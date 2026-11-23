@@ -252,6 +252,8 @@ export type ApiErrorCode =
   // Plan 4 Task 12 (J-06): the ruling routes.
   | 'reason-too-short'
   | 'same-person'
+  // Review p4t22 M1 (e): a second approval for a ruling the moderation gate does not refuse `needs-second`.
+  | 'not-refused'
   | 'account-action-unavailable'
   | 'freeze-not-allowed'
   // Lead call Q1: a ruling while maintenance pauses the dispute.

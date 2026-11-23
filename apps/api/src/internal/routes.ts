@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { normalizeTradeCode } from '@x2f/core';
+import { GATE_REFUSALS } from '@x2f/staff';
 import {
   attestationBytes,
   channelFor,
@@ -690,6 +691,49 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * Review p4t22 M1 (d): `{ kind: 'ruling-refused', trade, rulingId, reason }`, the moderation
+   * ruling gate refusing a ruling of the trade's current dispute (round 1's, or round 2's), with its
+   * refusal code (`GATE_REFUSALS`), or null once it no longer refuses it. As `ruling-wait`: each
+   * change is logged as `ruling.gate-refused` (system; `none` for null), the same report again is 201
+   * and logs nothing, and the staff case view shows the latest. A ruling that is not the dispute's
+   * is `stale-ruling`. Nothing about the ruling or the payout changes here; the rescue for
+   * `needs-second` is the staff route's (rulings.ts, `…/second-approval`).
+   */
+  const rulingRefused = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'rulingId', 'reason'])) throw new Refused(400, 'bad-body');
+    const reason = body.reason;
+    if (reason !== null && !(typeof reason === 'string' && (GATE_REFUSALS as readonly string[]).includes(reason))) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null || typeof body.rulingId !== 'string' || !/^[0-9a-f-]{36}$/.test(body.rulingId)) throw new Refused(400, 'bad-body');
+    const rulingId = body.rulingId;
+    const next = reason ?? 'none';
+    const client = await o.db.connect();
+    try {
+      await client.query('begin');
+      // The trade's row lock: two reports never log the same change twice.
+      const t = await client.query('select 1 from trades where code = $1 for update', [code]);
+      if (t.rows.length === 0) throw new Refused(404, 'not-found');
+      const d = (await loadDisputeRecord(client, code))?.dispute ?? null;
+      if (d === null || (d.ruling?.id !== rulingId && d.round1?.id !== rulingId)) throw new Refused(409, 'stale-ruling');
+      const last = await client.query<{ detail: string }>(
+        "select detail from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
+        [code],
+      );
+      const was = last.rows[0] === undefined ? null : (JSON.parse(last.rows[0].detail) as { rulingId: string; reason: string });
+      const same = was === null ? next === 'none' : was.rulingId === rulingId && was.reason === next;
+      if (!same) await appendLog(client, { at: o.clock?.() ?? new Date(now()), actor: { kind: 'system' }, tradeCode: code, action: 'ruling.gate-refused', detail: { rulingId, reason: next } });
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    log({ reason: 'internal-ruling-refused' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
   const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
@@ -894,6 +938,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'log-alarm') return logAlarm(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-wait') return rulingWait(body, reply);
+    if (isPlainObject(body) && body.kind === 'ruling-refused') return rulingRefused(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

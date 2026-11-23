@@ -1,4 +1,4 @@
-import { newDispute, DisputeRuleError, type Dispute, type DisputeStatus, type Round1, type RulingDraft } from '@x2f/staff';
+import { gateUsdCents, limitUsdCentsOf, newDispute, DisputeRuleError, type Dispute, type DisputeStatus, type GateValue, type Round1, type RulingDraft } from '@x2f/staff';
 import type { Trade } from '@x2f/trade';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
@@ -159,16 +159,34 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
 }
 
 /**
- * The trade's USD value in cents when its dispute opens: a USD trade's fiat total; another
- * currency's at the market quote (`usdCentsOf`, rounded up). Lead default, fail closed: with no
- * quote (a paused currency, or a system escalation, which runs without prices) the value is the
- * limit itself, so the two-person rule applies. The ruling gate keeps its own snapshot (Task 13).
+ * The trade's USD value in cents when its dispute opens: a USD trade's value as the ruling gate
+ * works it out (review p4t22 M1: `gateUsdCents`, the XMR times the locked rate rounded up, never the
+ * half-up fiat total, so the two sides cannot disagree by a cent at the limit); another currency's
+ * at the market quote (`usdCentsOf`, rounded up), for the staff views only, since the two-person
+ * rule follows the gate for it (`gateValueOf`). Lead default, fail closed: with no quote (a paused
+ * currency, or a system escalation, which runs without prices) the value is the limit itself.
  */
-export function disputeUsdCents(t: Pick<Trade, 'lockedRate' | 'fiatCents'>, prices: MarketPrices | null, limitUsdCents: bigint): bigint {
-  if (t.lockedRate.currency === 'USD') return t.fiatCents;
+export function disputeUsdCents(t: Pick<Trade, 'lockedRate' | 'fiatCents' | 'amountAtomic'>, prices: MarketPrices | null, limitUsdCents: bigint): bigint {
+  if (t.lockedRate.currency === 'USD') return gateUsdCents({ currency: 'USD', amountAtomic: t.amountAtomic, centsPerXmr: t.lockedRate.centsPerXmr })!;
   const q = prices?.quote(t.lockedRate.currency) ?? null;
   if (q === null) return limitUsdCents;
   return usdCentsOf(t.fiatCents, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
+}
+
+/**
+ * Review p4t22 M1: the ruling gate's own inputs for this trade (`GateValue`), as the propose route
+ * hands them to the dispute machine: the gate's value of the trade (null for a non-USD deal: lead
+ * default, owner question OQ1, every non-USD dispute needs a second person) and the large-trade
+ * limit in force now (`limitUsdCentsOf(settings)`). The gate applies its current limit, never the
+ * snapshot at opening (it cannot know when a dispute opened, and it is the one that co-signs), so
+ * the API judges by the same limit; the machine also keeps the snapshot's rule, so the API is never
+ * laxer than either.
+ */
+export function gateValueOf(t: Pick<Trade, 'lockedRate' | 'amountAtomic'>, largeTradeLimitUsd: number): GateValue {
+  return {
+    usdCents: gateUsdCents({ currency: t.lockedRate.currency, amountAtomic: t.amountAtomic, centsPerXmr: t.lockedRate.centsPerXmr }),
+    limitUsdCents: limitUsdCentsOf(largeTradeLimitUsd),
+  };
 }
 
 /**
@@ -179,11 +197,11 @@ export function disputeUsdCents(t: Pick<Trade, 'lockedRate' | 'fiatCents'>, pric
  */
 export async function startDispute(
   client: pg.PoolClient,
-  t: Pick<Trade, 'code' | 'lockedRate' | 'fiatCents'>,
+  t: Pick<Trade, 'code' | 'lockedRate' | 'fiatCents' | 'amountAtomic'>,
   a: { openedBy: 'buyer' | 'seller' | 'system'; reason: StoredReason; note: string; afterRefund: boolean; now: Date; prices: MarketPrices | null },
 ): Promise<Dispute> {
   const s = await disputeSettings(client);
-  const limitUsdCents = BigInt(s.largeTradeLimitUsd) * 100n;
+  const limitUsdCents = limitUsdCentsOf(s.largeTradeLimitUsd);
   const { rows } = await client.query<{ seq: number }>(`select ${NEXT_SEQ} as seq`, [t.code]);
   const d = newDispute({
     code: t.code,

@@ -399,6 +399,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
                 if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-statement-refused-${res.status}` });
                 return res.status === 201 || res.status === 200;
               },
+              // Review p4t22 M1 (d): the gate's refusal of the ruling, for the staff case view.
+              reportRefusal: async (r) => {
+                const res = await link.report({ kind: 'ruling-refused', trade: x.code, rulingId: r.rulingId, reason: r.reason });
+                if (res.status !== 201 && res.status !== 200) log({ reason: `ruling-refused-report-refused-${res.status}` });
+                return res.status === 201 || res.status === 200;
+              },
               // Ruling-winner reasons (lead 22 Nov): why the payout waits on its winner, for the staff case view.
               reportWait: async (reason) => {
                 const res = await link.report({ kind: 'ruling-wait', trade: x.code, reason });

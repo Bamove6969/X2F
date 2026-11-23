@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simplewebauthn/server';
 import { decodeAttestationObject } from '@simplewebauthn/server/helpers';
-import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, type KeyTapIntent } from '@x2f/staff';
+import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, involvedIn, limitUsdCentsOf, type KeyTapIntent } from '@x2f/staff';
 import type pg from 'pg';
 import { ADD_OWNER_KEY_PAIR_MS, LINK_MAX_LIFETIME_MS, MAX_TAP_AGE_MS, SWITCH_ON_SKEW_MS, type GateState, type InvitableRole, type PinnedCred } from './store.js';
 import { credOf, noteCounter, verifyTap, type GateContext, type GateRuling, type StoredTap } from './verify.js';
@@ -363,7 +363,8 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
           continue;
         }
         accept(t, 'settings', 'settings');
-        g.limitUsdCents = BigInt(Math.round(usd * 100));
+        // Review p4t22 M1: the same conversion as the API's (@x2f/staff `limitUsdCentsOf`).
+        g.limitUsdCents = limitUsdCentsOf(usd);
         g.appealWindowH = h;
         continue;
       }

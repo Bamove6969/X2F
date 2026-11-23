@@ -103,6 +103,11 @@ export const LOG_ACTIONS = {
   // Ruling-winner reasons (lead 22 Nov): why the moderation process's ruling payout waits on its
   // winner (`winner-committed`, `winner-offline`), or `none` once the winner took part (system).
   'ruling.payout-waiting': { reason: 'id' },
+  // Review p4t22 M1 (d): the moderation ruling gate refused a ruling (its refusal code, `none` once
+  // it no longer does), from the moderation process; and (e) a second approval added to a ruling
+  // published on one tap that the gate refused `needs-second`.
+  'ruling.gate-refused': { rulingId: 'id', reason: 'id' },
+  'ruling.second-approved': RULING,
   'dispute.complied': { txHash: 'hex64' },
   // Plan 4 Task 12 (A6): the seller's payment proof waits for its confirmations, or was refused on a
   // later check; the seller let the comply time pass with no proof (the case goes to a senior).

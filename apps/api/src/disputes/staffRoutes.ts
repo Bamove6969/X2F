@@ -1,5 +1,5 @@
 import { normalizeTradeCode } from '@x2f/core';
-import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
+import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, needsSecond, normalizeIncidentId, twoPersonRule, type Actor, type Dispute, type RulingOutcome } from '@x2f/staff';
 import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2 } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -17,7 +17,7 @@ import { rulingExtras } from './rulingDrafts.js';
 import { COMPLY_LAPSED_SQL, complianceOf } from './comply.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
-import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
+import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
 
 /**
  * Plan 4 Task 11: the moderator's queue and case view, messages to both traders, the
@@ -287,11 +287,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       : 'false';
     const { rows } = await deps.db.query<{
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
+      locked_currency: string; locked_cents_per_xmr: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
       involved: string[] | null; comply_lapsed: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
+              t.locked_currency, t.locked_cents_per_xmr::text as locked_cents_per_xmr,
               d.limit_usd_cents::text as limit_usd_cents, t.method_id, d.opened_by, d.opened_at, ap.at as appealed_at,
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
@@ -327,7 +329,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         const approval = r.status === 'awaiting-approval'
           // Waiting for a second person's approval of this proposal (Task 12 writes proposals).
           ? { waitingFor: 'second-approval', proposedBy: r.proposer_name }
-          : usdCents >= BigInt(r.limit_usd_cents) ? 'needs-second' : 'not-needed';
+          // Review p4t22 M1: the snapshot's rule or the gate's (every non-USD trade, the limit now).
+          : usdCents >= BigInt(r.limit_usd_cents) ||
+              twoPersonRule(gateValueOf({ amountAtomic: BigInt(r.amount_atomic), lockedRate: { currency: r.locked_currency, centsPerXmr: BigInt(r.locked_cents_per_xmr) } }, settings.largeTradeLimitUsd), { kind: 'none' })
+            ? 'needs-second' : 'not-needed';
         const since = r.round === 2 && r.appealed_at !== null ? r.appealed_at : r.opened_at;
         return {
           code: r.code,
@@ -452,7 +457,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       rulingDueAt: d.rulingDueAt.toISOString(),
       firstReplyAt: d.firstReplyAt?.toISOString() ?? null,
       usd: usd(d.usdCents),
-      overLimit: d.usdCents >= d.limitUsdCents,
+      // Review p4t22 M1: the two-person rule as a proposal now meets it (the gate's own rule too:
+      // every non-USD trade, and the limit in force now; lead default, owner question OQ1).
+      overLimit: needsSecond(d, 'release-to-buyer', { kind: 'none' }, gateValueOf({ amountAtomic: BigInt(t.amount_atomic), lockedRate: { currency: t.locked_currency, centsPerXmr: BigInt(t.locked_cents_per_xmr) } }, (await disputeSettings(deps.db)).largeTradeLimitUsd)),
       // Plan 4 Task 18 (ModCase): the large-trade limit this dispute snapshotted when it opened, whole dollars.
       limitUsd: Number(d.limitUsdCents / 100n),
       assignee: x.assignee_name,
@@ -489,6 +496,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         compliance: await complianceOf(deps.db, d),
         // Ruling-winner reasons (lead 22 Nov): why the moderation process's payout waits on its winner, while disputed.
         payoutWait: t.state === 'disputed' ? await payoutWaitOf(deps.db, code) : null,
+        // Review p4t22 M1 (d, e): the moderation gate's latest refusal of a ruling of this dispute,
+        // and, for `needs-second` on round 1 before its payout ran, what a second approval taps.
+        gateRefusal: await gateRefusalOf(deps.db, d),
       },
       freezes: await freezesOf(deps.db, t, code),
     };
@@ -824,6 +834,36 @@ async function payoutWaitOf(q: Queryable, code: string): Promise<{ reason: 'winn
   if (r === undefined) return null;
   const reason = (JSON.parse(r.detail) as { reason?: unknown }).reason;
   return reason === 'winner-committed' || reason === 'winner-offline' ? { reason, since: r.at.toISOString() } : null;
+}
+
+/**
+ * Review p4t22 M1 (d, e): the latest `ruling.gate-refused` the moderation process reported for a
+ * ruling of this dispute (internal `ruling-refused`), with when it was logged; null when there is
+ * none, it was cleared, or it names a ruling this dispute no longer has. `secondApproval`: for a
+ * `needs-second` refusal of round 1 (the ruling the executor pays) that has no approver and whose
+ * payout has not run, the published reason and evidence a second approval's tap binds; else null.
+ */
+async function gateRefusalOf(
+  q: Queryable,
+  d: Dispute,
+): Promise<{ rulingId: string; reason: string; since: string; secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[] } | null } | null> {
+  const { rows } = await q.query<{ detail: string; at: Date }>(
+    "select detail, at from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
+    [d.code],
+  );
+  const r = rows[0];
+  if (r === undefined) return null;
+  const x = JSON.parse(r.detail) as { rulingId?: unknown; reason?: unknown };
+  if (typeof x.rulingId !== 'string' || typeof x.reason !== 'string' || x.reason === 'none') return null;
+  if (d.ruling?.id !== x.rulingId && d.round1?.id !== x.rulingId) return null;
+  const r1 = d.round === 1 ? d.ruling : d.round1;
+  let secondApproval = null;
+  if (x.reason === 'needs-second' && r1 !== null && r1.id === x.rulingId && r1.approver === null && d.executedAt === null && d.publishedAt !== null && d.status !== 'closed') {
+    const pub = await q.query<{ reason: string; evidence: string[] }>('select reason, evidence from dispute_rulings where code = $1 and seq = $2 and round = 1', [d.code, d.seq]);
+    const p = pub.rows[0];
+    if (p) secondApproval = { rulingId: r1.id, outcome: r1.outcome, reason: p.reason, evidence: p.evidence };
+  }
+  return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval };
 }
 
 async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, code: string): Promise<Record<Side, boolean>> {

@@ -7,6 +7,7 @@ import {
   evidenceSha256,
   type AccountAction,
   type Dispute,
+  type GateValue,
   type KeyTapIntent,
   type RulingOutcome,
 } from '@x2f/staff';
@@ -19,7 +20,7 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { disputeSettings } from './settings.js';
-import { withDispute, type DisputeRecord } from './store.js';
+import { gateValueOf, withDispute, type DisputeRecord } from './store.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
 
@@ -127,6 +128,20 @@ async function tradeAmount(client: pg.PoolClient, code: string): Promise<string>
   const { rows } = await client.query<{ amount_atomic: string }>('select amount_atomic::text from trades where code = $1', [code]);
   if (!rows[0]) throw new ApiError(404, 'not-found');
   return rows[0].amount_atomic;
+}
+
+/**
+ * Review p4t22 M1: the ruling gate's inputs for the trade (`gateValueOf`): its XMR and locked rate
+ * from the trade row, and the large-trade limit in the settings now.
+ */
+async function gateValue(client: pg.PoolClient, code: string, largeTradeLimitUsd: number): Promise<GateValue> {
+  const { rows } = await client.query<{ amount_atomic: string; currency: string; cents: string }>(
+    'select amount_atomic::text, locked_currency as currency, locked_cents_per_xmr::text as cents from trades where code = $1',
+    [code],
+  );
+  const r = rows[0];
+  if (!r) throw new ApiError(404, 'not-found');
+  return gateValueOf({ amountAtomic: BigInt(r.amount_atomic), lockedRate: { currency: r.currency, centsPerXmr: BigInt(r.cents) } }, largeTradeLimitUsd);
 }
 
 /** `round1Id`: round 2's taps name the round-1 ruling they review (mod-gate review B2); null in round 1. */
@@ -240,7 +255,9 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         // The tap first: a tap that is not for exactly this ruling writes nothing.
         await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, round1Id: d.round1?.id ?? null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
         const s = await disputeSettings(client);
-        const next = applyDispute(d, { type: 'propose', ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
+        // Review p4t22 M1: never publish on one tap a ruling the gate would refuse (`needs-second`).
+        const gate = await gateValue(client, code, s.largeTradeLimitUsd);
+        const next = applyDispute(d, { type: 'propose', gate, ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
         const ins = await client.query(
           `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at)
            values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,
@@ -287,6 +304,54 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const next = applyDispute(d, { type: 'approve' }, me, now, await disputeSettings(client));
         await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.approved', detail: rulingDetail(r, d.round, amountAtomic) });
         if (decided(d, next)) await publishDecided(client, next, draft, amountAtomic, now, me);
+        return next;
+      });
+    } catch (err) {
+      rulingError(err);
+    }
+    return rulingState(req, code);
+  });
+
+  /**
+   * Review p4t22 M1 (e), the rescue for a dispute already stuck: `POST …/rulings/:id/second-approval
+   * {tapId}` (perm `rulings.approve`). A round-1 ruling published on one tap that the moderation gate
+   * refuses for want of a second person (its latest report for this dispute is `needs-second` for
+   * this very ruling: 409 `not-refused` otherwise) gets a senior moderator's or the owner's approval,
+   * never the proposer's (409 `same-person`), before its payout ran. The tap is exactly an `approve`
+   * tap of this ruling, over its published reason and evidence: the key signs nothing a normal
+   * approval would not, and the gate re-verifies it like any other. The machine's `second-approve`
+   * records the approver; during an appeal it joins round 1's signers (R37). Logged as
+   * `ruling.second-approved`. Refused while paused or stopped, before the tap (lead call Q1).
+   */
+  app.post('/staff/v1/disputes/:code/rulings/:id/second-approval', approver, async (req) => {
+    const b = bodyOf(req, ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request');
+    const tapId = b.tapId;
+    const id = (req.params as { id?: unknown }).id;
+    const code = await caseCodeOf(req.server.deps.db, req);
+    const me = actorOf(req);
+    try {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
+        await assertNotPaused(client, rec);
+        const r1 = d.round === 1 ? d.ruling : d.round1;
+        if (typeof id !== 'string' || !UUID.test(id) || r1 === null || r1.id !== id) throw new ApiError(409, 'wrong-state');
+        const last = await client.query<{ detail: string }>(
+          "select detail from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
+          [code],
+        );
+        const refused = last.rows[0] === undefined ? null : (JSON.parse(last.rows[0].detail) as { rulingId?: unknown; reason?: unknown });
+        if (refused === null || refused.rulingId !== id || refused.reason !== 'needs-second') throw new ApiError(409, 'not-refused');
+        const pub = await client.query<{ reason: string; evidence: string[] }>(
+          'select reason, evidence from dispute_rulings where code = $1 and seq = $2 and round = 1',
+          [code, d.seq],
+        );
+        const p = pub.rows[0];
+        if (!p) throw new ApiError(409, 'wrong-state');
+        const amountAtomic = await tradeAmount(client, code);
+        // The machine first (who may, and whether it is still open), so a refused rescue leaves the tap unused.
+        const next = applyDispute(d, { type: 'second-approve' }, me, now, await disputeSettings(client));
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r1.id, code, round: 1, round1Id: null, outcome: r1.outcome, amountAtomic, reason: p.reason, evidence: p.evidence }), now, { sessionId: req.auth.sessionId });
+        await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.second-approved', detail: rulingDetail(r1, 1, amountAtomic) });
         return next;
       });
     } catch (err) {

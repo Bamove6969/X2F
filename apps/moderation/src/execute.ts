@@ -1,7 +1,7 @@
 import type { Outcome, PartyHandle, Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES } from '@x2f/staff';
 import { signRulingStatement, type RulingKind, type RulingStatement } from '@x2f/trade';
-import { gateCheck, type GateContext, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
+import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
 
 /**
  * Plan 4 Task 14: the ruling executor. For a trade the API shows disputed, it settles the round-1
@@ -106,6 +106,11 @@ export interface RulingStepInput {
   announce(r: { statement: RulingStatement; sig: string }): Promise<boolean>;
   /** Ruling-winner reasons: posts why the payout waits (or null: no longer) to the API; true once it took it. */
   reportWait?(reason: RulingWait | null): Promise<boolean>;
+  /**
+   * Review p4t22 M1 (d): posts the gate's refusal of the ruling it was asked about (or null: it no
+   * longer refuses it) to the API (`ruling-refused`), for the staff case view; true once it took it.
+   */
+  reportRefusal?(r: { rulingId: string; reason: GateRefusal | null }): Promise<boolean>;
 }
 
 export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | 'no-escrow' | 'announce-failed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
@@ -145,6 +150,8 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
   const announced = new Map<string, string>();
   /** The wait reason the API took in this process, per trade code (absent: none reported yet). */
   const waitReported = new Map<string, RulingWait | null>();
+  /** Review p4t22 M1 (d): the gate refusal the API took in this process, per trade code (`rulingId:reason`, or `rulingId:` for a clear). */
+  const refusalReported = new Map<string, string>();
   const waitMs = o.winnerWaitMs ?? RULING_WINNER_WAIT_MS;
   /** Review m2: a report bounded in time; no answer, a refusal and an error are all false. */
   const bounded = async (send: () => Promise<boolean>): Promise<boolean> => {
@@ -186,6 +193,20 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     o.log({ reason: why === null ? 'ruling-winner-joined' : `ruling-${why}` });
   };
 
+  /**
+   * Review p4t22 M1 (d): tells the API, once per change in this process, that the gate refuses this
+   * ruling (and why), or no longer does; a refused or unanswered report is sent again next pass.
+   */
+  const refusalPass = async (s: RulingStepInput, rulingId: string, reason: GateRefusal | null): Promise<void> => {
+    if (!s.reportRefusal) return;
+    const now = `${rulingId}:${reason ?? ''}`;
+    const was = refusalReported.get(s.code);
+    if (was === now) return;
+    // Nothing reported in this process and nothing refused: one clear, in case an earlier process reported one.
+    const took = await bounded(() => s.reportRefusal!({ rulingId, reason }));
+    if (took) refusalReported.set(s.code, now);
+  };
+
   const step = async (s: RulingStepInput): Promise<RulingStepResult> => {
     const done = o.store.state.executions[s.code];
     if (done !== undefined && done.settledAt !== null) return 'settled';
@@ -201,8 +222,10 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     const auth = await gateCheck(o.store, o.source, { ruling: r1, recorded: s.recorded, balanceAtomic: balance }, o.ctx);
     if (!auth.ok) {
       o.log({ reason: `ruling-refused-${auth.reason}` });
+      await refusalPass(s, r1.id, auth.reason);
       return `refused-${auth.reason}`;
     }
+    await refusalPass(s, r1.id, null);
     if (auth.settle === null) return 'none';
     // Review M5: the desk's armed, unblocked refund goes first; the ruling waits until it is blocked.
     if (s.deskArmed?.kind === 'auto-refund' && (s.deskArmed.blocked ?? null) === null && o.store.state.executions[s.code] === undefined) {

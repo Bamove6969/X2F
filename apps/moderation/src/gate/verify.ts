@@ -1,7 +1,7 @@
 import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { normalizeTradeCode } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
-import { ESCROW_OUTCOMES, canonicalJson, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
+import { ESCROW_OUTCOMES, canonicalJson, gateUsdCents, tapChallenge, twoPersonRule, type AccountAction, type GateRefusal as StaffGateRefusal, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import { payoutsFor, type AttestedTerms } from '@x2f/trade';
 import type { GateState, PinnedCred } from './store.js';
 
@@ -43,23 +43,8 @@ export interface GateContext {
   log: (e: { reason: string }) => void;
 }
 
-export type GateRefusal =
-  | 'unpinned'
-  | 'unknown-key'
-  | 'bad-signature'
-  | 'intent-mismatch'
-  | 'nonce-reused'
-  | 'same-person'
-  | 'proposer-role'
-  | 'approver-role'
-  | 'needs-second'
-  | 'revoked'
-  | 'involved'
-  | 'round1-unseen'
-  | 'replayed'
-  | 'stale-round'
-  | 'stopped'
-  | 'bad-terms';
+/** Review p4t22 M1 (d): the list lives in @x2f/staff (`GATE_REFUSALS`), so the API can take the gate's reports. */
+export type GateRefusal = StaffGateRefusal;
 
 export type SignerRole = 'owner' | 'senior' | 'mod' | 'helper';
 
@@ -162,8 +147,6 @@ export interface RecordedTerms {
   usdCents: bigint | null;
 }
 
-const ATOMIC_PER_XMR = 1_000_000_000_000n;
-
 /** The recorded terms from this process's attested terms and its own trade (the desk's shadow trade). */
 export function recordedTerms(a: {
   terms: AttestedTerms;
@@ -174,7 +157,8 @@ export function recordedTerms(a: {
   // Review I3: the trade is the deal this process attested (it may only grow, spec 11.1).
   if (a.trade.poster !== deal.poster) throw new RangeError('recordedTerms: the poster is not the attested one');
   if (a.trade.amountAtomic < BigInt(deal.takeAmountAtomic)) throw new RangeError('recordedTerms: the amount is below the attested take amount');
-  const usdCents = deal.currency === 'USD' ? (a.trade.amountAtomic * BigInt(deal.centsPerXmr) + ATOMIC_PER_XMR - 1n) / ATOMIC_PER_XMR : null;
+  // Review p4t22 M1: the one rule the API uses too (@x2f/staff `gateUsdCents`).
+  const usdCents = gateUsdCents({ currency: deal.currency, amountAtomic: a.trade.amountAtomic, centsPerXmr: BigInt(deal.centsPerXmr) });
   return {
     amountAtomic: a.trade.amountAtomic,
     feeAtomic: a.trade.feeAtomic,
@@ -223,7 +207,8 @@ const refuse = (reason: GateRefusal): Authorization => ({ ok: false, reason });
 
 /** True when the trade needs a second person: by the gate's own recorded value and limit, or for any account action. */
 export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: AccountAction): boolean {
-  return recorded.usdCents === null || recorded.usdCents >= g.limitUsdCents || action.kind !== 'none';
+  // Review p4t22 M1: the same rule the API's dispute machine applies (`needsSecond` calls it too).
+  return twoPersonRule({ usdCents: recorded.usdCents, limitUsdCents: g.limitUsdCents }, action);
 }
 
 /**

@@ -125,9 +125,22 @@ export type DisputeEvent =
    */
   | { type: 'assign'; staffId: string; role: StaffRole }
   | { type: 'reply' }
-  | { type: 'propose'; ruling: Omit<RulingDraft, 'approver' | 'needsSecond'> }
+  /**
+   * `gate` (review p4t22 M1): the ruling gate's own inputs for this trade, from the trade row and
+   * the current settings (`GateValue`), so the machine never publishes on one tap a ruling the gate
+   * would refuse for want of a second person.
+   */
+  | { type: 'propose'; ruling: Omit<RulingDraft, 'approver' | 'needsSecond'>; gate: GateValue }
   | { type: 'approve' }
   | { type: 'send-back' }
+  /**
+   * Review p4t22 M1 (e), the rescue: a second person's approval added to a round-1 ruling that was
+   * published on one tap and that the ruling gate refuses for want of a second person
+   * (`needs-second`; the API checks the gate's report). The approval binds exactly the same ruling
+   * as an `approve` tap would; nothing else about the dispute changes. Only before round 1's payout
+   * ran, and never by the proposer.
+   */
+  | { type: 'second-approve' }
   /**
    * `involved`: the staff ids with an activity-log entry on the trade before this appeal's own
    * `appeal.opened` entry (`involvedIn(log, code, { beforeId })`, I3). They are added to `seen`
@@ -208,9 +221,62 @@ export function newDispute(a: {
   };
 }
 
-/** Two-person rule: at or above the large-trade limit, or any ban. */
-export function needsSecond(d: Dispute, _outcome: RulingOutcome, action: AccountAction): boolean {
-  return d.usdCents >= d.limitUsdCents || action.kind !== 'none';
+/**
+ * Why the moderation process's ruling gate refuses a ruling (apps/moderation gate/verify.ts
+ * `GateRefusal` is this list). Review p4t22 M1 (d): the gate reports its refusal to the API, which
+ * shows it on the staff case view, so a ruling the gate will not act on is never silent.
+ */
+export const GATE_REFUSALS = [
+  'unpinned', 'unknown-key', 'bad-signature', 'intent-mismatch', 'nonce-reused', 'same-person', 'proposer-role',
+  'approver-role', 'needs-second', 'revoked', 'involved', 'round1-unseen', 'replayed', 'stale-round', 'stopped', 'bad-terms',
+] as const;
+export type GateRefusal = (typeof GATE_REFUSALS)[number];
+
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+/**
+ * Review p4t22 M1: the trade's US-dollar value as the moderation process's ruling gate works it out
+ * from the deal it attested, the one rule both sides use. A US-dollar deal: the trade's XMR times
+ * the locked rate, rounded up (never down, so a value a hair under the limit counts as at it). Any
+ * other currency: null, since the attested deal carries no US-dollar rate and the gate has no value
+ * of its own (lead default, owner question OQ1: every non-USD dispute needs a second person, until
+ * the owner chooses a signed USD rate at escrow setup instead).
+ */
+export function gateUsdCents(deal: { currency: string; amountAtomic: bigint; centsPerXmr: bigint }): bigint | null {
+  if (deal.currency !== 'USD') return null;
+  return (deal.amountAtomic * deal.centsPerXmr + ATOMIC_PER_XMR - 1n) / ATOMIC_PER_XMR;
+}
+
+/** Review p4t22 M1: the large-trade limit in US cents from the setting in whole US dollars, the same way on both sides. */
+export function limitUsdCentsOf(largeTradeLimitUsd: number): bigint {
+  if (!Number.isFinite(largeTradeLimitUsd) || largeTradeLimitUsd < 0) throw new RangeError('limit out of range');
+  return BigInt(Math.round(largeTradeLimitUsd * 100));
+}
+
+/**
+ * What the ruling gate decides the two-person rule from: its own value of the trade
+ * (`gateUsdCents`, null for a non-USD deal) and the large-trade limit in force now (the gate applies
+ * its current limit; it cannot know when a dispute opened).
+ */
+export interface GateValue {
+  usdCents: bigint | null;
+  limitUsdCents: bigint;
+}
+
+/** The two-person rule as the ruling gate applies it: no value of its own, at or above the limit, or any account action. */
+export function twoPersonRule(v: GateValue, action: AccountAction): boolean {
+  return v.usdCents === null || v.usdCents >= v.limitUsdCents || action.kind !== 'none';
+}
+
+/**
+ * Two-person rule: at or above the large-trade limit snapshot taken at opening, or any ban; and
+ * (review p4t22 M1) whenever the ruling gate's own rule would ask for a second person (`gate`: the
+ * gate's value of the trade and the limit in force now). Never laxer than the gate, which otherwise
+ * refuses a published ruling for good (`needs-second`) and strands the escrow.
+ */
+export function needsSecond(d: Dispute, _outcome: RulingOutcome, action: AccountAction, gate: GateValue): boolean {
+  // The gate's rule first: a caller that did not pass its inputs throws instead of passing.
+  return twoPersonRule(gate, action) || d.usdCents >= d.limitUsdCents || action.kind !== 'none';
 }
 
 /** Adds a staff id to `seen` (the API calls this for every log entry on the case). */
@@ -439,10 +505,28 @@ export function applyDispute(
   // Staff.
   if (SYSTEM_EVENTS.includes(e.type) || e.type === 'appeal') return fail('wrong-party');
   if (!can(by.role, 'disputes.handle')) return fail('wrong-party');
+  const seenBy = (x: Dispute, ...ids: string[]) => ids.reduce(markSeen, x);
+  if (e.type === 'second-approve') {
+    // Round 1 as the executor pays it: the current ruling, or round 1 once an appeal is open.
+    const r1 = d.round === 1 ? d.ruling : d.round1;
+    const open1 = d.round === 1 ? d.status === 'published' || d.status === 'final' : d.status !== 'closed';
+    if (!open1 || r1 === null || d.publishedAt === null || d.executedAt !== null || r1.approver !== null) return fail('wrong-state');
+    if (!validAction(r1.accountAction, now)) return fail('invalid-action');
+    if (!canApprove(by.role, r1.accountAction)) return fail('wrong-party');
+    if (r1.proposer === by.id) return fail('same-person');
+    const approved = { ...r1, approver: by.id, needsSecond: true };
+    if (d.round === 1) return seenBy({ ...d, ruling: approved }, by.id);
+    // Round 2: approving round 1 is round 1's work, so someone involved in it may do it; but the
+    // approver is then one of round 1's signers, and R37 keeps them out of the appeal (here and at
+    // the gate): never the appeal's proposer, approver or assignee.
+    if (d.ruling !== null && (d.ruling.proposer === by.id || d.ruling.approver === by.id)) return fail('not-eligible');
+    if (d.assignee === by.id) return fail('not-eligible');
+    const involved = d.round1!.involved.includes(by.id) ? d.round1!.involved : [...d.round1!.involved, by.id];
+    return seenBy({ ...d, round1: { ...d.round1!, approver: by.id, needsSecond: true, involved } }, by.id);
+  }
   // I2 (R37): nobody involved in round 1 takes any part in the appeal: not a reply, not an
   // assignment of someone else, not a send-back. Task 11's chat and message routes apply the same.
   if (d.round === 2 && d.round1 !== null && d.round1.involved.includes(by.id)) return fail('not-eligible');
-  const seenBy = (x: Dispute, ...ids: string[]) => ids.reduce(markSeen, x);
 
   switch (e.type) {
     case 'assign': {
@@ -468,7 +552,7 @@ export function applyDispute(
       if (!outcomeFits(d, e.ruling.outcome)) return fail('wrong-state');
       if (!validAction(e.ruling.accountAction, now)) return fail('invalid-action');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');
-      const second = needsSecond(d, e.ruling.outcome, e.ruling.accountAction);
+      const second = needsSecond(d, e.ruling.outcome, e.ruling.accountAction, e.gate);
       const ruling: RulingDraft = {
         id: e.ruling.id,
         outcome: e.ruling.outcome,
