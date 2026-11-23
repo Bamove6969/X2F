@@ -87,8 +87,9 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  font-size: 16px;
-  line-height: 20px;
+  /* Owner demo note #113 (23 Nov): much bigger now the footer line is gone. */
+  font-size: 22px;
+  line-height: 28px;
   font-weight: 600;
 }
 
