@@ -153,7 +153,8 @@ export function PgpChallenge() {
         <>
           <ol className="x2f-start__steps">
             <li>Copy the encrypted message below.</li>
-            <li>Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it.</li>
+            {/* Owner demo note #145 (23 Nov): "...decrypt the message to find the hidden login code." */}
+            <li>Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt the message to find the hidden login code.</li>
             <li>Paste the code from inside the message.</li>
           </ol>
           <section className="x2f-start__message" aria-label="Encrypted message">

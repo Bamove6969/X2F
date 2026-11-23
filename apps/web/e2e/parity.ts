@@ -326,7 +326,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
-      why: 'Sign-up round 3 (owner 13-16 Nov 2026): PGPony is the PGP app recommended on Android, so the step reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."',
+      why: 'Sign-up round 3 (owner 13-16 Nov 2026): PGPony is the PGP app recommended on Android, so the step reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."; owner demo note #145 (23 Nov 2026) then ends it "... and decrypt the message to find the hidden login code."',
     },
     {
       text: '4:12',
