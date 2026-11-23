@@ -3,6 +3,9 @@
 // list, not buttons, then one address field; the Edge tip names Edge's real setting) and 16 Nov #97
 // (/setup/welcome: the security rating, the "Username and password" line, a link back to each
 // setting). COPY-UNSIGNED.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -207,6 +210,33 @@ describe('/setup/welcome (owner #97)', () => {
     expect(nameLine.nextElementSibling!.textContent).toBe(WELCOME_COPY.lead);
     // Owner #166: his second paragraph right after.
     expect(nameLine.nextElementSibling!.nextElementSibling!.textContent).toBe(WELCOME_COPY.leadMore);
+  });
+
+  describe('owner #167: the rating line is big and its word is coloured by level', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/setup/setup.css'), 'utf8');
+    const ruleFor = (sel: string) => {
+      const i = css.indexOf(`${sel} {`);
+      expect(i, sel).toBeGreaterThanOrEqual(0);
+      return css.slice(i, css.indexOf('}', i));
+    };
+    it('the line uses the screen-title size, the biggest type after the heading', () => {
+      expect(ruleFor('.x2f-welcome__rating-line')).toMatch(/font-size:\s*var\(--x2f-screen-title-size\)/);
+    });
+    for (const [level, methods, word, token] of [
+      ['high', ['pgp', 'recovery-codes'], 'Highly secure', '--x2f-good'],
+      ['medium', ['password', 'totp', 'recovery-codes'], RATING_WORDS.medium, '--x2f-caution'],
+      ['weak', ['password', 'recovery-codes'], RATING_WORDS.weak, '--x2f-danger'],
+    ] as const) {
+      it(`${level}: "${word}" in var(${token}), never the button's Monero orange`, async () => {
+        const host = await showWelcome([...methods], walletList());
+        const section = host.querySelector('[data-part="security-rating"]')!;
+        expect(section.getAttribute('data-rating')).toBe(level);
+        expect(section.querySelector('[data-part="rating-word"]')!.textContent).toBe(word);
+        const rule = ruleFor(`.x2f-welcome__rating[data-rating='${level}'] [data-part='rating-word']`);
+        expect(rule).toContain(`color: var(${token})`);
+        expect(rule).not.toContain('monero');
+      });
+    }
   });
 
   it('a PGP account is Highly secure, with no raise line, and still lists the username', async () => {

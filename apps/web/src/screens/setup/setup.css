@@ -1249,6 +1249,33 @@
   font-size: 15px;
 }
 
+/* Owner demo note #167 (23 Nov): the rating line in the biggest type after the heading, and the
+   rating word coloured by level: Highly secure green, Medium amber (the caution token, clearly not
+   the orange of the button below), Weak red. */
+.x2f-welcome__rating-line {
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.x2f-welcome__rating-line .x2f-welcome__title {
+  font-weight: 700;
+}
+
+.x2f-welcome__rating[data-rating='high'] [data-part='rating-word'] {
+  color: var(--x2f-good);
+}
+
+.x2f-welcome__rating[data-rating='medium'] [data-part='rating-word'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-welcome__rating[data-rating='weak'] [data-part='rating-word'] {
+  color: var(--x2f-danger);
+}
+
 .x2f-welcome__link {
   align-self: flex-start;
 }
