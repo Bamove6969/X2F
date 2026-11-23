@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { newTradeCode } from '@x2f/core';
+import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
 import { escrowPlan } from '@x2f/trade';
 import pg from 'pg';
@@ -847,7 +847,10 @@ describe('Haveno review 2026-11-12, finding 2 (lead call): rulings only move for
     // A new round-1 ruling on the same trade (another outcome), properly tapped: stale.
     const late = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
     expect(await authorize(w, late, [tapBy(senior, late.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
-    // Round 1 as the gate authorised it is unchanged.
+    // Review p4t22 F1 m1 (hardening): the appeal decided the trade, so round 1 (authorised, never
+    // recorded) is not authorised again; with its payout recorded before the appeal it still is.
+    expect(await authorize(w, r1, [r1Tap])).toEqual({ ok: false, reason: 'stale-round' });
+    w.gate.executions[normalizeTradeCode(r1.ruling.code)!] = { rulingId: r1.ruling.id, winner: 'buyer', payouts: [], recordedAt: NOW.toISOString(), settledAt: null, settledTx: null };
     expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
   });
 
@@ -1438,8 +1441,8 @@ describe('review p4t22 N1: round 1 by someone removed before its payout ran', ()
     expect(await ask(w, r1, r1Taps)).toEqual({ ok: false, reason: 'revoked' });
     const r2 = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'refund-to-seller' });
     expect(await ask(w, r2, [tapBy(senior2, r2.intent('propose'))], { involved: [], round1: { ruling: r1.ruling, taps: r1Taps } })).toMatchObject({ ok: true, settle: { winner: 'seller' } });
-    // Round 1 alone is still refused, also now that the gate knows its signers.
-    expect(await ask(w, r1, r1Taps)).toEqual({ ok: false, reason: 'revoked' });
+    // Round 1 alone is still refused (now stale: the appeal decided the trade), also now that the gate knows its signers.
+    expect(await ask(w, r1, r1Taps)).toEqual({ ok: false, reason: 'stale-round' });
     expect(w.gate.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true });
     // A fresh round 1 on the trade is stale: round 1 is decided by the appeal now.
     const late = ruling(senior2, { code: r1.ruling.code });
@@ -1602,6 +1605,53 @@ describe('review p4t22 F1: a ruling the gate authorised stays authorised when a 
     expect(await authorize(x.w, x.r1, x.taps, x.usd)).toEqual(x.first);
   });
 
+  it('m1: a round 1 read for its signers only, its signer switched back on, re-signed on its bound nonce: refused (stale, and held to its intents)', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const t1 = ruling(mod);
+    const t1Tap = tapBy(mod, t1.intent('propose'));
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    const t2 = ruling(senior, { round: 2, round1Id: t1.ruling.id, code: t1.ruling.code });
+    expect((await authorizeRuling(w.gate, { ruling: t2.ruling, taps: [tapBy(senior, t2.intent('propose'))], recorded: recorded(41_250n), balanceAtomic: BALANCE, involved: [], round1: { ruling: t1.ruling, taps: [t1Tap] } }, ctx())).ok).toBe(true);
+    expect(w.gate.rulingsSeen[t1.ruling.id]).toMatchObject({ signersOnly: true, intentsSha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    w.api.taps.push(tapBy(w.owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' }));
+    w.api.staffRows.get(mod.id)!.switchedOff = false;
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(w.gate.staff[mod.id]?.revoked).toBe(false);
+    const flipped = { ...t1, ruling: { ...t1.ruling, outcome: 'refund-to-seller' as const } };
+    const flip = tapOnNonce(mod, t1.intent('propose', { outcome: 'refund-to-seller' }), t1Tap.nonceHex);
+    // The hardening: round 2 decided the trade, so round 1 is stale whatever it says.
+    expect(await authorize(w, flipped, [flip])).toEqual({ ok: false, reason: 'stale-round' });
+    expect(await authorize(w, t1, [t1Tap])).toEqual({ ok: false, reason: 'stale-round' });
+    // And below it, the hash: even with a payout record naming round 1 (so the hardening lets it
+    // through), the flipped intents are refused; the intents it was read on are not.
+    w.gate.executions[normalizeTradeCode(t1.ruling.code)!] = { rulingId: t1.ruling.id, winner: 'buyer', payouts: [], recordedAt: NOW.toISOString(), settledAt: null, settledTx: null };
+    expect(await authorize(w, flipped, [flip])).toEqual({ ok: false, reason: 'replayed' });
+    expect((await authorize(w, t1, [t1Tap])).ok).toBe(true);
+  });
+
+  it('m2: a proposal and an approval sharing one nonce are refused up front, and nothing is bound', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod, { approver: senior });
+    const tp = tapBy(mod, r1.intent('propose'));
+    const ta = tapOnNonce(senior, r1.intent('approve'), tp.nonceHex);
+    expect(await authorize(w, r1, [tp, ta], 500_000n)).toEqual({ ok: false, reason: 'nonce-reused' });
+    expect(w.gate.usedNonces[tp.nonceHex]).toBeUndefined();
+    expect(w.gate.rulingsSeen[r1.ruling.id]).toBeUndefined();
+    // With its own nonce, the approval goes through, and checks the same again.
+    const ta2 = tapBy(senior, r1.intent('approve'));
+    const first = await authorize(w, r1, [tp, ta2], 500_000n);
+    expect(first.ok).toBe(true);
+    expect(await authorize(w, r1, [tp, ta2], 500_000n)).toEqual(first);
+  });
+
+  // Hash-less entries are pre-launch only (no production gate.bin exists); they fail closed.
   it('finding A: an authorised entry with no intents hash (written before it) fails closed for the re-check', async () => {
     const x = await authorisedRound1();
     expect(x.w.gate.rulingsSeen[x.r1.ruling.id]?.intentsSha256).toMatch(/^[0-9a-f]{64}$/);
@@ -1631,7 +1681,7 @@ describe('review p4t22 F1: a ruling the gate authorised stays authorised when a 
     const t2 = ruling(x.senior, { round: 2, round1Id: t1.ruling.id, code: t1.ruling.code });
     expect((await authorizeRuling(x.w.gate, { ruling: t2.ruling, taps: [tapBy(x.senior, t2.intent('propose'))], recorded: recorded(41_250n), balanceAtomic: BALANCE, involved: [], round1: { ruling: t1.ruling, taps: t1Taps } }, ctx())).ok).toBe(true);
     expect(x.w.gate.rulingsSeen[t1.ruling.id]).toMatchObject({ signersOnly: true, signers: [x.mod.id] });
-    expect(await authorize(x.w, t1, t1Taps)).toEqual({ ok: false, reason: 'revoked' });
+    expect(await authorize(x.w, t1, t1Taps)).toEqual({ ok: false, reason: 'stale-round' });
   });
 
   it("F1's twin: a round 1 never authorised whose signer was then reset is revoked (so it can be re-proposed), and its appeal reads its signer", async () => {
@@ -1653,6 +1703,6 @@ describe('review p4t22 F1: a ruling the gate authorised stays authorised when a 
     expect(await authorizeRuling(w.gate, { ruling: r2.ruling, taps: [tapBy(senior, r2.intent('propose'))], recorded: recorded(41_250n), balanceAtomic: BALANCE, involved: [], round1 }, ctx())).toMatchObject({ ok: true, settle: { winner: 'seller' } });
     expect(w.gate.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true, signers: [mod.id] });
     // Round 1 itself still never pays.
-    expect(await authorize(w, r1, r1Taps)).toEqual({ ok: false, reason: 'revoked' });
+    expect(await authorize(w, r1, r1Taps)).toEqual({ ok: false, reason: 'stale-round' });
   });
 });
