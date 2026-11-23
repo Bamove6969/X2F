@@ -6,7 +6,8 @@
  * - 403 `recovery-hold`: a held backup session or the account's 24-hour hold, until `holdUntil` (Plan 2 Tasks 9 and 17);
  * - 429 `slow-down` / `locked`: how long to wait, from `retryAfterSeconds` (the TOTP backup's daily
  *   cap waits until midnight UTC, so a long wait is given as a clock time);
- * - 400 `key-expired` / `key-revoked`: the key is turned away with the reason (spec 6.2);
+ * - 400 `key-expired` / `key-revoked`: the key is turned away with the reason (spec 6.2); `key-no-encryption` /
+ *   `key-encryption-inactive` (owner demo note #144): the key cannot receive the login code;
  * - a `detail` sentence about the pasted key: shown as the server wrote it;
  * - 400 `challenge-expired`: the step ran out of time and must start again;
  * - 409 `security-key-limit` / `login-name-set` (FU-A): the key cap, a login name already chosen.
@@ -99,6 +100,14 @@ export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, the
 // not-a-refusal: the pasted key itself is revoked
 export const KEY_REVOKED = 'That key has been revoked, so it cannot be used to log in. Use a key that is still valid.';
 export const STEP_EXPIRED = 'That step has expired. Start again.';
+/**
+ * Owner demo note #144 (23 Nov 2026): 400 `key-no-encryption` (a sign-only key) and
+ * `key-encryption-inactive` (its encryption subkey expired or was revoked). The same sentences as
+ * the device's own check (@x2f/accounts `inspectPublicKey`), so both say it alike. COPY-UNSIGNED
+ */
+export const KEY_SIGN_ONLY = 'This key can only sign. X2F sends your login code encrypted to your key, so it needs an encryption subkey. Add one in your PGP app, then paste the key again.';
+export const KEY_ENCRYPTION_INACTIVE =
+  "This key's encryption subkey has expired or been revoked. X2F sends your login code encrypted to your key, so add a new encryption subkey in your PGP app, then paste the key again.";
 /** 409 `key-unavailable` (owner 2 Nov 2026): a key on the ban list; never said why. COPY-UNSIGNED */
 export const KEY_UNAVAILABLE = 'That key is not accepted on X2F. Use a different key.';
 /** 409 `security-key-limit` (FU-A review I2): the account already holds the most security keys allowed. */
@@ -121,6 +130,8 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
   if (r.code === 'key-expired') return KEY_EXPIRED;
   if (r.code === 'key-revoked') return KEY_REVOKED;
+  if (r.code === 'key-no-encryption') return KEY_SIGN_ONLY;
+  if (r.code === 'key-encryption-inactive') return KEY_ENCRYPTION_INACTIVE;
   if (r.code === 'key-unavailable') return KEY_UNAVAILABLE;
   if (r.code === 'challenge-expired') return o.expired ?? STEP_EXPIRED;
   // cant-do-that-todo: shown inline by Security (add a key) through refusalText

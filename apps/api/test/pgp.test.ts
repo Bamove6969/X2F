@@ -1138,3 +1138,75 @@ describe('logs', () => {
     expect(all).not.toMatch(/[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}/);
   });
 });
+
+// Owner demo note #144 (23 Nov 2026): the server, which decides, refuses a key whose encryption part
+// (the one the login challenge goes to) is missing, inactive or weak, with a specific code; a key
+// with an email address in a User ID is accepted. Real generated keys.
+describe('demo note #144: the encryption part of a pasted key', () => {
+  const pairOf = async (k: openpgp.PrivateKey): Promise<Pair> => ({
+    publicKey: k.toPublic().armor(), privateKey: k.armor(), fingerprint: k.getFingerprint(),
+  });
+  const gen = async (o: Omit<Parameters<typeof openpgp.generateKey>[0], 'format' | 'userIDs'>) =>
+    (await openpgp.generateKey({ userIDs: [{ name: 'Test User' }], date: KEY_DATE, ...o, format: 'object' })).privateKey;
+  /** Ed25519 + an RSA 2048 encryption subkey, then a newer X25519 one: [pair, the X25519 subkey's fingerprint]. */
+  const mixed = async (): Promise<[Pair, string]> => {
+    const base = await gen({ type: 'ecc', curve: 'ed25519Legacy', subkeys: [{ type: 'rsa', rsaBits: 2048 }] });
+    const k = await base.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() + DAY) });
+    return [await pairOf(k), k.subkeys.find((s) => s.getAlgorithmInfo().algorithm === 'ecdh')!.getFingerprint()];
+  };
+  const refusedAtRegister = async (key: Pair) => {
+    const res = await registerStart(new Browser(), uniqueName(), key);
+    expect(res.statusCode).toBe(400);
+    return res.json() as { error: string; detail: string };
+  };
+
+  it('a sign-only key → 400 key-no-encryption', async () => {
+    const r = await refusedAtRegister(await genKey({ subkeys: [] }));
+    expect(r).toMatchObject({ error: 'key-no-encryption', detail: expect.stringContaining('can only sign') });
+  });
+
+  it('an expired or a revoked encryption subkey → 400 key-encryption-inactive', async () => {
+    expect(await refusedAtRegister(await genKey({ subkeys: [{ keyExpirationTime: 86_400 }] }))).toMatchObject({ error: 'key-encryption-inactive' });
+    const k = await gen({ type: 'ecc', curve: 'ed25519Legacy' });
+    k.subkeys[0] = await k.subkeys[0]!.revoke(k.keyPacket as openpgp.SecretKeyPacket, undefined, new Date(KEY_DATE.getTime() + DAY));
+    expect(await refusedAtRegister(await pairOf(k))).toMatchObject({ error: 'key-encryption-inactive' });
+  });
+
+  it('RSA 4096 with an RSA 2048 encryption subkey → 400 key-weak, at sign-up and when adding a key', async () => {
+    const weak = await pairOf(await gen({ type: 'rsa', rsaBits: 4096, subkeys: [{ type: 'rsa', rsaBits: 2048 }] }));
+    expect(await refusedAtRegister(weak)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('encryption subkey is RSA 2048') });
+    const b = await registerPgp(uniqueName(), await genKey());
+    const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'pgp' });
+    const add = await b.post('/v1/account/pgp/start', { publicKey: weak.publicKey, confirmToken });
+    expect(add.statusCode).toBe(400);
+    expect(add.json()).toMatchObject({ error: 'key-weak' });
+    const signOnly = await b.post('/v1/account/pgp/start', { publicKey: (await genKey({ subkeys: [] })).publicKey, confirmToken });
+    expect(signOnly.json()).toMatchObject({ error: 'key-no-encryption' });
+  }, 120_000);
+
+  it('a login pasting a sign-only key → 400 key-no-encryption, before any account lookup', async () => {
+    const res = await loginStart(new Browser(), await genKey({ subkeys: [] }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'key-no-encryption' });
+  });
+
+  it('good keys sign up: Ed25519 + X25519 (v4, v6) and RSA 4096; an email in a User ID is no refusal', async () => {
+    await registerPgp(uniqueName(), await genKey());
+    await registerPgp(uniqueName(), await genKey({ v6: true }));
+    await registerPgp(uniqueName(), await pairOf(await gen({ type: 'rsa', rsaBits: 4096 })));
+    await registerPgp(uniqueName(), await genKey({ userIDs: [{ name: 'Alice', email: 'alice@example.com' }] }));
+  }, 120_000);
+
+  it('a strong newest subkey beside an older weak one: accepted, and every challenge goes to the strong one only', async () => {
+    const [key, strong] = await mixed();
+    const n = uniqueName();
+    await registerPgp(n, key);
+    const { rows } = await deps.db.query<{ proved_subkeys: string[] }>('select proved_subkeys from pgp_keys where account_id = $1', [await accountId(n)]);
+    expect(rows).toEqual([{ proved_subkeys: [strong.toLowerCase()] }]);
+    // The stored key still logs in; the message decrypts with the X25519 subkey's secret alone.
+    const s = await loginStart(new Browser(), key);
+    expect(s.statusCode).toBe(200);
+    expect(await recipients(s.json().encryptedMessage)).toEqual([String(openpgp.enums.publicKey.ecdh)]);
+    expect(codeOf(await dec(s.json().encryptedMessage, key.privateKey))).toMatch(/\S/);
+  }, 120_000);
+});
