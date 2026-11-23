@@ -287,7 +287,8 @@ describe('note #108: no spaces in new usernames, display names or passwords', ()
   });
 
   it('sign-up and a password change refuse a password with a space, naming the rule', async () => {
-    for (const password of ['Correct Horse-9', ' Correct-Horse-9', 'Correct-Horse-9 ', 'Correct\tHorse-9']) {
+    // Security review of #108: blank-looking characters that are not white space count too.
+    for (const password of ['Correct Horse-9', ' Correct-Horse-9', 'Correct-Horse-9 ', 'Correct\tHorse-9', 'Correct\u2800Horse-9', 'Correct\u3164Horse-9', 'Correct\u200bHorse-9']) {
       const res = await reg({ password });
       expect(res.statusCode, password).toBe(400);
       expect(res.json(), password).toEqual({ error: 'password-weak', missing: ['space'] });

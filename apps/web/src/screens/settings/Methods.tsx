@@ -31,7 +31,7 @@ import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
-import { hasSpace, spaceProblem } from '../setup/names.js';
+import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -182,7 +182,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
   const [burned, setBurned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const spaced = hasSpace(password);
+  const spaced = hasPasswordSpace(password);
 
   const save = async () => {
     setBusy(true);

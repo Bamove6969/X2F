@@ -8,7 +8,8 @@ import type { HTMLAttributes, KeyboardEvent } from 'react';
  * The screens keep their Copy button beside it.
  */
 export function selectAllInside(e: KeyboardEvent<HTMLElement>): void {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'a') return;
+  // `code` too: on a non-Latin layout (Cyrillic, Greek ...) the A key's `key` is another letter.
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || (e.key.toLowerCase() !== 'a' && e.code !== 'KeyA')) return;
   e.preventDefault();
   const selection = window.getSelection();
   if (selection === null) return;

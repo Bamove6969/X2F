@@ -35,6 +35,8 @@ describe('note #98: Ctrl-A inside a PGP message box selects only the box', () =>
     ['Ctrl-A', { key: 'a', ctrlKey: true }],
     ['Cmd-A', { key: 'a', metaKey: true }],
     ['Ctrl-A with Caps Lock', { key: 'A', ctrlKey: true }],
+    ['Ctrl-A on a Russian layout (key is "ф")', { key: 'ф', code: 'KeyA', ctrlKey: true }],
+    ['Cmd-A on a Greek layout (key is "α")', { key: 'α', code: 'KeyA', metaKey: true }],
   ])('%s selects the message and nothing else on the page', (_what, init) => {
     const { host } = render(
       <div>

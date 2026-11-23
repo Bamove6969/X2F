@@ -9,6 +9,7 @@ import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
 import { ROLE_LABELS } from '../ui/RoleChip.js';
 import { TermsStep } from '../ui/TermsStep.js';
+import { DISPLAY_NAME_SPACES, hasSpace } from '../ui/noSpaces.js';
 import '../ui/staff.css';
 
 // Every sentence on this screen is draft copy (no board: DESIGNER-REVIEW). COPY-UNSIGNED
@@ -134,6 +135,8 @@ export function Invite() {
         setFault('Fill in both names first.');
         return;
       }
+      // Owner demo note #108: the line under the field says why; nothing is sent.
+      if (hasSpace(username)) return;
       try {
         await inviteAccount(token, { displayName: username.trim(), loginName: loginName.trim(), acceptedTerms: terms.version, termsSignature: terms.signature });
       } catch (e) {
@@ -219,7 +222,21 @@ export function Invite() {
             <label className="x2f-label" htmlFor={userId}>
               Username
             </label>
-            <input id={userId} className="x2f-input" autoComplete="off" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} />
+            <input
+              id={userId}
+              className="x2f-input"
+              autoComplete="off"
+              spellCheck={false}
+              value={username}
+              aria-invalid={hasSpace(username) ? true : undefined}
+              aria-describedby={hasSpace(username) ? `${userId}-space` : undefined}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            {hasSpace(username) ? (
+              <p className="x2f-error" id={`${userId}-space`} data-part="name-space">
+                {DISPLAY_NAME_SPACES}
+              </p>
+            ) : null}
             <p className="x2f-staff-hint">Shown to staff, never to traders</p>
           </div>
           <div className="x2f-field">
@@ -229,7 +246,7 @@ export function Invite() {
             <input id={loginId} className="x2f-input" autoComplete="username" spellCheck={false} value={loginName} onChange={(e) => setLoginName(e.target.value)} />
             <p className="x2f-staff-hint">Private. You type it to log in; nobody else sees it.</p>
           </div>
-          <Button variant="primary" disabled={busy} onClick={() => void createAccount()}>
+          <Button variant="primary" disabled={busy || hasSpace(username)} onClick={() => void createAccount()}>
             Continue
           </Button>
         </section>

@@ -15,6 +15,7 @@ import {
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
+import { DISPLAY_NAME_SPACES, hasSpace } from '../ui/noSpaces.js';
 import '../ui/staff.css';
 
 /** The locked page's words (A8). COPY-UNSIGNED */
@@ -171,6 +172,8 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
   const ensureAccount = async () => {
     if (accountMade) return;
     if (username.trim() === '' || loginName.trim() === '') throw new NamesMissing();
+    // Owner demo note #108: the line under the field says why; nothing is sent.
+    if (hasSpace(username)) throw new NamesSpaced();
     await setupAccount({ displayName: username.trim(), loginName: loginName.trim() });
     setAccountMade(true);
   };
@@ -182,6 +185,10 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
       } catch (e) {
         if (e instanceof NamesMissing) {
           setFault('Fill in step 2 first.');
+          return;
+        }
+        if (e instanceof NamesSpaced) {
+          setFault(DISPLAY_NAME_SPACES);
           return;
         }
         throw e;
@@ -254,7 +261,24 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
           Username
         </label>
         <p className="x2f-staff-hint">Shown to staff, never to traders</p>
-        <input id={nameId} className="x2f-input" data-mask="" autoComplete="off" spellCheck={false} readOnly={accountMade} disabled={!codeOk} value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input
+          id={nameId}
+          className="x2f-input"
+          data-mask=""
+          autoComplete="off"
+          spellCheck={false}
+          readOnly={accountMade}
+          disabled={!codeOk}
+          value={username}
+          aria-invalid={hasSpace(username) ? true : undefined}
+          aria-describedby={hasSpace(username) ? `${nameId}-space` : undefined}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+        {hasSpace(username) ? (
+          <p className="x2f-error" id={`${nameId}-space`} data-part="name-space">
+            {DISPLAY_NAME_SPACES}
+          </p>
+        ) : null}
         {/* Not on the board: the API needs the private login name too (OWNER-Q). COPY-UNSIGNED */}
         <label className="x2f-label" htmlFor={loginId}>
           Login name
@@ -323,6 +347,8 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
 }
 
 class NamesMissing extends Error {}
+/** The display name holds a space (owner demo note #108). */
+class NamesSpaced extends Error {}
 
 function KeySlotRow({ name, note, done, disabled, onTap }: { name: string; note: string; done: boolean; disabled: boolean; onTap: () => void }) {
   return (

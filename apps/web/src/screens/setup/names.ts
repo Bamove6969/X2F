@@ -14,7 +14,7 @@
  */
 import { checkNames } from '@x2f/auth-client';
 
-export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName } from '@x2f/auth-client';
+export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, hasPasswordSpace } from '@x2f/auth-client';
 
 /** Whether a typed value holds a space or other white space (note #108). */
 export const hasSpace = (s: string): boolean => /\s/u.test(s);

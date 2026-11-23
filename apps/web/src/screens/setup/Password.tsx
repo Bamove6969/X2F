@@ -23,7 +23,7 @@ import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPassword, setupError, termsChanged, type SetupError } from './register.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';
-import { hasSpace, spaceProblem } from './names.js';
+import { hasPasswordSpace, spaceProblem } from './names.js';
 
 type Met = 'true' | 'false' | 'unknown';
 
@@ -195,7 +195,7 @@ export function Password() {
           />
         </label>
         <StrengthMeter level={strength} />
-        {hasSpace(pw) ? (
+        {hasPasswordSpace(pw) ? (
           <p className="x2f-error" data-part="password-space">
             {spaceProblem('password')}
           </p>

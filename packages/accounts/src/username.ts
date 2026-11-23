@@ -135,10 +135,10 @@ function checkShape(input: string): NameCheck {
   return { ok: true, name: input, key: input.toLowerCase() };
 }
 
-/** Every character a display name may hold: letters, combining marks, decimal digits, the space and the listed symbols. */
 /** Any white space: the plain space, tabs, line breaks, the no-break and ideographic spaces. */
 const WHITE_SPACE = /\s/u;
 
+/** Every character a display name may hold: letters, combining marks, decimal digits, the space and the listed symbols. */
 const DISPLAY_CHARS = /^[\p{L}\p{M}\p{Nd} $&!?.,'\-_@#%*+():]+$/u;
 /** Letters of the right-to-left scripts (Bidi classes R and AL): Hebrew, Arabic, Syriac, Thaana, N'Ko and the rest. */
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
