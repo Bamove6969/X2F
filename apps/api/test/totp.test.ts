@@ -316,8 +316,8 @@ describe('TOTP goes with a password (owner, 16 Nov 2026)', () => {
 /**
  * Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
  * needs TOTP or another login method (a PGP key, passkey or security key, each of which stands
- * alone). 409 `password-alone` when a removal would leave a password with neither. (The sign-up
- * half, 409 on `POST /v1/account/onboarding/end`, comes with sign-up v2: main has no such route.)
+ * alone). 409 `password-alone` when sign-up would finish, or a removal would leave, a password with
+ * neither.
  */
 describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
   const del = (b: Browser, type: string, id: string, confirmToken: string) =>
@@ -328,6 +328,23 @@ describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
     const { rows } = await deps.db.query<{ id: string }>('select id from pgp_keys where account_id = $1', [id]);
     return rows[0]!.id;
   };
+
+  it('finishing sign-up with only a password is refused, 409 password-alone; the sign-up window stays open', async () => {
+    const { id, b } = await trader();
+    const res = await b.post('/v1/account/onboarding/end', {});
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
+    const { rows } = await deps.db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where account_id = $1 and revoked_at is null', [id]);
+    expect(rows[0]!.onboarding_until).not.toBeNull();
+  });
+
+  it('with the authenticator app, or with another login method, sign-up finishes', async () => {
+    const one = await trader();
+    await enrol(one.b);
+    expect((await one.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
+    const two = await trader();
+    await pgpKey(two.id);
+    expect((await two.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
+  });
 
   it('removing the authenticator app from a password-only login is refused, 409 password-alone, token unspent', async () => {
     const { id, b } = await trader();

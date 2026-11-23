@@ -10,10 +10,15 @@
  * Owner's labels (12 Nov 2026): "Recommended" and, in green, "Strong" on PGP and the security key;
  * the authenticator app (OTP) with its explanation, "Medium" (the owner's "Medium" note sat on the
  * passkey's card, so the passkey reads Medium too); the password "Weak", with his sentence. An
- * authenticator code never logs in alone (recovery.ts), so it can be ticked only with another way
- * to log in (signup round 3, lead call, 13 Nov 2026: PGP, a security key, a passkey or a password).
+ * authenticator code is a password's second step (TOTP alone never logs in, recovery.ts), so it
+ * can be ticked only with Password (owner decision, 16 Nov 2026, which reverses signup round 3
+ * behaviour 1, TOTP with PGP, a security key or a passkey and no password; the server refuses it,
+ * 409 `totp-needs-password`). A password does not stand alone either (owner decision, 16 Nov 2026,
+ * login methods): Continue needs the authenticator app or a PGP key, security key or passkey with it
+ * (the server refuses finishing sign-up otherwise, 409 `password-alone`).
  */
 import { useId, useState } from 'react';
+import { passwordAlone } from '@x2f/auth-client';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { keyErrorText } from '../auth/keyErrors.js';
@@ -35,17 +40,7 @@ interface MethodDef {
   /** A method that goes with another one: it can be ticked while any of these is ticked. */
   needs?: readonly LoginMethod[];
   needsText?: string;
-  /** Shown while the method can be ticked but Password is not ticked. */
-  noPasswordText?: string;
 }
-
-/**
- * Review of third-signup-r3 (16 Nov 2026), M3: the authenticator code is asked for only after a
- * password (auth/password.ts); PGP, passkey and security-key logins never ask for it. Until the
- * owner answers Q1 the copy says so rather than promising a second step.
- */
-// COPY-UNSIGNED
-export const TOTP_NO_PASSWORD = 'X2F asks for this code only when you log in with a password. A PGP key, passkey or security key logs you in without it.';
 
 // COPY-UNSIGNED: the strength words are the owner's (12 Nov 2026), their colours are for design.
 const STRENGTH_WORDS: Record<Strength, string> = { strong: 'Strong', medium: 'Medium', weak: 'Weak' };
@@ -87,14 +82,10 @@ export const METHODS: MethodDef[] = [
     strength: 'medium',
     cta: 'Continue',
     desc: 'After your password, type the 6-digit code from an authenticator app on your phone, such as Aegis or Google Authenticator. The code changes every 30 seconds, so your password alone is not enough to get in.',
-    // Signup round 3, lead call (13 Nov 2026): with PGP, a security key or a passkey it may be the
-    // only extra method; with none of those it still goes with a password.
-    needs: ['pgp', 'security-key', 'passkey', 'password'],
-    // COPY-UNSIGNED
-    needsText: 'Goes with another way to log in: tick one above, or Password, to add it.',
-    // COPY-UNSIGNED (review of third-signup-r3, M3; owner question Q1): the server asks for the
-    // code only after a password, so without one ticked the card says so.
-    noPasswordText: TOTP_NO_PASSWORD,
+    // Owner decision, 16 Nov 2026: only with a password (@x2f/accounts METHOD_PARTNERS).
+    needs: ['password'],
+    // COPY-UNSIGNED (the pre-round-3 sentence, restored)
+    needsText: 'Goes with a password: tick Password to add it.',
   },
   {
     id: 'password',
@@ -127,6 +118,7 @@ export function Login() {
   const chosen = ordered(picks);
   const first = chosen[0] as LoginMethod | undefined;
   const current = first !== undefined ? METHODS.find((m) => m.id === first)! : null;
+  const alone = passwordAlone(chosen);
 
   const toggle = (m: MethodDef, on: boolean) => {
     setPicks((p) => {
@@ -142,7 +134,7 @@ export function Login() {
   };
 
   const next = async () => {
-    if (first === undefined) return;
+    if (first === undefined || alone) return;
     update({ methods: chosen, done: [], method: first });
     if (first === 'pgp') return go('pgp-key');
     if (first === 'password') return go('password');
@@ -174,7 +166,7 @@ export function Login() {
       // Review F8: the screen before this one is the display name.
       back={path('display-name')}
       footer={
-        <Button variant="primary" disabled={busy || current === null} onClick={() => void next()} data-part="method-continue">
+        <Button variant="primary" disabled={busy || current === null || alone} onClick={() => void next()} data-part="method-continue">
           {current?.cta ?? 'Continue'}
         </Button>
       }
@@ -213,12 +205,6 @@ export function Login() {
                 {m.desc}
                 {m.warn !== undefined ? <span className="x2f-start__choice-warn"> {m.warn}</span> : null}
                 {off && m.needsText !== undefined ? <span className="x2f-start__choice-needs"> {m.needsText}</span> : null}
-                {!off && m.noPasswordText !== undefined && !picks.has('password') ? (
-                  <span className="x2f-start__choice-needs" data-part="totp-no-password">
-                    {' '}
-                    {m.noPasswordText}
-                  </span>
-                ) : null}
               </span>
               {on && m.later !== undefined ? <span className="x2f-start__choice-later">{m.later}</span> : null}
             </label>
@@ -229,6 +215,12 @@ export function Login() {
         // COPY-UNSIGNED
         <p className="x2f-start__help" role="status" data-part="method-none">
           Tick at least one way to log in.
+        </p>
+      ) : null}
+      {alone ? (
+        // COPY-UNSIGNED (owner decision, 16 Nov 2026: a password does not stand alone)
+        <p className="x2f-start__help" role="status" data-part="password-partner">
+          A password needs the authenticator app or another way to log in. Tick one of them too.
         </p>
       ) : null}
       <RegisterError error={error} />
