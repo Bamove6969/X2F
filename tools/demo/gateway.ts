@@ -88,7 +88,7 @@ const codes = createCodesHandler({ origins: ORIGINS, secrets: readTotpSecrets })
 const guide = createGuideHandler({ origins: ORIGINS });
 const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
   const path = (req.url ?? '').split(/[?#]/, 1)[0];
-  if (path === '/__demo/codes') codes(req, res);
+  if (path === '/__demo/codes' || path === '/__demo/codes.js') codes(req, res);
   else if (path === '/__demo/guide' || path === '/__demo/guide/legal') guide(req, res);
   else notes(req, res);
 };

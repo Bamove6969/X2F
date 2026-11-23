@@ -7,13 +7,16 @@
  *
  * Demo r6 (wip/lead-notes-all): the page opens with "New in this demo", one screen at a time, each
  * with the owner's demo note numbers it answers, and /__demo/guide/legal shows the Terms legal
- * review (docs/terms-legal-review-2026-11-23.md) as a page, rendered here (no script either).
+ * review (docs/terms-legal-review-2026-11-23.md) as a page, rendered here. Both pages carry the
+ * app's Comment button (notes.js, page-csp.ts); each item is a section with its own data-screen
+ * (guide-new-A, guide-step-5, legal-proposal-7 ...), which a comment records, so a comment says
+ * which guide item or legal proposal it is about.
  */
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { DEMO_PASSWORD, ROOT, STATE_DIR } from './config.js';
+import { demoPageCsp, NOTES_TAG } from './page-csp.js';
 import { forwardedHttps } from './self-origin.js';
 
 /** What the seed made (seed.ts writes it). */
@@ -43,7 +46,7 @@ const STYLE =
   'code{font:500 15px ui-monospace,Menlo,Consolas,"Roboto Mono",monospace;background:#1b212a;padding:1px 4px;border-radius:4px}' +
   '.who{color:#b7c0cc;font-size:15px}.box{background:#161b22;border-radius:8px;padding:8px 12px;margin:8px 0}' +
   '.notes{color:#ff8a3d;font-size:15px;font-weight:600}h3{font-size:17px;margin:20px 0 4px}';
-const CSP = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(STYLE).digest('base64')}'`;
+const CSP = demoPageCsp(STYLE);
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const link = (path: string, text = path): string => `<a href="${esc(path)}">${esc(text)}</a>`;
@@ -318,20 +321,22 @@ export function guidePage(s: SeedSummary | null): string {
   const fresh = newSteps()
     .map(
       (st) =>
+        `<section data-screen="guide-new-${esc(st.title.slice(0, 1))}" id="new-${esc(st.title.slice(0, 1))}">` +
         `<h3>${esc(st.title)}</h3>` +
         `<div class="notes">${esc(noteList(st.notes))}</div>` +
         (st.links.length > 0 ? `<div>${st.links.join(' · ')}</div>` : '') +
         `<p class="who">${st.who}</p>` +
-        `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`,
+        `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`,
     )
     .join('');
   const steps = guideSteps(s)
     .map(
       (st) =>
+        `<section data-screen="guide-step-${esc(/^\d+/.exec(st.title)?.[0] ?? 'x')}" id="step-${esc(/^\d+/.exec(st.title)?.[0] ?? 'x')}">` +
         `<h2>${esc(st.title)}</h2>` +
         (st.links.length > 0 ? `<div>${st.links.join(' · ')}</div>` : '') +
         `<p class="who">${st.who}</p>` +
-        `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`,
+        `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`,
     )
     .join('');
   const accounts = s
@@ -345,9 +350,9 @@ export function guidePage(s: SeedSummary | null): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>X2F demo guide</title><style>${STYLE}</style></head><body>`,
+    `<title>X2F demo guide</title><style>${STYLE}</style>${NOTES_TAG}</head><body data-screen="demo-guide">`,
     '<h1>Demo guide</h1>',
-    '<p>Regtest demo only: fake money, throwaway accounts. Leave a comment on any screen with the Comment button (top right).</p>',
+    '<p>Regtest demo only: fake money, throwaway accounts. Leave a comment on any screen with the Comment button (top right), this guide included: tap Comment, then the item you mean, and the comment records which item it is.</p>',
     `<p>Password for every seeded account: <code>${esc(DEMO_PASSWORD)}</code>. Codes: ${link('/__demo/codes')}. One account per browser or device.</p>`,
     `<p>New: ${link('/__demo/guide/legal', 'Legal suggestions')} (the Terms legal review, 23 Nov).</p>`,
     accounts,
@@ -387,6 +392,20 @@ export function renderMarkdown(md: string): string {
   const out: string[] = [];
   let para: string[] = [];
   let depth = 0;
+  // Each "### N." proposal (and each "##" part) is a section with its own data-screen, which a
+  // comment made on it records (demo r6: the owner comments on each proposal by number).
+  let section = false;
+  const openSection = (level: number, text: string): void => {
+    if (section) out.push('</section>');
+    section = false;
+    const n = /^(\d+)\./.exec(text);
+    let key = '';
+    if (level === 4 && n) key = `proposal-${n[1]}`;
+    else if (level <= 3) key = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    if (key === '') return;
+    out.push(`<section data-screen="legal-${esc(key)}" id="${esc(key)}">`);
+    section = true;
+  };
   const flushPara = (): void => {
     if (para.length > 0) out.push(`<p>${inline(para.join(' '))}</p>`);
     para = [];
@@ -409,6 +428,7 @@ export function renderMarkdown(md: string): string {
       flushPara();
       closeLists(0);
       const level = Math.min(4, h[1]!.length + 1);
+      openSection(level, h[2]!);
       out.push(`<h${level}>${inline(h[2]!)}</h${level}>`);
     } else if (li) {
       flushPara();
@@ -432,6 +452,7 @@ export function renderMarkdown(md: string): string {
   }
   flushPara();
   closeLists(0);
+  if (section) out.push('</section>');
   return out.join('');
 }
 
@@ -440,10 +461,10 @@ export function legalPage(md: string | null): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>X2F legal suggestions</title><style>${STYLE}</style></head><body>`,
+    `<title>X2F legal suggestions</title><style>${STYLE}</style>${NOTES_TAG}</head><body data-screen="legal-suggestions">`,
     `<p>${link('/__demo/guide', '← Demo guide')} · ${link('/terms', 'Read the Terms (v2026-11-23)')}</p>`,
     '<h1>Legal suggestions</h1>',
-    '<p class="who">The Terms legal review of 23 Nov (your note #92), as written in docs/terms-legal-review-2026-11-23.md. To answer, open the Terms screen (/terms) and leave a comment there with the numbers you accept or reject (this page has no Comment button).</p>',
+    '<p class="who">The Terms legal review of 23 Nov (your note #92), as written in docs/terms-legal-review-2026-11-23.md. To answer a proposal, tap Comment (top right), then tap that proposal, and type accept, reject or a change: the comment records the proposal\'s number.</p>',
     md === null ? '<p>The review file is not in this demo\'s tree.</p>' : renderMarkdown(md),
     '</body></html>',
   ].join('');

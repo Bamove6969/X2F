@@ -35,14 +35,19 @@ What runs, all bound to 127.0.0.1:
 
 A second demo beside a running one (demo r6: build and check a new worktree while the old one
 keeps serving): `DEMO_PORT_OFFSET=10 npm run demo` adds 10 to every port above (4410 / 4411,
-API 18090, Postgres 54339 ...) and uses its own Postgres container, `x2f-demo-postgres-10`. The
-container a demo started is kept in `.demo/pg-container`, so `npm run demo:stop` in that worktree
-removes that one and never the other demo's. For a check that should leave the owner's comments
+API 18090, Postgres 54339 ...) and uses its own Postgres container (`x2f-demo-postgres-10`),
+folder (`.demo-10/`) and web build (`apps/web/dist-demo-10/`), so it can even run from the same
+worktree. The container a demo started is kept in its folder's `pg-container`, so
+`npm run demo:stop` (with the same `DEMO_PORT_OFFSET`) removes that one and never the other's. For a check that should leave the owner's comments
 alone, also set `DEMO_NOTES_PUSH=0` and `DEMO_NOTES_FILE` to a scratch file.
 
 The guide (`/__demo/guide`) opens with "New in this demo": each new or fixed screen with the
 owner's demo note numbers it answers; `/__demo/guide/legal` shows
-`docs/terms-legal-review-2026-11-23.md` as a page.
+`docs/terms-legal-review-2026-11-23.md` as a page. The guide, the legal page and `/__demo/codes`
+carry the same Comment button as the app (same numbering, same push to comms). Each guide item
+and each legal proposal is its own section with a `data-screen` (`guide-new-A`, `guide-step-5`,
+`legal-proposal-7` ...), which a comment made on it records. The codes page reloads itself for
+new codes by `/__demo/codes.js`, which waits while a comment box is open.
 
 Process ids are in `.demo/pids.json`, logs in `.demo/logs/<name>.log`, the logins in
 `.demo/logins.txt`, the secrets in `.demo/secrets/` (the authenticator secrets in

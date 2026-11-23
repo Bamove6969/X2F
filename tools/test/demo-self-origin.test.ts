@@ -176,7 +176,33 @@ describe('/__demo/codes', () => {
       q.end();
     });
     const hash = createHash('sha256').update(style!).digest('base64');
-    expect(csp).toBe(`default-src 'none'; style-src 'sha256-${hash}'`);
+    // Demo r6: scripts and fetches from this origin only, for the Comment button (notes.js).
+    expect(csp).toBe(`default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'sha256-${hash}'`);
+  });
+
+  // Demo r6 (owner: no Comment button on the demo pages): the page carries notes.js, and reloads
+  // itself by /__demo/codes.js, which waits while a comment is being written (no meta refresh).
+  it('carries the Comment button and reloads by its own script, not while a comment is open', async () => {
+    const page = codesPage(secrets, now);
+    expect(page).toContain('<script src="/__demo/notes.js" defer></script>');
+    expect(page).toContain('<script src="/__demo/codes.js" defer></script>');
+    expect(page).toMatch(/<noscript><meta http-equiv="refresh" content="\d+"><\/noscript>/);
+    expect(page.replace(/<noscript>.*?<\/noscript>/, '')).not.toContain('http-equiv="refresh"');
+    expect(page).toContain('data-screen="demo-codes"');
+    const h = createCodesHandler({ origins: new Set([PRIMARY]), secrets: () => secrets, now: () => now });
+    const port = await listen(http.createServer(h));
+    const js = await new Promise<{ type: string; body: string }>((resolve, reject) => {
+      const q = http.request({ host: '127.0.0.1', port, path: '/__demo/codes.js', headers: { host: 'localhost:4400' } }, (r) => {
+        let body = '';
+        r.on('data', (c: Buffer) => (body += c.toString()));
+        r.on('end', () => resolve({ type: String(r.headers['content-type']), body }));
+      });
+      q.on('error', reject);
+      q.end();
+    });
+    expect(js.type).toMatch(/^text\/javascript/);
+    expect(js.body).toContain('__x2fDemoNotesBusy');
+    expect(js.body).toContain('location.reload()');
   });
 
   it('is GET only, not cached, and only on the demo\'s hosts or behind an https front', async () => {

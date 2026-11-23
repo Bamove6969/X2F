@@ -58,7 +58,7 @@
   // ── what a tap records ────────────────────────────────────────────────────────────────────────
   var SKIP = 'input,textarea,select,option,script,style,noscript,[contenteditable],[contenteditable=""]';
   // Screens whose text can be recovery codes, keys or wallet details: the tapped text stays out.
-  var PRIVATE_PATHS = /^\/(wallets|setup|login|terms|team\/join|settings\/(security|devices))(\/|$)/;
+  var PRIVATE_PATHS = /^\/(wallets|setup|login|terms|team\/join|settings\/(security|devices)|__demo\/codes)(\/|$)/;
   var PRIVATE_SCREEN = '[data-screen="wallets"]';
 
   function screenKey() { return location.pathname + safeHash(); }
@@ -297,8 +297,11 @@
 
   // ── pick a spot ───────────────────────────────────────────────────────────────────────────────
   var picking = null;
+  // Demo r6: a /__demo/ page that reloads itself (the codes page) waits while this is true.
+  function setBusy(on) { window.__x2fDemoNotesBusy = on; }
   function stopPicking() {
     if (!picking) return;
+    setBusy(false);
     root.removeChild(picking.overlay);
     root.removeChild(picking.banner);
     document.removeEventListener('keydown', picking.onKey, true);
@@ -309,6 +312,7 @@
   }
   function startPicking() {
     closeBox();
+    setBusy(true);
     commentBtn.style.display = 'none';
     downloadBtn.style.display = 'none';
     pushTag.style.display = 'none';
@@ -341,6 +345,7 @@
 
   function closeBox() {
     if (!box) return;
+    setBusy(false);
     root.removeChild(box.node);
     if (box.marker) root.removeChild(box.marker);
     box = null;
@@ -367,6 +372,7 @@
   }
   function frame(x, y, threadId) {
     closeBox();
+    setBusy(true);
     commentBtn.style.display = 'none';
     downloadBtn.style.display = 'none';
     pushTag.style.display = 'none';

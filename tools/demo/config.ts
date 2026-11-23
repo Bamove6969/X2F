@@ -3,21 +3,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-/** Gitignored: secrets, logs, pids, chain and state of the running demo. */
-export const DEMO_DIR = join(ROOT, '.demo');
-export const SECRETS_DIR = join(DEMO_DIR, 'secrets');
-export const LOG_DIR = join(DEMO_DIR, 'logs');
-export const STATE_DIR = join(DEMO_DIR, 'state');
-export const PIDS_FILE = join(DEMO_DIR, 'pids.json');
-export const ENV_FILE = join(SECRETS_DIR, 'env.json');
-export const WEB_DIST = join(ROOT, 'apps/web/dist-demo');
-
-export const HOST = '127.0.0.1';
-
 /**
  * DEMO_PORT_OFFSET (demo r6): added to every port below, so a second demo (another worktree) can
  * be built and checked beside a running one, e.g. 10 for 4410/4411 while one serves 4400/4401. It
- * also names its own Postgres container, so starting or stopping one never removes the other's.
+ * also names its own Postgres container, .demo folder and web build, so starting or stopping one
+ * never touches the other's, even from the same worktree.
  * Unset or 0: the usual ports and container.
  */
 export function portOffset(env: Record<string, string | undefined>): number {
@@ -30,6 +20,18 @@ export function portOffset(env: Record<string, string | undefined>): number {
   return n;
 }
 export const PORT_OFFSET = portOffset(process.env);
+/** Gitignored: secrets, logs, pids, chain and state of the running demo (.demo-<offset> for an offset demo, so two can run from one worktree). */
+export const DEMO_DIR = join(ROOT, PORT_OFFSET === 0 ? '.demo' : `.demo-${PORT_OFFSET}`);
+export const SECRETS_DIR = join(DEMO_DIR, 'secrets');
+export const LOG_DIR = join(DEMO_DIR, 'logs');
+export const STATE_DIR = join(DEMO_DIR, 'state');
+export const PIDS_FILE = join(DEMO_DIR, 'pids.json');
+export const ENV_FILE = join(SECRETS_DIR, 'env.json');
+/** The demo's web build (its own for an offset demo: the running one's API serves the other). */
+export const WEB_DIST = join(ROOT, PORT_OFFSET === 0 ? 'apps/web/dist-demo' : `apps/web/dist-demo-${PORT_OFFSET}`);
+
+export const HOST = '127.0.0.1';
+
 const at = (p: number): number => p + PORT_OFFSET;
 
 export const PORTS = {

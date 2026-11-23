@@ -60,6 +60,11 @@ describe('demo guide page (/__demo/guide)', () => {
       expect(html).toContain(`href="${path}"`);
     }
     expect(html).toContain('2026-11-23');
+    // Each item is a section a comment records (demo r6: comment on a guide item directly).
+    expect(html).toContain('<section data-screen="guide-new-A" id="new-A">');
+    expect(html).toContain('<section data-screen="guide-step-5" id="step-5">');
+    expect(html).toContain('<body data-screen="demo-guide">');
+    expect(html.match(/<section/g)?.length).toBe(html.match(/<\/section>/g)?.length);
   });
 
   it('renders the legal review Markdown without passing raw HTML through', () => {
@@ -71,6 +76,12 @@ describe('demo guide page (/__demo/guide)', () => {
     expect(html).toContain('<h4>1. A point</h4>');
     expect(html).toContain('<ul><li><b>Current:</b> a<ul><li>(a) nested</li></ul></li><li>next</li></ul><p>After.</p>');
     expect(legalPage(null)).toContain('not in this demo');
+    // Each proposal is its own section, so a comment on it records its number (data-screen).
+    const legal = legalPage('## Proposals\n\n### 7. Data retention\n\n- **Current:** x\n\n### 8. Collect\n\nText.\n\n## Questions\n\n- q');
+    expect(legal).toContain('<script src="/__demo/notes.js" defer></script>');
+    expect(legal).toContain('<section data-screen="legal-proposal-7" id="proposal-7"><h4>7. Data retention</h4>');
+    expect(legal).toContain('</section><section data-screen="legal-proposal-8" id="proposal-8"><h4>8. Collect</h4><p>Text.</p></section><section data-screen="legal-questions"');
+    expect(legal.match(/<section/g)?.length).toBe(legal.match(/<\/section>/g)?.length);
     expect(legalPage('## Proposals')).toContain('<h3>Proposals</h3>');
   });
 
@@ -96,11 +107,12 @@ describe('demo guide page (/__demo/guide)', () => {
       return `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
     }
 
-    it('serves the page to a demo origin with a script-free CSP, no-store', async () => {
+    it('serves the page to a demo origin with a same-origin-script CSP (the Comment button), no-store', async () => {
       const base = await serve();
       const res = await get(base, { host: 'localhost:4400' });
       expect(res.status).toBe(200);
-      expect(res.headers['content-security-policy']).toMatch(/^default-src 'none'; style-src 'sha256-[A-Za-z0-9+/=]+'$/);
+      expect(res.headers['content-security-policy']).toMatch(/^default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'sha256-[A-Za-z0-9+/=]+'$/);
+      expect(res.text).toContain('<script src="/__demo/notes.js" defer></script>');
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.text).toContain('Demo guide');
     });

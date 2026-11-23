@@ -9,9 +9,11 @@ import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { pendingIdOf } from './door-parse.js';
+import { NOTES_TAG } from './page-csp.js';
 import { fillSelf, forwardedHttps, isLoopbackPeer, isSelfOrigin, selfOriginOf } from './self-origin.js';
 
-export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
+/** The comment layer's script tag (page-csp.ts), put into the app's HTML. */
+export { NOTES_TAG };
 /** Larger HTML than this is passed on untouched rather than held in memory. */
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 /** The app's JavaScript is held up to this size to put the request's own origin in it (self-origin.ts). */
