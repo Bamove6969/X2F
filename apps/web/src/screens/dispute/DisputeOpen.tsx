@@ -31,6 +31,7 @@ export function DisputeOpen({
   onOpen,
   evidence,
   finishFirst = false,
+  checking = false,
 }: {
   trade: DisputeTrade;
   methodName: string;
@@ -45,6 +46,8 @@ export function DisputeOpen({
    * step (in the trade room) comes first.
    */
   finishFirst?: boolean;
+  /** The buyer's paid trade, while this device's escrow record is still loading (DisputeScreen DEVICE_WAIT_MS): the form waits. */
+  checking?: boolean;
 }) {
   const [reason, setReason] = useState<Reason>('paid');
   const [note, setNote] = useState('');
@@ -53,7 +56,7 @@ export function DisputeOpen({
   const noteId = useId();
   const at = now();
   const entry = disputeEntry(trade, at);
-  const allowed = entry.kind === 'open' && !finishFirst;
+  const allowed = entry.kind === 'open' && !finishFirst && !checking;
   const back = `/trade/${encodeURIComponent(trade.code)}`;
   // The buyer may dispute from the trade's wait after marking paid (owner 2026-11-07 F9), often before the
   // seller's confirm window ends: the flag says it ran out only once it has.
@@ -113,6 +116,12 @@ export function DisputeOpen({
               Finish marking as paid
             </Button>
           </div>
+        ) : checking && entry.kind === 'open' ? (
+          // COPY-UNSIGNED: a second or two while this device loads its record of the trade.
+          <p className="dispute-wait" role="status" data-part="dispute-checking">
+            <Icon name="clock" size={18} />
+            <span>Checking this trade on your device…</span>
+          </p>
         ) : entry.kind === 'wait' ? (
           <p className="dispute-wait" role="status">
             <Icon name="clock" size={18} />

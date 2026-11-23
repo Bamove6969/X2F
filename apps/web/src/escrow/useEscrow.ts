@@ -103,6 +103,8 @@ export interface UseEscrow {
   receivedAtomic: bigint | null;
   /** `EscrowStatus.confirmedAtomic`: the 1+-confirmation part of what arrived, from the same reading (see EscrowStatus). */
   confirmedAtomic: bigint | null;
+  /** `EscrowStatus.role`: this device's own record's role, null until the record is loaded (optional for fakes, which then gate nothing). */
+  role?: 'buyer' | 'seller' | null;
   /** `EscrowStatus.paidRecorded`: the buyer's own "I've paid" is recorded on this device ("Marked as paid"). */
   paidRecorded: boolean;
   /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
@@ -192,6 +194,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     instructionsMismatch: status.instructionsMismatch,
     receivedAtomic: status.receivedAtomic,
     confirmedAtomic: status.confirmedAtomic,
+    role: status.role,
     paidRecorded: status.paidRecorded,
     intentKind: status.intentKind,
     handedOff: status.handedOff,

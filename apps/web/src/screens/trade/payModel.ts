@@ -204,24 +204,47 @@ export function finishBlock(view: PayView, e: PayEscrow): PayBlock | null {
  * No dispute yet: the trade is `paid` on the server but this buyer's device has not recorded the
  * tap, so it has no fixed amount (acceptedAtomic) and could never co-sign a ruling (runtime I1/I7
  * fail closed; the winning buyer's coins would stay stuck). This happens when the tab closes between
- * the API's mark-paid and the device's markPaid (PaidFlowSheet). While "Finish marking as paid" can
- * run (`amount-unknown` and `finishBlock` clear), or while the device is still recording or loading
- * the trade (no refusal, no error), every buyer entry point shows the Finish step instead of the
- * dispute (BuyerPay's paid room, PaidWaitingActions, the /trade/:code/dispute route). When Finish
- * cannot run on this device (a stopped escrow, another refusal such as `view-mismatch`, a total it
- * can't confirm), the dispute stays: those lines already tell the buyer to open one if it doesn't
- * clear. A UI gate only; the API still takes the buyer's dispute (it can't know the device's state).
- * `e.role`, when given, is this device's own record's role (the dispute route's subscribed status).
+ * the API's mark-paid and the device's markPaid (PaidFlowSheet). The gate holds only while a Finish
+ * the buyer can tap is actually on screen, or the tap is in flight (`inFlight`, BuyerPay's
+ * `finishing`), and then every buyer entry point shows the Finish step instead of the dispute
+ * (BuyerPay's paid room, PaidWaitingActions, the /trade/:code/dispute route).
+ *
+ * "Finish is on screen" means: this device's own record is the buyer's (`e.role`, never assumed),
+ * the run has reported (`phase` not `idle`: a worker that never reports locks nothing), no error,
+ * the refusal is `amount-unknown` (the one Finish exists for) and the totals agree (finishBlock
+ * clear), and no Finish attempt has failed (`finishFailed`: a markPaid that keeps throwing, e.g. an
+ * untaken rebound release or no signals channel, must not lock the dispute forever). Anything else
+ * leaves the dispute as it was: a run still registering or verifying, a daemon or relay that is
+ * down, a stopped escrow, another refusal (`view-mismatch`, ...), a total the device can't confirm;
+ * those lines tell the buyer to open one if it doesn't clear. A UI gate only; the API still takes
+ * the buyer's dispute (it can't know the device's state).
  */
 export function disputeNeedsFinish(
   view: { role: string; state: string; amountAtomic: string; fiatCents?: string | undefined },
-  e: Pick<TradeEscrow, 'paidRecorded' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'> & { role?: 'buyer' | 'seller' | null },
+  e: Pick<TradeEscrow, 'paidRecorded' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic' | 'phase'> & { role?: 'buyer' | 'seller' | null | undefined },
+  opts: { inFlight?: boolean; finishFailed?: boolean } = {},
 ): boolean {
   if (view.role !== 'buyer' || view.state !== 'paid' || e.paidRecorded) return false;
-  if (e.role !== undefined && e.role !== 'buyer') return false;
-  if (e.error !== null) return false;
-  if (e.refusal === null) return true; // still recording the tap, or still loading the trade
-  if (e.refusal !== 'amount-unknown') return false;
+  if (e.role !== 'buyer') return false;
+  if (opts.inFlight === true) return true;
+  if (opts.finishFailed === true) return false;
+  if (e.phase === 'idle' || e.error !== null || e.refusal !== 'amount-unknown') return false;
   if (view.fiatCents === undefined) return e.fiatCents !== null;
   return totalBlock({ fiatCents: view.fiatCents, amountAtomic: view.amountAtomic }, e) === null;
+}
+
+const finishFailures = new Set<string>();
+
+/**
+ * A Finish attempt failed on this page (BuyerPay's markPaid threw): the gate lets the dispute go,
+ * in the room and on the /trade/:code/dispute route alike (one page, one module; a reload shows
+ * Finish again, and the gate holds until that attempt fails too).
+ */
+export function noteFinishFailed(code: string, failed = true): void {
+  if (failed) finishFailures.add(code);
+  else finishFailures.delete(code);
+}
+
+export function finishFailed(code: string): boolean {
+  return finishFailures.has(code);
 }

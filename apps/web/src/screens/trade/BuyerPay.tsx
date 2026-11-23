@@ -34,7 +34,7 @@ import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, disputeNeedsFinish, escrowChip, finishBlock, PAY_MIN, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, disputeNeedsFinish, escrowChip, finishBlock, finishFailed, noteFinishFailed, PAY_MIN, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { PaidWaitingActions, PaidWaitingBody } from './PaidWaiting.js';
 import { GiftCardEvidence } from '../giftcard/GiftCardRules.js';
 import { minutesText } from '../browse/methodTime.js';
@@ -482,8 +482,9 @@ export function BuyerPay(p: TradeScreenProps) {
   const finishBlocked = finishBlock(view, escrow);
   const finishOk = finishBlocked === null;
   // No dispute while the server says paid and this device has not fixed the amount, and Finish can
-  // fix it: the Finish step comes first (payModel disputeNeedsFinish; investigator 2026-11-23).
-  const finishFirst = disputeNeedsFinish(view, escrow);
+  // fix it: the Finish step comes first (payModel disputeNeedsFinish; investigator 2026-11-23). Not
+  // once a Finish attempt has failed: a markPaid that keeps throwing must not lock it for good.
+  const finishFirst = disputeNeedsFinish(view, escrow, { inFlight: finishing, finishFailed: finishError !== null || finishFailed(view.code) });
   // Owner Q12: no "I've paid" before the escrow is secured (`not-secured`), so no warning in front of it.
   const payWhenId = useId();
   // Owner G56: the buyer's cancel asks once, "Cancelling is likely final" (T-049).
@@ -499,7 +500,9 @@ export function BuyerPay(p: TradeScreenProps) {
     setFinishError(null);
     try {
       await escrow.markPaid(escrow.fiatCents);
+      noteFinishFailed(view.code, false);
     } catch {
+      noteFinishFailed(view.code);
       setFinishError("Your device couldn't record it. Try again.");
     } finally {
       setFinishing(false);

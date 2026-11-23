@@ -193,7 +193,7 @@ export function PaidWaitingBody({
               ? '. The XMR is still safe in escrow. You can open a dispute once the maintenance is over, or keep waiting and nudge them.'
               : finishFirst
                 ? // COPY-UNSIGNED: the Finish step comes before any dispute (payModel disputeNeedsFinish).
-                  '. The XMR is still safe in escrow. Finish marking as paid, then you can open a dispute, or keep waiting and nudge them.'
+                  '. The XMR is still safe in escrow. Finish marking as paid first. Then you can open a dispute, or keep waiting and nudge them.'
                 : '. The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.'}
           </>
         ) : (

@@ -9,8 +9,8 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EscrowStatus } from '../src/escrow/runtime.js';
 import { setEscrowClient, type EscrowClient } from '../src/escrow/useEscrow.js';
-import { DisputeScreen } from '../src/screens/dispute/DisputeScreen.js';
-import { disputeNeedsFinish } from '../src/screens/trade/payModel.js';
+import { DEVICE_WAIT_MS, DisputeScreen } from '../src/screens/dispute/DisputeScreen.js';
+import { disputeNeedsFinish, noteFinishFailed } from '../src/screens/trade/payModel.js';
 import { SERVER_NOW, sellerView } from '../e2e/refundViews.js';
 import { render } from './render.js';
 
@@ -45,13 +45,13 @@ const device = (over: Partial<EscrowStatus> = {}): EscrowStatus => ({
   ...over,
 });
 
-describe('disputeNeedsFinish: no dispute while Finish can fix the device', () => {
+describe('disputeNeedsFinish: no dispute while a Finish the buyer can tap is on screen', () => {
   const paid = { role: 'buyer', state: 'paid', amountAtomic: '1250000000000', fiatCents: '41250' };
 
-  it('paid on the server, not on this device, Finish can run: Finish first', () => {
+  it('paid on the server, not on this device, Finish offered and runnable: Finish first', () => {
     expect(disputeNeedsFinish(paid, device({ refusal: 'amount-unknown' }))).toBe(true);
-    // Still recording the tap, or the escrow not loaded yet: no dispute in that gap either.
-    expect(disputeNeedsFinish(paid, device({ refusal: null }))).toBe(true);
+    // A Finish tap in flight holds it too, whatever the refusal says meanwhile.
+    expect(disputeNeedsFinish(paid, device({ refusal: null }), { inFlight: true })).toBe(true);
   });
 
   it('recorded on this device (the normal paid trade, or after Finish): the dispute as before', () => {
@@ -59,9 +59,25 @@ describe('disputeNeedsFinish: no dispute while Finish can fix the device', () =>
     expect(disputeNeedsFinish(paid, device({ paidRecorded: true, refusal: 'amount-unknown' }))).toBe(false);
   });
 
+  it('review M1: no refusal yet (registering, verifying, setting up, a daemon or relay down): no Finish on screen, no lock', () => {
+    for (const phase of ['registering', 'verifying', 'setting-up', 'ready'] as const) expect(disputeNeedsFinish(paid, device({ phase, refusal: null }))).toBe(false);
+  });
+
+  it('review M2 / m4: a run that has not reported (idle) or no record role (null, or a fake without one): no lock', () => {
+    expect(disputeNeedsFinish(paid, device({ phase: 'idle', refusal: 'amount-unknown' }))).toBe(false);
+    expect(disputeNeedsFinish(paid, device({ role: null, refusal: 'amount-unknown' }))).toBe(false);
+    const { role: _r, ...noRole } = device({ refusal: 'amount-unknown' });
+    expect(disputeNeedsFinish(paid, noRole)).toBe(false);
+  });
+
+  it('review M3: once a Finish attempt has failed, no lock (until a retry is in flight)', () => {
+    expect(disputeNeedsFinish(paid, device({ refusal: 'amount-unknown' }), { finishFailed: true })).toBe(false);
+    expect(disputeNeedsFinish(paid, device({ refusal: 'amount-unknown' }), { finishFailed: true, inFlight: true })).toBe(true);
+  });
+
   it('Finish cannot run on this device: the dispute stays (the lines there say to open one if it does not clear)', () => {
-    expect(disputeNeedsFinish(paid, device({ refusal: 'view-mismatch' }))).toBe(false);
-    expect(disputeNeedsFinish(paid, device({ phase: 'error', error: 'escrow-failed' }))).toBe(false);
+    for (const refusal of ['view-mismatch', 'attempts-exhausted', 'amount-changed', 'paid-amount-refused', 'amount-out-of-range'] as const) expect(disputeNeedsFinish(paid, device({ refusal }))).toBe(false);
+    expect(disputeNeedsFinish(paid, device({ phase: 'error', error: 'escrow-failed', refusal: 'amount-unknown' }))).toBe(false);
     // A total the device can't confirm (finishBlock's no-amount / amount-differs / total-wrong).
     expect(disputeNeedsFinish(paid, device({ refusal: 'amount-unknown', fiatCents: null }))).toBe(false);
     expect(disputeNeedsFinish({ ...paid, fiatCents: '43313' }, device({ refusal: 'amount-unknown' }))).toBe(false);
@@ -77,7 +93,9 @@ describe('disputeNeedsFinish: no dispute while Finish can fix the device', () =>
 let fetchMock: ReturnType<typeof vi.fn>;
 let started: string[];
 let status: EscrowStatus | null;
+let push: ((s: EscrowStatus) => void) | null;
 beforeEach(() => {
+  push = null;
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.endsWith('/dispute') && init?.method === 'POST') return jsonResponse({ error: 'unexpected' }, 500);
@@ -93,6 +111,7 @@ beforeEach(() => {
     act: async () => undefined,
     retry: () => undefined,
     subscribe: (_code, cb) => {
+      push = cb;
       if (status) cb(status);
       return () => undefined;
     },
@@ -100,6 +119,8 @@ beforeEach(() => {
   setEscrowClient(client);
 });
 afterEach(() => {
+  vi.useRealTimers();
+  noteFinishFailed(view.code, false);
   setEscrowClient(null);
   vi.unstubAllGlobals();
 });
@@ -144,9 +165,42 @@ describe('/trade/:code/dispute: the buyer finishes marking as paid before openin
     expect(openButton(host).disabled).toBe(false);
   });
 
-  it('no record of the trade on this device (another device, a team member): the form as before, this device cannot tell', async () => {
-    status = null;
+  it('review m4: no record reported yet (none here, or the run idle: another tab holds the lock, the store still loading): the form waits briefly, then opens', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    for (const s of [null, device({ phase: 'idle', role: null })]) {
+      status = s;
+      const host = await screen();
+      expect(host.querySelector('[data-part="dispute-checking"]')?.textContent).toBe('Checking this trade on your device…');
+      expect(openButton(host).disabled).toBe(true);
+      await act(async () => void vi.advanceTimersByTime(DEVICE_WAIT_MS));
+      expect(host.querySelector('[data-part="dispute-checking"]')).toBeNull();
+      expect(host.querySelector('[data-part="dispute-finish-first"]')).toBeNull();
+      expect(openButton(host).disabled).toBe(false);
+      host.remove();
+    }
+  });
+
+  it('review m4: the record arrives while the form waits: Finish first, not the form', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    status = device({ phase: 'idle', role: null });
     const host = await screen();
+    expect(host.querySelector('[data-part="dispute-checking"]')).not.toBeNull();
+    await act(async () => push!(device({ refusal: 'amount-unknown' })));
+    expect(host.querySelector('[data-part="dispute-checking"]')).toBeNull();
+    expect(host.querySelector('[data-part="dispute-finish-first"]')).not.toBeNull();
+    await act(async () => void vi.advanceTimersByTime(DEVICE_WAIT_MS));
+    expect(openButton(host).disabled).toBe(true);
+  });
+
+  it('review M1 / M3: a run still setting up, or a Finish that already failed in the room: the form as before', async () => {
+    status = device({ phase: 'setting-up', refusal: null });
+    let host = await screen();
+    expect(host.querySelector('[data-part="dispute-finish-first"]')).toBeNull();
+    expect(openButton(host).disabled).toBe(false);
+    host.remove();
+    noteFinishFailed(view.code);
+    status = device({ refusal: 'amount-unknown' });
+    host = await screen();
     expect(host.querySelector('[data-part="dispute-finish-first"]')).toBeNull();
     expect(openButton(host).disabled).toBe(false);
   });

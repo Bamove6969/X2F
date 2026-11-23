@@ -11,12 +11,19 @@ import { useServerClock } from '../../api/client.js';
 import { POLL_MS, useTradeLive } from '../trade/seams.js';
 import { useResumeSync } from '../../session/syncFirst.js';
 import { useEscrowRestitution, useEscrowStatus } from '../../escrow/useEscrow.js';
-import { disputeNeedsFinish } from '../trade/payModel.js';
+import { disputeNeedsFinish, finishFailed } from '../trade/payModel.js';
 import { disputeMethodName, fetchDispute, fetchTrade, openDispute, proofRefusalText, refusalText, sendAppeal, sendPaymentProof, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling, sameAmount } from './DisputeRuling.js';
 import './dispute.css';
+
+/**
+ * How long the open form waits for this device's escrow record before it opens anyway (a run that
+ * is still idle: another tab holds the trade's lock, or the store has not loaded yet; or no record
+ * here at all, which never reports).
+ */
+export const DEVICE_WAIT_MS = 3_000;
 
 interface Loaded {
   trade: DisputeTrade;
@@ -71,9 +78,17 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
   const restitution = useEscrowRestitution(trade.code);
   // Paid on the server but not recorded on this device: Finish first, no dispute (payModel
   // disputeNeedsFinish). Only on this device's own record; none here (another device, a team
-  // member) leaves the form as it was, since this device can't tell.
+  // member) leaves the form as it was once DEVICE_WAIT_MS has passed, since this device can't tell.
   const device = useEscrowStatus(trade.code);
-  const finishFirst = device !== null && disputeNeedsFinish(trade, device);
+  const [waited, setWaited] = useState(false);
+  const holdable = trade.role === 'buyer' && trade.state === 'paid';
+  useEffect(() => {
+    if (!holdable) return;
+    const id = setTimeout(() => setWaited(true), DEVICE_WAIT_MS);
+    return () => clearTimeout(id);
+  }, [holdable]);
+  const checking = holdable && !waited && (device === null || device.phase === 'idle');
+  const finishFirst = device !== null && disputeNeedsFinish(trade, device, { finishFailed: finishFailed(trade.code) });
   const screen = disputeScreenFor(trade, dispute, params.get('view') === 'chat');
   if (screen.kind === 'open') {
     return (
@@ -82,8 +97,9 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
         methodName={methodName}
         now={clock}
         finishFirst={finishFirst}
+        checking={checking}
         onOpen={async (reason, note) => {
-          if (finishFirst) return;
+          if (finishFirst || checking) return;
           try {
             setDispute(await openDispute(trade.code, reason, note));
             reload();

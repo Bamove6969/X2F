@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
 import { confirmWindow, disputeOpensAt, NUDGE_AGAIN_MS } from '../src/screens/trade/PaidWaiting.js';
+import { noteFinishFailed } from '../src/screens/trade/payModel.js';
 import { GIFT_CARD_WARNING, setProofSource, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
@@ -1360,11 +1361,13 @@ describe('paid on the server, not recorded on this device: Finish marking as pai
   // The confirm window is over, so the machine would take a dispute now.
   const ended = () => tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90 });
   const dispute = () => document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+  // This device's own buyer record, reported by the run, Finish offered.
+  const unrecorded = (over: Partial<TradeEscrow> = {}) => fakeEscrow({ role: 'buyer', refusal: 'amount-unknown', ...over });
+  afterEach(() => noteFinishFailed(CODE, false));
 
   for (const wide of [false, true]) {
     it(`${wide ? 'wide' : 'phone'}: the dispute is locked with "Finish marking as paid first" and Finish is the one action; after Finish it opens`, async () => {
-      const escrow = fakeEscrow({ refusal: 'amount-unknown' });
-      const r = mount(props({ view: ended(), escrow, wide }));
+      const r = mount(props({ view: ended(), escrow: unrecorded(), wide }));
       expect(text()).toContain("Your device hasn't recorded your payment. Tap to finish.");
       const finish = byText('Finish marking as paid', 'button') as HTMLButtonElement;
       expect(finish.disabled).toBe(false);
@@ -1375,13 +1378,13 @@ describe('paid on the server, not recorded on this device: Finish marking as pai
       expect(document.getElementById(dispute().getAttribute('aria-describedby')!)?.textContent).toBe('Finish marking as paid first. Then you can open a dispute.');
       // The ended window's lead points at Finish, not at a dispute now.
       const lead = document.querySelector('[data-part="paid-status"] .x2f-hero__lead')!.textContent;
-      expect(lead).toContain('Finish marking as paid, then you can open a dispute, or keep waiting and nudge them.');
+      expect(lead).toContain('Finish marking as paid first. Then you can open a dispute, or keep waiting and nudge them.');
       expect(lead).not.toContain('You can open a dispute now');
       await click(finish);
       await flush();
       expect(calls).toEqual(['escrow:markPaid(41250)']);
       // The device has fixed the amount (paidRecorded): the dispute is offered, Finish is gone.
-      r.rerender(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      r.rerender(props({ view: ended(), escrow: fakeEscrow({ role: 'buyer', paidRecorded: true }), wide }));
       expect(dispute().tagName).toBe('A');
       expect(dispute().getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
       expect(maybe('Finish marking as paid')).toBeUndefined();
@@ -1389,27 +1392,59 @@ describe('paid on the server, not recorded on this device: Finish marking as pai
     });
   }
 
-  it('while this device is still recording the tap ("Marking as paid…"): no dispute either', () => {
-    mount(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: false, refusal: null }) }));
-    expect(text()).toContain('Marking as paid…');
+  it('review M3: a Finish that fails lets the dispute go; a retry locks it again only while it is in flight', async () => {
+    let settle!: () => void;
+    const markPaid = vi
+      .fn<(c: bigint) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('escrow action refused'))
+      .mockImplementationOnce(() => new Promise<void>((_ok, no) => (settle = () => no(new Error('escrow action refused')))));
+    mount(props({ view: ended(), escrow: unrecorded({ markPaid }) }));
     expect(dispute().tagName).toBe('BUTTON');
-    expect(document.querySelector('[data-part="paid-dispute-finish"]')).not.toBeNull();
+    await click(byText('Finish marking as paid', 'button'));
+    await flush();
+    expect(text()).toContain("Your device couldn't record it. Try again.");
+    expect(dispute().tagName).toBe('A');
+    expect(document.querySelector('[data-part="paid-dispute-finish"]')).toBeNull();
+    // The second tap: locked while it runs, open again once it fails too.
+    await click(byText('Finish marking as paid', 'button'));
+    expect(dispute().tagName).toBe('BUTTON');
+    await act(async () => settle());
+    await flush();
+    expect(dispute().tagName).toBe('A');
+  });
+
+  it('review M1: no Finish on screen (the run still setting up, a daemon down: "Marking as paid…"): the dispute stays open', () => {
+    for (const phase of ['registering', 'verifying', 'setting-up', 'ready'] as const) {
+      const r = mount(props({ view: ended(), escrow: fakeEscrow({ role: 'buyer', phase, paidRecorded: false, refusal: null }) }));
+      expect(text()).toContain('Marking as paid…');
+      expect(dispute().tagName).toBe('A');
+      expect(document.querySelector('[data-part="paid-dispute-finish"]')).toBeNull();
+      r.unmount();
+    }
+  });
+
+  it('review M2: a run that never reported (idle, no record role) locks nothing', () => {
+    const r = mount(props({ view: ended(), escrow: unrecorded({ phase: 'idle' }) }));
+    expect(dispute().tagName).toBe('A');
+    r.unmount();
+    mount(props({ view: ended(), escrow: unrecorded({ role: null }) }));
+    expect(dispute().tagName).toBe('A');
   });
 
   it('a normal paid trade (recorded on this device): the dispute as before, no Finish line', () => {
-    mount(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: ended(), escrow: fakeEscrow({ role: 'buyer', paidRecorded: true }) }));
     expect(dispute().tagName).toBe('A');
     expect(document.querySelector('[data-part="paid-dispute-finish"]')).toBeNull();
     expect(document.querySelector('[data-part="paid-status"] .x2f-hero__lead')!.textContent).toContain('You can open a dispute now');
   });
 
   it("Finish can't run on this device (its total isn't the trade's, or a view-mismatch): the dispute stays, as the Finish line says", () => {
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90, fiatCents: '43313' }), escrow: fakeEscrow({ refusal: 'amount-unknown' }) }));
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90, fiatCents: '43313' }), escrow: unrecorded() }));
     expect((byText('Finish marking as paid', 'button') as HTMLButtonElement).disabled).toBe(true);
     expect(text()).toContain('open a dispute if it doesn');
     expect(dispute().tagName).toBe('A');
     r.unmount();
-    mount(props({ view: ended(), escrow: fakeEscrow({ refusal: 'view-mismatch' }) }));
+    mount(props({ view: ended(), escrow: unrecorded({ refusal: 'view-mismatch' }) }));
     expect(dispute().tagName).toBe('A');
   });
 });
