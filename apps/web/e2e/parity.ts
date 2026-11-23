@@ -253,7 +253,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'We answer lawful warrants with the little we have.',
-      why: 'Owner demo note #102 (17 Nov 2026, setup-terms key points): the page says "We answer lawful warrants with what very little information we collect." (Terms version 2026-11-23).',
+      why: 'Owner demo note #102 (17 Nov 2026), then #122 (23 Nov 2026, setup-terms key points): the page now has his zero-log and lawful-orders paragraph in place of this line (Terms version 2026-11-23).',
     },
     {
       text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
