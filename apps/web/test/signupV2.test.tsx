@@ -97,10 +97,10 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     expect(box(host, 'password').checked).toBe(false);
   });
 
-  it('labels PGP and the security key Recommended and Strong, the authenticator app Medium, the password Weak with the owner\'s warning', () => {
+  it('labels PGP, the security key and the passkey Recommended and Strong (#134), the authenticator app Medium, the password Weak with the owner\'s warning', () => {
     const host = show(<Login />, setup());
     const chip = (id: string) => host.querySelector(`[data-method="${id}"] [data-part="strength"]`)!;
-    for (const id of ['pgp', 'security-key']) {
+    for (const id of ['pgp', 'security-key', 'passkey']) {
       expect(host.querySelector(`[data-method="${id}"] [data-part="recommended"]`)!.textContent).toBe('Recommended');
       expect(chip(id).textContent).toBe('RATED-STRONG');
       expect(chip(id).getAttribute('data-strength')).toBe('strong');
