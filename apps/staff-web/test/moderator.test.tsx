@@ -551,7 +551,7 @@ describe('ModCase (board ModCase)', () => {
     });
     await open(`/disputes/${CODE}`);
     expect(text('gate-refused')).toBe(
-      `Since ${hhmm(since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off or removed before it was carried out. A senior moderator or the owner can propose a new ruling in its place.`,
+      `Since ${hhmm(since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off, removed or had their security keys reset before it was carried out. A senior moderator or the owner can propose a new ruling in its place.`,
     );
     const panel = part('re-propose')!;
     await click(panel.querySelector('input[value="refund-to-seller"]'));

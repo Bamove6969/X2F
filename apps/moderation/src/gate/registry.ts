@@ -303,6 +303,11 @@ export async function syncRegistry(source: GateSource, g: GateState, ctx: GateCo
       // registered through it back after the reset.
       for (const b of Object.values(g.invites)) if (b.accountId === intent.accountId) b.closed = true;
       s.inviteClosed = true;
+      // Review p4t22 F1 (twin): the old keys are retired, never trusted again, only kept so a ruling
+      // they signed before the reset is still read as theirs (`pastSigner`, gate/verify.ts).
+      const retired = [...(s.retiredCreds ?? [])];
+      for (const c of s.creds) if (!retired.some((r) => r.credentialId === c.credentialId)) retired.push(c);
+      if (retired.length > 0) s.retiredCreds = retired;
       s.creds = [];
       // Design task 8: a security reset revokes every device the person certified with the old keys.
       // Re-review M1: as of the reset tap's signed issuedAt (never later than now), as N5 does, so the

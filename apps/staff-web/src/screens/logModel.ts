@@ -132,7 +132,7 @@ function sentence(
     case 'ruling.gate-refused':
       return d.reason === 'none' ? 'The moderation service accepts the ruling again'
         : d.reason === 'needs-second' ? 'The moderation service will not carry out the ruling: it needs a second person\'s approval'
-        : d.reason === 'revoked' ? 'The moderation service will not carry out the ruling: the moderator who signed it was switched off or removed'
+        : d.reason === 'revoked' ? 'The moderation service will not carry out the ruling: the moderator who signed it was switched off, removed or had their security keys reset'
         : d.reason === 'no-terms' ? "The moderation service will not carry out the ruling: it has no record of the trade's terms"
         : `The moderation service will not carry out the ruling (${String(d.reason)})`;
     case 'ruling.second-approved': return 'Added the second approval the moderation service asked for';

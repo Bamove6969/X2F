@@ -15,7 +15,7 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, RULING_WAIT_REPORT_MS, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
-import { BALANCE, ctx, newGate, newKey, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
+import { BALANCE, ctx, newGate, newKey, recorded, resetSecurity, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
 import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
@@ -658,5 +658,94 @@ describe('review p4t22 N1: round 1 by a moderator removed before its payout ran'
     expect(await executor(s).step(step(s, p.handle))).toBe('refused-unknown-key');
     expect(p.settles).toEqual([]);
     expect(s.store.state.rulingsSeen[r2!.ruling.id]).toBeUndefined();
+  });
+});
+
+describe('review p4t22 F1: a round 1 the gate authorised still pays once its signer is removed, switched off or reset', () => {
+  /** The moderator who proposed the setup's round 1, as `resetSecurity` needs them (only the id is read). */
+  const proposerOf = (s: Setup) => ({ id: s.c.ruling.proposer, key: newKey(), role: 'mod' as const });
+
+  it('removed after the payout was recorded and handed: after a restart the same payout is handed again (the probe), also once an appeal is decided', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    const row = s.w.api.staffRows.get(s.c.ruling.proposer)!;
+    row.removed = true;
+    row.switchedOff = true;
+    // A restart: a fresh executor on the same sealed store.
+    const again = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, again.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('handed');
+    expect(again.settles).toEqual(p.settles);
+    expect(sent).toEqual([{ rulingId: s.c.ruling.id, reason: null }]);
+    // An appeal decided since: the record still pins round 1's payout, handed again after a restart.
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    const third = recordingParty();
+    expect(await executor(s, await openGateStore(s.dir, s.key)).step(step(s, third.handle))).toBe('handed');
+    expect(third.settles).toEqual(p.settles);
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(s.c.ruling.id);
+  });
+
+  it('switched off after the gate authorised it but before any payout was recorded (a desk refund was armed): it pays once the desk refund is blocked', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+    expect(s.store.state.rulingsSeen[s.c.ruling.id]).toBeDefined();
+    expect(s.store.state.executions[s.c.ruling.code]).toBeUndefined();
+    s.w.api.staffRows.get(s.c.ruling.proposer)!.switchedOff = true;
+    const store = await openGateStore(s.dir, s.key);
+    expect(await executor(s, store).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'buyer' });
+    expect(store.state.staff[s.c.ruling.proposer]?.revoked).toBe(true);
+    expect(store.state.executions[s.c.ruling.code]?.rulingId).toBe(s.c.ruling.id);
+  });
+
+  it("reset after the payout was handed (the old key is retired): after a restart the same payout is handed again", async () => {
+    const s = await setup({ outcome: 'refund-to-seller' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    resetSecurity(s.w, proposerOf(s));
+    const again = recordingParty();
+    const store = await openGateStore(s.dir, s.key);
+    expect(await executor(s, store).step(step(s, again.handle))).toBe('handed');
+    expect(again.settles).toEqual(p.settles);
+    // The reset reached the gate: the proposer's tapped key is retired, no longer one of theirs.
+    const st = store.state.staff[s.c.ruling.proposer]!;
+    const tapped = s.w.api.taps.find((t) => (JSON.parse(t.intent) as { rulingId?: string }).rulingId === s.c.ruling.id)!.credentialId;
+    expect(st.creds.map((c) => c.credentialId)).not.toContain(tapped);
+    expect(st.retiredCreds?.map((c) => c.credentialId)).toEqual([tapped]);
+  });
+
+  it('the emergency stop still holds an authorised payout whose signer was removed: nothing is handed', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    s.w.api.staffRows.get(s.c.ruling.proposer)!.removed = true;
+    s.w.api.taps.push(tapBy(s.w.owner, { kind: 'emergency-stop' }));
+    const again = recordingParty();
+    expect(await executor(s, await openGateStore(s.dir, s.key)).step(step(s, again.handle))).toBe('refused-stopped');
+    expect(again.settles).toEqual([]);
+  });
+
+  it("F1's twin: round 1 never authorised, its moderator then reset: refused as revoked (re-proposable); an appeal decided by someone else pays", async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    resetSecurity(s.w, proposerOf(s));
+    const p = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, p.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('refused-revoked');
+    expect(sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'revoked' }]);
+    expect(p.settles).toEqual([]);
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'seller' });
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2.ruling.id);
+    expect(s.store.state.rulingsSeen[s.c.ruling.id]).toMatchObject({ signersOnly: true, signers: [s.c.ruling.proposer] });
   });
 });

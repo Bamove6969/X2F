@@ -237,7 +237,7 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     if (pay === r2 && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
       // R37 at the gate rests on round 1 as the gate authorised it (`round1-unseen`): round 1 is
       // checked first (authorised only, nothing paid), so its signers are known. Review p4t22 N1:
-      // when round 1's signer has since been switched off or removed (`revoked`), round 2's check
+      // when round 1's signer has since been switched off, removed or reset (`revoked`), round 2's check
       // reads round 1's signers from its taps instead (the gate's `round1`; round 1 still never pays).
       const first = await check(r1);
       if (!first.ok && first.reason !== 'revoked') {

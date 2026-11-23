@@ -29,6 +29,12 @@ export type InvitableRole = 'senior' | 'mod' | 'helper';
 export interface StaffEntry {
   role: InvitableRole;
   creds: PinnedCred[];
+  /**
+   * Review p4t22 F1 (twin): the keys an owner-tapped security reset took away (`reset-staff-security`),
+   * kept only to tell who signed a ruling before the reset (`pastSigner`, as the keys kept for
+   * switched-off or removed staff). They never authorise anything new. Absent before any reset.
+   */
+  retiredCreds?: PinnedCred[];
   /** Switched off (as the API shows it, no signature needed) and not switched on again by an owner tap since. */
   revoked: boolean;
   /** Removed for good: nothing restores them. */

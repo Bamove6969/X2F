@@ -55,8 +55,10 @@ const NONCE_HEX = /^(?:[0-9a-f]{2}){16,64}$/;
 
 /**
  * `pastSigner` (review p4t22 N1): also the keys the gate keeps for someone it trusted and has since
- * switched off or removed (never someone who had not joined). Only for reading who signed a round 1
- * an appeal reviews (R37), never for authorising anything.
+ * switched off or removed (never someone who had not joined), and (review p4t22 F1, twin) the keys
+ * a security reset retired (`retiredCreds`). Only for reading who signed a ruling: a round 1 an
+ * appeal reviews (R37), or a ruling this gate already authorised (`authorizeRuling`), never for
+ * authorising anything new.
  */
 const credsOf = (g: GateState, accountId: string, pastSigner = false): { creds: PinnedCred[]; role: SignerRole } | { refused: GateRefusal } => {
   if (g.ownerAccountId !== null && accountId === g.ownerAccountId) return { creds: g.ownerCreds, role: 'owner' };
@@ -64,8 +66,12 @@ const credsOf = (g: GateState, accountId: string, pastSigner = false): { creds: 
   if (!s) return { refused: 'unknown-key' };
   if (!s.joined) return { refused: 'revoked' };
   if ((s.removed || s.revoked) && !pastSigner) return { refused: 'revoked' };
-  return { creds: s.creds, role: s.role };
+  return { creds: pastSigner ? [...s.creds, ...(s.retiredCreds ?? [])] : s.creds, role: s.role };
 };
+
+/** Review p4t22 F1 (twin): a key this gate trusted for the person once, and retired at their security reset. */
+const retired = (g: GateState, accountId: string, credentialId: string): boolean =>
+  accountId !== g.ownerAccountId && Object.hasOwn(g.staff, accountId) && (g.staff[accountId]!.retiredCreds ?? []).some((c) => c.credentialId === credentialId);
 
 /**
  * Verifies one tap against the gate's registry: the key must be one the gate trusts for that
@@ -79,12 +85,16 @@ export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext, 
     // A revoked person with a key the gate never trusted is still an unknown key.
     if (who.refused === 'revoked') {
       const s = g.staff[tap.accountId]!;
-      if (!s.creds.some((c) => c.credentialId === tap.credentialId)) return { ok: false, reason: 'unknown-key' };
+      if (!s.creds.some((c) => c.credentialId === tap.credentialId) && !retired(g, tap.accountId, tap.credentialId)) return { ok: false, reason: 'unknown-key' };
     }
     return { ok: false, reason: who.refused };
   }
   const cred = who.creds.find((c) => c.credentialId === tap.credentialId);
-  if (!cred) return { ok: false, reason: 'unknown-key' };
+  // Review p4t22 F1 (twin): a key retired at the person's security reset is `revoked`, as a
+  // switched-off person's key is (so a round 1 it signed can be re-proposed or appealed), never
+  // `unknown-key`, and it never verifies here. The gate cannot date a ruling tap, so it says this
+  // of any tap by the retired key; that only ever names who signed, it authorises nothing.
+  if (!cred) return { ok: false, reason: retired(g, tap.accountId, tap.credentialId) ? 'revoked' : 'unknown-key' };
   if (tap.response?.id !== cred.credentialId || typeof tap.nonceHex !== 'string' || !NONCE_HEX.test(tap.nonceHex)) return { ok: false, reason: 'bad-signature' };
   let intent: KeyTapIntent;
   let challenge: Uint8Array;
@@ -254,6 +264,14 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  *   appeal overturned round 1 before its payout ran), from `payoutsFor` on the recorded terms
  *   (`bad-terms` when they do not make a payout). After-refund rulings are authorised with nothing
  *   to co-sign (their statement is the after-refund one, M2).
+ * Review p4t22 F1 (lead call, owner question): a ruling this gate already authorised (in
+ * `rulingsSeen` other than `signersOnly`, or named by its trade's payout record) stays authorised:
+ * when a later check refuses it only for a signer's standing (`revoked`, `unknown-key`,
+ * `proposer-role`, `approver-role`: switched off, removed, reset or given another role since), it is
+ * checked again with the very taps it was authorised on (each nonce already bound to it, the same
+ * signers, past signers' keys counting, roles not asked again). The emergency stop still holds it
+ * (it is checked first), and so do the terms. A key retired at a security reset (`retiredCreds`) is
+ * `revoked` for anything else and never authorises a new ruling or round.
  * On success the taps' nonces are bound to this ruling and the ruling is recorded in `rulingsSeen`
  * (the caller saves the gate). Checking the same ruling again with the same taps succeeds again.
  */
@@ -270,16 +288,21 @@ type Examined =
 /**
  * Every check of `authorizeRuling` on one ruling's taps, short of round 2's R37 and the payouts, and
  * changing nothing. `pastSigner`: review p4t22 N1's reading of a round 1's signers (see there).
+ * `authorised` (review p4t22 F1): the re-check of a ruling this gate already authorised: past
+ * signers' keys count, every tap must be one already bound to this very ruling (its nonce) and the
+ * signers those it recorded, and the signers' roles are not asked again (they were, when it was
+ * authorised). Everything else (the intents against the stored ruling and the recorded amount, the
+ * two-person rule on the recorded terms) is checked as ever.
  */
 const no = (reason: GateRefusal): Examined => ({ ok: false, reason });
 
-async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'recorded'>, ctx: GateContext, pastSigner: boolean): Promise<Examined> {
+async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'recorded'>, ctx: GateContext, pastSigner: boolean, authorised = false): Promise<Examined> {
   if (!Array.isArray(r.taps) || r.taps.length < 1 || r.taps.length > 2) return no('intent-mismatch');
   const checked: Array<Extract<TapCheck, { ok: true }> & { nonceHex: string }> = [];
   // Review B2: the round-1 ruling a round-2 ruling reviews, as the taps must name it.
   const round1Id = r.ruling.round === 2 ? (r.ruling.round1Id ?? null) : null;
   for (const tap of r.taps) {
-    const c = await verifyTap(g, tap, ctx, { pastSigner });
+    const c = await verifyTap(g, tap, ctx, { pastSigner: pastSigner || authorised });
     if (!c.ok) return no(c.reason);
     checked.push({ ...c, nonceHex: tap.nonceHex });
   }
@@ -289,6 +312,7 @@ async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'r
     if (c.intent.kind !== 'ruling') return no('intent-mismatch');
     const bound = Object.hasOwn(g.usedNonces, c.nonceHex) ? g.usedNonces[c.nonceHex] : undefined;
     if (bound !== undefined && bound !== `ruling:${rul.id}:${c.intent.step}`) return no('nonce-reused');
+    if (authorised && bound === undefined) return no('nonce-reused');
     steps.push({ step: c.intent.step, accountId: c.accountId, role: c.role, nonceHex: c.nonceHex });
   }
   const code = typeof rul.code === 'string' ? normalizeTradeCode(rul.code) : null;
@@ -322,20 +346,44 @@ async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'r
   const approver = approvals[0] ?? null;
   if (proposer.accountId !== rul.proposer) return no('intent-mismatch');
   if (approver !== null && approver.accountId !== rul.approver) return no('intent-mismatch');
-  if (!PROPOSERS.has(proposer.role)) return no('proposer-role');
+  const signers = [proposer.accountId, ...(approver !== null ? [approver.accountId] : [])];
+  if (authorised && before !== undefined && canonicalJson(before.signers) !== canonicalJson(signers)) return no('intent-mismatch');
+  if (!authorised && !PROPOSERS.has(proposer.role)) return no('proposer-role');
   const needs = gateNeedsSecond(g, r.recorded, rul.accountAction);
   if (needs && approver === null) return no('needs-second');
   if (approver !== null) {
     if (approver.accountId === proposer.accountId) return no('same-person');
-    if (!APPROVERS.has(approver.role)) return no('approver-role');
+    if (!authorised && !APPROVERS.has(approver.role)) return no('approver-role');
   }
-  return { ok: true, code, steps, checked, signers: [proposer.accountId, ...(approver !== null ? [approver.accountId] : [])] };
+  return { ok: true, code, steps, checked, signers };
+}
+
+/** The refusals that are about a signer's standing now, not about the ruling (review p4t22 F1). */
+const STANDING: ReadonlySet<GateRefusal> = new Set(['revoked', 'unknown-key', 'proposer-role', 'approver-role']);
+
+/**
+ * Review p4t22 F1: this gate already authorised the ruling: it is in `rulingsSeen` other than for
+ * its signers only (N1's `signersOnly`, never authorised), or its trade's payout record names it.
+ */
+function wasAuthorised(g: GateState, rul: GateRuling): boolean {
+  const seen = typeof rul?.id === 'string' && Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
+  if (seen !== undefined) return seen.signersOnly !== true;
+  const code = typeof rul?.code === 'string' ? normalizeTradeCode(rul.code) : null;
+  const ex = code !== null && Object.hasOwn(g.executions, code) ? g.executions[code] : undefined;
+  return ex !== undefined && ex.rulingId === rul.id;
 }
 
 export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
   if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
   if (g.stopped) return refuse('stopped');
-  const e = await examine(g, r, ctx, false);
+  let e = await examine(g, r, ctx, false);
+  if (!e.ok && STANDING.has(e.reason) && wasAuthorised(g, r.ruling)) {
+    // Review p4t22 F1: a ruling this gate already authorised stays authorised when a signer is
+    // later switched off, removed, reset or given another role; only the stop (above), the terms
+    // (the intents and payouts below) and the executor's pause check still hold it.
+    const again = await examine(g, r, ctx, false, true);
+    if (again.ok) e = again;
+  }
   if (!e.ok) return e;
   const { code, steps, checked, signers } = e;
   const rul = r.ruling;

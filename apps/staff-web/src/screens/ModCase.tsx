@@ -690,8 +690,8 @@ function RulingCard({
           {r.gateRefusal.reason === 'needs-second'
             ? `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it needs a second person's approval (a senior moderator or the owner).`
             : r.gateRefusal.reason === 'revoked'
-              ? // Review p4t22 N1. COPY-UNSIGNED
-                `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off or removed before it was carried out.${r.gateRefusal.rePropose ? ' A senior moderator or the owner can propose a new ruling in its place.' : ''}`
+              ? // Review p4t22 N1 (and F1 twin: a security reset). COPY-UNSIGNED
+                `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off, removed or had their security keys reset before it was carried out.${r.gateRefusal.rePropose ? ' A senior moderator or the owner can propose a new ruling in its place.' : ''}`
               : r.gateRefusal.reason === 'no-terms'
                 ? // Review p4t22 residual (b). COPY-UNSIGNED
                   `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it has no record of this trade's terms. ${c.afterRefund ? 'The seller is shown no payment form, and the time to comply does not run out meanwhile.' : 'No escrow payout is made meanwhile.'}`
