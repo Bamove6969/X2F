@@ -297,7 +297,8 @@ for (const v of PHONES) {
     // recovery-code view, which keeps the board's panel ("Your coins stay…"; parity.ts SetupBackup
     // exceptions), and the code goes straight on to the wallet.
     await expect(page.locator('[data-part="recovery-make"]')).toBeVisible();
-    await expect(page.getByText("Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.")).toBeVisible();
+    // Owner demo note #153 (23 Nov 2026): the "Your coins stay…" box is gone from this screen.
+    await expect(page.getByText("Your coins stay in your own wallet either way.")).toHaveCount(0);
     await expectParity(page, 'SetupBackup', { viewport: v });
     await saveRecoveryCodes(page);
     // Design build gaps Job 1: no authenticator app as a backup; lead call: no other backup offered here at all.

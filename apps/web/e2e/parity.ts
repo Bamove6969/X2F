@@ -191,7 +191,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: "Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.",
-      why: 'S-017: shown, word for word, on the required recovery-code view before the one checked here, not again once a backup exists. The board predates S-017.',
+      why: 'Owner demo note #153 (23 Nov 2026): this box is removed from the recovery-code screen to cut scrolling. (Earlier, S-017 showed it word for word there.)',
     },
   ],
   SetupTerms: [
