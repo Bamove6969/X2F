@@ -320,7 +320,7 @@ for (const v of PHONES) {
     await expect(page.getByRole('heading', { level: 1, name: 'Welcome to X2F' })).toBeVisible();
     await expect(page.locator('[data-part="welcome-name"]')).toHaveText('lumen.kai,');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
-    await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
+    await expect(page.locator('[data-method="recovery-codes"] [data-part="mark-set"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
     // Owner G25: the sign-up session ends and Log in comes next, carrying the take on.
@@ -494,7 +494,7 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.Kay_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
-  await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
+  await expect(page.locator('[data-method="recovery-codes"] [data-part="mark-set"]')).toHaveCount(1);
   // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
   await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.Kay_', loginName: 'mira-signin-01' });

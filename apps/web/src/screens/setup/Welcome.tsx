@@ -22,6 +22,7 @@ import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
 import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
+import { Icon } from '../../ui/icons.js';
 import { Logo } from '../../ui/Logo.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, useSetup, type SetupState } from './kit.js';
@@ -36,9 +37,17 @@ export const WELCOME_COPY = {
   // Owner demo note #166 (23 Nov), his two paragraphs word for word.
   lead: 'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
   leadMore: 'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
-  loginItem: 'Configured your secure methods of logging into X2F',
-  recoveryItem: 'Emergency login method: recovery code documented',
-  walletItem: 'Connected your wallet',
+  /**
+   * Owner demo note #168 (23 Nov): every login method X2F offers under one bold, underlined heading,
+   * each with a big green check or red cross, ending in the level reached (the #167 rating line).
+   * COPY-UNSIGNED
+   */
+  loginsTitle: 'Secure X2F login methods',
+  methodSet: 'Set up',
+  methodNotSet: 'Not set up',
+  verdict: 'You have achieved level:',
+  recoveryCode: 'Recovery code',
+  walletItem: 'Payout wallet:',
   /** Under the checklist, in a bigger font (owner). */
   changeLater: 'Any information provided above can be changed later in Settings.',
   /** Right after sign-up only (owner G25: Start trading opens Log in). */
@@ -48,8 +57,6 @@ export const WELCOME_COPY = {
   done: 'Done',
   /** Review 12 Nov, C1: what a screen reader hears for an item not done yet. */
   notDone: 'Not done yet',
-  /** Owner #97: the account's security rating, above the checklist. COPY-UNSIGNED */
-  ratingTitle: "Your account's security rating",
   /** Owner #97: how to make it more secure, for an account not yet highly secure. COPY-UNSIGNED */
   ratingRaise: 'Add a passkey, a security key or a PGP key to make it highly secure.',
   ratingLink: 'Make it more secure',
@@ -96,6 +103,32 @@ const BEST_FIRST: Array<{ id: MethodType; word: string }> = [
   { id: 'totp', word: 'Authenticator app' },
   { id: 'password', word: WELCOME_COPY.usernamePassword },
 ];
+
+/**
+ * Owner demo note #168: every login method X2F offers, in his order (PGP key, security key, passkey,
+ * authenticator app, password), then the recovery code, each marked set up or not from the account's
+ * methods as this setup leaves them.
+ */
+const OFFERED: Array<{ id: MethodType; word: string }> = [
+  { id: 'pgp', word: 'PGP key' },
+  { id: 'security-key', word: 'Security key' },
+  { id: 'passkey', word: 'Passkey' },
+  { id: 'totp', word: 'Authenticator app' },
+  { id: 'password', word: 'Password' },
+  { id: 'recovery-codes', word: WELCOME_COPY.recoveryCode },
+];
+
+export interface MethodRow {
+  id: MethodType;
+  word: string;
+  set: boolean;
+}
+
+export function methodRows(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): MethodRow[] {
+  const have = methodsNow(me, flow);
+  if (flow.backup === 'recovery-codes') have.add('recovery-codes');
+  return OFFERED.map((m) => ({ ...m, set: have.has(m.id) }));
+}
 
 /** The account's login methods best to worst; what this setup just did counts before the account is read again. */
 export function loginMethodsBestFirst(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): string[] {
@@ -163,6 +196,15 @@ export function Tick({ done }: { done: boolean }) {
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
         <path d="M5 12l4 4 10-10" />
       </svg>
+    </span>
+  );
+}
+
+/** Owner #168: the big green check or red cross of one login method; the row's text says it too. */
+function MethodMark({ set }: { set: boolean }) {
+  return (
+    <span className="x2f-welcome__mark" data-part={set ? 'mark-set' : 'mark-unset'} aria-hidden="true">
+      <Icon name={set ? 'check' : 'close'} size={32} stroke={3} />
     </span>
   );
 }
@@ -272,6 +314,7 @@ export function Welcome() {
   const name = displayNameOf(me) || state.displayName;
   const c = checklist(me, wallets, state);
   const rating = securityRating(me, state);
+  const rows = methodRows(me, state);
 
   return (
     <div className="x2f-start x2f-welcome" data-screen="setup-welcome">
@@ -294,52 +337,41 @@ export function Welcome() {
           <p className="x2f-start__lead">{WELCOME_COPY.lead}</p>
           <p className="x2f-start__lead">{WELCOME_COPY.leadMore}</p>
         </section>
-        {/* Owner #97 (16 Nov): the rating, and for anything below highly secure, the way to raise it. DESIGNER-REVIEW */}
-        <section className="x2f-welcome__rating" data-part="security-rating" data-rating={rating} aria-labelledby="welcome-rating-title">
-          <p className="x2f-welcome__rating-line">
-            <span className="x2f-welcome__title" id="welcome-rating-title">
-              {WELCOME_COPY.ratingTitle}:
-            </span>{' '}
-            <span data-part="rating-word">{RATING_WORDS[rating]}</span>
-          </p>
-          {rating !== 'high' ? (
-            <p className="x2f-welcome__rating-raise">
-              {WELCOME_COPY.ratingRaise}{' '}
-              <LeaveLink target={WELCOME_LINKS.rating} leave={leave} part="rating-link" disabled={leaving}>
-                {WELCOME_COPY.ratingLink}
-              </LeaveLink>
+        {/* Owner demo note #168 (23 Nov): every login method X2F offers, a big green check or red
+            cross each, ending in the level reached (#167: big, coloured by level). DESIGNER-REVIEW */}
+        <section className="x2f-welcome__logins" aria-labelledby="welcome-logins-title">
+          <h2 className="x2f-welcome__logins-title" id="welcome-logins-title">
+            {WELCOME_COPY.loginsTitle}
+          </h2>
+          <ul className="x2f-welcome__rows" data-part="login-rows">
+            {rows.map((m) => (
+              <li key={m.id} className="x2f-welcome__row" data-part="method-row" data-method={m.id} data-set={m.set ? 'true' : 'false'}>
+                <MethodMark set={m.set} />
+                <span className="x2f-welcome__row-name">{m.word}</span>
+                <span className="x2f-welcome__row-state" data-part="method-state">
+                  {m.set ? WELCOME_COPY.methodSet : WELCOME_COPY.methodNotSet}
+                </span>
+                <LeaveLink target={m.id === 'recovery-codes' ? WELCOME_LINKS.recovery : WELCOME_LINKS.login} leave={leave} part={`method-link-${m.id}`} disabled={leaving}>
+                  {m.set ? WELCOME_COPY.change : WELCOME_COPY.add}
+                </LeaveLink>
+              </li>
+            ))}
+          </ul>
+          <div className="x2f-welcome__rating" data-part="security-rating" data-rating={rating}>
+            <p className="x2f-welcome__rating-line" id="welcome-rating-title">
+              {WELCOME_COPY.verdict} <span data-part="rating-word">{RATING_WORDS[rating]}</span>
             </p>
-          ) : null}
+            {rating !== 'high' ? (
+              <p className="x2f-welcome__rating-raise">
+                {WELCOME_COPY.ratingRaise}{' '}
+                <LeaveLink target={WELCOME_LINKS.rating} leave={leave} part="rating-link" disabled={leaving}>
+                  {WELCOME_COPY.ratingLink}
+                </LeaveLink>
+              </p>
+            ) : null}
+          </div>
         </section>
-        {/* DESIGNER-REVIEW: the owner's checklist (12 Nov), plain until design restyles it. */}
-        <ul className="x2f-welcome__checks" aria-label="Your setup">
-          <li className="x2f-welcome__check" data-part="check-login">
-            <div className="x2f-welcome__what">
-              <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.loginItem}</span>
-              {c.logins.length > 0 ? (
-                <ul className="x2f-welcome__methods" data-part="login-methods">
-                  {c.logins.map((m) => (
-                    <li key={m}>{m}</li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="x2f-welcome__key">{WELCOME_COPY.none}</span>
-              )}
-              <LeaveLink target={WELCOME_LINKS.login} leave={leave} part="change-login" disabled={leaving}>
-                {c.loginDone ? WELCOME_COPY.change : WELCOME_COPY.add}
-              </LeaveLink>
-            </div>
-            <Tick done={c.loginDone} />
-          </li>
-          <li className="x2f-welcome__check" data-part="check-recovery">
-            <div className="x2f-welcome__what">
-              <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.recoveryItem}</span>
-              <LeaveLink target={WELCOME_LINKS.recovery} leave={leave} part="change-recovery" disabled={leaving}>
-                {c.recoveryDone ? WELCOME_COPY.change : WELCOME_COPY.add}
-              </LeaveLink>
-            </div>
-            <Tick done={c.recoveryDone} />
-          </li>
+        <ul className="x2f-welcome__checks" aria-label="Your payout wallet">
           <li className="x2f-welcome__check" data-part="check-wallet">
             <div className="x2f-welcome__what">
               <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.walletItem}</span>

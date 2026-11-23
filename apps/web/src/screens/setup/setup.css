@@ -1008,7 +1008,8 @@
 }
 
 .x2f-welcome__name {
-  margin: 0;
+  /* Owner demo note #169 (23 Nov): the name a little lower, clear of the bottom of the logo. */
+  margin: 20px 0 0;
   font-family: var(--x2f-font-display);
   font-size: clamp(26px, 4vw, 34px);
   line-height: 1.15;
@@ -1247,6 +1248,106 @@
 .x2f-welcome__rating-raise {
   color: var(--x2f-ink-muted);
   font-size: 15px;
+}
+
+/* Owner demo note #167 (23 Nov): the rating line in the biggest type after the heading, and the
+   rating word coloured by level: Highly secure green, Medium amber (the caution token, clearly not
+   the orange of the button below), Weak red. */
+.x2f-welcome__rating-line {
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.x2f-welcome__rating-line .x2f-welcome__title {
+  font-weight: 700;
+}
+
+.x2f-welcome__rating[data-rating='high'] [data-part='rating-word'] {
+  color: var(--x2f-good);
+}
+
+.x2f-welcome__rating[data-rating='medium'] [data-part='rating-word'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-welcome__rating[data-rating='weak'] [data-part='rating-word'] {
+  color: var(--x2f-danger);
+}
+
+/* Owner demo note #168 (23 Nov): every login method X2F offers, bold, under a bold underlined
+   heading, a big green check or red cross each. */
+.x2f-welcome__logins {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+}
+
+.x2f-welcome__logins-title {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 3px solid var(--x2f-ink);
+  font-family: var(--x2f-screen-title-family);
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+}
+
+.x2f-welcome__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-welcome__row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'mark name link'
+    'mark state link';
+  align-items: center;
+  column-gap: var(--x2f-space-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-welcome__mark {
+  grid-area: mark;
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+}
+
+.x2f-welcome__mark[data-part='mark-set'] {
+  color: var(--x2f-good);
+}
+
+.x2f-welcome__mark[data-part='mark-unset'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-welcome__row-name {
+  grid-area: name;
+  font-size: 19px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.x2f-welcome__row-state {
+  grid-area: state;
+  color: var(--x2f-ink-muted);
+  font-size: 15px;
+}
+
+.x2f-welcome__row .x2f-welcome__link {
+  grid-area: link;
+  align-self: center;
 }
 
 .x2f-welcome__link {

@@ -44,17 +44,17 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
     'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
     'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
   ]);
-  const login = screen.locator('[data-part="check-login"]');
-  await expect(login.locator('[data-part="check-title"]')).toHaveText('Configured your secure methods of logging into X2F');
-  await expect(login.locator('[data-part="login-methods"] li')).toHaveText(['Security key', 'Authenticator app', 'Username and password']);
-  await expect(screen.locator('[data-part="check-recovery"] [data-part="check-title"]')).toHaveText('Emergency login method: recovery code documented');
-  await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Connected your wallet');
+  // Owner #168: every login method, set up or not, a big check or cross each, then the level reached.
+  await expect(screen.locator('#welcome-logins-title')).toHaveText('Secure X2F login methods');
+  await expect(screen.locator('[data-part="method-row"] .x2f-welcome__row-name')).toHaveText(['PGP key', 'Security key', 'Passkey', 'Authenticator app', 'Password', 'Recovery code']);
+  await expect(screen.locator('[data-part="method-state"]')).toHaveText(['Not set up', 'Set up', 'Not set up', 'Set up', 'Set up', 'Set up']);
+  await expect(screen.locator('[data-part="mark-set"]')).toHaveCount(4);
+  await expect(screen.locator('[data-part="mark-unset"]')).toHaveCount(2);
+  expect((await screen.locator('[data-part="mark-set"]').first().boundingBox())!.width).toBeGreaterThanOrEqual(28);
+  await expect(screen.locator('.x2f-welcome__rating-line')).toHaveText('You have achieved level: Highly secure');
+  await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Payout wallet:');
   await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Cake Wallet …k3Fz');
-  // One tick per item, the login group included: three in all, each green and big.
-  for (const part of ['check-login', 'check-recovery', 'check-wallet']) await expect(screen.locator(`[data-part="${part}"] [data-part="tick"]`)).toHaveCount(1);
-  await expect(screen.locator('[data-part="tick"]')).toHaveCount(3);
-  const tick = await screen.locator('[data-part="check-login"] [data-part="tick"]').boundingBox();
-  expect(tick!.width).toBeGreaterThanOrEqual(28);
+  await expect(screen.locator('[data-part="check-wallet"] [data-part="tick"]')).toHaveCount(1);
   // Bigger than the lead line's size: the line under the checklist.
   const next = screen.locator('[data-part="change-later"]');
   await expect(next).toHaveText('Any information provided above can be changed later in Settings.');
