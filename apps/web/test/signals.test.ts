@@ -1,4 +1,5 @@
 import { ROLES } from '@x2f/core';
+import type { Transport } from '@x2f/escrow';
 import { seal, type Identity, type Participants } from '@x2f/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { runSignals, type SignalsState } from '../src/escrow/signals.js';
@@ -110,6 +111,123 @@ describe('signals channel', () => {
     await until(() => ignored.mock.calls.some((c) => c[0] === 'malformed'));
     expect(s2.absorbed.some((x) => x.type === 'trade.paid')).toBe(false);
     s2.h.stop();
+  });
+
+  // Found while chasing the 23 Nov dispute-payout flake (it was not that flake's cause):
+  // a side answered the peer's trade.terms only the first time it adopted them, and stopped
+  // resending its own once it held the peer's terms and the mod's ack. A peer that lost ours (its
+  // run read them but a reload came before the save landed) then resent forever and never got
+  // them: its device has no counterparty terms, its policy context is null, and it settles nothing.
+  // A done side now answers a peer still resending, at most once per quiet interval, so two done
+  // sides never ping-pong.
+  it('a buyer that lost the seller\'s terms with a reload gets them again from a seller that is already done; two done sides then stay quiet', async () => {
+    const hub = new Hub();
+    const { ids, participants } = await trio();
+    const ack = async (role: 'buyer' | 'seller', seq: number) =>
+      hub.inject(CHANNEL, role, await seal({ trade: CHANNEL, from: 'mod', seq, type: 'trade.ack', payload: { of: 'trade.terms' }, to: ROLES, me: ids.mod, participants }));
+    // The buyer's first run: its own terms leave (their seq is stored), but the save that adopts the
+    // seller's terms never lands (the page is going away).
+    const stored: SignalsState[] = [];
+    let adoptTried = false;
+    const b1 = side('buyer', hub, ids.buyer, participants, {
+      save: (st) => {
+        if (st.theirAddress !== null) {
+          adoptTried = true;
+          return new Promise<void>(() => {});
+        }
+        stored.push(structuredClone(st));
+        return Promise.resolve();
+      },
+      answerMs: 50,
+    });
+    const s = side('seller', hub, ids.seller, participants, { answerMs: 50 });
+    await until(() => adoptTried && s.last()?.theirAddress === ADDR.buyer);
+    await ack('seller', 1);
+    await until(() => s.last()?.termsAcked === true);
+    b1.h.stop();
+    // Whatever else reached the dying page is lost with it.
+    const drain = hub.transport({ url: 'ws://t', code: CHANNEL, role: 'buyer' });
+    while (await Promise.race([drain.next().then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 30))]));
+    drain.close();
+    expect(stored.at(-1)?.theirAddress).toBeNull();
+    // The seller is done and quiet; the buyer comes back from what was stored and resends its terms.
+    await new Promise((r) => setTimeout(r, 80));
+    const b2 = side('buyer', hub, ids.buyer, participants, { state: stored.at(-1)!, answerMs: 50 });
+    await until(() => b2.last()?.theirAddress === ADDR.seller, 2000);
+    expect(b2.last()?.theirDeal).toEqual(confirmedFor('seller').deal);
+    await ack('buyer', 2);
+    await until(() => b2.last()?.termsAcked === true);
+    // Both done: no more terms in either direction.
+    await new Promise((r) => setTimeout(r, 150));
+    const n = hub.sent.length;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(hub.sent.length).toBe(n);
+    b2.h.stop();
+    s.h.stop();
+  });
+
+  // Review of d9ed0d60 (M1): a quiet interval alone did not stop two done sides answering each
+  // other once twice the one-way delay reached it. A copy of the peer's terms is answered again only
+  // after the peer sent two of them since our last send: a done peer sends one per send of ours.
+  const LATENCIES = [0, 10, 30, 60, 120];
+  const delayed = (t: Transport, ms: number): Transport => ({ ...t, send: (e) => (ms === 0 ? t.send(e) : void setTimeout(() => t.send(e), ms)) });
+  const doneState = (role: 'buyer' | 'seller'): SignalsState => ({ ...fresh(), seq: 100, theirAddress: ADDR[role === 'buyer' ? 'seller' : 'buyer'], theirDeal: confirmedFor(role === 'buyer' ? 'seller' : 'buyer').deal, termsAcked: true });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it.each(LATENCIES)('two done sides starting together, one-way delay %i ms: each sends its terms once and then both stay quiet', async (ms) => {
+    const hub = new Hub();
+    const { ids, participants } = await trio();
+    const mk = (role: 'buyer' | 'seller') =>
+      side(role, hub, ids[role], participants, { transport: delayed(hub.transport({ url: 'ws://t', code: CHANNEL, role }), ms), state: doneState(role), answerMs: 20 });
+    const b = mk('buyer');
+    const s = mk('seller');
+    await sleep(300 + 4 * ms);
+    const n = hub.sent.length;
+    await sleep(600);
+    expect(hub.sent.length).toBe(n);
+    expect(n).toBeLessThanOrEqual(2);
+    b.h.stop();
+    s.h.stop();
+  });
+
+  it.each(LATENCIES)('two fresh sides starting together, one-way delay %i ms: both adopt, and once the mod acks both, no more terms', async (ms) => {
+    const hub = new Hub();
+    const { ids, participants } = await trio();
+    const mk = (role: 'buyer' | 'seller') => side(role, hub, ids[role], participants, { transport: delayed(hub.transport({ url: 'ws://t', code: CHANNEL, role }), ms), answerMs: 20 });
+    const b = mk('buyer');
+    const s = mk('seller');
+    await until(() => b.last()?.theirAddress === ADDR.seller && s.last()?.theirAddress === ADDR.buyer, 3000);
+    for (const [role, seq] of [['buyer', 1], ['seller', 2]] as const) {
+      hub.inject(CHANNEL, role, await seal({ trade: CHANNEL, from: 'mod', seq, type: 'trade.ack', payload: { of: 'trade.terms' }, to: ROLES, me: ids.mod, participants }));
+    }
+    await until(() => b.last()?.termsAcked === true && s.last()?.termsAcked === true);
+    await sleep(300 + 4 * ms);
+    const n = hub.sent.length;
+    await sleep(600);
+    expect(hub.sent.length).toBe(n);
+    b.h.stop();
+    s.h.stop();
+  });
+
+  it.each(LATENCIES)('one-way delay %i ms: a done seller answers a buyer that came back without its terms, then both stay quiet', async (ms) => {
+    const hub = new Hub();
+    const { ids, participants } = await trio();
+    const s = side('seller', hub, ids.seller, participants, { transport: delayed(hub.transport({ url: 'ws://t', code: CHANNEL, role: 'seller' }), ms), state: doneState('seller'), answerMs: 20 });
+    await sleep(100 + 2 * ms);
+    // The seller's start send is lost with the buyer's old page.
+    const drain = hub.transport({ url: 'ws://t', code: CHANNEL, role: 'buyer' });
+    while (await Promise.race([drain.next().then(() => true), sleep(30).then(() => false)]));
+    drain.close();
+    const b = side('buyer', hub, ids.buyer, participants, { transport: delayed(hub.transport({ url: 'ws://t', code: CHANNEL, role: 'buyer' }), ms), state: { ...fresh(), seq: 100 }, answerMs: 20 });
+    await until(() => b.last()?.theirAddress === ADDR.seller, 3000);
+    hub.inject(CHANNEL, 'buyer', await seal({ trade: CHANNEL, from: 'mod', seq: 1, type: 'trade.ack', payload: { of: 'trade.terms' }, to: ROLES, me: ids.mod, participants }));
+    await until(() => b.last()?.termsAcked === true);
+    await sleep(300 + 4 * ms);
+    const n = hub.sent.length;
+    await sleep(600);
+    expect(hub.sent.length).toBe(n);
+    b.h.stop();
+    s.h.stop();
   });
 
   it('a side may send only its own signals; the seq is saved before the envelope leaves', async () => {
