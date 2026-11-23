@@ -1,6 +1,7 @@
 // Owner demo note #144 (23 Nov 2026, /setup/pgp-key): "Key accepted" only for a key whose
 // encryption part (the one a login challenge is encrypted to) is active and strong, and a
 // non-blocking heads-up when a User ID holds an email address. Real generated keys throughout.
+import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, test } from 'vitest';
 import * as openpgp from 'openpgp';
 import { STRICT_CONFIG, encryptChallenge, inspectPublicKey } from '@x2f/accounts';
@@ -116,5 +117,78 @@ describe('3. an email address in a User ID: a heads-up, never a refusal', () => 
 
   test('hasEmail is false without one', async () => {
     expect(await inspectPublicKey(await pub(await priv({ type: 'ecc', curve: 'ed25519Legacy' })), now)).toMatchObject({ ok: true, hasEmail: false });
+  });
+});
+
+// Security review of #144 (23 Nov 2026).
+const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
+const NEW = { newKey: true } as const;
+
+/** An Ed25519 key whose cv25519 subkey's KDF is `hash`/`cipher`, re-bound (as the review's probe P9). */
+async function withKdf(hash: openpgp.enums.hash, cipher: openpgp.enums.symmetric): Promise<string> {
+  const k0 = await priv({ type: 'ecc', curve: 'ed25519Legacy', date: new Date(real - DAY) });
+  const kp = k0.subkeys[0]!.keyPacket as unknown as { publicParams: { kdfParams: object }; computeFingerprintAndKeyID(): Promise<void> };
+  const KDF = kp.publicParams.kdfParams.constructor as new (o: { hash: number; cipher: number }) => object;
+  kp.publicParams.kdfParams = new KDF({ hash, cipher });
+  await kp.computeFingerprintAndKeyID();
+  const { privateKey } = await openpgp.reformatKey({ privateKey: k0, userIDs: [{ name: 'T' }], date: new Date(real - DAY / 2), format: 'object' });
+  return pub(privateKey);
+}
+
+describe('review 1: "expired or revoked" only when verifiably so', () => {
+  test('a broken binding signature on the encryption subkey → key-encryption-unusable, not expired/revoked', async () => {
+    const k = (await priv({ type: 'ecc', curve: 'ed25519Legacy', date: new Date(real - DAY) })).toPublic();
+    const sig = k.subkeys[0]!.bindingSignatures[0] as unknown as { signedHashValue: Uint8Array; params: { r: Uint8Array } };
+    sig.signedHashValue = new Uint8Array([0, 0]);
+    sig.params.r[0]! ^= 1;
+    const r = await inspectPublicKey(k.armor(), now);
+    expect(r).toMatchObject({ ok: false, reason: 'key-encryption-unusable' });
+    if (!r.ok) expect(r.detail).toBe("This key's encryption subkey isn't validly signed. X2F sends your login code encrypted to your key, so make a new encryption subkey in your PGP app, then paste the key again.");
+  });
+
+  test('a revocation signature that does not verify is not taken as a revocation', async () => {
+    const k = await priv({ type: 'ecc', curve: 'ed25519Legacy', date: new Date(real - 2 * DAY), subkeys: [{ keyExpirationTime: 86_400 }] });
+    const other = await priv({ type: 'ecc', curve: 'ed25519Legacy', date: new Date(real - 2 * DAY) });
+    // Another key's revocation pasted onto this subkey: it does not verify, so only the (real) expiry speaks.
+    const forged = await other.subkeys[0]!.revoke(other.keyPacket as openpgp.SecretKeyPacket, undefined, new Date(real - 1000));
+    const pk = k.toPublic();
+    pk.subkeys[0]!.revocationSignatures.push(...forged.revocationSignatures);
+    expect(await inspectPublicKey(pk.armor(), now)).toMatchObject({ ok: false, reason: 'key-encryption-inactive' });
+  });
+});
+
+describe('review 2: SHA-1 signatures and weak ECDH KDFs, refused for a NEW key only', () => {
+  test('a GnuPG RSA 4096 key self-signed with SHA-1: refused as new, still accepted for a stored key (login)', async () => {
+    const a = fixture('gpg-rsa-sha1.asc');
+    const r = await inspectPublicKey(a, now, NEW);
+    expect(r).toMatchObject({ ok: false, reason: 'key-weak' });
+    if (!r.ok) expect(r.detail).toContain('SHA-1');
+    expect(await inspectPublicKey(a, now)).toMatchObject({ ok: true, algorithm: 'rsa', bits: 4096 });
+  });
+
+  test('a GnuPG RSA 4096 key whose primary encrypts (SHA-512): accepted as new, and the primary is the part used', async () => {
+    const a = fixture('gpg-rsa-primary-encrypts.asc');
+    expect(await inspectPublicKey(a, now, NEW)).toMatchObject({ ok: true, bits: 4096 });
+    const k = await openpgp.readKey({ armoredKey: a });
+    expect(await usedPart(a)).toBe(k.getFingerprint());
+  });
+
+  test('an ECDH subkey with an MD5 or SHA-1 KDF, or a non-AES KDF cipher: refused as new, unchanged for a stored key', async () => {
+    const { hash, symmetric } = openpgp.enums;
+    for (const [h, c] of [[hash.md5, symmetric.aes128], [hash.sha1, symmetric.aes128], [hash.sha256, symmetric.tripledes]] as const) {
+      const a = await withKdf(h, c);
+      const r = await inspectPublicKey(a, now, NEW);
+      expect(r).toMatchObject({ ok: false, reason: 'key-weak' });
+      if (!r.ok) expect(r.detail).toContain('key derivation needs SHA-256 or stronger and AES');
+    }
+    expect(await inspectPublicKey(await withKdf(hash.sha1, symmetric.aes128), now)).toMatchObject({ ok: true });
+    expect(await inspectPublicKey(await withKdf(hash.sha256, symmetric.aes128), now, NEW)).toMatchObject({ ok: true });
+  });
+
+  test('good new keys pass the new-key rules: Ed25519 + cv25519 (v4), v6 X25519, Ed448, RSA 4096', async () => {
+    expect(await inspectPublicKey(await pub(await priv({ type: 'ecc', curve: 'ed25519Legacy' })), now, NEW)).toMatchObject({ ok: true });
+    expect(await inspectPublicKey((await keys.v6Curve25519()).publicKey, now, NEW)).toMatchObject({ ok: true });
+    expect(await inspectPublicKey((await keys.curve448()).publicKey, now, NEW)).toMatchObject({ ok: true });
+    expect(await inspectPublicKey((await keys.rsa4096()).publicKey, now, NEW)).toMatchObject({ ok: true });
   });
 });

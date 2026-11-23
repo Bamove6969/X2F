@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1209,4 +1210,54 @@ describe('demo note #144: the encryption part of a pasted key', () => {
     expect(await recipients(s.json().encryptedMessage)).toEqual([String(openpgp.enums.publicKey.ecdh)]);
     expect(codeOf(await dec(s.json().encryptedMessage, key.privateKey))).toMatch(/\S/);
   }, 120_000);
+
+  // Security review of #144, item 2: SHA-1 signatures and a weak ECDH KDF are refused for a NEW key
+  // only; a key already stored keeps logging in.
+  describe('new-key rules (review 2)', () => {
+    const SHA1_GPG = readFileSync(new URL('./helpers/gpg-rsa-sha1.asc', import.meta.url), 'utf8');
+    /** An Ed25519 key whose cv25519 subkey's KDF hash is SHA-1, re-bound. */
+    const sha1Kdf = async (): Promise<Pair> => {
+      const k0 = await gen({ type: 'ecc', curve: 'ed25519Legacy' });
+      const kp = k0.subkeys[0]!.keyPacket as unknown as { publicParams: { kdfParams: object }; computeFingerprintAndKeyID(): Promise<void> };
+      const KDF = kp.publicParams.kdfParams.constructor as new (o: { hash: number; cipher: number }) => object;
+      kp.publicParams.kdfParams = new KDF({ hash: openpgp.enums.hash.sha1, cipher: openpgp.enums.symmetric.aes128 });
+      await kp.computeFingerprintAndKeyID();
+      const { privateKey } = await openpgp.reformatKey({ privateKey: k0, userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() + DAY), format: 'object' });
+      return pairOf(privateKey);
+    };
+    /** A trader account holding `key`, stored as an older X2F would have stored it. */
+    const stored = async (key: Pair): Promise<string> => {
+      const n = uniqueName();
+      const id = await seedAccount(deps, { loginName: n });
+      LOGIN_NAMES.set(key.fingerprint.toLowerCase(), n);
+      await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+      return id;
+    };
+
+    it('a GnuPG RSA 4096 key self-signed with SHA-1: refused at sign-up and add; stored, it still gets a real login challenge', async () => {
+      setNow(new Date(Date.parse('2026-12-01T00:00:00Z') + step * DAY));
+      const fingerprint = (await openpgp.readKey({ armoredKey: SHA1_GPG })).getFingerprint();
+      const key: Pair = { publicKey: SHA1_GPG, privateKey: '', fingerprint };
+      expect(await refusedAtRegister(key)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('SHA-1') });
+      const b = await registerPgp(uniqueName(), await genKey());
+      const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'pgp' });
+      expect((await b.post('/v1/account/pgp/start', { publicKey: SHA1_GPG, confirmToken })).json()).toMatchObject({ error: 'key-weak' });
+      const id = await stored(key);
+      const s = await loginStart(new Browser(), key);
+      expect(s.statusCode).toBe(200);
+      const { rows } = await deps.db.query('select account_id from challenges where id = $1', [s.json().challengeId]);
+      expect(rows).toEqual([{ account_id: id }]);
+    }, 120_000);
+
+    it('an ECDH subkey with a SHA-1 KDF: refused at sign-up; stored, it still logs in', async () => {
+      const key = await sha1Kdf();
+      expect(await refusedAtRegister(key)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('key derivation') });
+      await stored(key);
+      const b = new Browser();
+      const s = await loginStart(b, key);
+      expect(s.statusCode).toBe(200);
+      const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
+      expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
+    }, 120_000);
+  });
 });

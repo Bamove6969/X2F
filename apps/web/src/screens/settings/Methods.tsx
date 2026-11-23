@@ -13,7 +13,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKeyWithId,
-  inspectPublicKey,
   isStaged,
   partnerMissing,
   partnerNeededBy,
@@ -43,7 +42,7 @@ import { Totp } from './Totp.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
-import { KeyEmailNote } from '../setup/PgpKey.js';
+import { KeyEmailNote, useKeyCheck } from '../setup/PgpKey.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -335,23 +334,8 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Owner demo note #144: the same check as setup, on the device as the key is pasted (the server
-  // checks again and is the one that decides).
-  const [check, setCheck] = useState<Awaited<ReturnType<typeof inspectPublicKey>> | null>(null);
-
-  useEffect(() => {
-    const armored = publicKey.trim();
-    if (armored === '') {
-      setCheck(null);
-      return;
-    }
-    let live = true;
-    void inspectPublicKey(armored, new Date()).then((r) => {
-      if (live) setCheck(r);
-    });
-    return () => {
-      live = false;
-    };
-  }, [publicKey]);
+  // checks again and is the one that decides). Add key waits for the result of the text shown.
+  const { check, checking } = useKeyCheck(publicKey);
 
   const start = async () => {
     setBusy(true);
@@ -403,7 +387,7 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
           ) : null}
           <KeyEmailNote check={check} />
           <div className="x2f-row">
-            <Button variant={primary} disabled={busy || publicKey.trim() === '' || (check !== null && !check.ok)} onClick={() => void start()}>
+            <Button variant={primary} disabled={busy || publicKey.trim() === '' || checking || (check !== null && !check.ok)} onClick={() => void start()}>
               Add key
             </Button>
             <Button variant="quiet" disabled={busy} onClick={onCancel}>

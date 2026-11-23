@@ -18,6 +18,11 @@ export type KeyRefusal =
   | 'key-no-encryption'
   /** Owner demo note #144: the key has an encryption subkey, but every one is expired, revoked or not valid now. */
   | 'key-encryption-inactive'
+  /**
+   * Security review of #144: the key has an encryption subkey, but none is validly signed for
+   * encryption now and none is verifiably expired or revoked (a broken or forged binding, say).
+   */
+  | 'key-encryption-unusable'
   | 'key-not-yet-valid'
   // Plan 5 Task 10 review round 1 N3: past reputation, a key with no signing key usable now.
   | 'key-no-signing';
@@ -54,6 +59,15 @@ export const PAST_REP_MIN_RSA_BITS = 2048;
 export interface InspectOptions {
   minRsaBits?: number;
   requireEncryption?: boolean;
+  /**
+   * Security review of #144: the extra rules for a key being ADDED (sign-up, add a key, team, staff
+   * and owner join), never for a key already stored (login, the stored-key checks) nor for past
+   * reputation, so no stored key stops logging in: the primary key's self-signature and the
+   * encryption subkey's binding hashed with SHA-256 or stronger (no SHA-1), and an ECDH
+   * subkey's KDF (RFC 6637) using SHA-256 or stronger and AES. STRICT_CONFIG (used to encrypt
+   * every challenge) is unchanged. Default false.
+   */
+  newKey?: boolean;
 }
 
 const { enums } = openpgp;
@@ -159,6 +173,28 @@ const FIND_CONFIG: openpgp.Config = Object.freeze({
   rejectCurves: new Set<openpgp.enums.curve>(),
 });
 
+/**
+ * FIND_CONFIG, also refusing SHA-1 signatures: used only for a new key (`newKey`) to check that
+ * the signatures which make it valid now are SHA-256 or stronger.
+ */
+const NEW_KEY_FIND_CONFIG: openpgp.Config = Object.freeze({
+  ...FIND_CONFIG,
+  rejectHashAlgorithms: new Set([enums.hash.md5, enums.hash.ripemd, enums.hash.sha1]),
+});
+
+/** RFC 6637 KDF parameters a new key's ECDH subkey may use. */
+const NEW_KEY_KDF_HASHES: ReadonlySet<number> = new Set([enums.hash.sha256, enums.hash.sha384, enums.hash.sha512, enums.hash.sha3_256, enums.hash.sha3_512]);
+const NEW_KEY_KDF_CIPHERS: ReadonlySet<number> = new Set([enums.symmetric.aes128, enums.symmetric.aes192, enums.symmetric.aes256]);
+
+/** False when `part` is an ECDH key whose KDF uses a hash below SHA-256 or a cipher other than AES. */
+function kdfStrong(part: openpgp.Key | openpgp.Subkey): boolean {
+  if (part.getAlgorithmInfo().algorithm !== 'ecdh') return true;
+  const kdf = (part.keyPacket as unknown as { publicParams?: { kdfParams?: { hash?: number; cipher?: number } } }).publicParams?.kdfParams;
+  return kdf?.hash !== undefined && kdf.cipher !== undefined && NEW_KEY_KDF_HASHES.has(kdf.hash) && NEW_KEY_KDF_CIPHERS.has(kdf.cipher);
+}
+
+const SHA1_DETAIL = "This key is signed with SHA-1, which X2F doesn't accept for a new key. Re-sign it with SHA-256 or stronger in your PGP app, then paste it again.";
+
 const refuse = (reason: KeyRefusal, detail: string): KeyInspection => ({ ok: false, reason, detail });
 
 const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
@@ -214,16 +250,47 @@ const flagsEncrypt = (sig: { keyFlags?: Uint8Array | null } | null | undefined):
   ((sig?.keyFlags?.[0] ?? 0) & ENCRYPT_FLAGS) !== 0;
 
 /**
- * Owner demo note #144: whether any part of the key was ever marked for encryption (by any of its
- * signatures, valid now or not). False for a sign-only key; true for a key whose encryption
- * subkeys have all expired or been revoked. Only chooses which refusal to give.
+ * Owner demo note #144 and its security review: why a key that has no usable encryption part now
+ * has none. Only chooses which refusal to give (the key is refused either way).
+ *
+ * - `inactive`: some subkey had a binding that verifies (at the time it was made) and marks it for
+ *   encryption, and that subkey is now verifiably revoked (a verified revocation) or expired.
+ * - `unusable`: some signature claims encryption, but nothing above is verifiable (a broken or
+ *   forged binding, a binding with a rejected hash, a primary-key claim that does not hold).
+ * - `none`: no signature on the key, verified or not, marks any part for encryption (sign-only).
  */
-function everEncryptionCapable(key: openpgp.Key): boolean {
-  if (key.subkeys.some((s) => s.bindingSignatures.some(flagsEncrypt))) return true;
+async function whyNoEncryption(key: openpgp.Key, now: Date): Promise<'inactive' | 'unusable' | 'none'> {
+  let claimed = false;
+  for (const s of key.subkeys) {
+    const claims = s.bindingSignatures.filter(flagsEncrypt);
+    if (claims.length === 0) continue;
+    claimed = true;
+    // A revocation counts only once verified against the primary key (openpgp checks it).
+    try {
+      if (await s.isRevoked(undefined as unknown as openpgp.SignaturePacket, key.keyPacket, now, FIND_CONFIG)) return 'inactive';
+    } catch {
+      // Unverifiable: says nothing.
+    }
+    for (const sig of claims) {
+      const at = sig.created;
+      if (!(at instanceof Date)) continue;
+      try {
+        // The latest valid binding at `at`: verified, not revoked and not expired then.
+        const binding = await s.verify(at, FIND_CONFIG);
+        if (!flagsEncrypt(binding)) continue;
+        // When that binding (key or signature expiry) runs out.
+        const until = await s.getExpirationTime(at, FIND_CONFIG);
+        if (until instanceof Date && until.getTime() <= now.getTime()) return 'inactive';
+      } catch {
+        // Not validly bound at `at`: says nothing verifiable.
+      }
+    }
+  }
+  if (claimed) return 'unusable';
   // `directSignatures` is on every openpgp 6 key, but missing from its type declarations.
   const direct = (key as unknown as { directSignatures?: { keyFlags?: Uint8Array | null }[] }).directSignatures ?? [];
-  if (direct.some(flagsEncrypt)) return true;
-  return key.users.some((u) => u.selfCertifications.some(flagsEncrypt));
+  if (direct.some(flagsEncrypt) || key.users.some((u) => u.selfCertifications.some(flagsEncrypt))) return 'unusable';
+  return 'none';
 }
 
 /** Owner demo note #144: true when any User ID on the key (valid or not) contains an "@". */
@@ -297,6 +364,15 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
     return refuse('key-expired', `This key expired on ${isoDate(expiresAt)}.`);
   }
 
+  // Security review of #144: a new key's primary self-signature must not be SHA-1.
+  if (options.newKey === true) {
+    try {
+      await key.verifyPrimaryKey(now, undefined, NEW_KEY_FIND_CONFIG);
+    } catch {
+      return refuse('key-weak', SHA1_DETAIL);
+    }
+  }
+
   const facts = { name: await userName(key, now), createdAt: key.getCreationTime(), hasEmail: userIdsHaveEmail(key) };
   if (!requireEncryption) {
     return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };
@@ -310,15 +386,23 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
   try {
     encryptionKey = await key.getEncryptionKey(undefined, now, undefined, FIND_CONFIG);
   } catch {
-    return everEncryptionCapable(key)
-      ? refuse(
-          'key-encryption-inactive',
-          "This key's encryption subkey has expired or been revoked. X2F sends your login code encrypted to your key, so add a new encryption subkey in your PGP app, then paste the key again.",
-        )
-      : refuse(
-          'key-no-encryption',
-          'This key can only sign. X2F sends your login code encrypted to your key, so it needs an encryption subkey. Add one in your PGP app, then paste the key again.',
-        );
+    const why = await whyNoEncryption(key, now);
+    if (why === 'inactive') {
+      return refuse(
+        'key-encryption-inactive',
+        "This key's encryption subkey has expired or been revoked. X2F sends your login code encrypted to your key, so add a new encryption subkey in your PGP app, then paste the key again.",
+      );
+    }
+    if (why === 'unusable') {
+      return refuse(
+        'key-encryption-unusable',
+        "This key's encryption subkey isn't validly signed. X2F sends your login code encrypted to your key, so make a new encryption subkey in your PGP app, then paste the key again.",
+      );
+    }
+    return refuse(
+      'key-no-encryption',
+      'This key can only sign. X2F sends your login code encrypted to your key, so it needs an encryption subkey. Add one in your PGP app, then paste the key again.',
+    );
   }
   const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo(), minRsaBits, encryptionKey === key);
   if (encProblem !== null) return refuse('key-weak', encProblem);
@@ -333,6 +417,24 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
   }
   if (used === null || used.getFingerprint() !== encryptionKey.getFingerprint()) {
     return refuse('key-weak', `This key's encryption subkey cannot be used to send your login code. It needs RSA ${minRsaBits} or more, X25519 or X448.`);
+  }
+  if (options.newKey === true) {
+    // Security review of #144: for a new key, the same part must also be found with SHA-1 refused
+    // (its binding, or the primary's self-signature, is SHA-256 or stronger), and an ECDH part's
+    // KDF must be SHA-256+ with AES.
+    let strongSigned: openpgp.Key | openpgp.Subkey | null;
+    try {
+      strongSigned = await key.getEncryptionKey(undefined, now, undefined, NEW_KEY_FIND_CONFIG);
+    } catch {
+      strongSigned = null;
+    }
+    if (strongSigned === null || strongSigned.getFingerprint() !== encryptionKey.getFingerprint()) return refuse('key-weak', SHA1_DETAIL);
+    if (!kdfStrong(encryptionKey)) {
+      return refuse(
+        'key-weak',
+        "This key's encryption subkey uses weak settings: its key derivation needs SHA-256 or stronger and AES. Make a new encryption subkey in your PGP app, then paste the key again.",
+      );
+    }
   }
 
   return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };

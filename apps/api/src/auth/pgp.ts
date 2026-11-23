@@ -522,9 +522,14 @@ function optStr(b: Record<string, unknown>, key: string): string | undefined {
   return v;
 }
 
-/** 400 with the refusal and its plain-sentence `detail` (only ever about the key the person pasted). */
-async function inspectOrRefuse(armored: string, now: Date): Promise<Extract<KeyInspection, { ok: true }>> {
-  const r = await inspectPublicKey(armored, now);
+/**
+ * 400 with the refusal and its plain-sentence `detail` (only ever about the key the person pasted).
+ * `rules` (security review of #144): `'new-key'` for a key being added (sign-up, add a key, team,
+ * staff and owner join), which also refuses SHA-1 self-signatures/bindings and a weak ECDH KDF;
+ * `'login'` for a key already on an account, so a stored key keeps logging in.
+ */
+async function inspectOrRefuse(armored: string, now: Date, rules: 'new-key' | 'login'): Promise<Extract<KeyInspection, { ok: true }>> {
+  const r = await inspectPublicKey(armored, now, { newKey: rules === 'new-key' });
   if (!r.ok) throw new ApiError(400, r.reason, { detail: r.detail });
   return r;
 }
@@ -708,7 +713,7 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   if (!pasted.includes('-----BEGIN PGP')) {
     throw new ApiError(400, 'key-unreadable', { detail: 'Paste your whole public key, from -----BEGIN PGP PUBLIC KEY BLOCK----- to the end.' });
   }
-  const { fingerprint } = await inspectOrRefuse(pasted, now);
+  const { fingerprint } = await inspectOrRefuse(pasted, now, 'login');
 
   const device = deviceHash(req); // the cookie this browser *sent*: null when it sent none
   // From here on the browser has a device cookie, so the challenge is bound to the device that will
@@ -782,7 +787,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const b = body(req);
   const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
-  const inspection = await inspectOrRefuse(publicKey, now);
+  const inspection = await inspectOrRefuse(publicKey, now, 'new-key');
   await assertDisplayNameFree(deps.db, names, deps.config);
   // Fingerprint clashes and the ban list are not checked here: only `finish`, after the code proves
   // the key, says key-in-use or key-unavailable (insertPgpKey). A check here would tell anyone,
@@ -864,7 +869,7 @@ const inspected = new WeakMap<FastifyRequest, { armored: string; fingerprint: st
  */
 const inspectNewKey: preHandlerAsyncHookHandler = async function (req) {
   const armored = str(body(req), 'publicKey');
-  const r = await inspectOrRefuse(armored, req.server.deps.clock());
+  const r = await inspectOrRefuse(armored, req.server.deps.clock(), 'new-key');
   // The ban list is checked only once the code proves the key (applyPgpKey), never here.
   inspected.set(req, { armored, fingerprint: r.fingerprint });
 };
@@ -931,7 +936,7 @@ export async function issueTeamJoinChallenge(
 ): Promise<IssuedChallenge & { fingerprint: string }> {
   const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
-  const inspection = await inspectOrRefuse(a.publicKey, now);
+  const inspection = await inspectOrRefuse(a.publicKey, now, 'new-key');
   // The ban list is checked only at the write, after the code proves the key (insertPgpKey).
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
