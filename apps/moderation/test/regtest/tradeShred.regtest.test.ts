@@ -129,6 +129,9 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
     expect(is!.address).toBe(was.address);
     expect(is!.step).toBe(was.step);
     expect(is!.release).toEqual(was.release);
+    // Review of d5ba95c1 (nit): the optional release bookkeeping is unchanged too (M2 sweep accounting).
+    expect(is!.claims ?? []).toEqual(was.claims ?? []);
+    expect(is!.shown ?? []).toEqual(was.shown ?? []);
     // Its wallet's key material is still stored.
     expect(is!.session.v).toBe(1);
     expect(is!.session.keys.length).toBeGreaterThan(0);
