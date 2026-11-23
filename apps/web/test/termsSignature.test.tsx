@@ -194,7 +194,8 @@ describe('SignaturePad', () => {
 describe('the Terms text is pinned to its version', () => {
   // 2026-11-12: the owner's 16 /setup comments applied (comms terms-draft-2026-11-12.md): new version.
   // 2026-11-14: the owner's demo notes of 13 Nov (setup-terms) applied: new version.
-  const PIN = { version: '2026-11-14', sha256: '6efe83e54f27b5bf18905da9b5e9cc5f0b4caf6cfddd6fb1c7b7c3c80eb3e5af' };
+  // 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107) applied: new version.
+  const PIN = { version: '2026-11-23', sha256: '975d6cecba888d717defea6b87d88788969ba5b0ad536a9d6c396c08212260cf' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
@@ -215,7 +216,10 @@ describe('the Terms text: bullets', () => {
     expect(lists).toHaveLength(1);
     expect(lists[0]!.previousElementSibling?.textContent).toMatch(/^Each trade has timers,.*always make sure to:$/);
     expect([...lists[0]!.querySelectorAll('li')].map((li) => li.textContent)).toHaveLength(4);
-    expect(lists[0]!.lastElementChild?.textContent).toBe('If you paid late and the seller cancels, open a dispute and we will help you get your money back. The trade screen always shows the time left.');
+    // Owner demo note #106 (17 Nov): his late-payment sentence in place of the 14 Nov bullet.
+    expect(lists[0]!.lastElementChild?.textContent).toBe(
+      'If for some reason you don’t pay until after your allotted time runs out, the seller triggers a cancellation that automatically refunds the XMR to the seller, and you can’t figure it out amicably between yourself and the other trader, then this is a scenario when you would call upon a moderator to help settle the dispute, whether that means seeing the XMR transferred to you or a refund of the payment you made. The outcome will always be fair. The trade screen always shows the time left.',
+    );
   });
 });
 

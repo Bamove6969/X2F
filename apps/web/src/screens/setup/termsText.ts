@@ -17,7 +17,11 @@
 // 2026-11-12: the owner's 16 /setup comments applied (comms terms-draft-2026-11-12.md). COPY-UNSIGNED.
 // 2026-11-14: the owner's demo notes of 13 Nov (comms owner-demo-notes-2026-11-13.jsonl, screen
 // setup-terms) applied in his words, tidied for grammar and spelling only. COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-14';
+// 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107, screen setup-terms) applied in his
+// words, tidied for grammar only, plus grammar/consistency fixes from the #92 legal pass; every
+// change of meaning beyond his words is a proposal in docs/terms-legal-review-2026-11-23.md, not
+// applied here. COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-23';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
@@ -48,7 +52,9 @@ export const KEY_POINTS: readonly string[] = [
   'Completed trades are erased on day 30.',
   'Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.',
   'No IP addresses are logged.',
-  'We answer lawful warrants with the little we have.',
+  // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
+  // we collect." COPY-UNSIGNED
+  'We answer lawful warrants with what very little information we collect.',
   // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
   'X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.',
 ];
@@ -61,8 +67,9 @@ export const TERMS: TermsSection[] = [
     heading: '1. What X2F is',
     paragraphs: [
       // COPY-UNSIGNED: owner demo notes 13 Nov, his opening and the draft's married ("find a way to
-      // marry them without overlap").
-      'X2F is a place where like-minded, privacy-focused individuals or groups come together to trade Monero (XMR) with each other: to exchange their hard-earned XMR for cash, bank transfers or the payment app that suits them, or, vice versa, to buy XMR and pay for it in the way that is easiest or most convenient for them. X2F is a facilitator. It just brings those people together and lets them interact safely and securely, with a built-in escrow system and moderators to resolve disputes if one should ever happen. It is not a party to your trades, it is not a bank or an exchange, and it never holds your coins.',
+      // marry them without overlap"). Owner demo note #93 (16 Nov, e596a8e5 and his reply 150862d3): a
+      // period after "with each other", and the next sentence starts "Here they can exchange their".
+      'X2F is a place where like-minded, privacy-focused individuals or groups come together to trade Monero (XMR) with each other. Here they can exchange their hard-earned XMR for cash, bank transfers or the payment app that suits them, or, vice versa, buy XMR and pay for it in the way that is easiest or most convenient for them. X2F is a facilitator. It just brings those people together and lets them interact safely and securely, with a built-in escrow system and moderators to resolve disputes if one should ever happen. It is not a party to your trades, it is not a bank or an exchange, and it never holds your coins.',
     ],
   },
   {
@@ -86,9 +93,12 @@ export const TERMS: TermsSection[] = [
       // COPY-UNSIGNED: from "Read the": owner demo notes 13 Nov.
       'You decide whom you trade with and on what terms. Read the vendor’s terms before you take an offer. Buyer and seller beware. Educating yourself on how everything works will help keep you from ever being disadvantaged or, hopefully, from being taken advantage of, but regardless, our moderators are here to see that fair endings = happy endings.',
       // COPY-UNSIGNED: owner's comment ca2b6a83 ("disrupted" read as "disputed"; draft item 4, Q-3);
-      // from "instantly undone": owner demo notes 13 Nov.
+      // from "instantly undone": owner demo notes 13 Nov. Owner demo notes #103-#105 (17 Nov, 3b5808fc,
+      // 8889fe12, 001b37f2): a period after "requested", his proof sentence, his seller sentence and
+      // his transfer sentence, in place of the draft's "posts proof ... releases the XMR, which goes
+      // straight to the buyer's own wallet".
       // not-a-refusal: Terms text
-      'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays exactly as the trade says, with the payment method that was requested, posts proof of payment and marks the trade paid once the payment is complete. The seller confirms that the payment has arrived through that payment method and releases the XMR, which goes straight to the buyer’s own wallet. A release cannot be instantly undone, but it can be disputed and the funds recovered, to the best of our abilities, for the slighted party. Hopefully the moderator will end the trade amicably and it will end as a normal trade, but in the event things aren’t so straightforward, our team is here to help.',
+      'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays exactly as the trade says, with the payment method that was requested. A buyer will also be requested to post proof of their payment for extra reassurance and then marks the trade paid once the payment is complete. The seller then checks their account, or whichever method they chose to get paid by, and only after confirming with their own eyes that they have received the payment do they mark the trade completed. Marking a trade complete automatically transfers the XMR to the buyer’s off-site wallet, minus the 1% fee paid to X2F. A release cannot be instantly undone, but it can be disputed and the funds recovered, to the best of our abilities, for the slighted party. Hopefully the moderator will end the trade amicably and it will end as a normal trade, but in the event things aren’t so straightforward, our team is here to help.',
       // COPY-UNSIGNED: owner's comment aaf06c2f. Draft item 5.
       'A screenshot counts as proof, but it is not a guarantee: anything can be edited these days. Always check that the payment has arrived in your own account before you release the escrow.',
       // COPY-UNSIGNED: owner's comment 7a830826; the 2 hours is his example, not a set time (p11-29
@@ -102,7 +112,11 @@ export const TERMS: TermsSection[] = [
           'Send the payment as requested and mark it paid, preventing any ability for the other party to cancel when the time has run out.',
           'Communicate with the other trader and let them know you may be delayed in sending, so as to prevent them from having their fingers on the cancellation button at the first opportunity they get.',
           'Stay in contact with them and respond when reached out to, or, if you are the one not getting a response, feel free to send an audio cue, what we like to call a “nudge”, to grab their attention.',
-          'If you paid late and the seller cancels, open a dispute and we will help you get your money back. The trade screen always shows the time left.',
+          // Owner demo note #106 (17 Nov, d1e42dcc, on this bullet): his sentence in place of "If you
+          // paid late and the seller cancels, open a dispute and we will help you get your money
+          // back."; the draft's last sentence (the time left) is kept.
+          // not-a-refusal: Terms text
+          'If for some reason you don’t pay until after your allotted time runs out, the seller triggers a cancellation that automatically refunds the XMR to the seller, and you can’t figure it out amicably between yourself and the other trader, then this is a scenario when you would call upon a moderator to help settle the dispute, whether that means seeing the XMR transferred to you or a refund of the payment you made. The outcome will always be fair. The trade screen always shows the time left.',
         ],
       },
     ],
@@ -141,8 +155,10 @@ export const TERMS: TermsSection[] = [
   {
     heading: '7. Police and government requests',
     paragraphs: [
+      // Owner demo note #107 (17 Nov, de4e3eea): "within the scope of the writ." after "what little
+      // information we hold".
       // not-a-refusal: Terms text
-      "If police or a government agency sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+      "If police or a government agency sends us a lawful request for data backed by a warrant, we will provide what little information we hold within the scope of the writ. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
     ],
   },
   {

@@ -156,8 +156,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // taken back") and ChatPanel's UNREADABLE_PAY_LINE (ec53ea9b, review payee-fields-2 m-4), a note in
     // place of a chat line. 70 -> 69 (sign-up round 3): setup/Backup.tsx's one goes. keyErrors.ts
     // carries none: its server refusal (method-not-allowed) goes through refusalText and CantDoThat
-    // (second-seckey-fixes), and the Terms merge changes no pragma.
-    expect(notARefusal).toBeLessThanOrEqual(69);
+    // (second-seckey-fixes), and the Terms merge changes no pragma. 69 -> 70 (Terms v2026-11-23, owner
+    // demo note #106, 17 Nov): setup/termsText.ts's late-payment bullet in the owner's own words ("you
+    // can't figure it out amicably ... call upon a moderator"), Terms text that explains, not a refusal.
+    expect(notARefusal).toBeLessThanOrEqual(70);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
