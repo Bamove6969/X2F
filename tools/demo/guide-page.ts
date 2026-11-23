@@ -4,12 +4,16 @@
  * like /__demo/codes (codes-page.ts): one static page, no script, its only style allowed by hash.
  * It reads what the seed made (.demo/state/seed.json: login names, offers, trade codes; no secrets)
  * and never reaches the API.
+ *
+ * Demo r6 (wip/lead-notes-all): the page opens with "New in this demo", one screen at a time, each
+ * with the owner's demo note numbers it answers, and /__demo/guide/legal shows the Terms legal
+ * review (docs/terms-legal-review-2026-11-23.md) as a page, rendered here (no script either).
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { DEMO_PASSWORD, STATE_DIR } from './config.js';
+import { DEMO_PASSWORD, ROOT, STATE_DIR } from './config.js';
 import { forwardedHttps } from './self-origin.js';
 
 /** What the seed made (seed.ts writes it). */
@@ -37,7 +41,8 @@ const STYLE =
   'h1{font-size:24px;line-height:1.25}h2{font-size:19px;margin:28px 0 4px;border-top:1px solid #2a313c;padding-top:16px}' +
   'a{color:#ff8a3d}ul{padding-left:20px;margin:6px 0}li{margin:4px 0}' +
   'code{font:500 15px ui-monospace,Menlo,Consolas,"Roboto Mono",monospace;background:#1b212a;padding:1px 4px;border-radius:4px}' +
-  '.who{color:#b7c0cc;font-size:15px}.box{background:#161b22;border-radius:8px;padding:8px 12px;margin:8px 0}';
+  '.who{color:#b7c0cc;font-size:15px}.box{background:#161b22;border-radius:8px;padding:8px 12px;margin:8px 0}' +
+  '.notes{color:#ff8a3d;font-size:15px;font-weight:600}h3{font-size:17px;margin:20px 0 4px}';
 const CSP = `default-src 'none'; style-src 'sha256-${createHash('sha256').update(STYLE).digest('base64')}'`;
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -69,7 +74,7 @@ export function guideSteps(s: SeedSummary | null): Step[] {
       title: '1. Sign up',
       links: [link('/'), link('/setup')],
       who: 'Nobody: make a new account of your own (it gets no door, see Log in).',
-      todo: ['Tap Create account; pick a login name and a display name; set a password; read and sign the Terms.', 'Add a payout wallet when asked (any address shape the form accepts is fine on regtest).', 'Save the recovery code screen (it is a throwaway on the demo).'],
+      todo: ['Tap Create account; read and sign the Terms (v2026-11-23); pick a username and a display name; tick the login methods you want.', 'Save the one recovery code, then type it back on the next screen.', 'Paste a payout address when asked (any address shape the form accepts is fine on regtest). "New in this demo" above walks each screen.'],
     },
     {
       title: '2. Log in',
@@ -139,13 +144,13 @@ export function guideSteps(s: SeedSummary | null): Step[] {
     },
     {
       title: '13. Alerts',
-      links: [link('/settings/security', '/settings/security (Alerts card)'), link('/settings/jabber')],
+      links: [link('/settings/alerts', '/settings/alerts (Alerts tab)'), link('/settings/jabber')],
       who: 'Any account.',
       todo: ['Turn the alarm on and test it; push notices; Secure Jabber alerts and which events send one.'],
     },
     {
       title: '14. Security and account',
-      links: [link('/settings/security'), link('/settings/devices'), link('/settings/account-type'), link('/settings/blocked'), link('/settings/changes')],
+      links: [link('/settings/security'), link('/settings/devices'), link('/settings/account'), link('/settings/account-type'), link('/settings/blocked'), link('/settings/changes')],
       who: 'Any account.',
       todo: ['Add a passkey or security key (works under this page\'s host name), recovery codes, devices, trader or vendor, blocked traders.'],
     },
@@ -170,8 +175,156 @@ export function guideSteps(s: SeedSummary | null): Step[] {
   ];
 }
 
+
+/** One new or fixed thing to look at, with the owner's demo note numbers it answers. */
+export interface NewStep extends Step {
+  notes: number[];
+}
+
+/** Demo r6: what changed since the last demo, screen by screen, in the order a sign-up meets it. */
+export function newSteps(): NewStep[] {
+  return [
+    {
+      title: 'A. Sign up: Terms v2026-11-23',
+      notes: [49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 93, 102, 103, 104, 105, 106, 107],
+      links: [link('/setup', '/setup (Create account)'), link('/terms', '/terms (read only)'), link('/__demo/guide/legal', 'Legal suggestions')],
+      who: 'A new account of your own, in a fresh browser or private window (log out first if a seeded account is in).',
+      todo: [
+        'The Terms screen shows version 2026-11-23: your 13 Nov notes (the v2026-11-14 text) and your 16-17 Nov notes: the period after "with each other" and "Here they can exchange" (#93), "what very little information we collect" (#102), the proof and "with their own eyes" sentences (#103-#105), the late-payment bullet (#106), "within the scope of the writ" (#107).',
+        'Read to the end and sign (typed or drawn). The seeded accounts signed this same version, so they are not asked again.',
+        'The legal read-through of this text (#92) is on the Legal suggestions page: accept or reject each proposal by number.',
+      ],
+    },
+    {
+      title: 'B. Sign up: username and display name',
+      notes: [18, 19, 69, 108],
+      links: [link('/setup/name')],
+      who: 'Your new account.',
+      todo: [
+        '"Pick a unique username" and the new lead line (no "nothing else to give us").',
+        'Display names take $ & ! ? and the like.',
+        'Type a space in the username, display name or (later) the password: the line under the field says "Remove the spaces. A ... has no spaces." straight away, and the server refuses one too (#108).',
+      ],
+    },
+    {
+      title: 'C. Sign up: login methods (ticks)',
+      notes: [20, 21, 22, 23, 24, 27, 30, 72, 75],
+      links: [link('/setup/login')],
+      who: 'Your new account.',
+      todo: [
+        'Tick every method you want to set up now; the sign-up walks each ticked one in turn, and the recovery code comes after all of them (#27, #30).',
+        'Recommended and a green Strong on PGP and the security key; Medium on the passkey and the authenticator app (OTP); Weak on the password, with your warning sentence (#20-#24).',
+        'Your sentence "Anything you do not set up now can be added later ..." (#72), and the key makers by name: YubiKey, Google Titan, Nitrokey, Feitian (#75).',
+        'Owner rules of 16 Nov: the authenticator only with a password; a password never alone.',
+      ],
+    },
+    {
+      title: 'D. Sign up: PGP key and PGPony',
+      notes: [25, 26, 39, 40, 74, 77, 78, 79, 80],
+      links: [link('/setup/pgp-key'), link('/setup/pgp-code')],
+      who: 'Your new account, with PGP ticked (you need your own PGP key).',
+      todo: [
+        'The "Adding your public PGP key" screen: a much wider and taller box, bigger text, and the name on the key and its date once pasted (#26, #78, #79, #80).',
+        'The PGP app list recommends PGPony on Android (OpenKeychain also works) (#25, #77).',
+        'The encrypted code screen shows X2F\'s signing key fingerprint and a link to the key, so the signer is no longer "unknown" (#40).',
+      ],
+    },
+    {
+      title: 'E. Sign up: recovery code, type it back, and no way round it',
+      notes: [28, 29, 87, 88, 89, 90],
+      links: [link('/setup/backup')],
+      who: 'Your new account.',
+      todo: [
+        'One recovery code (not ten), longer, with dashes put in for you (#28), and your sentence about losing your login method (#87); bigger text (#88).',
+        'Tick "I\'ve written it down", Next, then type it back without seeing it: red until it matches, green when it does; Back keeps the code (#29).',
+        'Swipe back or open another screen before typing it back: the app returns you to the recovery code screen, so nobody skips it (#89).',
+        'The password field has an eye to show what you typed (#90).',
+      ],
+    },
+    {
+      title: 'F. Sign up: payout wallet list and the Edge tip',
+      notes: [31, 32, 96],
+      links: [link('/setup/wallet'), link('/wallets')],
+      who: 'Your new account (and /wallets for any account).',
+      todo: [
+        'The wallets are a list of recommendations ("and many more."), not buttons to pick, with one address field under them (#32, #96).',
+        'The Edge tip is shown to everyone, with Edge\'s real setting, and the field lets Edge and Chrome fill a saved address (#96).',
+      ],
+    },
+    {
+      title: 'G. Welcome: security rating and links',
+      notes: [97],
+      links: [link('/setup/welcome')],
+      who: 'Your new account, at the end of sign-up.',
+      todo: [
+        '"Your account\'s security rating" above the checklist (Weak, Medium or Highly secure), with "Make it more secure" to Settings, Security.',
+        '"Username and password" is always a line of the checklist, and each line has a Change or Add link back to its setting (login methods, recovery code, wallet); the links leave sign-up the same way Start trading does.',
+      ],
+    },
+    {
+      title: 'H. The tour: scrolling and the trade room',
+      notes: [47, 99, 100],
+      links: [link('/welcome', '/welcome (Take the tour)'), link('/settings/help', '/settings/help (start it again)')],
+      who: 'Any account. The welcome screen shows on a device\'s first visit; Settings, Help starts the tour again at any time.',
+      todo: [
+        'On a computer, each stop scrolls into view, so the cards on the right are reachable (#99).',
+        'A new stop shows the trade room with an open chat, as a trade looks once it has started (#100); the tour is 7 pages now.',
+      ],
+    },
+    {
+      title: 'I. Settings in tabs',
+      notes: [101],
+      links: [link('/settings/security', 'Security'), link('/settings/alerts', 'Alerts'), link('/settings/account', 'Account'), link('/settings/help', 'Help')],
+      who: `${login('ana-demo')} (a vendor, so the Account tab has the team too). A team member sees no Account tab.`,
+      todo: [
+        'Four tabs, each its own page you can link to: Security (login methods, recovery code, account changes, devices), Alerts (alarm, Jabber, the alerts list), Account (account type, team, blocked traders), Help (the tour and the welcome screen).',
+        'The tab bar uses the Buy / Sell look; old Security links to a section that moved go to its tab.',
+      ],
+    },
+    {
+      title: 'J. "Test this key now"',
+      notes: [82, 94],
+      links: [link('/settings/security', '/settings/security (Login methods)'), link('/setup/security-key')],
+      who: `Any seeded account in Settings (for example ${login('ana-demo')}), or your new account during sign-up. Needs a real security key or passkey on your device.`,
+      todo: [
+        'Add a security key or passkey: the green "Security key added" with the name you give it (#94).',
+        'Then tap Test this key now and tap or insert the key: "Your security key works. It answered and X2F checked its answer." (or why not). A test changes nothing (#94).',
+      ],
+    },
+    {
+      title: 'K. PGP message box: Ctrl-A selects only the message',
+      notes: [39, 98],
+      links: [link('/login'), link('/setup/pgp-code')],
+      who: 'An account with a PGP login (your new one, if you ticked PGP).',
+      todo: [
+        'Click in the box with the encrypted message and press Ctrl-A (Cmd-A on a Mac): only the message is highlighted, not the whole page (#98). Copy still works.',
+        'The PGP boxes on log in are taller (#39).',
+      ],
+    },
+    {
+      title: 'L. Fonts',
+      notes: [43, 73, 91],
+      links: [link('/')],
+      who: 'Every screen.',
+      todo: ['DM Sans and DM Mono, one size bigger, orange labels: the face you chose on 16 Nov (#91), with more room to scroll on the sign-up screens (#73).'],
+    },
+  ];
+}
+
+const noteList = (n: number[]): string => `Owner notes: ${n.map((x) => `#${x}`).join(', ')}`;
+
 /** The page for this seed summary. */
 export function guidePage(s: SeedSummary | null): string {
+  const fresh = newSteps()
+    .map(
+      (st) =>
+        `<h3>${esc(st.title)}</h3>` +
+        `<div class="notes">${esc(noteList(st.notes))}</div>` +
+        (st.links.length > 0 ? `<div>${st.links.join(' · ')}</div>` : '') +
+        `<p class="who">${st.who}</p>` +
+        `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`,
+    )
+    .join('');
   const steps = guideSteps(s)
     .map(
       (st) =>
@@ -196,14 +349,116 @@ export function guidePage(s: SeedSummary | null): string {
     '<h1>Demo guide</h1>',
     '<p>Regtest demo only: fake money, throwaway accounts. Leave a comment on any screen with the Comment button (top right).</p>',
     `<p>Password for every seeded account: <code>${esc(DEMO_PASSWORD)}</code>. Codes: ${link('/__demo/codes')}. One account per browser or device.</p>`,
+    `<p>New: ${link('/__demo/guide/legal', 'Legal suggestions')} (the Terms legal review, 23 Nov).</p>`,
     accounts,
+    '<h2>New in this demo (r6)</h2>',
+    '<p class="who">Built from wip/lead-notes-all. Each item names the demo note numbers it answers; leave a comment on the screen if it is not what you meant.</p>',
+    fresh,
+    '<h2>Everything, screen by screen</h2>',
     steps,
     failures,
     '</body></html>',
   ].join('');
 }
 
-export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => SeedSummary | null }): (req: IncomingMessage, res: ServerResponse) => void {
+
+/** The Terms legal review the guide's Legal suggestions page shows (owner note #92). */
+export const LEGAL_REVIEW_FILE = join(ROOT, 'docs/terms-legal-review-2026-11-23.md');
+export const LEGAL_PATH = '/__demo/guide/legal';
+
+/** Inline Markdown: `code`, **bold**, *italic*; everything else escaped. No links or raw HTML. */
+function inline(t: string): string {
+  return t
+    .split(/(`[^`]+`)/)
+    .map((part) => {
+      if (part.length > 1 && part.startsWith('`') && part.endsWith('`')) return `<code>${esc(part.slice(1, -1))}</code>`;
+      return esc(part)
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>');
+    })
+    .join('');
+}
+
+/**
+ * The small Markdown the review uses, as HTML: # to #### headings, paragraphs, "- " lists (one
+ * level of nesting by two spaces), **bold**, `code`. Raw HTML in the file is shown as text.
+ */
+export function renderMarkdown(md: string): string {
+  const out: string[] = [];
+  let para: string[] = [];
+  let depth = 0;
+  const flushPara = (): void => {
+    if (para.length > 0) out.push(`<p>${inline(para.join(' '))}</p>`);
+    para = [];
+  };
+  const closeLists = (to: number): void => {
+    while (depth > to) {
+      out.push('</li></ul>');
+      depth -= 1;
+    }
+  };
+  for (const raw of md.replace(/\r\n?/g, '\n').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    const h = /^(#{1,4})\s+(.*)$/.exec(line);
+    const li = /^( *)[-*]\s+(.*)$/.exec(line);
+    if (line.trim() === '') {
+      flushPara();
+      continue;
+    }
+    if (h) {
+      flushPara();
+      closeLists(0);
+      const level = Math.min(4, h[1]!.length + 1);
+      out.push(`<h${level}>${inline(h[2]!)}</h${level}>`);
+    } else if (li) {
+      flushPara();
+      const want = Math.min(2, Math.floor(li[1]!.length / 2) + 1);
+      if (want > depth) {
+        while (depth < want) {
+          out.push('<ul><li>');
+          depth += 1;
+        }
+      } else {
+        closeLists(want);
+        out.push('</li><li>');
+      }
+      out.push(inline(li[2]!));
+    } else if (depth > 0 && /^ {2,}\S/.test(raw)) {
+      out.push(` ${inline(line.trim())}`);
+    } else {
+      closeLists(0);
+      para.push(line.trim());
+    }
+  }
+  flushPara();
+  closeLists(0);
+  return out.join('');
+}
+
+/** /__demo/guide/legal: the review as a page, or a line saying it is missing. */
+export function legalPage(md: string | null): string {
+  return [
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>X2F legal suggestions</title><style>${STYLE}</style></head><body>`,
+    `<p>${link('/__demo/guide', '← Demo guide')} · ${link('/terms', 'Read the Terms (v2026-11-23)')}</p>`,
+    '<h1>Legal suggestions</h1>',
+    '<p class="who">The Terms legal review of 23 Nov (your note #92), as written in docs/terms-legal-review-2026-11-23.md. To answer, open the Terms screen (/terms) and leave a comment there with the numbers you accept or reject (this page has no Comment button).</p>',
+    md === null ? '<p>The review file is not in this demo\'s tree.</p>' : renderMarkdown(md),
+    '</body></html>',
+  ].join('');
+}
+
+function readLegal(file = LEGAL_REVIEW_FILE): string | null {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => SeedSummary | null; legal?: () => string | null }): (req: IncomingMessage, res: ServerResponse) => void {
+  const legal = cfg.legal ?? (() => readLegal());
   const hosts = new Set([...cfg.origins].map((o) => new URL(o).host));
   const summary = cfg.summary ?? (() => readSeedSummary());
   return (req, res) => {
@@ -220,6 +475,7 @@ export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => 
     };
     if (!hosts.has(req.headers.host ?? '') && !forwardedHttps(req.headers)) return send(403, 'application/json', '{"error":"demo-guide-host"}');
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, 'application/json', '{"error":"demo-guide-method"}');
-    send(200, 'text/html; charset=utf-8', guidePage(summary()));
+    const path = (req.url ?? '').split(/[?#]/, 1)[0];
+    send(200, 'text/html; charset=utf-8', path === LEGAL_PATH ? legalPage(legal()) : guidePage(summary()));
   };
 }

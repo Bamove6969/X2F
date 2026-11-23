@@ -89,7 +89,7 @@ const guide = createGuideHandler({ origins: ORIGINS });
 const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
   const path = (req.url ?? '').split(/[?#]/, 1)[0];
   if (path === '/__demo/codes') codes(req, res);
-  else if (path === '/__demo/guide') guide(req, res);
+  else if (path === '/__demo/guide' || path === '/__demo/guide/legal') guide(req, res);
   else notes(req, res);
 };
 // The seeded accounts' way in from a fresh browser (door.ts).

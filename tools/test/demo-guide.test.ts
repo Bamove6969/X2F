@@ -1,7 +1,7 @@
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createGuideHandler, guidePage, guideSteps, type SeedSummary } from '../demo/guide-page.js';
+import { createGuideHandler, guidePage, guideSteps, legalPage, newSteps, renderMarkdown, type SeedSummary } from '../demo/guide-page.js';
 
 const SUMMARY: SeedSummary = {
   owner: [{ login: 'ana-demo', shown: 'demo_ana', vendor: true }, { login: 'ben-demo', shown: 'demo_ben', vendor: false }],
@@ -44,13 +44,43 @@ describe('demo guide page (/__demo/guide)', () => {
     expect(guidePage(null)).not.toContain('href="/trade/');
   });
 
+  it('opens with what is new in r6, each screen with its owner note numbers (demo r6)', () => {
+    const html = guidePage(SUMMARY);
+    expect(html).toContain('New in this demo (r6)');
+    const all = newSteps();
+    const notes = new Set(all.flatMap((s) => s.notes));
+    // Sign-up ticks, PGPony, recovery code + type-back, swipe-back gate, Terms v2026-11-23, wallet
+    // list + Edge, Welcome rating, tour, Settings tabs, Ctrl-A, no spaces, Test this key now.
+    for (const n of [27, 77, 28, 29, 89, 93, 102, 107, 96, 97, 99, 100, 101, 98, 108, 94]) expect(notes).toContain(n);
+    for (const s of all) {
+      expect(s.notes.length).toBeGreaterThan(0);
+      expect(html).toContain(`#${s.notes[0]}`);
+    }
+    for (const path of ['/setup', '/setup/login', '/setup/backup', '/setup/wallet', '/setup/welcome', '/welcome', '/settings/alerts', '/settings/account', '/settings/help', '/__demo/guide/legal']) {
+      expect(html).toContain(`href="${path}"`);
+    }
+    expect(html).toContain('2026-11-23');
+  });
+
+  it('renders the legal review Markdown without passing raw HTML through', () => {
+    const html = renderMarkdown('# Title\n\nSome **bold** and `code` <script>x</script>.\n\n### 1. A point\n\n- **Current:** a\n  - (a) nested\n- next\n\nAfter.');
+    expect(html).toContain('<h2>Title</h2>');
+    expect(html).toContain('<b>bold</b>');
+    expect(html).toContain('<code>code</code>');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('<h4>1. A point</h4>');
+    expect(html).toContain('<ul><li><b>Current:</b> a<ul><li>(a) nested</li></ul></li><li>next</li></ul><p>After.</p>');
+    expect(legalPage(null)).toContain('not in this demo');
+    expect(legalPage('## Proposals')).toContain('<h3>Proposals</h3>');
+  });
+
   describe('the handler', () => {
     let srv: Server | null = null;
     afterEach(() => new Promise<void>((r) => (srv ? srv.close(() => r()) : r())));
     /** fetch() may not set Host, so a plain node:http request. */
-    function get(base: string, headers: Record<string, string>, method = 'GET'): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
+    function get(base: string, headers: Record<string, string>, method = 'GET', path = '/__demo/guide'): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
       return new Promise((done, fail) => {
-        const req = request(`${base}/__demo/guide`, { method, headers }, (res) => {
+        const req = request(`${base}${path}`, { method, headers }, (res) => {
           let text = '';
           res.on('data', (c: Buffer) => (text += c.toString()));
           res.on('end', () => done({ status: res.statusCode ?? 0, headers: res.headers, text }));
@@ -60,7 +90,7 @@ describe('demo guide page (/__demo/guide)', () => {
       });
     }
     async function serve(): Promise<string> {
-      const h = createGuideHandler({ origins: new Set(['http://localhost:4400']), summary: () => SUMMARY });
+      const h = createGuideHandler({ origins: new Set(['http://localhost:4400']), summary: () => SUMMARY, legal: () => '## Proposals\n\n### 1. Fee' });
       srv = createServer(h);
       await new Promise<void>((r) => srv!.listen(0, '127.0.0.1', r));
       return `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
@@ -73,6 +103,15 @@ describe('demo guide page (/__demo/guide)', () => {
       expect(res.headers['content-security-policy']).toMatch(/^default-src 'none'; style-src 'sha256-[A-Za-z0-9+/=]+'$/);
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.text).toContain('Demo guide');
+    });
+
+    it('serves the Legal suggestions page at /__demo/guide/legal', async () => {
+      const base = await serve();
+      const res = await get(base, { host: 'localhost:4400' }, 'GET', '/__demo/guide/legal');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('Legal suggestions');
+      expect(res.text).toContain('<h4>1. Fee</h4>');
+      expect((await get(base, { host: 'evil.example' }, 'GET', '/__demo/guide/legal')).status).toBe(403);
     });
 
     it('refuses another host (unless through an https front) and any method but GET or HEAD', async () => {

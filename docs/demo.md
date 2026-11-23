@@ -33,6 +33,17 @@ What runs, all bound to 127.0.0.1:
 | Postgres 17 in Docker, container `x2f-demo-postgres`, data on tmpfs | 54329 |
 | Demo moderator (moderation service, miner, faucet) | no port |
 
+A second demo beside a running one (demo r6: build and check a new worktree while the old one
+keeps serving): `DEMO_PORT_OFFSET=10 npm run demo` adds 10 to every port above (4410 / 4411,
+API 18090, Postgres 54339 ...) and uses its own Postgres container, `x2f-demo-postgres-10`. The
+container a demo started is kept in `.demo/pg-container`, so `npm run demo:stop` in that worktree
+removes that one and never the other demo's. For a check that should leave the owner's comments
+alone, also set `DEMO_NOTES_PUSH=0` and `DEMO_NOTES_FILE` to a scratch file.
+
+The guide (`/__demo/guide`) opens with "New in this demo": each new or fixed screen with the
+owner's demo note numbers it answers; `/__demo/guide/legal` shows
+`docs/terms-legal-review-2026-11-23.md` as a page.
+
 Process ids are in `.demo/pids.json`, logs in `.demo/logs/<name>.log`, the logins in
 `.demo/logins.txt`, the secrets in `.demo/secrets/` (the authenticator secrets in
 `.demo/secrets/totp.json`; all gitignored).

@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { migrate } from '../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
-import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
+import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_CONTAINER_FILE, PG_IMAGE, PORT_OFFSET, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
 import { pushEnabled } from './notes-push.js';
@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   rmSync(DEMO_DIR, { recursive: true, force: true });
   mkdirSync(LOG_DIR, { recursive: true });
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  if (PORT_OFFSET !== 0) step(`DEMO_PORT_OFFSET=${PORT_OFFSET}: ports ${PORTS.gateway}/${PORTS.gatewayNode} (and every other port +${PORT_OFFSET}), Postgres container ${PG_CONTAINER}`);
 
   // ── Tailscale (optional, private tailnet only) ──────────────────────────────
   let tsIp = '';
@@ -99,6 +100,7 @@ async function main(): Promise<void> {
   execFileSync('docker', ['rm', '-f', PG_CONTAINER], { stdio: 'ignore' });
   execFileSync('docker', ['run', '-d', '--name', PG_CONTAINER, '--label', 'x2f-demo=1', '-p', `${HOST}:${PORTS.postgres}:5432`,
     '-e', `POSTGRES_PASSWORD=${s.pgPassword}`, '--tmpfs', '/var/lib/postgresql/data', PG_IMAGE], { stdio: 'ignore' });
+  writeFileSync(PG_CONTAINER_FILE, `${PG_CONTAINER}\n`);
   const pgUrl = (db: string) => `postgres://postgres:${s.pgPassword}@${HOST}:${PORTS.postgres}/${db}`;
   await waitFor('Postgres', async () => {
     const c = new pg.Client({ connectionString: pgUrl('postgres') });
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
 
   // ── services ────────────────────────────────────────────────────────────────
   const origins = o.allowed;
-  const demo = { X2F_DEMO: '1' };
+  const demo: Record<string, string> = { X2F_DEMO: '1', ...(PORT_OFFSET !== 0 ? { DEMO_PORT_OFFSET: String(PORT_OFFSET) } : {}) };
 
   startTs('relay', 'apps/relay/src/main.ts', {
     RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(PORTS.relay),
