@@ -42,6 +42,9 @@ export const SETUP_ONLY: ReadonlySet<string> = new Set([
   // The sign-up's end (still 409 password-alone), this session's own length, and a new device's login approval.
   'POST /v1/account/onboarding/end',
   'PUT /v1/account/session/length',
+  // Re-review N2: seeing its sessions and ending a stranger's (the route's own weak-session rules apply).
+  'GET /v1/account/sessions',
+  'DELETE /v1/account/sessions/:id',
   'POST /v1/account/session/extend',
   'GET /v1/account/approvals',
   'GET /v1/account/approvals/:id',

@@ -71,7 +71,6 @@ async function expectRefused(b: Browser) {
     ['POST', '/v1/offers', {}],
     ['GET', '/v1/account/offers', undefined],
     ['PUT', '/v1/account/type', { type: 'vendor' }],
-    ['GET', '/v1/account/sessions', undefined],
     ['POST', '/v1/account/blocks', { displayName: 'Someone1' }],
   ] as const) {
     const res = method === 'GET' ? await b.get(url) : method === 'PUT' ? await b.put(url, body) : await b.post(url, body);
@@ -141,5 +140,20 @@ describe('review M2: a password alone gives a setup-only session', () => {
     setNow(new Date(now.getTime() + 31 * MIN));
     expect((await b.get('/v1/account/me')).json()).toMatchObject({ setupOnly: false });
     expect((await b.get('/v1/wallets')).statusCode).toBe(200);
+  });
+
+  it('re-review N2: a setup-only owner sees its sessions and ends a stranger\'s newer one', async () => {
+    const { b, id } = await passwordOnly();
+    setNow(new Date(now.getTime() + 31 * MIN));
+    // A stranger's newer username-and-password session on the account.
+    const stranger = new Browser(app);
+    expect((await stranger.post('/t/login', { accountId: id })).statusCode).toBe(200);
+    await deps.db.query("update sessions set strength = 'weak-single' where account_id = $1", [id]);
+    const list = await b.get('/v1/account/sessions');
+    expect(list.statusCode, list.body).toBe(200);
+    const theirs = (list.json() as Array<{ id: string; current: boolean }>).find((s) => !s.current)!;
+    const del = await b.delete(`/v1/account/sessions/${theirs.id}`);
+    expect(del.statusCode, del.body).toBeLessThan(300);
+    expect((await stranger.get('/v1/account/me')).statusCode).toBe(401);
   });
 });
