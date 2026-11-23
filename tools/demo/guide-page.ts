@@ -268,7 +268,7 @@ export function newSteps(): NewStep[] {
       who: 'Any account. The welcome screen shows on a device\'s first visit; Settings, Help starts the tour again at any time.',
       todo: [
         'On a computer, each stop scrolls into view, so the cards on the right are reachable (#99).',
-        'A new stop shows the trade room with an open chat, as a trade looks once it has started (#100); the tour is 7 pages now.',
+        'A new stop shows the trade room with an open chat, as a trade looks once it has started (#100).',
       ],
     },
     {
