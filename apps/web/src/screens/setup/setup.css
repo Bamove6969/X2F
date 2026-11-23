@@ -1266,3 +1266,9 @@
   font-weight: 600;
   color: var(--x2f-ink);
 }
+
+/* Owner demo note #160 (23 Nov): the address-reuse tip in a noticeable colour; it is a heads-up, not an error. */
+.x2f-start__small--heads-up {
+  color: var(--x2f-caution);
+  font-weight: 600;
+}

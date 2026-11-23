@@ -174,9 +174,10 @@ export function Wallet() {
           This is your first payout wallet, so it works right away. Adding future wallets will require verification via your security method. You
           can also configure X2F to alert you whenever a new wallet is added.
         </p>
-        <p className="x2f-start__small">
-          Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your
-          wallet for each trade.
+        {/* Owner demo note #160 (23 Nov): his words (dash made a full stop), in a different, noticeable colour. */}
+        <p className="x2f-start__small x2f-start__small--heads-up" data-part="address-reuse">
+          Monero addresses never expire. Reusing one will never lose a payout. For stronger privacy, generate and paste a fresh subaddress for each
+          trade.
         </p>
         {confirmUi}
       </SetupFrame>
