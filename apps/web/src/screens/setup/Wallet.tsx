@@ -39,7 +39,8 @@ export const WALLET_COPY = {
   more: 'and many more.',
   /** Shown to everyone now no app is picked: wallets-model.ts EDGE_TIP (Edge's real setting, owner #96). */
   edgeTip: `Using Edge? ${EDGE_TIP}`,
-  field: 'Use your favourite wallet and enter a receive address from it',
+  // Owner demo note #156 (23 Nov); the heading above already asks "Where should we send your XMR?".
+  field: 'Enter your receiving wallet address below.',
 } as const;
 
 /**
