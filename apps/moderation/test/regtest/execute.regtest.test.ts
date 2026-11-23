@@ -93,16 +93,36 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     await payout('refund-to-seller');
   });
 
-  async function payout(outcome: 'release-to-buyer' | 'refund-to-seller'): Promise<void> {
+  // Review p4t22 N1: the moderator who ruled round 1 ("release to buyer") is removed before its
+  // payout ran, and an uninvolved senior's appeal overturns it ("refund to seller"). Round 1 never
+  // pays; the appeal does, from the gate reading round 1's signers from its taps (R37).
+  it('review p4t22 N1: round 1 by a moderator removed before it paid; the appeal that overturns it pays the seller, once', async () => {
+    await payout('refund-to-seller', { removedRound1: true });
+  });
+
+  async function payout(outcome: 'release-to-buyer' | 'refund-to-seller', o: { removedRound1?: boolean } = {}): Promise<void> {
     const buyerWins = outcome === 'release-to-buyer';
     const winner = buyerWins ? 'buyer' : 'seller';
     // The staff and the ruling: a moderator proposes, the owner approves (the trade is above the gate's limit).
+    // N1: under the limit, a moderator's round 1 on one tap, then removed; a senior's round 2 on one tap.
     const w = await world();
     const mod = w.hire('mod');
-    const c = ruling(mod, { approver: w.owner, outcome });
+    let c = ruling(mod, o.removedRound1 ? { outcome: 'release-to-buyer' } : { approver: w.owner, outcome });
     const code = c.ruling.code;
-    w.api.taps.push(tapBy(mod, c.intent('propose')), tapBy(w.owner, c.intent('approve')));
-    w.api.rulings.set(code, { current: c.ruling, round1: null, involved: [] });
+    if (o.removedRound1) {
+      w.api.taps.push(tapBy(mod, c.intent('propose')));
+      const senior = w.hire('senior');
+      const round1 = c.ruling;
+      c = ruling(senior, { round: 2, round1Id: round1.id, code, outcome });
+      w.api.taps.push(tapBy(senior, c.intent('propose')));
+      w.api.rulings.set(code, { current: c.ruling, round1, involved: [] });
+      const row = w.api.staffRows.get(mod.id)!;
+      row.removed = true;
+      row.switchedOff = true;
+    } else {
+      w.api.taps.push(tapBy(mod, c.intent('propose')), tapBy(w.owner, c.intent('approve')));
+      w.api.rulings.set(code, { current: c.ruling, round1: null, involved: [] });
+    }
     const dir = await mkdtemp(join(tmpdir(), 'x2f-exec-rt-'));
     dirs.push(dir);
     const key = new Uint8Array(randomBytes(32));
@@ -144,7 +164,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     // This process's own recorded terms: the attested deal and the traders' addresses.
     const [buyerW, sellerW, feeW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
     wallets.push(buyerW, sellerW, feeW);
-    const terms = { ...recorded(200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
+    const terms = { ...recorded(o.removedRound1 ? 41_250n : 200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
 
     // The executor's pass, on the funds the moderator's own party reads, until it hands the payout.
     // Haveno review finding 2: the moderation signing key signs the statement the winner's app verifies.
@@ -168,6 +188,11 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
 
     // The winner's app checks the signed statement against its own trade, escrow and payouts first.
     const st = statements.at(-1)!;
+    // N1: the statement names round 2's ruling; round 1 was read for its signers only, never authorised.
+    if (o.removedRound1) {
+      expect(st.statement).toMatchObject({ round: 2, rulingId: c.ruling.id, winner });
+      expect(Object.values(store.state.rulingsSeen).find((x) => x.round === 1)).toMatchObject({ signersOnly: true, signers: [mod.id] });
+    }
     expect((await verifyRulingStatement(st.statement, st.sig, sodium.to_hex(modKey.publicKey), { trade: code, escrowAddress: addresses[0]!, winner, payouts: to })).ok).toBe(true);
     // The winner's app co-signs exactly that mod-built set (Task 15's cosignPolicy); the tx lands.
     const tx = await mining(parties[winner].settle({ kind: 'release', to, builder: 'mod', cosigner: winner }));
@@ -208,6 +233,15 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     expect(t.state).toBe('disputed');
     t = apply(t, { type: 'settled', kind: kind!, txHash: tx! }, 'system', at(300));
     expect(t).toMatchObject({ state: buyerWins ? 'released' : 'refunded', txHash: tx, settling: null });
+    if (o.removedRound1) {
+      // Once: a restarted executor (the gate reopened from disk) settles nothing more.
+      expect(await pass()).toBe('settled');
+      const again = rulingExecutor({ store: await openGateStore(dir, key), source: w.api, ctx: ctx(), log: () => {}, signingSecret: modKey.privateKey });
+      const asked: unknown[] = [];
+      expect(await again.step({ code, handle: { settle: async (x) => (asked.push(x), null) }, api: { state: 'disputed', paused: false }, funds: { balance: BALANCE, unlocked: BALANCE }, recorded: terms, escrowAddress: addresses[0]!, announce: async () => true })).toBe('settled');
+      expect(asked).toEqual([]);
+      return;
+    }
     const S = { appealWindowH: 48, firstResponseH: 4 };
     const modActor = { kind: 'staff' as const, id: mod.id, role: 'mod' as const };
     const ownerActor = { kind: 'staff' as const, id: w.owner.id, role: 'owner' as const };

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   approveRuling,
+  reProposeRuling,
   secondApproveRuling,
   codeOf,
   disputeCase,
@@ -155,6 +156,8 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
   // Review p4t22 M1 (e): a senior or the owner who did not propose it adds the second approval the gate asks for.
   const second = c.ruling.gateRefusal?.secondApproval ?? null;
   const rescuing = live && second !== null && isApprover(role) && !second.proposedByYou;
+  // Review p4t22 N1: a senior or the owner proposes a new round 1 in place of one refused as revoked.
+  const reProposing = live && (c.ruling.gateRefusal?.rePropose ?? null) !== null && isApprover(role);
   // Review X3-1 (a): no ruling tap opens for a case that is not the one in the address.
   const matches = caseMatchesAddress(code, c);
   const openTap = (t: Tap) => {
@@ -196,7 +199,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
-          <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
+          <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} reProposing={reProposing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>
 
@@ -635,6 +638,7 @@ function RulingCard({
   proposing,
   approving,
   rescuing,
+  reProposing,
   buyer,
   seller,
   setTap,
@@ -644,6 +648,7 @@ function RulingCard({
   proposing: boolean;
   approving: boolean;
   rescuing: boolean;
+  reProposing: boolean;
   buyer: string;
   seller: string;
   setTap: (t: Tap) => void;
@@ -684,10 +689,17 @@ function RulingCard({
         <p className="x2f-staff-hint" data-part="gate-refused">
           {r.gateRefusal.reason === 'needs-second'
             ? `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it needs a second person's approval (a senior moderator or the owner).`
-            : `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling (${r.gateRefusal.reason}).`}
+            : r.gateRefusal.reason === 'revoked'
+              ? // Review p4t22 N1 (and F1 twin: a security reset). COPY-UNSIGNED
+                `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off, removed or had their security keys reset before it was carried out.${r.gateRefusal.rePropose ? ' A senior moderator or the owner can propose a new ruling in its place.' : ''}`
+              : r.gateRefusal.reason === 'no-terms'
+                ? // Review p4t22 residual (b). COPY-UNSIGNED
+                  `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it has no record of this trade's terms. ${c.afterRefund ? 'The seller is shown no payment form, and the time to comply does not run out meanwhile.' : 'No escrow payout is made meanwhile.'}`
+                : `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling (${r.gateRefusal.reason}).`}
         </p>
       ) : null}
       {rescuing ? <SecondApprovalPanel c={c} setTap={setTap} reload={reload} /> : null}
+      {reProposing ? <ProposeForm c={c} buyer={buyer} seller={seller} setTap={setTap} reload={reload} replaces={r.gateRefusal!.rePropose!.rulingId} /> : null}
       {/* RC-4 (lead default): the seller's proofs X2F's checker could not take, so a senior deciding a lapse sees X2F's fault. COPY-UNSIGNED; DESIGNER-REVIEW (no board). */}
       {(r.compliance?.failedChecks ?? []).length > 0 ? (
         <ul className="x2f-staff-hint" data-part="proof-check-failed">
@@ -717,7 +729,12 @@ const rulingFault = (e: unknown, fallback: string) => {
   return faultText(e, fallback);
 };
 
-function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buyer: string; seller: string; setTap: (t: Tap) => void; reload: () => Promise<void> }) {
+/**
+ * `replaces` (review p4t22 N1): the published round-1 ruling the moderation gate refuses as revoked;
+ * the form then proposes a new round 1 in its place (`…/re-propose`), with the same normal propose
+ * tap. COPY-UNSIGNED for the re-proposal's words; DESIGNER-REVIEW (no board).
+ */
+function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: DisputeCase; buyer: string; seller: string; setTap: (t: Tap) => void; reload: () => Promise<void>; replaces?: string }) {
   const reasonId = useId();
   const evidenceId = useId();
   const headId = useId();
@@ -729,7 +746,10 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
   const lines = evidenceLines(evidence);
   const evidenceOk = lines.length <= EVIDENCE_MAX && lines.every((l) => l.length <= EVIDENCE_LINE_MAX);
   const ready = outcome !== null && reason.trim().length >= REASON_MIN && evidenceOk;
-  const label = c.overLimit ? 'Send ruling for approval' : 'Send ruling';
+  const label = replaces !== undefined ? (c.overLimit ? 'Send new ruling for approval' : 'Send new ruling') : c.overLimit ? 'Send ruling for approval' : 'Send ruling';
+  // A re-proposal is always a round 1 (review p4t22 N1).
+  const round = replaces !== undefined ? 1 : c.round;
+  const round1Id = replaces !== undefined ? null : (c.ruling.round1?.id ?? null);
   const xmr = xmrShort(c.escrow.amountAtomic);
 
   const submit = () => {
@@ -739,13 +759,14 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
     const text = reason;
     const ev = lines;
     setTap({
-      intent: rulingIntent('propose', { rulingId, code: c.code, round: c.round, round1Id: c.ruling.round1?.id ?? null, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
+      intent: rulingIntent('propose', { rulingId, code: c.code, round, round1Id, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
       body: `Tap your security key to sign this ruling: ${OUTCOME_LABELS[outcome]}.`,
       labels: rulingLabels(c, outcome),
       onDone: async (tapId) => {
         try {
-          await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId });
+          if (replaces !== undefined) await reProposeRuling(c.code, replaces, { rulingId, outcome, reason: text, evidence: ev, tapId });
+          else await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId });
           await reload();
         } catch (e) {
           setFault(rulingFault(e, 'The ruling could not be sent just now. Try again.'));
@@ -755,10 +776,13 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
   };
 
   return (
-    <section className="x2f-card" data-part="ruling">
+    <section className="x2f-card" data-part={replaces !== undefined ? 're-propose' : 'ruling'}>
       <h2 className="x2f-h2" id={headId}>
-        Your ruling
+        {replaces !== undefined ? 'Your new ruling in place of the refused one' : 'Your ruling'}
       </h2>
+      {replaces !== undefined ? (
+        <p className="x2f-staff-hint">The refused ruling is withdrawn when you send this one. Both traders then see the new ruling, with a new appeal window.</p>
+      ) : null}
       <ChoiceGroup look="card" labelledBy={headId} options={outcomeChoices(c.afterRefund, { xmr, buyer, seller })} value={outcome} onChange={setOutcome} part="ruling-outcome" />
       <h3 className="x2f-staff-eyebrow">Account action</h3>
       <p className="x2f-staff-hint">None. A freeze is its own action (Freeze, above); bans come later.</p>

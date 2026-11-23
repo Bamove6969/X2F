@@ -29,6 +29,12 @@ export type InvitableRole = 'senior' | 'mod' | 'helper';
 export interface StaffEntry {
   role: InvitableRole;
   creds: PinnedCred[];
+  /**
+   * Review p4t22 F1 (twin): the keys an owner-tapped security reset took away (`reset-staff-security`),
+   * kept only to tell who signed a ruling before the reset (`pastSigner`, as the keys kept for
+   * switched-off or removed staff). They never authorise anything new. Absent before any reset.
+   */
+  retiredCreds?: PinnedCred[];
   /** Switched off (as the API shows it, no signature needed) and not switched on again by an owner tap since. */
   revoked: boolean;
   /** Removed for good: nothing restores them. */
@@ -51,9 +57,22 @@ export interface RulingSeen {
   round: 1 | 2;
   /** Who signed it (proposer, and approver when there was one), as this gate verified. R37 reads it. */
   signers: string[];
+  /**
+   * Review p4t22 F1, finding A: SHA-256 (hex) of the canonical intents it was authorised on (the
+   * proposer's, then the approver's or null). Once set, the ruling is only ever accepted again on
+   * these very intents (`replayed` otherwise), and F1's re-check of an authorised ruling needs it.
+   * Absent on a `signersOnly` entry and in an entry written before it (set on its next authorisation).
+   */
+  intentsSha256?: string;
   /** When this gate first authorised it (its own clock). */
   publishedSeenAt: string;
   firstSeenFinalAt?: string;
+  /**
+   * Review p4t22 N1: a round 1 this gate never authorised, read only for its signers when an appeal
+   * of it was authorised (its signer had been switched off or removed). It never pays; it only
+   * keeps R37 and the round order (`stale-round`).
+   */
+  signersOnly?: true;
 }
 
 export interface GateState {

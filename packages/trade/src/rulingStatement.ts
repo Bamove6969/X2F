@@ -127,7 +127,8 @@ export async function verifyRulingStatement(s: unknown, sig: unknown, modSigning
 
 /**
  * Review p4t22 M2: the moderation service's signed statement of an after-refund ruling that orders
- * the seller to send the trade's XMR back to the buyer (`seller-sends-xmr`). The escrow is already
+ * the seller to send the trade's XMR back to the buyer (`seller-sends-xmr`); residual (a): and of
+ * every other decided after-refund round (nothing to send). The escrow is already
  * refunded, so nothing is co-signed: the seller moves the coins by hand, and the seller's app shows
  * the pay form only for a statement that verifies here against the pinned moderation key, for this
  * trade, with this device's own amount and the buyer's attested address (`want`). The moderation
@@ -144,11 +145,20 @@ export interface AfterRefundStatement {
   trade: string;
   round: 1 | 2;
   rulingId: string;
-  outcome: 'seller-sends-xmr';
+  /**
+   * Review p4t22 residual (a): every decided after-refund round is signed, whatever its outcome. Only
+   * `seller-sends-xmr` orders a payment; `seller-returns-fiat` and `no-action` say the round was
+   * decided with nothing for the seller to send, so a round 2 that overrules is a signed fact.
+   */
+  outcome: AfterRefundOutcome;
   amountAtomic: string;
   buyerPayout: string;
   issuedAt: string;
 }
+
+/** The after-refund ruling outcomes (@x2f/staff AFTER_REFUND_OUTCOMES). */
+export const AFTER_REFUND_STATEMENT_OUTCOMES = ['seller-sends-xmr', 'seller-returns-fiat', 'no-action'] as const;
+export type AfterRefundOutcome = (typeof AFTER_REFUND_STATEMENT_OUTCOMES)[number];
 
 export type AfterRefundStatementRefusal = 'bad-signature' | 'wrong-trade' | 'wrong-amount' | 'wrong-address';
 export type AfterRefundStatementCheck = { ok: true; statement: AfterRefundStatement } | { ok: false; reason: AfterRefundStatementRefusal };
@@ -156,10 +166,10 @@ export type AfterRefundStatementCheck = { ok: true; statement: AfterRefundStatem
 const AFTER_REFUND_DOMAIN = 'x2f/ruling-statement-after-refund/v1\0';
 const AFTER_REFUND_KEYS = ['v', 'kind', 'trade', 'round', 'rulingId', 'outcome', 'amountAtomic', 'buyerPayout', 'issuedAt'] as const;
 
-/** Exactly the `AfterRefundStatement` shape: a positive amount, an address, round 1 or 2. */
+/** Exactly the `AfterRefundStatement` shape: an after-refund outcome, a positive amount, an address, round 1 or 2. */
 export function isAfterRefundStatement(x: unknown): x is AfterRefundStatement {
   if (!isRecord(x) || !exactKeys(x, AFTER_REFUND_KEYS)) return false;
-  if (x.v !== 1 || x.kind !== 'after-refund' || x.outcome !== 'seller-sends-xmr' || (x.round !== 1 && x.round !== 2)) return false;
+  if (x.v !== 1 || x.kind !== 'after-refund' || !(AFTER_REFUND_STATEMENT_OUTCOMES as readonly unknown[]).includes(x.outcome) || (x.round !== 1 && x.round !== 2)) return false;
   if (!shortString(x.trade, 32) || !shortString(x.rulingId, MAX_ID) || !shortString(x.buyerPayout, MAX_ADDRESS) || !shortString(x.issuedAt, 64)) return false;
   return typeof x.amountAtomic === 'string' && ATOMIC.test(x.amountAtomic);
 }

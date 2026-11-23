@@ -108,6 +108,8 @@ export const LOG_ACTIONS = {
   // published on one tap that the gate refused `needs-second`.
   'ruling.gate-refused': { rulingId: 'id', reason: 'id' },
   'ruling.second-approved': RULING,
+  // Review p4t22 N1: a senior's new round-1 ruling in place of one the gate refused as revoked.
+  'ruling.re-proposed': { ...RULING, replaces: 'id' },
   'dispute.complied': { txHash: 'hex64' },
   // Plan 4 Task 12 (A6): the seller's payment proof waits for its confirmations, or was refused on a
   // later check; the seller let the comply time pass with no proof (the case goes to a senior).

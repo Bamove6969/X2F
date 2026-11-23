@@ -15,7 +15,7 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, RULING_WAIT_REPORT_MS, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
-import { BALANCE, ctx, newGate, recorded, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
+import { BALANCE, ctx, newGate, newKey, recorded, resetSecurity, ruling, tapBy, tapOnNonce, world, type Case, type Person, type World } from './gateWorld.js';
 import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
@@ -42,6 +42,8 @@ interface Setup {
   dir: string;
   key: Uint8Array;
   store: GateStore;
+  /** The moderator who proposed the round-1 ruling (review p4t22 F1, finding A re-signs with their key). */
+  signer: Person;
 }
 
 /** A pinned gate with a round-1 ruling by a moderator, its propose tap stored, the gate saved in a fresh dir. */
@@ -58,7 +60,7 @@ async function setup(o: { outcome?: 'release-to-buyer' | 'refund-to-seller' | 's
   const store = await openGateStore(dir, key);
   store.state = w.gate;
   await store.save();
-  return { w, c, dir, key, store };
+  return { w, c, dir, key, store, signer: mod };
 }
 
 /** The moderation signing key (MOD_SIGNING_SECRET) the executor signs its ruling statements with. */
@@ -502,6 +504,18 @@ describe('review p4t22 M1 (d): the gate refusal reaches the API, for the staff c
     expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'needs-second' }, { rulingId: s.c.ruling.id, reason: null }]);
   });
 
+  it('residual (b): no recorded terms is reported (no-terms) like a refusal, once', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    const r = reports();
+    expect(await exec.step(step(s, p.handle, { recorded: null, reportRefusal: r.reportRefusal }))).toBe('no-terms');
+    expect(await exec.step(step(s, p.handle, { recorded: null, reportRefusal: r.reportRefusal }))).toBe('no-terms');
+    expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'no-terms' }]);
+    expect(await exec.step(step(s, p.handle, { reportRefusal: r.reportRefusal }))).toBe('handed');
+    expect(r.sent.at(-1)).toEqual({ rulingId: s.c.ruling.id, reason: null });
+  });
+
   it('a refused report is sent again on the next pass; a different refusal is a change', async () => {
     const s = await setup();
     const p = recordingParty();
@@ -583,5 +597,175 @@ describe('review p4t22 m1 (lead default, owner question OQ2): an appeal decided 
     expect(await executor(s).step(step(s, p.handle))).toBe('handed');
     expect(p.settles).toEqual([{ kind: 'release', to: want.payouts, builder: 'mod', cosigner: 'buyer' }]);
     expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2.ruling.id);
+  });
+});
+
+describe('review p4t22 N1: round 1 by a moderator removed before its payout ran', () => {
+  /** Round 1 release-to-buyer by a moderator, round 2 (`outcome`) decided by an uninvolved senior, then the moderator removed. */
+  async function removedThenAppealed(outcome: 'refund-to-seller' | 'release-to-buyer' | null = 'refund-to-seller') {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const senior = s.w.hire('senior');
+    let r2: Case | null = null;
+    if (outcome !== null) {
+      r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome });
+      s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+      s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    }
+    const row = s.w.api.staffRows.get(s.c.ruling.proposer)!;
+    row.removed = true;
+    row.switchedOff = true;
+    return { s, r2, senior };
+  }
+
+  it('the appeal that overturns it pays (the probe of the re-review); round 1 never does', async () => {
+    const { s, r2 } = await removedThenAppealed();
+    const p = recordingParty();
+    const logs: string[] = [];
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    const before = announced.length;
+    expect(await executor(s, s.store, logs).step(step(s, p.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'seller' });
+    expect(s.store.state.executions[s.c.ruling.code]).toMatchObject({ rulingId: r2!.ruling.id, winner: 'seller' });
+    expect(announced.slice(before).at(-1)!.statement).toMatchObject({ round: 2, rulingId: r2!.ruling.id, winner: 'seller' });
+    // Round 1's signers are known (for R37), but round 1 is not authorised: it is never paid.
+    expect(s.store.state.rulingsSeen[s.c.ruling.id]).toMatchObject({ round: 1, signersOnly: true, signers: [s.c.ruling.proposer] });
+    expect(sent.at(-1)).toEqual({ rulingId: r2!.ruling.id, reason: null });
+  });
+
+  it("with no appeal, the removed moderator's round 1 is still refused as revoked, and reported", async () => {
+    const { s } = await removedThenAppealed(null);
+    const p = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, p.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('refused-revoked');
+    expect(p.settles).toEqual([]);
+    expect(sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'revoked' }]);
+  });
+
+  it('"Decision stands" after the removal: round 2 pays, from its own taps', async () => {
+    const { s, r2 } = await removedThenAppealed('release-to-buyer');
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'buyer' });
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2!.ruling.id);
+  });
+
+  it('a round 1 with a forged tap still blocks the appeal, and nothing is paid', async () => {
+    const { s, r2 } = await removedThenAppealed();
+    // The stored round-1 tap swapped for one by a key the gate never trusted.
+    const i = s.w.api.taps.findIndex((t) => (JSON.parse(t.intent) as { rulingId?: string }).rulingId === s.c.ruling.id);
+    const mod = { id: s.c.ruling.proposer, key: newKey(), role: 'mod' as const };
+    s.w.api.taps[i] = tapBy(mod, s.c.intent('propose'));
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('refused-unknown-key');
+    expect(p.settles).toEqual([]);
+    expect(s.store.state.rulingsSeen[r2!.ruling.id]).toBeUndefined();
+  });
+});
+
+describe('review p4t22 F1: a round 1 the gate authorised still pays once its signer is removed, switched off or reset', () => {
+  /** The moderator who proposed the setup's round 1, as `resetSecurity` needs them (only the id is read). */
+  const proposerOf = (s: Setup) => ({ id: s.c.ruling.proposer, key: newKey(), role: 'mod' as const });
+
+  it('removed after the payout was recorded and handed: after a restart the same payout is handed again (the probe), also once an appeal is decided', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    const row = s.w.api.staffRows.get(s.c.ruling.proposer)!;
+    row.removed = true;
+    row.switchedOff = true;
+    // A restart: a fresh executor on the same sealed store.
+    const again = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, again.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('handed');
+    expect(again.settles).toEqual(p.settles);
+    expect(sent).toEqual([{ rulingId: s.c.ruling.id, reason: null }]);
+    // An appeal decided since: the record still pins round 1's payout, handed again after a restart.
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    const third = recordingParty();
+    expect(await executor(s, await openGateStore(s.dir, s.key)).step(step(s, third.handle))).toBe('handed');
+    expect(third.settles).toEqual(p.settles);
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(s.c.ruling.id);
+  });
+
+  it('switched off after the gate authorised it but before any payout was recorded (a desk refund was armed): it pays once the desk refund is blocked', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+    expect(s.store.state.rulingsSeen[s.c.ruling.id]).toBeDefined();
+    expect(s.store.state.executions[s.c.ruling.code]).toBeUndefined();
+    s.w.api.staffRows.get(s.c.ruling.proposer)!.switchedOff = true;
+    const store = await openGateStore(s.dir, s.key);
+    expect(await executor(s, store).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'buyer' });
+    expect(store.state.staff[s.c.ruling.proposer]?.revoked).toBe(true);
+    expect(store.state.executions[s.c.ruling.code]?.rulingId).toBe(s.c.ruling.id);
+  });
+
+  it("reset after the payout was handed (the old key is retired): after a restart the same payout is handed again", async () => {
+    const s = await setup({ outcome: 'refund-to-seller' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    resetSecurity(s.w, proposerOf(s));
+    const again = recordingParty();
+    const store = await openGateStore(s.dir, s.key);
+    expect(await executor(s, store).step(step(s, again.handle))).toBe('handed');
+    expect(again.settles).toEqual(p.settles);
+    // The reset reached the gate: the proposer's tapped key is retired, no longer one of theirs.
+    const st = store.state.staff[s.c.ruling.proposer]!;
+    const tapped = s.w.api.taps.find((t) => (JSON.parse(t.intent) as { rulingId?: string }).rulingId === s.c.ruling.id)!.credentialId;
+    expect(st.creds.map((c) => c.credentialId)).not.toContain(tapped);
+    expect(st.retiredCreds?.map((c) => c.credentialId)).toEqual([tapped]);
+  });
+
+  it('the emergency stop still holds an authorised payout whose signer was removed: nothing is handed', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    s.w.api.staffRows.get(s.c.ruling.proposer)!.removed = true;
+    s.w.api.taps.push(tapBy(s.w.owner, { kind: 'emergency-stop' }));
+    const again = recordingParty();
+    expect(await executor(s, await openGateStore(s.dir, s.key)).step(step(s, again.handle))).toBe('refused-stopped');
+    expect(again.settles).toEqual([]);
+  });
+
+  it('finding A: authorised while a desk refund was armed, its moderator reset, the outcome re-signed on the bound nonce: nothing is handed', async () => {
+    for (const change of ['reset', 'active'] as const) {
+      const s = await setup({ outcome: 'release-to-buyer' });
+      const p = recordingParty();
+      expect(await executor(s).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+      if (change === 'reset') resetSecurity(s.w, proposerOf(s));
+      // A compromised API swaps in the other outcome, signed by the (retired or active) key on the bound nonce.
+      const i = s.w.api.taps.findIndex((t) => (JSON.parse(t.intent) as { rulingId?: string }).rulingId === s.c.ruling.id);
+      s.w.api.taps[i] = tapOnNonce(s.signer, s.c.intent('propose', { outcome: 'refund-to-seller' }), s.w.api.taps[i]!.nonceHex);
+      s.w.api.rulings.set(s.c.ruling.code, { current: { ...s.c.ruling, outcome: 'refund-to-seller' }, round1: null, involved: [] });
+      const store = await openGateStore(s.dir, s.key);
+      const res = await executor(s, store).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }));
+      expect(res, change).toBe(change === 'reset' ? 'refused-revoked' : 'refused-replayed');
+      expect(p.settles, change).toEqual([]);
+      expect(store.state.executions[s.c.ruling.code], change).toBeUndefined();
+    }
+  });
+
+  it("F1's twin: round 1 never authorised, its moderator then reset: refused as revoked (re-proposable); an appeal decided by someone else pays", async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    resetSecurity(s.w, proposerOf(s));
+    const p = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, p.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('refused-revoked');
+    expect(sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'revoked' }]);
+    expect(p.settles).toEqual([]);
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'seller' });
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2.ruling.id);
+    expect(s.store.state.rulingsSeen[s.c.ruling.id]).toMatchObject({ signersOnly: true, signers: [s.c.ruling.proposer] });
   });
 });

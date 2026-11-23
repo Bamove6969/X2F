@@ -3,7 +3,7 @@
 // trader API answers 503 `maintenance` except GET /v1/site, while the staff API still answers; and
 // GET /v1/site, which answers anyone but shows the banner and the trading pause only to a signed-in,
 // set-up trader (the front door, owner 8 Nov 2026; test/frontDoor.test.ts).
-import { bannerPublishIntent, maintenanceOnIntent } from '@x2f/staff';
+import { bannerPublishIntent, maintenanceOnIntent, maintenancePlannedIntent } from '@x2f/staff';
 import { fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -130,11 +130,18 @@ async function bannerTapped(b: Record<string, unknown>): Promise<Record<string, 
   if ((b.kind !== 'info' && b.kind !== 'warning') || typeof b.text !== 'string' || 'tapId' in b) return b;
   return { ...b, tapId: await seedTap(deps, ownerId, bannerPublishIntent({ bannerKind: b.kind, text: b.text })) };
 }
-async function maintenanceTapped(b: Record<string, unknown>): Promise<Record<string, unknown>> {
+/** `inherits` (review p4t22 N2): the announced plan's message a planned switch-on without one of its own shows, which its tap binds. */
+async function maintenanceTapped(b: Record<string, unknown>, o: { inherits?: string | null } = {}): Promise<Record<string, unknown>> {
   if (b.on !== true || (b.kind !== 'planned' && b.kind !== 'unplanned') || 'tapId' in b) return b;
-  const message = typeof b.message === 'string' ? b.message : null;
+  const own = typeof b.message === 'string' && b.message.trim() !== '' ? b.message : null;
+  const message = own ?? (o.inherits !== undefined ? o.inherits : typeof b.message === 'string' ? b.message : null);
   const backBy = typeof b.backBy === 'string' ? b.backBy : null;
   return { ...b, tapId: await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: b.kind, message, backBy })) };
+}
+/** Review p4t22 N2: the owner's tap for announcing exactly this plan (as sent); a body the route refuses before the tap goes as it is. */
+async function plannedTapped(b: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (typeof b.startsAt !== 'string' || typeof b.endsAt !== 'string' || 'tapId' in b || (b.message !== undefined && b.message !== null && typeof b.message !== 'string')) return b;
+  return { ...b, tapId: await seedTap(deps, ownerId, maintenancePlannedIntent({ startsAt: b.startsAt, endsAt: b.endsAt, message: typeof b.message === 'string' ? b.message : null })) };
 }
 
 describe('emergency stop', () => {
@@ -350,7 +357,7 @@ describe('maintenance', () => {
     const startsAt = new Date(T0.getTime() + 24 * 60 * MIN).toISOString();
     const endsAt = new Date(T0.getTime() + 26 * 60 * MIN).toISOString();
     const message = `Planned upgrade.\n${'m'.repeat(480)}`;
-    const ok = await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message });
+    const ok = await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped({ startsAt, endsAt, message }));
     expect(ok.statusCode, ok.body).toBe(200);
     expect(ok.json()).toMatchObject({ planned: { startsAt, endsAt, message }, maintenance: null });
     expect((await site()).plannedMaintenance).toEqual({ startsAt, endsAt, message });
@@ -364,7 +371,7 @@ describe('maintenance', () => {
     // Without a message is fine; a new plan replaces the old one.
     const startsAt2 = new Date(T0.getTime() + 48 * 60 * MIN).toISOString();
     const endsAt2 = new Date(T0.getTime() + 49 * 60 * MIN).toISOString();
-    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt: startsAt2, endsAt: endsAt2 })).statusCode).toBe(200);
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped({ startsAt: startsAt2, endsAt: endsAt2 }))).statusCode).toBe(200);
     expect((await site()).plannedMaintenance).toEqual({ startsAt: startsAt2, endsAt: endsAt2, message: null });
 
     // Once its end has passed (never switched on), visitors no longer see it.
@@ -390,10 +397,10 @@ describe('maintenance', () => {
       [{ startsAt, endsAt, message: 5 }, 'message'],
     ];
     for (const [body, field] of bads) {
-      const res = await owner.send('PUT', '/staff/v1/site/maintenance/planned', body);
+      const res = await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped(body as Record<string, unknown>));
       expect({ status: res.statusCode, error: errorOf(res), field: (res.json() as { field?: string }).field }, JSON.stringify(body)).toEqual({ status: 400, error: 'bad-request', field });
     }
-    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, extra: 1 }))).toBe('bad-request');
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped({ startsAt, endsAt, extra: 1 })))).toBe('bad-request');
     expect((await site()).plannedMaintenance).toBeNull();
   });
 
@@ -401,7 +408,7 @@ describe('maintenance', () => {
     setNow(T0);
     const startsAt = new Date(T0.getTime() + 60 * MIN).toISOString();
     const endsAt = new Date(T0.getTime() + 180 * MIN).toISOString();
-    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message: 'Upgrade.' })).statusCode).toBe(200);
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped({ startsAt, endsAt, message: 'Upgrade.' }))).statusCode).toBe(200);
     try {
       // An unplanned maintenance meanwhile keeps the plan for later.
       await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned' }));
@@ -409,7 +416,7 @@ describe('maintenance', () => {
       await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }));
 
       setNow(new Date(Date.parse(startsAt)));
-      const on = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'planned' }));
+      const on = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'planned' }, { inherits: 'Upgrade.' }));
       expect(on.statusCode, on.body).toBe(200);
       expect(await site()).toMatchObject({
         maintenance: { kind: 'planned', message: 'Upgrade.', since: startsAt, backBy: endsAt },
@@ -443,6 +450,53 @@ describe('review p4t22 m2 (lead default): a stolen owner session without the key
     expect((await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId })).statusCode).toBe(200);
     expect(errorOf(await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId }))).toBe('tap-invalid');
     expect((await owner.send('DELETE', '/staff/v1/site/banner')).statusCode).toBe(204);
+  });
+
+  it('review p4t22 N2: announcing a planned maintenance needs a tap of exactly that plan (start, end, message as sent)', async () => {
+    setNow(T0);
+    const startsAt = new Date(T0.getTime() + 24 * 60 * MIN).toISOString();
+    const endsAt = new Date(T0.getTime() + 26 * 60 * MIN).toISOString();
+    const message = 'Planned upgrade of the database.';
+    const logged = (await logEntries(deps, 'site.maintenance-planned')).length;
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message }))).toBe('tap-invalid');
+    for (const wrong of [
+      maintenancePlannedIntent({ startsAt, endsAt, message: 'Send your XMR to support first.' }),
+      maintenancePlannedIntent({ startsAt, endsAt, message: null }),
+      maintenancePlannedIntent({ startsAt: endsAt, endsAt, message }),
+      maintenancePlannedIntent({ startsAt, endsAt: new Date(T0.getTime() + 27 * 60 * MIN).toISOString(), message }),
+      maintenanceOnIntent({ maintenanceKind: 'planned', message, backBy: null }),
+    ]) {
+      const tapId = await seedTap(deps, ownerId, wrong);
+      expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message, tapId }))).toBe('tap-invalid');
+    }
+    expect((await owner.send('GET', '/staff/v1/site')).json()).toMatchObject({ planned: null });
+    expect(await logEntries(deps, 'site.maintenance-planned')).toHaveLength(logged);
+    const tapId = await seedTap(deps, ownerId, maintenancePlannedIntent({ startsAt, endsAt, message }));
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message, tapId })).statusCode).toBe(200);
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message, tapId }))).toBe('tap-invalid');
+    expect((await owner.send('DELETE', '/staff/v1/site/maintenance/planned')).statusCode).toBe(204);
+  });
+
+  it("review p4t22 N2: a planned switch-on that shows the plan's message binds that message in its tap", async () => {
+    setNow(T0);
+    const startsAt = new Date(T0.getTime() + 60 * MIN).toISOString();
+    const endsAt = new Date(T0.getTime() + 180 * MIN).toISOString();
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', await plannedTapped({ startsAt, endsAt, message: 'Upgrade.' }))).statusCode).toBe(200);
+    try {
+      // A tap with no message (what used to be bound) no longer switches on the plan's text.
+      const bare = await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: 'planned', message: null, backBy: null }));
+      expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', tapId: bare }))).toBe('tap-invalid');
+      const other = await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: 'planned', message: 'Something else.', backBy: null }));
+      expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', tapId: other }))).toBe('tap-invalid');
+      expect((await owner.send('GET', '/staff/v1/site')).json()).toMatchObject({ maintenance: null });
+      const tapId = await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: 'planned', message: 'Upgrade.', backBy: null }));
+      const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', tapId });
+      expect(on.statusCode, on.body).toBe(200);
+      expect(on.json()).toMatchObject({ maintenance: { kind: 'planned', message: 'Upgrade.' }, planned: null });
+    } finally {
+      expect((await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }))).statusCode).toBe(200);
+      await owner.send('DELETE', '/staff/v1/site/maintenance/planned');
+    }
   });
 
   it('maintenance on: no tap, or one for another kind, message or back-by time, is tap-invalid and changes nothing; off needs none', async () => {

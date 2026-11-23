@@ -14,7 +14,7 @@ import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
-import { COMPLY_LAPSED_SQL, complianceOf } from './comply.js';
+import { COMPLY_LAPSED_SQL, complianceOf, hasAfterRefundStatement } from './comply.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -809,7 +809,9 @@ function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
 async function freezeAllowed(q: Queryable, d: Dispute, side: Side, reason: 'no-reply' | 'ignored-ruling', now: Date): Promise<boolean> {
   if (reason === 'ignored-ruling') {
     // Only a payment the ruling ordered and the seller let lapse (`seller-sends-xmr`, COMPLY_H).
-    return side === 'seller' && d.status === 'complying' && d.complyBy !== null && d.compliedAt === null && now.getTime() >= d.complyBy.getTime();
+    if (!(side === 'seller' && d.status === 'complying' && d.complyBy !== null && d.compliedAt === null && now.getTime() >= d.complyBy.getTime())) return false;
+    // Review p4t22 residual (b): and only once the seller's app could show the pay form (the signed statement exists).
+    return d.ruling !== null && (await hasAfterRefundStatement(q, d.ruling.id));
   }
   const { rows } = await q.query<{ last: Date | null }>(
     `select max(e.created_at) as last from chat_envelopes e join chats c on c.code = e.chat
@@ -847,12 +849,19 @@ async function payoutWaitOf(q: Queryable, code: string): Promise<{ reason: 'winn
  * none, it was cleared, or it names a ruling this dispute no longer has. `secondApproval`: for a
  * `needs-second` refusal of round 1 (the ruling the executor pays) that has no approver and whose
  * payout has not run, the published reason and evidence a second approval's tap binds; else null.
+ * `rePropose` (review p4t22 N1): set when a senior or the owner may replace the refused ruling.
  */
 async function gateRefusalOf(
   q: Queryable,
   d: Dispute,
   viewer: string,
-): Promise<{ rulingId: string; reason: string; since: string; secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null } | null> {
+): Promise<{
+  rulingId: string;
+  reason: string;
+  since: string;
+  secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null;
+  rePropose: { rulingId: string } | null;
+} | null> {
   const { rows } = await q.query<{ detail: string; at: Date }>(
     "select detail, at from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
     [d.code],
@@ -869,7 +878,10 @@ async function gateRefusalOf(
     const p = pub.rows[0];
     if (p) secondApproval = { rulingId: r1.id, outcome: r1.outcome, reason: p.reason, evidence: p.evidence, proposedByYou: r1.proposer === viewer };
   }
-  return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval };
+  // Review p4t22 N1: a published round-1 escrow ruling refused as revoked, before any appeal and
+  // before its payout ran, can be replaced by a senior's or the owner's new one (`…/re-propose`).
+  const canRePropose = x.reason === 'revoked' && d.round === 1 && !d.afterRefund && d.ruling?.id === x.rulingId && d.executedAt === null && d.publishedAt !== null && (d.status === 'published' || d.status === 'final');
+  return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval, rePropose: canRePropose ? { rulingId: x.rulingId } : null };
 }
 
 async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, code: string): Promise<Record<Side, boolean>> {
