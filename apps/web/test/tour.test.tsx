@@ -340,7 +340,8 @@ describe('the tour shell', () => {
   it('the first-trade tour runs on its example stage, with no title, counted "n of 19", ending on Done', async () => {
     const { host } = mount(FIRST_TRADE_TOUR);
     click(host.querySelector('#start')!);
-    await settle();
+    // The stage loads lazily (main's Suspense round it): on a loaded machine it can take a few turns.
+    for (let i = 0; i < 20 && document.querySelector('[data-part="tour-stage"] [data-tour="seg"]') === null; i++) await settle();
     expect(document.querySelector('[data-part="tour-stage"] [data-tour="seg"]')).not.toBeNull();
     expect(card()?.querySelector('h2')).toBeNull();
     expect(card()?.getAttribute('aria-label')).toBe('First trade tour');
