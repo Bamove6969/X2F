@@ -196,6 +196,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupTerms: [
     {
+      text: "Completed trades are erased on day 30.",
+      why: "Owner demo note #119 (23 Nov 2026, setup-terms key point): the page says \"To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.\" (Terms version 2026-11-23).",
+    },
+    {
       text: "Moderators can read your trade chat only if a dispute is opened.",
       why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\" (Terms version 2026-11-23).",
     },
