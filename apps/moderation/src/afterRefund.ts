@@ -1,4 +1,5 @@
-import { signAfterRefundStatement, type AfterRefundStatement } from '@x2f/trade';
+import { AFTER_REFUND_OUTCOMES } from '@x2f/staff';
+import { signAfterRefundStatement, type AfterRefundOutcome, type AfterRefundStatement } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type StoredRulings } from './gate/index.js';
 
 /**
@@ -12,7 +13,10 @@ import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type Ga
  * the XMR and the buyer's payout address, all from this process's own attested records. It is
  * announced to the API (`after-refund-statement`), which keeps it for the traders; the seller's
  * device shows the pay form only for one that verifies against the pinned key and its own amount
- * and address.
+ * and address. Residual (a) (23 Nov follow-up): every decided after-refund round is signed, whatever
+ * its outcome (`no-action` and `seller-returns-fiat`: decided, nothing to send), so a round 2 that
+ * overrules is a signed fact; the seller's device never shows the pay form for a round below the
+ * highest it verified.
  *
  * The ruling in force: round 1's while an appeal is pending (the API gives round 2 only once it is
  * decided), else round 2's. A round 2 is checked after round 1 (authorised, whatever its outcome,
@@ -58,7 +62,8 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
   const step = async (s: AfterRefundStepInput): Promise<AfterRefundStepResult> => {
     const r1 = s.stored.current?.round === 1 ? s.stored.current : s.stored.round1;
     const inForce = s.stored.current ?? r1;
-    if (inForce === null || inForce.outcome !== 'seller-sends-xmr') return 'none';
+    // Residual (a): every decided after-refund round, whatever its outcome (an escrow one never).
+    if (inForce === null || !(AFTER_REFUND_OUTCOMES as readonly string[]).includes(inForce.outcome)) return 'none';
     if (announced.get(s.code) === inForce.id) return 'done';
     if (s.recorded === null) return 'no-terms';
     if (inForce.round === 2 && r1 !== null && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
@@ -84,7 +89,7 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
       trade: s.code,
       round: inForce.round,
       rulingId: inForce.id,
-      outcome: 'seller-sends-xmr',
+      outcome: inForce.outcome as AfterRefundOutcome,
       amountAtomic: s.recorded.amountAtomic.toString(),
       buyerPayout: s.recorded.buyerPayout,
       issuedAt: seen?.publishedSeenAt ?? o.ctx.now().toISOString(),

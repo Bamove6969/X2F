@@ -29,6 +29,13 @@ const statement = (o: Partial<AfterRefundStatement> = {}): AfterRefundStatement 
 const want = { trade: CODE, amountAtomic: 1_250_000_000_000n, buyerPayout: BUYER };
 
 describe('the after-refund ruling statement (review p4t22 M2)', () => {
+  it('residual (a): a decided round with nothing to send (no-action, seller-returns-fiat) is a signed statement too', async () => {
+    for (const outcome of ['no-action', 'seller-returns-fiat'] as const) {
+      const s = statement({ outcome, round: 2 });
+      expect(await verifyAfterRefundStatement(s, await signAfterRefundStatement(s, mod.privateKey), pub, want)).toEqual({ ok: true, statement: s });
+    }
+  });
+
   it('verifies under the pinned moderation key for this trade, amount and address (round 1 or 2)', async () => {
     for (const round of [1, 2] as const) {
       const s = statement({ round });
@@ -44,6 +51,10 @@ describe('the after-refund ruling statement (review p4t22 M2)', () => {
     expect(afterRefundStatementValid({ ...s, amountAtomic: '1' }, sig, pub, { ...want, amountAtomic: 1n })).toEqual({ ok: false, reason: 'bad-signature' });
     expect(afterRefundStatementValid({ ...s, extra: 1 }, sig, pub, want)).toEqual({ ok: false, reason: 'bad-signature' });
     expect(afterRefundStatementValid({ ...s, outcome: 'no-action' }, sig, pub, want)).toEqual({ ok: false, reason: 'bad-signature' });
+    // Review p4t22 residual (a): any after-refund outcome is a statement, but never an escrow one.
+    for (const outcome of ['release-to-buyer', 'refund-to-seller', 'whatever']) {
+      expect(afterRefundStatementValid({ ...s, outcome }, sig, pub, want)).toEqual({ ok: false, reason: 'bad-signature' });
+    }
     expect(afterRefundStatementValid(s, 'zz', pub, want)).toEqual({ ok: false, reason: 'bad-signature' });
     expect(afterRefundStatementValid(null, sig, pub, want)).toEqual({ ok: false, reason: 'bad-signature' });
   });

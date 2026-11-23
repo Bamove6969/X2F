@@ -1347,6 +1347,38 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       c.release();
     }
   });
+
+  it('review p4t22 residual (a): afterRefundCodes lists open after-refund disputes, and closed ones of the last 7 days whose ruling has no statement yet', async () => {
+    const c = await owner.connect();
+    const codes = { open: newTradeCode(), unsigned: newTradeCode(), signed: newTradeCode(), old: newTradeCode(), escrow: newTradeCode(), earlier: newTradeCode() };
+    try {
+      await c.query('set session_replication_role = replica');
+      const add = async (code: string, o: { afterRefund?: boolean; status?: string; closedDaysAgo?: number; seq?: number }) => {
+        const ruling = { id: randomUUID(), outcome: 'no-action', accountAction: { kind: 'none' }, proposer: randomUUID(), approver: null, needsSecond: false };
+        const closed = o.status === 'closed';
+        await c.query(
+          `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, round, ruling, closed_at)
+           values ($1, $2, 'buyer', 'paid', '', now(), $3, $4, now(), now(), 0, 100000, 1, $5, $6)`,
+          [code, o.seq ?? 1, o.afterRefund ?? true, o.status ?? 'published', JSON.stringify(ruling), closed ? new Date(Date.now() - (o.closedDaysAgo ?? 0) * 86_400_000) : null],
+        );
+        return ruling.id;
+      };
+      await add(codes.open, {});
+      await add(codes.unsigned, { status: 'closed', closedDaysAgo: 1 });
+      const signedId = await add(codes.signed, { status: 'closed', closedDaysAgo: 1 });
+      await c.query(`insert into after_refund_statements (ruling_id, code, seq, round, statement, sig) values ($1, $2, 1, 1, '{}'::jsonb, 'x')`, [signedId, codes.signed]);
+      await add(codes.old, { status: 'closed', closedDaysAgo: 8 });
+      await add(codes.escrow, { afterRefund: false });
+      // A closed after-refund dispute that a later one on the same trade replaced: only the latest counts.
+      await add(codes.earlier, { status: 'closed', closedDaysAgo: 1 });
+      await add(codes.earlier, { afterRefund: false, seq: 2 });
+      const listed = await pgGateSource(reader).afterRefundCodes(1000);
+      expect(listed).toEqual(expect.arrayContaining([codes.open, codes.unsigned]));
+      for (const not of [codes.signed, codes.old, codes.escrow, codes.earlier]) expect(listed).not.toContain(not);
+    } finally {
+      c.release();
+    }
+  });
 });
 
 describe('gateFromEnv', () => {

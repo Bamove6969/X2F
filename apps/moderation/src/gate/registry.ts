@@ -508,7 +508,8 @@ export interface PgGateSource extends GateSource {
   storedRulings(code: string): Promise<StoredRulings>;
   /**
    * Review p4t22 M2: the trades whose current dispute is an after-refund one that is not closed,
-   * for the after-refund statement pass (afterRefund.ts), at most `limit`.
+   * for the after-refund statement pass (afterRefund.ts), at most `limit`. Residual (a): and one
+   * closed in the last 7 days whose ruling has no statement yet (migration 791's grants).
    */
   afterRefundCodes(limit?: number): Promise<string[]>;
 }
@@ -584,8 +585,13 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
     },
     async afterRefundCodes(limit = 200) {
       const { rows } = await db.query<{ code: string }>(
+        // Review p4t22 residual (a): also a dispute closed in the last 7 days whose ruling has no
+        // statement yet (a decided round with nothing to send closes its dispute at once).
         `select d.code from disputes d
-          where d.after_refund and d.status <> 'closed' and d.seq = (select max(x.seq) from disputes x where x.code = d.code)
+          where d.after_refund and d.seq = (select max(x.seq) from disputes x where x.code = d.code)
+            and (d.status <> 'closed'
+                 or (d.closed_at > now() - interval '7 days'
+                     and not exists (select 1 from after_refund_statements s where s.ruling_id::text = d.ruling ->> 'id')))
           order by d.code limit $1`,
         [limit],
       );

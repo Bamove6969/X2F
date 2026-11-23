@@ -654,7 +654,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
 
   /**
    * Review p4t22 M2: `{ kind: 'after-refund-statement', trade, statement, sig }`, the moderation
-   * process's signed statement of an after-refund `seller-sends-xmr` ruling its gate authorised. The
+   * process's signed statement of an after-refund ruling its gate authorised (residual (a): any
+   * after-refund outcome, so a decided round with nothing to send is signed too). The
    * seller's device verifies it itself before it shows the pay form (the API's word is never
    * enough); the API keeps it for the traders only when it is signed by MOD_SIGNING_PUBLIC
    * (`bad-statement`), for this trade (`wrong-trade`), and names the ruling in force of the trade's

@@ -3128,6 +3128,39 @@ describe('review p4t22 M2: the seller pays an after-refund ruling only on its si
     }
   });
 
+  it('residual (a): a verified statement with nothing to send (no-action, seller-returns-fiat) shows no form', async () => {
+    for (const outcome of ['no-action', 'seller-returns-fiat'] as const) {
+      const { t, seller } = await disputedSeller();
+      t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT, { outcome });
+      await t.parties.ticks('seller', 3);
+      expect(seller.last()?.restitution ?? null).toBeNull();
+      await seller.runtime.stopAll();
+    }
+  });
+
+  it('residual (a): once a round-2 statement verified, a round-1 order to pay is never shown again, also after a reload', async () => {
+    const { t, seller } = await disputedSeller();
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);
+    expect(await seller.status((s) => s.restitution != null)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    // Round 2 overrules: decided, nothing to send.
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT, { round: 2, rulingId: '7f0c1f9e-0000-4000-8000-0000000000bb', outcome: 'no-action' });
+    expect(await seller.status((s) => s.restitution == null)).toMatchObject({ restitution: null });
+    expect((await seller.store.load(CODE))?.afterRefundRound).toBe(2);
+    // A compromised API serves the genuine round-1 statement again: still no form.
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);
+    await t.parties.ticks('seller', 3);
+    expect(seller.last()?.restitution ?? null).toBeNull();
+    await seller.runtime.stopAll();
+    const again = await t.mk('seller', { idb: seller.idb });
+    await again.runtime.resumeAll();
+    await t.parties.ticks('seller', 3);
+    expect(again.last()?.restitution ?? null).toBeNull();
+    // A round-2 order to pay still shows.
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT, { round: 2, rulingId: '7f0c1f9e-0000-4000-8000-0000000000cc' });
+    expect(await again.status((s) => s.restitution != null)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    await again.runtime.stopAll();
+  });
+
   it('a verified statement shows the form; once the API stops serving it (a later round), the form goes', async () => {
     const { t, seller } = await disputedSeller();
     t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);

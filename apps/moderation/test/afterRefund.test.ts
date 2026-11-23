@@ -22,7 +22,7 @@ beforeAll(async () => {
   modKey = sodium.crypto_sign_keypair();
 });
 
-async function setup(o: { outcome?: 'seller-sends-xmr' | 'no-action'; tap?: boolean } = {}) {
+async function setup(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-returns-fiat' | 'release-to-buyer'; tap?: boolean } = {}) {
   const w = await world();
   const mod = w.hire('mod');
   const c = ruling(mod, { outcome: o.outcome ?? 'seller-sends-xmr' });
@@ -95,8 +95,28 @@ describe('the after-refund statement pass (review p4t22 M2)', () => {
     expect(sent).toEqual([]);
   });
 
-  it('nothing for another outcome, nothing without recorded terms, nothing on a refused announcement (tried again)', async () => {
-    const other = await setup({ outcome: 'no-action' });
+  it('residual (a): a decided round with nothing to send is signed too, with its own outcome', async () => {
+    for (const outcome of ['no-action', 'seller-returns-fiat'] as const) {
+      const other = await setup({ outcome });
+      const { s, sent } = input(other.c, { current: other.c.ruling, round1: null, involved: [] });
+      expect(await other.signer.step(s)).toBe('announced');
+      expect(sent[0]!.statement).toMatchObject({ outcome, round: 1, rulingId: other.c.ruling.id, amountAtomic: AMOUNT.toString(), buyerPayout: BUYER });
+    }
+  });
+
+  it('residual (a): a round 2 that overrules round 1 with nothing to send gets its own signed statement', async () => {
+    const { w, c, signer } = await setup();
+    expect(await signer.step(input(c, { current: c.ruling, round1: null, involved: [] }).s)).toBe('announced');
+    const senior = w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: c.ruling.id, code: c.ruling.code, outcome: 'no-action' });
+    w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    const decided = input(c, { current: r2.ruling, round1: c.ruling, involved: [] });
+    expect(await signer.step(decided.s)).toBe('announced');
+    expect(decided.sent[0]!.statement).toMatchObject({ round: 2, rulingId: r2.ruling.id, outcome: 'no-action' });
+  });
+
+  it('nothing for an escrow outcome, nothing without recorded terms, nothing on a refused announcement (tried again)', async () => {
+    const other = await setup({ outcome: 'release-to-buyer' });
     expect(await other.signer.step(input(other.c, { current: other.c.ruling, round1: null, involved: [] }).s)).toBe('none');
     const { c, signer } = await setup();
     const stored = { current: c.ruling, round1: null, involved: [] };
