@@ -213,7 +213,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     const ownerActor = { kind: 'staff' as const, id: w.owner.id, role: 'owner' as const };
     let d = newDispute({ code, openedBy: 'buyer', afterRefund: false, usdCents: 200_000n, limitUsdCents: 100_000n, firstResponseH: 4, now: at(200) });
     d = applyDispute(d, { type: 'assign', staffId: mod.id, role: 'mod' }, modActor, at(210), S);
-    d = applyDispute(d, { type: 'propose', ruling: { id: c.ruling.id, outcome, accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
+    d = applyDispute(d, { type: 'propose', gate: { usdCents: d.usdCents, limitUsdCents: d.limitUsdCents }, ruling: { id: c.ruling.id, outcome, accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
     d = applyDispute(d, { type: 'approve' }, ownerActor, at(230), S);
     expect(d.status).toBe('published');
     d = applyDispute(d, { type: 'executed' }, { kind: 'system' }, at(300), S);

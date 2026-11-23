@@ -75,7 +75,7 @@ const reply = (code: string, w: Who) =>
 const rule = (code: string, w: Who, outcome: RulingOutcome) =>
   step(code, async (d, now, client) => {
     const id = randomUUID();
-    const next = applyDispute(d, { type: 'propose', ruling: { id, outcome, accountAction: { kind: 'none' }, proposer: w.id } }, actorOf(w), now, S);
+    const next = applyDispute(d, { type: 'propose', gate: { usdCents: d.usdCents, limitUsdCents: d.limitUsdCents }, ruling: { id, outcome, accountAction: { kind: 'none' }, proposer: w.id } }, actorOf(w), now, S);
     await client.query(
       `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at, status, decided_by, decided_at)
        values ($1, $2, $3, $4, $5, '[]', $6, $7, 'published', $6, $7)`,

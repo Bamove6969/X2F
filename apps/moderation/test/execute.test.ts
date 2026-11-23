@@ -481,3 +481,42 @@ describe('why a ruling payout waits on its winner (ruling-winner-committed / -of
     expect(r.sent).toEqual([]);
   });
 });
+
+describe('review p4t22 M1 (d): the gate refusal reaches the API, for the staff case view', () => {
+  const reports = () => {
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    return { sent, reportRefusal: async (r: { rulingId: string; reason: string | null }) => (sent.push(r), true) };
+  };
+
+  it('a refusal is reported once per change; a pass the gate then allows clears it once', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    const r = reports();
+    // Above the gate's own limit with one person only: needs-second, said once.
+    expect(await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal: r.reportRefusal }))).toBe('refused-needs-second');
+    expect(await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal: r.reportRefusal }))).toBe('refused-needs-second');
+    expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'needs-second' }]);
+    // Under it, the gate allows the ruling: the refusal is cleared, once.
+    expect(await exec.step(step(s, p.handle, { reportRefusal: r.reportRefusal }))).toBe('handed');
+    expect(await exec.step(step(s, p.handle, { reportRefusal: r.reportRefusal }))).toBe('in-flight');
+    expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'needs-second' }, { rulingId: s.c.ruling.id, reason: null }]);
+  });
+
+  it('a refused report is sent again on the next pass; a different refusal is a change', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    const sent: Array<string | null> = [];
+    let ok = false;
+    const reportRefusal = async (x: { reason: string | null }) => (sent.push(x.reason), ok);
+    await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal }));
+    ok = true;
+    await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal }));
+    await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal }));
+    s.w.api.taps.push(tapBy(s.w.owner, { kind: 'emergency-stop' }));
+    await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal }));
+    expect(sent).toEqual(['needs-second', 'needs-second', 'stopped']);
+    expect(p.settles).toEqual([]);
+  });
+});

@@ -117,7 +117,7 @@ async function rule(code: string, by: { id: string; role: StaffRole }, outcome: 
   return withDispute(deps, { code }, async (d) => {
     const actor: Actor = { kind: 'staff', id: by.id, role: by.role };
     let x = applyDispute(d, { type: 'assign', staffId: by.id, role: by.role }, actor, deps.clock(), S);
-    x = applyDispute(x, { type: 'propose', ruling: { id: randomUUID(), outcome, accountAction: { kind: 'none' }, proposer: by.id } }, actor, deps.clock(), S);
+    x = applyDispute(x, { type: 'propose', gate: { usdCents: x.usdCents, limitUsdCents: x.limitUsdCents }, ruling: { id: randomUUID(), outcome, accountAction: { kind: 'none' }, proposer: by.id } }, actor, deps.clock(), S);
     return x;
   });
 }
@@ -128,7 +128,7 @@ async function decideAppeal(code: string, reviewer: { id: string }, outcome: Rul
   return withDispute(deps, { code }, async (d) => {
     const actor: Actor = { kind: 'staff', id: reviewer.id, role: 'senior' };
     let x = applyDispute(d, { type: 'assign', staffId: reviewer.id, role: 'senior' }, actor, deps.clock(), S);
-    x = applyDispute(x, { type: 'propose', ruling: { id: randomUUID(), outcome, accountAction: { kind: 'none' }, proposer: reviewer.id } }, actor, deps.clock(), S);
+    x = applyDispute(x, { type: 'propose', gate: { usdCents: x.usdCents, limitUsdCents: x.limitUsdCents }, ruling: { id: randomUUID(), outcome, accountAction: { kind: 'none' }, proposer: reviewer.id } }, actor, deps.clock(), S);
     return x;
   });
 }

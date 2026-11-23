@@ -22,7 +22,7 @@ export async function publishRuling(
     const role = d.round === 1 ? 'mod' : 'senior';
     const staff: Actor = { kind: 'staff', id: o.staffId ?? randomUUID(), role };
     let x = applyDispute(d, { type: 'assign', staffId: staff.id, role }, staff, now, S);
-    x = applyDispute(x, { type: 'propose', ruling: { id: randomUUID(), outcome: o.outcome, accountAction: { kind: 'none' }, proposer: staff.id } }, staff, now, S);
+    x = applyDispute(x, { type: 'propose', gate: { usdCents: x.usdCents, limitUsdCents: x.limitUsdCents }, ruling: { id: randomUUID(), outcome: o.outcome, accountAction: { kind: 'none' }, proposer: staff.id } }, staff, now, S);
     await client.query(
       `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,

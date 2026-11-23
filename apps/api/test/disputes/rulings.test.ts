@@ -13,6 +13,7 @@ import { startDispute } from '../../src/disputes/store.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi } from '../../src/staff/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import type { MarketPrices } from '../../src/price/market.js';
 import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff, seedTap } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
 import { AMOUNT, driveTo, seedTrade } from '../helpers/trades.js';
@@ -54,17 +55,24 @@ async function staff(role: 'mod' | 'senior' | 'owner') {
   return { id: s.id, b };
 }
 
-/** A trade with a dispute opened now: on the escrow, or after a refund. */
-async function disputed(o: { afterRefund?: boolean } = {}) {
+/**
+ * A trade with a dispute opened now: on the escrow, or after a refund. Review p4t22 M1: another
+ * locked currency, amount or market quote (`prices`, as the trader route passes them) when given.
+ */
+async function disputed(o: { afterRefund?: boolean; lockedCurrency?: string; amountAtomic?: bigint; prices?: MarketPrices } = {}) {
   setNow(START);
   const seller = await newTrader();
   const buyer = await newTrader();
-  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+  const { trade } = await seedTrade(deps, {
+    sellerId: seller.id, buyerId: buyer.id, poster: 'seller',
+    ...(o.lockedCurrency === undefined ? {} : { lockedCurrency: o.lockedCurrency }),
+    ...(o.amountAtomic === undefined ? {} : { amountAtomic: o.amountAtomic }),
+  });
   const t = await driveTo(deps, trade, 'paid');
   const client = await deps.db.connect();
   try {
     await client.query('begin');
-    await startDispute(client, t, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: o.afterRefund ?? false, now: START, prices: null });
+    await startDispute(client, t, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: o.afterRefund ?? false, now: START, prices: o.prices ?? null });
     await client.query('commit');
   } finally {
     client.release();
@@ -380,6 +388,65 @@ describe('at or above the large-trade limit: two people', () => {
       const ok = await senior.b.post(url(code, `/rulings/${rulingId}/send-back`), { note: 'Ask for the reference \u{1F4F7} first.' });
       expect(ok.statusCode, ok.body).toBe(200);
     });
+  });
+});
+
+/** A market quote for any currency: `minor` of it, and `usd` US cents, per XMR. */
+const quote = (minor: bigint, usd: bigint) => ({ quote: () => ({ price: { centsPerXmr: minor }, usdCentsPerXmr: usd }) }) as unknown as MarketPrices;
+
+describe('review p4t22 M1: the API is never laxer than the ruling gate', () => {
+  it('a EUR dispute under the limit waits for a second person (lead default, owner question OQ1)', async () => {
+    // EUR 412.50 at a quote of EUR 330 = USD 360 per XMR: USD 450, far under the $1,000 limit.
+    const { code } = await disputed({ lockedCurrency: 'EUR', prices: quote(33_000n, 36_000n) });
+    expect((await loadDispute(deps.db, code))!.usdCents < 100_000n).toBe(true);
+    setNow(at(H));
+    const mod = await staff('mod');
+    await take(mod, code);
+    const { res, rulingId } = await propose(mod, code, { outcome: 'release-to-buyer' });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await loadDispute(deps.db, code))!.status).toBe('awaiting-approval');
+    expect(await published(code)).toEqual([]);
+    // A senior's approval then publishes it, as above the limit.
+    const senior = await staff('senior');
+    expect((await approve(senior, code, rulingId, { outcome: 'release-to-buyer' })).statusCode).toBe(200);
+    expect((await loadDispute(deps.db, code))!.status).toBe('published');
+  });
+
+  it('a limit lowered after the dispute opened applies, as the gate applies its current limit', async () => {
+    const { code } = await disputed(); // $412.50 under a $1,000 snapshot
+    setNow(at(H));
+    const mod = await staff('mod');
+    await take(mod, code);
+    await withLimit(400, async () => {
+      const { res } = await propose(mod, code, { outcome: 'release-to-buyer' });
+      expect(res.statusCode, res.body).toBe(200);
+    });
+    expect((await loadDispute(deps.db, code))!.status).toBe('awaiting-approval');
+  });
+
+  it('a USD trade at 99,999.3 cents needs two people: the value is rounded up, as the gate rounds it', async () => {
+    const { code } = await disputed({ amountAtomic: 3_030_281_818_181n });
+    expect((await loadDispute(deps.db, code))!.usdCents).toBe(100_000n);
+    setNow(at(H));
+    const mod = await staff('mod');
+    await take(mod, code);
+    const rulingId = randomUUID();
+    const tapId = await seedTap(deps, mod.id, { ...intent(code, 'propose', { rulingId, outcome: 'release-to-buyer' }), amountAtomic: '3030281818181' } as KeyTapIntent);
+    const res = await mod.b.post(url(code, '/rulings'), { rulingId, outcome: 'release-to-buyer', accountAction: NONE, reason: REASON, evidence: EVIDENCE, tapId });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await loadDispute(deps.db, code))!.status).toBe('awaiting-approval');
+  });
+
+  it('the case view and the queue say a second person is needed for a non-USD trade under the limit', async () => {
+    const { code } = await disputed({ lockedCurrency: 'GBP', prices: quote(26_000n, 33_000n) });
+    const mod = await staff('mod');
+    const view = await mod.b.get(url(code));
+    expect(view.statusCode, view.body).toBe(200);
+    expect((view.json() as { overLimit: boolean }).overLimit).toBe(true);
+    const queue = await mod.b.get('/staff/v1/disputes');
+    expect(queue.statusCode, queue.body).toBe(200);
+    const row = (queue.json() as { rows: Array<{ code: string; approval: unknown }> }).rows.find((r) => r.code === code);
+    expect(row?.approval).toBe('needs-second');
   });
 });
 
