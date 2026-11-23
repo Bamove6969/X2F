@@ -570,6 +570,13 @@ describe('ModCase (board ModCase)', () => {
     expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/re-propose`)!.body).toEqual({
       rulingId: intent.rulingId, outcome: 'refund-to-seller', accountAction: { kind: 'none' }, reason: REASON, evidence: ['One line'], tapId: 'tap-9',
     });
+    // Residual (b): no recorded terms, said in words.
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: stuck({ rulingId: 'r1', reason: 'no-terms', since, secondApproval: null, rePropose: null }, { afterRefund: true }) } });
+    await open(`/disputes/${CODE}`);
+    expect(text('gate-refused')).toBe(
+      `Since ${hhmm(since)}, the moderation service cannot carry out this ruling: it has no record of this trade's terms. The seller is shown no payment form, and the time to comply does not run out meanwhile.`,
+    );
     // A moderator, or no re-proposal offered (an appeal is open): the line only.
     for (const [me, r] of [[MOD, refusal], [SENIOR, { ...refusal, rePropose: null }]] as const) {
       document.body.innerHTML = '';

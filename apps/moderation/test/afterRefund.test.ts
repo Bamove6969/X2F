@@ -95,6 +95,21 @@ describe('the after-refund statement pass (review p4t22 M2)', () => {
     expect(sent).toEqual([]);
   });
 
+  it('residual (b): no recorded terms signs nothing and is reported (no-terms) for the case view, once; terms later clear it', async () => {
+    const { c, signer } = await setup();
+    const stored = { current: c.ruling, round1: null, involved: [] };
+    const first = input(c, stored, { recorded: null });
+    expect(await signer.step(first.s)).toBe('no-terms');
+    expect(first.sent).toEqual([]);
+    expect(first.refusals).toEqual([{ rulingId: c.ruling.id, reason: 'no-terms' }]);
+    const again = input(c, stored, { recorded: null });
+    expect(await signer.step(again.s)).toBe('no-terms');
+    expect(again.refusals).toEqual([]);
+    const later = input(c, stored);
+    expect(await signer.step(later.s)).toBe('announced');
+    expect(later.refusals).toEqual([{ rulingId: c.ruling.id, reason: null }]);
+  });
+
   it('residual (a): a decided round with nothing to send is signed too, with its own outcome', async () => {
     for (const outcome of ['no-action', 'seller-returns-fiat'] as const) {
       const other = await setup({ outcome });

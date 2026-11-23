@@ -253,6 +253,15 @@ export const GATE_REFUSALS = [
 ] as const;
 export type GateRefusal = (typeof GATE_REFUSALS)[number];
 
+/**
+ * Review p4t22 residual (b): what the moderation process reports through the same channel
+ * (`ruling-refused`) for the staff case view: a gate refusal, or `no-terms`, when it has no recorded
+ * terms for the trade (so it can neither pay the ruling nor sign its after-refund statement). Not a
+ * gate refusal: the gate was never asked.
+ */
+export const RULING_REFUSALS = [...GATE_REFUSALS, 'no-terms'] as const;
+export type RulingRefusal = (typeof RULING_REFUSALS)[number];
+
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
 
 /**

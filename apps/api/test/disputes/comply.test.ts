@@ -88,8 +88,24 @@ async function relogin(...who: { id: string; browser: { post(url: string, body: 
   for (const w of who) expect((await w.browser.post('/t/login', { accountId: w.id })).statusCode).toBe(200);
 }
 
-/** A refunded trade the buyer disputed at START, ruled `seller-sends-xmr` at PUBLISHED (by default). */
-async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-returns-fiat'; afterRefund?: boolean; buyerPayout?: string } = {}) {
+/**
+ * Review p4t22 residual (b): the moderation service's signed after-refund statement of the dispute's
+ * current ruling, as the internal route stores it (its signature is the route's business, tested in
+ * afterRefundStatement.test.ts). Without it the seller's app shows no pay form, and nothing lapses.
+ */
+async function statementStored(code: string): Promise<void> {
+  const d = (await loadDispute(deps.db, code))!;
+  await deps.db.query(
+    `insert into after_refund_statements (ruling_id, code, seq, round, statement, sig) values ($1, $2, $3, $4, '{}'::jsonb, 'x')`,
+    [d.ruling!.id, code, d.seq, d.round],
+  );
+}
+
+/**
+ * A refunded trade the buyer disputed at START, ruled `seller-sends-xmr` at PUBLISHED (by default),
+ * its signed statement stored (unless `statement: false`).
+ */
+async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-returns-fiat'; afterRefund?: boolean; buyerPayout?: string; statement?: boolean } = {}) {
   setNow(START);
   const seller = await trader();
   const buyer = await trader();
@@ -106,6 +122,7 @@ async function ruled(o: { outcome?: 'seller-sends-xmr' | 'no-action' | 'seller-r
   setNow(PUBLISHED);
   if (o.outcome !== undefined || o.afterRefund !== false) {
     await publishRuling(deps, t.code, { outcome: o.outcome ?? 'seller-sends-xmr' });
+    if (o.statement !== false && (o.afterRefund ?? true)) await statementStored(t.code);
   }
   setNow(at(2 * H));
   await relogin(seller, buyer);
@@ -343,6 +360,17 @@ describe('A6: the comply time lapses with no proof: the case goes to a senior mo
     expect(await queueOf('owner')).toMatchObject([{ code, complyLapsed: true }]);
   });
 
+  it('review p4t22 residual (b): while no signed statement exists, the comply time does not lapse; once it does, it lapses', async () => {
+    const { code } = await ruled({ statement: false });
+    setNow(new Date(COMPLY_BY.getTime() + 2 * H));
+    await tick();
+    expect(await logOf(code)).toEqual([]);
+    expect((await deps.db.query('select comply_lapsed_at from disputes where code = $1', [code])).rows).toEqual([{ comply_lapsed_at: null }]);
+    await statementStored(code);
+    await tick();
+    expect((await logOf(code)).map((e) => e.action)).toEqual(['dispute.comply-lapsed']);
+  });
+
   it("the owner's phone gets the fixed alert push once per lapse (the owner-alert push path)", async () => {
     const owner = await ownerOf();
     const { code } = await ruled();
@@ -368,6 +396,7 @@ describe('A6: the comply time lapses with no proof: the case goes to a senior mo
     // While the appeal is pending nothing lapses.
     await tick();
     await publishRuling(deps, code, { outcome: 'seller-sends-xmr' });
+    await statementStored(code);
     const d = (await loadDispute(deps.db, code))!;
     expect(d.status).toBe('complying');
     expect(d.complyBy).toEqual(new Date(COMPLY_BY.getTime() + H + COMPLY_H * H));

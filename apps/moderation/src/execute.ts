@@ -1,5 +1,5 @@
 import type { Outcome, PartyHandle, Payout } from '@x2f/escrow';
-import { ESCROW_OUTCOMES } from '@x2f/staff';
+import { ESCROW_OUTCOMES, type RulingRefusal } from '@x2f/staff';
 import { signRulingStatement, type RulingKind, type RulingStatement } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
 
@@ -113,7 +113,7 @@ export interface RulingStepInput {
    * Review p4t22 M1 (d): posts the gate's refusal of the ruling it was asked about (or null: it no
    * longer refuses it) to the API (`ruling-refused`), for the staff case view; true once it took it.
    */
-  reportRefusal?(r: { rulingId: string; reason: GateRefusal | null }): Promise<boolean>;
+  reportRefusal?(r: { rulingId: string; reason: RulingRefusal | null }): Promise<boolean>;
 }
 
 export type RulingStepResult = 'none' | 'settled' | 'paused' | 'no-terms' | 'waiting-funds' | 'desk-armed' | 'no-escrow' | 'announce-failed' | `refused-${string}` | 'mismatch' | 'handed' | 'in-flight';
@@ -200,7 +200,7 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
    * Review p4t22 M1 (d): tells the API, once per change in this process, that the gate refuses this
    * ruling (and why), or no longer does; a refused or unanswered report is sent again next pass.
    */
-  const refusalPass = async (s: RulingStepInput, rulingId: string, reason: GateRefusal | null): Promise<void> => {
+  const refusalPass = async (s: RulingStepInput, rulingId: string, reason: RulingRefusal | null): Promise<void> => {
     if (!s.reportRefusal) return;
     const now = `${rulingId}:${reason ?? ''}`;
     const was = refusalReported.get(s.code);
@@ -223,7 +223,11 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     // ruling only once it is final) pays instead of round 1 when round 1's payout was never recorded
     // here; a payout already recorded (and perhaps handed) is carried on, never swapped.
     const r2 = stored.current?.round === 2 && isEscrow(stored.current) ? stored.current : null;
-    if (s.recorded === null) return 'no-terms';
+    if (s.recorded === null) {
+      // Review p4t22 residual (b): said for the staff case view like a refusal, never silent.
+      await refusalPass(s, (r2 ?? r1).id, 'no-terms');
+      return 'no-terms';
+    }
     const { balance, unlocked } = s.funds;
     if (balance <= 0n || balance !== unlocked) return 'waiting-funds';
     const before = o.store.state.executions[s.code];

@@ -14,7 +14,7 @@ import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
-import { COMPLY_LAPSED_SQL, complianceOf } from './comply.js';
+import { COMPLY_LAPSED_SQL, complianceOf, hasAfterRefundStatement } from './comply.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -809,7 +809,9 @@ function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
 async function freezeAllowed(q: Queryable, d: Dispute, side: Side, reason: 'no-reply' | 'ignored-ruling', now: Date): Promise<boolean> {
   if (reason === 'ignored-ruling') {
     // Only a payment the ruling ordered and the seller let lapse (`seller-sends-xmr`, COMPLY_H).
-    return side === 'seller' && d.status === 'complying' && d.complyBy !== null && d.compliedAt === null && now.getTime() >= d.complyBy.getTime();
+    if (!(side === 'seller' && d.status === 'complying' && d.complyBy !== null && d.compliedAt === null && now.getTime() >= d.complyBy.getTime())) return false;
+    // Review p4t22 residual (b): and only once the seller's app could show the pay form (the signed statement exists).
+    return d.ruling !== null && (await hasAfterRefundStatement(q, d.ruling.id));
   }
   const { rows } = await q.query<{ last: Date | null }>(
     `select max(e.created_at) as last from chat_envelopes e join chats c on c.code = e.chat

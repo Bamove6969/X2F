@@ -130,6 +130,13 @@ describe('ruling-refused: the gate says why it will not act on a ruling', () => 
     expect((await refusals(t.code)).map((x) => (x as unknown as { reason: string }).reason)).toEqual(['needs-second', 'stopped', 'none']);
   });
 
+  it('residual (b): no-terms (the moderation service has no recorded terms for the trade) is taken and shown like a refusal', async () => {
+    const { t, rulingId } = await ruled();
+    expect((await report({ kind: 'ruling-refused', trade: t.code, rulingId, reason: 'no-terms' })).statusCode).toBe(201);
+    expect(await refusals(t.code)).toEqual([{ actor: 'system', rulingId, reason: 'no-terms' }]);
+    expect(await caseView(t.code)).toMatchObject({ rulingId, reason: 'no-terms', secondApproval: null, rePropose: null });
+  });
+
   it('refuses a bad body, an unknown reason, an unknown trade and a ruling that is not the dispute\'s', async () => {
     const { t, rulingId } = await ruled();
     expect((await report({ kind: 'ruling-refused', trade: t.code, rulingId, reason: 'whatever' })).statusCode).toBe(400);

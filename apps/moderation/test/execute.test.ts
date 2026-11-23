@@ -502,6 +502,18 @@ describe('review p4t22 M1 (d): the gate refusal reaches the API, for the staff c
     expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'needs-second' }, { rulingId: s.c.ruling.id, reason: null }]);
   });
 
+  it('residual (b): no recorded terms is reported (no-terms) like a refusal, once', async () => {
+    const s = await setup();
+    const p = recordingParty();
+    const exec = executor(s);
+    const r = reports();
+    expect(await exec.step(step(s, p.handle, { recorded: null, reportRefusal: r.reportRefusal }))).toBe('no-terms');
+    expect(await exec.step(step(s, p.handle, { recorded: null, reportRefusal: r.reportRefusal }))).toBe('no-terms');
+    expect(r.sent).toEqual([{ rulingId: s.c.ruling.id, reason: 'no-terms' }]);
+    expect(await exec.step(step(s, p.handle, { reportRefusal: r.reportRefusal }))).toBe('handed');
+    expect(r.sent.at(-1)).toEqual({ rulingId: s.c.ruling.id, reason: null });
+  });
+
   it('a refused report is sent again on the next pass; a different refusal is a change', async () => {
     const s = await setup();
     const p = recordingParty();

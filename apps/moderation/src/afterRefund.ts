@@ -1,4 +1,4 @@
-import { AFTER_REFUND_OUTCOMES } from '@x2f/staff';
+import { AFTER_REFUND_OUTCOMES, type RulingRefusal } from '@x2f/staff';
 import { signAfterRefundStatement, type AfterRefundOutcome, type AfterRefundStatement } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type StoredRulings } from './gate/index.js';
 
@@ -21,7 +21,8 @@ import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type Ga
  * The ruling in force: round 1's while an appeal is pending (the API gives round 2 only once it is
  * decided), else round 2's. A round 2 is checked after round 1 (authorised, whatever its outcome,
  * so the gate knows its signers). A refusal is reported for the staff case view (`ruling-refused`,
- * once per change); no recorded terms (`no-terms`) signs nothing. `issuedAt` is when the gate first
+ * once per change); no recorded terms (`no-terms`) signs nothing and is reported the same way
+ * (residual (b)). `issuedAt` is when the gate first
  * saw the ruling (sealed in its store), so the statement is the same after a restart.
  */
 export type AfterRefundStepResult = 'none' | 'no-terms' | `refused-${string}` | 'announce-failed' | 'announced' | 'done';
@@ -32,7 +33,7 @@ export interface AfterRefundStepInput {
   /** This process's own recorded terms for the trade (`recordedTerms`), or null. */
   recorded: RecordedTerms | null;
   announce(r: { statement: AfterRefundStatement; sig: string }): Promise<boolean>;
-  reportRefusal?(r: { rulingId: string; reason: GateRefusal | null }): Promise<boolean>;
+  reportRefusal?(r: { rulingId: string; reason: RulingRefusal | null }): Promise<boolean>;
 }
 
 export interface AfterRefundSigner {
@@ -45,7 +46,7 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
   /** The refusal the API took in this process, per trade (`rulingId:reason`). */
   const refused = new Map<string, string>();
 
-  const report = async (s: AfterRefundStepInput, rulingId: string, reason: GateRefusal | null): Promise<void> => {
+  const report = async (s: AfterRefundStepInput, rulingId: string, reason: RulingRefusal | null): Promise<void> => {
     if (!s.reportRefusal) return;
     const now = `${rulingId}:${reason ?? ''}`;
     if (refused.get(s.code) === now) return;
@@ -65,7 +66,12 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
     // Residual (a): every decided after-refund round, whatever its outcome (an escrow one never).
     if (inForce === null || !(AFTER_REFUND_OUTCOMES as readonly string[]).includes(inForce.outcome)) return 'none';
     if (announced.get(s.code) === inForce.id) return 'done';
-    if (s.recorded === null) return 'no-terms';
+    if (s.recorded === null) {
+      // Review p4t22 residual (b): no statement can be signed; said for the staff case view, never silent.
+      o.log({ reason: 'after-refund-no-terms' });
+      await report(s, inForce.id, 'no-terms');
+      return 'no-terms';
+    }
     if (inForce.round === 2 && r1 !== null && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
       const first = await check(s, r1);
       // Review p4t22 N1: a round 1 whose signer was since switched off or removed is read for its signers by round 2's check.

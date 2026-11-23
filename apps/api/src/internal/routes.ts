@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { normalizeTradeCode } from '@x2f/core';
-import { GATE_REFUSALS } from '@x2f/staff';
+import { RULING_REFUSALS } from '@x2f/staff';
 import {
   attestationBytes,
   channelFor,
@@ -745,7 +745,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   /**
    * Review p4t22 M1 (d): `{ kind: 'ruling-refused', trade, rulingId, reason }`, the moderation
    * ruling gate refusing a ruling of the trade's current dispute (round 1's, or round 2's), with its
-   * refusal code (`GATE_REFUSALS`), or null once it no longer refuses it. As `ruling-wait`: each
+   * refusal code (`GATE_REFUSALS`, or residual (b)'s `no-terms`: `RULING_REFUSALS`), or null once it no longer refuses it. As `ruling-wait`: each
    * change is logged as `ruling.gate-refused` (system; `none` for null), the same report again is 201
    * and logs nothing, and the staff case view shows the latest. A ruling that is not the dispute's
    * is `stale-ruling`. Nothing about the ruling or the payout changes here; the rescue for
@@ -754,7 +754,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   const rulingRefused = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind', 'trade', 'rulingId', 'reason'])) throw new Refused(400, 'bad-body');
     const reason = body.reason;
-    if (reason !== null && !(typeof reason === 'string' && (GATE_REFUSALS as readonly string[]).includes(reason))) throw new Refused(400, 'bad-body');
+    // Residual (b): `no-terms` too (`RULING_REFUSALS`), the moderation process with no recorded terms for the trade.
+    if (reason !== null && !(typeof reason === 'string' && (RULING_REFUSALS as readonly string[]).includes(reason))) throw new Refused(400, 'bad-body');
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null || typeof body.rulingId !== 'string' || !/^[0-9a-f-]{36}$/.test(body.rulingId)) throw new Refused(400, 'bad-body');
     const rulingId = body.rulingId;
