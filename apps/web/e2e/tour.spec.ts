@@ -134,7 +134,7 @@ for (const size of PHONES) {
       await expect(count(page)).toHaveText('1 of 19');
       await expect(body(page)).toHaveText("First, decide why you're here: to buy Monero or to sell it.");
       await expect(card(page).locator('h2')).toHaveCount(0);
-      await expect(card(page).getByRole('img', { name: 'Page 1 of 6, Find a trade' })).toBeAttached();
+      await expect(card(page).getByRole('img', { name: 'Page 1 of 7, Find a trade' })).toBeAttached();
       await expectRingOn(page, stage(page).locator('[data-tour="buy"]'));
       await expect(page.locator('[data-part="tour-arrow"]')).toBeVisible();
       await expect(card(page).locator('[data-part="tour-back"]')).toBeDisabled();
@@ -167,7 +167,7 @@ for (const size of PHONES) {
       await expect(count(page)).toHaveText('6 of 19');
       await expect(stage(page).getByRole('heading', { level: 1 })).toHaveText('Sell XMR via Cash App');
       await expect(stage(page).locator('[data-part="example"]')).toBeVisible();
-      await expect(card(page).getByRole('img', { name: 'Page 2 of 6, Offers' })).toBeAttached();
+      await expect(card(page).getByRole('img', { name: 'Page 2 of 7, Offers' })).toBeAttached();
       await expectRingOn(page, stage(page).locator('[data-tour="ohead"]'));
       await next(page).click();
       await expect(body(page)).toHaveText("Each card tells you about the trader: the badges they've earned...");
