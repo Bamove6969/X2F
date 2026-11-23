@@ -55,9 +55,9 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with PGP key',
     desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
-    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026)
+    // COPY-UNSIGNED: owner demo note #130 (23 Nov), his words, replacing the 13 Nov line.
     later:
-      'Only you can unlock it. Decrypt the enclosed message with your preferred PGP app to reveal a one-time login code, which proves you hold the matching private key. Only the holder of that key can see the code, and each code works only once.',
+      'Upon logging in, you will be provided with an encrypted message that only you can decrypt or unlock using your private PGP key that is stored in your PGP software. Upon decrypting the message, you will be presented with a unique one-time login code which proves you hold the matching key pair and will allow you to log into the site.',
   },
   {
     id: 'security-key',
