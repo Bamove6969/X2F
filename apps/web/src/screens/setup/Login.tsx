@@ -67,7 +67,8 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with security key',
     // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026; brands named in text only)
-    desc: 'Log in by tapping or inserting your YubiKey, Google Titan, Nitrokey, Feitian or any FIDO2-certified security key into your phone or computer.',
+    // Owner demo note #131 (23 Nov), his words ("Yubikey" kept as the brand writes it: YubiKey).
+    desc: 'Log in by NFC tapping or USB inserting your YubiKey, Google Titan, Nitrokey, Feitian, or any FIDO2-certified security key into your phone or computer. This is probably the most secure and the most recommended method of security that there is.',
   },
   {
     id: 'passkey',
