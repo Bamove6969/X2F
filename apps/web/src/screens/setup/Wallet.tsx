@@ -170,8 +170,9 @@ export function Wallet() {
           </p>
         ) : null}
         <p className="x2f-start__help" data-part="first-wallet-rule">
-          This is your first payout wallet, so it works right away. Wallets you add later ask you to confirm it's you, and X2F always shows an alert when
-          one is added.
+          {/* Owner demo notes #157 and #158 (23 Nov), his words. */}
+          This is your first payout wallet, so it works right away. Adding future wallets will require verification via your security method. You
+          can also configure X2F to alert you whenever a new wallet is added.
         </p>
         <p className="x2f-start__small">
           Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your
