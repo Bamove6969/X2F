@@ -145,6 +145,23 @@ export function useEscrowRestitution(code: string): { address: string; amountAto
 }
 
 /**
+ * This device's escrow status for `code`, for a page outside the trade room (the dispute route's
+ * "Finish marking as paid" gate, payModel `disputeNeedsFinish`). Subscribe only, like
+ * useEscrowRestitution: it never starts a trade. Null until the worker reports one (or never, when
+ * this device holds no record of the trade).
+ */
+export function useEscrowStatus(code: string): EscrowStatus | null {
+  const [s, setS] = useState<EscrowStatus | null>(null);
+  const c = useMemo(() => escrowClient(), []);
+  useEffect(() => {
+    setS(null);
+    const off = c.subscribe(code, setS);
+    return () => void off();
+  }, [c, code]);
+  return s;
+}
+
+/**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
  * needed the first time a trade starts on this device and ignored once it is stored.
  */

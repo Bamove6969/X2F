@@ -175,7 +175,7 @@ export function paySecured(v: Pick<TradeView, 'state'>): boolean {
 }
 type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
 
-function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
+function totalBlock(view: PayView, e: Pick<PayEscrow, 'fiatCents' | 'amountAtomic'>): PayBlock | null {
   if (e.fiatCents === null) return 'no-amount';
   if (e.fiatCents === BigInt(view.fiatCents)) return null;
   return e.amountAtomic !== null && e.amountAtomic === BigInt(view.amountAtomic) ? 'total-wrong' : 'amount-differs';
@@ -198,4 +198,30 @@ export function finishBlock(view: PayView, e: PayEscrow): PayBlock | null {
   if (e.error !== null) return 'escrow-stopped';
   if (e.refusal !== null && e.refusal !== 'amount-unknown') return 'escrow-refused';
   return totalBlock(view, e);
+}
+
+/**
+ * No dispute yet: the trade is `paid` on the server but this buyer's device has not recorded the
+ * tap, so it has no fixed amount (acceptedAtomic) and could never co-sign a ruling (runtime I1/I7
+ * fail closed; the winning buyer's coins would stay stuck). This happens when the tab closes between
+ * the API's mark-paid and the device's markPaid (PaidFlowSheet). While "Finish marking as paid" can
+ * run (`amount-unknown` and `finishBlock` clear), or while the device is still recording or loading
+ * the trade (no refusal, no error), every buyer entry point shows the Finish step instead of the
+ * dispute (BuyerPay's paid room, PaidWaitingActions, the /trade/:code/dispute route). When Finish
+ * cannot run on this device (a stopped escrow, another refusal such as `view-mismatch`, a total it
+ * can't confirm), the dispute stays: those lines already tell the buyer to open one if it doesn't
+ * clear. A UI gate only; the API still takes the buyer's dispute (it can't know the device's state).
+ * `e.role`, when given, is this device's own record's role (the dispute route's subscribed status).
+ */
+export function disputeNeedsFinish(
+  view: { role: string; state: string; amountAtomic: string; fiatCents?: string | undefined },
+  e: Pick<TradeEscrow, 'paidRecorded' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'> & { role?: 'buyer' | 'seller' | null },
+): boolean {
+  if (view.role !== 'buyer' || view.state !== 'paid' || e.paidRecorded) return false;
+  if (e.role !== undefined && e.role !== 'buyer') return false;
+  if (e.error !== null) return false;
+  if (e.refusal === null) return true; // still recording the tap, or still loading the trade
+  if (e.refusal !== 'amount-unknown') return false;
+  if (view.fiatCents === undefined) return e.fiatCents !== null;
+  return totalBlock({ fiatCents: view.fiatCents, amountAtomic: view.amountAtomic }, e) === null;
 }

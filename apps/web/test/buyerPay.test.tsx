@@ -1355,3 +1355,61 @@ describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exac
     }
   });
 });
+
+describe('paid on the server, not recorded on this device: Finish marking as paid before any dispute', () => {
+  // The confirm window is over, so the machine would take a dispute now.
+  const ended = () => tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90 });
+  const dispute = () => document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+
+  for (const wide of [false, true]) {
+    it(`${wide ? 'wide' : 'phone'}: the dispute is locked with "Finish marking as paid first" and Finish is the one action; after Finish it opens`, async () => {
+      const escrow = fakeEscrow({ refusal: 'amount-unknown' });
+      const r = mount(props({ view: ended(), escrow, wide }));
+      expect(text()).toContain("Your device hasn't recorded your payment. Tap to finish.");
+      const finish = byText('Finish marking as paid', 'button') as HTMLButtonElement;
+      expect(finish.disabled).toBe(false);
+      // No link to the dispute route: the locked button, described by the Finish line.
+      expect(dispute().tagName).toBe('BUTTON');
+      expect(dispute().getAttribute('aria-disabled')).toBe('true');
+      expect(document.querySelector(`a[href="/trade/${CODE}/dispute"]`)).toBeNull();
+      expect(document.getElementById(dispute().getAttribute('aria-describedby')!)?.textContent).toBe('Finish marking as paid first. Then you can open a dispute.');
+      // The ended window's lead points at Finish, not at a dispute now.
+      const lead = document.querySelector('[data-part="paid-status"] .x2f-hero__lead')!.textContent;
+      expect(lead).toContain('Finish marking as paid, then you can open a dispute, or keep waiting and nudge them.');
+      expect(lead).not.toContain('You can open a dispute now');
+      await click(finish);
+      await flush();
+      expect(calls).toEqual(['escrow:markPaid(41250)']);
+      // The device has fixed the amount (paidRecorded): the dispute is offered, Finish is gone.
+      r.rerender(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      expect(dispute().tagName).toBe('A');
+      expect(dispute().getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
+      expect(maybe('Finish marking as paid')).toBeUndefined();
+      expect(document.querySelector('[data-part="paid-dispute-finish"]')).toBeNull();
+    });
+  }
+
+  it('while this device is still recording the tap ("Marking as paid…"): no dispute either', () => {
+    mount(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: false, refusal: null }) }));
+    expect(text()).toContain('Marking as paid…');
+    expect(dispute().tagName).toBe('BUTTON');
+    expect(document.querySelector('[data-part="paid-dispute-finish"]')).not.toBeNull();
+  });
+
+  it('a normal paid trade (recorded on this device): the dispute as before, no Finish line', () => {
+    mount(props({ view: ended(), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(dispute().tagName).toBe('A');
+    expect(document.querySelector('[data-part="paid-dispute-finish"]')).toBeNull();
+    expect(document.querySelector('[data-part="paid-status"] .x2f-hero__lead')!.textContent).toContain('You can open a dispute now');
+  });
+
+  it("Finish can't run on this device (its total isn't the trade's, or a view-mismatch): the dispute stays, as the Finish line says", () => {
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90, fiatCents: '43313' }), escrow: fakeEscrow({ refusal: 'amount-unknown' }) }));
+    expect((byText('Finish marking as paid', 'button') as HTMLButtonElement).disabled).toBe(true);
+    expect(text()).toContain('open a dispute if it doesn');
+    expect(dispute().tagName).toBe('A');
+    r.unmount();
+    mount(props({ view: ended(), escrow: fakeEscrow({ refusal: 'view-mismatch' }) }));
+    expect(dispute().tagName).toBe('A');
+  });
+});

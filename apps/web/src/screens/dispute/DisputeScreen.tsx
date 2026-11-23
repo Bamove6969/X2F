@@ -10,7 +10,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
 import { POLL_MS, useTradeLive } from '../trade/seams.js';
 import { useResumeSync } from '../../session/syncFirst.js';
-import { useEscrowRestitution } from '../../escrow/useEscrow.js';
+import { useEscrowRestitution, useEscrowStatus } from '../../escrow/useEscrow.js';
+import { disputeNeedsFinish } from '../trade/payModel.js';
 import { disputeMethodName, fetchDispute, fetchTrade, openDispute, proofRefusalText, refusalText, sendAppeal, sendPaymentProof, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
@@ -68,6 +69,11 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
   // Task 21 bug 2: the seller's payment a seller-sends-xmr ruling orders, from the escrow's
   // attested terms only (as DisputeSlot), never an API field, and only at the trade amount.
   const restitution = useEscrowRestitution(trade.code);
+  // Paid on the server but not recorded on this device: Finish first, no dispute (payModel
+  // disputeNeedsFinish). Only on this device's own record; none here (another device, a team
+  // member) leaves the form as it was, since this device can't tell.
+  const device = useEscrowStatus(trade.code);
+  const finishFirst = device !== null && disputeNeedsFinish(trade, device);
   const screen = disputeScreenFor(trade, dispute, params.get('view') === 'chat');
   if (screen.kind === 'open') {
     return (
@@ -75,7 +81,9 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
         trade={trade}
         methodName={methodName}
         now={clock}
+        finishFirst={finishFirst}
         onOpen={async (reason, note) => {
+          if (finishFirst) return;
           try {
             setDispute(await openDispute(trade.code, reason, note));
             reload();
