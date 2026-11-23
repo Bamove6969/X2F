@@ -382,3 +382,54 @@ describe('staffNameKey', () => {
     expect(staffNameKey('Myra.K')).not.toBe(staffNameKey('Mira.K'));
   });
 });
+
+// Security review of wip/lead-notes-all (23 Nov 2026), M1: look-alikes from scripts the old fold did
+// not know (Lisu, Cherokee, Armenian, Coptic, Canadian syllabics). Reserved words and staff names
+// are compared by the UTS #39 confusables skeleton (confusables.ts, Unicode 16.0.0), and a name
+// mixes scripts only as UTS #39's "highly restrictive" level allows (Latin with Han, Hiragana,
+// Katakana, Hangul or Bopomofo; every other script stands alone).
+describe('review M1: the UTS #39 skeleton and the highly restrictive script rule', () => {
+  test.each([
+    ['all-Lisu ADMIN', 'ꓮꓓꓟꓲꓠ'],
+    ['Lisu S in support', 'ꓢupport'],
+    ['Lisu SUPPORT alone', 'ꓢꓴꓑꓑꓳꓣꓔ'],
+    ['Cherokee S in support', 'Ꮪupport'],
+    ['Armenian o in moderator', 'mօderator'],
+    ['Armenian o in support', 'suppօrt'],
+    ['Coptic alfa in admin', 'ⲁdmin'],
+    ['Coptic o in support', 'suppⲟrt'],
+    ['Canadian syllabics in admin', 'adᐅin'],
+    ['a Devanagari digit in x2f', 'x२f_team'],
+    ['Cherokee look-alike of the staff name Mira.K', 'Ꮇira.Ꮶ'],
+  ])('refused: %s', (_what, name) => {
+    const r = checkNewDisplayName(name);
+    expect(r.ok, name).toBe(false);
+    expect(['reserved', 'characters']).toContain((r as { reason: string }).reason);
+  });
+
+  test('the skeleton finds reserved words spelt wholly in another script', () => {
+    expect(checkDisplayName('ꓮꓓꓟꓲꓠ')).toEqual({ ok: false, reason: 'reserved' });
+    expect(checkDisplayName('ꓢꓴꓑꓑꓳꓣꓔ')).toEqual({ ok: false, reason: 'reserved' });
+  });
+
+  test('staff names: a Cherokee look-alike folds to the same key as the Latin one', () => {
+    expect(staffNameKey('ᎷᎥᏒᎪ.Ꮶ')).toBe(staffNameKey('MIRA.K'));
+    expect(staffNameKey('Ꮇira.Ꮶ')).toBe(staffNameKey('Mira.K'));
+  });
+
+  test.each(['Tokyo東京', 'Sakuraさくら', 'Kimチム', 'Lee이민호', 'Wangㄅㄆ', '東京の取引者', 'Привет мир', 'Ἀθηνᾶ', 'Ölaf_Ünal', 'Ꮳ Ꮻ Ꭿ Ꮭ', 'Աննա_Սարգսյան'])(
+    'still allowed (one script, or Latin with the CJK scripts): %s',
+    (name) => {
+      expect(checkDisplayName(name)).toMatchObject({ ok: true });
+    },
+  );
+
+  test.each([
+    ['Latin with Armenian', 'Anna Սարգսյան'],
+    ['Latin with Cherokee', 'Mira Ꮶ'],
+    ['Cyrillic with Han', 'Иван東京'],
+    ['Hangul with Hiragana', '이민호さくら'],
+  ])('refused, scripts mixed beyond the highly restrictive level: %s', (_what, name) => {
+    expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+});
