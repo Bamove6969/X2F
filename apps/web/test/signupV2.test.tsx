@@ -82,7 +82,7 @@ describe('/setup/name (owner, 12 Nov 2026)', () => {
     const host = show(<Username />, setup());
     expect(host.querySelector('h1')!.textContent).toBe('Pick a unique username');
     expect(host.textContent).not.toContain('Nothing else to give');
-    expect(host.textContent).toContain('You type this to log in. Only you see it.');
+    expect(host.textContent).toContain('You will type this to log in each and every time, and only you will know what it is.');
   });
 });
 

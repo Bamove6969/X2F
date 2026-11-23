@@ -343,7 +343,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'This is how traders see you. No email or phone number needed, now or ever.',
-      why: 'Item 6: the username here is private ("You type this to log in. Only you see it. …"); "This is how traders see you" moved to the display-name screen. The board predates item 6.',
+      why: 'Item 6: the username here is private (owner note #124: "You will type this to log in each and every time, and only you will know what it is. …"); "This is how traders see you" moved to the display-name screen. The board predates item 6.',
     },
     {
       text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
