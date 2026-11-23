@@ -481,6 +481,54 @@ describe('ModCase (board ModCase)', () => {
     }
   });
 
+  it('review p4t22 M1: the case says the moderation service will not carry out a ruling, and why; a senior adds the second approval it asks for (tapped)', async () => {
+    const since = new Date(Date.now() - 2 * H).toISOString();
+    const second = { rulingId: 'r1', outcome: 'release-to-buyer', reason: REASON, evidence: ['Bank statement'], proposedByYou: false };
+    const stuck = (gateRefusal: unknown) =>
+      kase({ status: 'published', assignedToYou: false }, { publishedAt: new Date(Date.now() - 3 * H).toISOString(), draft: { id: 'r1', outcome: 'release-to-buyer' }, gateRefusal } as never);
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: SENIOR },
+      'GET /staff/v1/disputes/:code': { body: stuck({ rulingId: 'r1', reason: 'needs-second', since, secondApproval: second }) },
+      'POST /staff/v1/taps/start': honestTapStart('tap-9'),
+      'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-9' } },
+      'POST /staff/v1/disputes/:code/rulings/:id/second-approval': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
+    });
+    await open(`/disputes/${CODE}`);
+    expect(text('gate-refused')).toBe(`Since ${hhmm(since)}, the moderation service will not carry out this ruling: it needs a second person's approval (a senior moderator or the owner).`);
+    const panel = part('second-approval')!;
+    expect(panel.textContent).toContain('Release to buyer');
+    expect(panel.textContent).toContain(REASON);
+    await click(button('Add the second approval', panel));
+    await click(button('Tap security key'));
+    // Exactly the approve tap of the published ruling: nothing a normal approval would not sign.
+    expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body).toEqual({
+      kind: 'ruling', step: 'approve', rulingId: 'r1', code: CODE, round: 1, outcome: 'release-to-buyer', accountAction: { kind: 'none' },
+      amountAtomic: '4000000000000', reasonSha256: sha(REASON), evidenceSha256: sha(JSON.stringify(['Bank statement'])), round1Id: null,
+    });
+    expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/second-approval`)!.body).toEqual({ tapId: 'tap-9' });
+
+    // Its proposer, a moderator, or another refusal: the line only, no panel.
+    for (const [me, refusal] of [
+      [SENIOR, { rulingId: 'r1', reason: 'needs-second', since, secondApproval: { ...second, proposedByYou: true } }],
+      [MOD, { rulingId: 'r1', reason: 'needs-second', since, secondApproval: second }],
+      [SENIOR, { rulingId: 'r1', reason: 'stopped', since, secondApproval: null }],
+    ] as const) {
+      document.body.innerHTML = '';
+      fakeApi({ 'GET /staff/v1/me': { body: me }, 'GET /staff/v1/disputes/:code': { body: stuck(refusal) } });
+      await open(`/disputes/${CODE}`);
+      expect(part('gate-refused')).not.toBeNull();
+      expect(part('second-approval')).toBeNull();
+    }
+    expect(text('gate-refused')).toBe(`Since ${hhmm(since)}, the moderation service will not carry out this ruling (stopped).`);
+    // None (or an older API): nothing.
+    for (const gateRefusal of [null, undefined]) {
+      document.body.innerHTML = '';
+      fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: stuck(gateRefusal) } });
+      await open(`/disputes/${CODE}`);
+      expect(part('gate-refused')).toBeNull();
+    }
+  });
+
   it('in an appeal, a senior who took part in round 1 (mayWork false) is offered neither the approval nor Take (review M2)', async () => {
     const waiting = kase(
       { round: 2, status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },
