@@ -59,7 +59,8 @@ export const KEY_POINTS: readonly string[] = [
   'To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.',
   // Owner demo note #120 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.',
-  'No IP addresses are logged.',
+  // Owner demo note #121 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.',
   // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
   // we collect." COPY-UNSIGNED
   'We answer lawful warrants with what very little information we collect.',
