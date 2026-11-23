@@ -86,7 +86,8 @@ export const METHODS: MethodDef[] = [
     name: 'Authenticator app (OTP)',
     strength: 'medium',
     cta: 'Continue',
-    desc: 'After your password, type the 6-digit code from an authenticator app on your phone, such as Aegis or Google Authenticator. The code changes every 30 seconds, so your password alone is not enough to get in.',
+    // Owner demo note #135 (23 Nov), his words; "below" made "on the next screen", since the code box is there.
+    desc: 'Scan the QR code using your preferred authenticator app to generate a 6-digit code that refreshes every 30 seconds. Enter the current code on the next screen to finish setup. Going forward, you will use these rotating codes whenever you log in. If you cannot scan the QR code, you can enter the setup key manually.',
     // Owner decision, 16 Nov 2026: only with a password (@x2f/accounts METHOD_PARTNERS).
     needs: ['password'],
     // COPY-UNSIGNED (the pre-round-3 sentence, restored)
