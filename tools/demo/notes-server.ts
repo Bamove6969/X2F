@@ -391,7 +391,14 @@ export function gatewayNotesEnv(env: Record<string, string | undefined>): Record
   const out: Record<string, string> = {};
   // The notes' files and publishing, and what git needs to reach GitHub with the owner's own
   // credentials: his ssh agent, and WSL's bridge to a Windows credential manager.
-  for (const k of ['DEMO_NOTES_FILE', 'DEMO_NOTES_SEED', 'DEMO_NOTES_PUSH', 'SSH_AUTH_SOCK', 'WSL_INTEROP', 'WSL_DISTRO_NAME'] as const) {
+  // Demo r5: also git's own environment config, an askpass helper, its CA file and an HTTPS proxy,
+  // for a machine (a cloud box) whose git reaches GitHub through those rather than an ssh agent.
+  const count = Number(env.GIT_CONFIG_COUNT ?? '0');
+  const gitConfig = Number.isInteger(count) && count > 0 && count <= 32
+    ? ['GIT_CONFIG_COUNT', ...Array.from({ length: count }, (_, i) => [`GIT_CONFIG_KEY_${i}`, `GIT_CONFIG_VALUE_${i}`]).flat()]
+    : [];
+  for (const k of ['DEMO_NOTES_FILE', 'DEMO_NOTES_SEED', 'DEMO_NOTES_PUSH', 'SSH_AUTH_SOCK', 'WSL_INTEROP', 'WSL_DISTRO_NAME',
+    'GIT_ASKPASS', 'GIT_SSL_CAINFO', 'HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy', ...gitConfig]) {
     const v = env[k];
     if (v !== undefined && v !== '') out[k] = v;
   }
