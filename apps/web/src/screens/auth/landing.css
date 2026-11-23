@@ -87,19 +87,10 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  font-size: 16px;
-  line-height: 20px;
+  /* Owner demo note #113 (23 Nov): much bigger now the footer line is gone. */
+  font-size: 22px;
+  line-height: 28px;
   font-weight: 600;
-}
-.x2f-landing__foot {
-  padding-top: 20px;
-}
-.x2f-landing__foot p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 18px;
-  text-align: center;
-  color: var(--x2f-ink-muted);
 }
 
 /* Landing-Wide: the logo at 180, the slogan on one line at 40/44, the promises in one row of three,
