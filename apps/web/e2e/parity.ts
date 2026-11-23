@@ -287,6 +287,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupPgpKey: [
     {
+      text: 'Add your PGP public key',
+      why: 'Owner demo note #143 (23 Nov 2026): the heading reads "Add your public PGP key".',
+    },
+    {
       text: 'Set up your account',
       why: 'Sign-up round 3 (signup-r3-spec-2026-11-13.md, owner 13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key".',
     },
