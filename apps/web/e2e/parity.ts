@@ -196,6 +196,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupTerms: [
     {
+      text: "Moderators can read your trade chat only if a dispute is opened.",
+      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\" (Terms version 2026-11-23).",
+    },
+    {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
       why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
     },

@@ -48,7 +48,8 @@ export const KEY_POINTS: readonly string[] = [
   'X2F never holds your coins. The coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must cryptographically sign off on the transaction.',
   // Owner demo note #116 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees.',
-  'Moderators can read your trade chat only if a dispute is opened.',
+  // Owner demo note #117 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'Moderators can read your trade chat only if their presence is requested and a dispute is opened.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
   // "Dispute records are kept for 30 days." COPY-UNSIGNED.
   'Completed trades are erased on day 30.',
