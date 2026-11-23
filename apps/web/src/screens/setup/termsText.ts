@@ -18,9 +18,8 @@
 // 2026-11-14: the owner's demo notes of 13 Nov (comms owner-demo-notes-2026-11-13.jsonl, screen
 // setup-terms) applied in his words, tidied for grammar and spelling only. COPY-UNSIGNED.
 // 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107, screen setup-terms) applied in his
-// words, tidied for grammar only, plus grammar/consistency fixes from the #92 legal pass; every
-// change of meaning beyond his words is a proposal in docs/terms-legal-review-2026-11-23.md, not
-// applied here. COPY-UNSIGNED.
+// words, tidied for grammar only. The #92 legal pass applied nothing: every suggestion beyond his
+// words is a proposal in docs/terms-legal-review-2026-11-23.md, waiting on him. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-23';
 
 /**
@@ -98,7 +97,7 @@ export const TERMS: TermsSection[] = [
       // his transfer sentence, in place of the draft's "posts proof ... releases the XMR, which goes
       // straight to the buyer's own wallet".
       // not-a-refusal: Terms text
-      'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays exactly as the trade says, with the payment method that was requested. A buyer will also be requested to post proof of their payment for extra reassurance and then marks the trade paid once the payment is complete. The seller then checks their account, or whichever method they chose to get paid by, and only after confirming with their own eyes that they have received the payment do they mark the trade completed. Marking a trade complete automatically transfers the XMR to the buyer’s off-site wallet, minus the 1% fee paid to X2F. A release cannot be instantly undone, but it can be disputed and the funds recovered, to the best of our abilities, for the slighted party. Hopefully the moderator will end the trade amicably and it will end as a normal trade, but in the event things aren’t so straightforward, our team is here to help.',
+      'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays exactly as the trade says, with the payment method that was requested. A buyer will also be requested to post proof of their payment for extra reassurance and then mark the trade paid once the payment is complete. The seller then checks their account, or whichever method they chose to get paid by, and only after confirming with their own eyes that they have received the payment do they mark the trade completed. Marking a trade complete automatically transfers the XMR to the buyer’s off-site wallet, minus the 1% fee paid to X2F. A release cannot be instantly undone, but it can be disputed and the funds recovered, to the best of our abilities, for the slighted party. Hopefully the moderator will end the trade amicably and it will end as a normal trade, but in the event things aren’t so straightforward, our team is here to help.',
       // COPY-UNSIGNED: owner's comment aaf06c2f. Draft item 5.
       'A screenshot counts as proof, but it is not a guarantee: anything can be edited these days. Always check that the payment has arrived in your own account before you release the escrow.',
       // COPY-UNSIGNED: owner's comment 7a830826; the 2 hours is his example, not a set time (p11-29

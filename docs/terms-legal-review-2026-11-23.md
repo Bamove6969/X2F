@@ -19,7 +19,7 @@ These are applied in the text. They are your own words, with only the grammar ti
 - #106: in section 3, the last timer bullet is now your late-payment sentence. "The trade screen always shows the time left." is kept at its end.
 - #107: section 7 now says "... we will provide what little information we hold within the scope of the writ."
 
-Grammar tidies only: "The marking of s trade complete" became "Marking a trade complete". "buyers" became "buyer's". In #106 the run-on sentence became one sentence, "the trader" became "the other trader" (the same words section 5 uses), and "Whether that be ..." was joined to the sentence before it.
+Grammar tidies only: in #93, "to buy XMR" became "buy XMR" (the sentence now starts "Here they can exchange"). In #103, "and then marks the trade paid" became "and then mark the trade paid" (it follows "will be requested to post"). In #105, "The marking of s trade complete" became "Marking a trade complete", and "buyers" became "buyer's". In #106 the run-on sentence became one sentence, "the trader" became "the other trader" (the same words section 5 uses), and "Whether that be ..." was joined to the sentence before it.
 
 No other wording was changed. Everything below is a proposal: **accept or reject each one by number**. A proposal that is accepted means a new Terms version, and everyone gets asked again (see the end of this page).
 
@@ -50,19 +50,19 @@ Risk scale used: Severity (S) 1-5 x Likelihood (L) 1-5. 1-4 GREEN, 5-9 YELLOW, 1
 
 - **Current:** "... either of you can open a dispute, both during the trade and for a short time after it completes. The trade screen shows how long you have."
 - **Proposed:** "... either of you can open a dispute while the trade is open. If the seller cancelled after the time to pay ran out and you had paid, you can still open one for 48 hours after the refund. Once the seller has released the XMR, the trade is closed and cannot be disputed. The trade screen shows how long you have."
-- **Why:** The code gives no dispute after a completion (see proposal 3). After a refund, only the buyer can dispute, for 48 hours (`TIMERS.disputeAfterRefundHours = 48`, `packages/trade/src/timers.ts:19`, used at `machine.ts:489-500`). Also, during the trade a buyer can dispute only after marking paid, and either side only after the payment method's time (`machine.ts:466-476`). Whether the Terms should say that much detail is your call.
+- **Why:** The code gives no dispute after a completion (see proposal 3). After a refund, only the buyer can dispute, for 48 hours (`TIMERS.disputeAfterRefundHours = 48`, `packages/trade/src/timers.ts:19`, used at `machine.ts:489-500`). Also, during the trade the timing differs by stage. Before "I've paid", the seller can dispute at once and the buyer cannot (`machine.ts:466-470`). After "I've paid", either side waits the payment method's full time (`machine.ts:472-476`). While the seller's cancel refund is still settling, a buyer who paid late can dispute at once (`machine.ts:484`). Whether the Terms should say that much detail is your call.
 
 ### 5. Who can cancel when the time to pay runs out (section 3, timer paragraph). S3 x L4 = 12 ORANGE
 
 - **Current:** "If the allotted time has run out, whoever started the trade can immediately cancel and receive the funds from escrow deposited back into their account."
 - **Proposed:** "If the allotted time has run out and the buyer has not marked the trade paid, the seller can immediately cancel the trade and have the XMR in escrow refunded to the seller's own wallet."
-- **Why:** Only the seller can cancel after the time to pay (`packages/trade/src/machine.ts:616-626`, `request-refund`). The refund goes to the seller's own wallet, and X2F has no "account" balance. Your own #106 bullet already says "the seller triggers a cancellation", so the paragraph and its bullet now contradict each other. This is agy's question #1.
+- **Why:** Only the seller can cancel after the time to pay (`packages/trade/src/machine.ts:616-626`, `request-refund`). The refund goes to the seller's own wallet, and X2F has no "account" balance. Your own #106 bullet already says "the seller triggers a cancellation", so the paragraph and its bullet now contradict each other. Small extra point: before marking paid, the buyer can also cancel at any time (`buyer-cancel`, `machine.ts:628-633`). The XMR then goes back to the seller too, and the Terms could say so. This is agy's question #1.
 
 ### 6. "The outcome will always be fair" is an absolute promise (section 3, note #106). S3 x L3 = 9 YELLOW
 
 - **Current:** "... whether that means seeing the XMR transferred to you or a refund of the payment you made. The outcome will always be fair."
 - **Proposed:** "... whether that means seeing the XMR transferred to you or a refund of the payment you made. A moderator will look at the proof from both sides and decide fairly. Until the seller does what the moderator decides, they cannot trade on X2F."
-- **Why:** "Always" is a guarantee, and a user who lost a dispute can quote it back at you. Also, X2F cannot force the money back. After the automatic refund (the moderation service co-signs in about 5 seconds, `machine.ts:478-484`), the XMR is already in the seller's wallet. The moderator's remedy is an order plus a lien that blocks trading (refusal code `lien`, `apps/web/src/ui/cantDoCodes.ts:83`). The proposed wording says what X2F really does. Check the last sentence with the lead: it assumes the lien blocks new trades, as the `lien` refusal suggests.
+- **Why:** "Always" is a guarantee, and a user who lost a dispute can quote it back at you. Also, X2F cannot force the money back. After the automatic refund (the moderation service co-signs in about 5 seconds, `machine.ts:478-484`), the XMR is already in the seller's wallet. The moderator's remedy is an order to the seller. The proposed wording says what X2F means to do. Note that **no lien check exists in the code yet**: the API never refuses a trade with a `lien` code. The `lien` entry in `apps/web/src/ui/cantDoCodes.ts:83` is only a guessed placeholder, waiting for Plan 4's lien work. So "they cannot trade on X2F" is true only once that lands. Until then, drop the last sentence or build the lien first.
 
 ### 7. Data retention: the words say "entirety ... purged", but the code keeps a stripped record (section 6 and the key points). S4 x L4 = 16 RED
 
@@ -140,6 +140,8 @@ Risk scale used: Severity (S) 1-5 x Likelihood (L) 1-5. 1-4 GREEN, 5-9 YELLOW, 1
 
 ## Version bump and re-asking (how v2026-11-23 reaches users)
 
-- `TERMS_TEXT_VERSION` is now `2026-11-23`. When the server's `X2F_TERMS_VERSION` is set to the same value on deploy, everyone who accepted 2026-11-14 or earlier is refused with `terms-required` at their next session check (`apps/api/src/auth/sessions.ts:472-474`). The app then shows the Terms again, and trading waits until they accept (as section 9 says).
+- `TERMS_TEXT_VERSION` is now `2026-11-23`. When the server's `X2F_TERMS_VERSION` is set to the same value on deploy, every trader (and team member) who accepted 2026-11-14 or earlier is refused with `terms-required` at their next session check (`apps/api/src/auth/sessions.ts:470-474`). The app then shows the Terms again, and trading waits until they accept (as section 9 says).
+- **Only traders are re-asked.** That check runs only for `kind === 'trader'` (`sessions.ts:470`). Staff and owner accounts are NOT asked again: staff accept the Terms once at their invite, and the owner never signs them. If staff should re-accept new versions too, that needs a code change.
+- Deploy note: the server's `X2F_TERMS_VERSION` and the web build must change together. If they differ, the sign-up's Terms screen shows "Reload" forever (`apps/web/src/screens/setup/Terms.tsx:106`). See `docs/dev-setup.md`.
 - The demo sets `X2F_TERMS_VERSION` from `TERMS_TEXT_VERSION` automatically (`tools/demo/demo.ts:176`).
 - Any proposal accepted above changes the text again, so it needs another version (for example `2026-11-2x`) and another round of re-acceptance. It is better to accept or reject them all in one go.
