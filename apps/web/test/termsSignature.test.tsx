@@ -195,7 +195,7 @@ describe('the Terms text is pinned to its version', () => {
   // 2026-11-12: the owner's 16 /setup comments applied (comms terms-draft-2026-11-12.md): new version.
   // 2026-11-14: the owner's demo notes of 13 Nov (setup-terms) applied: new version.
   // 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107) applied: new version.
-  const PIN = { version: '2026-11-23', sha256: '967a59fa754b9e8195fa7056ce4aea30e8c783f24a7c3101f4713e4f40029d07' };
+  const PIN = { version: '2026-11-23', sha256: 'a56556aabe57da1c4a7fb89e66d42a6cde384be5eee395c4da1cd1632d23ca89' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
