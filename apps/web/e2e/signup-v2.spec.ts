@@ -271,7 +271,7 @@ for (const v of VIEWPORTS) {
     await page.click('[data-part="recovery-continue"]');
     // Lead call: no "Add another backup" step; straight on to the wallet.
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
-    await page.fill('#addr', ADDRESS);
+    await page.fill('#xmr-payout', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect.poll(() => s.calls.includes('onboarding-end')).toBe(true);

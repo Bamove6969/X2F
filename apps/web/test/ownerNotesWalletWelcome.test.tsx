@@ -4,12 +4,12 @@
 // (/setup/welcome: the security rating, the "Username and password" line, a link back to each
 // setting). COPY-UNSIGNED.
 import { act } from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Wallet as WalletEntry } from '@x2f/auth-client';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { SUGGESTED_WALLETS, WALLET_COPY, Wallet } from '../src/screens/setup/Wallet.js';
-import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, securityRating } from '../src/screens/setup/Welcome.js';
+import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, leavePath, securityRating, startTradingPath } from '../src/screens/setup/Welcome.js';
 import { render } from './render.js';
 
 const me = vi.hoisted(() => ({ current: { displayName: 'Lumen.K', methods: ['password'] } as Record<string, unknown> }));
@@ -42,13 +42,22 @@ function setup(state: Partial<SetupState> = {}): SetupApi {
   return { state: { ...INITIAL, ...state }, update: vi.fn(), returnTo: '/sell', go: vi.fn(), path: (s) => `/setup/${s}` };
 }
 
+/** Where the router is now (the Welcome links navigate). */
+function Where() {
+  const l = useLocation();
+  return <span data-testid="where">{l.pathname + l.search}</span>;
+}
+
 function show(el: React.ReactNode, api: SetupApi) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={['/setup/welcome']}>
       <SetupContext.Provider value={api}>{el}</SetupContext.Provider>
+      <Where />
     </MemoryRouter>,
   ).host;
 }
+
+const where = (host: HTMLElement) => host.querySelector('[data-testid="where"]')!.textContent;
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -151,9 +160,17 @@ describe('/setup/welcome (owner #97)', () => {
     { id: 'w', app: 'other', label: 'Wallet 1', address: ADDRESS, addressEnd: 'k3Fz', usableFrom: '2026-10-25T00:00:00.000Z', usable: true, ...over },
   ];
 
+  let posts: string[] = [];
   async function showWelcome(methods: string[], wallets: WalletEntry[], state: Partial<SetupState> = {}) {
     me.current = { displayName: 'Lumen.K', methods };
-    vi.stubGlobal('fetch', async (u: string) => (String(u).endsWith('/v1/wallets') ? json(wallets) : json({ error: 'internal' }, 500)));
+    posts = [];
+    vi.stubGlobal('fetch', async (u: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push(String(u));
+        return new Response(null, { status: 204 });
+      }
+      return String(u).endsWith('/v1/wallets') ? json(wallets) : json({ error: 'internal' }, 500);
+    });
     const host = show(<Welcome />, setup(state));
     await settle();
     return host;
@@ -193,8 +210,50 @@ describe('/setup/welcome (owner #97)', () => {
 
     host = await showWelcome(['pgp'], walletList({ usable: false }));
     expect(host.querySelector('[data-part="change-recovery"]')!.textContent).toBe('Add');
-    const w = host.querySelectorAll('[data-part="change-wallet"]');
-    expect(w[w.length - 1]!.getAttribute('href')).toBe('/wallets?add=1');
-    expect(w[w.length - 1]!.textContent).toBe('Add');
+    // Add a wallet keeps the returnTo that started setup.
+    const w = host.querySelector('[data-part="change-wallet"]')!;
+    expect(w.getAttribute('href')).toBe('/wallets?add=1&returnTo=%2Fsell');
+    expect(w.textContent).toBe('Add');
+  });
+
+  it('someone already logged in (setup opened only for a wallet) follows a link straight there, still logged in', async () => {
+    const host = await showWelcome(['password'], walletList(), { registered: false });
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="change-login"]')!.click());
+    await settle();
+    expect(where(host)).toBe('/settings/security');
+    expect(posts.filter((u) => u.includes('/v1/logout'))).toEqual([]);
+  });
+
+  it('right after sign-up a link leaves the way Start trading does (owner G25): log out, Log in, then the setting', async () => {
+    const host = await showWelcome(['password'], walletList(), { registered: true, method: 'password', backup: 'recovery-codes' });
+    for (const [part, target] of [
+      ['rating-link', WELCOME_LINKS.rating],
+      ['change-login', WELCOME_LINKS.login],
+      ['change-recovery', WELCOME_LINKS.recovery],
+      ['change-wallet', WELCOME_LINKS.wallet],
+    ] as const) {
+      expect(host.querySelector(`[data-part="${part}"]`)!.getAttribute('href'), part).toBe(`/login?returnTo=${encodeURIComponent(target)}`);
+    }
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="change-login"]')!.click());
+    await settle();
+    expect(posts.filter((u) => u.includes('/v1/logout'))).toHaveLength(1);
+    expect(where(host)).toBe(`/login?returnTo=${encodeURIComponent('/settings/security')}`);
+  });
+
+  it("right after sign-up, Add a wallet logs out, then Log in, then Add a wallet, then the take that started setup", async () => {
+    const host = await showWelcome(['pgp'], [], { registered: true, method: 'pgp', backup: 'recovery-codes' });
+    const add = `/wallets?add=1&returnTo=${encodeURIComponent('/sell')}`;
+    expect(host.querySelector('[data-part="change-wallet"]')!.getAttribute('href')).toBe(`/login?returnTo=${encodeURIComponent(add)}`);
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="change-wallet"]')!.click());
+    await settle();
+    expect(posts.filter((u) => u.includes('/v1/logout'))).toHaveLength(1);
+    expect(where(host)).toBe(`/login?returnTo=${encodeURIComponent(add)}`);
+    // The same target Start trading uses when there is no usable wallet.
+    expect(startTradingPath({ registered: true, usable: false, returnTo: '/sell' }).to).toBe(where(host));
+  });
+
+  it('leavePath: the one way out for Start trading and the links', () => {
+    expect(leavePath({ registered: true, target: '/wallets' })).toEqual({ logOut: true, to: '/login?returnTo=%2Fwallets' });
+    expect(leavePath({ registered: false, target: '/wallets' })).toEqual({ logOut: false, to: '/wallets' });
   });
 });

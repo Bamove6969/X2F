@@ -73,8 +73,12 @@ export const WELCOME_LINKS = {
   login: '/settings/security',
   recovery: '/settings/security',
   wallet: '/wallets',
-  walletAdd: '/wallets?add=1',
 } as const;
+
+/** Add a wallet, then back to what started setup (the take or the post), as Start trading's own wallet step. */
+export function walletAddPath(returnTo: string): string {
+  return `/wallets?add=1&returnTo=${encodeURIComponent(returnTo)}`;
+}
 
 export type SecurityRating = 'weak' | 'medium' | 'high';
 
@@ -158,13 +162,41 @@ function Tick({ done }: { done: boolean }) {
   );
 }
 
-/** The link back to an item's setting (owner #97): "Change" once it is done, "Add" before. */
-function ChangeLink({ to, done, what }: { to: string; done: boolean; what: 'login' | 'recovery' | 'wallet' }) {
+/**
+ * The link back to a setting (owner #97). Right after sign-up it leaves the way Start trading does
+ * (owner G25): `leave` ends the sign-up session and Log in comes next, then the setting. The href is
+ * where the link really goes, so it reads right without script.
+ */
+function LeaveLink({ target, leave, part, disabled, children }: { target: string; leave: Leave; part: string; disabled: boolean; children: string }) {
+  const { to } = leave.path(target);
   return (
-    <Link className="x2f-link x2f-welcome__link" to={to} data-part={`change-${what}`}>
-      {done ? WELCOME_COPY.change : WELCOME_COPY.add}
+    <Link
+      className="x2f-link x2f-welcome__link"
+      to={to}
+      data-part={part}
+      aria-disabled={disabled || undefined}
+      onClick={(e) => {
+        e.preventDefault();
+        if (!disabled) void leave.go(target);
+      }}
+    >
+      {children}
     </Link>
   );
+}
+
+interface Leave {
+  path: (target: string) => { logOut: boolean; to: string };
+  go: (target: string) => Promise<void>;
+}
+
+/**
+ * Where a link off the Welcome screen goes (owner G25 and #97): right after sign-up (`registered`) the
+ * sign-up session ends (`logOut`) and Log in comes next with `target` as its `returnTo`; someone
+ * already logged in goes straight there.
+ */
+export function leavePath(o: { registered: boolean; target: string }): { logOut: boolean; to: string } {
+  return o.registered ? { logOut: true, to: `/login?returnTo=${encodeURIComponent(safeReturnTo(o.target))}` } : { logOut: false, to: o.target };
 }
 
 /**
@@ -173,8 +205,7 @@ function ChangeLink({ to, done, what }: { to: string; done: boolean; what: 'logi
  */
 export function startTradingPath(o: { registered: boolean; usable: boolean; returnTo: string }): { logOut: boolean; to: string } {
   // Trading and posting need a usable payout wallet (spec 6.4): Add a wallet first, then on.
-  const next = o.usable ? o.returnTo : `/wallets?add=1&returnTo=${encodeURIComponent(o.returnTo)}`;
-  return o.registered ? { logOut: true, to: `/login?returnTo=${encodeURIComponent(safeReturnTo(next))}` } : { logOut: false, to: next };
+  return leavePath({ registered: o.registered, target: o.usable ? o.returnTo : walletAddPath(o.returnTo) });
 }
 
 export function Welcome() {
@@ -202,8 +233,7 @@ export function Welcome() {
   const usable = wallets?.some((w) => w.usable) ?? false;
 
   const [leaving, setLeaving] = useState(false);
-  const start = async () => {
-    const { logOut, to } = startTradingPath({ registered: state.registered, usable, returnTo });
+  const go = async ({ logOut, to }: { logOut: boolean; to: string }) => {
     if (logOut) {
       setLeaving(true);
       // Should the logout call fail, Log in still comes next: a login revokes the session this
@@ -212,6 +242,12 @@ export function Welcome() {
       refreshSession();
     }
     void navigate(to);
+  };
+  const start = () => go(startTradingPath({ registered: state.registered, usable, returnTo }));
+  // Owner #97 links: the same way out as Start trading (G25), then the setting.
+  const leave: Leave = {
+    path: (target) => leavePath({ registered: state.registered, target }),
+    go: (target) => go(leavePath({ registered: state.registered, target })),
   };
 
   if (!ready) {
@@ -257,9 +293,9 @@ export function Welcome() {
           {rating !== 'high' ? (
             <p className="x2f-welcome__rating-raise">
               {WELCOME_COPY.ratingRaise}{' '}
-              <Link className="x2f-link x2f-welcome__link" to={WELCOME_LINKS.rating} data-part="rating-link">
+              <LeaveLink target={WELCOME_LINKS.rating} leave={leave} part="rating-link" disabled={leaving}>
                 {WELCOME_COPY.ratingLink}
-              </Link>
+              </LeaveLink>
             </p>
           ) : null}
         </section>
@@ -277,14 +313,18 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key">{WELCOME_COPY.none}</span>
               )}
-              <ChangeLink to={WELCOME_LINKS.login} done={c.loginDone} what="login" />
+              <LeaveLink target={WELCOME_LINKS.login} leave={leave} part="change-login" disabled={leaving}>
+                {c.loginDone ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.loginDone} />
           </li>
           <li className="x2f-welcome__check" data-part="check-recovery">
             <div className="x2f-welcome__what">
               <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.recoveryItem}</span>
-              <ChangeLink to={WELCOME_LINKS.recovery} done={c.recoveryDone} what="recovery" />
+              <LeaveLink target={WELCOME_LINKS.recovery} leave={leave} part="change-recovery" disabled={leaving}>
+                {c.recoveryDone ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.recoveryDone} />
           </li>
@@ -298,7 +338,9 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key" data-part="summary-wallet">{WELCOME_COPY.none}</span>
               )}
-              <ChangeLink to={c.wallet !== null ? WELCOME_LINKS.wallet : WELCOME_LINKS.walletAdd} done={c.wallet !== null} what="wallet" />
+              <LeaveLink target={c.wallet !== null ? WELCOME_LINKS.wallet : walletAddPath(returnTo)} leave={leave} part="change-wallet" disabled={leaving}>
+                {c.wallet !== null ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.wallet !== null} />
           </li>
