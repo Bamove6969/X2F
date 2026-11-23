@@ -178,7 +178,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // enter the setup key manually."), how setup works; nothing was tried and refused. 75 -> 76
     // (owner demo note #137, 23 Nov): setup/Login.tsx's authenticator-app second paragraph ("Security
     // Level: Medium. We strongly recommend ..."), advice on choosing login methods, not a refusal.
-    expect(notARefusal).toBeLessThanOrEqual(76);
+    // Owner demo note #139 (23 Nov): the password option's "Security Level: Low…" paragraph explains
+    // the risk of a password-only account; nothing was tried and refused. 76 -> 77
+    expect(notARefusal).toBeLessThanOrEqual(77);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
