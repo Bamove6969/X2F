@@ -108,6 +108,8 @@ export const STEP_EXPIRED = 'That step has expired. Start again.';
 export const KEY_SIGN_ONLY = 'This key can only sign. X2F sends your login code encrypted to your key, so it needs an encryption subkey. Add one in your PGP app, then paste the key again.';
 export const KEY_ENCRYPTION_INACTIVE =
   "This key's encryption subkey has expired or been revoked. X2F sends your login code encrypted to your key, so add a new encryption subkey in your PGP app, then paste the key again.";
+/** Security review of #144: 400 `key-encryption-unusable`, an encryption subkey that isn't validly signed. COPY-UNSIGNED */
+export const KEY_ENCRYPTION_UNUSABLE = "This key's encryption subkey isn't validly signed. X2F sends your login code encrypted to your key, so make a new encryption subkey in your PGP app, then paste the key again.";
 /** 409 `key-unavailable` (owner 2 Nov 2026): a key on the ban list; never said why. COPY-UNSIGNED */
 export const KEY_UNAVAILABLE = 'That key is not accepted on X2F. Use a different key.';
 /** 409 `security-key-limit` (FU-A review I2): the account already holds the most security keys allowed. */
@@ -132,6 +134,7 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   if (r.code === 'key-revoked') return KEY_REVOKED;
   if (r.code === 'key-no-encryption') return KEY_SIGN_ONLY;
   if (r.code === 'key-encryption-inactive') return KEY_ENCRYPTION_INACTIVE;
+  if (r.code === 'key-encryption-unusable') return KEY_ENCRYPTION_UNUSABLE;
   if (r.code === 'key-unavailable') return KEY_UNAVAILABLE;
   if (r.code === 'challenge-expired') return o.expired ?? STEP_EXPIRED;
   // cant-do-that-todo: shown inline by Security (add a key) through refusalText

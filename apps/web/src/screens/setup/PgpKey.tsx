@@ -33,6 +33,46 @@ function expiry(at: Date | null): string {
   return at === null ? 'Never' : formatDate(at);
 }
 
+/** The check's own failure (it threw): said as a refusal of the pasted key, never "Key accepted". */
+export const KEY_CHECK_FAILED = 'X2F could not check that key. Check that you pasted the whole public key, then try again.';
+/** How long the pasted key must stay unchanged before the device checks it. */
+export const KEY_CHECK_DEBOUNCE_MS = 250;
+
+/**
+ * The on-device check of a pasted key, with the new-key rules (owner demo note #144 and its
+ * security review; the server checks again and decides). `checking` is true from each change until
+ * that text's result is in; the previous result is cleared at once, so nothing reflects stale text.
+ * A check that throws reads as a refusal (KEY_CHECK_FAILED).
+ */
+export function useKeyCheck(key: string): { check: KeyInspection | null; checking: boolean } {
+  const [check, setCheck] = useState<KeyInspection | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    const armored = key.trim();
+    setCheck(null);
+    if (armored === '') {
+      setChecking(false);
+      return;
+    }
+    setChecking(true);
+    let live = true;
+    const timer = setTimeout(() => {
+      inspectPublicKey(armored, new Date(), { newKey: true })
+        .catch((): KeyInspection => ({ ok: false, reason: 'key-unreadable', detail: KEY_CHECK_FAILED }))
+        .then((r) => {
+          if (!live) return;
+          setCheck(r);
+          setChecking(false);
+        });
+    }, KEY_CHECK_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [key]);
+  return { check, checking };
+}
+
 /**
  * Owner demo note #144 (23 Nov 2026): a non-blocking heads-up when a User ID on the key holds an
  * email address (`hasEmail`); the key is still accepted. Also shown by Settings, Add a PGP key.
@@ -86,24 +126,9 @@ export function KeyFacts({ check }: { check: Extract<KeyInspection, { ok: true }
 export function PgpKey() {
   const { state, update, go, path } = useSetup();
   const [key, setKey] = useState(state.publicKey);
-  const [check, setCheck] = useState<KeyInspection | null>(null);
+  const { check } = useKeyCheck(key);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SetupError | null>(null);
-
-  useEffect(() => {
-    const armored = key.trim();
-    if (armored === '') {
-      setCheck(null);
-      return;
-    }
-    let live = true;
-    void inspectPublicKey(armored, new Date()).then((r) => {
-      if (live) setCheck(r);
-    });
-    return () => {
-      live = false;
-    };
-  }, [key]);
 
   const next = async () => {
     setBusy(true);

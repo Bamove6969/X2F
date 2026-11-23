@@ -8,7 +8,7 @@ import { act } from 'react';
 import { AuthApiError, inspectPublicKey } from '@x2f/auth-client';
 import { KeyEmailNote } from '../src/screens/setup/PgpKey.js';
 import { AddPgpKey } from '../src/screens/settings/Methods.js';
-import { KEY_ENCRYPTION_INACTIVE, KEY_SIGN_ONLY, refusalText } from '../src/screens/auth/refusals.js';
+import { KEY_ENCRYPTION_INACTIVE, KEY_ENCRYPTION_UNUSABLE, KEY_SIGN_ONLY, refusalText } from '../src/screens/auth/refusals.js';
 import { fire, render } from './render.js';
 
 const HEADS_UP = 'Heads up: Your public key contains an email address, which will be visible in the key metadata.';
@@ -39,6 +39,7 @@ describe('the server refusal and the device check say the same plain words', () 
   it('key-no-encryption and key-encryption-inactive map to plain copy', () => {
     expect(refusalText(new AuthApiError(400, 'key-no-encryption', { detail: 'x' }), 'fallback')).toBe(KEY_SIGN_ONLY);
     expect(refusalText(new AuthApiError(400, 'key-encryption-inactive'), 'fallback')).toBe(KEY_ENCRYPTION_INACTIVE);
+    expect(refusalText(new AuthApiError(400, 'key-encryption-unusable'), 'fallback')).toBe(KEY_ENCRYPTION_UNUSABLE);
   });
 
   it("the device check's sentences are the web's", async () => {
@@ -67,6 +68,21 @@ describe('Settings, Add a PGP key: the check as the key is pasted', () => {
     await settle(host, '[data-part="key-refused"]');
     expect(host.querySelector('[data-part="key-refused"]')!.textContent).toBe(KEY_SIGN_ONLY);
     expect(addButton(host).disabled).toBe(true);
+  });
+
+  it('a new paste clears the last result at once, and Add key waits for the new check (review 3)', async () => {
+    const { host } = mount();
+    const box = host.querySelector('textarea')!;
+    paste(box, await withEmail());
+    await settle(host, '[data-part="key-email-note"]');
+    expect(addButton(host).disabled).toBe(false);
+    paste(box, await signOnly());
+    // Straight after the change: no stale note, no stale result, and Add key is off while checking.
+    expect(host.querySelector('[data-part="key-email-note"]')).toBeNull();
+    expect(host.querySelector('[data-part="key-refused"]')).toBeNull();
+    expect(addButton(host).disabled).toBe(true);
+    await settle(host, '[data-part="key-refused"]');
+    expect(host.querySelector('[data-part="key-refused"]')!.textContent).toBe(KEY_SIGN_ONLY);
   });
 
   it('a key with an email address shows the heads-up and can still be added', async () => {
