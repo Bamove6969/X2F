@@ -94,6 +94,7 @@ export function PaidWaitingBody({
   chatAction,
   wide,
   actions,
+  finishFirst = false,
 }: {
   view: TradeView;
   /** The amounts are the ones this device accepted (review 2026-10-27 I3; release/view.ts `amounts`), never the API's. */
@@ -105,6 +106,8 @@ export function PaidWaitingBody({
   wide: boolean;
   /** Wide only: the actions go right under the hero (the Wide board's order; design review P2-10). */
   actions?: ReactNode;
+  /** payModel `disputeNeedsFinish`: the ended window's lead points at Finish, not at a dispute now. */
+  finishFirst?: boolean;
 }) {
   const details = usePaymentDetails(view.code);
   const { clock, paused } = roomClock(view, serverClock);
@@ -188,7 +191,10 @@ export function PaidWaitingBody({
             {/* COPY-UNSIGNED the paused ending: the machine refuses a dispute during maintenance (owner G19; lead review 2026-11-08 R-m2). */}
             {paused
               ? '. The XMR is still safe in escrow. You can open a dispute once the maintenance is over, or keep waiting and nudge them.'
-              : '. The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.'}
+              : finishFirst
+                ? // COPY-UNSIGNED: the Finish step comes before any dispute (payModel disputeNeedsFinish).
+                  '. The XMR is still safe in escrow. Finish marking as paid first. Then you can open a dispute, or keep waiting and nudge them.'
+                : '. The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.'}
           </>
         ) : (
           <>
@@ -333,7 +339,21 @@ export function PaidProgress({ view, serverClock }: { view: Pick<TradeView, 'con
  * bell in caution (P2-13). The board's soft link (P2-12, after the buyer's shorter wait while the
  * seller's window still ran) is gone: one window for both sides (owner p9-4), so it never applies.
  */
-export function PaidWaitingActions({ view, serverClock, wide = false }: { view: TradeView; serverClock: () => Date; wide?: boolean }) {
+export function PaidWaitingActions({
+  view,
+  serverClock,
+  wide = false,
+  finishFirst = false,
+}: {
+  view: TradeView;
+  serverClock: () => Date;
+  wide?: boolean;
+  /**
+   * payModel `disputeNeedsFinish`: paid on the server, not yet recorded on this device. The dispute
+   * stays locked with "Finish marking as paid first" under it until the device has fixed the amount.
+   */
+  finishFirst?: boolean;
+}) {
   const name = publicName(view.counterparty);
   const { clock, paused } = roomClock(view, serverClock);
   const now = clock().getTime();
@@ -387,7 +407,8 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
   );
   // Never during maintenance: the machine refuses every dispute then (owner G19; lead review
   // 2026-11-08 R-m2), even once the window had ended before the pause.
-  const open = !paused && opensAt !== null && now >= opensAt;
+  const open = !finishFirst && !paused && opensAt !== null && now >= opensAt;
+  const describedBy = finishFirst || opensAt !== null ? 'paid-dispute-when' : undefined;
   const disputeButton = open ? (
     <Link
       to={`/trade/${encodeURIComponent(view.code)}/dispute`}
@@ -399,12 +420,16 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
     </Link>
   ) : (
     // aria-disabled, not disabled: it stays focusable, so its "Available from" is reachable (review N4).
-    <Button variant="secondary" aria-disabled="true" aria-describedby={opensAt !== null ? 'paid-dispute-when' : undefined} data-size={wide ? undefined : 'large'} data-part="paid-dispute">
+    <Button variant="secondary" aria-disabled="true" aria-describedby={describedBy} data-size={wide ? undefined : 'large'} data-part="paid-dispute">
       Open dispute
     </Button>
   );
-  const disputeWhen =
-    open || opensAt === null ? null : (
+  const disputeWhen = finishFirst ? (
+    // COPY-UNSIGNED: the Finish step comes before any dispute (payModel disputeNeedsFinish).
+    <p id="paid-dispute-when" className="x2f-footnote" data-align={wide ? 'end' : undefined} data-part="paid-dispute-finish">
+      Finish marking as paid first. Then you can open a dispute.
+    </p>
+  ) : open || opensAt === null ? null : (
       <p id="paid-dispute-when" className="x2f-footnote" data-align={wide ? 'end' : undefined}>
         {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it). While paused the time
             moves later, so no clock time is shown; the countdown is the working time left at the pause,

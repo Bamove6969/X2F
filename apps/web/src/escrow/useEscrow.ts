@@ -103,6 +103,8 @@ export interface UseEscrow {
   receivedAtomic: bigint | null;
   /** `EscrowStatus.confirmedAtomic`: the 1+-confirmation part of what arrived, from the same reading (see EscrowStatus). */
   confirmedAtomic: bigint | null;
+  /** `EscrowStatus.role`: this device's own record's role, null until the record is loaded (optional for fakes, which then gate nothing). */
+  role?: 'buyer' | 'seller' | null;
   /** `EscrowStatus.paidRecorded`: the buyer's own "I've paid" is recorded on this device ("Marked as paid"). */
   paidRecorded: boolean;
   /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
@@ -145,6 +147,23 @@ export function useEscrowRestitution(code: string): { address: string; amountAto
 }
 
 /**
+ * This device's escrow status for `code`, for a page outside the trade room (the dispute route's
+ * "Finish marking as paid" gate, payModel `disputeNeedsFinish`). Subscribe only, like
+ * useEscrowRestitution: it never starts a trade. Null until the worker reports one (or never, when
+ * this device holds no record of the trade).
+ */
+export function useEscrowStatus(code: string): EscrowStatus | null {
+  const [s, setS] = useState<EscrowStatus | null>(null);
+  const c = useMemo(() => escrowClient(), []);
+  useEffect(() => {
+    setS(null);
+    const off = c.subscribe(code, setS);
+    return () => void off();
+  }, [c, code]);
+  return s;
+}
+
+/**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
  * needed the first time a trade starts on this device and ignored once it is stored.
  */
@@ -175,6 +194,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     instructionsMismatch: status.instructionsMismatch,
     receivedAtomic: status.receivedAtomic,
     confirmedAtomic: status.confirmedAtomic,
+    role: status.role,
     paidRecorded: status.paidRecorded,
     intentKind: status.intentKind,
     handedOff: status.handedOff,

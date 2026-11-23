@@ -1533,7 +1533,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed', { integrity: true }); // confirmed settled elsewhere
       } else this.emptiedWhileSettling = null;
       if (changed) await this.persist();
-      if (provenDone) this.doneUnsaved = false;
+      if (provenDone) {
+        this.doneUnsaved = false;
+        // As settle() does once its save resolves: the status shows `done` now, not only at the end
+        // of this tick (whose instructions check may still await a hash on a fresh run: the lead's
+        // 23 Nov attestation-flow flake, `ready` read right after the record said done).
+        this.refresh();
+      }
       const settled = r.settleSeenAt != null || neverFunded || r.settledWithoutDevice === true;
       if (!this.error && emptyInBlock && settled && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
         await this.close();
