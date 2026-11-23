@@ -111,6 +111,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',
+  // Owner demo note #94: the key test's own results (KeyTestError in @x2f/auth-client, never an API
+  // answer), said inline by screens/auth/KeyTest.tsx; nothing was refused.
+  'other-key': 'a key test answered by another key than the one just added (KeyTest.tsx, inline)',
+  'not-listed': 'a key test for a key the confirm options did not list (KeyTest.tsx, inline)',
   // Plan 4 Task 12 (J-06): the staff ruling routes.
   'reason-too-short': "a ruling's reason under 40 characters (staff app only)",
   'same-person': 'a ruling approved by its own proposer (staff app only)',

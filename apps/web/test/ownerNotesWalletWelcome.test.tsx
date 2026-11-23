@@ -125,7 +125,8 @@ describe('/setup/wallet (owner #32, #96)', () => {
     const host = show(<Wallet />, api);
     act(() => type(host.querySelector<HTMLInputElement>('#xmr-payout')!, `  ${ADDRESS} `));
     act(() => host.querySelector<HTMLButtonElement>('[data-part="wallet-finish"]')!.click());
-    await settle();
+    // The add's confirm action hashes the address (WebCrypto, off the timer queue) before it is sent.
+    for (let i = 0; i < 40 && vi.mocked(api.go).mock.calls.length === 0; i++) await settle();
     expect(bodies).toEqual([{ wallets: [{ app: 'other', label: 'Wallet 1', address: ADDRESS }] }]);
     expect(api.update).toHaveBeenCalledWith({ wallet: { app: 'other', addressEnd: 'k3Fz' } });
     expect(api.go).toHaveBeenCalledWith('welcome');
