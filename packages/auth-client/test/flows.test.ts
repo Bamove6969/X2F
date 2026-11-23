@@ -87,6 +87,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/traders/:name/record',
   'GET /v1/trades',
   'GET /v1/trades/:code',
+  'GET /v1/trades/:code/after-refund-statement',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/blur-checks',
   'GET /v1/trades/:code/confirmations',
