@@ -53,7 +53,7 @@ export function Backup() {
             much this screen matters and to fill the empty space. A caution sign stands in for his optional "!",
             which copy-lint does not allow in copy. COPY-UNSIGNED */}
         <p className="x2f-start__shout" data-part="backup-important">
-          <Icon name="caution" size={32} stroke={2.25} />
+          <Icon name="alert" size={32} stroke={2.25} />
           EXTREMELY IMPORTANT
         </p>
         {/* COPY-UNSIGNED (singular: owner, 12 Nov 2026; signup round 3 wording, 13 Nov 2026) */}
