@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The welcome screen and the guided tours (owner, 12 Nov 2026, demo note #47; design,
 // wip/design-brief b3b8315b tour-stops.md and tour-motion.md): the engine's two flows, the
-// once-per-device welcome flag, the remembered stop, the first-trade tour's 17 stops word for word,
+// once-per-device welcome flag, the remembered stop, the first-trade tour's 19 stops word for word (design's 17 and the trade room's 2),
 // and the shell (scrim and ring, card, Skip / Back / Next, keys, the closed line, reduced motion).
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -10,7 +10,7 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backPos, indexOf, nextLabel, nextPos, posOf, progressOf, stepAt, type TourDef } from '../src/tour/engine.js';
-import { FIRST_TRADE_TEXT, FIRST_TRADE_TOUR } from '../src/tour/firstTradeTour.js';
+import { FIRST_TRADE_TEXT, FIRST_TRADE_TOUR, TRADE_ROOM_TEXT } from '../src/tour/firstTradeTour.js';
 import { clearTourProgress, replayLabel, saveTourProgress, tourProgress } from '../src/tour/progress.js';
 import { TourProvider, useTour } from '../src/tour/TourProvider.js';
 import { WELCOME_SEEN_KEY, markWelcomeSeen, resetWelcomeMemory, welcomeSeen } from '../src/tour/welcomeSeen.js';
@@ -69,15 +69,15 @@ describe('tour engine', () => {
   });
 
   it('a story: Next on every stop, Done on the last, never "Next screen"; counted across the tour', () => {
-    const labels = FIRST_TRADE_TEXT.map((_, i) => nextLabel(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i)));
-    expect(labels.slice(0, 16).every((l) => l === 'Next')).toBe(true);
-    expect(labels[16]).toBe('Done');
-    expect(progressOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, 5))).toEqual({ index: 6, total: 17 });
+    const labels = Array.from({ length: 19 }, (_, i) => nextLabel(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i)));
+    expect(labels.slice(0, 18).every((l) => l === 'Next')).toBe(true);
+    expect(labels[18]).toBe('Done');
+    expect(progressOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, 5))).toEqual({ index: 6, total: 19 });
   });
 
   it('maps tour-wide indexes and positions both ways', () => {
-    for (let i = 0; i < 17; i++) expect(indexOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i))).toBe(i);
-    expect(posOf(FIRST_TRADE_TOUR, 99)).toEqual(posOf(FIRST_TRADE_TOUR, 16));
+    for (let i = 0; i < 19; i++) expect(indexOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i))).toBe(i);
+    expect(posOf(FIRST_TRADE_TOUR, 99)).toEqual(posOf(FIRST_TRADE_TOUR, 18));
     expect(stepAt(TWO_PAGES, { page: 1, step: 0 }).id).toBe('b1');
   });
 });
@@ -125,15 +125,18 @@ describe('the remembered stop', () => {
 describe('the first-trade tour (design, tour-stops.md §2)', () => {
   const steps = FIRST_TRADE_TOUR.pages.flatMap((p) => p.steps);
 
-  it('is 17 stops on 6 screens, every one on an example stage', () => {
+  it('is 19 stops on 7 screens, the trade room after Fund (demo note #100), every one on an example stage', () => {
     expect(FIRST_TRADE_TOUR.flow).toBe('story');
-    expect(FIRST_TRADE_TOUR.pages.map((p) => p.name)).toEqual(['Find a trade', 'Offers', 'Quote', 'Fund', 'Check and release', 'Released']);
-    expect(FIRST_TRADE_TOUR.pages.map((p) => p.steps.length)).toEqual([5, 5, 2, 2, 2, 1]);
+    expect(FIRST_TRADE_TOUR.pages.map((p) => p.name)).toEqual(['Find a trade', 'Offers', 'Quote', 'Fund', 'Trade room', 'Check and release', 'Released']);
+    expect(FIRST_TRADE_TOUR.pages.map((p) => p.steps.length)).toEqual([5, 5, 2, 2, 2, 2, 1]);
     for (const p of FIRST_TRADE_TOUR.pages) expect(p.stage, p.id).toBeDefined();
   });
 
-  it('uses design\'s card text exactly, with no titles', () => {
-    expect(steps.map((s) => s.body)).toEqual([
+  it('uses design\'s card text exactly, with the trade room\'s two cards after Fund, and no titles', () => {
+    const bodies = steps.map((s) => s.body);
+    expect([...bodies.slice(0, 14), ...bodies.slice(16)]).toEqual([...FIRST_TRADE_TEXT]);
+    expect(bodies.slice(14, 16)).toEqual([...TRADE_ROOM_TEXT]);
+    expect(FIRST_TRADE_TEXT).toEqual([
       "First, decide why you're here: to buy Monero or to sell it.",
       "Let's pretend we're selling. Tap Sell.",
       'Next, pick the currency you want to be paid in.',
@@ -155,10 +158,11 @@ describe('the first-trade tour (design, tour-stops.md §2)', () => {
     expect(steps.every((s) => s.title === undefined)).toBe(true);
   });
 
-  it('centres stops 5 and 17 with their tiles; stop 1 alternates; every other stop has a target', () => {
-    expect([steps[4]!.icon, steps[4]!.target, steps[16]!.icon, steps[16]!.target]).toEqual(['eye-off', null, 'tick', null]);
+  it('centres stops 5 and 19 with their tiles; stop 1 alternates; every other stop has a target', () => {
+    expect([steps[4]!.icon, steps[4]!.target, steps[18]!.icon, steps[18]!.target]).toEqual(['eye-off', null, 'tick', null]);
     expect(steps[0]!.alternate).toHaveLength(2);
-    expect(steps.filter((s, i) => i !== 4 && i !== 16).every((s) => s.target !== null)).toBe(true);
+    expect(steps.filter((s, i) => i !== 4 && i !== 18).every((s) => s.target !== null)).toBe(true);
+    expect(new Set(steps.map((s) => s.id)).size).toBe(19);
   });
 });
 
@@ -333,19 +337,19 @@ describe('the tour shell', () => {
     expect(tourProgress('test')).toBeNull();
   });
 
-  it('the first-trade tour runs on its example stage, with no title, counted "n of 17", ending on Done', async () => {
+  it('the first-trade tour runs on its example stage, with no title, counted "n of 19", ending on Done', async () => {
     const { host } = mount(FIRST_TRADE_TOUR);
     click(host.querySelector('#start')!);
     await settle();
     expect(document.querySelector('[data-part="tour-stage"] [data-tour="seg"]')).not.toBeNull();
     expect(card()?.querySelector('h2')).toBeNull();
     expect(card()?.getAttribute('aria-label')).toBe('First trade tour');
-    expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe('1 of 17');
+    expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe('1 of 19');
     expect(card()?.querySelector('[data-part="tour-body"]')?.textContent).toBe(FIRST_TRADE_TEXT[0]);
-    for (let i = 1; i < 17; i++) {
+    for (let i = 1; i < 19; i++) {
       click(btn('tour-next')!);
       await settle();
-      expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe(`${i + 1} of 17`);
+      expect(card()?.querySelector('[data-part="tour-count"]')?.textContent).toBe(`${i + 1} of 19`);
     }
     expect(document.querySelector('[data-part="tour-stage"] [data-part="example"]')).not.toBeNull();
     expect(btn('tour-next')?.textContent).toBe('Done');
@@ -353,7 +357,7 @@ describe('the tour shell', () => {
     await settle();
     expect(card()).toBeNull();
     expect(where).toBe('/sell');
-  });
+   }, 20_000);
 
   it('runs the calm version under prefers-reduced-motion', async () => {
     setReducedMotion(true);

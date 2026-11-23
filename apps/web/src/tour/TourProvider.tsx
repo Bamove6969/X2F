@@ -14,6 +14,8 @@
  * - the card (`tour-card`): page bars, the count, the text, Skip tour / Back / Next (Done, Finish or
  *   Next screen by flow). Below the target when it fits with the 60 px arrow gap, else above, else
  *   the screen scrolls first; on a wide landscape screen (860+ wide) the card sits beside the target.
+ * Every stop scrolls its target onto the screen first, and the screen behind still scrolls by wheel,
+ * finger and ↓ ↑ Page Down / Page Up (owner, 16 Nov 2026, demo note #99).
  * Keys: → and Enter Next, ← Back, Esc Skip tour; focus stays in the card. Skip shows "Tour closed"
  * with Restart for 6 s. The stop reached is kept on this device until the tour is finished, so the
  * Settings row can read "Carry on the tour". prefers-reduced-motion: parts swap with fades only.
@@ -206,29 +208,82 @@ function sideMode(): boolean {
   return v.w >= 860 && v.w > v.h;
 }
 
-/** Below, above, or (neither fits) the scroll that makes room: where the card goes for `r`. */
+/**
+ * The element that scrolls `el`: the example stage's scroller, else the nearest ancestor that
+ * scrolls, else null for the page itself (owner, 16 Nov 2026, demo note #99).
+ */
+export function scrollerOf(el: Element | null): HTMLElement | null {
+  if (el === null) return null;
+  const stage = el.closest<HTMLElement>('[data-tour-scroll]');
+  if (stage !== null) return stage;
+  for (let p = el.parentElement; p !== null && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
+}
+
+/** How far `scroller` (null: the page) can really move by `by`, clamped to its ends. */
+function room(scroller: HTMLElement | null, by: number): number {
+  const top = scroller === null ? window.scrollY || document.documentElement.scrollTop || 0 : scroller.scrollTop;
+  const max =
+    scroller === null
+      ? Math.max(0, (document.documentElement.scrollHeight || 0) - viewport().h)
+      : Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  return Math.min(max, Math.max(0, top + by)) - top;
+}
+
+/** Scrolls `scroller` (null: the page) by `by`, smoothly unless calm; answers the distance moved. */
+export function scrollTourBy(scroller: HTMLElement | null, by: number, behavior: ScrollBehavior): number {
+  const d = room(scroller, by);
+  if (Math.abs(d) < 1) return 0;
+  if (scroller !== null) {
+    if (typeof scroller.scrollBy === 'function') scroller.scrollBy({ top: d, behavior });
+    else scroller.scrollTop += d;
+  } else if (typeof window.scrollBy === 'function') window.scrollBy({ top: d, behavior });
+  return d;
+}
+
+/**
+ * Below, above, beside, or centred: where the card goes for `el`. Every stop first brings its
+ * target onto the screen (owner, 16 Nov 2026, demo note #99: on a computer the tour pointed below
+ * the fold and nothing scrolled): a target out of view is scrolled near the top, with the card
+ * below it (tour-motion.md §3 rule 2); a target that fits is left where it is.
+ */
 function decide(el: Element | null, step: TourStep, cardHeight: number, reduced: boolean): Where {
   if (el === null || step.placement === 'center') return 'center';
-  if (sideMode()) return 'side';
+  const behavior = (reduced ? 'instant' : 'smooth') as ScrollBehavior;
   const v = viewport();
-  const r = el.getBoundingClientRect();
+  const r0 = el.getBoundingClientRect();
   const sticky = el.closest('.x2f-ex__foot') !== null;
-  const fitsBelow = r.bottom + PAD + GAP + cardHeight + EDGE <= v.h;
-  const fitsAbove = r.top - PAD - GAP - cardHeight >= EDGE;
+  const scroller = sticky ? null : scrollerOf(el);
+  const inView = r0.top >= EDGE + PAD && r0.bottom <= v.h - EDGE - PAD;
+  const toTop = () => scrollTourBy(scroller, r0.top - (EDGE + PAD + 4), behavior);
+  if (sideMode()) {
+    if (!sticky && !inView) toTop();
+    return 'side';
+  }
+  // A target off the screen comes onto it first; the card is then placed on where it lands.
+  const moved = !sticky && !inView ? toTop() : 0;
+  const top = r0.top - moved;
+  const bottom = r0.bottom - moved;
+  const fitsBelow = bottom + PAD + GAP + cardHeight + EDGE <= v.h;
+  const fitsAbove = top - PAD - GAP - cardHeight >= EDGE;
   if (step.placement === 'below' && fitsBelow) return 'below';
   if (step.placement === 'above' && fitsAbove) return 'above';
   if (sticky) return 'above';
   if (fitsBelow) return 'below';
   if (fitsAbove) return 'above';
   // Neither fits: scroll the highlight near the top, with the card below it (§3 rule 2).
-  const scroller = el.closest<HTMLElement>('[data-tour-scroll]');
-  const by = r.top - (EDGE + PAD + 4);
-  if (Math.abs(by) > 1) {
-    const behavior = (reduced ? 'instant' : 'smooth') as ScrollBehavior;
-    if (scroller !== null) scroller.scrollBy({ top: by, behavior });
-    else if (typeof window.scrollBy === 'function') window.scrollBy({ top: by, behavior });
-  }
+  if (moved === 0) scrollTourBy(scroller, top - (EDGE + PAD + 4), behavior);
   return 'below';
+}
+
+/** A wheel's travel in pixels (lines and pages turned into pixels). */
+function wheelPixels(e: WheelEvent, pageHeight: number): number {
+  if (e.deltaMode === 1) return e.deltaY * 40;
+  if (e.deltaMode === 2) return e.deltaY * pageHeight;
+  return e.deltaY;
 }
 
 const EYE_OFF = (
@@ -256,6 +311,7 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const [size, setSize] = useState(viewport);
   const [cardHeight, setCardHeight] = useState(200);
   const cardRef = useRef<HTMLElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const nextRef = useRef<HTMLButtonElement | null>(null);
   const keyboard = useRef(false);
   const bodyId = useId();
@@ -366,12 +422,64 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
     return () => cancelAnimationFrame(frame);
   }, [current, anchor]);
 
-  // Keys (tour-stops.md §1): → and Enter Next, ← Back, Esc Skip tour; Tab stays in the card.
+  // The screen behind the tour still scrolls (owner, 16 Nov 2026, demo note #99: "unable to scroll
+  // down ... to see what's lower"): the wheel, a finger drag and ↓ ↑ Page Down / Page Up move the
+  // example stage's scroller, or the page under a real-screen tour, while taps still do nothing.
+  // The highlight, the arrow and the card follow the target as it moves (the frame loop above).
+  const scrollKeyTarget = useRef<(() => HTMLElement | null) | null>(null);
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    const target = (): HTMLElement | null =>
+      root.querySelector<HTMLElement>('[data-tour-scroll]') ?? scrollerOf(currentRef.current === null ? null : document.querySelector(currentRef.current));
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return; // pinch zoom
+      e.preventDefault();
+      scrollTourBy(target(), wheelPixels(e, viewport().h), 'instant' as ScrollBehavior);
+    };
+    let lastY: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      lastY = e.touches.length === 1 ? e.touches[0]!.clientY : null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (lastY === null || e.touches.length !== 1) return;
+      const y = e.touches[0]!.clientY;
+      e.preventDefault();
+      scrollTourBy(target(), lastY - y, 'instant' as ScrollBehavior);
+      lastY = y;
+    };
+    const onTouchEnd = () => {
+      lastY = null;
+    };
+    root.addEventListener('wheel', onWheel, { passive: false });
+    root.addEventListener('touchstart', onTouchStart, { passive: true });
+    root.addEventListener('touchmove', onTouchMove, { passive: false });
+    root.addEventListener('touchend', onTouchEnd);
+    root.addEventListener('touchcancel', onTouchEnd);
+    scrollKeyTarget.current = target;
+    return () => {
+      root.removeEventListener('wheel', onWheel);
+      root.removeEventListener('touchstart', onTouchStart);
+      root.removeEventListener('touchmove', onTouchMove);
+      root.removeEventListener('touchend', onTouchEnd);
+      root.removeEventListener('touchcancel', onTouchEnd);
+      scrollKeyTarget.current = null;
+    };
+  }, [shown === null]); // eslint-disable-line react-hooks/exhaustive-deps -- the root element changes once, when the first stop shows
+
+  // Keys (tour-stops.md §1): → and Enter Next, ← Back, Esc Skip tour; Tab stays in the card;
+  // ↓ ↑ Page Down and Page Up scroll the screen behind (demo note #99).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       keyboard.current = true;
       const onButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
-      if (e.key === 'Escape') onSkip();
+      const page = viewport().h * 0.85;
+      const scrollKey = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page }[e.key];
+      if (scrollKey !== undefined) {
+        scrollTourBy(scrollKeyTarget.current?.() ?? null, scrollKey, (prefersReduced() ? 'instant' : 'smooth') as ScrollBehavior);
+      } else if (e.key === 'Escape') onSkip();
       else if (e.key === 'ArrowRight' || (e.key === 'Enter' && !onButton)) onNext();
       else if (e.key === 'ArrowLeft') onBack();
       else if (e.key === 'Tab' && cardRef.current !== null) {
@@ -409,7 +517,7 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const motion = reduced ? 'reduced' : 'full';
   if (shown === null) {
     return (
-      <div className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion}>
+      <div ref={rootRef} className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion}>
         {Stage ? (
           <div className="x2f-ex" data-part="tour-stage">
             <Suspense fallback={null}>
@@ -468,7 +576,7 @@ function TourOverlay({ run, onNext, onBack, onSkip }: { run: Run; onNext: () => 
   const pageIndex = shown.pos.page;
 
   return (
-    <div className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion} data-phase={phase}>
+    <div ref={rootRef} className="x2f-tour" data-part="tour" data-tour={tour.id} data-motion={motion} data-phase={phase}>
       {Stage ? (
         <div className="x2f-ex" data-part="tour-stage" data-side={side ? 'true' : 'false'}>
           <Suspense fallback={null}>
