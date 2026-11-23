@@ -249,3 +249,113 @@ All targeted vitest ran with nice -n 10, outside the lock, at d82d692c.
 - **OQ2 (m1):** an overturn before round 1 paid: pay round 2 instead of a lien? I recommend yes.
 - **OQ3 (m2):** which untapped owner and senior actions should take a key tap? I recommend maintenance-on and news publish at least.
 - **OQ4 (m4):** re-bind a suspended lien when no eligible appeal reviewer exists after 48 h? I recommend yes.
+
+---
+
+## Re-review: wip/lead-p4t22-fix at a03297ef (23 Nov 2026)
+
+Scope: `git diff origin/main...a03297ef`, 18 commits on d82d692c, 71 files. Worktree `.claude/worktrees/rev-p4t22b`, detached; the branch was not changed.
+
+### Verdict: APPROVE WITH MINORS
+
+All five findings are fixed, with tests. The rescue cannot be used by the proposer and cannot widen what the moderator key signs. The round-2 payout path cannot pay twice. There is one new Minor (N1), found while answering the lead's residual (c): it is a narrow stuck-coins case and should be fixed before launch, but it does not block this branch, which makes it no worse. There is also one small leftover from m2 (N2).
+
+The full `npm run check` belongs to the cloud runner, and approval holds only if it is green.
+
+### The fixes
+
+- **M1: fixed.**
+  - **One rule on both sides.** `@x2f/staff` now has `gateUsdCents` (round up; null for non-USD), `limitUsdCentsOf` and `twoPersonRule`. The gate calls them (`recordedTerms`, `gateNeedsSecond`, the registry's settings). The API's `needsSecond` must now be given the gate's inputs (`GateValue`: the trade row's XMR, its locked rate and the limit in force now). It ORs them with the snapshot rule, so it is never laxer than either.
+  - **Each disagreement case is closed.** `disputeUsdCents` for USD now uses the gate's formula, which closes the one-cent case. The limit in force covers the lowered-limit case. A non-USD trade is null, which means two people (OQ1 lead default).
+  - **Refusals reach staff.** `twoPersonAgreement.test` pins the cross-check. Refusals are reported (`ruling-refused`, logged `ruling.gate-refused`, deduplicated under the trade lock, enum-checked) and shown on the case view.
+  - **Remaining edge.** A limit lowered *after* a ruling was published, but before it paid, is still refused by the gate. That is exactly what the rescue is for, and the case view now says so.
+- **The rescue (M1 e): cannot be used by the proposer, and does not widen signing.** `POST …/rulings/:id/second-approval`:
+  - **Who may use it.** It needs `rulings.approve` and the gate's latest report for this very ruling to be `needs-second`. The machine refuses the proposer (`same-person`), refuses a dispute whose payout already ran, and refuses an already-approved ruling. In round 2 it refuses the appeal's proposer, approver and assignee, and the rescuer joins round 1's `involved` list (R37).
+  - **What gets tapped.** The tap is consumed only after the machine accepts. It is exactly the `approve` intent for that ruling: the same id, round 1, outcome, amount, and the published reason and evidence. So the key signs nothing a normal approval would not.
+  - **What the gate checks again.** The gate re-verifies the tap with the same `same-person` and `approver-role` checks. A compromised API that skips the route's checks still needs a real senior's or the owner's tap for that exact ruling, which is the same power it had before.
+  - **Nothing else changes.** It cannot publish an unpublished ruling, change an outcome, or reach a round-2 ruling.
+- **M2: fixed.**
+  - **The statement.** `AfterRefundStatement` has its own domain (`x2f/ruling-statement-after-refund/v1\0`), exact keys, and is bound to trade, round, ruling, amount and buyer address. It is signed only after `gateCheck` authorises the ruling in force, using the same taps and R37 against round 1 as the gate authorised it. The amount and address come from the moderation process's own attested terms and shadow trade.
+  - **Storage and display.** The API verifies the statement against MOD_SIGNING_PUBLIC, checks it names the ruling in force with its round, and keeps the first one per ruling (migration 790). The seller's device shows the pay form only for a statement that verifies against the pinned key with its own accepted amount and attested address (`restitution` null otherwise).
+- **m1: fixed.**
+  - **The new rule.** A decided round 2 pays when no payout was recorded for the trade, after round 1 is authorised (not paid) so the gate knows its signers. `lienSteps` places the overturn lien only once round 1's payout is the one that ran (`executedRound === 1`), including when round 1 lands after the overturn. `rulingFee` follows the same rule.
+  - **A nit (no effect).** When round 2 upholds round 1 and round 1 had already paid, the `settled` report's kind matches round 2, so `executedRound` records 2. Nothing reads it in the upheld case: no lien, and the fee is the same. Recording the ruling id the watcher settled would be exact.
+- **m2: fixed, with N2 below.** Taps are now required for:
+  - `maintenance-on` (kind, message hash, backBy as sent);
+  - `news-publish` (id or null, title and body hashes as sent);
+  - `banner-publish` (kind, text hash as sent).
+
+  Each is consumed in the write's own transaction and bound to the session. The perm is `site.control`.
+- **m3: fixed.** `threats-staff.md` and the plan now say what the gate enforces for round 2. It is also live code now (m1).
+
+### The round-2 payout cannot pay twice
+
+- **One record per trade.** The executor keeps at most one execution record per trade. It is written and saved before anything is handed or signed, and any later pass must match it (`mismatch` otherwise). `pay` is round 2 only when there is no record or the record is round 2's, so a round-1 payout already recorded (and perhaps handed) is always carried on and never swapped. This is pinned ("carried on, never swapped", with a restart).
+- **One statement per trade.** Only one `RulingStatement` is ever signed per trade, from that record. The API keeps the first statement (`statement-conflict`).
+- **The escrow itself.** Only one spend is possible.
+- **What the device can't verify.** The device's `wrong-round` check now accepts 1 or 2. It cannot tell which round should pay, but it needs no such check: the moderation process never signs both.
+
+### The builder's residuals
+
+- **(a) A genuine round-1 after-refund statement, served after round 2 changed the outcome.**
+  - **The round:** yes, the statement needs it, and it has it.
+  - **The device can't fully know the latest round against an API that withholds:** this is the same class as the accepted residual "an appeal hidden for the whole window" (spec 6.6/T22). Accept it as that.
+  - **Two cheap hardenings (Minor, recommended):**
+    1. Sign an after-refund statement for **every** decided after-refund round, whatever its outcome. That means also `no-action` and `seller-returns-fiat` (a "decided, nothing to send" statement), so a round 2 that overrules is a signed fact and not just an absence.
+    2. Have the seller's device persist the highest round it has verified for the trade, and never show a pay form for a lower round afterwards.
+  - **Payment during the window is legitimate.** The 24 h comply window lies inside the 48 h appeal window, so paying on round 1 while an appeal may follow is the design. The lien rules already handle a later overrule (`compliedAt` → overturned lien on the buyer).
+- **(b) No statement is signed when the moderation process has no recorded terms, and staff aren't told.**
+  - **When it happens.** It should be rare for a refunded escrow, because the dispute holds off the shred. But it is silent, and the seller then sees no pay form while the lien and the comply deadline still run.
+  - **Fix (Minor).** Report `no-terms` through the same `ruling-refused` channel (a reason outside the gate list, e.g. `GATE_REFUSALS` plus `no-terms` on the API side), so the case view shows it. Also hold `runComplyLapses` (no lapse, no freeze for `ignored-ruling`) while no statement exists for the ruling in force. A seller must not be penalised for a form their app was never allowed to show.
+- **(c) A round 2 whose round 1 the gate refuses waits for the rescue.**
+  - **When the refusal is `needs-second`:** acceptable. The rescue exists and the refusal is visible.
+  - **When the refusal is not `needs-second`:** not acceptable. See N1.
+
+### New findings
+
+**N1 (Minor; liveness, stuck coins, narrow). Removing or switching off a moderator strands their published-but-unpaid round-1 rulings, and now also the appeal that overturns them.**
+
+- **Where:**
+  - `apps/moderation/src/gate/verify.ts:71-77`, :87-93: a removed, revoked or switched-off signer is `revoked`, judged at use time.
+  - `apps/moderation/src/execute.ts`: for `pay === r2`, round 1 must be authorised first, otherwise the pass returns `refused-<reason>`.
+- **The probe.** `probe-p4t22b-revoked.test.ts`, kept in the scratchpad:
+  1. round 1 `release-to-buyer` by a moderator;
+  2. round 2 `refund-to-seller` decided by an uninvolved senior;
+  3. the moderator is removed;
+  4. the executor returns `refused-revoked`, and nothing is settled.
+
+  The probe passes, which confirms the finding.
+- **The case.** The rescue does not apply, because it is only for `needs-second`. Nothing else can authorise round 1 again, so neither round can ever pay. This is the likely case, not a rare one: a moderator caught ruling for an accomplice is removed. Their ruling then rightly never pays, but the appeal meant to correct it can't pay either.
+- **Round 1 alone, before this branch.** The same stranding already existed for round 1 alone. A removed moderator's unpaid ruling, with the winner offline, never paid and could not be re-ruled.
+- **Fix (engineering; the lead decides the shape):**
+  - (1) For the R37 signers check only (`round1-unseen`), not for authorisation, let the gate verify round 1's taps against the pinned credentials it keeps for removed or revoked staff. `remove-staff` keeps `creds`. Then record round 1 as seen with its signers, unpaid, and let round 2 pay.
+  - (2) For a round 1 refused `revoked` with no appeal: let a senior or the owner re-propose round 1 under a new ruling id. The gate's `stale-round` allows it, because the old ruling was never authorised. Alternatively, show it on the case view so staff can steer the traders to appeal.
+  - Test: the probe, plus the re-proposal.
+
+**N2 (Minor, m2 leftover). The planned-maintenance announcement is still untapped, and a planned switch-on inherits its message.**
+
+- **Where:** `PUT /staff/v1/site/maintenance/planned` (apps/api/src/staff/site.ts, after the maintenance route) stores `planned_message` without a tap. That message is shown to every visitor (`plannedMaintenance`).
+- **The leak:** a planned switch-on with no message of its own binds `messageSha256: null` and then shows `planned_message`. So untapped text still reaches every user.
+- **Fix:** tap the planned announcement with the same `maintenance-on`-style intent (start, end, message hash), and bind the inherited message into the switch-on tap.
+
+### Tests run at a03297ef
+
+All targeted vitest ran with nice -n 10, outside the lock.
+
+| Project | Files | Result |
+|---|---|---|
+| packages/staff | all 14 | **377/377 passed** |
+| packages/trade | afterRefundStatement, rulingStatement | **9/9 passed** |
+| apps/moderation | afterRefund, execute, gate, internal, tradeShred | **143/143 passed** |
+| apps/web | policy, attestation-flow, dispute, dispute-tripwires, disputeScreenProof | **302/302 passed** |
+| apps/staff-web | moderator, ownerPages, screens, webauthnTripwire | **77/77 passed** |
+| apps/api | 23 files: test/disputes/* (afterRefundStatement, gateRefusal and twoPersonAgreement included), finalOutcome, schema, site, staff content/pay/performance/keyTap/matrix/settings, watchReports | **608/608 passed** |
+
+- **Probe** N1: passes (confirms it). Scratch only; deleted from the worktree.
+- **Staff dispute regtest**, full, under ~/x2f-comms/check.lock: **12/15 passed** (39.2 min). All three failures are desktop rows whose phone twins passed.
+  - **EUR row.** It is the first desktop row to fail. After the owner approved, the payout was recorded and handed (`ruling-signing`, `desk-ruling-recorded`), but the winner's co-sign did not complete within `PAYOUT_WAIT`. The moderation log has no `ruling-settled` for it, and a `ruling-settle-failed` at shutdown.
+  - **Overturn row.** It then saw 28 unexpected incoming txs in the buyer wallet (its own tx among them). That is a stale `before` snapshot of the wallet, not a second payout.
+  - **Winner-offline row.** It saw 1 unexpected incoming tx before the buyer reopened.
+  - **No double payout.** The moderation log shows exactly one `ruling-signing` per ruling trade (10 for 10). Nothing points to two payouts on one trade.
+  - **Rerun.** The same three desktop rows alone, under the lock: **3/3 passed** (6.3 min).
+  - **Reading:** timing flakes in the desktop sequence, cascading from the slow EUR co-sign. They are not a security defect. A lead follow-up would make the `before` snapshots robust (refresh the wallet before snapshotting) and give the EUR row the same wait as the above-limit row.
