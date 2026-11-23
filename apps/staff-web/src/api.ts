@@ -463,6 +463,10 @@ export const removeBanner = () => staffApi<unknown>('/staff/v1/site/banner', { m
 /** Review p4t22 m2: switching maintenance on is tapped (`maintenance-on`); off is not. */
 export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null; tapId: string } | { on: false }) =>
   staffApi<StaffSite>('/staff/v1/site/maintenance', { method: 'PUT', body: b });
+/** Review p4t22 N2: announcing a planned maintenance is tapped (`maintenance-planned`); removing it is not. */
+export const announcePlannedMaintenance = (b: { startsAt: string; endsAt: string; message: string | null; tapId: string }) =>
+  staffApi<StaffSite>('/staff/v1/site/maintenance/planned', { method: 'PUT', body: b });
+export const removePlannedMaintenance = () => staffApi<unknown>('/staff/v1/site/maintenance/planned', { method: 'DELETE' });
 
 export interface RevenueBucket {
   period: string;
@@ -547,6 +551,8 @@ export interface CaseRuling {
     reason: string;
     since: string;
     secondApproval: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null;
+    /** Review p4t22 N1: set when a senior or the owner may propose a new round 1 in place of a ruling refused `revoked`. Absent from an older API. */
+    rePropose?: { rulingId: string } | null;
   } | null;
 }
 export interface DisputeCase {
@@ -635,6 +641,12 @@ export const approveRuling = (code: string, rulingId: string, tapId: string) =>
 /** Review p4t22 M1 (e): a second approval for a ruling published on one tap that the gate refuses `needs-second`. */
 export const secondApproveRuling = (code: string, rulingId: string, tapId: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/second-approval`), { method: 'POST', body: { tapId } });
+/** Review p4t22 N1: a senior's new round-1 ruling in place of one the gate refuses `revoked` (their own propose tap). */
+export const reProposeRuling = (
+  code: string,
+  replaces: string,
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+) => staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(replaces)}/re-propose`), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const sendBackRuling = (code: string, rulingId: string, note: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
 

@@ -200,14 +200,6 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says \"We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
     },
     {
-      text: "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.",
-      why: "Owner demo note #120 (23 Nov 2026, setup-terms key point): the page says \"Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.\" (Terms version 2026-11-23).",
-    },
-    {
-      text: "Completed trades are erased on day 30.",
-      why: "Owner demo note #119 (23 Nov 2026, setup-terms key point): the page says \"To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.\" (Terms version 2026-11-23).",
-    },
-    {
       text: "Moderators can read your trade chat only if a dispute is opened.",
       why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\" (Terms version 2026-11-23).",
     },
@@ -273,7 +265,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Dispute records are kept for 30 days.',
-      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling): two key points, "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, …"; this repo\'s mirror of the board is from 26 Oct.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by two key points, which owner demo notes #119 and #120 (23 Nov 2026) reworded in his words: the page says "To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion." and "Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day." (Terms version 2026-11-23). This repo\'s mirror of the board is from 26 Oct. Owner demo note #118\'s new point ("Moderators are at your disposal …") has no board counterpart, so parity needs nothing for it.',
     },
   ],
   // Owner demo notes (12 Nov 2026, /setup/login): every method is a checkbox, several can be
@@ -372,6 +364,16 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     {
       text: 'Authenticator app',
       why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',
+    },
+    {
+      text: 'Cake Wallet …k3Fz',
+      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: setup no longer picks a wallet app (a plain recommendation list, then one address field), so the first wallet is saved as Other with the neutral label "Wallet 1", and the row reads "Wallet 1 …k3Fz" (setup.spec asserts the saved app and label). The board predates the notes.',
+    },
+  ],
+  SetupPassword: [
+    {
+      text: 'At least 10 characters, with upper and lower case letters, a number and a symbol.',
+      why: 'Owner demo note #108 (17 Nov 2026): no spaces in a password, so the lead reads "At least 10 characters, with upper and lower case letters, a number and a symbol, and no spaces." and the rules list gains "No spaces" (COPY-UNSIGNED). The board predates the note.',
     },
   ],
   SetupWallet: [

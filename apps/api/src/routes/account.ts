@@ -51,6 +51,11 @@ export interface AccountOverview {
   hasBackup: boolean;
   suggestions: Suggestion[];
   termsCurrent: boolean;
+  /**
+   * Review M2: this session is setup-only (the account's only login is a password and its sign-up
+   * window is over): it may only add a second method (auth/setupOnly.ts).
+   */
+  setupOnly: boolean;
   /** The end of the account's 24-hour hold (a recovery-code login, hold model v3) while one runs, else null. */
   accountHoldUntil: string | null;
   /** Hold model v3: the account's changes waiting their 24 h (the banner "N changes take effect on <date>"), else null. */
@@ -326,6 +331,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     termsCurrent:
       row.kind !== 'trader' ||
       (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
+    setupOnly: req.auth.setupOnly,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     accountType: row.account_type,
     securityRating: member === null && row.kind === 'trader' ? accountRating(counts) : null,

@@ -785,13 +785,19 @@ describe('the freeze', () => {
     const mod = await staff('mod');
     const { code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    await deps.db.query(`update disputes set status = 'complying', complied_at = null, comply_by = $2 where code = $1`, [code, new Date(START.getTime() + 24 * H)]);
+    const rulingId = randomUUID();
+    const ruling = { id: rulingId, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' }, proposer: mod.id, approver: null, needsSecond: false };
+    await deps.db.query(`update disputes set status = 'complying', complied_at = null, comply_by = $2, ruling = $3 where code = $1`, [code, new Date(START.getTime() + 24 * H), JSON.stringify(ruling)]);
     setNow(new Date(START.getTime() + 23 * H));
     await mod.fresh();
     let res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'ignored-ruling' });
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'freeze-not-allowed' });
     setNow(new Date(START.getTime() + 25 * H));
     await mod.fresh();
+    // Review p4t22 residual (b): not while the seller's app could not show the pay form (no signed statement).
+    res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'ignored-ruling' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'freeze-not-allowed' });
+    await deps.db.query(`insert into after_refund_statements (ruling_id, code, seq, round, statement, sig) values ($1, $2, 1, 1, '{}'::jsonb, 'x')`, [rulingId, code]);
     // Only the side the ruling ordered to pay.
     res = await mod.b.post(url(code, '/freeze'), { side: 'buyer', on: true, reason: 'ignored-ruling' });
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'freeze-not-allowed' });

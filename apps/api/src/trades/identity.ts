@@ -117,8 +117,8 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
   });
 
   /**
-   * Review p4t22 M2: the moderation service's signed statement of the after-refund
-   * `seller-sends-xmr` ruling in force on this trade's current dispute (internal
+   * Review p4t22 M2: the moderation service's signed statement of the after-refund ruling in force
+   * on this trade's current dispute (residual (a): any outcome; internal
    * `after-refund-statement`), 204 while there is none. The seller's device verifies it itself
    * against the pinned moderation key, the trade, its own amount and the buyer's attested address,
    * and shows the pay form only then.
@@ -132,7 +132,9 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
     if (d === null || !d.afterRefund) return reply.code(204).send();
     const decided = d.round === 2 && ['final', 'complying', 'closed'].includes(d.status);
     const inForce = d.round === 1 || decided ? d.ruling : d.round1;
-    if (inForce === null || inForce.outcome !== 'seller-sends-xmr') return reply.code(204).send();
+    // Residual (a): served whatever the outcome in force; the device shows the pay form only for a
+    // verified `seller-sends-xmr` one, and never for a round below the highest it verified.
+    if (inForce === null) return reply.code(204).send();
     const { rows } = await deps.db.query<{ statement: unknown; sig: string }>(
       'select statement, sig from after_refund_statements where ruling_id = $1 and code = $2',
       [inForce.id, normalized],

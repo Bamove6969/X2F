@@ -1,4 +1,4 @@
-import { checkDisplayName } from '@x2f/accounts';
+import { checkDisplayName, displayKeyOf as foldedKeyOf } from '@x2f/accounts';
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 
@@ -12,11 +12,11 @@ export const PUBLIC_NAME = PUBLIC_NAME_COLUMN;
 export const PUBLIC_NAME_KEY = 'display_key';
 
 /**
- * The stored key of a display name taken as is (no shape or reserved-word check): NFC, then lower
- * case, exactly as `checkDisplayName` makes it (signup round 3: the database's lower() is not used,
- * migration 800).
+ * The stored key of a display name taken as is (no shape or reserved-word check): @x2f/accounts'
+ * `displayKeyOf`, exactly as `checkDisplayName` makes it (signup round 3: the database's lower()
+ * is not used, migration 800; review L3 and L4: a full case fold, spaces tidied; migration 810).
  */
-export const displayKeyOf = (raw: string): string => raw.normalize('NFC').toLowerCase();
+export const displayKeyOf = (raw: string): string => foldedKeyOf(raw);
 
 /** An account found by its public name, case-insensitively; null for a name that is malformed or unknown. */
 export async function findByPublicName(

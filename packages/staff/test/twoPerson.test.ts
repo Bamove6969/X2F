@@ -150,3 +150,57 @@ describe('the rescue: a second approval on a ruling published on one tap (M1 e)'
     expect(applyDispute(d, { type: 'second-approve' }, senior, at(52), S).ruling?.approver).toBe('senior-1');
   });
 });
+
+describe('review p4t22 N1: a senior re-proposes a round 1 the gate refuses as revoked', () => {
+  const again = (gate: GateValue, outcome: 'release-to-buyer' | 'refund-to-seller' = 'refund-to-seller', id = 'r1b', proposer = 'senior-1') =>
+    ({ type: 're-propose', gate, ruling: { id, outcome, accountAction: NONE, proposer } }) as const;
+
+  test('under the limit, it is published at once as a new round 1, with a fresh appeal window', () => {
+    const d = proposed(UNDER);
+    const next = applyDispute(d, again(UNDER), senior, at(10), S);
+    expect(next.ruling).toEqual({ id: 'r1b', outcome: 'refund-to-seller', accountAction: NONE, proposer: 'senior-1', approver: null, needsSecond: false });
+    expect(next.status).toBe('published');
+    expect(next.round).toBe(1);
+    expect(next.assignee).toBe('senior-1');
+    expect(next.publishedAt).toEqual(at(10));
+    expect(next.appealEndsAt).toEqual(at(58));
+    expect(next.seen).toContain('senior-1');
+  });
+  test('at the limit (or a non-USD trade) it waits for a second person, through the normal approval', () => {
+    const d = proposed(EUR, base(5_500n));
+    const waiting = applyDispute(applyDispute(d, { type: 'approve' }, senior2, at(3), S), again(EUR, 'release-to-buyer'), senior, at(10), S);
+    expect(waiting.status).toBe('awaiting-approval');
+    expect(waiting.publishedAt).toBeNull();
+    expect(waiting.appealEndsAt).toBeNull();
+    rule('same-person', () => applyDispute(waiting, { type: 'approve' }, senior, at(11), S));
+    const done = applyDispute(waiting, { type: 'approve' }, owner, at(11), S);
+    expect(done.status).toBe('published');
+    expect(done.ruling).toMatchObject({ id: 'r1b', proposer: 'senior-1', approver: 'owner-1', needsSecond: true });
+  });
+  test('also once final, until the payout ran; never after it, never in an appeal', () => {
+    let d = proposed(UNDER);
+    d = applyDispute(d, { type: 'window-closed' }, system, at(51), S);
+    expect(d.status).toBe('final');
+    expect(applyDispute(d, again(UNDER), senior, at(52), S).status).toBe('published');
+    const paid = applyDispute(d, { type: 'executed', round: 1 }, system, at(52), S);
+    rule('wrong-state', () => applyDispute(paid, again(UNDER), senior, at(53), S));
+    const appealed = applyDispute(proposed(UNDER), { type: 'appeal', involved: ['mod-1'] }, { kind: 'trader', side: 'seller' }, at(3), S);
+    rule('wrong-state', () => applyDispute(appealed, again(UNDER), senior, at(4), S));
+  });
+  test('only a senior or the owner, as themselves, with a new ruling id; never on an after-refund dispute (lead default)', () => {
+    const d = proposed(UNDER);
+    rule('wrong-party', () => applyDispute(d, again(UNDER, 'refund-to-seller', 'r1b', 'mod-2'), mod2, at(10), S));
+    rule('wrong-party', () => applyDispute(d, again(UNDER, 'refund-to-seller', 'r1b', 'senior-2'), senior, at(10), S));
+    rule('wrong-state', () => applyDispute(d, again(UNDER, 'refund-to-seller', 'r1'), senior, at(10), S));
+    rule('wrong-state', () => applyDispute(base(), again(UNDER), senior, at(10), S));
+    let ar = newDispute({ code: 'K7M2-9QXA-4FTR-8WPN', openedBy: 'buyer', afterRefund: true, usdCents: 41_250n, limitUsdCents: LIMIT, firstResponseH: 4, now: T0 });
+    ar = applyDispute(ar, { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
+    ar = applyDispute(ar, { type: 'propose', gate: UNDER, ruling: { id: 'r1', outcome: 'seller-sends-xmr', accountAction: NONE, proposer: 'mod-1' } }, mod, at(2), S);
+    rule('wrong-state', () => applyDispute(ar, again(UNDER, 'release-to-buyer'), senior, at(10), S));
+  });
+  test('the two-person rule is the gate\'s: no gate value is a TypeError, as for a proposal', () => {
+    const d = proposed(UNDER);
+    const e = { type: 're-propose', ruling: { id: 'r1b', outcome: 'release-to-buyer', accountAction: NONE, proposer: 'senior-1' } } as never;
+    expect(() => applyDispute(d, e, senior, at(10), S)).toThrow(TypeError);
+  });
+});

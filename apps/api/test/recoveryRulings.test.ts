@@ -16,7 +16,7 @@ import { HOLD_MS } from '../src/auth/hold.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { verifyPassword } from '../src/auth/password.js';
 import { SIG } from './helpers/signature.js';
-import { accountIdByLoginName } from './helpers/accounts.js';
+import { accountIdByLoginName, addUnusedSecurityKey } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { Browser } from './helpers/totp.js';
@@ -85,6 +85,8 @@ async function ownerWithCode() {
   expect(res.statusCode).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
   const codes = (await b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
+  // Review M2: a password alone is setup-only; the password session below is still the weak one.
+  await addUnusedSecurityKey(deps, id);
   await onboarding(id, null);
   return { b, name, id, code: codes.codes[0]! };
 }

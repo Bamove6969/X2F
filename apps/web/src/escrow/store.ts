@@ -105,6 +105,13 @@ export interface EscrowRecord {
    */
   rulingLost?: boolean;
   /**
+   * Review p4t22 residual (a): the highest round of the moderation service's after-refund statement
+   * this device verified for the trade. A statement for a lower round never shows the pay form
+   * afterwards (a round 2 that overruled round 1 stays in force, whatever the API serves later).
+   * Absent: none verified yet.
+   */
+  afterRefundRound?: 1 | 2;
+  /**
    * The trade amount this device fixed (security fix, 2026-10-24): the buyer at its own "I've
    * paid" tap (with the fiat total it confirmed); the seller from the buyer's signed trade.paid
    * amount, if it fits. Never from the API, never before paid. From then on only this amount is

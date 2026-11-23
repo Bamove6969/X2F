@@ -8,6 +8,7 @@ export {
   checkNames,
   checkNewDisplayName,
   checkNewLoginName,
+  displayKeyOf,
   LOOK_ALIKE_LETTERS,
   NAME_MAX,
   NAME_MIN,
@@ -52,6 +53,7 @@ export {
   addressesHash,
   describeAction,
   STRONG_ONLY_ACTIONS,
+  WEBAUTHN_ONLY_ACTIONS,
   needsStrongConfirm,
 } from './confirmAction.js';
 export {

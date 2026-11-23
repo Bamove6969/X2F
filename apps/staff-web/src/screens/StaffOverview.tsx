@@ -18,6 +18,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle } from '../ui/StaffShell.js';
+import { PlannedMaintenance } from './PlannedMaintenance.js';
 import { usdText, utcClock, utcMinuteText, xmrText } from './staffFormat.js';
 import '../ui/staff.css';
 
@@ -37,8 +38,8 @@ import '../ui/staff.css';
  *   "Show to everyone" / "Remove banner";
  * - maintenance mode: the message and the switch. The API requires a kind (owner G19: planned or
  *   unplanned, no default), so the switch waits until one is picked (not drawn: COPY-UNSIGNED,
- *   DESIGNER-REVIEW). The announced planned maintenance (`PUT …/maintenance/planned`) has no
- *   control here yet.
+ *   DESIGNER-REVIEW). The announced planned maintenance (`PUT …/maintenance/planned`, tapped:
+ *   review p4t22 N2) is PlannedMaintenance.tsx's card below it.
  * - the way to News for traders (no board places it; kept here from the shell's first version).
  *
  * Exactly one primary: "Show to everyone"/"Remove banner" while trading is live, "Tap key and
@@ -158,14 +159,17 @@ export function StaffOverview() {
     if (on) return run(() => setMaintenance({ on: false }), 'Maintenance mode was not changed. Try again.');
     const sent = message.trim() === '' ? null : message.trim();
     const maintenanceKind = mKind!;
+    // Review p4t22 N2: a planned switch-on with no message of its own shows the announced plan's, and its tap binds that.
+    const inherits = sent === null && maintenanceKind === 'planned' && (state?.planned ?? null) !== null;
+    const shown = inherits ? (state!.planned!.message ?? null) : sent;
     setTap({
-      intent: maintenanceOnIntent({ maintenanceKind, message: sent, backBy: null }),
+      intent: maintenanceOnIntent({ maintenanceKind, message: shown, backBy: null }),
       // COPY-UNSIGNED
       title: 'Turn maintenance mode on',
       // not-a-refusal: a description of what switching maintenance on does, in the tap dialog.
       body: 'Tap your security key to turn maintenance mode on. Traders cannot use X2F until you turn it off.',
       tapLabel: 'Tap key and turn on',
-      labels: { messageSha256: 'the message above' },
+      labels: { messageSha256: inherits ? "the planned maintenance's message" : 'the message above' },
       run: (tapId) => setMaintenance({ on: true, kind: maintenanceKind, message: sent, tapId }),
     });
     return Promise.resolve();
@@ -307,6 +311,8 @@ export function StaffOverview() {
           <span>Maintenance mode on</span>
         </label>
       </section>
+
+      <PlannedMaintenance plan={state?.planned} onChange={(s) => setState(s ?? (state === null ? null : { ...state, planned: null }))} />
 
       <p className="x2f-staff-page__lead">
         <Link className="x2f-link" to="/overview/news">

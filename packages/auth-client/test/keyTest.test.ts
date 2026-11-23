@@ -75,8 +75,8 @@ describe('note #94: test a security key right after adding it', () => {
     await expect(testWebAuthnKey(j.api, credentialId, c)).resolves.toBeUndefined();
     expect(c.seen).toHaveLength(1);
     expect(c.seen[0]!.allowCredentials!.map((x) => x.id)).toEqual([soft.credentialId]);
-    // It reuses the existing confirm action; nothing new is asked of the server.
-    expect(KEY_TEST_ACTION).toEqual({ kind: 'extend-session' });
+    // Review L1: its own action, for which the server issues no token.
+    expect(KEY_TEST_ACTION).toEqual({ kind: 'key-test' });
   });
 
   it('another of the account\'s keys answering is not a pass (refused before the server is asked)', async () => {

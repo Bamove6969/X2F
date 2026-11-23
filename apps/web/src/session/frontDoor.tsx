@@ -30,6 +30,15 @@ const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/,
 const RECOVERY: readonly RegExp[] = [/^\/settings\/security$/, /^\/settings\/alerts$/, /^\/trade\/[^/]+(\/dispute)?$/, /^\/feedback$/];
 export const RECOVERY_HOME = '/settings/security';
 
+/**
+ * Security review of wip/lead-notes-all, M2: a setup-only session (the account's only login is a
+ * password, `me.setupOnly`) may open only Security, to add a second way to log in (and its
+ * recovery code), its staged changes, and the feedback form, as the API allows (auth/setupOnly.ts).
+ * Anything else goes to Security.
+ */
+const SETUP_ONLY: readonly RegExp[] = [/^\/settings\/security$/, /^\/settings\/changes$/, /^\/feedback$/];
+export const SETUP_ONLY_HOME = '/settings/security';
+
 /** Whether `pathname` is one of the front door's screens. */
 export function isFrontDoor(pathname: string): boolean {
   return FRONT_DOOR.some((r) => r.test(pathname));
@@ -37,10 +46,12 @@ export function isFrontDoor(pathname: string): boolean {
 
 export type DoorVerdict = { kind: 'wait' } | { kind: 'in' } | { kind: 'go'; to: string };
 
-function me(session: Session): { kind?: unknown; level?: unknown; termsCurrent?: unknown } | null {
+type MeShape = { kind?: unknown; level?: unknown; termsCurrent?: unknown; setupOnly?: unknown };
+
+function me(session: Session): MeShape | null {
   if (session.status !== 'signed-in') return null;
   const m = session.me as unknown;
-  return m !== null && typeof m === 'object' ? (m as { kind?: unknown; level?: unknown; termsCurrent?: unknown }) : null;
+  return m !== null && typeof m === 'object' ? (m as MeShape) : null;
 }
 
 /**
@@ -49,7 +60,7 @@ function me(session: Session): { kind?: unknown; level?: unknown; termsCurrent?:
  */
 export function isInside(session: Session): boolean {
   const m = me(session);
-  return m !== null && m.kind === 'trader' && m.level === 'full' && m.termsCurrent === true;
+  return m !== null && m.kind === 'trader' && m.level === 'full' && m.termsCurrent === true && m.setupOnly !== true;
 }
 
 /**
@@ -68,6 +79,8 @@ export function doorVerdict(session: Session, pathname: string, search: string):
   if (m === null || m.kind !== 'trader') return { kind: 'go', to: `/?returnTo=${returnTo}` };
   // Not finished setting up: the current Terms are not accepted yet.
   if (m.termsCurrent !== true) return { kind: 'go', to: `/terms?returnTo=${returnTo}` };
+  // Review M2: a password alone, its sign-up over: only Security, to add a second way to log in.
+  if (m.setupOnly === true) return SETUP_ONLY.some((r) => r.test(pathname)) ? { kind: 'in' } : { kind: 'go', to: SETUP_ONLY_HOME };
   if (m.level === 'full') return { kind: 'in' };
   if (m.level === 'recovery') return RECOVERY.some((r) => r.test(pathname)) ? { kind: 'in' } : { kind: 'go', to: RECOVERY_HOME };
   return { kind: 'go', to: `/login?returnTo=${returnTo}` };

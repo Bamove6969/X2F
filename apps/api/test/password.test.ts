@@ -10,7 +10,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { DUMMY_HASH, REGISTER_PASSWORD_BODY_LIMIT, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
-import { accountIdByLoginName, seedAccount, trustedDevice } from './helpers/accounts.js';
+import { accountIdByLoginName, seedAccount, trustedDevice, addUnusedSecurityKey } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -379,7 +379,8 @@ describe('POST /v1/login/password', () => {
     // From the registering browser: a new one would wait for approval (Task 16, deviceApproval.test.ts).
     const ok = await login('LOGINOK01', GOOD, { [DEVICE_COOKIE]: cookie(reg, DEVICE_COOKIE)! });
     expect(ok.statusCode).toBe(200);
-    expect(ok.json()).toEqual({ status: 'ok' });
+    // Review M2: the account's only login is the password: the session is setup-only, and the login says so.
+    expect(ok.json()).toEqual({ status: 'ok', setupOnly: true });
     expect(cookie(ok, SESSION_COOKIE)).toBeTruthy();
     expect(await alerts(id, 'new-login')).toEqual([{ detail: { method: 'password', deviceLabel: 'Test browser' } }]);
     const bad = await login('loginok01', 'Wrong-Horse-9');
@@ -399,6 +400,8 @@ describe('POST /v1/login/password', () => {
     await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
       id, legacyHash.hash, legacyHash.pepperId, now,
     ]);
+    // Review M2: a password alone is setup-only; this account also holds a key it does not use here.
+    await addUnusedSecurityKey(deps, id);
     // Hold model v3: with nothing logged in, a password alone gets in only on a trusted device.
     const dev = { [DEVICE_COOKIE]: await trustedDevice(deps, id) };
     const first = await login('Legacy.Acct', GOOD, dev);
@@ -426,7 +429,8 @@ describe('POST /v1/login/password', () => {
     const dev = { [DEVICE_COOKIE]: await trustedDevice(deps, id) };
     const ok = await login('spaced.old1', spaced, dev);
     expect(ok.statusCode, ok.body).toBe(200);
-    expect(ok.json()).toEqual({ status: 'ok' });
+    // It logs in; with the password alone the session is setup-only (review M2).
+    expect(ok.json()).toEqual({ status: 'ok', setupOnly: true });
     // The same password typed without its spaces is a different password.
     expect((await login('spaced.old1', 'OldHorse9-x', dev)).statusCode).toBe(401);
   });

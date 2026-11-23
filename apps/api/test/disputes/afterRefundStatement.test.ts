@@ -120,6 +120,23 @@ describe('the after-refund ruling statement (review p4t22 M2)', () => {
     expect((await traderGet(t.code, 'seller')).statusCode).toBe(204);
   });
 
+  it('residual (a): a decided round with nothing to send is kept and served too; a round 2 that overrules then serves its own', async () => {
+    const na = await ruled('no-action');
+    const s1 = statementFor(na.t.code, na.rulingId, { outcome: 'no-action' });
+    expect((await post(na.t.code, s1)).statusCode).toBe(201);
+    expect(((await traderGet(na.t.code, 'seller')).json() as { statement: unknown }).statement).toEqual(s1);
+    // Its outcome must be the ruling's.
+    const { t, rulingId } = await ruled();
+    expect((await post(t.code, statementFor(t.code, rulingId, { outcome: 'no-action' }))).json()).toEqual({ error: 'stale-ruling' });
+    expect((await post(t.code, statementFor(t.code, rulingId))).statusCode).toBe(201);
+    await appealDirect(deps, t.code, 'seller');
+    const d2 = await publishRuling(deps, t.code, { outcome: 'seller-returns-fiat' });
+    expect((await traderGet(t.code, 'seller')).statusCode).toBe(204);
+    const s2 = statementFor(t.code, d2.ruling!.id, { round: 2, outcome: 'seller-returns-fiat' });
+    expect((await post(t.code, s2)).statusCode).toBe(201);
+    expect(((await traderGet(t.code, 'seller')).json() as { statement: unknown }).statement).toEqual(s2);
+  });
+
   it('a decided round 2 that orders the payment gets its own statement', async () => {
     const { t } = await ruled('no-action');
     await appealDirect(deps, t.code, 'buyer');

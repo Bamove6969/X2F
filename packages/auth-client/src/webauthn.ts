@@ -122,12 +122,12 @@ export async function addWebAuthnKeyWithId(
 }
 
 /**
- * The confirm action a key test asks for (owner demo note #94). The test reuses the confirm
- * ceremony (`/v1/confirm/webauthn/start|finish`, the server's own assertion check, bound to this
- * session); the token it earns is dropped unspent. "Stay logged in?" is the least a token can do
- * (it would only extend this same session, and only if redeemed), so nothing new is trusted.
+ * The confirm action a key test asks for (owner demo note #94; security review of
+ * wip/lead-notes-all, L1): its own `key-test`, which only a passkey or security key confirms and for
+ * which the server issues no token. The test reuses the confirm ceremony
+ * (`/v1/confirm/webauthn/start|finish`, the server's own assertion check, bound to this session).
  */
-export const KEY_TEST_ACTION: ConfirmAction = { kind: 'extend-session' };
+export const KEY_TEST_ACTION: ConfirmAction = { kind: 'key-test' };
 
 /** Why a key test did not pass, besides the browser's and the server's own errors. */
 export class KeyTestError extends Error {
@@ -159,6 +159,7 @@ export async function testWebAuthnKey(
   if (listed.length === 0) throw new KeyTestError('not-listed');
   const response = await ceremony.startAuthentication({ optionsJSON: { ...options, allowCredentials: listed } });
   if (response.id !== credentialId || response.rawId !== credentialId) throw new KeyTestError('other-key');
-  // The server's check; the confirm token it answers with is not kept.
-  await api.confirmWebAuthnFinish({ challengeId, response });
+  // The server's check; it answers `{ tested: true }` and issues no token (review L1).
+  const done = await api.keyTestWebAuthnFinish({ challengeId, response });
+  if (done.tested !== true) throw new KeyTestError('not-listed');
 }

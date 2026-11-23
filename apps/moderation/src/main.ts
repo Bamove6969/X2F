@@ -782,8 +782,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
 
   /**
-   * Review p4t22 M2: one pass over the current after-refund disputes: for a `seller-sends-xmr`
-   * ruling in force that the gate authorises, the signed after-refund statement goes to the API
+   * Review p4t22 M2: one pass over the current after-refund disputes: for an after-refund ruling
+   * in force (residual (a): any outcome) that the gate authorises, the signed after-refund statement goes to the API
    * (`after-refund-statement`); a refusal is reported for the staff case view (`ruling-refused`).
    * Resolves with the trades whose statement the API took this pass.
    */

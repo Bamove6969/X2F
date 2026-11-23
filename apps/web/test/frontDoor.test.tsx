@@ -192,6 +192,22 @@ describe('a recovery (backup) session', () => {
   });
 });
 
+// Security review of wip/lead-notes-all, M2: a password alone, its sign-up over: the session is
+// setup-only (me.setupOnly) and reaches only Security (to add a second way to log in), its staged
+// changes and the feedback form, as the API allows.
+describe('a setup-only session (a password alone)', () => {
+  it('reaches Security, Account changes and the feedback form only, and is not inside', () => {
+    const so: Session = { status: 'signed-in', me: { ...FULL, setupOnly: true } as never };
+    for (const p of BEHIND) {
+      const v = doorVerdict(so, p, '');
+      const allowed = p === '/settings/security' || p === '/settings/changes' || p === '/feedback';
+      expect(v, p).toEqual(allowed ? { kind: 'in' } : { kind: 'go', to: '/settings/security' });
+    }
+    expect(isInside(so)).toBe(false);
+    expect(isInside({ status: 'signed-in', me: { ...FULL, setupOnly: false } as never })).toBe(true);
+  });
+});
+
 describe('logged in and set up', () => {
   // This device has seen the welcome screen (the first visit is the next describe).
   beforeEach(() => window.localStorage.setItem(WELCOME_SEEN_KEY, '1'));
