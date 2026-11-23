@@ -427,6 +427,8 @@
  * token, --x2f-good). Medium and Weak take the caution and danger colours (for design to confirm).
  */
 .x2f-start__strength {
+  /* Owner demo note #129: moved over to the right of the row. */
+  margin-left: auto;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -474,13 +476,16 @@
   line-height: 18px;
 }
 
+/* Owner demo note #129 (23 Nov): "Recommended bigger, brighter, and all caps". */
 .x2f-start__rec {
-  padding: 2px 10px;
+  padding: 3px 12px;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-surface-raised);
-  color: var(--x2f-escrow);
-  font-size: 13px;
-  font-weight: 600;
+  background: var(--x2f-monero);
+  color: var(--x2f-on-monero);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .x2f-start__choice-desc,

@@ -102,7 +102,7 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     const chip = (id: string) => host.querySelector(`[data-method="${id}"] [data-part="strength"]`)!;
     for (const id of ['pgp', 'security-key']) {
       expect(host.querySelector(`[data-method="${id}"] [data-part="recommended"]`)!.textContent).toBe('Recommended');
-      expect(chip(id).textContent).toBe('Strong');
+      expect(chip(id).textContent).toBe('RATED-STRONG');
       expect(chip(id).getAttribute('data-strength')).toBe('strong');
     }
     expect(chip('totp').textContent).toBe('Medium');
