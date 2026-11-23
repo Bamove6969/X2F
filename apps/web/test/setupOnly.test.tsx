@@ -11,7 +11,7 @@ import { EndSignup } from '../src/screens/setup/SetupFlow.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
 import { SECOND_METHOD_MESSAGE, SECOND_METHOD_SIGNUP } from '../src/ui/cantDoCodes.js';
 import { refreshSession } from '../src/session/useSession.js';
-import { fire, render } from './render.js';
+import { fire, render, waitFor, waitUntil } from './render.js';
 
 let setupOnly = true;
 let endAnswer: () => Response = () => new Response(null, { status: 204 });
@@ -46,8 +46,7 @@ afterEach(() => {
   refreshSession();
 });
 
-const settle = () => act(async () => new Promise<void>((r) => setTimeout(r, 10)));
-
+/** Security once its session has loaded: the Login methods section is there for every session. */
 async function security(): Promise<HTMLElement> {
   let host: HTMLElement = null!;
   await act(async () => {
@@ -59,15 +58,14 @@ async function security(): Promise<HTMLElement> {
       </MemoryRouter>,
     ).host;
   });
-  await settle();
+  await waitFor(host, '[data-part="methods"]');
   return host;
 }
 
 describe('review M2: Security for a setup-only session', () => {
   it('says to add a second way to log in, keeps Login methods, and links to no session screen', async () => {
     const host = await security();
-    const note = host.querySelector('[data-part="setup-only"]')!;
-    expect(note).not.toBeNull();
+    const note = await waitFor(host, '[data-part="setup-only"]');
     expect(note.textContent).toContain('Add a second way to log in');
     expect(note.textContent).toContain(SECOND_METHOD_MESSAGE);
     expect(host.querySelector('[data-part="methods"]')).not.toBeNull();
@@ -77,8 +75,8 @@ describe('review M2: Security for a setup-only session', () => {
   it('a normal session sees no such notice', async () => {
     setupOnly = false;
     const host = await security();
+    await waitFor(host, '[data-part="devices-link"]');
     expect(host.querySelector('[data-part="setup-only"]')).toBeNull();
-    expect(host.querySelector('[data-part="devices-link"]')).not.toBeNull();
   });
 });
 
@@ -103,33 +101,31 @@ describe('review M2: the end of sign-up is not ignored', () => {
 
   it('ends sign-up quietly when it works', async () => {
     const host = welcome();
-    await settle();
-    expect(ends).toHaveLength(1);
-    expect(host.querySelector('[data-part="welcome-child"]')).not.toBeNull();
+    await waitUntil(() => ends.length === 1, 'the sign-up end request');
+    await waitFor(host, '[data-part="welcome-child"]');
     expect(host.querySelector('[data-part="end-signup-failed"]')).toBeNull();
   });
 
   it('409 password-alone: says why, and goes on to Security to add a second way to log in', async () => {
     endAnswer = () => json(409, { error: 'password-alone' });
     const host = welcome();
-    await settle();
-    expect(document.body.textContent).toContain(SECOND_METHOD_SIGNUP);
+    await waitUntil(() => (document.body.textContent ?? '').includes(SECOND_METHOD_SIGNUP), 'the password-alone message');
     expect(host.querySelector('[data-part="welcome-child"]')).toBeNull();
-    const close = [...document.body.querySelectorAll('button')].find((b) => /close|ok|got it/i.test(b.textContent ?? ''))!;
-    fire(close, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(host.querySelector('[data-part="went-security"]')).not.toBeNull();
+    const close = [...document.body.querySelectorAll('button')].find((b) => /close|ok|got it/i.test(b.textContent ?? ''));
+    expect(close, 'a close button on the message').toBeDefined();
+    fire(close!, new MouseEvent('click', { bubbles: true }));
+    await waitFor(host, '[data-part="went-security"]');
   });
 
   it('any other failure says so with Try again, which asks again', async () => {
     endAnswer = () => json(500, { error: 'internal' });
     const host = welcome();
-    await settle();
-    expect(host.querySelector('[data-part="end-signup-failed"]')!.textContent).toContain('Could not finish your sign-up.');
+    const failed = await waitFor(host, '[data-part="end-signup-failed"]');
+    expect(failed.textContent).toContain('Could not finish your sign-up.');
     endAnswer = () => json(200, { ok: true });
-    fire(host.querySelector('[data-part="end-signup-retry"]')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
+    fire(await waitFor(host, '[data-part="end-signup-retry"]'), new MouseEvent('click', { bubbles: true }));
+    await waitUntil(() => ends.length === 2, 'the second sign-up end request');
+    await waitUntil(() => host.querySelector('[data-part="end-signup-failed"]') === null, 'the failure to clear');
     expect(ends).toHaveLength(2);
-    expect(host.querySelector('[data-part="end-signup-failed"]')).toBeNull();
   });
 });

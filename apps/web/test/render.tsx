@@ -72,3 +72,27 @@ export function setReducedMotion(on: boolean): void {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+/**
+ * Polls inside act until `ready()` holds, every 10 ms up to `deadlineMs` (2 s), so a test waits
+ * for an async result instead of a fixed pause that a loaded machine can outrun. Throws `what`
+ * when the deadline passes.
+ */
+export async function waitUntil(ready: () => boolean, what: string, deadlineMs = 2000): Promise<void> {
+  const end = Date.now() + deadlineMs;
+  for (;;) {
+    let ok = false;
+    await act(async () => {
+      await new Promise<void>((r) => setTimeout(r, 10));
+      ok = ready();
+    });
+    if (ok) return;
+    if (Date.now() > end) throw new Error(`waitUntil: ${what} did not happen within ${deadlineMs} ms`);
+  }
+}
+
+/** The element `selector` finds in `root`, once it is there (`waitUntil`). */
+export async function waitFor(root: ParentNode, selector: string, deadlineMs = 2000): Promise<Element> {
+  await waitUntil(() => root.querySelector(selector) !== null, `${selector} to appear`, deadlineMs);
+  return root.querySelector(selector)!;
+}
