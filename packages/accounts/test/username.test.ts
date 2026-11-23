@@ -528,6 +528,11 @@ describe('new names: a reserved word with a short pad', () => {
     'SUPPORTX', 'ModEst12', 'Team_work', 'BigOwner', 'Sysadmin', 'Escrow99', 'Security', 'Serv1ce_Bob',
     'TheTeam1', 'R00tR00t', 'Helper99', 'ServiceDog', 'Maxmod12', 'Supp0rt_', 'H3lpdesk', '0wner_77',
     'Adm1n_Bob', 'Escr0w_Svc',
+    // Review of cbf71cb8 (Low): one look-alike digit inside the word no longer switches off the
+    // start, end and half rules.
+    'Theadm1n', 'Xadm1nxy', '0wnerxyz', 'Xsupp0rtX', 'x5upp0rtx', '5taffxyz', 'Sy5temxx', 'Escr0wxx', 'Myr00tac',
+    // A reserved word starting or ending one of the name's words, glued to letters on the other side.
+    'MyR00tacc', 'My_r00tacc', 'BigOwnerxy', 'JoeAdminxy',
   ];
   test.each(PROBES)('refuses %s as a new display name; a new login name may hold it (private)', (name) => {
     expect(checkNewDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
@@ -546,7 +551,7 @@ describe('new names: a reserved word with a short pad', () => {
     'Ownership1', 'Systematic', 'Officially1', 'Steamboat9', 'SteamPunk1', 'Beetroot88', 'Homeowner7',
     'Landowner1', 'Teammate5', 'Rooted123', 'Ecosystem1', 'Commodore64', 'Hotmodel9', 'Teamster1',
     'Whelp_dog', 'MoneroFan', 'CryptoBob99', 'Satoshi_21', 'Alice2024', 'BobTheBuilder', 'TradeMaster',
-    'XmrTrader1', 'Quiet.Fox_7', 'Badminton7', 'Gamer007', 'user007x', 'satoshi_ghost', 'nightowl_44', 'kettle.moss', 'lowtide_rx',
+    'XmrTrader1', 'Quiet.Fox_7', 'Badminton7', 'Gamer007', 'user007x', 'Helping_Hand', 'Teams4Life', 'Supporter9', 'Gamer1999', 'satoshi_ghost', 'nightowl_44', 'kettle.moss', 'lowtide_rx',
   ];
   test.each(LEGITIMATE)('accepts %s as a new display name and a new login name', (name) => {
     expect(checkNewDisplayName(name)).toMatchObject({ ok: true });
@@ -560,6 +565,12 @@ describe('new names: a reserved word with a short pad', () => {
   test('the old prefix rule still refuses a display name starting with staff (Stafford22); a login name is free of it', () => {
     expect(checkNewDisplayName('Stafford22')).toEqual({ ok: false, reason: 'reserved' });
     expect(checkNewLoginName('Stafford22')).toMatchObject({ ok: true });
+  });
+
+  test('a reserved word glued inside one word of letters, under half of them, is not refused (Myr00tacc as Myrootacc)', () => {
+    // No word break, not at an end, four letters of nine: none of the three rules applies.
+    expect(checkNewDisplayName('Myrootacc')).toMatchObject({ ok: true });
+    expect(checkNewDisplayName('Myr00tacc')).toMatchObject({ ok: true });
   });
 
   test('reserved words in other scripts\' look-alikes are found too', () => {

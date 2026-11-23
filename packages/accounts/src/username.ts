@@ -203,13 +203,13 @@ const NEW_RESERVED_WORDS = [
  * its own (`ModEst12`, `Team_work`, `Mod12345`).
  */
 const ORDINARY_WORDS = [
-  'mode', 'modu', 'modif', 'helpful', 'helpless', 'whelp', 'teamwork', 'teammate', 'teamster', 'steam',
-  'rootbeer', 'rooted', 'rooter', 'rootless', 'beetroot', 'taproot', 'arrowroot', 'ownership', 'homeowner',
+  'mode', 'modu', 'modif', 'helpful', 'helpless', 'helping', 'whelp', 'teams', 'teamwork', 'teammate', 'teamster', 'steam',
+  'supporter', 'rootbeer', 'rooted', 'rooter', 'rootless', 'beetroot', 'taproot', 'arrowroot', 'ownership', 'homeowner',
   'landowner', 'stafford', 'staffan', 'distaff', 'systematic', 'ecosystem', 'officially', 'badminton',
 ] as const;
 
 /** Digits drawn like letters, beyond lookAlikeKey's 0→o and 1→l: for the new-name check only. */
-const DIGIT_LETTERS: Readonly<Record<string, string>> = { '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b' };
+const DIGIT_LETTERS: Readonly<Record<string, string>> = { '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '9': 'g' };
 
 const ALNUM_OR_MARK = /[\p{L}\p{M}\p{Nd}]/u;
 
@@ -274,11 +274,12 @@ function occurrences(s: string, w: string): number[] {
  * when it
  * 1. stands as a word of its own anywhere: a word break, or the name's start or end, on both sides
  *    (`Support1`, `SUPPORT1`, `SupportX`, `XAdmin12`, `Mod12345`, `Big_Owner`);
- * 2. starts or ends the name, or its letters once the digits at the ends are set aside, even glued
- *    to other letters (`Rootuser`, `Theadmin`, `Helpdesk`, `Owner123`); or
+ * 2. starts or ends the name, its letters once the digits at the ends are set aside, or one of
+ *    its words, even glued to other letters (`Rootuser`, `Theadmin`, `Helpdesk`, `Owner123`,
+ *    `MyR00tacc`); or
  * 3. makes up at least half the name's letters (`SUPPORTX` aside, `Xadminxy`).
- * A reserved word read through look-alike digits (`R00t`, `5upport`) counts only by rule 1, so
- * `Gamer007` (gamer, r00t) passes.
+ * A reserved word spelt more in look-alike digits than letters counts only by rule 1, so
+ * `Gamer007` (gamer, r007: one letter of four) passes while `Theadm1n` and `Myr00tacc` do not.
  * An occurrence glued inside an ordinary word (ORDINARY_WORDS, written as one word) does not count,
  * so `Modesty12`, `Teamwork9` and `Rootbeer7` pass while `ModEst12` and `Team_work` do not.
  */
@@ -297,10 +298,13 @@ function isReservedNewName(name: string): boolean {
       const covered = ORDINARY.some((e) => occurrences(s, e).some((c) => c <= a && b <= c + e.length && unbroken(c, c + e.length)));
       if (covered) continue;
       if (cut[a] && cut[b]) return true;
-      // Read through look-alike digits, a reserved word counts only as a word of its own
-      // (`5upport1`, `R00tR00t`), not glued to letters (`Gamer007` holds r00t).
-      if (fromDigit.slice(a, b).some(Boolean)) continue;
-      if (starts.has(a) || ends.has(b)) return true;
+      // A reserved word spelt mostly in look-alike digits counts only as a word of its own
+      // (`R00tR00t`): glued to letters it is a digit pad borrowing a letter (`Gamer007` holds
+      // r007, one letter of four). One spelt mostly in letters (`Theadm1n`, `Myr00tacc`,
+      // `0wnerxyz`) takes every rule.
+      const digits = fromDigit.slice(a, b).filter(Boolean).length;
+      if (2 * digits > b - a) continue;
+      if (starts.has(a) || ends.has(b) || cut[a] || cut[b]) return true;
       if (2 * letterCount(w) >= letters) return true;
     }
   }
