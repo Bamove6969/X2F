@@ -209,7 +209,7 @@ test('StaffOverview parity at 1280x1500; 141 banner characters put the counter i
   await page.goto('/overview');
   await expect(page.locator('[data-part="earnings-card"]').first()).toContainText('4.82 XMR');
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Zelle payments may take longer this weekend because of a bank holiday.');
-  await page.getByRole('textbox', { name: 'Message to users' }).fill('X2F is being upgraded. Back by 03:00 UTC.');
+  await page.getByRole('region', { name: 'Maintenance mode' }).getByRole('textbox', { name: 'Message to users' }).fill('X2F is being upgraded. Back by 03:00 UTC.');
   // The stubbed figures are the board's own; the XMR amounts carry data-mask for the pixel diff.
   expectOnly(await parityFailures(page, 'StaffOverview', []), KNOWN_OVERVIEW);
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('x'.repeat(141));
