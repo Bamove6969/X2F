@@ -22,8 +22,8 @@ export const LANDING_COPY = {
   sloganTop: 'You’ll need Fiat',
   sloganBottom: 'to believe it.',
   promises: [
-    // not-a-refusal: a reassurance about escrow, not a rule the user ran into
     // COPY: owner's demo note #109 (23 Nov), his words; comma splice made two sentences.
+    // not-a-refusal: a reassurance about escrow, not a rule the user ran into
     'Your coins are protected by a modern 2-of-3 escrow wallet where you and the person you trade with will agree to release and complete the trade. Even X2F cannot unilaterally move the coins. It is a mutually agreed upon decision.',
     // COPY: owner's demo note #110 (23 Nov), his words.
     'No IP addresses logged and all chats are end-to-end encrypted.',
