@@ -335,7 +335,9 @@ describe('review L3: migration 810 refolds stored display keys', () => {
     expect(rows[0]!.display_key).toBe(`αβγδσ${n}`);
 
     const s1 = await seedAccount(deps, { loginName: `rk${++n}bb`, displayName: `Straße${n}` });
-    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, displayName: `STRASSE${n}` });
+    // Stored before the fold: two keys that differ (seeded apart, as the old key made them).
+    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, displayName: `Stras${n}` });
+    await deps.db.query('update accounts set display_name = $2 where id = $1', [s2, `STRASSE${n}`]);
     await deps.db.query("update accounts set display_key = lower(display_name) where id = any($1)", [[s1, s2]]);
     await expect(deps.db.query('select rekey_display_names()')).rejects.toThrow(/display key collision/);
     const after = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = any($1)', [[s1, s2]]);

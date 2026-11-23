@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import type { AccountKind } from '@x2f/accounts';
+import { displayKeyOf, type AccountKind } from '@x2f/accounts';
 import { loginTag } from '../../src/accounts.js';
 import type { Deps } from '../../src/app.js';
 import type { ConfirmAction } from '@x2f/accounts';
@@ -44,7 +44,7 @@ export async function seedAccount(
     `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
     [
-      display, display.toLowerCase(), currentLoginTag(deps, a.loginName ?? display, keyId), keyId, a.loginName === null, kind, randomBytes(32),
+      display, displayKeyOf(display), currentLoginTag(deps, a.loginName ?? display, keyId), keyId, a.loginName === null, kind, randomBytes(32),
       terms, terms === null ? null : now, now, a.disabled ? now : null,
     ],
   );

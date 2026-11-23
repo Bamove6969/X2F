@@ -242,6 +242,30 @@ function highlyRestrictive(name: string): boolean {
   return rest !== null && ['Jpan', 'Hanb', 'Kore'].some((x) => rest.has(x));
 }
 
+/** NFC, trimmed, runs of spaces as one: a display name as stored. */
+function tidyName(input: string): string {
+  return input.normalize('NFC').replace(/ {2,}/g, ' ').replace(/^ +| +$/g, '');
+}
+
+/**
+ * The key two display names are compared by (security review of wip/lead-notes-all, L3): a full
+ * case fold with NFKC_Casefold's effect, NFKC (ligatures and full-width forms plain), upper then
+ * lower case (ß and SS, ǅ and Ǆ alike), final sigma as sigma, NFKC again. The database's
+ * display_key_fold (migration 810) is the same fold, checked on a corpus (signup-rules.test.ts).
+ */
+function foldKey(name: string): string {
+  return name.normalize('NFKC').toUpperCase().toLowerCase().replace(/ς/g, 'σ').normalize('NFKC');
+}
+
+/**
+ * The stored key of a display name taken as is, with no shape or reserved-word check (a name
+ * looked up for a block, a note or a profile): tidied as `checkDisplayName` tidies it (L4: trimmed,
+ * runs of spaces as one), then `foldKey`, so it equals the key `checkDisplayName` gives.
+ */
+export function displayKeyOf(raw: string): string {
+  return foldKey(tidyName(raw));
+}
+
 /**
  * A public display name as stored or looked up: normalised (NFC, trimmed, runs of spaces as one),
  * then the length, the characters (see the top of this file), then reserved words and their
@@ -252,12 +276,12 @@ export function checkDisplayName(input: string): NameCheck {
   if (typeof input !== 'string') return { ok: false, reason: 'characters' };
   // Refuse huge input before normalising it.
   if (input.length > MAX_RAW_LENGTH) return { ok: false, reason: 'length' };
-  const name = input.normalize('NFC').replace(/ {2,}/g, ' ').replace(/^ +| +$/g, '');
+  const name = tidyName(input);
   if (!lengthOk(name)) return { ok: false, reason: 'length' };
   if (INVISIBLE.test(name) || HANGUL_FILLER.test(name)) return { ok: false, reason: 'characters' };
   if (!DISPLAY_CHARS.test(name) || RTL.test(name) || BAD_MARK.test(name) || !/[\p{L}\p{Nd}]/u.test(name)) return { ok: false, reason: 'characters' };
   if (!highlyRestrictive(name)) return { ok: false, reason: 'characters' };
-  const key = name.toLowerCase();
+  const key = foldKey(name);
   if (isReserved(key)) return { ok: false, reason: 'reserved' };
   return { ok: true, name, key };
 }
