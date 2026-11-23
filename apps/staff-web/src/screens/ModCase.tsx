@@ -694,7 +694,7 @@ function RulingCard({
                 `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off or removed before it was carried out.${r.gateRefusal.rePropose ? ' A senior moderator or the owner can propose a new ruling in its place.' : ''}`
               : r.gateRefusal.reason === 'no-terms'
                 ? // Review p4t22 residual (b). COPY-UNSIGNED
-                  `Since ${hhmm(r.gateRefusal.since)}, the moderation service cannot carry out this ruling: it has no record of this trade's terms. ${c.afterRefund ? 'The seller is shown no payment form, and the time to comply does not run out meanwhile.' : 'The escrow payout cannot be made.'}`
+                  `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling: it has no record of this trade's terms. ${c.afterRefund ? 'The seller is shown no payment form, and the time to comply does not run out meanwhile.' : 'No escrow payout is made meanwhile.'}`
                 : `Since ${hhmm(r.gateRefusal.since)}, the moderation service will not carry out this ruling (${r.gateRefusal.reason}).`}
         </p>
       ) : null}
