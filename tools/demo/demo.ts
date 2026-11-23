@@ -22,6 +22,7 @@ import { phoneIp } from './phone.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
 import { SELF_HTTP, SELF_WS } from './self-origin.js';
 import { makeSecrets } from './secrets.js';
+import { buildWeb } from './web-build.js';
 
 assertDemoFlag(process.env);
 const step = (s: string): void => console.log(`demo: ${s}`);
@@ -141,18 +142,7 @@ async function main(): Promise<void> {
 
   // ── the web build ───────────────────────────────────────────────────────────
   step('building apps/web for this demo (regtest, demo moderation key)');
-  execFileSync('npx', ['vite', 'build', '--outDir', WEB_DIST, '--emptyOutDir'], {
-    cwd: join(ROOT, 'apps/web'),
-    stdio: ['ignore', 'ignore', 'inherit'],
-    env: {
-      ...process.env,
-      VITE_MONERO_NETWORK: 'regtest',
-      VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
-      VITE_FEE_WALLET: s.feeWallet,
-      VITE_RELAY_URL: `${SELF_WS}/relay`,
-      VITE_NODE_PROXY_URL: SELF_HTTP,
-    },
-  });
+  buildWeb(WEB_DIST, s);
 
   // ── services ────────────────────────────────────────────────────────────────
   const origins = o.allowed;
