@@ -81,7 +81,7 @@ async function addPgp(b: StaffBrowser, deps: Deps, pair: Pair): Promise<LightMyR
 }
 
 /** Code and account; returns the browser holding the setup cookie. */
-async function begin(app: FastifyInstance, deps: Deps, displayName = 'lumen.k', loginName = 'lumen-login'): Promise<StaffBrowser> {
+async function begin(app: FastifyInstance, deps: Deps, displayName = 'lumen.kai', loginName = 'lumen-login'): Promise<StaffBrowser> {
   const code = (await ensureSetupCode(deps))!;
   const b = new StaffBrowser(app);
   expect((await enterCode(b, code)).statusCode).toBe(200);
@@ -187,21 +187,21 @@ describe('an owner name that looks like an existing trader or member (review lea
   it('is refused with 400 display-name-reserved and creates no owner; an unlike name works', async () => {
     const { app, deps } = await fresh();
     const { seedAccount } = await import('../helpers/accounts.js');
-    const trader = await seedAccount(deps, { loginName: 'trader-login', displayName: 'Mira_K7' });
+    const trader = await seedAccount(deps, { loginName: 'trader-login', displayName: 'Mira_Kay7' });
     await deps.db.query(
       `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
-       values ($1, 'Ren_Q7', 'ren_q7', '{offers-see}', $2, $2)`,
+       values ($1, 'Ren_Quinn7', 'ren_quinn7', '{offers-see}', $2, $2)`,
       [trader, new Date(T0.getTime() + HOUR)],
     );
     const code = (await ensureSetupCode(deps))!;
     const b = new StaffBrowser(app);
     expect((await enterCode(b, code)).statusCode).toBe(200);
-    for (const displayName of ['Mira.K7', 'M1ra-k7', 'ren.q7', 'Re_nQ7']) {
+    for (const displayName of ['Mira.Kay7', 'M1ra-kay7', 'ren.quinn7', 'Re_nQuinn7']) {
       const res = await b.post('/staff/v1/setup/account', { displayName, loginName: 'owner-login' });
       expect({ displayName, status: res.statusCode, error: errorOf(res) }).toEqual({ displayName, status: 400, error: 'display-name-reserved' });
     }
     expect((await deps.db.query("select 1 from accounts where kind = 'owner'")).rows).toHaveLength(0);
-    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.k', loginName: 'owner-login' });
+    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.kai', loginName: 'owner-login' });
     expect(ok.statusCode, ok.body).toBe(201);
   });
 });
@@ -261,7 +261,7 @@ describe('keys and finish', () => {
 
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode, me.body).toBe(200);
-    expect(me.json()).toMatchObject({ displayName: 'lumen.k', role: 'owner' });
+    expect(me.json()).toMatchObject({ displayName: 'lumen.kai', role: 'owner' });
 
     const { rows: owner } = await deps.db.query<{ id: string; disabled_at: Date | null }>("select id, disabled_at from accounts where kind = 'owner'");
     expect(owner).toHaveLength(1);

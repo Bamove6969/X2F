@@ -276,11 +276,11 @@ describe('POST /v1/register/password', () => {
   });
 
   it('one namespace (review I1): a login name never equals a display name, nor a display name a login name', async () => {
-    // Alice: display Mira.K. Bob picks login name mira.k: refused before the Argon2 hash (display
+    // Alice: display Mira.Kay. Bob picks login name mira.kay: refused before the Argon2 hash (display
     // names are public, so the cheap refusal tells nobody anything new).
-    expect((await register('alice.private', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Mira.K' })).statusCode).toBe(201);
+    expect((await register('alice.private', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Mira.Kay' })).statusCode).toBe(201);
     const hash = vi.spyOn(argon2, 'hash');
-    const bob = await register('MIRA.K', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Bob.Trades' });
+    const bob = await register('MIRA.KAY', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Bob.Trades' });
     expect(bob.statusCode).toBe(409);
     expect(bob.json()).toEqual({ error: 'names-unavailable' });
     expect(hash).not.toHaveBeenCalled();
@@ -298,8 +298,8 @@ describe('POST /v1/register/password', () => {
   });
 
   it('F4: refuses a display name that looks like a staff or owner display name', async () => {
-    await seedAccount(deps, { loginName: 'staff.login9', displayName: 'Kim.Lorn', kind: 'staff' });
-    for (const displayName of ['kim.lom', 'Klm.L0rn', 'KIM.LORN']) {
+    await seedAccount(deps, { loginName: 'staff.login9', displayName: 'Kim.Lorne', kind: 'staff' });
+    for (const displayName of ['kim.lome', 'Klm.L0rne', 'KIM.LORNE']) {
       const res = await register(`kimfan.${displayName.length}${displayName[1]}`, GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName });
       expect(res.statusCode, displayName).toBe(400);
       expect(res.json()).toEqual({ error: 'display-name-reserved' });
@@ -307,6 +307,24 @@ describe('POST /v1/register/password', () => {
     // Two traders whose names only look alike are both fine.
     expect((await register('trader.aa1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Alice.bb' })).statusCode).toBe(201);
     expect((await register('trader.aa2', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'A1ice.bb' })).statusCode).toBe(201);
+  });
+
+  it('owner demo notes #126 and #127: a new login name and display name need 8 characters; an older 5-7 character account still logs in', async () => {
+    const shortLogin = await register('seven.1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Long.Enough' });
+    expect(shortLogin.statusCode).toBe(400);
+    expect(shortLogin.json()).toEqual({ error: 'login-name-invalid' });
+    const shortDisplay = await register('eight.ch1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Seven.1' });
+    expect(shortDisplay.statusCode).toBe(400);
+    expect(shortDisplay.json()).toEqual({ error: 'display-name-invalid' });
+    expect(await accountRow('seven.1')).toBeUndefined();
+    expect((await register('eight.ch2', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Eight.ch' })).statusCode).toBe(201);
+    // An account made before the notes, with a 6-character login name and display name.
+    const id = await seedAccount(deps, { loginName: 'old.k6', displayName: 'Old.K6' });
+    const hashed = await hashPassword(deps.config, GOOD);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, hashed.hash, hashed.pepperId, now]);
+    expect(loginNameLookup(deps.config, 'old.k6').valid).toBe(true);
+    const ok = await login('old.k6', GOOD, { [DEVICE_COOKIE]: await trustedDevice(deps, id) });
+    expect(ok.statusCode).toBe(200);
   });
 
   it('refuses leaked and weak passwords', async () => {

@@ -24,7 +24,7 @@
  * A name found this way still has its per-name login throttle (R28), so guesses at its password stay
  * paced; what a finder gains is knowing where to aim them.
  */
-import { checkLoginName } from '@x2f/accounts';
+import { checkNewLoginName } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loginNameAvailable } from '../accounts.js';
 import { ApiError } from '../errors.js';
@@ -46,7 +46,7 @@ async function nameCheck(req: FastifyRequest, reply: FastifyReply) {
   await takeSharedBucket(deps, 'name-check:site', NAME_CHECK_BUCKET, { status: 503, code: 'busy' });
   const b = req.body as Record<string, unknown> | null;
   if (b === null || typeof b !== 'object' || Array.isArray(b) || typeof b.loginName !== 'string') throw new ApiError(400, 'bad-request');
-  const r = checkLoginName(b.loginName);
+  const r = checkNewLoginName(b.loginName);
   if (!r.ok) throw new ApiError(400, 'login-name-invalid');
   return { available: await loginNameAvailable(deps.db, deps.config, r.key) };
 }

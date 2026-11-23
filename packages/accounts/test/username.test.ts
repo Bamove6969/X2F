@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { LOOK_ALIKE_LETTERS, checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, lookAlikeKey, staffNameKey } from '@x2f/accounts';
+import { LOOK_ALIKE_LETTERS, NAME_MAX, NAME_MIN, NEW_NAME_MIN, checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName, lookAlikeKey, staffNameKey } from '@x2f/accounts';
 
 describe('checkDisplayName', () => {
   test('accepts a valid name, keeps it as typed, lower-cases the key', () => {
     expect(checkDisplayName('Satoshi.N')).toEqual({ ok: true, name: 'Satoshi.N', key: 'satoshi.n' });
   });
 
-  test('length: under 5 or over 20', () => {
+  test('length (a stored name): under 5 or over 20', () => {
     expect(checkDisplayName('abcd')).toEqual({ ok: false, reason: 'length' });
     expect(checkDisplayName('a'.repeat(21))).toEqual({ ok: false, reason: 'length' });
     expect(checkDisplayName('a'.repeat(20))).toMatchObject({ ok: true });
@@ -179,6 +179,21 @@ describe('checkNewDisplayName', () => {
   test('a stored name with a space is still a valid name to look up (checkDisplayName is unchanged)', () => {
     expect(checkDisplayName('Bob Smith')).toEqual({ ok: true, name: 'Bob Smith', key: 'bob smith' });
   });
+
+  test('owner demo note #127: a new display name is 8 to 20 characters; a stored 5-7 one still looks up', () => {
+    expect(NEW_NAME_MIN).toBe(8);
+    expect(checkNewDisplayName('abcdefg')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewDisplayName('mira.k')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewDisplayName('abcdefgh')).toEqual({ ok: true, name: 'abcdefgh', key: 'abcdefgh' });
+    expect(checkNewDisplayName('a'.repeat(20))).toMatchObject({ ok: true });
+    expect(checkNewDisplayName('a'.repeat(21))).toEqual({ ok: false, reason: 'length' });
+    // Counted in code points after NFC and trimming, as the stored rule.
+    expect(checkNewDisplayName('  abcdefg  ')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewDisplayName('東京の取引者です')).toMatchObject({ ok: true });
+    expect(checkNewDisplayName('Zoe\u0308.kim')).toEqual({ ok: false, reason: 'length' });
+    // A stored 5-7 character name (before #127) is still a valid name to look up and show.
+    for (const name of ['mira.k', 'demo_cy', 'abcde']) expect(checkDisplayName(name), name).toMatchObject({ ok: true });
+  });
 });
 
 describe('checkLoginName', () => {
@@ -198,6 +213,29 @@ describe('checkLoginName', () => {
   test('reserved words are not refused: the login name is never shown to anyone', () => {
     expect(checkLoginName('my.admin.name')).toMatchObject({ ok: true });
   });
+
+  test('owner demo note #126: a stored 5-7 character login name still parses, so its account logs in', () => {
+    expect(NAME_MIN).toBe(5);
+    expect(NAME_MAX).toBe(20);
+    for (const name of ['abcde', 'cy-demo', 'ana.k1']) expect(checkLoginName(name), name).toMatchObject({ ok: true });
+  });
+});
+
+describe('checkNewLoginName (owner demo note #126: "minimum of 8 characters")', () => {
+  test('8 to 20 characters', () => {
+    expect(checkNewLoginName('abcdefg')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewLoginName('cy-demo')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewLoginName('ana-demo')).toEqual({ ok: true, name: 'ana-demo', key: 'ana-demo' });
+    expect(checkNewLoginName('a'.repeat(20))).toMatchObject({ ok: true });
+    expect(checkNewLoginName('a'.repeat(21))).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewLoginName('a'.repeat(65))).toEqual({ ok: false, reason: 'length' });
+  });
+
+  test('the same characters as checkLoginName', () => {
+    expect(checkNewLoginName('bob smith')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkNewLoginName('cash$king')).toEqual({ ok: false, reason: 'characters' });
+    expect(checkNewLoginName('Quiet.Fox_7')).toEqual({ ok: true, name: 'Quiet.Fox_7', key: 'quiet.fox_7' });
+  });
 });
 
 describe('checkNames', () => {
@@ -213,7 +251,7 @@ describe('checkNames', () => {
   });
 
   test('look-alikes of each other are allowed (folding is only against staff and reserved names)', () => {
-    expect(checkNames('Alice.b', 'A1ice.b')).toMatchObject({ ok: true });
+    expect(checkNames('Alice.bb', 'A1ice.bb')).toMatchObject({ ok: true });
   });
 
   test('note #108: a new account\'s display name holds no spaces', () => {
@@ -225,6 +263,12 @@ describe('checkNames', () => {
     expect(checkNames('abc', 'quiet.fox')).toEqual({ ok: false, field: 'displayName', reason: 'length' });
     expect(checkNames('the_admin', 'quiet.fox')).toEqual({ ok: false, field: 'displayName', reason: 'reserved' });
     expect(checkNames('Satoshi.N', 'bad name')).toEqual({ ok: false, field: 'loginName', reason: 'characters' });
+  });
+
+  test('owner demo notes #126 and #127: both new names are at least 8 characters', () => {
+    expect(checkNames('mira.k.7', 'quiet.fo')).toMatchObject({ ok: true });
+    expect(checkNames('Satoshi', 'quiet.fox')).toEqual({ ok: false, field: 'displayName', reason: 'length' });
+    expect(checkNames('Satoshi.N', 'quiet.f')).toEqual({ ok: false, field: 'loginName', reason: 'length' });
   });
 });
 

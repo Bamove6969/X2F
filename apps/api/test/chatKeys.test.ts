@@ -102,7 +102,7 @@ class Browser {
 }
 
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}x${step}`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 
 /** A password trader in a fresh browser: a username-and-password session, `weak-single`. */
 async function weakTrader(label = 'Firefox on Linux') {

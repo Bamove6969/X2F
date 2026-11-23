@@ -2,7 +2,7 @@
 // (the FU-A tripwires that stood here until FU-A landed on 2026-10-28 are retired).
 import * as client from '@x2f/auth-client';
 import { describe, expect, it } from 'vitest';
-import { checkDisplayName, checkLoginName, checkNames } from '../src/screens/setup/names.js';
+import { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName } from '../src/screens/setup/names.js';
 import { displayNameOf } from '../src/session/useSession.js';
 
 describe('setup takes the name rules from the typed client', () => {
@@ -10,11 +10,13 @@ describe('setup takes the name rules from the typed client', () => {
     expect(checkNames).toBe(client.checkNames);
     expect(checkDisplayName).toBe(client.checkDisplayName);
     expect(checkLoginName).toBe(client.checkLoginName);
+    expect(checkNewLoginName).toBe(client.checkNewLoginName);
+    expect(checkNewDisplayName).toBe(client.checkNewDisplayName);
   });
 });
 
 describe("setup's name rules are FU-A's (@x2f/auth-client)", () => {
-  it('both names: 5-20 characters; the username ASCII letters, digits, dots, dashes, underscores', () => {
+  it('stored names: 5-20 characters; the username ASCII letters, digits, dots, dashes, underscores', () => {
     expect(checkDisplayName('Mira.K_')).toEqual({ ok: true, name: 'Mira.K_', key: 'mira.k_' });
     expect(checkDisplayName('abcd')).toEqual({ ok: false, reason: 'length' });
     expect(checkDisplayName('a'.repeat(21))).toEqual({ ok: false, reason: 'length' });
@@ -39,10 +41,22 @@ describe("setup's name rules are FU-A's (@x2f/auth-client)", () => {
   });
 
   it('the two names must differ, ignoring case; the display name is checked first', () => {
-    expect(checkNames('Lumen.K', 'lumen.k')).toEqual({ ok: false, field: 'loginName', reason: 'same' });
-    expect(checkNames('abc', 'lumen.k')).toEqual({ ok: false, field: 'displayName', reason: 'length' });
-    expect(checkNames('lumen.k', 'abc')).toEqual({ ok: false, field: 'loginName', reason: 'length' });
-    expect(checkNames('lumen.k', 'lumen-login')).toMatchObject({ ok: true, display: { name: 'lumen.k' }, login: { name: 'lumen-login' } });
+    expect(checkNames('Lumen.Kai', 'lumen.kai')).toEqual({ ok: false, field: 'loginName', reason: 'same' });
+    expect(checkNames('abc', 'lumen.kai')).toEqual({ ok: false, field: 'displayName', reason: 'length' });
+    expect(checkNames('lumen.kai', 'abc')).toEqual({ ok: false, field: 'loginName', reason: 'length' });
+    expect(checkNames('lumen.kai', 'lumen-login')).toMatchObject({ ok: true, display: { name: 'lumen.kai' }, login: { name: 'lumen-login' } });
+  });
+
+  it('owner demo notes #126 and #127: a new username and display name are 8-20 characters', () => {
+    expect(checkNewLoginName('lumen.k')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewLoginName('lumen.ka')).toMatchObject({ ok: true });
+    expect(checkNewDisplayName('Lumen.K')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewDisplayName('Lumen.Ka')).toMatchObject({ ok: true });
+    expect(checkNames('lumen.k', 'lumen-login')).toEqual({ ok: false, field: 'displayName', reason: 'length' });
+    expect(checkNames('lumen.kai', 'lumen.k')).toEqual({ ok: false, field: 'loginName', reason: 'length' });
+    // Names stored before still parse (login lookups, profiles).
+    expect(checkLoginName('lumen.k').ok).toBe(true);
+    expect(checkDisplayName('Lumen.K').ok).toBe(true);
   });
 });
 

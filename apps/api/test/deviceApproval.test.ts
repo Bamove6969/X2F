@@ -97,7 +97,7 @@ class Browser {
 }
 
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}x${step}`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 
 /** Signs up a password trader in a fresh browser (logged in there). */
 async function signUp(label = 'Firefox on Linux') {

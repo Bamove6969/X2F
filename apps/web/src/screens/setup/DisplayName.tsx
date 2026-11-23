@@ -77,8 +77,8 @@ export function DisplayName() {
           </p>
         ) : null}
         <p className="x2f-start__help" id="display-name-help">
-          {/* COPY-UNSIGNED (signup round 3: the display name's wider set; owner demo note #108: no spaces) */}
-          5 to 20 characters: letters, numbers and common symbols such as {DISPLAY_SYMBOLS}, with no spaces.
+          {/* COPY-UNSIGNED (signup round 3: the display name's wider set; owner demo note #108: no spaces; #127: 8 to 20) */}
+          8 to 20 characters: letters, numbers and common symbols such as {DISPLAY_SYMBOLS}, with no spaces.
         </p>
       </div>
       {error !== null ? (

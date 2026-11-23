@@ -128,7 +128,7 @@ async function seedAccount(...args: Parameters<typeof seedTagged>): Promise<stri
 }
 
 let nameSeq = 0;
-const uniqueName = (prefix: string) => `${prefix}${++nameSeq}x`;
+const uniqueName = (prefix: string) => `${prefix}${String(++nameSeq).padStart(4, '0')}x`;
 /** Sign-up names for a test login name: display name `D.<login name>`. */
 const names = (loginName: string) => ({ displayName: `D.${loginName}`, loginName });
 

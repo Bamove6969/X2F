@@ -266,7 +266,7 @@ for (const v of PHONES) {
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-name"]')).toBeVisible();
     await expectParity(page, 'SetupUsername', { viewport: v });
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
 
     await expect(page).toHaveURL(/\/setup\/login\?/);
     // PGP is first and picked (ticked) by default.
@@ -312,7 +312,7 @@ for (const v of PHONES) {
     await page.click('[data-part="wallet-finish"]');
 
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
-    await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
+    await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.kai');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
     await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
@@ -323,7 +323,7 @@ for (const v of PHONES) {
     expect(s.requests).toContain('POST /v1/logout');
 
     // The register calls carry both names (FU-A), the accepted Terms version and the signature.
-    expect(s.bodies['pgp-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
+    expect(s.bodies['pgp-start']).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
     expect(s.bodies['pgp-finish']).toEqual([
       expect.objectContaining({ challengeId: 'c1', code: '1234-5678-9ABC', acceptedTerms: TERMS_VERSION, termsSignature: DRAWN }),
     ]);
@@ -343,12 +343,12 @@ for (const v of PHONES) {
       if (tries === 1) return json({ error: 'password-leaked' }, 400)(r);
       s.registered = true;
       s.methods = ['password'];
-      return json({ displayName: 'lumen.k' }, 201)(r);
+      return json({ displayName: 'lumen.kai' }, 201)(r);
     });
 
     await page.goto('/setup');
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await chooseOnly(page, 'password');
     await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/password\?/);
@@ -373,7 +373,7 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/backup\?/);
 
     expect(s.bodies.password?.at(-1)).toMatchObject({
-      displayName: 'lumen.k',
+      displayName: 'lumen.kai',
       loginName: 'lumen-login-7',
       password: 'Quiet-harbour-58',
       acceptedTerms: TERMS_VERSION,
@@ -448,7 +448,7 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/setup\/name\?/);
 
-  await pickNames(page, 'lumen.k', 'lumen-login-7');
+  await pickNames(page, 'lumen.kai', 'lumen-login-7');
   await chooseOnly(page, 'password');
   await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
@@ -459,14 +459,14 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION, termsSignature: { kind: 'typed', name: 'Lumen K' } })]);
 });
 
-test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page }) => {
+test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ page }) => {
   const s = await stubApi(page);
   const urls: string[] = [];
   page.on('framenavigated', (f) => urls.push(f.url()));
 
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
   await acceptTerms(page);
-  await pickNames(page, 'Mira.K_', 'mira-signin-01');
+  await pickNames(page, 'Mira.Kay_', 'mira-signin-01');
   await chooseOnly(page, 'password');
   await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
@@ -479,14 +479,14 @@ test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page
   await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
 
-  await expect(page.locator('h1')).toHaveText('Welcome to X2F, Mira.K_');
+  await expect(page.locator('h1')).toHaveText('Welcome to X2F, Mira.Kay_');
   const name = page.locator('[data-username]');
-  await expect(name).toHaveText('Mira.K_');
+  await expect(name).toHaveText('Mira.Kay_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
   await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
   // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
   await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
-  expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
+  expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.Kay_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
   // Owner G25: Log in next, then on to the post.
@@ -500,7 +500,7 @@ test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page
   expect(stored).not.toContain('mira-signin');
 });
 
-test('the username and display name are checked before going on (5-20, allowed characters, free, different)', async ({ page }) => {
+test('the username and display name are checked before going on (8-20, owner notes #126 and #127; allowed characters, free, different)', async ({ page }) => {
   const s = await stubApi(page);
   await page.goto('/setup');
   await acceptTerms(page);
@@ -508,9 +508,9 @@ test('the username and display name are checked before going on (5-20, allowed c
 
   // Step 1 is one private field: no second name on this screen.
   await expect(page.locator('[data-screen="setup-name"] input')).toHaveCount(1);
-  await page.fill('#uname', 'abcd');
+  await page.fill('#uname', 'abcdefg');
   await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username needs 5 to 20 characters.');
+  await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username needs 8 to 20 characters.');
   await page.fill('#uname', 'Mira K');
   await go.click();
   await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username can use only letters, numbers, dots, dashes and underscores.');
@@ -538,7 +538,7 @@ test('a taken display name at register sends the person back to change their nam
   await page.route('**/v1/register/password', json({ error: 'display-name-taken' }, 409));
   await page.goto('/setup');
   await acceptTerms(page);
-  await pickNames(page, 'lumen.k', 'lumen-login-7');
+  await pickNames(page, 'lumen.kai', 'lumen-login-7');
   await chooseOnly(page, 'password');
   await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
@@ -548,7 +548,7 @@ test('a taken display name at register sends the person back to change their nam
   // Review F8: "Change your names" opens the screen of the name that was refused (the display name).
   await page.click('[data-part="change-names"]');
   await expect(page).toHaveURL(/\/setup\/display-name\?/);
-  await expect(page.locator('#display-name')).toHaveValue('lumen.k');
+  await expect(page.locator('#display-name')).toHaveValue('lumen.kai');
   await page.click('[aria-label="Back"]');
   await expect(page).toHaveURL(/\/setup\/name\?/);
   await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
@@ -600,7 +600,7 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.fill('#uname', 'lumen-login-7');
   await page.click('[data-part="names-continue"]');
   await at('setup-display-name');
-  await page.fill('#display-name', 'lumen.k');
+  await page.fill('#display-name', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
   await at('setup-login');
   await page.click('[data-part="method-continue"]');
@@ -663,7 +663,7 @@ test.describe('on a new device', () => {
     await stubApi(page);
     await page.goto('/setup');
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await page.click('[data-method="password"]');
     await page.click('[data-part="method-continue"]');
     await page.fill('#pw', 'Quiet-harbour-58');
@@ -827,7 +827,7 @@ test.describe('review fix round', () => {
   async function toPgpCode(page: Page): Promise<void> {
     await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await page.click('[data-part="method-continue"]');
     await page.fill('#pub', realKey);
     await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
@@ -838,7 +838,7 @@ test.describe('review fix round', () => {
   async function toPassword(page: Page): Promise<void> {
     await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await chooseOnly(page, 'password');
     await page.click('[data-part=\"method-continue\"]');
     await page.fill('#pw', 'Quiet-harbour-58');
@@ -902,7 +902,7 @@ test.describe('review fix round', () => {
         options: {
           challenge: 'AQIDBAUGBwgJCgsMDQ4PEA',
           rp: { name: 'X2F', id: 'localhost' },
-          user: { id: 'BwcH', name: 'lumen-login-7', displayName: 'lumen.k' },
+          user: { id: 'BwcH', name: 'lumen-login-7', displayName: 'lumen.kai' },
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
           authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
           attestation: 'none',
@@ -914,7 +914,7 @@ test.describe('review fix round', () => {
       (s.bodies['webauthn-finish'] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
       s.registered = true;
       s.methods = ['passkey'];
-      return json({ displayName: 'lumen.k' }, 201)(r);
+      return json({ displayName: 'lumen.kai' }, 201)(r);
     });
     await page.goto(`http://localhost:${process.env.X2F_E2E_PORT ?? 4317}/setup?returnTo=%2Fpost`);
     const cdp = await page.context().newCDPSession(page);
@@ -923,11 +923,11 @@ test.describe('review fix round', () => {
       options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
     });
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await chooseOnly(page, 'passkey');
     await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
-    expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', kind: 'passkey' }]);
+    expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', kind: 'passkey' }]);
     const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; termsSignature: unknown; deviceLabel: string; challengeId: string };
     expect(finish.challengeId).toBe('w1');
     expect(finish.acceptedTerms).toBe(TERMS_VERSION);
@@ -941,7 +941,7 @@ test.describe('review fix round', () => {
     await page.route('**/v1/register/webauthn/start', json({ error: 'webauthn-failed' }, 401));
     await page.goto('/setup');
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await chooseOnly(page, 'passkey');
     await page.click('[data-part=\"method-continue\"]');
     await expect(page.locator('[data-part="register-error"]')).toContainText('pick another way to log in');
@@ -958,7 +958,7 @@ test.describe('review fix round', () => {
       if (tries === 1) return json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r);
       s.registered = true;
       s.methods = ['password'];
-      return json({ displayName: 'lumen.k' }, 201)(r);
+      return json({ displayName: 'lumen.kai' }, 201)(r);
     });
     await toPassword(page);
     await page.click('[data-part="password-set"]');
@@ -971,7 +971,7 @@ test.describe('review fix round', () => {
     // person picks the method again.
     await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
     await page.click('[data-part="names-continue"]');
-    await expect(page.locator('#display-name')).toHaveValue('lumen.k');
+    await expect(page.locator('#display-name')).toHaveValue('lumen.kai');
     await page.click('[data-part="display-continue"]');
     await chooseOnly(page, 'password');
     await page.click('[data-part=\"method-continue\"]');
@@ -1105,7 +1105,7 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
     await page.click('[data-part="names-continue"]');
     await described('display-name', 'display-name-help');
-    await page.fill('#display-name', 'lumen.k');
+    await page.fill('#display-name', 'lumen.kai');
     await page.click('[data-part="display-continue"]');
     // Owner demo notes (12 Nov 2026): the login methods are checkboxes now, each its own tab stop,
     // ticked with Space, each linked to its description.

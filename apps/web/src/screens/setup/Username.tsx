@@ -3,15 +3,15 @@
  * never shown to anybody and is as confidential as your password"): ONE field, the private
  * username, which is the login name. A live tick says whether it is free (availability.ts; the
  * server paces it). The public display name follows on its own screen (DisplayName.tsx; owner G6:
- * "a unique username and also a unique display name"). 5-20 letters, numbers, dots, dashes and
- * underscores.
+ * "a unique username and also a unique display name"). 8-20 letters, numbers, dots, dashes and
+ * underscores (owner demo note #126, 23 Nov 2026: "minimum of 8 characters").
  */
 import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { availabilityLine, useNameAvailability, type NameChecker } from './availability.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { checkLoginName, hasSpace, nameShapeProblem, spaceProblem } from './names.js';
+import { checkNewLoginName, hasSpace, nameShapeProblem, spaceProblem } from './names.js';
 
 export function Username({ check }: { check?: NameChecker } = {}) {
   const { state, update, go, path } = useSetup();
@@ -23,7 +23,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
   const spaced = hasSpace(loginName);
 
   const next = () => {
-    const r = checkLoginName(loginName);
+    const r = checkNewLoginName(loginName);
     if (spaced) {
       setError(spaceProblem('username'));
       return;
@@ -95,7 +95,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
           </p>
         ) : null}
         <p className="x2f-start__help" id="uname-help">
-          5 to 20 characters: letters, numbers, dots, dashes and underscores, with no spaces. Pick something that isn't your real name or used elsewhere.
+          8 to 20 characters: letters, numbers, dots, dashes and underscores, with no spaces. Pick something that isn't your real name or used elsewhere.
         </p>
       </div>
       {error !== null ? (

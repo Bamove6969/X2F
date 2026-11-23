@@ -109,7 +109,7 @@ beforeEach(() => {
 });
 
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}x`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x`;
 const errorOf = (r: LightMyRequestResponse) => (r.json() as { error?: string }).error;
 
 /** The account's hold row as the test needs it, or null. */
@@ -1008,7 +1008,7 @@ describe('review round 2', () => {
       // Nobody can take it meanwhile, as a display name or as a login name.
       const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asDisplay)).toBe('names-unavailable');
-      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
+      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('dname')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asLogin)).toBe('names-unavailable');
       expect((await submit(t.b, [changeIdOf(res)])).statusCode).toBe(200);
       setNow(new Date(now.getTime() + HOLD_MS));

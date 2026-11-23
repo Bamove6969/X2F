@@ -23,7 +23,7 @@ import { Browser, addTestLogin } from './helpers/totp.js';
 let app: FastifyInstance;
 let deps: Deps;
 let n = 0;
-const uniq = (p: string) => `${p}${(++n).toString().padStart(3, '0')}x`;
+const uniq = (p: string) => `${p}${(++n).toString().padStart(4, '0')}x`;
 
 beforeAll(async () => {
   ({ app, deps } = await testApp());

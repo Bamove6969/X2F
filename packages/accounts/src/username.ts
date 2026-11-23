@@ -3,8 +3,12 @@
  * - the **display name**, public (offers, profiles, chat), and
  * - the **login name**, private: never shown to anyone, used only to log in with a password, a
  *   security key by name or a backup code.
- * Both are 5–20 characters, unique case-insensitively through `key`, and the two must differ
- * case-insensitively.
+ * Both are unique case-insensitively through `key`, and the two must differ case-insensitively.
+ * - Length: a **new or changed** name of either kind is 8–20 characters (owner demo notes #126, the
+ *   login name, and #127, the display name, 23 Nov 2026: `NEW_NAME_MIN`, `checkNewLoginName`,
+ *   `checkNewDisplayName`). A name stored before then may be 5–7 characters: `checkLoginName` and
+ *   `checkDisplayName` still take 5–20 (`NAME_MIN`), so such an account is still found by its names
+ *   and logs in as before.
  * - The login name: ASCII letters, digits, `.`, `-`, `_`, kept as typed.
  * - The display name (signup round 3, lead call, 13 Nov 2026; owner: "allow the majority of major
  *   characters, just not weird ones"; owner demo note #69: `$` and the like allowed): printable
@@ -47,7 +51,14 @@ export type NamesCheck =
   | { ok: true; display: { name: string; key: string }; login: { name: string; key: string } }
   | { ok: false; field: 'displayName' | 'loginName'; reason: NameRefusal | 'same' };
 
-const NAME_RE = /^[A-Za-z0-9._-]{5,20}$/;
+/** The shortest name ever stored (before owner notes #126 and #127); lookups of stored names take it. */
+export const NAME_MIN = 5;
+/** The shortest new or changed name, login or display (owner demo notes #126 and #127, 23 Nov 2026). */
+export const NEW_NAME_MIN = 8;
+/** The longest name of either kind. */
+export const NAME_MAX = 20;
+
+const NAME_RE = /^[A-Za-z0-9._-]+$/;
 /** UTF-16 code units; anything longer is refused before any other work. */
 const MAX_RAW_LENGTH = 64;
 
@@ -134,15 +145,15 @@ function isReserved(key: string): boolean {
 }
 
 /** The length rule, in code points (an astral character counts once); huge input is refused first. */
-function lengthOk(input: string): boolean {
+function lengthOk(input: string, min = NAME_MIN): boolean {
   if (input.length > MAX_RAW_LENGTH) return false;
   const len = [...input].length;
-  return len >= 5 && len <= 20;
+  return len >= min && len <= NAME_MAX;
 }
 
-function checkShape(input: string): NameCheck {
+function checkShape(input: string, min: number): NameCheck {
   if (typeof input !== 'string') return { ok: false, reason: 'characters' };
-  if (!lengthOk(input)) return { ok: false, reason: 'length' };
+  if (!lengthOk(input, min)) return { ok: false, reason: 'length' };
   if (!NAME_RE.test(input)) return { ok: false, reason: 'characters' };
   return { ok: true, name: input, key: input.toLowerCase() };
 }
@@ -183,32 +194,46 @@ export function checkDisplayName(input: string): NameCheck {
  * A display name being chosen or changed (owner demo note #108, 17 Nov 2026: "Do not allow spaces in
  * username or passwords or display names"): `checkDisplayName` first (so a reserved or malformed
  * name keeps its own reason), then no space left inside the normalised name (spaces at the ends are
- * still trimmed off; other white space was already refused as `characters`). Only new and changed
- * names go through this; a name stored before the rule (it may hold a space) is still found and
- * shown by `checkDisplayName`.
+ * still trimmed off; other white space was already refused as `characters`), then at least
+ * `NEW_NAME_MIN` (8) characters (owner demo note #127, 23 Nov 2026: "Also minimum of 8
+ * characters"). Only new and changed names go through this; a name stored before these rules (it
+ * may hold a space, or be 5–7 characters) is still found and shown by `checkDisplayName`.
  */
 export function checkNewDisplayName(input: string): NameCheck {
   const r = checkDisplayName(input);
   if (r.ok && WHITE_SPACE.test(r.name)) return { ok: false, reason: 'spaces' };
+  if (r.ok && !lengthOk(r.name, NEW_NAME_MIN)) return { ok: false, reason: 'length' };
   return r;
 }
 
 /**
- * A private login name: the shape rules only (it is never shown, so nobody can be misled by it).
- * Its characters (NAME_RE) never included a space, so note #108 needed no change here.
+ * A private login name as stored or typed to log in: the shape rules only (it is never shown, so
+ * nobody can be misled by it), 5–20 characters, so an account made before owner note #126 with a
+ * 5–7 character login name still logs in. Its characters (NAME_RE) never included a space, so note
+ * #108 needed no change here. A login name being chosen or changed goes through `checkNewLoginName`.
  */
 export function checkLoginName(input: string): NameCheck {
-  return checkShape(input);
+  return checkShape(input, NAME_MIN);
 }
 
 /**
- * Both names of a new account: the display name first (no spaces, `checkNewDisplayName`), then the
- * login name, then that they differ.
+ * A login name being chosen or changed (sign-up, staff invite, owner setup, team member logins,
+ * `POST /v1/account/login-name`, the sign-up's availability check): `checkLoginName`'s rules with
+ * at least `NEW_NAME_MIN` (8) characters (owner demo note #126, 23 Nov 2026: "I want username
+ * changed to minimum of 8 characters").
+ */
+export function checkNewLoginName(input: string): NameCheck {
+  return checkShape(input, NEW_NAME_MIN);
+}
+
+/**
+ * Both names of a new account: the display name first (`checkNewDisplayName`), then the login name
+ * (`checkNewLoginName`), then that they differ.
  */
 export function checkNames(displayName: string, loginName: string): NamesCheck {
   const display = checkNewDisplayName(displayName);
   if (!display.ok) return { ok: false, field: 'displayName', reason: display.reason };
-  const login = checkLoginName(loginName);
+  const login = checkNewLoginName(loginName);
   if (!login.ok) return { ok: false, field: 'loginName', reason: login.reason };
   if (display.key === login.key) return { ok: false, field: 'loginName', reason: 'same' };
   return { ok: true, display: { name: display.name, key: display.key }, login: { name: login.name, key: login.key } };

@@ -43,7 +43,8 @@ interface MethodDef {
 }
 
 // COPY-UNSIGNED: the strength words are the owner's (12 Nov 2026), their colours are for design.
-const STRENGTH_WORDS: Record<Strength, string> = { strong: 'Strong', medium: 'Medium', weak: 'Weak' };
+// Owner demo note #129 (23 Nov): "I want it to say RATED-STRONG". COPY-UNSIGNED.
+const STRENGTH_WORDS: Record<Strength, string> = { strong: 'RATED-STRONG', medium: 'Medium', weak: 'Weak' };
 
 /** The methods in the order shown (and set up, but for the authenticator app after the password). */
 export const METHODS: MethodDef[] = [
@@ -54,9 +55,9 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with PGP key',
     desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
-    // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026)
+    // COPY-UNSIGNED: owner demo note #130 (23 Nov), his words, replacing the 13 Nov line.
     later:
-      'Only you can unlock it. Decrypt the enclosed message with your preferred PGP app to reveal a one-time login code, which proves you hold the matching private key. Only the holder of that key can see the code, and each code works only once.',
+      'Upon logging in, you will be provided with an encrypted message that only you can decrypt or unlock using your private PGP key that is stored in your PGP software. Upon decrypting the message, you will be presented with a unique one-time login code which proves you hold the matching key pair and will allow you to log into the site.',
   },
   {
     id: 'security-key',
@@ -66,14 +67,18 @@ export const METHODS: MethodDef[] = [
     strength: 'strong',
     cta: 'Continue with security key',
     // COPY-UNSIGNED (signup round 3, from the owner's words, 13 Nov 2026; brands named in text only)
-    desc: 'Log in by tapping or inserting your YubiKey, Google Titan, Nitrokey, Feitian or any FIDO2-certified security key into your phone or computer.',
+    // Owner demo note #131 (23 Nov), his words ("Yubikey" kept as the brand writes it: YubiKey).
+    desc: 'Log in by NFC tapping or USB inserting your YubiKey, Google Titan, Nitrokey, Feitian, or any FIDO2-certified security key into your phone or computer. This is probably the most secure and the most recommended method of security that there is.',
   },
   {
     id: 'passkey',
     name: 'Passkey',
-    strength: 'medium',
+    // Owner demo note #134 (23 Nov): passkeys rated strong and recommended, like PGP and the security key.
+    rec: true,
+    strength: 'strong',
     cta: 'Continue with passkey',
-    desc: 'Log in with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.',
+    // Owner demo note #133 (23 Nov), his words; "Passkeys people are" made "People are" and "pin" made "PIN".
+    desc: 'People are pretty familiar with passkeys by now. They allow you to log in with your face, fingerprint, or personal PIN. You can save them in your favorite password manager and also sync them across your devices.',
   },
   {
     id: 'totp',
@@ -173,7 +178,9 @@ export function Login() {
     >
       {/* COPY-UNSIGNED (signup round 3, the owner's words, 13 Nov 2026) */}
       <SetupIntro title="How do you want to log in?">
-        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes.
+        {/* Owner demo note #128 (23 Nov): his sentence continued, in his words. */}
+        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes, such as not
+        having to wait 24 hours for major changes to your account to take effect, which is explained in better detail in the FAQ.
       </SetupIntro>
       <div className="x2f-start__choices" role="group" aria-label="Login methods">
         {METHODS.map((m) => {
