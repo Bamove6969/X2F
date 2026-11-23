@@ -228,6 +228,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Owner demo notes 13 Nov 2026 (setup-terms, section 7): "a government agency"; the page says "If police or a government agency sends us …", the rest word for word (Terms version 2026-11-14). Owner demo note #107 (17 Nov): "... what little information we hold within the scope of the writ." (Terms version 2026-11-23).',
     },
     {
+      text: 'X2F never holds your coins.',
+      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point (Terms version 2026-11-23).',
+    },
+    {
       text: 'We answer lawful warrants with the little we have.',
       why: 'Owner demo note #102 (17 Nov 2026, setup-terms key points): the page says "We answer lawful warrants with what very little information we collect." (Terms version 2026-11-23).',
     },
