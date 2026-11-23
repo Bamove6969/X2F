@@ -563,23 +563,25 @@
 
 .x2f-start__suggest-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 20px;
+  /* Owner demo note #154 (23 Nov): the wallet list in the biggest type. */
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 28px;
 }
 
 .x2f-start__suggest-list {
   margin: 0;
-  padding: 0 0 0 18px;
-  font-size: 15px;
-  line-height: 22px;
-  color: var(--x2f-ink-muted);
+  padding: 0 0 0 22px;
+  font-size: 20px;
+  line-height: 30px;
+  font-weight: 600;
+  color: var(--x2f-ink);
 }
 
 .x2f-start__suggest-more {
   margin: 0;
-  font-size: 15px;
-  line-height: 20px;
+  font-size: 20px;
+  line-height: 28px;
   color: var(--x2f-ink-muted);
 }
 
