@@ -1100,12 +1100,18 @@
   color: var(--x2f-caution);
 }
 
-/* Phones draw scrollbars over the content; keep it that way on a narrow desktop window too. */
-@media (max-width: 480px) {
-  .x2f-start__main,
-  .x2f-welcome__main {
-    scrollbar-width: none;
-  }
+/*
+ * Owner demo note #159 (23 Nov): no scroll bar line at any width (it was only hidden under 480 px).
+ * The page still scrolls with the wheel, touch and keys.
+ */
+.x2f-start__main,
+.x2f-welcome__main {
+  scrollbar-width: none;
+}
+
+.x2f-start__main::-webkit-scrollbar,
+.x2f-welcome__main::-webkit-scrollbar {
+  display: none;
 }
 
 .x2f-welcome .x2f-start__foot {
