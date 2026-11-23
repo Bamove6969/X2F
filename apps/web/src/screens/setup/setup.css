@@ -1216,3 +1216,22 @@
 .x2f-welcome__link {
   align-self: flex-start;
 }
+
+/* Owner demo note #148 (23 Nov): the verified PGP key gets a big green tick and a big "Key verified". */
+.x2f-start__verified-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4) 0;
+  color: var(--x2f-good);
+}
+
+.x2f-start__verified-word {
+  margin: 0;
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: 700;
+  color: var(--x2f-good);
+}

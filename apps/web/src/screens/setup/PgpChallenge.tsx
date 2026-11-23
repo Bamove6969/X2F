@@ -137,15 +137,16 @@ export function PgpChallenge() {
       }
     >
       {/* Owner demo note #146 (23 Nov): once decrypted, the heading celebrates it. */}
-      <SetupIntro title={done ? 'You have successfully decrypted your first login code!' : 'Decrypt your first login code'}>
+      <SetupIntro title={done ? 'You have successfully decrypted your first login code.' : 'Decrypt your first login code'}>
         You'll do the same thing each time you log in.
       </SetupIntro>
       {done ? (
         <section className="x2f-start__verified" aria-label="Key verified">
-          <p className="x2f-start__status" data-tone="escrow">
-            <Icon name="check" size={20} stroke={2} />
-            Key verified
-          </p>
+          {/* Owner demo note #148 (23 Nov): a big "Key verified" with a huge green check mark filling the space. */}
+          <div className="x2f-start__verified-big" data-part="key-verified">
+            <Icon name="check" size={96} stroke={2.5} />
+            <p className="x2f-start__verified-word">Key verified</p>
+          </div>
           <p className="x2f-start__help">
             Every login works this way from now on. X2F shows a message locked to your key, your PGP app unlocks it with your private key, and you
             paste in the code.
