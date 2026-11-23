@@ -7,9 +7,14 @@
  * case-insensitively.
  * - The login name: ASCII letters, digits, `.`, `-`, `_`, kept as typed.
  * - The display name (signup round 3, lead call, 13 Nov 2026; owner: "allow the majority of major
- *   characters, just not weird ones"): printable letters of any script, digits, spaces and
- *   `$ & ! ? . , ' - _ @ # % * + ( ) :`. It is normalised to NFC, trimmed, and its runs of spaces
- *   collapsed. Refused: control, format (zero-width, bidi controls), private-use and unassigned
+ *   characters, just not weird ones"; owner demo note #69: `$` and the like allowed): printable
+ *   letters of any script, digits and `$ & ! ? . , ' - _ @ # % * + ( ) :`. **No spaces** in a new or
+ *   changed name (owner demo note #108, 17 Nov 2026, newer than #69, wins on spaces:
+ *   `checkNewDisplayName`, used by sign-up, staff and owner set-up and team member names). A name
+ *   stored before #108 may hold single spaces: `checkDisplayName` still accepts them, so such a name
+ *   is still found, shown, blocked and nudged, and its account logs in as before (logins go by the
+ *   private login name, which never held a space). It is normalised to NFC, trimmed, and its runs of
+ *   spaces collapsed. Refused: control, format (zero-width, bidi controls), private-use and unassigned
  *   characters, every invisible character (Default_Ignorable_Code_Point: the Hangul fillers, the
  *   variation selectors, joiners; review of third-signup-r3, B1), other spaces, letters of a
  *   right-to-left script (they change the text's
@@ -33,7 +38,8 @@
  */
 export type AccountKind = 'trader' | 'staff' | 'owner' | 'member';
 
-export type NameRefusal = 'length' | 'characters' | 'reserved';
+/** `spaces`: a space (or any other white space) inside a new name (owner demo note #108, 17 Nov 2026). */
+export type NameRefusal = 'length' | 'characters' | 'reserved' | 'spaces';
 
 export type NameCheck = { ok: true; name: string; key: string } | { ok: false; reason: NameRefusal };
 
@@ -141,7 +147,10 @@ function checkShape(input: string): NameCheck {
   return { ok: true, name: input, key: input.toLowerCase() };
 }
 
-/** Every character a display name may hold: letters, combining marks, decimal digits, the space and the listed symbols. */
+/** Any white space: the plain space, tabs, line breaks, the no-break and ideographic spaces. */
+const WHITE_SPACE = /\s/u;
+
+/** Every character a stored display name may hold: letters, combining marks, decimal digits, the space (pre-#108 names only) and the listed symbols. */
 const DISPLAY_CHARS = /^[\p{L}\p{M}\p{Nd} $&!?.,'\-_@#%*+():]+$/u;
 /** Letters of the right-to-left scripts (Bidi classes R and AL): Hebrew, Arabic, Syriac, Thaana, N'Ko and the rest. */
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
@@ -150,8 +159,10 @@ const BAD_MARK = /(?:^|[^\p{L}\p{M}])\p{M}|\p{M}{3}/u;
 const LOOK_ALIKE_SCRIPTS = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Greek}/u];
 
 /**
- * A public display name: normalised (NFC, trimmed, runs of spaces as one), then the length, the
- * characters (see the top of this file), then reserved words and their look-alikes.
+ * A public display name as stored or looked up: normalised (NFC, trimmed, runs of spaces as one),
+ * then the length, the characters (see the top of this file), then reserved words and their
+ * look-alikes. It still accepts a single space inside, for names stored before owner note #108; a
+ * name being chosen or changed goes through `checkNewDisplayName`, which refuses any space.
  */
 export function checkDisplayName(input: string): NameCheck {
   if (typeof input !== 'string') return { ok: false, reason: 'characters' };
@@ -168,14 +179,34 @@ export function checkDisplayName(input: string): NameCheck {
   return { ok: true, name, key };
 }
 
-/** A private login name: the shape rules only (it is never shown, so nobody can be misled by it). */
+/**
+ * A display name being chosen or changed (owner demo note #108, 17 Nov 2026: "Do not allow spaces in
+ * username or passwords or display names"): `checkDisplayName` first (so a reserved or malformed
+ * name keeps its own reason), then no space left inside the normalised name (spaces at the ends are
+ * still trimmed off; other white space was already refused as `characters`). Only new and changed
+ * names go through this; a name stored before the rule (it may hold a space) is still found and
+ * shown by `checkDisplayName`.
+ */
+export function checkNewDisplayName(input: string): NameCheck {
+  const r = checkDisplayName(input);
+  if (r.ok && WHITE_SPACE.test(r.name)) return { ok: false, reason: 'spaces' };
+  return r;
+}
+
+/**
+ * A private login name: the shape rules only (it is never shown, so nobody can be misled by it).
+ * Its characters (NAME_RE) never included a space, so note #108 needed no change here.
+ */
 export function checkLoginName(input: string): NameCheck {
   return checkShape(input);
 }
 
-/** Both names of a new account: the display name first, then the login name, then that they differ. */
+/**
+ * Both names of a new account: the display name first (no spaces, `checkNewDisplayName`), then the
+ * login name, then that they differ.
+ */
 export function checkNames(displayName: string, loginName: string): NamesCheck {
-  const display = checkDisplayName(displayName);
+  const display = checkNewDisplayName(displayName);
   if (!display.ok) return { ok: false, field: 'displayName', reason: display.reason };
   const login = checkLoginName(loginName);
   if (!login.ok) return { ok: false, field: 'loginName', reason: login.reason };

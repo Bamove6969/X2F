@@ -317,7 +317,7 @@ test('Settings, Help: "Take the tour again", reading "Carry on the tour" once le
   await page.route('**/v1/account/sessions', (r) => r.fulfill({ json: [] }));
   await page.route('**/v1/account/alerts', (r) => r.fulfill({ json: [] }));
   await page.addInitScript(() => window.localStorage.setItem('x2f.welcome.seen', '1'));
-  await page.goto('/settings/security');
+  await page.goto('/settings/help');
   const replay = page.locator('[data-part="tour-replay"]');
   await expect(replay).toContainText('Take the tour again');
   await expect(replay).toContainText('A quick walk through each screen');

@@ -94,6 +94,8 @@ const PASSWORD_RULES: Record<string, string> = {
   lower: 'a lower case letter',
   number: 'a number',
   symbol: 'a symbol',
+  // COPY-UNSIGNED (owner demo note #108)
+  space: 'no spaces',
 };
 
 function minutes(seconds: number | undefined): string {

@@ -24,8 +24,10 @@ const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/,
 /**
  * What a recovery (backup) session may open: adding a login method (Security), finishing an open
  * trade, and the feedback form, as the API allows (`allowRecovery`). Anything else goes to Security.
+ * Owner demo note #101: the alerts list moved off Security to the Alerts tab, which a recovery session
+ * could already read there (GET /v1/account/alerts is `readAny`), so that tab stays open to it.
  */
-const RECOVERY: readonly RegExp[] = [/^\/settings\/security$/, /^\/trade\/[^/]+(\/dispute)?$/, /^\/feedback$/];
+const RECOVERY: readonly RegExp[] = [/^\/settings\/security$/, /^\/settings\/alerts$/, /^\/trade\/[^/]+(\/dispute)?$/, /^\/feedback$/];
 export const RECOVERY_HOME = '/settings/security';
 
 /** Whether `pathname` is one of the front door's screens. */

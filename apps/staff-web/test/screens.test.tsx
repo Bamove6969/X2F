@@ -495,3 +495,53 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
     expect(document.querySelector('[data-part="title-count"]')?.textContent).toBe('121 / 120');
   });
 });
+
+// Owner demo note #108 (17 Nov 2026; security review follow-up): the staff name ("Username", the
+// display name staff see) holds no spaces; said inline as soon as one is typed, and nothing is sent.
+describe('note #108: no spaces in a staff display name', () => {
+  it('Invite: the line shows under Username, Continue is disabled and no account call is made', async () => {
+    const api = fakeApi({
+      'GET /staff/v1/terms': { body: { version: TERMS_TEXT_VERSION } },
+      'GET /staff/v1/invites/accept/:token': { body: { role: 'mod', hours: { days: ['Mon'], start: '09:00', end: '17:00', tz: 'UTC' }, expiresAt: new Date().toISOString(), resume: null } },
+      'POST /staff/v1/invites/accept/:token/account': { status: 201, body: { ok: true } },
+    });
+    await open('/invite/tok_sp');
+    await tick(document.querySelector('[data-part="terms-tick"]'));
+    await click(document.querySelector('[data-part="signature-type"]'));
+    typeInto(document.querySelector('[data-part="signature-name"]'), 'Dmitri K');
+    await settle();
+    await click(document.querySelector('[data-part="terms-accept"]'));
+    typeInto(field('Username'), 'dmitri k');
+    typeInto(field('Login name'), 'dk-login');
+    await settle();
+    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(field('Username')!.getAttribute('aria-invalid')).toBe('true');
+    expect(button('Continue')!.disabled).toBe(true);
+    await click(button('Continue')!);
+    expect(api.calls.some((c) => c.path.endsWith('/account'))).toBe(false);
+    typeInto(field('Username'), 'dmitri_k');
+    await settle();
+    expect(document.querySelector('[data-part="name-space"]')).toBeNull();
+    expect(button('Continue')!.disabled).toBe(false);
+  });
+
+  it('OwnerSetup: the line shows under Username and the account is not made', async () => {
+    const api = fakeApi({
+      'POST /staff/v1/setup/finish': refused(401, 'not-authenticated'),
+      'POST /staff/v1/setup/code': { body: { ok: true, expiresAt: new Date().toISOString() } },
+      'POST /staff/v1/setup/account': { status: 201, body: { ok: true } },
+      'POST /staff/v1/setup/key/start': { body: { challengeId: 'k', options: { challenge: 'z' } } },
+      'POST /staff/v1/setup/key/finish': { status: 201, body: { keys: 1 } },
+    });
+    await open('/setup');
+    typeInto(field('Setup code'), '7QX4-MP2D-91KA');
+    await click(button('Check code'));
+    typeInto(field('Username'), 'lumen k');
+    typeInto(field('Login name'), 'lumen-login');
+    await settle();
+    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(field('Username')!.getAttribute('aria-invalid')).toBe('true');
+    await click(button('Tap key to register'));
+    expect(api.calls.some((c) => c.path.endsWith('/setup/account'))).toBe(false);
+  });
+});

@@ -23,6 +23,7 @@ import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPassword, setupError, termsChanged, type SetupError } from './register.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';
+import { hasPasswordSpace, spaceProblem } from './names.js';
 
 type Met = 'true' | 'false' | 'unknown';
 
@@ -30,6 +31,8 @@ export interface PasswordRules {
   length: boolean;
   cases: boolean;
   numberSymbol: boolean;
+  /** Owner demo note #108: no spaces (false once one is typed). */
+  noSpaces: boolean;
   match: boolean;
   ok: boolean;
 }
@@ -41,8 +44,9 @@ export function passwordRules(pw: string, again: string): PasswordRules {
   const length = pw !== '' && !missing.includes('length') && !missing.includes('too-long');
   const cases = pw !== '' && !missing.includes('upper') && !missing.includes('lower');
   const numberSymbol = pw !== '' && !missing.includes('number') && !missing.includes('symbol');
+  const noSpaces = pw !== '' && !missing.includes('space');
   const match = pw !== '' && pw === again;
-  return { length, cases, numberSymbol, match, ok: r.ok && match };
+  return { length, cases, numberSymbol, noSpaces, match, ok: r.ok && match };
 }
 
 function Rule({ id, met, children }: { id: string; met: Met; children: string }) {
@@ -178,7 +182,7 @@ export function Password() {
             {HOLD_COPY.staged}
           </p>
         ) : null}
-        <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol.</SetupIntro>
+        <SetupIntro title="Choose a password">At least 10 characters, with upper and lower case letters, a number and a symbol, and no spaces.</SetupIntro>
         <label className="x2f-field x2f-label" htmlFor="pw">
           Password
           <PasswordInput id="pw"
@@ -191,6 +195,11 @@ export function Password() {
           />
         </label>
         <StrengthMeter level={strength} />
+        {hasPasswordSpace(pw) ? (
+          <p className="x2f-error" data-part="password-space">
+            {spaceProblem('password')}
+          </p>
+        ) : null}
         <label className="x2f-field x2f-label" htmlFor="pw2">
           Type it again
           <PasswordInput id="pw2" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
@@ -204,6 +213,10 @@ export function Password() {
           </Rule>
           <Rule id="number-symbol" met={yes(rules.numberSymbol)}>
             A number and a symbol
+          </Rule>
+          {/* COPY-UNSIGNED (owner demo note #108) */}
+          <Rule id="no-spaces" met={yes(rules.noSpaces)}>
+            No spaces
           </Rule>
           <Rule id="leaked" met={leaked}>
             Not on the list of leaked passwords

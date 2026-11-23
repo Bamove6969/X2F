@@ -47,7 +47,9 @@ import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
 import { AlarmListener } from './alerts/alarm.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
-import { Security } from './screens/settings/Security.js';
+import { HelpSettings, Security } from './screens/settings/Security.js';
+import { AccountSettings, AlertsSettings } from './screens/settings/SettingsTabs.js';
+import { ACCOUNT_PATH, ALERTS_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
 import { Team } from './screens/settings/Team.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
@@ -312,7 +314,12 @@ export function App() {
             {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
             <Route path="/wallets" element={<Wallets />} />
-            <Route path="/settings/security" element={<Security />} />
+            {/* Owner demo note #101: Settings in tabs (Security, Alerts, Account, Help; SettingsTabs.tsx); /settings opens the first. */}
+            <Route path={SETTINGS_PATH} element={<Navigate to={SECURITY_PATH} replace />} />
+            <Route path={SECURITY_PATH} element={<Security />} />
+            <Route path={ALERTS_PATH} element={<AlertsSettings />} />
+            <Route path={ACCOUNT_PATH} element={<AccountSettings />} />
+            <Route path={SETTINGS_HELP_PATH} element={<HelpSettings />} />
             <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />

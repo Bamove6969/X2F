@@ -4,6 +4,7 @@
  * message X2F will ever send). Turn off is a danger tertiary, never a primary. The address is
  * shown masked only (the server never sends it back in full).
  */
+import { ALERTS_PATH } from './settingsCopy.js';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { AuthApiError, type JabberStatus } from '@x2f/auth-client';
@@ -93,7 +94,7 @@ export function JabberSetup() {
 
   return (
     <main className="x2f-screen" data-screen="jabber-setup" data-step={step}>
-      <Link className="x2f-button x2f-button--quiet" to="/settings/security" aria-label={C.back}>
+      <Link className="x2f-button x2f-button--quiet" to={ALERTS_PATH} aria-label={C.back}>
         ‹
       </Link>
       <p className="x2f-note">{C.kicker}</p>
@@ -161,7 +162,7 @@ export function JabberSetup() {
             </p>
             <p data-part="jabber-preview-text">{C.previewText}</p>
           </section>
-          <Link className="x2f-button x2f-button--primary" to="/settings/security" data-part="jabber-done-link">
+          <Link className="x2f-button x2f-button--primary" to={ALERTS_PATH} data-part="jabber-done-link">
             {C.done}
           </Link>
           <Button variant="danger-outline" disabled={busy} onClick={() => void turnOff()} data-part="jabber-turn-off">

@@ -4,6 +4,11 @@
 -- builtin providers leave other letters alone), so the two checks that compared them move into
 -- the app: every write of `display_key` takes it from `checkDisplayName`. Numbered 610 on
 -- wip/third-demo-r3; 800 when merged onto main a981b348 (main has 790).
+-- Spaces (owner demo note #108, 17 Nov 2026, wins over #69 on spaces): a new or changed display
+-- name holds none, checked in the app (`checkNewDisplayName`). There is deliberately no database
+-- check for it: names stored before #108 may hold a space and must still load, be looked up and
+-- log in (their login name never held one), and a check would refuse every later update of
+-- those rows. Comments only; the statements below are unchanged.
 alter table accounts drop constraint accounts_display_key_lower;
 -- team_members' check was declared inline (015), so it is found by what it says.
 do $$

@@ -6,6 +6,7 @@ export {
   checkDisplayName,
   checkLoginName,
   checkNames,
+  checkNewDisplayName,
   LOOK_ALIKE_LETTERS,
   lookAlikeKey,
   staffNameKey,
@@ -16,6 +17,7 @@ export {
   PASSWORD_MAX,
   PASSWORD_MIN,
   checkPassword,
+  hasPasswordSpace,
   normalizePassword,
 } from './password.js';
 export { formatRecoveryInput, newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';

@@ -44,7 +44,7 @@ for (const viewport of PHONE_VIEWPORTS) {
   test(`Alerts at ${viewport}: phone layout, 44 px alarm and Jabber controls, every alarm control named`, async ({ page }) => {
     await base(page);
     await setPhone(page, viewport);
-    await page.goto('/settings/security');
+    await page.goto('/settings/alerts');
     await expect(page.locator('[data-part="alarm"]')).toBeVisible();
     await expect(page.locator('[data-part="jabber-switch"]')).toBeVisible();
     await expect(page.locator('[data-part="alert-list"] li')).toHaveCount(2);
@@ -70,7 +70,7 @@ test('the alarm: turn it on, set the volume and the events, choose a sound; it a
     const p = new URL(r.url()).pathname;
     if (p.startsWith('/v1/') && r.method() !== 'GET') api.push(`${r.method()} ${p}`);
   });
-  await page.goto('/settings/security');
+  await page.goto('/settings/alerts');
   const alarm = page.locator('[data-part="alarm"]');
   const sw = alarm.getByRole('switch', { name: 'Loud alarm' });
   await expect(sw).toHaveAttribute('aria-checked', 'false');
@@ -120,7 +120,7 @@ test('the Jabber switch pauses and resumes alerts; the rows open the set-up and 
     puts.push(body);
     return json({ ...JABBER_ON, state: body.on ? 'on' : 'paused' })(r);
   });
-  await page.goto('/settings/security');
+  await page.goto('/settings/alerts');
   const jabber = page.locator('[data-part="jabber-alerts"]');
   const sw = jabber.getByRole('switch', { name: 'Account change alerts' });
   await expect(sw).toHaveAttribute('aria-checked', 'true');
@@ -140,7 +140,7 @@ for (const viewport of PHONE_VIEWPORTS) {
   test(`Jabber not set up at ${viewport}: no switch, the address row says so and opens the set-up`, async ({ page }) => {
     await base(page, JABBER_OFF);
     await setPhone(page, viewport);
-    await page.goto('/settings/security');
+    await page.goto('/settings/alerts');
     const jabber = page.locator('[data-part="jabber-alerts"]');
     await expect(jabber).toBeVisible();
     await expect(jabber.getByRole('switch')).toHaveCount(0);

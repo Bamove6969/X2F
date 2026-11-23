@@ -106,7 +106,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       ] as const) {
         await page.route(path, (r) => r.fulfill({ json: body }));
       }
-      await page.goto('/settings/security');
+      await page.goto('/settings/account');
       await page.locator('[data-part="blocked-link"]').getByRole('link', { name: 'Blocked traders' }).click();
       await expect(page).toHaveURL('/settings/blocked');
       await expect(page.locator('[data-part="blocked-empty"]')).toHaveText("You haven't blocked anyone.");

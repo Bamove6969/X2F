@@ -14,7 +14,7 @@
  * - Removing a member ends their sessions at once and deletes their login (review M6).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { checkDisplayName, checkLoginName, staffNameKey } from '@x2f/accounts';
+import { checkLoginName, checkNewDisplayName, staffNameKey } from '@x2f/accounts';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -136,7 +136,7 @@ export async function listMembers(db: Queryable, accountId: string, now: Date): 
  * Unique within the team only (the unique index; 409 `display-name-taken`).
  */
 export async function checkMemberName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
-  const r = checkDisplayName(typeof raw === 'string' ? raw : '');
+  const r = checkNewDisplayName(typeof raw === 'string' ? raw : '');
   if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
   // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.key);

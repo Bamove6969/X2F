@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-// Order #2 M3: Security screen accessible to team members with owner-only sections hidden
-import { act } from 'react';
+// Order #2 M3: Security screen accessible to team members with owner-only sections hidden.
+// Since owner demo note #101 Settings is four tabs (SettingsTabs.tsx): the alarm and alerts are on
+// Alerts, account type / team / blocked on Account, the tour on Help. The member rules follow them.
+import { act, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Security } from '../src/screens/settings/Security.js';
+import { HelpSettings, Security } from '../src/screens/settings/Security.js';
+import { AccountSettings, AlertsSettings } from '../src/screens/settings/SettingsTabs.js';
+import { TourProvider } from '../src/tour/TourProvider.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
 
@@ -46,11 +50,30 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const u of extra.splice(0)) u();
   vi.unstubAllGlobals();
   refreshSession();
 });
 
 const settle = () => act(async () => new Promise<void>((r) => setTimeout(r, 10)));
+
+/** Each tab page, mounted for its own checks and unmounted before the session is reset. */
+const extra: (() => void)[] = [];
+
+async function mountAt(path: string, el: ReactNode): Promise<HTMLElement> {
+  let host: HTMLElement = null!;
+  await act(async () => {
+    const res = render(
+      <MemoryRouter initialEntries={[path]}>
+        <TourProvider>{el}</TourProvider>
+      </MemoryRouter>,
+    );
+    host = res.host;
+    extra.push(res.unmount);
+  });
+  await settle();
+  return host;
+}
 
 describe('Security screen for team members vs owner (Order #2 M3)', () => {
   it('renders owner sections and links for the account owner', async () => {
@@ -69,12 +92,19 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
 
     expect(host.querySelector('[data-owner-only]')).toBeNull();
     expect(host.querySelector('[data-part="devices-link"]')).not.toBeNull();
-    expect(host.querySelector('[data-part="account-type-link"]')).not.toBeNull();
-    expect(host.querySelector('[data-part="team-link"]')).not.toBeNull();
     expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
-    expect(host.querySelector('[data-part="blocked-link"]')).not.toBeNull();
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
-    expect(host.querySelector('[data-part="tour-replay"]')).not.toBeNull();
+    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Account', 'Help']);
+
+    // The owner's other tabs (note #101): Account's links, Help's tour replay, Alerts' list.
+    const account = await mountAt('/settings/account', <AccountSettings />);
+    expect(account.querySelector('[data-part="account-type-link"]')).not.toBeNull();
+    expect(account.querySelector('[data-part="team-link"]')).not.toBeNull();
+    expect(account.querySelector('[data-part="blocked-link"]')).not.toBeNull();
+    const help = await mountAt('/settings/help', <HelpSettings />);
+    expect(help.querySelector('[data-part="tour-replay"]')).not.toBeNull();
+    const alerts = await mountAt('/settings/alerts', <AlertsSettings />);
+    expect(alerts.querySelector('#alerts-h')).not.toBeNull();
   });
 
   it('renders member settings, hides owner sections, and does not fire owner fetches for a team member (M1, M2, M3, m1)', async () => {
@@ -98,26 +128,36 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
 
     // No CantDoThat / OwnerOnly refusal
     expect(host.querySelector('[data-owner-only]')).toBeNull();
-    expect(host.querySelector('.x2f-screen__title')?.textContent).toBe('Security');
+    expect(host.querySelector('.x2f-screen__title')?.textContent).toBe('Settings');
+    // A member has no Account tab (account type, team and blocked are the owner's).
+    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Help']);
 
     // Owner sections hidden
     expect(host.querySelector('[data-part="devices-link"]')).toBeNull();
-    expect(host.querySelector('[data-part="account-type-link"]')).toBeNull();
-    expect(host.querySelector('[data-part="team-link"]')).toBeNull();
-    expect(host.querySelector('[data-part="alerts"]')).toBeNull();
-
-    // M2: Blocked link hidden for members
-    expect(host.querySelector('[data-part="blocked-link"] a[href="/settings/blocked"]')).toBeNull();
-
-    // m1: Tour replay hidden for members
-    expect(host.querySelector('[data-part="tour-replay"]')).toBeNull();
+    expect(host.querySelector('[data-part="devices-row"]')).toBeNull();
+    expect(host.querySelector('[data-part="methods"]')).toBeNull();
 
     // M3: Session length link dropped
     expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
 
-    // Member sections shown: idle reminder and alarm settings
+    // Member sections shown: the idle reminder on Security
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
-    expect(host.querySelector('[data-part="alarm"]')).not.toBeNull();
+
+    // Alerts tab: the alarm settings, not the owner's alerts list
+    const alerts = await mountAt('/settings/alerts', <AlertsSettings />);
+    expect(alerts.querySelector('[data-part="alarm"]')).not.toBeNull();
+    expect(alerts.querySelector('[data-part="alerts"]')).toBeNull();
+
+    // Help tab, m1: tour replay hidden for members, the welcome link kept
+    const help = await mountAt('/settings/help', <HelpSettings />);
+    expect(help.querySelector('[data-part="tour-replay"]')).toBeNull();
+    expect(help.querySelector('[data-part="welcome-link"]')).not.toBeNull();
+
+    // Account tab opened by address, M2: the owner-only refusal, no Blocked link
+    const account = await mountAt('/settings/account', <AccountSettings />);
+    expect(account.querySelector('[data-owner-only]')).not.toBeNull();
+    expect(account.querySelector('[data-part="blocked-link"] a[href="/settings/blocked"]')).toBeNull();
+    expect(account.querySelector('[data-part="team-link"]')).toBeNull();
 
     // M1: Even after settle, owner calls were never fired for member
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
