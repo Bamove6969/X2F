@@ -516,8 +516,8 @@ describe('review L3/L4: the display key is a full case fold', () => {
 // (`Support1`, `Owner123`, `5upport1`) passed. A new or changed name, display or login, is refused
 // when its look-alike skeleton (digits drawn like letters folded too) has a reserved word standing
 // as its own word, starting or ending it, or making up half its letters, unless the word sits
-// glued inside an ordinary word (ORDINARY_WORDS). Stored names (checkDisplayName, checkLoginName)
-// are unchanged.
+// glued inside an ordinary word (ORDINARY_WORDS). Display names only: a login name is private.
+// Stored names (checkDisplayName, checkLoginName) are unchanged.
 describe('new names: a reserved word with a short pad', () => {
   const PROBES = [
     // The probe list of the follow-up.
@@ -529,9 +529,9 @@ describe('new names: a reserved word with a short pad', () => {
     'TheTeam1', 'R00tR00t', 'Helper99', 'ServiceDog', 'Maxmod12', 'Supp0rt_', 'H3lpdesk', '0wner_77',
     'Adm1n_Bob', 'Escr0w_Svc',
   ];
-  test.each(PROBES)('refuses %s as a new display name and a new login name', (name) => {
+  test.each(PROBES)('refuses %s as a new display name; a new login name may hold it (private)', (name) => {
     expect(checkNewDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
-    expect(checkNewLoginName(name)).toEqual({ ok: false, reason: 'reserved' });
+    expect(checkNewLoginName(name)).toMatchObject({ ok: true });
   });
 
   test('a stored name is unchanged: these login names still parse, so their accounts log in', () => {
@@ -557,7 +557,7 @@ describe('new names: a reserved word with a short pad', () => {
     expect(checkNewDisplayName(name)).toMatchObject({ ok: true });
   });
 
-  test('the old prefix rule still refuses a display name starting with staff (Stafford22), a login name is free of it', () => {
+  test('the old prefix rule still refuses a display name starting with staff (Stafford22); a login name is free of it', () => {
     expect(checkNewDisplayName('Stafford22')).toEqual({ ok: false, reason: 'reserved' });
     expect(checkNewLoginName('Stafford22')).toMatchObject({ ok: true });
   });
@@ -568,8 +568,8 @@ describe('new names: a reserved word with a short pad', () => {
     expect(checkNewDisplayName('Ｓｕｐｐｏｒｔ１')).toEqual({ ok: false, reason: 'reserved' });
   });
 
-  test('checkNames refuses a reserved login name on the loginName field', () => {
-    expect(checkNames('Quiet.Fox_7', 'Owner123')).toEqual({ ok: false, field: 'loginName', reason: 'reserved' });
+  test('checkNames refuses a reserved display name, not a reserved login name', () => {
+    expect(checkNames('Quiet.Fox_7', 'Owner123')).toMatchObject({ ok: true });
     expect(checkNames('Owner123', 'quiet-fox-7')).toEqual({ ok: false, field: 'displayName', reason: 'reserved' });
   });
 });

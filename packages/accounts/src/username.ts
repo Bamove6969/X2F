@@ -39,7 +39,7 @@
  * tools/confusables/gen.ts), so a reserved word or staff name spelt in any script's look-alikes
  * (ꓮꓓꓟꓲꓠ, Ꮪupport, mօderator) is found.
  *
- * New names (security follow-up, 23 Nov 2026): a new or changed name of either kind is also refused
+ * New names (security follow-up, 23 Nov 2026): a new or changed display name is also refused
  * when its look-alike skeleton, with digits drawn like letters folded (5→s, 3→e ...), holds a
  * reserved word standing as its own word, starting or ending it, or making up half its letters,
  * unless that word is glued inside an ordinary word (`isReservedNewName`). Stored names keep the
@@ -186,7 +186,7 @@ function isReserved(key: string): boolean {
 }
 
 /**
- * The reserved words a **new or changed** name is checked against (security follow-up, 23 Nov 2026:
+ * The reserved words a **new or changed** display name is checked against (security follow-up, 23 Nov 2026:
  * with the 8-20 minimum, `Support1`, `Owner123`, `Theadmin` or `5upport1` passed `isReserved`).
  * Wider than RESERVED_TOKENS, which stored names keep (a stored `Team_Bob` is still found).
  */
@@ -268,8 +268,8 @@ function occurrences(s: string, w: string): number[] {
 }
 
 /**
- * The reserved-word rule for a **new or changed** name, display or login (security follow-up,
- * 23 Nov 2026). On the name's look-alike skeleton (`newNameSkeleton`, digits that look like letters
+ * The reserved-word rule for a **new or changed** display name (security follow-up, 23 Nov 2026;
+ * login names are private and hold reserved words freely). On the name's look-alike skeleton (`newNameSkeleton`, digits that look like letters
  * folded too: `5upport1` reads `supportl`), a reserved word (NEW_RESERVED_WORDS) refuses the name
  * when it
  * 1. stands as a word of its own anywhere: a word break, or the name's start or end, on both sides
@@ -457,14 +457,11 @@ export function checkLoginName(input: string): NameCheck {
  * A login name being chosen or changed (sign-up, staff invite, owner setup, team member logins,
  * `POST /v1/account/login-name`, the sign-up's availability check): `checkLoginName`'s rules with
  * at least `NEW_NAME_MIN` (8) characters (owner demo note #126, 23 Nov 2026: "I want username
- * changed to minimum of 8 characters"), and the new-name reserved-word rule (`isReservedNewName`,
- * security follow-up, 23 Nov 2026), as a display name: no new account gets a staff-like name of
- * either kind. A stored login name (`checkLoginName`) is never checked for reserved words.
+ * changed to minimum of 8 characters"). No reserved words: a login name is private, never shown
+ * to anyone but its owner, so it cannot pass for staff (`isReservedNewName` is for display names).
  */
 export function checkNewLoginName(input: string): NameCheck {
-  const r = checkShape(input, NEW_NAME_MIN);
-  if (r.ok && isReservedNewName(r.name)) return { ok: false, reason: 'reserved' };
-  return r;
+  return checkShape(input, NEW_NAME_MIN);
 }
 
 /**

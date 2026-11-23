@@ -47,9 +47,6 @@ export function nameShapeProblem(which: string, reason: 'length' | 'characters' 
  */
 export const DISPLAY_SYMBOLS = '$ & ? @ # % + ( )';
 
-/** A new username refused for a reserved word (security follow-up, 23 Nov 2026: `checkNewLoginName`). */
-export const USERNAME_RESERVED = 'That username is kept for X2F. Pick another.';
-
 /** The sentence for a refused pair of names. */
 export function namesProblem(r: Extract<NamesCheck, { ok: false }>): string {
   switch (r.reason) {
@@ -58,7 +55,7 @@ export function namesProblem(r: Extract<NamesCheck, { ok: false }>): string {
     case 'spaces':
       return nameShapeProblem(r.field === 'displayName' ? 'Your display name' : 'Your username', r.reason);
     case 'reserved':
-      return r.field === 'displayName' ? 'That display name is kept for X2F. Pick another.' : USERNAME_RESERVED;
+      return 'That display name is kept for X2F. Pick another.';
     case 'same':
       return 'Your display name must be different from your username.';
   }

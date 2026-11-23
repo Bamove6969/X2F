@@ -265,12 +265,11 @@ describe('POST /v1/register/password', () => {
     expect(invalid.json()).toEqual({ error: 'display-name-invalid' });
     const badLogin = await register('bad login', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Fine.Name5' });
     expect(badLogin.json()).toEqual({ error: 'login-name-invalid' });
-    // Security follow-up (23 Nov 2026): a new login name is refused for reserved words too
-    // (checkNewLoginName); a reserved word glued inside an ordinary word is not one.
-    const reservedLogin = await register('my.admin.pw', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Plain.Pat' });
-    expect(reservedLogin.statusCode).toBe(400);
-    expect(reservedLogin.json()).toEqual({ error: 'login-name-invalid' });
-    expect((await register('my.badminton.pw', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Plain.Pat' })).statusCode).toBe(201);
+    // A private login name may hold a reserved word: nobody ever sees it.
+    expect((await register('my.admin.pw', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Plain.Pat' })).statusCode).toBe(201);
+    // Security follow-up (23 Nov 2026): a display name with a reserved word glued inside an
+    // ordinary word is not reserved.
+    expect((await register('my.badminton.pw', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Badminton7' })).statusCode).toBe(201);
   });
 
   it('refuses a login name equal to the display name in any case', async () => {

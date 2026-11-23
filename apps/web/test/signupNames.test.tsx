@@ -178,15 +178,6 @@ describe('step 1: one private username with a live tick', () => {
     expect(byPart(host, 'names-error')?.textContent).toBe('Your username needs 8 to 20 characters.');
     expect(api.go).not.toHaveBeenCalled();
   });
-
-  it('a username with a reserved word and a short pad cannot continue (security follow-up, 23 Nov 2026)', () => {
-    const api = setup();
-    const host = show('username', api);
-    type(host.querySelector<HTMLInputElement>('#uname')!, 'Support1');
-    fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'names-error')?.textContent).toBe('That username is kept for X2F. Pick another.');
-    expect(api.go).not.toHaveBeenCalled();
-  });
 });
 
 describe('the display name step', () => {
