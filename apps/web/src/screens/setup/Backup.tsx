@@ -63,9 +63,7 @@ export function Backup() {
           X2F has no email address or phone number for you, so if you ever lose access to your login methods, your emergency recovery code is the
           only way back into your account to set up or update your current security methods.
         </p>
-        <p className="x2f-start__panel">
-          Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
-        </p>
+        {/* Owner demo note #153 (23 Nov): the "Your coins stay in your own wallet" box removed, so less scrolling. */}
         <RecoveryCodeStep
           prove={prove}
           code={state.recoveryCode}
