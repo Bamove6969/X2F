@@ -27,7 +27,8 @@ export const LANDING_COPY = {
     'Your coins are protected by a modern 2-of-3 escrow wallet where you and the person you trade with will agree to release and complete the trade. Even X2F cannot unilaterally move the coins. It is a mutually agreed upon decision.',
     // COPY: owner's demo note #110 (23 Nov), his words.
     'No IP addresses logged and all chats are end-to-end encrypted.',
-    'Members only. Nothing here is public.',
+    // COPY: owner's demo note #111 (23 Nov), his words; "creates take no more then" tidied to "creation takes no more than".
+    'This site is for members only and nothing is for just public viewing. Account creation takes no more than 5 minutes.',
   ],
   create: 'Create account',
   login: 'Log in',
