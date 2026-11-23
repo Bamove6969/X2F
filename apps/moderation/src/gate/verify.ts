@@ -53,11 +53,17 @@ export type TapCheck = { ok: true; intent: KeyTapIntent; accountId: string; role
 
 const NONCE_HEX = /^(?:[0-9a-f]{2}){16,64}$/;
 
-const credsOf = (g: GateState, accountId: string): { creds: PinnedCred[]; role: SignerRole } | { refused: GateRefusal } => {
+/**
+ * `pastSigner` (review p4t22 N1): also the keys the gate keeps for someone it trusted and has since
+ * switched off or removed (never someone who had not joined). Only for reading who signed a round 1
+ * an appeal reviews (R37), never for authorising anything.
+ */
+const credsOf = (g: GateState, accountId: string, pastSigner = false): { creds: PinnedCred[]; role: SignerRole } | { refused: GateRefusal } => {
   if (g.ownerAccountId !== null && accountId === g.ownerAccountId) return { creds: g.ownerCreds, role: 'owner' };
   const s = Object.hasOwn(g.staff, accountId) ? g.staff[accountId] : undefined;
   if (!s) return { refused: 'unknown-key' };
-  if (s.removed || s.revoked || !s.joined) return { refused: 'revoked' };
+  if (!s.joined) return { refused: 'revoked' };
+  if ((s.removed || s.revoked) && !pastSigner) return { refused: 'revoked' };
   return { creds: s.creds, role: s.role };
 };
 
@@ -66,9 +72,9 @@ const credsOf = (g: GateState, accountId: string): { creds: PinnedCred[]; role: 
  * account, the stored intent canonical, and the WebAuthn assertion valid for `tapChallenge(intent,
  * nonce)` on the staff relying party. Nothing about the tap's use is checked here.
  */
-export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext): Promise<TapCheck> {
+export async function verifyTap(g: GateState, tap: StoredTap, ctx: GateContext, o: { pastSigner?: boolean } = {}): Promise<TapCheck> {
   if (typeof tap?.accountId !== 'string' || typeof tap.credentialId !== 'string') return { ok: false, reason: 'unknown-key' };
-  const who = credsOf(g, tap.accountId);
+  const who = credsOf(g, tap.accountId, o.pastSigner === true);
   if ('refused' in who) {
     // A revoked person with a key the gate never trusted is still an unknown key.
     if (who.refused === 'revoked') {
@@ -195,6 +201,12 @@ export interface RulingInput {
   balanceAtomic: bigint;
   /** Round 2: the staff with an activity-log entry on round 1 (R37), from the log. The gate adds round 1's signers itself. */
   involved?: readonly string[];
+  /**
+   * Review p4t22 N1, round 2 only: the round-1 ruling it reviews and that ruling's stored taps. Read
+   * only when the gate has not seen round 1 (`round1-unseen` otherwise), to learn round 1's signers
+   * for R37: see `authorizeRuling`.
+   */
+  round1?: { ruling: GateRuling; taps: StoredTap[] };
 }
 
 export type Authorization =
@@ -230,7 +242,14 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  *   trade, is refused (`stale-round`; round 1 as authorised still pays after an appeal);
  * - an appeal ruling reviews a round 1 this gate itself authorised on the same trade
  *   (`round1-unseen`), and its proposer and approver had no part in it (`involved`, R37): round 1's
- *   signers as this gate saw them, plus anyone on the log's list (which can only add);
+ *   signers as this gate saw them, plus anyone on the log's list (which can only add). Review p4t22
+ *   N1: a round 1 the gate never authorised because its signer was switched off or removed before
+ *   it paid is read from `r.round1` instead: its taps are checked exactly as for authorising it
+ *   (every check above, against the stored round 1 the appeal names), except that the keys the gate
+ *   keeps for switched-off and removed staff count. That only tells the gate who signed it: round 1
+ *   is then recorded as seen for its signers (`signersOnly`), never as authorised, so it still never
+ *   pays (asked about itself, it is `revoked` as before) and no other round 1 is accepted after it
+ *   (`stale-round`). Anything that does not check out is `round1-unseen`;
  * - the payouts, for an escrow outcome (either round: review p4t22 m1, round 2's pays when an
  *   appeal overturned round 1 before its payout ran), from `payoutsFor` on the recorded terms
  *   (`bad-terms` when they do not make a payout). After-refund rulings are authorised with nothing
@@ -238,35 +257,49 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  * On success the taps' nonces are bound to this ruling and the ruling is recorded in `rulingsSeen`
  * (the caller saves the gate). Checking the same ruling again with the same taps succeeds again.
  */
-export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
-  if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
-  if (g.stopped) return refuse('stopped');
-  if (!Array.isArray(r.taps) || r.taps.length < 1 || r.taps.length > 2) return refuse('intent-mismatch');
+type Examined =
+  | { ok: false; reason: GateRefusal }
+  | {
+      ok: true;
+      code: string;
+      steps: Array<{ step: 'propose' | 'approve'; accountId: string; role: SignerRole; nonceHex: string }>;
+      checked: Array<Extract<TapCheck, { ok: true }> & { nonceHex: string }>;
+      signers: string[];
+    };
+
+/**
+ * Every check of `authorizeRuling` on one ruling's taps, short of round 2's R37 and the payouts, and
+ * changing nothing. `pastSigner`: review p4t22 N1's reading of a round 1's signers (see there).
+ */
+const no = (reason: GateRefusal): Examined => ({ ok: false, reason });
+
+async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'recorded'>, ctx: GateContext, pastSigner: boolean): Promise<Examined> {
+  if (!Array.isArray(r.taps) || r.taps.length < 1 || r.taps.length > 2) return no('intent-mismatch');
   const checked: Array<Extract<TapCheck, { ok: true }> & { nonceHex: string }> = [];
   // Review B2: the round-1 ruling a round-2 ruling reviews, as the taps must name it.
   const round1Id = r.ruling.round === 2 ? (r.ruling.round1Id ?? null) : null;
   for (const tap of r.taps) {
-    const c = await verifyTap(g, tap, ctx);
-    if (!c.ok) return refuse(c.reason);
+    const c = await verifyTap(g, tap, ctx, { pastSigner });
+    if (!c.ok) return no(c.reason);
     checked.push({ ...c, nonceHex: tap.nonceHex });
   }
   const rul = r.ruling;
   const steps: Array<{ step: 'propose' | 'approve'; accountId: string; role: SignerRole; nonceHex: string }> = [];
   for (const c of checked) {
-    if (c.intent.kind !== 'ruling') return refuse('intent-mismatch');
+    if (c.intent.kind !== 'ruling') return no('intent-mismatch');
     const bound = Object.hasOwn(g.usedNonces, c.nonceHex) ? g.usedNonces[c.nonceHex] : undefined;
-    if (bound !== undefined && bound !== `ruling:${rul.id}:${c.intent.step}`) return refuse('nonce-reused');
+    if (bound !== undefined && bound !== `ruling:${rul.id}:${c.intent.step}`) return no('nonce-reused');
     steps.push({ step: c.intent.step, accountId: c.accountId, role: c.role, nonceHex: c.nonceHex });
   }
   const code = typeof rul.code === 'string' ? normalizeTradeCode(rul.code) : null;
-  if (code === null) return refuse('intent-mismatch');
+  if (code === null) return no('intent-mismatch');
   // Haveno finding 2 (b): no replay onto another trade or round; rounds only move forward.
   const before = Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
-  if (before !== undefined && (before.code !== code || before.round !== rul.round)) return refuse('replayed');
+  if (before !== undefined && (before.code !== code || before.round !== rul.round)) return no('replayed');
   if (before === undefined) {
     let highest = 0;
     for (const seen of Object.values(g.rulingsSeen)) if (seen.code === code && seen.round > highest) highest = seen.round;
-    if (rul.round <= highest) return refuse('stale-round');
+    if (rul.round <= highest) return no('stale-round');
   }
   for (const c of checked) {
     const i = c.intent as Extract<KeyTapIntent, { kind: 'ruling' }>;
@@ -280,30 +313,51 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
       i.evidenceSha256 === rul.evidenceSha256 &&
       i.round1Id === round1Id &&
       i.amountAtomic === r.recorded.amountAtomic.toString();
-    if (!agrees) return refuse('intent-mismatch');
+    if (!agrees) return no('intent-mismatch');
   }
   const proposals = steps.filter((s) => s.step === 'propose');
   const approvals = steps.filter((s) => s.step === 'approve');
-  if (proposals.length !== 1 || approvals.length > 1) return refuse('intent-mismatch');
+  if (proposals.length !== 1 || approvals.length > 1) return no('intent-mismatch');
   const proposer = proposals[0]!;
   const approver = approvals[0] ?? null;
-  if (proposer.accountId !== rul.proposer) return refuse('intent-mismatch');
-  if (approver !== null && approver.accountId !== rul.approver) return refuse('intent-mismatch');
-  if (!PROPOSERS.has(proposer.role)) return refuse('proposer-role');
+  if (proposer.accountId !== rul.proposer) return no('intent-mismatch');
+  if (approver !== null && approver.accountId !== rul.approver) return no('intent-mismatch');
+  if (!PROPOSERS.has(proposer.role)) return no('proposer-role');
   const needs = gateNeedsSecond(g, r.recorded, rul.accountAction);
-  if (needs && approver === null) return refuse('needs-second');
+  if (needs && approver === null) return no('needs-second');
   if (approver !== null) {
-    if (approver.accountId === proposer.accountId) return refuse('same-person');
-    if (!APPROVERS.has(approver.role)) return refuse('approver-role');
+    if (approver.accountId === proposer.accountId) return no('same-person');
+    if (!APPROVERS.has(approver.role)) return no('approver-role');
   }
+  return { ok: true, code, steps, checked, signers: [proposer.accountId, ...(approver !== null ? [approver.accountId] : [])] };
+}
+
+export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
+  if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
+  if (g.stopped) return refuse('stopped');
+  const e = await examine(g, r, ctx, false);
+  if (!e.ok) return e;
+  const { code, steps, checked, signers } = e;
+  const rul = r.ruling;
+  /** Review p4t22 N1: round 1 as read for its signers only, recorded with this ruling on success. */
+  let pastRound1: Extract<Examined, { ok: true }> | null = null;
   if (rul.round === 2) {
     if (typeof rul.round1Id !== 'string' || rul.round1Id === rul.id) return refuse('intent-mismatch');
     // Review B2: R37 rests on round 1 as this gate authorised it (same trade, round 1), never on
     // the database alone; the log's list can only add people to it.
-    const r1 = Object.hasOwn(g.rulingsSeen, rul.round1Id) ? g.rulingsSeen[rul.round1Id] : undefined;
+    let r1 = Object.hasOwn(g.rulingsSeen, rul.round1Id) ? g.rulingsSeen[rul.round1Id] : undefined;
+    if (r1 === undefined && r.round1 !== undefined) {
+      // Review p4t22 N1: the round 1 the appeal names, by someone since switched off or removed.
+      const given = r.round1.ruling;
+      if (given?.id !== rul.round1Id || given.round !== 1 || given.round1Id !== undefined) return refuse('round1-unseen');
+      const p = await examine(g, { ruling: given, taps: r.round1.taps, recorded: r.recorded }, ctx, true);
+      if (!p.ok || p.code !== code) return refuse('round1-unseen');
+      pastRound1 = p;
+      r1 = { code: p.code, round: 1, signers: p.signers, publishedSeenAt: ctx.now().toISOString() };
+    }
     if (r1 === undefined || r1.code !== code || r1.round !== 1) return refuse('round1-unseen');
     const involved = new Set([...r1.signers, ...(r.involved ?? [])]);
-    if (involved.has(proposer.accountId) || (approver !== null && involved.has(approver.accountId))) return refuse('involved');
+    if (signers.some((id) => involved.has(id))) return refuse('involved');
   }
   let settle: { payouts: Payout[]; winner: 'buyer' | 'seller' } | null = null;
   // Review p4t22 m1 (lead default, owner question OQ2): an escrow ruling of either round has a
@@ -327,13 +381,18 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
       return refuse('bad-terms');
     }
   }
+  if (pastRound1 !== null) {
+    // Bound like any ruling's taps, and seen for its signers only: never authorised (N1).
+    for (const s of pastRound1.steps) g.usedNonces[s.nonceHex] = `ruling:${rul.round1Id!}:${s.step}`;
+    g.rulingsSeen[rul.round1Id!] = { code, round: 1, signers: pastRound1.signers, publishedSeenAt: ctx.now().toISOString(), signersOnly: true };
+  }
   for (const s of steps) g.usedNonces[s.nonceHex] = `ruling:${rul.id}:${s.step}`;
   for (const c of checked) noteCounter(g, c.accountId, c.credentialId, c.counter);
   const seen = Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
   g.rulingsSeen[rul.id] = {
     code,
     round: rul.round,
-    signers: [proposer.accountId, ...(approver !== null ? [approver.accountId] : [])],
+    signers,
     publishedSeenAt: seen?.publishedSeenAt ?? ctx.now().toISOString(),
     ...(seen?.firstSeenFinalAt !== undefined ? { firstSeenFinalAt: seen.firstSeenFinalAt } : {}),
   };

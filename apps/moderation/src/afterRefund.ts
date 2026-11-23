@@ -50,7 +50,8 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
   };
 
   const check = async (s: AfterRefundStepInput, r: GateRuling): Promise<GateRefusal | null> => {
-    const a = await gateCheck(o.store, o.source, { ruling: r, recorded: s.recorded!, balanceAtomic: 0n, ...(r.round === 2 ? { involved: s.stored.involved } : {}) }, o.ctx);
+    const r1 = s.stored.current?.round === 1 ? s.stored.current : s.stored.round1;
+    const a = await gateCheck(o.store, o.source, { ruling: r, recorded: s.recorded!, balanceAtomic: 0n, ...(r.round === 2 ? { involved: s.stored.involved, ...(r1 ? { round1: r1 } : {}) } : {}) }, o.ctx);
     return a.ok ? null : a.reason;
   };
 
@@ -62,7 +63,8 @@ export function afterRefundSigner(o: { store: GateStore; source: GateSource; ctx
     if (s.recorded === null) return 'no-terms';
     if (inForce.round === 2 && r1 !== null && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
       const first = await check(s, r1);
-      if (first !== null) {
+      // Review p4t22 N1: a round 1 whose signer was since switched off or removed is read for its signers by round 2's check.
+      if (first !== null && first !== 'revoked') {
         o.log({ reason: `after-refund-refused-${first}` });
         await report(s, r1.id, first);
         return `refused-${first}`;

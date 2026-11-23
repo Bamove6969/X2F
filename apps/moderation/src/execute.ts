@@ -229,12 +229,14 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     const before = o.store.state.executions[s.code];
     const pay = r2 !== null && (before === undefined || before.rulingId === r2.id) ? r2 : r1;
     const check = async (r: GateRuling) =>
-      gateCheck(o.store, o.source, { ruling: r, recorded: s.recorded!, balanceAtomic: balance, ...(r.round === 2 ? { involved: stored.involved } : {}) }, o.ctx);
+      gateCheck(o.store, o.source, { ruling: r, recorded: s.recorded!, balanceAtomic: balance, ...(r.round === 2 ? { involved: stored.involved, round1: r1 } : {}) }, o.ctx);
     if (pay === r2 && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
       // R37 at the gate rests on round 1 as the gate authorised it (`round1-unseen`): round 1 is
-      // checked first (authorised only, nothing paid), so its signers are known.
+      // checked first (authorised only, nothing paid), so its signers are known. Review p4t22 N1:
+      // when round 1's signer has since been switched off or removed (`revoked`), round 2's check
+      // reads round 1's signers from its taps instead (the gate's `round1`; round 1 still never pays).
       const first = await check(r1);
-      if (!first.ok) {
+      if (!first.ok && first.reason !== 'revoked') {
         o.log({ reason: `ruling-refused-${first.reason}` });
         await refusalPass(s, r1.id, first.reason);
         return `refused-${first.reason}`;
