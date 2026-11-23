@@ -4,7 +4,7 @@
 // tapped action (create-invite, switch-on, set-role, remove-staff, settings, pay-settings,
 // emergency-stop, resume-trading) goes through KeyTapDialog with the intent the API re-derives;
 // the switch-off, hours, banner and maintenance changes are not tapped (Tasks 7 and 8).
-import { NAV, bannerPublishIntent, inviteTokenHash, maintenanceOnIntent } from '@x2f/staff';
+import { NAV, bannerPublishIntent, inviteTokenHash, maintenanceOnIntent, maintenancePlannedIntent } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -443,8 +443,19 @@ function overviewApi(site: Record<string, unknown> = {}, extra: Record<string, P
     },
     'PUT /staff/v1/site/maintenance': (b) => {
       const m = b as { on: boolean; kind?: string; message?: string | null };
-      state = { ...state, maintenance: m.on ? { since: '2026-11-18T02:00:00.000Z', kind: m.kind!, message: m.message ?? null, backBy: null } : null };
+      const plan = state.planned as { message: string | null } | null;
+      const inherit = m.on && m.kind === 'planned' && (m.message ?? null) === null && plan !== null;
+      state = { ...state, maintenance: m.on ? { since: '2026-11-18T02:00:00.000Z', kind: m.kind!, message: inherit ? plan.message : (m.message ?? null), backBy: null } : null, ...(inherit ? { planned: null } : {}) };
       return { body: state };
+    },
+    'PUT /staff/v1/site/maintenance/planned': (b) => {
+      const { tapId: _tap, ...p } = b as { startsAt: string; endsAt: string; message: string | null; tapId: string };
+      state = { ...state, planned: { startsAt: p.startsAt, endsAt: p.endsAt, message: p.message } };
+      return { body: state };
+    },
+    'DELETE /staff/v1/site/maintenance/planned': () => {
+      state = { ...state, planned: null };
+      return { status: 204 };
     },
     ...extra,
   });
@@ -545,6 +556,41 @@ describe('StaffOverview (board StaffOverview)', () => {
     ]);
     // Off takes none.
     expect(tapIntents(api.calls)).toEqual([maintenanceOnIntent({ maintenanceKind: 'planned', message, backBy: null })]);
+  });
+
+  it('review p4t22 N2: announcing a planned maintenance is tapped, bound to its start, end and message; removing it is not', async () => {
+    const api = overviewApi();
+    await open('/overview');
+    const sec = () => document.querySelector('section[aria-label="Planned maintenance"]')!;
+    expect(sec().textContent).toContain('No planned maintenance announced.');
+    typeInto(field('Starts (UTC)', sec()), '2099-01-02T10:00');
+    typeInto(field('Ends (UTC)', sec()), '2099-01-02T12:30');
+    typeInto(field('Message to users', sec()), '  Database upgrade.  ');
+    await settle();
+    await click(button('Announce', sec()));
+    expect(api.calls.some((c) => c.path === '/staff/v1/site/maintenance/planned')).toBe(false);
+    await click(button('Tap key and announce'));
+    const startsAt = '2099-01-02T10:00:00.000Z';
+    const endsAt = '2099-01-02T12:30:00.000Z';
+    expect(tapIntents(api.calls)).toEqual([maintenancePlannedIntent({ startsAt, endsAt, message: 'Database upgrade.' })]);
+    expect(api.calls.find((c) => c.path === '/staff/v1/site/maintenance/planned')?.body).toEqual({ startsAt, endsAt, message: 'Database upgrade.', tapId: 'tap-1' });
+    expect(sec().textContent).toContain('Announced: 2099-01-02 10:00 UTC to 2099-01-02 12:30 UTC.');
+    expect(sec().textContent).toContain('Database upgrade.');
+    await click(button('Remove the announcement', sec()));
+    expect(api.calls.filter((c) => c.path === '/staff/v1/site/maintenance/planned').map((c) => c.method)).toEqual(['PUT', 'DELETE']);
+    expect(tapIntents(api.calls)).toHaveLength(1);
+    expect(sec().textContent).toContain('No planned maintenance announced.');
+  });
+
+  it("review p4t22 N2: a planned switch-on with no message of its own binds the announced plan's message, which it shows", async () => {
+    const api = overviewApi({ planned: { startsAt: '2099-01-02T10:00:00.000Z', endsAt: '2099-01-02T12:30:00.000Z', message: 'Database upgrade.' } });
+    await open('/overview');
+    const sec = () => document.querySelector('section[aria-label="Maintenance mode"]')!;
+    await click(sec().querySelectorAll('[role="radiogroup"][aria-label="Maintenance kind"] [role="radio"]')[0]!);
+    await tick(sec().querySelector('input[type="checkbox"]'));
+    await click(button('Tap key and turn on'));
+    expect(tapIntents(api.calls)).toEqual([maintenanceOnIntent({ maintenanceKind: 'planned', message: 'Database upgrade.', backBy: null })]);
+    expect(api.calls.find((c) => c.path === '/staff/v1/site/maintenance')?.body).toEqual({ on: true, kind: 'planned', message: null, tapId: 'tap-1' });
   });
 
   it('the log-alarm card shows only when log_alarm is set', async () => {

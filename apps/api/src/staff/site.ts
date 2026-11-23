@@ -8,7 +8,7 @@ import type { LogAction } from '../log/actions.js';
 import { MAINTENANCE_KINDS, readSiteState, type SiteState } from '../site/routes.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
-import { bannerPublishIntent, maintenanceOnIntent } from '@x2f/staff';
+import { bannerPublishIntent, maintenanceOnIntent, maintenancePlannedIntent } from '@x2f/staff';
 
 /** The banner's limit (Task 8; migration 206 checks the same, in characters). */
 export const BANNER_MAX = 140;
@@ -89,7 +89,9 @@ export async function readStaffSiteState(db: Queryable): Promise<StaffSiteState>
  *   still ahead) and its message when the body gives none, and retires the plan. The trader API
  *   answers 503 `maintenance` meanwhile (site/routes.ts), and the timer loops pause every trade and
  *   dispute (trades/timers.ts, disputes/timers.ts; owner G19, g62).
- * - `PUT /staff/v1/site/maintenance/planned { startsAt, endsAt, message? }` (owner G19: "we will
+ * - `PUT /staff/v1/site/maintenance/planned { startsAt, endsAt, message?, tapId }` (review p4t22 N2,
+ *   lead default: tap intent `maintenance-planned`, bound to the start, end and message as sent; a
+ *   planned switch-on that inherits the plan's message binds that message) (owner G19: "we will
  *   plan it and try and give 24-hour notice"): announces a planned maintenance, shown to every
  *   visitor until its end (`GET /v1/site` `plannedMaintenance`); a new one replaces it. The start is
  *   after now and the end after the start; how much notice is the staff member's call (no minimum
@@ -188,17 +190,19 @@ export function staffSiteRoutes(app: FastifyInstance): void {
     const rawBackBy = typeof b.backBy === 'string' ? b.backBy : null;
     const maintenanceKind = kind as 'planned' | 'unplanned';
     return tx(req, async (c) => {
-      // Review p4t22 m2 (lead default): switching maintenance on is tapped, bound to its kind, the
-      // message and the back-by time as sent. Switching it off is not.
-      await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, maintenanceOnIntent({ maintenanceKind, message: rawMessage, backBy: rawBackBy }), now, {
-        sessionId: req.auth.sessionId,
-      });
       const { rows } = await c.query<{ was: boolean; planned_end: Date | null; planned_message: string | null }>(
         'select maintenance_since is not null as was, planned_end, planned_message from site_flags for update',
       );
       const plan = rows[0];
       // A planned switch-on takes up the announced plan and retires it; unplanned leaves it for later.
       const fromPlan = kind === 'planned' && plan !== undefined && plan.planned_end !== null;
+      // Review p4t22 m2 (lead default): switching maintenance on is tapped, bound to its kind, the
+      // message and the back-by time as sent. Switching it off is not. Review p4t22 N2: a planned
+      // switch-on with no message of its own shows the plan's, so its tap binds that one.
+      const shown = message === null && fromPlan ? (plan?.planned_message ?? null) : rawMessage;
+      await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, maintenanceOnIntent({ maintenanceKind, message: shown, backBy: rawBackBy }), now, {
+        sessionId: req.auth.sessionId,
+      });
       const planEnd = fromPlan && plan.planned_end !== null && plan.planned_end.getTime() > now.getTime() ? plan.planned_end : null;
       await c.query(
         `update site_flags set maintenance_since = coalesce(maintenance_since, $1), maintenance_message = $2, maintenance_kind = $3,
@@ -214,12 +218,22 @@ export function staffSiteRoutes(app: FastifyInstance): void {
   });
 
   app.put('/staff/v1/site/maintenance/planned', opts, async (req) => {
-    const b = bodyOf(req, ['startsAt', 'endsAt', 'message']);
+    const b = bodyOf(req, ['startsAt', 'endsAt', 'message', 'tapId']);
     const now = req.server.deps.clock();
     const startsAt = futureTime(b.startsAt, now, 'startsAt');
     const endsAt = futureTime(b.endsAt, startsAt, 'endsAt');
     const message = messageOf(b.message);
     return tx(req, async (c) => {
+      // Review p4t22 N2 (lead default): the announcement every visitor sees is tapped, bound to its
+      // start, its end and its message as sent, like switching maintenance on.
+      await consumeKeyTap(
+        c,
+        typeof b.tapId === 'string' ? b.tapId : '',
+        req.staff.accountId,
+        maintenancePlannedIntent({ startsAt: b.startsAt as string, endsAt: b.endsAt as string, message: typeof b.message === 'string' ? b.message : null }),
+        now,
+        { sessionId: req.auth.sessionId },
+      );
       await c.query('update site_flags set planned_start = $1, planned_end = $2, planned_message = $3', [startsAt, endsAt, message]);
       await log(c, req, 'site.maintenance-planned', { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() });
       return readStaffSiteState(c);

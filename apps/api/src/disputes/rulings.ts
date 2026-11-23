@@ -210,6 +210,15 @@ async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promi
   if (f.paused !== false) throw new ApiError(409, 'trading-paused');
 }
 
+/** The moderation gate's latest report on this trade's rulings (`ruling.gate-refused`), or null. */
+async function latestRefusal(client: pg.PoolClient, code: string): Promise<{ rulingId?: unknown; reason?: unknown } | null> {
+  const last = await client.query<{ detail: string }>(
+    "select detail from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
+    [code],
+  );
+  return last.rows[0] === undefined ? null : (JSON.parse(last.rows[0].detail) as { rulingId?: unknown; reason?: unknown });
+}
+
 function rulingError(err: unknown): never {
   if (err instanceof DisputeRuleError) {
     if (err.code === 'same-person') throw new ApiError(409, 'same-person');
@@ -335,11 +344,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         await assertNotPaused(client, rec);
         const r1 = d.round === 1 ? d.ruling : d.round1;
         if (typeof id !== 'string' || !UUID.test(id) || r1 === null || r1.id !== id) throw new ApiError(409, 'wrong-state');
-        const last = await client.query<{ detail: string }>(
-          "select detail from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
-          [code],
-        );
-        const refused = last.rows[0] === undefined ? null : (JSON.parse(last.rows[0].detail) as { rulingId?: unknown; reason?: unknown });
+        const refused = await latestRefusal(client, code);
         if (refused === null || refused.rulingId !== id || refused.reason !== 'needs-second') throw new ApiError(409, 'not-refused');
         const pub = await client.query<{ reason: string; evidence: string[] }>(
           'select reason, evidence from dispute_rulings where code = $1 and seq = $2 and round = 1',
@@ -352,6 +357,71 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const next = applyDispute(d, { type: 'second-approve' }, me, now, await disputeSettings(client));
         await consumeKeyTap(client, tapId, me.id, rulingIntent('approve', { rulingId: r1.id, code, round: 1, round1Id: null, outcome: r1.outcome, amountAtomic, reason: p.reason, evidence: p.evidence }), now, { sessionId: req.auth.sessionId });
         await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.second-approved', detail: rulingDetail(r1, 1, amountAtomic) });
+        return next;
+      });
+    } catch (err) {
+      rulingError(err);
+    }
+    return rulingState(req, code);
+  });
+
+  /**
+   * Review p4t22 N1, the re-proposal: `POST …/rulings/:id/re-propose {rulingId, outcome,
+   * accountAction, reason, evidence, tapId}` (perm `rulings.approve`, a senior moderator or the
+   * owner). A published round-1 escrow ruling that the moderation gate refuses as `revoked` (its
+   * latest report for this dispute is `revoked` for this very ruling: 409 `not-refused` otherwise;
+   * its signer was switched off or removed before the payout ran) is replaced by the caller's own
+   * new round-1 ruling, before any appeal and before the payout ran (the machine's `re-propose`).
+   * Exactly a normal proposal otherwise: a new ruling id, the caller's own `propose` tap for it
+   * (rebuilt here as the proposal route does; anything else is 403 `tap-invalid`), the same
+   * two-person rule (published at once with a fresh appeal window, or waiting for a normal
+   * `…/approve`). The key signs nothing a proposal would not, and the gate verifies it like one: a
+   * new round-1 ruling it never saw, never the withdrawn one. The withdrawn ruling's trader-visible
+   * row goes; it is logged as `ruling.re-proposed` (the new id, and the one it `replaces`).
+   * Refused while paused or stopped, before the tap (lead call Q1). Never on an after-refund
+   * dispute (lead default, owner question).
+   */
+  app.post('/staff/v1/disputes/:code/rulings/:id/re-propose', approver, async (req) => {
+    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    if (typeof b.rulingId !== 'string' || !UUID.test(b.rulingId)) throw new ApiError(400, 'bad-request');
+    if (typeof b.outcome !== 'string' || !OUTCOMES.includes(b.outcome)) throw new ApiError(400, 'bad-request');
+    if (!isText(b.reason, REASON_MAX)) throw new ApiError(400, 'bad-request');
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request');
+    const action = parseAction(b.accountAction);
+    const evidence = parseEvidence(b.evidence);
+    const reason = b.reason;
+    if (reason.trim().length < REASON_MIN) throw new ApiError(400, 'reason-too-short');
+    if (action.kind !== 'none') throw new ApiError(409, 'account-action-unavailable');
+    const rulingId = b.rulingId;
+    const outcome = b.outcome as RulingOutcome;
+    const tapId = b.tapId;
+    const id = (req.params as { id?: unknown }).id;
+    const code = await caseCodeOf(req.server.deps.db, req);
+    const me = actorOf(req);
+    try {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
+        await assertNotPaused(client, rec);
+        if (typeof id !== 'string' || !UUID.test(id) || d.round !== 1 || d.ruling === null || d.ruling.id !== id) throw new ApiError(409, 'wrong-state');
+        const refused = await latestRefusal(client, code);
+        if (refused === null || refused.rulingId !== id || refused.reason !== 'revoked') throw new ApiError(409, 'not-refused');
+        const s = await disputeSettings(client);
+        const gate = await gateValue(client, code, s.largeTradeLimitUsd);
+        // The machine first (who may, and whether it is still open), so a refused re-proposal leaves the tap unused.
+        const next = applyDispute(d, { type: 're-propose', gate, ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
+        const amountAtomic = await tradeAmount(client, code);
+        await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: 1, round1Id: null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
+        const ins = await client.query(
+          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at)
+           values ($1, $2, $3, 1, $4, $5, $6, $7) on conflict do nothing`,
+          [rulingId, code, d.seq, reason, JSON.stringify(evidence), me.id, now],
+        );
+        if (ins.rowCount !== 1) throw new ApiError(409, 'wrong-state');
+        // The withdrawn round 1 is no longer the traders' ruling; the new one is, once published.
+        await client.query('delete from dispute_rulings where code = $1 and seq = $2 and round = 1', [code, d.seq]);
+        await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.re-proposed', detail: { ...rulingDetail({ id: rulingId, outcome }, 1, amountAtomic), replaces: id } });
+        if (next.status === 'published') {
+          await publishDecided(client, next, { ruling_id: rulingId, round: 1, reason, evidence, proposer: me.id, proposed_at: now, status: 'proposed' }, amountAtomic, now, me);
+        }
         return next;
       });
     } catch (err) {

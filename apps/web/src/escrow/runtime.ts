@@ -1583,7 +1583,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * `rulingPollMs`) and keeps its amount and address only when it verifies on this device against
      * the pinned key, for this trade, this device's own accepted amount and the buyer's address from
      * the attested terms. Anything else (none, forged, another amount or address) clears it, so the
-     * pay form goes away with it; a read that fails keeps what was verified.
+     * pay form goes away with it; a read that fails keeps what was verified. Residual (a): only a
+     * `seller-sends-xmr` statement shows the form (the others say a round was decided with nothing
+     * to send), and only one for a round at or above the highest this device verified for the trade
+     * (`afterRefundRound`, kept in the record across reloads).
      */
     private async loadAfterRefund(): Promise<void> {
       const get = deps.api.getAfterRefundStatement;
@@ -1604,7 +1607,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.afterRefund = null;
       } else {
         const check = await verifyAfterRefundStatement(got.statement, got.sig, deps.config.modSigningPublic, { trade: this.code, amountAtomic, buyerPayout: this.attested.buyerPayout });
-        this.afterRefund = check.ok ? { amountAtomic, address: this.attested.buyerPayout } : null;
+        // Residual (a): the highest round verified here is kept; a lower round never shows the form.
+        const rec = this.rec as EscrowRecord | undefined;
+        if (check.ok && rec !== undefined && check.statement.round > (rec.afterRefundRound ?? 0)) {
+          rec.afterRefundRound = check.statement.round;
+          await this.persist();
+          if (this.stopped) return;
+        }
+        const pays = check.ok && rec !== undefined && check.statement.outcome === 'seller-sends-xmr' && check.statement.round >= (rec.afterRefundRound ?? 0);
+        this.afterRefund = pays ? { amountAtomic, address: this.attested.buyerPayout } : null;
       }
       if (before?.amountAtomic !== this.afterRefund?.amountAtomic || before?.address !== this.afterRefund?.address) this.emit();
     }

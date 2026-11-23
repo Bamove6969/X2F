@@ -497,6 +497,15 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         messageSha256: r.messageSha256 === null ? null : match(r, 'messageSha256', HEX64),
         backBy: r.backBy === null ? null : match(r, 'backBy', ISO_UTC),
       };
+    // Review p4t22 N2: a planned maintenance's announcement (start and end exact ISO times as sent).
+    case 'maintenance-planned':
+      exactKeys(r, ['kind', 'startsAt', 'endsAt', 'messageSha256']);
+      return {
+        kind: 'maintenance-planned',
+        startsAt: match(r, 'startsAt', ISO_UTC),
+        endsAt: match(r, 'endsAt', ISO_UTC),
+        messageSha256: r.messageSha256 === null ? null : match(r, 'messageSha256', HEX64),
+      };
     case 'news-publish':
       exactKeys(r, ['kind', 'newsId', 'titleSha256', 'bodySha256']);
       return {
@@ -557,6 +566,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'resume-trading':
     // Review p4t22 m2: the owner's publishing acts.
     case 'maintenance-on':
+    case 'maintenance-planned':
     case 'news-publish':
     case 'banner-publish':
       return 'site.control';

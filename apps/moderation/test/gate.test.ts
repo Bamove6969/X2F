@@ -29,7 +29,7 @@ import {
   type RecordedTerms,
   type StoredTap,
 } from '../src/gate/index.js';
-import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity } from './gateWorld.js';
+import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, type World } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
 
@@ -1347,6 +1347,38 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       c.release();
     }
   });
+
+  it('review p4t22 residual (a): afterRefundCodes lists open after-refund disputes, and closed ones of the last 7 days whose ruling has no statement yet', async () => {
+    const c = await owner.connect();
+    const codes = { open: newTradeCode(), unsigned: newTradeCode(), signed: newTradeCode(), old: newTradeCode(), escrow: newTradeCode(), earlier: newTradeCode() };
+    try {
+      await c.query('set session_replication_role = replica');
+      const add = async (code: string, o: { afterRefund?: boolean; status?: string; closedDaysAgo?: number; seq?: number }) => {
+        const ruling = { id: randomUUID(), outcome: 'no-action', accountAction: { kind: 'none' }, proposer: randomUUID(), approver: null, needsSecond: false };
+        const closed = o.status === 'closed';
+        await c.query(
+          `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents, round, ruling, closed_at)
+           values ($1, $2, 'buyer', 'paid', '', now(), $3, $4, now(), now(), 0, 100000, 1, $5, $6)`,
+          [code, o.seq ?? 1, o.afterRefund ?? true, o.status ?? 'published', JSON.stringify(ruling), closed ? new Date(Date.now() - (o.closedDaysAgo ?? 0) * 86_400_000) : null],
+        );
+        return ruling.id;
+      };
+      await add(codes.open, {});
+      await add(codes.unsigned, { status: 'closed', closedDaysAgo: 1 });
+      const signedId = await add(codes.signed, { status: 'closed', closedDaysAgo: 1 });
+      await c.query(`insert into after_refund_statements (ruling_id, code, seq, round, statement, sig) values ($1, $2, 1, 1, '{}'::jsonb, 'x')`, [signedId, codes.signed]);
+      await add(codes.old, { status: 'closed', closedDaysAgo: 8 });
+      await add(codes.escrow, { afterRefund: false });
+      // A closed after-refund dispute that a later one on the same trade replaced: only the latest counts.
+      await add(codes.earlier, { status: 'closed', closedDaysAgo: 1 });
+      await add(codes.earlier, { afterRefund: false, seq: 2 });
+      const listed = await pgGateSource(reader).afterRefundCodes(1000);
+      expect(listed).toEqual(expect.arrayContaining([codes.open, codes.unsigned]));
+      for (const not of [codes.signed, codes.old, codes.escrow, codes.earlier]) expect(listed).not.toContain(not);
+    } finally {
+      c.release();
+    }
+  });
 });
 
 describe('gateFromEnv', () => {
@@ -1371,5 +1403,84 @@ describe('gateFromEnv', () => {
     ] as const) {
       expect(() => gateFromEnv(env), name).toThrow(name);
     }
+  });
+});
+
+describe('review p4t22 N1: round 1 by someone removed before its payout ran', () => {
+  /** Round 1 by a moderator (approved by `approver` when given), never authorised here; then the moderator is removed. */
+  async function removedRound1(o: { approver?: boolean; usdCents?: bigint } = {}) {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const senior2 = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod, o.approver ? { approver: senior } : {});
+    const r1Taps = [tapBy(mod, r1.intent('propose')), ...(o.approver ? [tapBy(senior, r1.intent('approve'))] : [])];
+    w.api.staffRows.get(mod.id)!.removed = true;
+    w.api.staffRows.get(mod.id)!.switchedOff = true;
+    await syncRegistry(w.api, w.gate, ctx());
+    return { w, mod, senior, senior2, r1, r1Taps };
+  }
+  const ask = (w: World, c: { ruling: GateRuling }, taps: StoredTap[], extra: Partial<Parameters<typeof authorizeRuling>[1]> = {}, usdCents: bigint | null = 41_250n) =>
+    authorizeRuling(w.gate, { ruling: c.ruling, taps, recorded: recorded(usdCents), balanceAtomic: BALANCE, ...extra }, ctx());
+
+  it("the removed moderator's own round 1 never pays: revoked, before and after an appeal used its taps", async () => {
+    const { w, senior2, r1, r1Taps } = await removedRound1();
+    expect(await ask(w, r1, r1Taps)).toEqual({ ok: false, reason: 'revoked' });
+    const r2 = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'refund-to-seller' });
+    expect(await ask(w, r2, [tapBy(senior2, r2.intent('propose'))], { involved: [], round1: { ruling: r1.ruling, taps: r1Taps } })).toMatchObject({ ok: true, settle: { winner: 'seller' } });
+    // Round 1 alone is still refused, also now that the gate knows its signers.
+    expect(await ask(w, r1, r1Taps)).toEqual({ ok: false, reason: 'revoked' });
+    expect(w.gate.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true });
+    // A fresh round 1 on the trade is stale: round 1 is decided by the appeal now.
+    const late = ruling(senior2, { code: r1.ruling.code });
+    expect(await ask(w, late, [tapBy(senior2, late.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
+  });
+
+  it('without round 1 given, or when it is not the round 1 the appeal names, the gate still has not seen it', async () => {
+    const { w, senior2, r1, r1Taps } = await removedRound1();
+    const r2 = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    const t2 = [tapBy(senior2, r2.intent('propose'))];
+    expect(await ask(w, r2, t2, { involved: [] })).toEqual({ ok: false, reason: 'round1-unseen' });
+    const other = ruling(senior2, { code: r1.ruling.code });
+    expect(await ask(w, r2, t2, { involved: [], round1: { ruling: other.ruling, taps: [tapBy(senior2, other.intent('propose'))] } })).toEqual({ ok: false, reason: 'round1-unseen' });
+    expect(w.gate.rulingsSeen[r1.ruling.id]).toBeUndefined();
+    expect(w.gate.rulingsSeen[r2.ruling.id]).toBeUndefined();
+  });
+
+  it("round 1's taps are verified in full: a key the gate never trusted, a tap for something else, a missing second person", async () => {
+    const { w, mod, senior, senior2, r1 } = await removedRound1();
+    const r2 = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    const t2 = () => [tapBy(senior2, r2.intent('propose'))];
+    // A key the removed moderator never registered.
+    const forged = tapBy(mod, r1.intent('propose'), { key: newKey() });
+    expect(await ask(w, r2, t2(), { involved: [], round1: { ruling: r1.ruling, taps: [forged] } })).toEqual({ ok: false, reason: 'round1-unseen' });
+    // Their real key, for another outcome than the stored round 1.
+    const wrong = tapBy(mod, r1.intent('propose', { outcome: 'refund-to-seller' }));
+    expect(await ask(w, r2, t2(), { involved: [], round1: { ruling: r1.ruling, taps: [wrong] } })).toEqual({ ok: false, reason: 'round1-unseen' });
+    // At the limit, round 1 on one tap was never a ruling the gate would act on.
+    const big = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, approver: w.owner });
+    const bigTaps = [tapBy(senior2, big.intent('propose')), tapBy(w.owner, big.intent('approve'))];
+    expect(await ask(w, big, bigTaps, { involved: [], round1: { ruling: r1.ruling, taps: [tapBy(mod, r1.intent('propose'))] } }, 100_000n)).toEqual({ ok: false, reason: 'round1-unseen' });
+    // Someone else's tap passed off as round 1's.
+    const swapped = tapBy(senior, r1.intent('propose'));
+    expect(await ask(w, r2, t2(), { involved: [], round1: { ruling: r1.ruling, taps: [swapped] } })).toEqual({ ok: false, reason: 'round1-unseen' });
+    expect(w.gate.rulingsSeen[r1.ruling.id]).toBeUndefined();
+  });
+
+  it("R37 still holds: round 1's approver, as verified from round 1's taps, is involved even when the log forgets them", async () => {
+    const { w, senior, senior2, r1, r1Taps } = await removedRound1({ approver: true });
+    const byApprover = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await ask(w, byApprover, [tapBy(senior, byApprover.intent('propose'))], { involved: [], round1: { ruling: r1.ruling, taps: r1Taps } })).toEqual({ ok: false, reason: 'involved' });
+    const fine = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect((await ask(w, fine, [tapBy(senior2, fine.intent('propose'))], { involved: [], round1: { ruling: r1.ruling, taps: r1Taps } })).ok).toBe(true);
+    expect(w.gate.rulingsSeen[r1.ruling.id]?.signers).toEqual(expect.arrayContaining([senior.id]));
+  });
+
+  it('a round 1 whose signer the security reset left without keys cannot be verified, and nothing widens', async () => {
+    const { w, senior2, r1, r1Taps, mod } = await removedRound1();
+    w.gate.staff[mod.id]!.creds = [];
+    const r2 = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
+    expect(await ask(w, r2, [tapBy(senior2, r2.intent('propose'))], { involved: [], round1: { ruling: r1.ruling, taps: r1Taps } })).toEqual({ ok: false, reason: 'round1-unseen' });
   });
 });

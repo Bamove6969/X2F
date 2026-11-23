@@ -286,6 +286,20 @@ export async function runPendingProofs(deps: DisputeDeps & { txProof?: TxProofCh
  * logged `dispute.comply-lapsed`, the owner alerted. Not while maintenance pauses the dispute
  * (its deadlines move, A7) or an appeal is pending. Returns the number of disputes marked.
  */
+/**
+ * Review p4t22 residual (b): SQL over `disputes d`, true when the moderation service's signed
+ * after-refund statement of the dispute's ruling in force is stored. The seller's app shows the pay
+ * form only for such a statement, so until it exists the comply time is not counted as lapsed and no
+ * `ignored-ruling` freeze is allowed: a seller is never penalised for a form their app could not show.
+ */
+export const HAS_AFTER_REFUND_STATEMENT_SQL = `exists (select 1 from after_refund_statements s where s.ruling_id::text = d.ruling ->> 'id' and s.code = d.code and s.seq = d.seq)`;
+
+/** `HAS_AFTER_REFUND_STATEMENT_SQL` for one ruling. */
+export async function hasAfterRefundStatement(q: Queryable, rulingId: string): Promise<boolean> {
+  const { rows } = await q.query('select 1 from after_refund_statements where ruling_id::text = $1', [rulingId]);
+  return rows.length > 0;
+}
+
 export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): Promise<number> {
   const now = deps.clock();
   const { rows } = await deps.db.query<{ code: string; seq: number }>(
@@ -293,6 +307,7 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
       where d.after_refund and d.status in ('published', 'complying') and d.complied_at is null
         and d.comply_by is not null and d.comply_by <= $1 and d.paused_since is null
         and (d.comply_lapsed_at is null or d.comply_lapsed_at < d.comply_by)
+        and ${HAS_AFTER_REFUND_STATEMENT_SQL}
         and not exists (select 1 from ruling_payments p where p.code = d.code and p.seq = d.seq and p.status = 'pending')`,
     [now],
   );
@@ -303,6 +318,8 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
         if (d.complyBy === null || d.compliedAt !== null || at.getTime() < d.complyBy.getTime()) return d;
         if (d.status !== 'published' && d.status !== 'complying') return d;
         if (d.ruling?.outcome !== 'seller-sends-xmr') return d;
+        // Review p4t22 residual (b): no lapse while the seller's app could not show the pay form.
+        if (!(await hasAfterRefundStatement(client, d.ruling.id))) return d;
         const fresh = await client.query(
           `update disputes set comply_lapsed_at = $3 where code = $1 and seq = $2 and (comply_lapsed_at is null or comply_lapsed_at < comply_by)
              and not exists (select 1 from ruling_payments x where x.code = $1 and x.seq = $2 and x.status = 'pending')`,

@@ -537,6 +537,56 @@ describe('ModCase (board ModCase)', () => {
     }
   });
 
+  it('review p4t22 N1: a ruling refused because its moderator was removed; a senior proposes a new round 1 with their own tap', async () => {
+    const since = new Date(Date.now() - 2 * H).toISOString();
+    const stuck = (gateRefusal: unknown, o: Record<string, unknown> = {}) =>
+      kase({ status: 'published', assignedToYou: false, overLimit: false, ...o }, { publishedAt: new Date(Date.now() - 3 * H).toISOString(), draft: { id: 'r1', outcome: 'release-to-buyer' }, gateRefusal } as never);
+    const refusal = { rulingId: 'r1', reason: 'revoked', since, secondApproval: null, rePropose: { rulingId: 'r1' } };
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: SENIOR },
+      'GET /staff/v1/disputes/:code': { body: stuck(refusal) },
+      'POST /staff/v1/taps/start': honestTapStart('tap-9'),
+      'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-9' } },
+      'POST /staff/v1/disputes/:code/rulings/:id/re-propose': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
+    });
+    await open(`/disputes/${CODE}`);
+    expect(text('gate-refused')).toBe(
+      `Since ${hhmm(since)}, the moderation service will not carry out this ruling: the moderator who signed it was switched off or removed before it was carried out. A senior moderator or the owner can propose a new ruling in its place.`,
+    );
+    const panel = part('re-propose')!;
+    await click(panel.querySelector('input[value="refund-to-seller"]'));
+    typeInto(field('Reason (required, both traders see it)'), REASON);
+    typeInto(field('Evidence'), 'One line');
+    await settle();
+    await click(button('Send new ruling', panel));
+    await click(button('Tap security key'));
+    // A normal round-1 proposal tap for a new ruling id: nothing a proposal would not sign.
+    const intent = api.calls.find((c) => c.path === '/staff/v1/taps/start')!.body as { rulingId: string };
+    expect(intent).toEqual({
+      kind: 'ruling', step: 'propose', rulingId: intent.rulingId, code: CODE, round: 1, outcome: 'refund-to-seller', accountAction: { kind: 'none' },
+      amountAtomic: '4000000000000', reasonSha256: sha(REASON), evidenceSha256: sha(JSON.stringify(['One line'])), round1Id: null,
+    });
+    expect(intent.rulingId).not.toBe('r1');
+    expect(api.calls.find((c) => c.path === `/staff/v1/disputes/${CODE}/rulings/r1/re-propose`)!.body).toEqual({
+      rulingId: intent.rulingId, outcome: 'refund-to-seller', accountAction: { kind: 'none' }, reason: REASON, evidence: ['One line'], tapId: 'tap-9',
+    });
+    // Residual (b): no recorded terms, said in words.
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes/:code': { body: stuck({ rulingId: 'r1', reason: 'no-terms', since, secondApproval: null, rePropose: null }, { afterRefund: true }) } });
+    await open(`/disputes/${CODE}`);
+    expect(text('gate-refused')).toBe(
+      `Since ${hhmm(since)}, the moderation service will not carry out this ruling: it has no record of this trade's terms. The seller is shown no payment form, and the time to comply does not run out meanwhile.`,
+    );
+    // A moderator, or no re-proposal offered (an appeal is open): the line only.
+    for (const [me, r] of [[MOD, refusal], [SENIOR, { ...refusal, rePropose: null }]] as const) {
+      document.body.innerHTML = '';
+      fakeApi({ 'GET /staff/v1/me': { body: me }, 'GET /staff/v1/disputes/:code': { body: stuck(r) } });
+      await open(`/disputes/${CODE}`);
+      expect(part('gate-refused')).not.toBeNull();
+      expect(part('re-propose')).toBeNull();
+    }
+  });
+
   it('in an appeal, a senior who took part in round 1 (mayWork false) is offered neither the approval nor Take (review M2)', async () => {
     const waiting = kase(
       { round: 2, status: 'awaiting-approval', assignedToYou: false, assignee: 'sarah.v', mayWork: false },

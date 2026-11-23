@@ -1,7 +1,7 @@
 import type { GateSource } from './registry.js';
 import { syncRegistry } from './registry.js';
 import type { GateStore } from './store.js';
-import { authorizeRuling, type Authorization, type GateContext, type RulingInput } from './verify.js';
+import { authorizeRuling, type Authorization, type GateContext, type GateRuling, type RulingInput } from './verify.js';
 
 /**
  * The one way to ask the gate about a ruling (Plan 4 Task 13): sync the registry first, so a
@@ -14,12 +14,20 @@ import { authorizeRuling, type Authorization, type GateContext, type RulingInput
  * and the balance from the mod party, and settles `settle.payouts` once, mod-built for the winner.
  * Nothing here calls `settle`.
  */
-export function gateCheck(store: GateStore, source: GateSource, input: Omit<RulingInput, 'taps'>, ctx: GateContext): Promise<Authorization> {
+export function gateCheck(
+  store: GateStore,
+  source: GateSource,
+  input: Omit<RulingInput, 'taps' | 'round1'> & { round1?: GateRuling },
+  ctx: GateContext,
+): Promise<Authorization> {
   // One critical section per gate (review M2): never alongside the periodic sync or another check.
   return store.exclusive(async () => {
     await syncRegistry(source, store.state, ctx);
     const taps = await source.rulingTaps(input.ruling.id);
-    const result = await authorizeRuling(store.state, { ...input, taps }, ctx);
+    const { round1: r1, ...rest } = input;
+    // Review p4t22 N1: round 1's own taps, for round 2 only and only while the gate has not seen round 1.
+    const round1 = input.ruling.round === 2 && r1 !== undefined && !Object.hasOwn(store.state.rulingsSeen, r1.id) ? { ruling: r1, taps: await source.rulingTaps(r1.id) } : undefined;
+    const result = await authorizeRuling(store.state, { ...rest, taps, ...(round1 ? { round1 } : {}) }, ctx);
     await store.save();
     return result;
   });

@@ -54,6 +54,12 @@ export interface RulingSeen {
   /** When this gate first authorised it (its own clock). */
   publishedSeenAt: string;
   firstSeenFinalAt?: string;
+  /**
+   * Review p4t22 N1: a round 1 this gate never authorised, read only for its signers when an appeal
+   * of it was authorised (its signer had been switched off or removed). It never pays; it only
+   * keeps R37 and the round order (`stale-round`).
+   */
+  signersOnly?: true;
 }
 
 export interface GateState {

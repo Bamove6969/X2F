@@ -13,7 +13,7 @@
  */
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import type { LoginHours } from '@x2f/staff';
-import { DESKTOP, mine, pay, PHONE, sql, type Size } from '../../web/e2e/regtestKit.js';
+import { DESKTOP, mine, pay, PHONE, sql, stack, type Size } from '../../web/e2e/regtestKit.js';
 import { AMOUNT, dismissTips, FEE, fund, holdToRelease, inRooms, incomingTxs, LONG, markPaid, openTrade, receivedIn, shows, untilState, XMR, type Open } from '../../web/e2e/tradeFlow.js';
 import {
   appeal,
@@ -67,6 +67,16 @@ async function withStaff<T>(browser: Browser, p: Staffer, body: (page: Page) => 
   } finally {
     await s.close();
   }
+}
+
+/**
+ * A wallet's incoming txs, for a row's "before" snapshot and its checks (review p4t22 re-review, the desktop flakes):
+ * the wallet caches the daemon's height when it is made, so its connection is refreshed first and
+ * the sync then reaches the chain as it is now. A stale snapshot made later txs of the run look new.
+ */
+async function walletSnapshot(w: Parameters<typeof incomingTxs>[0]): Promise<Set<string>> {
+  await w.setDaemonConnection({ uri: stack().monerod });
+  return incomingTxs(w);
 }
 
 /** The buyer is paid `toBuyer − network fee` in `tx`, the fee wallet exactly `fee`, the seller nothing. */
@@ -128,7 +138,7 @@ for (const [label, size] of SIZES) {
       try {
       await inRooms(o, async () => {
         expect(await disputed(o)).toBe(six);
-        const before = { buyer: await incomingTxs(o.buyer.wallet), seller: await incomingTxs(o.seller.wallet) };
+        const before = { buyer: await walletSnapshot(o.buyer.wallet), seller: await walletSnapshot(o.seller.wallet) };
         await withStaff(browser, mod, async (staff) => {
           await takeCase(staff, o.code);
           await expect(staff.locator('[data-part="case-chips"]')).toContainText('Above the');
@@ -142,8 +152,8 @@ for (const [label, size] of SIZES) {
         }
         expect((await caseOf(o.code)).status).toBe('awaiting-approval');
         expect((await untilState(o.buyer, o.code, ['disputed'], 10_000)).state).toBe('disputed');
-        expect(await incomingTxs(o.buyer.wallet)).toEqual(before.buyer);
-        expect(await incomingTxs(o.seller.wallet)).toEqual(before.seller);
+        expect(await walletSnapshot(o.buyer.wallet)).toEqual(before.buyer);
+        expect(await walletSnapshot(o.seller.wallet)).toEqual(before.seller);
         // The owner approves with the spare key (the only key in this browser).
         await withStaff(browser, own, async (staff) => {
           await staff.goto(caseUrl(o.code));
@@ -167,20 +177,22 @@ for (const [label, size] of SIZES) {
       const own = await owner();
       await inRooms(o, async () => {
         expect(await disputed(o)).toBe(AMOUNT);
-        const before = { buyer: await incomingTxs(o.buyer.wallet), seller: await incomingTxs(o.seller.wallet) };
+        const before = { buyer: await walletSnapshot(o.buyer.wallet), seller: await walletSnapshot(o.seller.wallet) };
         await withStaff(browser, mod, async (staff) => {
           await takeCase(staff, o.code);
           await expect(staff.locator('[data-part="case-chips"]')).toContainText('Needs a second approval: not in US dollars');
           await proposeRuling(staff, 'Release to buyer');
           await expect(staff.locator('[data-part="ruling-waiting"]')).toContainText('Waiting for approval', { timeout: LONG });
         });
-        expect((await caseOf(o.code)).status).toBe('awaiting-approval');
-        for (let i = 0; i < 3; i++) {
+        // The same wait as the above-limit row (review p4t22 re-review: the EUR row's co-sign ran slow).
+        for (let i = 0; i < 6; i++) {
           await mine(1);
           await new Promise((r) => setTimeout(r, 5000));
         }
-        expect(await incomingTxs(o.buyer.wallet)).toEqual(before.buyer);
-        expect(await incomingTxs(o.seller.wallet)).toEqual(before.seller);
+        expect((await caseOf(o.code)).status).toBe('awaiting-approval');
+        expect((await untilState(o.buyer, o.code, ['disputed'], 10_000)).state).toBe('disputed');
+        expect(await walletSnapshot(o.buyer.wallet)).toEqual(before.buyer);
+        expect(await walletSnapshot(o.seller.wallet)).toEqual(before.seller);
         await withStaff(browser, own, async (staff) => {
           await staff.goto(caseUrl(o.code));
           await approveRuling(staff);
@@ -200,7 +212,7 @@ for (const [label, size] of SIZES) {
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
         await disputed(o);
-        const before = { buyer: await incomingTxs(o.buyer.wallet), seller: await incomingTxs(o.seller.wallet) };
+        const before = { buyer: await walletSnapshot(o.buyer.wallet), seller: await walletSnapshot(o.seller.wallet) };
         await withStaff(browser, mod, async (staff) => {
           await takeCase(staff, o.code);
           await proposeRuling(staff, 'Release to buyer');
@@ -229,8 +241,8 @@ for (const [label, size] of SIZES) {
         // no coins again (a lien goes on the buyer instead, Task 25).
         await buyerPaid(o, tx, AMOUNT - FEE, FEE);
         for (let i = 0; i < 4; i++) await mine(1);
-        expect([...(await incomingTxs(o.buyer.wallet))].filter((h) => !before.buyer.has(h))).toEqual([tx]);
-        expect([...(await incomingTxs(o.seller.wallet))].filter((h) => !before.seller.has(h))).toEqual([]);
+        expect([...(await walletSnapshot(o.buyer.wallet))].filter((h) => !before.buyer.has(h))).toEqual([tx]);
+        expect([...(await walletSnapshot(o.seller.wallet))].filter((h) => !before.seller.has(h))).toEqual([]);
       });
     });
 
@@ -239,7 +251,7 @@ for (const [label, size] of SIZES) {
       const o = await openTrade(browser, size, 'seller');
       await inRooms(o, async () => {
         await disputed(o);
-        const before = { buyer: await incomingTxs(o.buyer.wallet), seller: await incomingTxs(o.seller.wallet) };
+        const before = { buyer: await walletSnapshot(o.buyer.wallet), seller: await walletSnapshot(o.seller.wallet) };
         // The buyer's X2F is closed (the tab), the device keeps its data.
         const buyerContext = o.buyerPage.context();
         await o.buyerPage.close();
@@ -250,16 +262,16 @@ for (const [label, size] of SIZES) {
         await o.sellerPage.goto(disputeUrl(o.code));
         await shows(o.sellerPage, new RegExp(`Waiting for ${o.buyer.displayName} to open X2F`), LONG, { mining: true });
         // Nothing is broadcast while the winner is away.
-        expect(await incomingTxs(o.buyer.wallet)).toEqual(before.buyer);
+        expect(await walletSnapshot(o.buyer.wallet)).toEqual(before.buyer);
         o.buyerPage = await buyerContext.newPage();
         await dismissTips(o.buyerPage);
         await o.buyerPage.goto(disputeUrl(o.code));
         const tx = await settled(o.buyer, o.code, 'released', PAYOUT_WAIT);
         await buyerPaid(o, tx, AMOUNT - FEE, FEE);
         for (let i = 0; i < 4; i++) await mine(1);
-        const fresh = [...(await incomingTxs(o.buyer.wallet))].filter((h) => !before.buyer.has(h));
+        const fresh = [...(await walletSnapshot(o.buyer.wallet))].filter((h) => !before.buyer.has(h));
         expect(fresh).toEqual([tx]);
-        expect([...(await incomingTxs(o.seller.wallet))].filter((h) => !before.seller.has(h))).toEqual([]);
+        expect([...(await walletSnapshot(o.seller.wallet))].filter((h) => !before.seller.has(h))).toEqual([]);
       });
     });
 
