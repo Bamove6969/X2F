@@ -9,7 +9,9 @@ import './ui.css';
  * included: logo D top left (not a link: before login nothing here leads behind the door), then the
  * screen's name. The phone shell draws it on every screen but the Landing board (which has its own
  * large logo); Buy/Sell draw it in their own bar, beside the Site news bell and the Buy/Sell tabs;
- * the wide pre-login top (WideTop) is this header with the 32 px logo. The wide rail keeps its own
+ * the wide pre-login top (WideTop) is this header with the 32 px logo. Owner demo note #147 (23 Nov):
+ * "the phone shell" is every layout under 1000 px (phone, and 600-999 px windows: fold layout `two`),
+ * not only under 600 px, so a mid-width window shows it too. The wide rail keeps its own
  * head (logo, bell, page name), which already names the page. Screens keep their own titles.
  */
 
@@ -20,6 +22,19 @@ const MORE: [RegExp, string][] = [
   [/^\/session-length\/?$/, 'Session length'],
   // Owner demo note #79 (13 Nov 2026): this step's name says what it is (wip/agy-layout e82c136b).
   [/^\/setup\/pgp-key\/?$/, 'Adding your public PGP key'],
+  // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name. COPY-UNSIGNED
+  [/^\/setup\/name\/?$/, 'Your username'],
+  [/^\/setup\/display-name\/?$/, 'Your display name'],
+  [/^\/setup\/login\/?$/, 'How you log in'],
+  [/^\/setup\/pgp-code\/?$/, 'Your first login code'],
+  [/^\/setup\/password\/?$/, 'Your password'],
+  [/^\/setup\/authenticator\/?$/, 'Authenticator app'],
+  [/^\/setup\/security-key\/?$/, 'Security key'],
+  [/^\/setup\/passkey\/?$/, 'Passkey'],
+  [/^\/setup\/backup\/?$/, 'Recovery code'],
+  [/^\/setup\/wallet\/?$/, 'Your wallet'],
+  [/^\/setup\/welcome\/?$/, 'Welcome'],
+  // `/setup` itself is the Terms step of sign-up.
   [/^\/setup(\/|$)/, 'Create account'],
   [/^\/terms\/?$/, 'Terms'],
   [/^\/team\/join\/?$/, 'Join a team'],

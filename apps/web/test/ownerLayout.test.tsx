@@ -47,7 +47,12 @@ describe('screenName: the name beside the logo, one per route', () => {
   it('names the front door, the browse boards and the screens behind the door', () => {
     for (const [p, name] of [
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
-      ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'], ['/setup/welcome', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
+      ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'],
+      // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name (COPY-UNSIGNED).
+      ['/setup/name', 'Your username'], ['/setup/display-name', 'Your display name'], ['/setup/login', 'How you log in'],
+      ['/setup/pgp-code', 'Your first login code'], ['/setup/password', 'Your password'], ['/setup/authenticator', 'Authenticator app'],
+      ['/setup/security-key', 'Security key'], ['/setup/passkey', 'Passkey'], ['/setup/backup', 'Recovery code'],
+      ['/setup/wallet', 'Your wallet'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
       ['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security'],
       ['/help/faq', 'FAQ'], ['/help/getting-started', 'Getting started'], ['/help/support', 'Support'], ['/help/settings', 'Settings'],
     ] as const) expect([p, screenName(p)]).toEqual([p, name]);
@@ -107,6 +112,8 @@ describe('ScreenHeader: logo D top left, the screen name beside it', () => {
     const app = read('App.tsx');
     expect(app).toContain('<ScreenHeader');
     expect(app).toContain('<WideTop name={screenName(pathname)} />');
+    // Owner demo note #147: the 600-999 px window (layout `two`, e.g. 865x732) and the tri-fold draw it too.
+    expect(app).toContain("(layout === 'phone' || layout === 'two' || layout === 'three') && pathname !== '/'");
     expect(read('screens/browse/MethodList.tsx')).toContain('<ScreenHeader');
   });
 });
