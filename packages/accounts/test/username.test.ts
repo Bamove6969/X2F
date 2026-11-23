@@ -415,6 +415,8 @@ describe('review M1: the UTS #39 skeleton and the highly restrictive script rule
   test('staff names: a Cherokee look-alike folds to the same key as the Latin one', () => {
     expect(staffNameKey('ᎷᎥᏒᎪ.Ꮶ')).toBe(staffNameKey('MIRA.K'));
     expect(staffNameKey('Ꮇira.Ꮶ')).toBe(staffNameKey('Mira.K'));
+    // The API compares stored keys (lower case): a small Cherokee letter folds like its capital.
+    expect(staffNameKey('Ꮇira.Ꮶ'.toLowerCase())).toBe(staffNameKey('mira.k'));
   });
 
   test.each(['Tokyo東京', 'Sakuraさくら', 'Kimチム', 'Lee이민호', 'Wangㄅㄆ', '東京の取引者', 'Привет мир', 'Ἀθηνᾶ', 'Ölaf_Ünal', 'Ꮳ Ꮻ Ꭿ Ꮭ', 'Աննա_Սարգսյան'])(
