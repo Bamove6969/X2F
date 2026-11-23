@@ -35,7 +35,7 @@ beforeEach(() => {
   setNow(new Date(T0.getTime() + ++step * HOUR));
 });
 
-const unique = (p: string) => `${p}${process.pid % 1000}x${++n}`;
+const unique = (p: string) => `${p}${String(process.pid % 1000).padStart(3, '0')}x${String(++n).padStart(3, '0')}`;
 const cookie = (res: LightMyRequestResponse) => res.cookies.find((c) => c.name === DEVICE_COOKIE)?.value;
 
 function check(payload: unknown, device?: string) {

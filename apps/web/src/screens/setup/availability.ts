@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { authApi } from '../auth/authApi.js';
-import { checkLoginName } from './names.js';
+import { checkNewLoginName } from './names.js';
 
 export const CHECK_DELAY_MS = 500;
 
@@ -28,7 +28,7 @@ const serverCheck: NameChecker = async (loginName) => (await authApi.nameAvailab
 /** The availability of `name` as typed (idle while it has the wrong shape). */
 export function useNameAvailability(name: string, check: NameChecker = serverCheck): Availability {
   const [result, setResult] = useState<Availability>({ state: 'idle' });
-  const wellFormed = checkLoginName(name).ok;
+  const wellFormed = checkNewLoginName(name).ok;
 
   useEffect(() => {
     if (!wellFormed) return;

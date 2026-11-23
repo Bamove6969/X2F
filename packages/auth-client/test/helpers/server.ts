@@ -141,8 +141,8 @@ export async function failure(p: Promise<unknown>): Promise<unknown> {
 }
 
 let seq = 0;
-/** A fresh valid username per call (5-20 characters). */
-export const uniqueName = (prefix = 'user'): string => `${prefix}${String(++seq).padStart(4, '0')}x`;
+/** A fresh valid new username per call (8-20 characters, owner demo note #126). */
+export const uniqueName = (prefix = 'user'): string => `${prefix}${String(++seq).padStart(6, '0')}x`;
 
 /**
  * Plan 2 Task 16, for flows about something else: a trader login from a new browser while the

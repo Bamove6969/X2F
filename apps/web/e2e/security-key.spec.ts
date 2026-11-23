@@ -29,7 +29,7 @@ test.beforeAll(async () => {
 function keyOptions(rpId: string) {
   return {
     rp: { name: 'X2F', id: rpId },
-    user: { id: b64url(new Uint8Array(32).fill(3)), name: 'lumen.k', displayName: 'lumen.k' },
+    user: { id: b64url(new Uint8Array(32).fill(3)), name: 'lumen.kai', displayName: 'lumen.kai' },
     challenge: b64url(crypto.getRandomValues(new Uint8Array(32))),
     pubKeyCredParams: [-8, -7, -257].map((alg) => ({ alg, type: 'public-key' })),
     timeout: 60_000,
@@ -52,7 +52,7 @@ async function stubApi(page: Page, o: { rpId: string; finish?: (r: Route) => Pro
   const methods: string[] = [];
   await page.route('**/v1/account/me', (r) =>
     registered
-      ? json({ displayName: 'lumen.k', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
+      ? json({ displayName: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
   );
   await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
@@ -61,7 +61,7 @@ async function stubApi(page: Page, o: { rpId: string; finish?: (r: Route) => Pro
   await page.route('**/v1/register/pgp/finish', (r) => {
     registered = true;
     methods.push('pgp');
-    return json({ displayName: 'lumen.k' }, 201)(r);
+    return json({ displayName: 'lumen.kai' }, 201)(r);
   });
   await page.route('**/v1/account/webauthn/start', (r) => {
     s.starts.push(JSON.parse(r.request().postData() ?? 'null'));
@@ -109,7 +109,7 @@ async function toSecurityKeyStep(page: Page): Promise<void> {
   await page.fill('#uname', 'lumen-login-7');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
   await page.click('[data-part="names-continue"]');
-  await page.fill('#display-name', 'lumen.k');
+  await page.fill('#display-name', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
 
   await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();

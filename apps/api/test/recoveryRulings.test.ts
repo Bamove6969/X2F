@@ -71,7 +71,7 @@ beforeEach(() => {
 });
 
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}r`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}r`;
 const errorOf = (r: LightMyRequestResponse) => (r.json() as { error?: string }).error;
 
 const onboarding = (accountId: string, until: Date | null) =>

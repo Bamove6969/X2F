@@ -78,7 +78,7 @@ beforeEach(() => {
 });
 
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}v`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}v`;
 const errorOf = (r: LightMyRequestResponse) => (r.json() as { error?: string }).error;
 const in24h = () => new Date(now.getTime() + HOLD_MS).toISOString();
 const later = (ms: number) => setNow(new Date(now.getTime() + ms));

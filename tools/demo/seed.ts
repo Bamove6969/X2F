@@ -2,9 +2,9 @@
  * DEMO ONLY: seeds the demo traders and offers through the real API (sign-up with a password,
  * first payout wallet, offers), exactly as a browser would. Run by demo.ts after the stack is up.
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_DIR, DEMO_PASSWORD } from './config.js';
+import { DEMO_DIR, DEMO_PASSWORD, ENV_FILE } from './config.js';
 import { SEEDED_FILE } from './door.js';
 import { assertDemo } from './guard.js';
 import { throwawayAddress } from './secrets.js';
@@ -12,6 +12,9 @@ import { stepOf, TOTP_FILE, totpCode } from './totp.js';
 import pg from 'pg';
 import { GIFT_CARD_TERMS_VERSION } from '../../packages/trade/src/giftCards.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
+import { NEW_NAME_MIN, checkDisplayName, checkLoginName } from '../../packages/accounts/src/index.js';
+import { loginTag } from '../../apps/api/src/accounts.js';
+import { loadConfig } from '../../apps/api/src/config.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
 await assertDemo(process.env, process.env.MONERO_DAEMON_URI ?? '');
@@ -107,11 +110,41 @@ const OWNER: Person[] = [
   { displayName: 'demo_cy', loginName: 'cy-demo', vendor: false, offers: [] },
 ];
 
+/**
+ * DEMO ONLY (owner demo notes #126 and #127, 23 Nov 2026): a new login or display name is 8 to 20
+ * characters, but the demo keeps the names the owner already uses (`cy-demo`, `demo_cy`, `mira.k`),
+ * as an account made before the notes keeps its 5-7 character names. Such a name signs up with
+ * `.seed` added (`seedName`), and `restoreNames` then writes the real one straight into the demo's
+ * own throwaway database, as stored names are (the display name as typed, the login name only as
+ * its tag under the API's current key, FU-D). Lookups take 5-20 (`checkLoginName`,
+ * `checkDisplayName`), so these accounts log in and show as before.
+ */
+const seedName = (name: string): string => ([...name].length >= NEW_NAME_MIN ? name : `${name}.seed`);
+
+async function restoreNames(db: pg.Client, p: Person): Promise<void> {
+  if (seedName(p.displayName) !== p.displayName) {
+    const d = checkDisplayName(p.displayName);
+    if (!d.ok) throw new Error(`demo seed: ${p.displayName} is not a valid stored display name`);
+    const r = await db.query('update accounts set display_name = $2, display_key = $3 where display_key = $1', [seedName(p.displayName).toLowerCase(), d.name, d.key]);
+    if (r.rowCount !== 1) throw new Error(`demo seed: could not restore the display name ${p.displayName}`);
+  }
+  if (seedName(p.loginName) !== p.loginName) {
+    const l = checkLoginName(p.loginName);
+    if (!l.ok) throw new Error(`demo seed: ${p.loginName} is not a valid stored login name`);
+    const ring = loadConfig(JSON.parse(readFileSync(ENV_FILE, 'utf8')) as Record<string, string>).loginNameKeys;
+    const key = ring.keys.get(ring.current)!;
+    const r = await db.query('update accounts set login_tag = $2 where login_tag = $1 and login_tag_key_id = $3', [
+      loginTag(key, seedName(p.loginName)), loginTag(key, l.key), ring.current,
+    ]);
+    if (r.rowCount !== 1) throw new Error(`demo seed: could not restore the login name ${p.loginName}`);
+  }
+}
+
 async function signUp(p: Person): Promise<DemoClient> {
   const c = new DemoClient(ORIGIN);
   await c.ok('GET', '/v1/site');
   await c.ok('POST', '/v1/register/password', {
-    displayName: p.displayName, loginName: p.loginName, password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
+    displayName: seedName(p.displayName), loginName: seedName(p.loginName), password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
     // Every sign-up signs the Terms (migration 316): the seed types the display name, as someone
     // who cannot draw would.
     termsSignature: { kind: 'typed', name: p.displayName },
@@ -151,6 +184,7 @@ await db.connect();
 const failures: string[] = [];
 for (const p of [...CAST, ...OWNER]) {
   const c = await signUp(p);
+  await restoreNames(db, p);
   if (p.vendor) await makeVendor(db, p.displayName);
   for (const o of p.offers) {
     // The API's exchange rates (CAD and the rest) arrive with its first rate poll, a little after it

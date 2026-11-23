@@ -347,7 +347,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
-      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6.',
+      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6. Owner demo note #126 (23 Nov 2026, on /setup/name: "I want username changed to minimum of 8 characters"): the page says 8 to 20.',
     },
   ],
   SetupWelcome: [

@@ -283,7 +283,7 @@ describe('"Stay logged in?": extending the session', () => {
 
   it('works with the password alone, through the real confirm route (owner: any login method)', async () => {
     const b = new Browser(app);
-    const name = `pw${String(++n).padStart(4, '0')}x`;
+    const name = `pw${String(++n).padStart(5, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
     expect(reg.statusCode, reg.body).toBe(201);
     expect((await setLength(b, 2)).statusCode).toBe(200);
@@ -370,7 +370,7 @@ describe('"Stay logged in?": extending the session', () => {
 
   it('an account with an authenticator code may still extend with its password alone (owner G10); other confirms still need the code', async () => {
     const b = new Browser(app);
-    const name = `pt${String(++n).padStart(4, '0')}x`;
+    const name = `pt${String(++n).padStart(5, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
     expect(reg.statusCode, reg.body).toBe(201);
     const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);
@@ -384,7 +384,7 @@ describe('"Stay logged in?": extending the session', () => {
 
   it('a session on old Terms can still prove itself to stay logged in, and only for that (review M5)', async () => {
     const b = new Browser(app);
-    const name = `ps${String(++n).padStart(4, '0')}x`;
+    const name = `ps${String(++n).padStart(5, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
     expect(reg.statusCode, reg.body).toBe(201);
     const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);

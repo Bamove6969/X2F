@@ -14,7 +14,7 @@
  * - Removing a member ends their sessions at once and deletes their login (review M6).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { checkLoginName, checkNewDisplayName, staffNameKey } from '@x2f/accounts';
+import { checkNewDisplayName, checkNewLoginName, staffNameKey } from '@x2f/accounts';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -130,8 +130,8 @@ export async function listMembers(db: Queryable, accountId: string, now: Date): 
 }
 
 /**
- * A member's name, as chat labels show it: the display-name rules (5–20 ASCII letters, digits,
- * `.`, `-`, `_`; no reserved words, with look-alikes) and no look-alike of a staff or owner name
+ * A member's name, as chat labels show it: the new-display-name rules (8–20 characters, owner note #127; no
+ * spaces; no reserved words, with look-alikes) and no look-alike of a staff or owner name
  * (F4), so a label can never read like X2F staff. 400 `display-name-invalid` / `display-name-reserved`.
  * Unique within the team only (the unique index; 409 `display-name-taken`).
  */
@@ -496,7 +496,7 @@ export function inviteView(r: InviteRow): InviteView {
  * name already taken is found only by `createAccount` at the end (the same generic answer).
  */
 export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
-  const r = checkLoginName(typeof raw === 'string' ? raw : '');
+  const r = checkNewLoginName(typeof raw === 'string' ? raw : '');
   if (!r.ok) throw new ApiError(400, 'login-name-invalid');
   const { rows } = await db.query('select 1 from accounts where display_key = $1', [r.key]);
   if (rows.length > 0) throw new ApiError(409, 'names-unavailable');

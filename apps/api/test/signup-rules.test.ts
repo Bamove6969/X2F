@@ -53,7 +53,7 @@ beforeEach(() => {
   setNow(new Date(T0.getTime() + ++step * HOUR));
 });
 
-const name = (p = 'rule') => `${p}${process.pid % 1000}x${++n}`;
+const name = (p = 'rule') => `${p}${String(process.pid % 1000).padStart(3, '0')}x${String(++n).padStart(3, '0')}`;
 const names = () => {
   const loginName = name('priv');
   return { loginName, displayName: name('Shown') };
@@ -203,7 +203,7 @@ describe('signup round 3: display names with Unicode letters and common symbols'
   });
 
   it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
-    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira${n++}` });
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Miranda${n++}` });
     const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
     const res = await new Browser(app).post('/v1/register/password', {
       displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
@@ -252,7 +252,7 @@ describe('signup round 3 review: invisible characters and staff look-alikes', ()
   });
 
   it('M2: a team member name is held to the same staff comparison', async () => {
-    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.L${n++}` });
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.Lor${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
     for (const attack of [s.replace('.', ','), s.replace('i', 'ı')]) {
       await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });

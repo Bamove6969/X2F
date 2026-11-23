@@ -136,7 +136,7 @@ describe('step 1: one private username with a live tick', () => {
       answer = async () => reply;
       const api = setup();
       const host = show('username', api);
-      type(host.querySelector<HTMLInputElement>('#uname')!, 'lumen.k');
+      type(host.querySelector<HTMLInputElement>('#uname')!, 'lumen.kai');
       await wait(CHECK_DELAY_MS + 10);
       expect(byPart(host, 'name-status')?.textContent).toBe("We'll check it when you finish.");
       expect(byPart(host, 'name-status')?.getAttribute('data-tone')).toBe('neutral');
@@ -175,7 +175,7 @@ describe('step 1: one private username with a live tick', () => {
     const host = show('username', api);
     type(host.querySelector<HTMLInputElement>('#uname')!, 'abc');
     fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'names-error')?.textContent).toBe('Your username needs 5 to 20 characters.');
+    expect(byPart(host, 'names-error')?.textContent).toBe('Your username needs 8 to 20 characters.');
     expect(api.go).not.toHaveBeenCalled();
   });
 });
@@ -185,10 +185,10 @@ describe('the display name step', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
     expect(host.querySelectorAll('input').length).toBe(1);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.K');
-    expect(byPart(host, 'name-preview')?.textContent).toBe('Traders will see Lumen.K');
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    expect(byPart(host, 'name-preview')?.textContent).toBe('Traders will see Lumen.Kai');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.K', challenge: null });
+    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
     expect(api.go).toHaveBeenCalledWith('login');
   });
 
@@ -209,12 +209,12 @@ describe('the display name step', () => {
     expect(byPart(host, 'display-error')?.textContent).toBe('That display name is kept for X2F. Pick another.');
     type(host.querySelector<HTMLInputElement>('#display-name')!, 'ab');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name needs 5 to 20 characters.');
+    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name needs 8 to 20 characters.');
   });
 
   it('makes no availability request (display names are checked when the account is made)', () => {
     const host = show('display', setup({ loginName: 'juniper.oak' }));
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.K');
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
     expect(checks()).toEqual([]);
   });
 });
@@ -256,9 +256,9 @@ describe('note #108: no spaces in the names', () => {
   it('spaces at the ends are trimmed as before, not refused', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, '  Lumen.K  ');
+    type(host.querySelector<HTMLInputElement>('#display-name')!, '  Lumen.Kai  ');
     expect(byPart(host, 'display-space')).toBeNull();
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.K', challenge: null });
+    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
   });
 });

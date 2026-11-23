@@ -49,7 +49,7 @@ async function stubApi(page: Page): Promise<Stub> {
   });
   await page.route('**/v1/account/me', (r) =>
     s.registered
-      ? json({ displayName: 'lumen.k', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: s.methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
+      ? json({ displayName: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: s.methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
   );
   await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
@@ -63,7 +63,7 @@ async function stubApi(page: Page): Promise<Stub> {
     record('pgp-finish', r);
     s.registered = true;
     s.methods = ['pgp'];
-    return json({ displayName: 'lumen.k' }, 201)(r);
+    return json({ displayName: 'lumen.kai' }, 201)(r);
   });
   await page.route('**/v1/register/password', (r) => {
     record('register-password', r);
@@ -76,7 +76,7 @@ async function stubApi(page: Page): Promise<Stub> {
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
-    return json({ challengeId: 't1', otpauthUri: 'otpauth://totp/X2F:lumen.k?secret=JBSWY3DPEHPK3PXP&issuer=X2F', secret: 'JBSWY3DPEHPK3PXP' })(r);
+    return json({ challengeId: 't1', otpauthUri: 'otpauth://totp/X2F:lumen.kai?secret=JBSWY3DPEHPK3PXP&issuer=X2F', secret: 'JBSWY3DPEHPK3PXP' })(r);
   });
   await page.route('**/v1/account/totp/finish', (r) => {
     record('totp-finish', r);
@@ -124,7 +124,7 @@ async function pickNames(page: Page): Promise<void> {
   await page.fill('#uname', 'lumen-login-7');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
   await page.click('[data-part="names-continue"]');
-  await page.fill('#display-name', 'lumen.k');
+  await page.fill('#display-name', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
 }
 
@@ -161,7 +161,7 @@ for (const v of VIEWPORTS) {
     await expect(tick(page, 'pgp')).toBeChecked();
     for (const id of ['pgp', 'security-key']) {
       await expect(page.locator(`[data-method="${id}"] [data-part="recommended"]`)).toHaveText('Recommended');
-      await expect(page.locator(`[data-method="${id}"] [data-part="strength"]`)).toHaveText('Strong');
+      await expect(page.locator(`[data-method="${id}"] [data-part="strength"]`)).toHaveText('RATED-STRONG');
       // Lead call (12 Nov 2026): green, its own token (not the escrow teal).
       expect(await colour(page, `[data-method="${id}"] [data-part="strength"]`, 'color')).toBe(await token(page, '--x2f-good'));
       expect(await token(page, '--x2f-good')).not.toBe(await token(page, '--x2f-escrow'));

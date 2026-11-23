@@ -992,7 +992,7 @@ describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
   it('an invite is refused with recovery-hold, writes nothing and spends no confirm token; after the hold the same request goes through', async () => {
     const owner = await team();
     const until = await hold(owner.id);
-    const displayName = `Held${++n}x`;
+    const displayName = `HeldName${++n}x`;
     const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
     const res = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
     expect(res.statusCode, res.body).toBe(403);
@@ -1041,7 +1041,7 @@ describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
 
   it('a hold that starts after the preHandler check still refuses the write, under the account lock (ownerWriteGate)', async () => {
     const owner = await team();
-    const displayName = `Late${++n}x`;
+    const displayName = `LateName${++n}x`;
     const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
     // requireConfirm runs after requireNotHeld: the hold starts right after the token is spent.
     let until: Date | null = null;
@@ -1083,7 +1083,7 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
       const owner = await team();
       await weaken(owner.browser, strength);
       await deps.db.query('update sessions set onboarding_until = $2 where id = $1', [await sessionId(owner.browser), new Date(deps.clock().getTime() + 10 * 60_000)]);
-      const displayName = `Weak${++n}x`;
+      const displayName = `WeakName${++n}x`;
       const bare = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'] });
       expect(err(bare)).toEqual({ status: 403, error: 'weak-session' });
       const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
@@ -1851,14 +1851,14 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
 
   it('a freed number is used again by the next member (the lowest free one)', async () => {
     const owner = await team();
-    for (let i = 0; i < 3; i++) expect((await invite(owner, `Slot${++n}x`, ['offers'])).statusCode).toBe(201);
+    for (let i = 0; i < 3; i++) expect((await invite(owner, `SlotName${++n}x`, ['offers'])).statusCode).toBe(201);
     const first = (await listed(owner))[0]!;
     const confirmToken = await confirmed(owner, { kind: 'team-remove', memberId: first.id });
     const del = await app.inject({
       method: 'DELETE', url: `/v1/team/members/${first.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
     });
     expect(del.statusCode, del.body).toBe(204);
-    expect((await invite(owner, `Slot${++n}x`, ['offers'])).statusCode).toBe(201);
+    expect((await invite(owner, `SlotName${++n}x`, ['offers'])).statusCode).toBe(201);
     expect((await listed(owner)).map((m) => m.chatLabel).sort()).toEqual([1, 2, 3].map((k) => `${owner.displayName} Assistant ${k}`));
   });
 

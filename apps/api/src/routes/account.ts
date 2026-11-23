@@ -1,5 +1,5 @@
 import {
-  SESSION_CHOICE_WINDOW_MS, UNCHOSEN_SESSION_HOURS, checkLoginName, isIdleReminderMinutes, isSessionHours, sessionHoursFor, type AccountKind, type ConfirmAction,
+  SESSION_CHOICE_WINDOW_MS, UNCHOSEN_SESSION_HOURS, checkNewLoginName, isIdleReminderMinutes, isSessionHours, sessionHoursFor, type AccountKind, type ConfirmAction,
   type MethodType, type SessionAccountType,
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -402,7 +402,7 @@ export function accountRoutes(app: FastifyInstance): void {
     req.server.budgets.register.take();
     const body = req.body;
     const input = body !== null && typeof body === 'object' ? (body as { loginName?: unknown }).loginName : undefined;
-    const r = checkLoginName(typeof input === 'string' ? input : '');
+    const r = checkNewLoginName(typeof input === 'string' ? input : '');
     if (!r.ok) throw new ApiError(400, 'login-name-invalid');
     const { rows } = await d.db.query<{ display_key: string; legacy_login_name: boolean }>(
       'select display_key, legacy_login_name from accounts where id = $1',

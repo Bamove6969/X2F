@@ -135,7 +135,7 @@ export const TEAM_COPY = {
   logWhen: (iso: string, trade: string | null) => (trade === null ? when(iso) : `${when(iso)}, trade ${trade}`),
   loadFailed: 'Could not load your team. Reload the page to try again.',
   saveFailed: 'Could not save that. Try again.',
-  nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
+  nameInvalid: 'Use 8 to 20 letters, digits, dots, dashes or underscores.', // owner demo notes #126, #127
   nameTaken: 'Someone on your team already has that name.',
   signedOut: 'Log in to manage your team.',
   // J-20 (owner p7-4, p7-11; p11-27). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
@@ -194,7 +194,7 @@ export const JOIN_COPY = {
   keyFailed: 'Could not use that key. Check that you pasted the whole public key.',
   codeFailed: 'That code did not work. It may have expired: send a new message and try again.',
   webauthnFailed: 'That did not work. Try again, or choose another second factor.',
-  nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
+  nameInvalid: 'Use 8 to 20 letters, digits, dots, dashes or underscores.', // owner demo notes #126, #127
   nameUnavailable: 'Pick another login name. That one is taken.',
 } as const;
 

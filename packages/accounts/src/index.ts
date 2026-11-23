@@ -7,7 +7,11 @@ export {
   checkLoginName,
   checkNames,
   checkNewDisplayName,
+  checkNewLoginName,
   LOOK_ALIKE_LETTERS,
+  NAME_MAX,
+  NAME_MIN,
+  NEW_NAME_MIN,
   lookAlikeKey,
   staffNameKey,
 } from './username.js';
