@@ -23,14 +23,16 @@ export const LANDING_COPY = {
   sloganBottom: 'to believe it.',
   promises: [
     // not-a-refusal: a reassurance about escrow, not a rule the user ran into
-    'Your coins sit in 2-of-3 escrow. X2F can’t move them alone.',
-    'No IP addresses logged. Chats are end-to-end encrypted.',
-    'Members only. Nothing here is public.',
+    // COPY: owner's demo note #109 (23 Nov), his words; comma splice made two sentences.
+    'Your coins are protected by a modern 2-of-3 escrow wallet where you and the person you trade with will agree to release and complete the trade. Even X2F cannot unilaterally move the coins. It is a mutually agreed upon decision.',
+    // COPY: owner's demo note #110 (23 Nov), his words.
+    'No IP addresses logged and all chats are end-to-end encrypted.',
+    // COPY: owner's demo note #111 (23 Nov), his words; "creates take no more then" tidied to "creation takes no more than".
+    'This site is for members only and nothing is for just public viewing. Account creation takes no more than 5 minutes.',
   ],
   create: 'Create account',
   login: 'Log in',
   recover: 'Lost access? Recover your account',
-  footer: 'Members only · Monero for cash, 2-of-3 escrow',
 } as const;
 
 function Lock() {
@@ -109,9 +111,7 @@ export function Landing() {
           </Link>
         </nav>
       </main>
-      <footer className="x2f-landing__foot">
-        <p>{LANDING_COPY.footer}</p>
-      </footer>
+      {/* Owner demo note #112 (23 Nov): the board's footer line is removed. */}
     </div>
   );
 }

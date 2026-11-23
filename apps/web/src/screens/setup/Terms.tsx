@@ -244,7 +244,7 @@ export function SetupTerms() {
       // Design 9 Nov (p11-15, canvas ea2a9ca8; owner p11-15 "please check the box if you agree to the
       // rules and terms of X2F and then please sign your name and hit begin account creation").
       // "Terms" capitalised as this document's name (owner demo notes 13 Nov, setup-terms). COPY-UNSIGNED.
-      intro="Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade."
+      intro="Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again unless we update the Terms, in which case you will just have to agree to the new Terms."
       acceptLabel="Start creating my account"
       back={returnTo}
       after={

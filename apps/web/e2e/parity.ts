@@ -196,6 +196,22 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupTerms: [
     {
+      text: "No IP addresses are logged.",
+      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says \"We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
+    },
+    {
+      text: "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.",
+      why: "Owner demo note #120 (23 Nov 2026, setup-terms key point): the page says \"Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.\" (Terms version 2026-11-23).",
+    },
+    {
+      text: "Completed trades are erased on day 30.",
+      why: "Owner demo note #119 (23 Nov 2026, setup-terms key point): the page says \"To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.\" (Terms version 2026-11-23).",
+    },
+    {
+      text: "Moderators can read your trade chat only if a dispute is opened.",
+      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\" (Terms version 2026-11-23).",
+    },
+    {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
       why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
     },
@@ -226,6 +242,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     {
       text: "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
       why: 'Owner demo notes 13 Nov 2026 (setup-terms, section 7): "a government agency"; the page says "If police or a government agency sends us …", the rest word for word (Terms version 2026-11-14). Owner demo note #107 (17 Nov): "... what little information we hold within the scope of the writ." (Terms version 2026-11-23).',
+    },
+    {
+      text: 'If you post an ad, you pay a 1% fee when the trade completes.',
+      why: 'Owner demo note #116 (23 Nov 2026, setup-terms second key point): the page says "If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees." (Terms version 2026-11-23).',
+    },
+    {
+      text: 'X2F never holds your coins.',
+      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point (Terms version 2026-11-23).',
     },
     {
       text: 'We answer lawful warrants with the little we have.',

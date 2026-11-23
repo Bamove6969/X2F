@@ -43,14 +43,24 @@ export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's l
 
 /** The board's key points, shown above the full text. */
 export const KEY_POINTS: readonly string[] = [
-  'X2F never holds your coins.',
-  'If you post an ad, you pay a 1% fee when the trade completes.',
-  'Moderators can read your trade chat only if a dispute is opened.',
+  // Owner demo note #115 (23 Nov, on this key point): his explanation added after it, in his words;
+  // "The coins sit are held" tidied to "The coins are held". COPY-UNSIGNED.
+  'X2F never holds your coins. The coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must cryptographically sign off on the transaction.',
+  // Owner demo note #116 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees.',
+  // Owner demo note #118 (23 Nov): a new point between the fee and the chat ones, his words; a comma
+  // and "if" added for grammar. COPY-UNSIGNED.
+  'Moderators are at your disposal if something goes wrong, if you feel the need for site intervention, or just to make sure a trade ends smoothly.',
+  // Owner demo note #117 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'Moderators can read your trade chat only if their presence is requested and a dispute is opened.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
   // "Dispute records are kept for 30 days." COPY-UNSIGNED.
-  'Completed trades are erased on day 30.',
-  'Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.',
-  'No IP addresses are logged.',
+  // Owner demo note #119 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.',
+  // Owner demo note #120 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.',
+  // Owner demo note #121 (23 Nov, on this key point), his words. COPY-UNSIGNED.
+  'We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.',
   // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
   // we collect." COPY-UNSIGNED
   'We answer lawful warrants with what very little information we collect.',
