@@ -33,7 +33,9 @@ import { APP_LABELS } from '../wallets-model.js';
  * looks and the logo with the screen name top left on every screen).
  */
 export const WELCOME_COPY = {
-  lead: 'Your account is ready. Trade Monero for cash, bank transfers, gift cards, or whatever payment method you choose, with every trade protected by escrow. If the site is missing a payment method, please leave feedback so we can add it quickly: include what detail you can, or a link with information on it.',
+  // Owner demo note #166 (23 Nov), his two paragraphs word for word.
+  lead: 'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
+  leadMore: 'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
   loginItem: 'Configured your secure methods of logging into X2F',
   recoveryItem: 'Emergency login method: recovery code documented',
   walletItem: 'Connected your wallet',
@@ -290,6 +292,7 @@ export function Welcome() {
             <span data-username="">{name}</span>,
           </p>
           <p className="x2f-start__lead">{WELCOME_COPY.lead}</p>
+          <p className="x2f-start__lead">{WELCOME_COPY.leadMore}</p>
         </section>
         {/* Owner #97 (16 Nov): the rating, and for anything below highly secure, the way to raise it. DESIGNER-REVIEW */}
         <section className="x2f-welcome__rating" data-part="security-rating" data-rating={rating} aria-labelledby="welcome-rating-title">

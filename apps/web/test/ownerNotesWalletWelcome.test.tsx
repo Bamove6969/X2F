@@ -205,6 +205,8 @@ describe('/setup/welcome (owner #97)', () => {
     expect(nameLine.textContent).toBe('Lumen.K,');
     expect(nameLine.querySelector('[data-username]')!.textContent).toBe('Lumen.K');
     expect(nameLine.nextElementSibling!.textContent).toBe(WELCOME_COPY.lead);
+    // Owner #166: his second paragraph right after.
+    expect(nameLine.nextElementSibling!.nextElementSibling!.textContent).toBe(WELCOME_COPY.leadMore);
   });
 
   it('a PGP account is Highly secure, with no raise line, and still lists the username', async () => {

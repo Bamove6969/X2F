@@ -39,9 +39,11 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
   await stub(page, { methods: ['password', 'totp', 'security-key', 'recovery-codes'], session: false });
   await page.goto('/setup/welcome?returnTo=%2Fsell');
   const screen = page.locator('[data-screen="setup-welcome"]');
-  await expect(screen.locator('.x2f-start__lead')).toHaveText(
-    'Your account is ready. Trade Monero for cash, bank transfers, gift cards, or whatever payment method you choose, with every trade protected by escrow. If the site is missing a payment method, please leave feedback so we can add it quickly: include what detail you can, or a link with information on it.',
-  );
+  // Owner demo note #166 (23 Nov): two paragraphs.
+  await expect(screen.locator('.x2f-start__lead')).toHaveText([
+    'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
+    'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
+  ]);
   const login = screen.locator('[data-part="check-login"]');
   await expect(login.locator('[data-part="check-title"]')).toHaveText('Configured your secure methods of logging into X2F');
   await expect(login.locator('[data-part="login-methods"] li')).toHaveText(['Security key', 'Authenticator app', 'Username and password']);
