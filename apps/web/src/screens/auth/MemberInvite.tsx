@@ -22,6 +22,8 @@ import { refreshSession } from '../../session/useSession.js';
 import { authApi, deviceLabel } from './authApi.js';
 import { isExpired, refusalText } from './refusals.js';
 import '../screens.css';
+import { MessageBox } from '../../ui/MessageBox.js';
+import { hasSpace, spaceProblem } from '../setup/names.js';
 
 /** The invite code in a `#fragment`, or null. */
 export function inviteFromHash(hash: string): string | null {
@@ -119,9 +121,9 @@ function PgpProof({
           <label className="x2f-label" htmlFor="join-message">
             {C.decryptLabel}
           </label>
-          <pre className="x2f-pre" id="join-message" data-part="pgp-message">
+          <MessageBox id="join-message" data-part="pgp-message">
             {challenge.encryptedMessage}
-          </pre>
+          </MessageBox>
           <Button variant="secondary" onClick={copy}>
             {copied ? C.copied : C.copyMessage}
           </Button>
@@ -236,9 +238,16 @@ export function MemberInvite() {
                   autoComplete="username"
                   maxLength={20}
                   value={loginName}
-                  aria-describedby="join-login-hint"
+                  aria-describedby={hasSpace(loginName.trim()) ? 'join-login-space join-login-hint' : 'join-login-hint'}
+                  aria-invalid={hasSpace(loginName.trim()) ? true : undefined}
                   onChange={(e) => setLoginName(e.target.value)}
                 />
+                {/* Owner demo note #108: a username holds no spaces (the API refuses one too). */}
+                {hasSpace(loginName.trim()) ? (
+                  <p className="x2f-error" id="join-login-space" data-part="join-login-space">
+                    {spaceProblem('username')}
+                  </p>
+                ) : null}
                 <p className="x2f-note" id="join-login-hint">
                   {C.loginNameHint}
                 </p>

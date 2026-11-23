@@ -21,6 +21,7 @@ import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
 import { PasswordInput } from '../../ui/PasswordInput.js';
 import { HelpLinks } from '../../ui/HelpLinks.js';
+import { MessageBox } from '../../ui/MessageBox.js';
 
 /**
  * Where a visitor is sent once the server says this browser has missed the password about ten
@@ -296,9 +297,9 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
           <label className="x2f-label" htmlFor="pgp-message">
             Decrypt this message in your PGP app, then paste the code
           </label>
-          <pre className="x2f-pre" id="pgp-message" data-part="pgp-message">
+          <MessageBox id="pgp-message" data-part="pgp-message">
             {challenge.encryptedMessage}
-          </pre>
+          </MessageBox>
           <Button variant="secondary" onClick={copy} data-part="copy">
             {copied ? 'Copied' : 'Copy message'}
           </Button>

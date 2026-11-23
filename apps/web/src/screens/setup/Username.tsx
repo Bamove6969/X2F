@@ -11,7 +11,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { availabilityLine, useNameAvailability, type NameChecker } from './availability.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { checkLoginName, nameShapeProblem } from './names.js';
+import { checkLoginName, hasSpace, nameShapeProblem, spaceProblem } from './names.js';
 
 export function Username({ check }: { check?: NameChecker } = {}) {
   const { state, update, go, path } = useSetup();
@@ -19,9 +19,15 @@ export function Username({ check }: { check?: NameChecker } = {}) {
   const [error, setError] = useState<string | null>(null);
   const availability = useNameAvailability(loginName, check);
   const line = availabilityLine(availability);
+  // Owner demo note #108: a space is named as soon as it is typed, not only on Continue.
+  const spaced = hasSpace(loginName);
 
   const next = () => {
     const r = checkLoginName(loginName);
+    if (spaced) {
+      setError(spaceProblem('username'));
+      return;
+    }
     if (!r.ok) {
       // A login name has no reserved words (only a display name does), so any refusal is its shape.
       setError(nameShapeProblem('Your username', r.reason === 'length' ? 'length' : 'characters'));
@@ -65,7 +71,8 @@ export function Username({ check }: { check?: NameChecker } = {}) {
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
-          aria-describedby="uname-status uname-help"
+          aria-describedby={spaced ? 'uname-space uname-status uname-help' : 'uname-status uname-help'}
+          aria-invalid={spaced ? true : undefined}
           value={loginName}
           onChange={(e) => {
             setLoginName(e.target.value);
@@ -80,8 +87,13 @@ export function Username({ check }: { check?: NameChecker } = {}) {
             </span>
           ) : null}
         </span>
+        {spaced && error === null ? (
+          <p className="x2f-error" id="uname-space" data-part="name-space">
+            {spaceProblem('username')}
+          </p>
+        ) : null}
         <p className="x2f-start__help" id="uname-help">
-          5 to 20 characters: letters, numbers, dots, dashes and underscores. Pick something that isn't your real name or used elsewhere.
+          5 to 20 characters: letters, numbers, dots, dashes and underscores, with no spaces. Pick something that isn't your real name or used elsewhere.
         </p>
       </div>
       {error !== null ? (

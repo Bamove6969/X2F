@@ -392,6 +392,21 @@ describe('POST /v1/login/password', () => {
     expect((await login('legacy.private', GOOD, { ...dev, [SESSION_COOKIE]: session })).statusCode).toBe(200);
   });
 
+  // Owner demo note #108 (17 Nov 2026): new display names and passwords hold no spaces, but only
+  // new and changed values are checked. An account made before the rule logs in as it always did.
+  it('note #108: an account with a spaced display name and a spaced password, made before the rule, still logs in', async () => {
+    const id = await seedAccount(deps, { loginName: 'spaced.old1', displayName: 'Old Timer1' });
+    const spaced = 'Old Horse 9-x';
+    const h = await hashPassword(deps.config, spaced);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, h.hash, h.pepperId, now]);
+    const dev = { [DEVICE_COOKIE]: await trustedDevice(deps, id) };
+    const ok = await login('spaced.old1', spaced, dev);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json()).toEqual({ status: 'ok' });
+    // The same password typed without its spaces is a different password.
+    expect((await login('spaced.old1', 'OldHorse9-x', dev)).statusCode).toBe(401);
+  });
+
   it('never shows a wait: after 10 misses the name is quietly not checked for 15 minutes, with the same answer', async () => {
     await register('quietlock1');
     const id = (await accountRow('quietlock1'))!.id;

@@ -177,12 +177,13 @@ describe('S-014: only a strong password is accepted', () => {
 });
 
 // Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
-describe('signup round 3: display names with Unicode letters, spaces and common symbols', () => {
-  it('signs up as "Cash$ Ölaf  " (stored as normalised), and the name is found again by any case', async () => {
+// Owner demo note #108 (17 Nov 2026): but no spaces inside it (the ends are still trimmed).
+describe('signup round 3: display names with Unicode letters and common symbols', () => {
+  it('signs up as "  Cash$Ölaf " (stored as normalised), and the name is found again by any case', async () => {
     const b = new Browser(app);
-    const shown = `Cash$ Ölaf${n++}`;
+    const shown = `Cash$Ölaf${n++}`;
     const res = await b.post('/v1/register/password', {
-      displayName: `  ${shown.replace(' ', '   ')} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+      displayName: `  ${shown} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(res.statusCode).toBe(201);
     const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
@@ -236,11 +237,15 @@ describe('signup round 3 review: invisible characters and staff look-alikes', ()
   it('M1/M2: a staff name with a dotless i, a comma or a space for its dot, and "Admın Desk", are reserved', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira.K${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', ' '), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
+    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
       const res = await reg(attack);
       expect(res.statusCode, attack).toBe(400);
       expect(res.json()).toEqual({ error: 'display-name-reserved' });
     }
+    // Owner demo note #108: a space for its dot is now refused for the space itself.
+    const spaced = await reg(s.replace('.', ' '));
+    expect(spaced.statusCode).toBe(400);
+    expect(spaced.json()).toEqual({ error: 'display-name-invalid' });
     const adm = await reg('Admın Desk');
     expect(adm.statusCode, adm.body).toBe(400);
     expect(adm.json()).toEqual({ error: 'display-name-reserved' });
@@ -249,11 +254,54 @@ describe('signup round 3 review: invisible characters and staff look-alikes', ()
   it('M2: a team member name is held to the same staff comparison', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.L${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('.', ','), s.replace('.', ' '), s.replace('i', 'ı')]) {
+    for (const attack of [s.replace('.', ','), s.replace('i', 'ı')]) {
       await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });
     }
+    // Owner demo note #108: a member name with a space is refused for the space.
+    await expect(checkMemberName(deps.db, s.replace('.', ' '))).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
     await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
   });
+});
+
+// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
+// names". New and changed values only: an account made before the rule keeps logging in.
+describe('note #108: no spaces in new usernames, display names or passwords', () => {
+  const reg = (body: Record<string, unknown>) =>
+    new Browser(app).post('/v1/register/password', { displayName: `Plain${n++}x`, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG, ...body });
+
+  it('sign-up refuses a display name with a space inside, and makes no account', async () => {
+    const before = await accountCount();
+    for (const displayName of [`Bob Smith${n++}`, `Bob   Smith${n++}`, `R&B Trader${n++}`]) {
+      const res = await reg({ displayName });
+      expect(res.statusCode, displayName).toBe(400);
+      expect(res.json()).toEqual({ error: 'display-name-invalid' });
+    }
+    expect(await accountCount()).toBe(before);
+    expect((await reg({ displayName: `  BobSmith${n++}  ` })).statusCode).toBe(201);
+  });
+
+  it('sign-up refuses a username with a space (as it always did)', async () => {
+    const res = await reg({ loginName: `bob smith${n++}` });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'login-name-invalid' });
+  });
+
+  it('sign-up and a password change refuse a password with a space, naming the rule', async () => {
+    for (const password of ['Correct Horse-9', ' Correct-Horse-9', 'Correct-Horse-9 ', 'Correct\tHorse-9']) {
+      const res = await reg({ password });
+      expect(res.statusCode, password).toBe(400);
+      expect(res.json(), password).toEqual({ error: 'password-weak', missing: ['space'] });
+    }
+    const id = await seedAccount(deps, { loginName: name('sp') });
+    const b = new Browser(app);
+    expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
+    const res = await b.put('/v1/account/password', { password: 'Correct Horse-9' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'password-weak', missing: ['space'] });
+    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
+    expect(rows).toEqual([]);
+  });
+  // An account made before the rule keeps logging in: password.test.ts ("note #108").
 });
 
 it('migration 610: no database check compares display_key with lower(display_name) any more', async () => {

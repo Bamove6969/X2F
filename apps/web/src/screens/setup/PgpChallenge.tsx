@@ -13,6 +13,7 @@ import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPgpFinish, registerPgpStart, setupError, termsChanged, type SetupError } from './register.js';
+import { MessageBox } from '../../ui/MessageBox.js';
 
 /** Where the API publishes X2F's signing key for import (apps/api/src/auth/pgp.ts SIGNING_KEY_WELL_KNOWN). */
 export const SIGNING_KEY_PATH = '/.well-known/x2f-signing-key.asc';
@@ -165,9 +166,9 @@ export function PgpChallenge() {
                 {copied ? 'Copied' : 'Copy message'}
               </button>
             </div>
-            <pre className="x2f-pre" data-part="pgp-message">
+            <MessageBox data-part="pgp-message">
               {challenge.encryptedMessage}
-            </pre>
+            </MessageBox>
           </section>
           <SigningKey />
           <label className="x2f-field x2f-label" htmlFor="phrase">

@@ -161,6 +161,12 @@ textarea.x2f-textarea--tall {
   word-break: break-all;
 }
 
+/* Owner demo note #98: a message box takes focus so its Ctrl-A selects only its own text (ui/MessageBox.tsx). */
+.x2f-pre:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
 .x2f-note {
   margin: 0;
   font-size: 14px;

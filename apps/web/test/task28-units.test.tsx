@@ -55,12 +55,17 @@ describe('setup backups', () => {
 
 describe('passwordRules', () => {
   it('ticks each board line as it is met; ok only with every rule and a match', () => {
-    expect(passwordRules('', '')).toEqual({ length: false, cases: false, numberSymbol: false, match: false, ok: false });
+    expect(passwordRules('', '')).toEqual({ length: false, cases: false, numberSymbol: false, noSpaces: false, match: false, ok: false });
     expect(passwordRules('short', 'short')).toMatchObject({ length: false, match: true, ok: false });
     expect(passwordRules('alllowercase-1', 'alllowercase-1')).toMatchObject({ length: true, cases: false, numberSymbol: true, ok: false });
     expect(passwordRules('Orbit-lantern', 'Orbit-lantern')).toMatchObject({ cases: true, numberSymbol: false, ok: false });
     expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-7')).toMatchObject({ length: true, cases: true, numberSymbol: true, match: false, ok: false });
     expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-74').ok).toBe(true);
+  });
+
+  it('owner demo note #108: a space unticks "No spaces" and the password cannot be set', () => {
+    expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-74')).toMatchObject({ noSpaces: true, ok: true });
+    expect(passwordRules('Orbit lantern-74', 'Orbit lantern-74')).toMatchObject({ length: true, cases: true, numberSymbol: true, noSpaces: false, match: true, ok: false });
   });
 });
 
@@ -133,6 +138,8 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     expect(setupError(new AuthApiError(400, 'password-weak', { missing: ['length', 'symbol'] }), fallback).text).toBe(
       'That password still needs: 10 characters or more, a symbol.',
     );
+    // Owner demo note #108: the server's `space` rule is named too.
+    expect(setupError(new AuthApiError(400, 'password-weak', { missing: ['space'] }), fallback).text).toBe('That password still needs: no spaces.');
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
     expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });

@@ -6,6 +6,7 @@ export {
   checkDisplayName,
   checkLoginName,
   checkNames,
+  checkNewDisplayName,
   LOOK_ALIKE_LETTERS,
   lookAlikeKey,
   staffNameKey,

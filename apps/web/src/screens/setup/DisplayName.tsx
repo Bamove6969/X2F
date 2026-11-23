@@ -9,14 +9,16 @@ import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { DISPLAY_SYMBOLS, checkDisplayName, checkNames, namesProblem } from './names.js';
+import { DISPLAY_SYMBOLS, checkNames, checkNewDisplayName, hasSpace, namesProblem, spaceProblem } from './names.js';
 
 export function DisplayName() {
   const { state, update, go, path } = useSetup();
   const [displayName, setDisplayName] = useState(state.displayName);
   const [error, setError] = useState<string | null>(null);
-  const check = checkDisplayName(displayName);
+  // Owner demo note #108: no spaces in a new display name (the preview waits until there are none).
+  const check = checkNewDisplayName(displayName);
   const shown = check.ok ? check.name : null;
+  const spaced = hasSpace(displayName.trim());
 
   const next = () => {
     const r = checkNames(displayName, state.loginName);
@@ -53,7 +55,8 @@ export function DisplayName() {
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
-          aria-describedby="display-name-help"
+          aria-describedby={spaced ? 'display-name-space display-name-help' : 'display-name-help'}
+          aria-invalid={spaced ? true : undefined}
           value={displayName}
           onChange={(e) => {
             setDisplayName(e.target.value);
@@ -68,9 +71,14 @@ export function DisplayName() {
             </span>
           </span>
         ) : null}
+        {spaced && error === null ? (
+          <p className="x2f-error" id="display-name-space" data-part="display-space">
+            {spaceProblem('display name')}
+          </p>
+        ) : null}
         <p className="x2f-start__help" id="display-name-help">
-          {/* COPY-UNSIGNED (signup round 3: the display name's wider set) */}
-          5 to 20 characters: letters, numbers, spaces and common symbols such as {DISPLAY_SYMBOLS}. Extra spaces are removed.
+          {/* COPY-UNSIGNED (signup round 3: the display name's wider set; owner demo note #108: no spaces) */}
+          5 to 20 characters: letters, numbers and common symbols such as {DISPLAY_SYMBOLS}, with no spaces.
         </p>
       </div>
       {error !== null ? (

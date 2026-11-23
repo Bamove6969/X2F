@@ -218,3 +218,47 @@ describe('the display name step', () => {
     expect(checks()).toEqual([]);
   });
 });
+
+// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
+// names". Said inline as soon as a space is typed, and Continue stays on the step.
+describe('note #108: no spaces in the names', () => {
+  it('the username step says so as soon as a space is typed, never asks the server, and does not continue', async () => {
+    const api = setup();
+    const host = show('username', api);
+    const input = host.querySelector<HTMLInputElement>('#uname')!;
+    type(input, 'juniper oak');
+    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A username has no spaces.');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toContain('uname-space');
+    await wait(CHECK_DELAY_MS * 2);
+    expect(checks()).toEqual([]);
+    fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
+    expect(byPart(host, 'names-error')?.textContent).toBe('Remove the spaces. A username has no spaces.');
+    expect(api.go).not.toHaveBeenCalled();
+    type(input, 'juniper.oak');
+    expect(byPart(host, 'name-space')).toBeNull();
+  });
+
+  it('the display name step says so inline, shows no preview, and does not continue', () => {
+    const api = setup({ loginName: 'juniper.oak' });
+    const host = show('display', api);
+    const input = host.querySelector<HTMLInputElement>('#display-name')!;
+    type(input, 'Lumen K');
+    expect(byPart(host, 'display-space')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(byPart(host, 'name-preview')).toBeNull();
+    fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
+    expect(byPart(host, 'display-error')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(api.go).not.toHaveBeenCalled();
+    expect(host.querySelector('#display-name-help')?.textContent).toContain('with no spaces');
+  });
+
+  it('spaces at the ends are trimmed as before, not refused', () => {
+    const api = setup({ loginName: 'juniper.oak' });
+    const host = show('display', api);
+    type(host.querySelector<HTMLInputElement>('#display-name')!, '  Lumen.K  ');
+    expect(byPart(host, 'display-space')).toBeNull();
+    fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
+    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.K', challenge: null });
+  });
+});

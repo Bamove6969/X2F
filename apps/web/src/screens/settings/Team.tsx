@@ -34,6 +34,7 @@ import { holdSentence } from '../auth/refusals.js';
 import { StagedNote } from './HoldChanges.js';
 import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import '../screens.css';
+import { hasSpace, spaceProblem } from '../setup/names.js';
 
 const ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
 
@@ -196,6 +197,7 @@ export function Team() {
   const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
+  const nameSpaced = hasSpace(name.trim());
   const [roles, setRoles] = useState<TeamRole[]>(['offers']);
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -476,9 +478,16 @@ export function Team() {
                 autoComplete="off"
                 maxLength={20}
                 value={name}
-                aria-describedby="team-name-hint"
+                aria-describedby={nameSpaced ? 'team-name-space team-name-hint' : 'team-name-hint'}
+                aria-invalid={nameSpaced ? true : undefined}
                 onChange={(e) => setName(e.target.value)}
               />
+              {/* Owner demo note #108: a member's display name holds no spaces (the API refuses one too). */}
+              {nameSpaced ? (
+                <p className="x2f-error" id="team-name-space" data-part="team-name-space">
+                  {spaceProblem('display name')}
+                </p>
+              ) : null}
               <p className="x2f-note" id="team-name-hint">
                 {C.nameHint}
               </p>
@@ -492,9 +501,9 @@ export function Team() {
             <Button
               variant="primary"
               data-primary=""
-              aria-disabled={busy || name.trim() === '' || full}
+              aria-disabled={busy || name.trim() === '' || nameSpaced || full}
               aria-describedby={full ? fullId : undefined}
-              onClick={() => (full || name.trim() === '' ? undefined : void invite())}
+              onClick={() => (full || name.trim() === '' || nameSpaced ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}

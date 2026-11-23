@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { LOOK_ALIKE_LETTERS, checkDisplayName, checkLoginName, checkNames, lookAlikeKey, staffNameKey } from '@x2f/accounts';
+import { LOOK_ALIKE_LETTERS, checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, lookAlikeKey, staffNameKey } from '@x2f/accounts';
 
 describe('checkDisplayName', () => {
   test('accepts a valid name, keeps it as typed, lower-cases the key', () => {
@@ -137,6 +137,37 @@ describe('checkDisplayName', () => {
   });
 });
 
+// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
+// names". New and changed display names only; checkDisplayName (finding and showing a stored name)
+// still takes one, so an account named before the rule keeps working.
+describe('checkNewDisplayName', () => {
+  test.each([
+    ['a space', 'Bob Smith'],
+    ['runs of spaces (collapsed, still one inside)', 'Bob   Smith'],
+    ['a space in another script', 'Привет мир'],
+    ['a space beside symbols', 'R&B Trader'],
+  ])('refuses %s inside the name', (_what, name) => {
+    expect(checkNewDisplayName(name)).toEqual({ ok: false, reason: 'spaces' });
+  });
+
+  test('other white space stays a refused character, as before', () => {
+    for (const name of ['Bob\tSmith', 'Bob\nSmith', 'Bob\u00a0Smith', 'Bob\u3000Smith']) expect(checkNewDisplayName(name), JSON.stringify(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+
+  test('trims spaces at the ends, as before, and otherwise follows checkDisplayName', () => {
+    expect(checkNewDisplayName('  Satoshi.N  ')).toEqual({ ok: true, name: 'Satoshi.N', key: 'satoshi.n' });
+    expect(checkNewDisplayName('abcd')).toEqual({ ok: false, reason: 'length' });
+    expect(checkNewDisplayName('the_admin')).toEqual({ ok: false, reason: 'reserved' });
+    // A reserved name keeps its own reason even with a space in it.
+    expect(checkNewDisplayName('X2F Support')).toEqual({ ok: false, reason: 'reserved' });
+    expect(checkNewDisplayName('bob<smith>')).toEqual({ ok: false, reason: 'characters' });
+  });
+
+  test('a stored name with a space is still a valid name to look up (checkDisplayName is unchanged)', () => {
+    expect(checkDisplayName('Bob Smith')).toEqual({ ok: true, name: 'Bob Smith', key: 'bob smith' });
+  });
+});
+
 describe('checkLoginName', () => {
   // Signup round 3: the username keeps the strict set (ASCII letters, digits, ".", "-", "_").
   test.each(['bob smith', 'cash$king', 'bób12', 'name@home', 'Привет.мир', 'bob\u200bsmith'])('the strict set refuses %s', (name) => {
@@ -170,6 +201,11 @@ describe('checkNames', () => {
 
   test('look-alikes of each other are allowed (folding is only against staff and reserved names)', () => {
     expect(checkNames('Alice.b', 'A1ice.b')).toMatchObject({ ok: true });
+  });
+
+  test('note #108: a new account\'s display name holds no spaces', () => {
+    expect(checkNames('Bob Smith', 'quiet.fox')).toEqual({ ok: false, field: 'displayName', reason: 'spaces' });
+    expect(checkNames('  BobSmith  ', 'quiet.fox')).toMatchObject({ ok: true, display: { name: 'BobSmith' } });
   });
 
   test('the display name is checked first, then the login name', () => {
