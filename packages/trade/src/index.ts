@@ -20,6 +20,14 @@ export {
 } from './attestation.js';
 export {
   isRulingStatement,
+  afterRefundStatementBytes,
+  afterRefundStatementValid,
+  isAfterRefundStatement,
+  signAfterRefundStatement,
+  verifyAfterRefundStatement,
+  type AfterRefundStatement,
+  type AfterRefundStatementCheck,
+  type AfterRefundStatementRefusal,
   rulingStatementBytes,
   rulingStatementValid,
   signRulingStatement,

@@ -506,6 +506,11 @@ export interface StoredRulings {
 
 export interface PgGateSource extends GateSource {
   storedRulings(code: string): Promise<StoredRulings>;
+  /**
+   * Review p4t22 M2: the trades whose current dispute is an after-refund one that is not closed,
+   * for the after-refund statement pass (afterRefund.ts), at most `limit`.
+   */
+  afterRefundCodes(limit?: number): Promise<string[]>;
 }
 
 /** The gate's source on the API database, through the read-only role (`MOD_API_READER_DATABASE_URL`). */
@@ -576,6 +581,15 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
         'select account_id, role, switched_off_at is not null as off, removed_at is not null as removed from staff_members',
       );
       return rows.map((r) => ({ accountId: r.account_id, role: r.role, switchedOff: r.off, removed: r.removed }));
+    },
+    async afterRefundCodes(limit = 200) {
+      const { rows } = await db.query<{ code: string }>(
+        `select d.code from disputes d
+          where d.after_refund and d.status <> 'closed' and d.seq = (select max(x.seq) from disputes x where x.code = d.code)
+          order by d.code limit $1`,
+        [limit],
+      );
+      return rows.map((r) => r.code);
     },
     async storedRulings(code) {
       type Draft = { id: string; outcome: GateRuling['outcome']; accountAction: GateRuling['accountAction']; proposer: string; approver: string | null };

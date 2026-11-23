@@ -10,12 +10,13 @@ import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
 import { loadChatIdentity, loadEscrow, loadParty, saveChatIdentity, saveParty, sweepTag, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
-import { openDesk } from './desk.js';
+import { deskShadow, openDesk } from './desk.js';
 import { createWatcher, reviveWatchState } from './watcher.js';
 import type { DeskArmed, RulingExecutor } from './execute.js';
+import type { AfterRefundSigner } from './afterRefund.js';
 import { startCheckpoints, type CheckpointOptions } from './checkpoint.js';
 import { recordedTerms, type GateContext, type RecordedTerms } from './gate/verify.js';
-import type { GateSource } from './gate/registry.js';
+import type { GateSource, StoredRulings } from './gate/registry.js';
 import type { GateStore } from './gate/store.js';
 
 /**
@@ -202,6 +203,11 @@ export interface GateRun {
    * then holds the trade); `forget` deletes them once the trade's rows are gone (store.ts forgetTrade).
    */
   tradeRecords?: { pending(code: string): boolean; forget(code: string): Promise<void> };
+  /**
+   * Review p4t22 M2: the after-refund statement pass (afterRefund.ts) on the gate's store and
+   * source: the current after-refund disputes, their stored rulings, and the signer.
+   */
+  afterRefund?: { codes(): Promise<string[]>; stored(code: string): Promise<StoredRulings>; signer: AfterRefundSigner };
   stop(): Promise<void>;
 }
 
@@ -224,6 +230,8 @@ export interface ModerationHandle {
   grantTick(): Promise<string[]>;
   /** One pass signing dispute notices (design build task 7, T2); resolves with the chats noticed. */
   noticeTick(): Promise<string[]>;
+  /** Review p4t22 M2: one after-refund statement pass; resolves with the trades whose statement the API took. */
+  afterRefundTick(): Promise<string[]>;
   /** One chain-watcher pass (Task 9). */
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
@@ -770,6 +778,50 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  /**
+   * Review p4t22 M2: one pass over the current after-refund disputes: for a `seller-sends-xmr`
+   * ruling in force that the gate authorises, the signed after-refund statement goes to the API
+   * (`after-refund-statement`); a refusal is reported for the staff case view (`ruling-refused`).
+   * Resolves with the trades whose statement the API took this pass.
+   */
+  const afterRefundTick = async (): Promise<string[]> => {
+    const ar = gate?.afterRefund;
+    if (!ar) return [];
+    let codes: string[];
+    try {
+      codes = await ar.codes();
+    } catch {
+      log({ reason: 'after-refund-unavailable' });
+      return [];
+    }
+    const done: string[] = [];
+    for (const code of codes) {
+      try {
+        const { rows } = await o.db.query<{ attestation: Attestation }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
+        const terms = rows[0]?.attestation.terms;
+        const recorded = terms === undefined ? null : recordedFor({ terms, feeWallet: o.feeWallet } as ModPartyArgs, await deskShadow(o.db, code), log);
+        const r = await ar.signer.step({
+          code,
+          stored: await ar.stored(code),
+          recorded,
+          announce: async (x) => {
+            const res = await link.report({ kind: 'after-refund-statement', trade: code, statement: x.statement, sig: x.sig });
+            if (res.status !== 201 && res.status !== 200) log({ reason: `after-refund-statement-refused-${res.status}` });
+            return res.status === 201 || res.status === 200;
+          },
+          reportRefusal: async (x) => {
+            const res = await link.report({ kind: 'ruling-refused', trade: code, rulingId: x.rulingId, reason: x.reason });
+            return res.status === 201 || res.status === 200;
+          },
+        });
+        if (r === 'announced') done.push(code);
+      } catch {
+        log({ reason: 'after-refund-step-failed' });
+      }
+    }
+    return done;
+  };
+
   const grantTick = (): Promise<string[]> => grantPass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
   const noticeTick = (): Promise<string[]> => noticePass({ link, db: o.db, keystoreKey: o.keystoreKey, now, log });
 
@@ -787,6 +839,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       .then(tradeShredTick)
       .then(grantTick)
       .then(noticeTick)
+      .then(afterRefundTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, intervalMs);
@@ -848,6 +901,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     tradeShredTick,
     grantTick,
     noticeTick,
+    afterRefundTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,
@@ -1211,11 +1265,15 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               // Review F8: the internal server asks this same gate who is staff and which devices are certified.
               gateParts = { store, source, ctx: gateCtx };
               const rulings = rulingExecutor({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
+              const { afterRefundSigner } = await import('./afterRefund.js');
+              const signer = afterRefundSigner({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
               const { forgetTrade, tradeRulingPending } = await import('./gate/store.js');
               // A save that failed is made again on the next forget, so a forgotten trade never stays in gate.bin.
               let unsaved = false;
               return {
                 rulings,
+                // Review p4t22 M2: the after-refund statements.
+                afterRefund: { codes: () => source.afterRefundCodes(), stored: (code: string) => source.storedRulings(code), signer },
                 checkpoints: { store, reader },
                 tradeRecords: {
                   pending: (code: string) => tradeRulingPending(store.state, code),

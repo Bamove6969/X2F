@@ -22,6 +22,7 @@ import {
   fiatCents,
   identityProofBytes,
   instructionsMatch,
+  verifyAfterRefundStatement,
   verifyAttestation,
   verifyRulingStatement,
   type Attestation,
@@ -173,7 +174,10 @@ export interface EscrowStatus {
    * trade size (bound, else fixed, else the API's amount only within [take, own escrow-funded
    * size]), so a grown trade pays the grown amount (review B1). Null for the buyer, until an
    * attestation verified (another device, or a record already forgotten after the close), and
-   * while this device accepts no amount. Absent: null.
+   * while this device accepts no amount. Absent: null. Review p4t22 M2: and null until the
+   * moderation service's signed after-refund statement verified on this device against the pinned
+   * key, for this trade, with exactly this amount and address (`loadAfterRefund`): a ruling the API
+   * alone shows gets no pay form.
    */
   restitution?: { address: string; amountAtomic: bigint } | null;
 }
@@ -200,6 +204,13 @@ export interface EscrowApi {
    * answers 204. Asked only while the trade is disputed.
    */
   getRulingStatement(code: string): Promise<{ statement: unknown; sig: unknown } | null>;
+  /**
+   * Review p4t22 M2: GET /v1/trades/:code/after-refund-statement, the moderation service's signed
+   * statement of the after-refund `seller-sends-xmr` ruling in force (untrusted: verified on this
+   * device); null while it answers 204. Asked by the seller once the trade is closed. Absent: never
+   * asked, so the pay form never shows.
+   */
+  getAfterRefundStatement?(code: string): Promise<{ statement: unknown; sig: unknown } | null>;
 }
 
 export interface RuntimeConfig {
@@ -388,6 +399,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private ruling: { statement: unknown; sig: unknown } | null = null;
     /** Review m4: when this run last asked for the ruling statement (device clock, ms). */
     private rulingAskedAt: number | null = null;
+    /**
+     * Review p4t22 M2: the after-refund `seller-sends-xmr` statement, as last verified on this
+     * device (its amount and address), or null; and when this run last asked for it.
+     */
+    private afterRefund: { amountAtomic: bigint; address: string } | null = null;
+    private afterRefundAskedAt: number | null = null;
     private view: EscrowTradeView | null = null;
     /** The view's payment instructions as last checked against the attested hash (review I1); null while the view has none. */
     private instructions: { text: string | null; ok: boolean } | null = null;
@@ -471,8 +488,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         // Review B1: the amount is this device's own accepted trade size (the one a release
         // trusts), not the take amount: a grown trade's ruling payment is the grown amount. Null
         // (no amount this device accepts) means no form.
+        // Review p4t22 M2: only for a verified statement of exactly this amount and address.
         restitution:
-          this.attested !== null && this.rec?.role === 'seller' && amountAtomic !== null
+          this.attested !== null && this.rec?.role === 'seller' && amountAtomic !== null && this.afterRefund !== null &&
+          this.afterRefund.amountAtomic === amountAtomic && this.afterRefund.address === this.attested.buyerPayout
             ? { address: this.attested.buyerPayout, amountAtomic }
             : null,
       };
@@ -1265,6 +1284,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const v = this.view;
       if (!v) return;
       const closed = CLOSED.includes(v.state);
+      // Review p4t22 M2: the seller's after-refund payment order (a refunded trade disputed again, or
+      // closed), only once its signed statement verifies on this device; before any early return.
+      if ((this.rec as EscrowRecord | undefined)?.role === 'seller' && (closed || v.state === 'disputed')) await this.loadAfterRefund();
       // The relay dropped an open trade: nothing can be settled until retry() reconnects. Once the
       // trade is closed the relay's close is expected (Task 7) and the after-close rules run below.
       if (this.relayClosed && !closed && !this.error) return this.fail('escrow-failed');
@@ -1548,6 +1570,37 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec.rulingLost = true;
         await this.persist();
       }
+    }
+
+    /**
+     * Review p4t22 M2: reads the moderation service's signed after-refund statement (at most once per
+     * `rulingPollMs`) and keeps its amount and address only when it verifies on this device against
+     * the pinned key, for this trade, this device's own accepted amount and the buyer's address from
+     * the attested terms. Anything else (none, forged, another amount or address) clears it, so the
+     * pay form goes away with it; a read that fails keeps what was verified.
+     */
+    private async loadAfterRefund(): Promise<void> {
+      const get = deps.api.getAfterRefundStatement;
+      if (get === undefined) return;
+      const t = now();
+      if (this.afterRefundAskedAt !== null && t - this.afterRefundAskedAt < rulingPollMs) return;
+      this.afterRefundAskedAt = t;
+      let got: { statement: unknown; sig: unknown } | null;
+      try {
+        got = await get.call(deps.api, this.code);
+      } catch {
+        return;
+      }
+      if (this.stopped) return;
+      const amountAtomic = this.deviceAcceptedAmount();
+      const before = this.afterRefund;
+      if (got === null || this.attested === null || amountAtomic === null) {
+        this.afterRefund = null;
+      } else {
+        const check = await verifyAfterRefundStatement(got.statement, got.sig, deps.config.modSigningPublic, { trade: this.code, amountAtomic, buyerPayout: this.attested.buyerPayout });
+        this.afterRefund = check.ok ? { amountAtomic, address: this.attested.buyerPayout } : null;
+      }
+      if (before?.amountAtomic !== this.afterRefund?.amountAtomic || before?.address !== this.afterRefund?.address) this.emit();
     }
 
     /**

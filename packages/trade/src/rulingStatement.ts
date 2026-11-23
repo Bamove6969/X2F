@@ -124,3 +124,88 @@ export async function verifyRulingStatement(s: unknown, sig: unknown, modSigning
   await sodium.ready;
   return rulingStatementValid(s, sig, modSigningPublic, want);
 }
+
+/**
+ * Review p4t22 M2: the moderation service's signed statement of an after-refund ruling that orders
+ * the seller to send the trade's XMR back to the buyer (`seller-sends-xmr`). The escrow is already
+ * refunded, so nothing is co-signed: the seller moves the coins by hand, and the seller's app shows
+ * the pay form only for a statement that verifies here against the pinned moderation key, for this
+ * trade, with this device's own amount and the buyer's attested address (`want`). The moderation
+ * process signs it only after its gate authorised the staff-tapped ruling (the same
+ * `authorizeRuling`), from its own attested terms (`amountAtomic`, the buyer's payout address).
+ * A compromised API can no longer invent the order under a moderator's name.
+ *
+ * Canonical JSON in its own domain `x2f/ruling-statement-after-refund/v1\0`, so neither statement
+ * can ever pass for the other.
+ */
+export interface AfterRefundStatement {
+  v: 1;
+  kind: 'after-refund';
+  trade: string;
+  round: 1 | 2;
+  rulingId: string;
+  outcome: 'seller-sends-xmr';
+  amountAtomic: string;
+  buyerPayout: string;
+  issuedAt: string;
+}
+
+export type AfterRefundStatementRefusal = 'bad-signature' | 'wrong-trade' | 'wrong-amount' | 'wrong-address';
+export type AfterRefundStatementCheck = { ok: true; statement: AfterRefundStatement } | { ok: false; reason: AfterRefundStatementRefusal };
+
+const AFTER_REFUND_DOMAIN = 'x2f/ruling-statement-after-refund/v1\0';
+const AFTER_REFUND_KEYS = ['v', 'kind', 'trade', 'round', 'rulingId', 'outcome', 'amountAtomic', 'buyerPayout', 'issuedAt'] as const;
+
+/** Exactly the `AfterRefundStatement` shape: a positive amount, an address, round 1 or 2. */
+export function isAfterRefundStatement(x: unknown): x is AfterRefundStatement {
+  if (!isRecord(x) || !exactKeys(x, AFTER_REFUND_KEYS)) return false;
+  if (x.v !== 1 || x.kind !== 'after-refund' || x.outcome !== 'seller-sends-xmr' || (x.round !== 1 && x.round !== 2)) return false;
+  if (!shortString(x.trade, 32) || !shortString(x.rulingId, MAX_ID) || !shortString(x.buyerPayout, MAX_ADDRESS) || !shortString(x.issuedAt, 64)) return false;
+  return typeof x.amountAtomic === 'string' && ATOMIC.test(x.amountAtomic);
+}
+
+/** The bytes the moderation key signs for an after-refund statement. */
+export function afterRefundStatementBytes(s: AfterRefundStatement): Uint8Array {
+  return new TextEncoder().encode(AFTER_REFUND_DOMAIN + canonicalJson(s));
+}
+
+/** The moderation service's signature (hex) over `afterRefundStatementBytes`. */
+export async function signAfterRefundStatement(s: AfterRefundStatement, signingSecret: Uint8Array): Promise<string> {
+  await sodium.ready;
+  if (!isAfterRefundStatement(s)) throw new TypeError('after-refund statement: not a well-formed statement');
+  return sodium.to_hex(sodium.crypto_sign_detached(afterRefundStatementBytes(s), signingSecret));
+}
+
+/**
+ * Synchronous check (libsodium must be ready; before that it fails closed). In order: the shape
+ * and the signature under `modSigningPublic` (`bad-signature`); the trade (`wrong-trade`); the
+ * amount this device itself accepts (`wrong-amount`); the buyer's payout address from this
+ * device's own attested terms (`wrong-address`). Never throws.
+ */
+export function afterRefundStatementValid(
+  s: unknown,
+  sig: unknown,
+  modSigningPublic: string,
+  want: { trade: string; amountAtomic: bigint; buyerPayout: string },
+): AfterRefundStatementCheck {
+  try {
+    if (!isAfterRefundStatement(s) || typeof sig !== 'string' || !HEX_SIG.test(sig) || typeof modSigningPublic !== 'string' || !HEX_KEY.test(modSigningPublic)) {
+      return { ok: false, reason: 'bad-signature' };
+    }
+    if (!sodium.crypto_sign_verify_detached(sodium.from_hex(sig), afterRefundStatementBytes(s), sodium.from_hex(modSigningPublic))) return { ok: false, reason: 'bad-signature' };
+    const trade = normalizeTradeCode(s.trade);
+    const expected = typeof want.trade === 'string' ? normalizeTradeCode(want.trade) : null;
+    if (trade === null || expected === null || trade !== expected) return { ok: false, reason: 'wrong-trade' };
+    if (typeof want.amountAtomic !== 'bigint' || want.amountAtomic.toString() !== s.amountAtomic) return { ok: false, reason: 'wrong-amount' };
+    if (typeof want.buyerPayout !== 'string' || want.buyerPayout === '' || want.buyerPayout !== s.buyerPayout) return { ok: false, reason: 'wrong-address' };
+    return { ok: true, statement: s };
+  } catch {
+    return { ok: false, reason: 'bad-signature' };
+  }
+}
+
+/** `afterRefundStatementValid` once libsodium is ready. */
+export async function verifyAfterRefundStatement(s: unknown, sig: unknown, modSigningPublic: string, want: { trade: string; amountAtomic: bigint; buyerPayout: string }): Promise<AfterRefundStatementCheck> {
+  await sodium.ready;
+  return afterRefundStatementValid(s, sig, modSigningPublic, want);
+}

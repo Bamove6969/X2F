@@ -9,6 +9,8 @@ import {
   internalSignedBytes,
   isAttestedTerms,
   isRulingKind,
+  afterRefundStatementBytes,
+  isAfterRefundStatement,
   isRulingStatement,
   rulingStatementBytes,
   SETTLE_KINDS,
@@ -651,6 +653,51 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   };
 
   /**
+   * Review p4t22 M2: `{ kind: 'after-refund-statement', trade, statement, sig }`, the moderation
+   * process's signed statement of an after-refund `seller-sends-xmr` ruling its gate authorised. The
+   * seller's device verifies it itself before it shows the pay form (the API's word is never
+   * enough); the API keeps it for the traders only when it is signed by MOD_SIGNING_PUBLIC
+   * (`bad-statement`), for this trade (`wrong-trade`), and names the ruling in force of the trade's
+   * current after-refund dispute (round 1's while an appeal is pending, else the decided round's),
+   * with that round and outcome (`stale-ruling`). One per ruling: the same again is 201, any other
+   * 409 `statement-conflict`.
+   */
+  const afterRefundStatement = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'trade', 'statement', 'sig'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const s = body.statement;
+    const sig = body.sig;
+    if (!isAfterRefundStatement(s) || typeof sig !== 'string' || !/^[0-9a-f]{128}$/.test(sig)) throw new Refused(400, 'bad-statement');
+    let sigOk = false;
+    try {
+      sigOk = sodium.crypto_sign_verify_detached(sodium.from_hex(sig), afterRefundStatementBytes(s), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk) throw new Refused(400, 'bad-statement');
+    if (normalizeTradeCode(s.trade) !== code) throw new Refused(400, 'wrong-trade');
+    const rec = await loadDisputeRecord(o.db, code);
+    const d = rec?.dispute ?? null;
+    if (d === null) throw new Refused(404, 'not-found');
+    const decided = d.round === 2 && ['final', 'complying', 'closed'].includes(d.status);
+    const inForce = d.round === 1 ? d.ruling : decided ? d.ruling : d.round1;
+    const round = d.round === 1 || !decided ? 1 : 2;
+    if (!d.afterRefund || d.publishedAt === null || inForce === null || inForce.id !== s.rulingId || inForce.outcome !== s.outcome || round !== s.round) {
+      throw new Refused(409, 'stale-ruling');
+    }
+    await o.db.query(
+      'insert into after_refund_statements (ruling_id, code, seq, round, statement, sig, created_at) values ($1, $2, $3, $4, $5, $6, now()) on conflict (ruling_id) do nothing',
+      [s.rulingId, code, d.seq, s.round, s, sig],
+    );
+    const { rows } = await o.db.query<{ statement: unknown; sig: string }>('select statement, sig from after_refund_statements where ruling_id = $1', [s.rulingId]);
+    const kept = rows[0];
+    if (kept === undefined || kept.sig !== sig || canonicalJson(kept.statement) !== canonicalJson(s)) throw new Refused(409, 'statement-conflict');
+    log({ reason: 'internal-after-refund-statement' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
    * Ruling-winner reasons (lead 22 Nov; review-lead-fix-ruling-pay, builder's question 1):
    * `{ kind: 'ruling-wait', trade, reason }`, why the moderation process's handed ruling payout waits
    * on its winner: `winner-committed` (the winner's party sent the moderator a built set for another
@@ -942,6 +989,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'ruling-statement') return rulingStatement(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-wait') return rulingWait(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-refused') return rulingRefused(body, reply);
+    if (isPlainObject(body) && body.kind === 'after-refund-statement') return afterRefundStatement(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

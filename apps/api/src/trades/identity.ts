@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { loadDisputeRecord } from '../disputes/store.js';
 import { assertMemberMay, ownerDeviceOnly, TRADE_READ, tradePartAbility } from '../team/perms.js';
 
 /** Reading the attestation: the account owner, or a team member with Trades (Plan 2 Task 18). */
@@ -110,6 +111,32 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
     // Review lead-trades-list-2 B1: the part's box, after the participant check (a stranger stays 404).
     assertMemberMay(req.auth, tradePartAbility(closedAt));
     const { rows } = await deps.db.query<{ statement: unknown; sig: string }>('select statement, sig from ruling_statements where code = $1', [normalized]);
+    const row = rows[0];
+    if (!row) return reply.code(204).send();
+    return reply.send({ statement: row.statement, sig: row.sig });
+  });
+
+  /**
+   * Review p4t22 M2: the moderation service's signed statement of the after-refund
+   * `seller-sends-xmr` ruling in force on this trade's current dispute (internal
+   * `after-refund-statement`), 204 while there is none. The seller's device verifies it itself
+   * against the pinned moderation key, the trade, its own amount and the buyer's attested address,
+   * and shows the pay form only then.
+   */
+  app.get('/v1/trades/:code/after-refund-statement', { preHandler: requireTradesRead }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { code } = req.params as { code: string };
+    const { code: normalized, closedAt } = await roleInTrade(deps.db, code, req.auth.accountId);
+    assertMemberMay(req.auth, tradePartAbility(closedAt));
+    const d = (await loadDisputeRecord(deps.db, normalized))?.dispute ?? null;
+    if (d === null || !d.afterRefund) return reply.code(204).send();
+    const decided = d.round === 2 && ['final', 'complying', 'closed'].includes(d.status);
+    const inForce = d.round === 1 || decided ? d.ruling : d.round1;
+    if (inForce === null || inForce.outcome !== 'seller-sends-xmr') return reply.code(204).send();
+    const { rows } = await deps.db.query<{ statement: unknown; sig: string }>(
+      'select statement, sig from after_refund_statements where ruling_id = $1 and code = $2',
+      [inForce.id, normalized],
+    );
     const row = rows[0];
     if (!row) return reply.code(204).send();
     return reply.send({ statement: row.statement, sig: row.sig });

@@ -164,7 +164,7 @@ const TRADE: readonly RegExp[] = [
   /^POST \/v1\/trades\/:code\/blur-checks\/:proofId$/,
   /^POST \/v1\/trades\/:code\/proofs\/:(id|proofId)\/blur-check$/,
   /^(GET|PUT) \/v1\/trades\/:code\/proofs\/:id$/,
-  /^GET \/v1\/trades\/:code\/ruling-statement$/,
+  /^GET \/v1\/trades\/:code\/(ruling|after-refund)-statement$/,
   /^POST \/v1\/trades\/:code\/payment-proof$/,
 ];
 const CHAT: readonly RegExp[] = [

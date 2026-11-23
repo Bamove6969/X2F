@@ -214,6 +214,11 @@ async function loadRecord(db: pg.Pool, trade: string): Promise<{ record: DeskRec
   return { record: { ...r, paidSeenAt: r.paidSeenAt ?? null, shadow: reviveShadow(r.shadow) }, version: rows[0].version };
 }
 
+/** Review p4t22 M2: the trade's shadow as this desk last saved it (also once the desk is closed), or null. */
+export async function deskShadow(db: pg.Pool, trade: string): Promise<Trade | null> {
+  return (await loadRecord(db, trade))?.record.shadow ?? null;
+}
+
 /** A save refused because another process wrote the desk record since this one read it (finding 2). */
 export class StaleDeskRecord extends Error {
   constructor() {

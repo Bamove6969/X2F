@@ -86,6 +86,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/blur-checks': 'one of my own trades (participants only): my side\'s blur-check asks',
   'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/ruling-statement': 'one of my own trades (participants only)',
+  // Review p4t22 M2: the signed after-refund ruling statement the seller's app verifies.
+  'GET /v1/trades/:code/after-refund-statement': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
   // Plan 5 Task 14: a proof ciphertext of one of my own trades (participants only; unblurred is 404).
   'GET /v1/trades/:code/proofs/:id': 'a proof ciphertext of one of my own trades (participants only)',

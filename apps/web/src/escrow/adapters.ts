@@ -169,6 +169,14 @@ export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs
       const b = (await res.json()) as { statement?: unknown; sig?: unknown } | null;
       return { statement: b?.statement, sig: b?.sig };
     },
+    /** Review p4t22 M2: GET /v1/trades/:code/after-refund-statement; null while it answers 204. */
+    async getAfterRefundStatement(code: string): Promise<{ statement: unknown; sig: unknown } | null> {
+      const res = await call(path(code, '/after-refund-statement'));
+      if (res.status === 204) return null;
+      if (!res.ok) return fail(res);
+      const b = (await res.json()) as { statement?: unknown; sig?: unknown } | null;
+      return { statement: b?.statement, sig: b?.sig };
+    },
     async getAttestation(code: string): Promise<{ attestation: unknown; sig: unknown } | null> {
       const res = await call(path(code, '/attestation'));
       if (res.status === 202) return null;

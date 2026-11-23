@@ -26,3 +26,6 @@ create table after_refund_statements (
   foreign key (code, seq) references disputes (code, seq) on delete cascade
 );
 create index after_refund_statements_code on after_refund_statements (code, seq);
+
+-- M2: the moderation process lists the current after-refund disputes to sign their statements.
+grant select (after_refund) on disputes to x2f_mod_reader;
