@@ -33,10 +33,17 @@ export async function recordRulingExecution(
   const rec = await loadDisputeRecord(client, code, { lock: true });
   if (rec === null) return 'settle-kind-unknown';
   const d: Dispute = rec.dispute;
-  const paid = d.round === 1 ? d.ruling : d.round1;
-  if (paid === null || d.afterRefund || d.publishedAt === null || !(ESCROW_OUTCOMES as readonly string[]).includes(paid.outcome)) return 'settle-kind-unknown';
-  const expected: RulingKind = paid.outcome === 'release-to-buyer' ? 'dispute-buyer' : 'dispute-seller';
-  if (kind !== expected) return 'settle-kind-changed';
+  const r1 = d.round === 1 ? d.ruling : d.round1;
+  if (r1 === null || d.afterRefund || d.publishedAt === null || !(ESCROW_OUTCOMES as readonly string[]).includes(r1.outcome)) return 'settle-kind-unknown';
+  const kindOf = (o: string): RulingKind => (o === 'release-to-buyer' ? 'dispute-buyer' : 'dispute-seller');
+  // Review p4t22 m1 (lead default, owner question OQ2): once round 2 is decided, the moderation
+  // process pays round 2's outcome unless round 1's payout was already under way; the reported
+  // kind says which ran. Round 2's when it matches round 2 (an upheld round 1 is the same payout),
+  // else round 1's when it matches round 1 (the coins moved under round 1: lien rules follow).
+  const r2 = d.round === 2 && d.status === 'final' && d.ruling !== null && (ESCROW_OUTCOMES as readonly string[]).includes(d.ruling.outcome) ? d.ruling : null;
+  const paidRound: 1 | 2 | null = r2 !== null && kind === kindOf(r2.outcome) ? 2 : kind === kindOf(r1.outcome) ? 1 : null;
+  if (paidRound === null) return 'settle-kind-changed';
+  const paid = paidRound === 2 ? r2! : r1;
   // As withDispute (J-06 review L5): the parties' account rows, then this dispute's liens, before anything is logged.
   await client.query(
     `select 1 from accounts where id in (select seller_account_id from trades where code = $1 union select buyer_account_id from trades where code = $1)
@@ -46,7 +53,7 @@ export async function recordRulingExecution(
   await client.query('select 1 from liens where from_code = $1 and dispute_seq = $2 order by id for update', [d.code, d.seq]);
   let next: Dispute;
   try {
-    next = applyDispute(d, { type: 'executed' }, { kind: 'system' }, now, await disputeSettings(client));
+    next = applyDispute(d, { type: 'executed', round: paidRound }, { kind: 'system' }, now, await disputeSettings(client));
   } catch (e) {
     // Review I7: a case a senior already closed is its own reason (the caller raises it to the
     // owner: the coins moved, the trade stays disputed); executed already is settle-kind-unknown.

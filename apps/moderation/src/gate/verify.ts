@@ -231,9 +231,10 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  * - an appeal ruling reviews a round 1 this gate itself authorised on the same trade
  *   (`round1-unseen`), and its proposer and approver had no part in it (`involved`, R37): round 1's
  *   signers as this gate saw them, plus anyone on the log's list (which can only add);
- * - the payouts, for a round-1 escrow outcome only, from `payoutsFor` on the recorded terms
- *   (`bad-terms` when they do not make a payout). Round 2 and after-refund rulings are authorised
- *   with nothing to co-sign: round 1 pays once, and an overturn is a lien (Task 25).
+ * - the payouts, for an escrow outcome (either round: review p4t22 m1, round 2's pays when an
+ *   appeal overturned round 1 before its payout ran), from `payoutsFor` on the recorded terms
+ *   (`bad-terms` when they do not make a payout). After-refund rulings are authorised with nothing
+ *   to co-sign (their statement is the after-refund one, M2).
  * On success the taps' nonces are bound to this ruling and the ruling is recorded in `rulingsSeen`
  * (the caller saves the gate). Checking the same ruling again with the same taps succeeds again.
  */
@@ -305,7 +306,9 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     if (involved.has(proposer.accountId) || (approver !== null && involved.has(approver.accountId))) return refuse('involved');
   }
   let settle: { payouts: Payout[]; winner: 'buyer' | 'seller' } | null = null;
-  if (rul.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
+  // Review p4t22 m1 (lead default, owner question OQ2): an escrow ruling of either round has a
+  // payout; the executor pays round 2's only when round 1's payout never ran (one per trade).
+  if ((ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
     const winner = rul.outcome === 'release-to-buyer' ? 'buyer' : 'seller';
     try {
       const payouts = payoutsFor({

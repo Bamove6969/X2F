@@ -609,7 +609,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * statement, sig }`, the moderation process's signed statement of the payout it worked out for a
    * round-1 escrow ruling its gate authorised. The traders' devices verify it themselves before they
    * co-sign (the API's word is never enough); the API keeps it for them only when it is signed by
-   * MOD_SIGNING_PUBLIC (`bad-statement`), for this trade (`wrong-trade`), round 1, a trade still
+   * MOD_SIGNING_PUBLIC (`bad-statement`), for this trade (`wrong-trade`), round 1 (or, review p4t22
+   * m1, a decided round 2 whose round 1 never paid), a trade still
    * disputed (`wrong-state`) whose escrow address it names (`wrong-escrow`), and the trade's
    * published round-1 escrow ruling with that outcome (`stale-ruling`). The first statement stays:
    * the same one again is 201, any other (an altered payout) 409 `statement-conflict`.
@@ -627,7 +628,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     } catch {
       sigOk = false;
     }
-    if (!sigOk || s.round !== 1) throw new Refused(400, 'bad-statement');
+    if (!sigOk) throw new Refused(400, 'bad-statement');
     if (normalizeTradeCode(s.trade) !== code) throw new Refused(400, 'wrong-trade');
     const t = await loadTrade(o.db, code);
     if (t === null) throw new Refused(404, 'not-found');
@@ -635,7 +636,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (t.escrowAddress === null || t.escrowAddress !== s.escrowAddress) throw new Refused(409, 'wrong-escrow');
     const rec = await loadDisputeRecord(o.db, code);
     const d = rec?.dispute ?? null;
-    const paid = d === null ? null : d.round === 1 ? d.ruling : d.round1;
+    // Review p4t22 m1 (lead default, owner question OQ2): round 2's ruling pays once it is decided
+    // and round 1's payout never ran (the moderation process pays only one of them per trade).
+    const paid = d === null ? null : s.round === 1 ? (d.round === 1 ? d.ruling : d.round1) : d.round === 2 && d.status === 'final' ? d.ruling : null;
     if (d === null || paid === null || d.afterRefund || d.publishedAt === null || paid.id !== s.rulingId || paid.outcome !== s.outcome) {
       throw new Refused(409, 'stale-ruling');
     }

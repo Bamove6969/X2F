@@ -16,7 +16,7 @@
  * Mod-built (Plan 4 rulings, only while disputed): co-signed only against the moderation service's
  * signed ruling statement (RetoSwap/Haveno review 2026-11-12, finding 2, lead call: the API's
  * unsigned "disputed" is never enough): signed by the pinned moderation key, for this trade and the
- * escrow address this device's own party derived, round 1, this side the winner, and paying exactly
+ * escrow address this device's own party derived, round 1 (or 2, review p4t22 m1), this side the winner, and paying exactly
  * the set this device works out itself (`ruling` below, `@x2f/trade` rulingStatementValid); and only when it is exactly the ruling's
  * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
  * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
@@ -189,7 +189,7 @@ function check(c: PolicyContext, o: Outcome): boolean {
   return state === 'disputed' && is('dispute-seller', 'mod', 'seller') && ruled(c, o);
 }
 
-/** Haveno finding 2: the outcome is the verified statement's own payout set, for this trade, escrow, round 1 and this side. */
+/** Haveno finding 2: the outcome is the verified statement's own payout set, for this trade, escrow, round 1 or 2 (review p4t22 m1) and this side. */
 function ruled(c: PolicyContext, o: Outcome): boolean {
   const r = c.ruling;
   if (r === null || r === undefined) return false;
@@ -208,7 +208,7 @@ export function cosignPolicy(ctx: PolicyContext, outcome: Outcome): boolean {
 /**
  * Plan 4 rulings: the moderator-built set this side co-signs as the winner (`dispute-buyer` for the
  * buyer, `dispute-seller` for the seller), worked out from this side's own facts, or null when
- * cosignPolicy refuses it (not disputed, no verified statement for this trade, escrow, round 1 and
+ * cosignPolicy refuses it (not disputed, no verified statement for this trade, escrow, round 1 or 2 and
  * this side, or a statement paying anything else). Never built from the statement's own list.
  */
 export function rulingOutcomeFor(ctx: PolicyContext): Outcome | null {

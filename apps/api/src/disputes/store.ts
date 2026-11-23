@@ -53,6 +53,7 @@ interface Row {
   appeal_ends_at: Date | null;
   comply_by: Date | null;
   executed_at: Date | null;
+  executed_round: 1 | 2 | null;
   complied_at: Date | null;
   overturned: boolean | null;
   seen: string[];
@@ -64,7 +65,7 @@ interface Row {
 const SELECT = `select d.code, d.seq, d.opened_by, d.reason, d.opened_at, d.after_refund, d.status, d.moderator_name,
     d.moderator_joined_at, d.round, d.assignee::text as assignee, d.first_reply_at, d.reply_due_at, d.ruling_due_at,
     d.usd_cents::text as usd_cents, d.limit_usd_cents::text as limit_usd_cents, d.ruling, d.round1, d.published_at,
-    d.appeal_ends_at, d.comply_by, d.executed_at, d.complied_at, d.overturned, d.seen::text[] as seen, d.paused_since,
+    d.appeal_ends_at, d.comply_by, d.executed_at, d.executed_round, d.complied_at, d.overturned, d.seen::text[] as seen, d.paused_since,
     a.by as appeal_by, a.at as appealed_at
   from disputes d left join dispute_appeals a on a.code = d.code and a.seq = d.seq`;
 
@@ -95,6 +96,7 @@ function toRecord(r: Row): DisputeRecord {
       appealedAt: r.appealed_at,
       complyBy: r.comply_by,
       executedAt: r.executed_at,
+      executedRound: r.executed_round,
       compliedAt: r.complied_at,
       overturned: r.overturned,
       seen: r.seen,
@@ -131,11 +133,12 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
     `update disputes set status = $3, round = $4, assignee = $5, first_reply_at = $6, reply_due_at = $7, ruling_due_at = $8,
        ruling = $9, round1 = $10, published_at = $11, appeal_ends_at = $12, comply_by = $13, executed_at = $14,
        complied_at = $15, overturned = $16, seen = $17::uuid[],
-       closed_at = case when $3 = 'closed' then coalesce(closed_at, $18) end
+       closed_at = case when $3 = 'closed' then coalesce(closed_at, $18) end,
+       executed_round = $19
      where code = $1 and seq = $2`,
     [d.code, d.seq, d.status, d.round, d.assignee, d.firstReplyAt, d.replyDueAt, d.rulingDueAt,
       d.ruling === null ? null : JSON.stringify(d.ruling), round1Json(d.round1), d.publishedAt, d.appealEndsAt, d.complyBy,
-      d.executedAt, d.compliedAt, d.overturned, d.seen, now],
+      d.executedAt, d.compliedAt, d.overturned, d.seen, now, d.executedRound],
   );
   // R-011 / R-012 (owner Q40, Q41; NEEDS_P4_OVERTURN_ERASES_REVIEWS): feedback and totals follow the
   // final binding outcome, in this same transaction. A trade that ends REVERSED loses its reviews and

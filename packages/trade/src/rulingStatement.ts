@@ -10,8 +10,9 @@ import sodium from 'libsodium-wrappers';
  * The moderation process signs it with its long-term key (MOD_SIGNING_SECRET) only after its gate
  * authorised the staff-tapped ruling (apps/moderation gate/verify.ts `authorizeRuling`) and worked
  * out the payouts itself from its own attested terms and the outcome (`payoutsFor`); it names the
- * trade, the escrow address the moderator's own party derived, and the round (1: only round 1 pays
- * from the escrow; an overturn is a lien). The API keeps it for the two traders and checks it, but
+ * trade, the escrow address the moderator's own party derived, and the round (1; or 2 when an
+ * appeal overturned round 1 before round 1's payout ran, review p4t22 m1; otherwise an overturn is
+ * a lien). The API keeps it for the two traders and checks it, but
  * a trader's device verifies it itself against the pinned key and its own trade, escrow and payout
  * set before it co-signs (apps/web escrow/policy.ts), so the API's unsigned "disputed" is never
  * enough.
@@ -86,8 +87,8 @@ export async function signRulingStatement(s: RulingStatement, signingSecret: Uin
 /**
  * Synchronous check (libsodium must be ready; before that every statement is `bad-signature`, so it
  * fails closed). In order: the shape and the signature under `modSigningPublic` (`bad-signature`);
- * the trade (`wrong-trade`) and the escrow address (`wrong-escrow`) this side knows; round 1
- * (`wrong-round`: only round 1 pays from the escrow); the winner (`not-winner`) and the exact payout
+ * the trade (`wrong-trade`) and the escrow address (`wrong-escrow`) this side knows; round 1 or 2
+ * (`wrong-round`); the winner (`not-winner`) and the exact payout
  * set (`wrong-payouts`), when given. Never throws.
  */
 export function rulingStatementValid(s: unknown, sig: unknown, modSigningPublic: string, want: RulingStatementExpect): RulingStatementCheck {
@@ -100,7 +101,9 @@ export function rulingStatementValid(s: unknown, sig: unknown, modSigningPublic:
     const expected = typeof want.trade === 'string' ? normalizeTradeCode(want.trade) : null;
     if (trade === null || expected === null || trade !== expected) return { ok: false, reason: 'wrong-trade' };
     if (typeof want.escrowAddress !== 'string' || want.escrowAddress === '' || s.escrowAddress !== want.escrowAddress) return { ok: false, reason: 'wrong-escrow' };
-    if (s.round !== 1) return { ok: false, reason: 'wrong-round' };
+    // Review p4t22 m1 (lead default, owner question OQ2): round 2's ruling pays when an appeal
+    // overturned round 1 before round 1's payout ran; the moderation process signs one per trade.
+    if (s.round !== 1 && s.round !== 2) return { ok: false, reason: 'wrong-round' };
     if (want.winner !== undefined && s.winner !== want.winner) return { ok: false, reason: 'not-winner' };
     if (want.payouts !== undefined) {
       const p = want.payouts;

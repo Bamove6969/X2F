@@ -150,13 +150,11 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
     }
     const steps: LienStep[] = round1.map((l) => ({ op: 'void' as const, id: l.id }));
     if (isEscrow(first)) {
-      // The coins moved under round 1 and never move again: whoever received them owes the loss.
-      const debtor: LienSide = first === 'release-to-buyer' ? 'buyer' : 'seller';
-      // A release paid the 1% from the escrow; a refund paid none, and the appeal completes the trade.
-      const fee = feeSplit(debtor, facts, first === 'release-to-buyer', facts.liensOn);
-      if (facts.liensOn) steps.push({ op: 'place', round: 2, debtor, cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien });
-      steps.push(...fee.owed);
-      return steps;
+      // Review p4t22 m1 (lead default, owner question OQ2): only when the coins moved under round 1.
+      // Not yet paid, round 2's own payout runs instead and nobody is liened; if round 1's payout
+      // still runs (it was already handed), its `executed` liens the receiver then (below).
+      if (next.executedAt === null || next.executedRound !== 1) return steps;
+      return [...steps, ...overturnedLien(first, facts)];
     }
     // Reviews L1 and R1: the seller already paid under round 1 (the dispute's own `compliedAt`, kept
     // through the appeal; never the lien's status, as a lien carrying the seller's own 1% stays
@@ -176,6 +174,15 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
     return steps;
   }
 
+  // Review p4t22 m1: round 1's payout ran after round 2 had already overturned it (it was handed
+  // before the appeal was decided): the coins moved under round 1 after all, so its receiver owes them.
+  if (prev.executedAt === null && next.executedAt !== null && next.executedRound === 1 && next.round === 2 && FINAL.includes(prev.status)) {
+    const first = next.round1?.outcome;
+    const final = next.ruling?.outcome;
+    if (first !== undefined && final !== undefined && final !== first && isEscrow(first)) return overturnedLien(first, facts);
+    return [];
+  }
+
   // The seller's payment of `seller-sends-xmr` was accepted: a lien for the XMR alone is repaid.
   // One that also carries the unpaid 1% (D-063) stays: paying the buyer did not pay X2F
   // (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY, see the report).
@@ -186,6 +193,17 @@ export function lienSteps(prev: Dispute, next: Dispute, facts: LienFacts, liens:
   }
 
   return [];
+}
+
+/** The coins moved under an escrow round 1 that an appeal overturned: whoever received them owes the loss (D-006). */
+function overturnedLien(first: RulingOutcome, facts: LienFacts): LienStep[] {
+  const debtor: LienSide = first === 'release-to-buyer' ? 'buyer' : 'seller';
+  // A release paid the 1% from the escrow; a refund paid none, and the appeal completes the trade.
+  const fee = feeSplit(debtor, facts, first === 'release-to-buyer', facts.liensOn);
+  const steps: LienStep[] = [];
+  if (facts.liensOn) steps.push({ op: 'place', round: 2, debtor, cause: 'overturned', amountAtomic: facts.amountAtomic, feeAtomic: fee.inLien });
+  steps.push(...fee.owed);
+  return steps;
 }
 
 /** The side a lien is owed to. */

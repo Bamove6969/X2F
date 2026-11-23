@@ -108,8 +108,14 @@ export interface Dispute {
   appealBy: 'buyer' | 'seller' | null;
   appealedAt: Date | null;
   complyBy: Date | null;
-  /** When round 1's payout was seen (escrow disputes only). */
+  /** When the escrow payout was seen (escrow disputes only). */
   executedAt: Date | null;
+  /**
+   * Review p4t22 m1: which round's ruling the payout carried out (null before it ran). Round 1's,
+   * unless an appeal overturned round 1 before round 1's payout ran: then round 2's (lead default,
+   * owner question OQ2), and nobody is liened for coins they never received.
+   */
+  executedRound: 1 | 2 | null;
   /** When the seller's payment proof for `seller-sends-xmr` was accepted. */
   compliedAt: Date | null;
   /** Set when round 2 becomes final: true when it differs from round 1 ("Decision overruled"). */
@@ -148,7 +154,11 @@ export type DisputeEvent =
    */
   | { type: 'appeal'; involved: readonly string[] }
   | { type: 'window-closed' }
-  | { type: 'executed' }
+  /**
+   * The escrow payout was seen. `round`: whose ruling it carried out (review p4t22 m1). Round 1's at
+   * any time after it was published; round 2's only once round 2 is decided.
+   */
+  | { type: 'executed'; round: 1 | 2 }
   | { type: 'complied' }
   | { type: 'close' };
 
@@ -215,6 +225,7 @@ export function newDispute(a: {
     appealedAt: null,
     complyBy: null,
     executedAt: null,
+    executedRound: null,
     compliedAt: null,
     overturned: null,
     seen: [],
@@ -379,14 +390,15 @@ const OUTCOME_FEE: Record<RulingOutcome, Exclude<RulingFee, 'waits'>> = {
   'no-action': 'none',
 };
 
-export function rulingFee(d: Pick<Dispute, 'status' | 'round' | 'ruling' | 'round1'>): RulingFee | null {
+export function rulingFee(d: Pick<Dispute, 'status' | 'round' | 'ruling' | 'round1'> & { executedRound?: 1 | 2 | null }): RulingFee | null {
   if (d.round === 2) {
     if (d.status === 'appealed' || d.status === 'awaiting-approval') return 'waits';
     const first = d.round1?.outcome;
     const final = d.ruling?.outcome;
     if (first === undefined || final === undefined) return null;
-    // Escrow coins moved under round 1 and the appeal changed where they belong: a lien.
-    const moved = (ESCROW_OUTCOMES as readonly string[]).includes(first);
+    // Escrow coins moved under round 1 and the appeal changed where they belong: a lien. Review
+    // p4t22 m1: only when round 1's payout is the one that ran; otherwise round 2's pays (OQ2).
+    const moved = (ESCROW_OUTCOMES as readonly string[]).includes(first) && d.executedRound === 1;
     if (moved && final !== first) return 'poster-pays';
     return OUTCOME_FEE[final];
   }
@@ -416,6 +428,7 @@ function resolveFinal(d: Dispute, now: Date): Dispute {
   }
   if (!d.afterRefund) {
     // The coins move under round 1 at once and never move again (A1 dropped); wait to see it.
+    // Review p4t22 m1: when an appeal decided before round 1's payout ran, round 2's pays instead.
     if (next.executedAt !== null) next = { ...next, status: 'closed' };
   } else if (outcome === 'seller-sends-xmr') {
     next = { ...next, status: next.compliedAt !== null ? 'closed' : 'complying' };
@@ -485,7 +498,10 @@ export function applyDispute(
         if (d.afterRefund || d.publishedAt === null || d.executedAt !== null || d.status === 'closed') {
           return fail('wrong-state');
         }
-        const next = { ...d, executedAt: new Date(now.getTime()) };
+        if (e.round !== 1 && e.round !== 2) return fail('wrong-state');
+        // Review p4t22 m1: round 2 pays only once it is decided (final), never while it is pending.
+        if (e.round === 2 && (d.round !== 2 || d.status !== 'final' || d.ruling === null)) return fail('wrong-state');
+        const next = { ...d, executedAt: new Date(now.getTime()), executedRound: e.round };
         return d.status === 'final' ? { ...next, status: 'closed' } : next;
       }
       case 'complied': {

@@ -17,7 +17,10 @@ import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type Ga
  * - the API shows the trade paused for maintenance: `paused` (nothing is handed while it holds);
  * - no published round-1 escrow ruling (none yet, or an after-refund outcome, which never reaches
  *   settle): `none`; once there is an appeal, round 1 still pays from its own ruling (Note
- *   2026-10-30 M3) and round 2 never reaches settle;
+ *   2026-10-30 M3) while the appeal is pending; review p4t22 m1 (lead default, owner question
+ *   OQ2): once round 2 is decided and no payout of round 1 was recorded here, round 2's ruling pays
+ *   instead (round 1 is first authorised, unpaid, so the gate's R37 checks know its signers), and
+ *   a payout already recorded is carried on, never swapped for another;
  * - no recorded terms for the trade: `no-terms`; the escrow not wholly unlocked: `waiting-funds`;
  * - the gate (`gateCheck`: the registry synced first, so a tapped emergency stop or a switch-off
  *   counts at once; then the ruling's stored taps) refuses: `refused-<reason>` (e.g. `stopped`);
@@ -139,7 +142,7 @@ export interface RulingExecutorOptions {
   reportWaitMs?: number;
 }
 
-const isEscrow = (r: GateRuling): boolean => r.round === 1 && (ESCROW_OUTCOMES as readonly string[]).includes(r.outcome);
+const isEscrow = (r: GateRuling): boolean => (ESCROW_OUTCOMES as readonly string[]).includes(r.outcome);
 const asRecord = (p: readonly Payout[]): RulingExecution['payouts'] => p.map((x) => ({ address: x.address, amountAtomic: x.amountAtomic.toString() }));
 const keyOf = (rulingId: string, winner: string, p: RulingExecution['payouts']): string => JSON.stringify([rulingId, winner, p.map((x) => [x.address, x.amountAtomic])]);
 
@@ -215,17 +218,35 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     const stored = await o.source.storedRulings(s.code);
     // Round 1 pays from its own ruling, also once an appeal made round 2 current (Note 2026-10-30 M3).
     const r1 = stored.current?.round === 1 ? stored.current : stored.round1;
-    if (r1 === null || !isEscrow(r1)) return 'none';
+    if (r1 === null || r1.round !== 1 || !isEscrow(r1)) return 'none';
+    // Review p4t22 m1 (lead default, owner question OQ2): a decided round 2 (the API stores its
+    // ruling only once it is final) pays instead of round 1 when round 1's payout was never recorded
+    // here; a payout already recorded (and perhaps handed) is carried on, never swapped.
+    const r2 = stored.current?.round === 2 && isEscrow(stored.current) ? stored.current : null;
     if (s.recorded === null) return 'no-terms';
     const { balance, unlocked } = s.funds;
     if (balance <= 0n || balance !== unlocked) return 'waiting-funds';
-    const auth = await gateCheck(o.store, o.source, { ruling: r1, recorded: s.recorded, balanceAtomic: balance }, o.ctx);
+    const before = o.store.state.executions[s.code];
+    const pay = r2 !== null && (before === undefined || before.rulingId === r2.id) ? r2 : r1;
+    const check = async (r: GateRuling) =>
+      gateCheck(o.store, o.source, { ruling: r, recorded: s.recorded!, balanceAtomic: balance, ...(r.round === 2 ? { involved: stored.involved } : {}) }, o.ctx);
+    if (pay === r2 && !Object.hasOwn(o.store.state.rulingsSeen, r1.id)) {
+      // R37 at the gate rests on round 1 as the gate authorised it (`round1-unseen`): round 1 is
+      // checked first (authorised only, nothing paid), so its signers are known.
+      const first = await check(r1);
+      if (!first.ok) {
+        o.log({ reason: `ruling-refused-${first.reason}` });
+        await refusalPass(s, r1.id, first.reason);
+        return `refused-${first.reason}`;
+      }
+    }
+    const auth = await check(pay);
     if (!auth.ok) {
       o.log({ reason: `ruling-refused-${auth.reason}` });
-      await refusalPass(s, r1.id, auth.reason);
+      await refusalPass(s, pay.id, auth.reason);
       return `refused-${auth.reason}`;
     }
-    await refusalPass(s, r1.id, null);
+    await refusalPass(s, pay.id, null);
     if (auth.settle === null) return 'none';
     // Review M5: the desk's armed, unblocked refund goes first; the ruling waits until it is blocked.
     if (s.deskArmed?.kind === 'auto-refund' && (s.deskArmed.blocked ?? null) === null && o.store.state.executions[s.code] === undefined) {
@@ -238,12 +259,12 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
     }
     const { winner } = auth.settle;
     const payouts = asRecord(auth.settle.payouts);
-    const key = keyOf(r1.id, winner, payouts);
+    const key = keyOf(pay.id, winner, payouts);
     // Recorded (and saved) before the party is ever asked; an existing record must be this very payout.
     const recordedOk = await o.store.exclusive(async () => {
       const ex = o.store.state.executions[s.code];
       if (ex !== undefined) return keyOf(ex.rulingId, ex.winner, ex.payouts) === key;
-      o.store.state.executions[s.code] = { rulingId: r1.id, winner, payouts, recordedAt: o.ctx.now().toISOString(), settledAt: null, settledTx: null };
+      o.store.state.executions[s.code] = { rulingId: pay.id, winner, payouts, recordedAt: o.ctx.now().toISOString(), settledAt: null, settledTx: null };
       await o.store.save();
       return true;
     });
@@ -257,7 +278,8 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
         v: 1,
         trade: s.code,
         escrowAddress: s.escrowAddress,
-        round: 1,
+        // Review p4t22 m1: the round of the ruling this payout carries out.
+        round: r2 !== null && ex.rulingId === r2.id ? 2 : 1,
         rulingId: ex.rulingId,
         outcome: ex.winner === 'buyer' ? 'release-to-buyer' : 'refund-to-seller',
         winner: ex.winner,
