@@ -183,6 +183,13 @@ export async function markPaid(page: Page): Promise<void> {
   if (await withoutProof.isVisible()) await withoutProof.click();
   await page.locator('.x2f-sheet-layer input[type=checkbox]').first().check();
   await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
+  // Done only once this device has recorded the tap. The sheet posts mark-paid to the API first and
+  // only then asks the device (escrow.markPaid), which fixes the trade amount at the tap. Until then
+  // the room shows "I've paid" (the old view) or "Marking as paid…"; a device that missed it shows
+  // "Finish marking as paid". The 23 Nov dispute flake: the specs moved on once the API said paid,
+  // and the next page.goto killed the page between the two. The device then knew of paid without a
+  // fixed amount, so it co-signed nothing, neither the release nor the moderator-built ruling set.
+  await expect(page.getByRole('button', { name: /^(I've paid|Marking as paid…|Finish marking as paid)$/ })).toHaveCount(0, { timeout: 60_000 });
 }
 
 /** The seller ticks the check, holds "Payment received" and confirms the warning. */
