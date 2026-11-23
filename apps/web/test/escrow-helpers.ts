@@ -2,7 +2,7 @@
 import type { Role } from '@x2f/core';
 import { TransportClosedError, type EscrowEngine, type Incoming, type Outcome, type PartyArgs, type PartyHandle, type Transport } from '@x2f/escrow';
 import { canonicalJson, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, escrowPlan, instructionsSha256, type Attestation } from '@x2f/trade';
+import { attestationBytes, channelFor, escrowPlan, instructionsSha256, signAfterRefundStatement, type AfterRefundStatement, type Attestation } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
 import sodium from 'libsodium-wrappers';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
@@ -248,6 +248,17 @@ export interface ApiState {
   rulingStatement?: { statement: unknown; sig: unknown } | null;
   /** How many times each role asked for the ruling statement. */
   rulingReads?: Partial<Record<'buyer' | 'seller', number>>;
+  /** Review p4t22 M2: what GET /v1/trades/:code/after-refund-statement serves; absent or null: 204. */
+  afterRefundStatement?: { statement: unknown; sig: unknown } | null;
+}
+
+/** Review p4t22 M2: the moderation service's signed after-refund `seller-sends-xmr` statement for this trade. */
+export async function afterRefundFor(secret: Uint8Array, amountAtomic: bigint, o: Partial<AfterRefundStatement> = {}): Promise<{ statement: unknown; sig: unknown }> {
+  const statement: AfterRefundStatement = {
+    v: 1, kind: 'after-refund', trade: CODE, round: 1, rulingId: '7f0c1f9e-0000-4000-8000-0000000000aa', outcome: 'seller-sends-xmr',
+    amountAtomic: amountAtomic.toString(), buyerPayout: ADDR.buyer, issuedAt: '2026-10-24T13:00:00.000Z', ...o,
+  };
+  return { statement, sig: await signAfterRefundStatement(statement, secret) };
 }
 
 export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -317,6 +328,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       state.rulingReads[role] = (state.rulingReads[role] ?? 0) + 1;
       return state.rulingStatement ?? null;
     },
+    getAfterRefundStatement: async () => state.afterRefundStatement ?? null,
     getAttestation: async () => {
       if (state.refuse?.attestation) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.attestation });
       return attest(role);

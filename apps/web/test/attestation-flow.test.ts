@@ -5,7 +5,7 @@ import { channelFor, escrowPlan, fiatCents, instructionsSha256, payoutsFor, sign
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, afterRefundFor, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
 const sumTo = (o: { to: readonly { amountAtomic: bigint }[] }): bigint => o.to.reduce((a, x) => a + x.amountAtomic, 0n);
@@ -529,10 +529,15 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(seller.last()?.restitution ?? null).toBeNull();
     await buyer.runtime.start(CODE);
     await seller.runtime.start(CODE);
-    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
-    expect(await buyer.status((s) => s.phase === 'ready')).toMatchObject({ restitution: null });
+    // Review p4t22 M2: no signed after-refund statement, no payment order.
+    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ restitution: null });
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);
+    t.state.view = tradeView({ state: 'disputed', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
+    expect(await seller.status((s) => s.restitution != null)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    await t.parties.ticks('buyer', 2);
+    expect(buyer.last()?.restitution ?? null).toBeNull();
     // A view naming another address changes nothing: only the signed terms count.
-    t.state.view = { ...tradeView({ state: 'secured' }), buyerPayout: '4AttackerAddress' } as typeof t.state.view;
+    t.state.view = { ...tradeView({ state: 'disputed', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } }), buyerPayout: '4AttackerAddress' } as typeof t.state.view;
     await Promise.all([t.parties.ticks('seller', 2)]);
     expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
   });
@@ -1304,9 +1309,12 @@ describe('settling', () => {
 
     it('Plan 4 Task 12 (B1): a grown trade\'s ruling payment is the amount this seller fixed at paid, never the take amount; a view naming another amount changes nothing', async () => {
       const t = await paidAtMiddle();
+      // Review p4t22 M2: the order, signed for exactly this amount, once disputed.
+      t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, middle);
+      t.state.view = tradeView({ state: 'disputed', paidAt, amountAtomic: middle.toString() });
       expect(await t.seller.status((x) => x.restitution?.amountAtomic === middle)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: middle } });
       for (const lie of [AMOUNT, grown, grown * 2n]) {
-        t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: lie.toString() });
+        t.state.view = tradeView({ state: 'disputed', paidAt, amountAtomic: lie.toString() });
         await t.parties.ticks('seller', 2);
         expect(t.seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: middle });
       }
@@ -1318,10 +1326,14 @@ describe('settling', () => {
       t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
       await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
       t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      await t.parties.ticks('seller', 2);
+      // Review p4t22 M2: the order, signed for exactly the grown amount, once disputed.
+      t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, grown);
+      t.state.view = tradeView({ state: 'disputed', amountAtomic: grown.toString() });
       expect(await t.seller.status((x) => x.restitution?.amountAtomic === grown)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: grown } });
       expect(t.seller.last()?.restitution?.amountAtomic).not.toBe(AMOUNT);
       // An API amount above what this device's own escrow funds grew to: no amount, so no form.
-      t.state.view = tradeView({ state: 'secured', amountAtomic: (grown + 1n).toString() });
+      t.state.view = tradeView({ state: 'disputed', amountAtomic: (grown + 1n).toString() });
       expect(await t.seller.status((x) => x.restitution === null)).toMatchObject({ restitution: null });
     });
 
@@ -3086,6 +3098,45 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
   });
 });
 
+describe('review p4t22 M2: the seller pays an after-refund ruling only on its signed statement', () => {
+  /** Ready, secured, then disputed: the seller's runtime asks for the after-refund statement. */
+  async function disputedSeller() {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'disputed', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
+    return { t, seller };
+  }
+
+  it('a forged statement (another key), one for another amount, address or trade, or a malformed one: no form', async () => {
+    const other = await modKey();
+    for (const make of [
+      async (t: Awaited<ReturnType<typeof setup>>) => afterRefundFor(other.secret, AMOUNT),
+      async (t: Awaited<ReturnType<typeof setup>>) => afterRefundFor(t.mod.secret, AMOUNT + 1n),
+      async (t: Awaited<ReturnType<typeof setup>>) => afterRefundFor(t.mod.secret, AMOUNT, { buyerPayout: '4AttackerAddress' }),
+      async (t: Awaited<ReturnType<typeof setup>>) => afterRefundFor(t.mod.secret, AMOUNT, { trade: 'AAAA-BBBB-CCCC-DDDD' }),
+      async (t: Awaited<ReturnType<typeof setup>>) => ({ ...(await afterRefundFor(t.mod.secret, AMOUNT)), sig: 'zz' }),
+    ]) {
+      const { t, seller } = await disputedSeller();
+      t.state.afterRefundStatement = await make(t);
+      await t.parties.ticks('seller', 3);
+      expect(seller.last()?.restitution ?? null).toBeNull();
+      await seller.runtime.stopAll();
+    }
+  });
+
+  it('a verified statement shows the form; once the API stops serving it (a later round), the form goes', async () => {
+    const { t, seller } = await disputedSeller();
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);
+    expect(await seller.status((s) => s.restitution != null)).toMatchObject({ restitution: { address: ADDR.buyer, amountAtomic: AMOUNT } });
+    t.state.afterRefundStatement = null;
+    expect(await seller.status((s) => s.restitution == null)).toMatchObject({ restitution: null });
+  });
+});
+
 describe('Plan 4 Task 21 bug 2: the seller of an after-refund dispute keeps the attested restitution', () => {
   it('a refunded trade disputed by the buyer: the seller\'s status still carries the attested buyer address and the trade amount, also after a reload with the relay closed', async () => {
     const t = await setup();
@@ -3107,6 +3158,10 @@ describe('Plan 4 Task 21 bug 2: the seller of an after-refund dispute keeps the 
     // The buyer disputes the refund: the trade is disputed again, with an empty escrow.
     t.state.view = tradeView({ state: 'disputed', settling: 'auto-refund', dispute: { by: 'buyer', at: '2026-10-24T12:00:00.000Z' } });
     t.parties.closeRelay('seller');
+    await t.parties.ticks('seller', 3);
+    // Review p4t22 M2: the ruling shown by the API alone is no order: no form until it is signed.
+    expect(seller.last()?.restitution ?? null).toBeNull();
+    t.state.afterRefundStatement = await afterRefundFor(t.mod.secret, AMOUNT);
     await t.parties.ticks('seller', 3);
     expect(seller.last()?.restitution).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
     await seller.runtime.stopAll();
