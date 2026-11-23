@@ -4,7 +4,11 @@
  * envelope, with its own ReplayGuard and seq saved before anything is acted on or sent.
  *
  * - trade.terms (once at setup, resent until answered): the seller's `{ refundAddress, deal }`
- *   and the buyer's `{ payoutAddress, deal }`. Only terms whose address and deal are the ones the
+ *   and the buyer's `{ payoutAddress, deal }`. A side that already holds the peer's terms answers
+ *   copies of them again once the peer sent two since our last send and `answerMs` passed: a peer
+ *   that lost ours (e.g. a reload before its save landed) keeps resending on its timer, and a done
+ *   side never resent on its own. A done peer sends one copy per send of ours (its answer), so two
+ *   done sides never answer each other again, whatever the delay between them. Only terms whose address and deal are the ones the
  *   moderator attested are adopted; any other copy is ignored (never adopted, never fatal: one
  *   wrong message from a peer must not stop this device's key share for good). `deal` is a
  *   deviation from the plan (which signs the address only): both sides sign the trade's size and
@@ -63,6 +67,11 @@ export interface SignalsArgs {
   onSignal?(type: SignalType, from: Role, payload: Record<string, unknown>): void;
   onIgnored?(reason: string): void;
   resendMs?: number;
+  /**
+   * The least time (monotonic clock) between our last terms and an answer to the peer's copies
+   * (default 5 s, the resend interval). An answer also needs two copies since that send.
+   */
+  answerMs?: number;
 }
 
 /** The trade.paid payload: the amount the buyer's device fixed and the fiat total the buyer confirmed. */
@@ -108,7 +117,16 @@ export function runSignals(a: SignalsArgs): SignalsHandle {
     await persist(); // the seq is stored before the envelope leaves
     a.transport.send(await seal({ trade: a.channel, from: a.role, seq: state.seq, type, payload, to: ROLES, me: a.me, participants: a.participants }));
   };
-  const sendTerms = (): Promise<void> => sendNow('trade.terms', { [addressKey(a.role)]: a.ownAddress, deal: a.deal });
+  const answerMs = a.answerMs ?? 5000;
+  /** When this side last sent its terms (performance.now(), monotonic), or null before the first. */
+  let termsSentAt: number | null = null;
+  /** Copies of the peer's (already adopted) terms received since this side last sent its own. */
+  let copiesSinceSent = 0;
+  const sendTerms = async (): Promise<void> => {
+    copiesSinceSent = 0;
+    termsSentAt = performance.now();
+    await sendNow('trade.terms', { [addressKey(a.role)]: a.ownAddress, deal: a.deal });
+  };
   const termsDone = (): boolean => state.theirAddress !== null && state.termsAcked;
 
   const onFrame = async (raw: unknown): Promise<void> => {
@@ -137,6 +155,11 @@ export function runSignals(a: SignalsArgs): SignalsHandle {
       if (state.theirAddress === null) {
         state = { ...state, theirAddress: addr, theirDeal: deal };
         answerTerms = true; // the peer may have missed ours
+      } else {
+        // A copy after we adopted the peer's terms: one is the peer's answer to our last send; a
+        // second before we sent again means it is still resending, so it never got ours.
+        copiesSinceSent += 1;
+        if (copiesSinceSent >= 2 && (termsSentAt === null || performance.now() - termsSentAt >= answerMs)) answerTerms = true;
       }
     }
     if (type === 'trade.ack' && p.of === 'trade.terms') state = { ...state, termsAcked: true };
