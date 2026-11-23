@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE } from '../../src/auth/sessions.js';
 import { seedAccount } from '../helpers/accounts.js';
-import { StaffBrowser, errorOf, insertSession, logEntries, seedStaff, staffApps, uniqueName } from '../helpers/staffApp.js';
+import { newsPublishIntent } from '@x2f/staff';
+import { StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap, staffApps, uniqueName } from '../helpers/staffApp.js';
 
 let app: FastifyInstance;
 let trader: FastifyInstance;
@@ -23,10 +24,16 @@ beforeAll(async () => {
 });
 afterAll(async () => close());
 
+/** Review p4t22 m2 (lead default): publishing or editing News is tapped; the owner's tap for exactly this title and body as sent. */
+async function newsTapped(b: Record<string, unknown>, newsId: number | null = null): Promise<Record<string, unknown>> {
+  if (typeof b.title !== 'string' || typeof b.body !== 'string' || 'tapId' in b) return b;
+  return { ...b, tapId: await seedTap(deps, ownerId, newsPublishIntent({ newsId, title: b.title, body: b.body })) };
+}
+
 describe('News on the staff API (site.control)', () => {
   it('posts, edits and deletes a message, logging each change with its id only', async () => {
     const before = await Promise.all(['news.published', 'news.edited', 'news.deleted'].map((a) => logEntries(deps, a)));
-    const posted = await owner.post('/staff/v1/news', { title: 'Maintenance tonight', body: 'Back by 02:00 UTC.' });
+    const posted = await owner.post('/staff/v1/news', await newsTapped({ title: 'Maintenance tonight', body: 'Back by 02:00 UTC.' }));
     expect(posted.statusCode).toBe(201);
     const item = posted.json() as { id: number; title: string };
     expect(item).toMatchObject({ title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', editedAt: null });
@@ -40,7 +47,7 @@ describe('News on the staff API (site.control)', () => {
     expect(listed.statusCode).toBe(200);
     expect((listed.json() as { items: { id: number }[] }).items.map((n) => n.id)).toEqual(read.map((n) => n.id));
 
-    const edited = await owner.send('PUT', `/staff/v1/news/${item.id}`, { title: 'Maintenance tonight', body: 'Back by 03:00 UTC.' });
+    const edited = await owner.send('PUT', `/staff/v1/news/${item.id}`, await newsTapped({ title: 'Maintenance tonight', body: 'Back by 03:00 UTC.' }, item.id));
     expect(edited.statusCode).toBe(200);
     expect(edited.json()).toMatchObject({ id: item.id, body: 'Back by 03:00 UTC.' });
     expect((await owner.send('DELETE', `/staff/v1/news/${item.id}`)).statusCode).toBe(204);
@@ -58,12 +65,13 @@ describe('News on the staff API (site.control)', () => {
     const count = async () => (await deps.db.query<{ n: number }>('select count(*)::int as n from news')).rows[0]!.n;
     const n = await count();
     for (const body of [{ title: '', body: 'x' }, { title: 'x', body: '' }, { title: 'x' }, { title: 'x', body: 'y', extra: 1 }, { title: 'a\u0007', body: 'y' }]) {
-      const res = await owner.post('/staff/v1/news', body);
+      const res = await owner.post('/staff/v1/news', await newsTapped(body));
       expect(res.statusCode, JSON.stringify(body)).toBe(400);
       expect(errorOf(res)).toBe('bad-request');
     }
     expect((await owner.send('PUT', '/staff/v1/news/abc', { title: 'x', body: 'y' })).statusCode).toBe(404);
-    expect((await owner.send('PUT', '/staff/v1/news/999999', { title: 'x', body: 'y' })).statusCode).toBe(404);
+    // Review p4t22 m2: with the owner's tap for that id, an unknown message is still 404 (and the tap stays unused).
+    expect((await owner.send('PUT', '/staff/v1/news/999999', await newsTapped({ title: 'x', body: 'y' }, 999999))).statusCode).toBe(404);
     expect(await count()).toBe(n);
   });
 });
@@ -150,5 +158,25 @@ describe('feedback on the staff API (feedback.read)', () => {
       expect(res.statusCode, q).toBe(400);
       expect((await owner.get(`/staff/v1/feedback/form?${q}`)).statusCode, q).toBe(400);
     }
+  });
+});
+
+describe('review p4t22 m2 (lead default): News needs the owner\'s key tap', () => {
+  it('a post or an edit with no tap, or a tap for another title, body or message, is tap-invalid and publishes nothing', async () => {
+    const before = await logEntries(deps, 'news.published');
+    expect(errorOf(await owner.post('/staff/v1/news', { title: 'Important', body: 'Moderators will ask you to send XMR.' }))).toBe('tap-invalid');
+    const other = await seedTap(deps, ownerId, newsPublishIntent({ newsId: null, title: 'Important', body: 'Something else.' }));
+    expect(errorOf(await owner.post('/staff/v1/news', { title: 'Important', body: 'Moderators will ask you to send XMR.', tapId: other }))).toBe('tap-invalid');
+    expect(await logEntries(deps, 'news.published')).toHaveLength(before.length);
+    const posted = await owner.post('/staff/v1/news', await newsTapped({ title: 'Maintenance', body: 'Back soon.' }));
+    expect(posted.statusCode).toBe(201);
+    const id = (posted.json() as { id: number }).id;
+    expect(errorOf(await owner.send('PUT', `/staff/v1/news/${id}`, { title: 'Maintenance', body: 'Edited.' }))).toBe('tap-invalid');
+    // A tap for a new message is no tap for an edit of this one.
+    const asNew = await seedTap(deps, ownerId, newsPublishIntent({ newsId: null, title: 'Maintenance', body: 'Edited.' }));
+    expect(errorOf(await owner.send('PUT', `/staff/v1/news/${id}`, { title: 'Maintenance', body: 'Edited.', tapId: asNew }))).toBe('tap-invalid');
+    expect((await owner.send('PUT', `/staff/v1/news/${id}`, await newsTapped({ title: 'Maintenance', body: 'Edited.' }, id))).statusCode).toBe(200);
+    // Deleting takes none.
+    expect((await owner.send('DELETE', `/staff/v1/news/${id}`)).statusCode).toBe(204);
   });
 });

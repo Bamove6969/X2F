@@ -4,7 +4,7 @@
 // tapped action (create-invite, switch-on, set-role, remove-staff, settings, pay-settings,
 // emergency-stop, resume-trading) goes through KeyTapDialog with the intent the API re-derives;
 // the switch-off, hours, banner and maintenance changes are not tapped (Tasks 7 and 8).
-import { NAV, inviteTokenHash } from '@x2f/staff';
+import { NAV, bannerPublishIntent, inviteTokenHash, maintenanceOnIntent } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -433,7 +433,8 @@ function overviewApi(site: Record<string, unknown> = {}, extra: Record<string, P
       return { body: state };
     },
     'PUT /staff/v1/site/banner': (b) => {
-      state = { ...state, banner: b as { text: string; kind: 'info' } };
+      const { tapId: _tap, ...banner } = b as { text: string; kind: 'info'; tapId?: string };
+      state = { ...state, banner };
       return { body: state };
     },
     'DELETE /staff/v1/site/banner': () => {
@@ -507,14 +508,19 @@ describe('StaffOverview (board StaffOverview)', () => {
     await click(kinds[1]!);
     expect(sec().querySelector('[aria-label="Banner preview"]')?.getAttribute('data-kind')).toBe('warning');
     await click(button('Show to everyone', sec()));
-    expect(api.calls.find((c) => c.method === 'PUT' && c.path === '/staff/v1/site/banner')?.body).toEqual({ text: 'Zelle payments may take longer this weekend because of a bank holiday.', kind: 'warning' });
+    // Review p4t22 m2 (lead default): nothing is shown before the owner's key tap, bound to this text and kind.
+    expect(api.calls.some((c) => c.method === 'PUT' && c.path === '/staff/v1/site/banner')).toBe(false);
+    await click(button('Tap key and show'));
+    const text = 'Zelle payments may take longer this weekend because of a bank holiday.';
+    expect(tapIntents(api.calls)).toEqual([bannerPublishIntent({ bannerKind: 'warning', text })]);
+    expect(api.calls.find((c) => c.method === 'PUT' && c.path === '/staff/v1/site/banner')?.body).toEqual({ text, kind: 'warning', tapId: 'tap-1' });
     expect(sec().textContent).toContain('Showing to everyone now.');
     await click(button('Remove banner', sec()));
     expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/staff/v1/site/banner')).toBe(true);
     expect(sec().textContent).toContain('Not showing.');
   });
 
-  it('maintenance: on with its kind and message, off again (no tap)', async () => {
+  it('maintenance: on with its kind and message (tapped, review p4t22 m2), off again (no tap)', async () => {
     const api = overviewApi();
     await open('/overview');
     const sec = () => document.querySelector('section[aria-label="Maintenance mode"]')!;
@@ -526,14 +532,19 @@ describe('StaffOverview (board StaffOverview)', () => {
     await click(sec().querySelectorAll('[role="radiogroup"][aria-label="Maintenance kind"] [role="radio"]')[0]!);
     expect(on.disabled).toBe(false);
     await tick(on);
-    expect(api.calls.find((c) => c.path === '/staff/v1/site/maintenance')?.body).toEqual({ on: true, kind: 'planned', message: 'X2F is being upgraded. Back by 03:00 UTC.' });
+    // Review p4t22 m2 (lead default): on takes the owner's key tap, bound to the kind and the message.
+    expect(api.calls.some((c) => c.path === '/staff/v1/site/maintenance')).toBe(false);
+    await click(button('Tap key and turn on'));
+    const message = 'X2F is being upgraded. Back by 03:00 UTC.';
+    expect(api.calls.find((c) => c.path === '/staff/v1/site/maintenance')?.body).toEqual({ on: true, kind: 'planned', message, tapId: 'tap-1' });
     expect(sec().querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
     await tick(sec().querySelector('input[type="checkbox"]'));
     expect(api.calls.filter((c) => c.path === '/staff/v1/site/maintenance').map((c) => c.body)).toEqual([
-      { on: true, kind: 'planned', message: 'X2F is being upgraded. Back by 03:00 UTC.' },
+      { on: true, kind: 'planned', message, tapId: 'tap-1' },
       { on: false },
     ]);
-    expect(tapIntents(api.calls)).toEqual([]);
+    // Off takes none.
+    expect(tapIntents(api.calls)).toEqual([maintenanceOnIntent({ maintenanceKind: 'planned', message, backBy: null })]);
   });
 
   it('the log-alarm card shows only when log_alarm is set', async () => {

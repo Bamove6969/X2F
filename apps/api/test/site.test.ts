@@ -3,6 +3,7 @@
 // trader API answers 503 `maintenance` except GET /v1/site, while the staff API still answers; and
 // GET /v1/site, which answers anyone but shows the banner and the trading pause only to a signed-in,
 // set-up trader (the front door, owner 8 Nov 2026; test/frontDoor.test.ts).
+import { bannerPublishIntent, maintenanceOnIntent } from '@x2f/staff';
 import { fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -120,6 +121,22 @@ describe('the log alarm on the staff site state', () => {
   });
 });
 
+/**
+ * Review p4t22 m2 (lead default): showing the banner and switching maintenance on are tapped. The
+ * owner's tap for exactly this body (as sent), added to a body the route will validate as such; a
+ * body the route refuses before the tap (a bad kind or text, or switching off) goes as it is.
+ */
+async function bannerTapped(b: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if ((b.kind !== 'info' && b.kind !== 'warning') || typeof b.text !== 'string' || 'tapId' in b) return b;
+  return { ...b, tapId: await seedTap(deps, ownerId, bannerPublishIntent({ bannerKind: b.kind, text: b.text })) };
+}
+async function maintenanceTapped(b: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (b.on !== true || (b.kind !== 'planned' && b.kind !== 'unplanned') || 'tapId' in b) return b;
+  const message = typeof b.message === 'string' ? b.message : null;
+  const backBy = typeof b.backBy === 'string' ? b.backBy : null;
+  return { ...b, tapId: await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: b.kind, message, backBy })) };
+}
+
 describe('emergency stop', () => {
   it('needs a tap for emergency-stop; while stopped, take and post refuse trading-paused and existing trades go on; resume needs its own tap', async () => {
     setNow(T0);
@@ -193,11 +210,11 @@ describe('emergency stop', () => {
 
 describe('banner', () => {
   it('sets a banner of up to 140 characters, refuses 141 with banner-too-long, shows it on GET /v1/site and removes it', async () => {
-    const long = await owner.send('PUT', '/staff/v1/site/banner', { text: 'a'.repeat(141), kind: 'info' });
+    const long = await owner.send('PUT', '/staff/v1/site/banner', await bannerTapped({ text: 'a'.repeat(141), kind: 'info' }));
     expect({ status: long.statusCode, error: errorOf(long) }).toEqual({ status: 400, error: 'banner-too-long' });
     // 140 characters, counted as Postgres counts them (an emoji is one).
     const text = `${'🛠'.repeat(10)}${'b'.repeat(130)}`;
-    const ok = await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'warning' });
+    const ok = await owner.send('PUT', '/staff/v1/site/banner', await bannerTapped({ text, kind: 'warning' }));
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await site()).banner).toEqual({ text, kind: 'warning' });
     expect(await outside()).toEqual({ maintenance: null, plannedMaintenance: null });
@@ -205,7 +222,7 @@ describe('banner', () => {
     expect(entries.at(-1)!.detail).toBe('{"kind":"warning"}');
 
     for (const body of [{ text: 'x', kind: 'danger' }, { text: '   ', kind: 'info' }, { text: 'two\nlines', kind: 'info' }, { text: 5, kind: 'info' }, { text: 'x', kind: 'info', extra: 1 }]) {
-      const res = await owner.send('PUT', '/staff/v1/site/banner', body);
+      const res = await owner.send('PUT', '/staff/v1/site/banner', await bannerTapped(body));
       expect({ status: res.statusCode, error: errorOf(res) }, JSON.stringify(body)).toEqual({ status: 400, error: 'bad-request' });
     }
     expect((await owner.send('DELETE', '/staff/v1/site/banner')).statusCode).toBe(204);
@@ -235,8 +252,8 @@ describe('maintenance', () => {
     setNow(T0);
     const t = await trader();
     // Owner G19: no default kind (an emergency is internal): turning it on without one is 400.
-    expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: true })).statusCode).toBe(400);
-    const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' });
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true }))).statusCode).toBe(400);
+    const on = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' }));
     expect(on.statusCode, on.body).toBe(200);
     expect(on.json()).toMatchObject({ maintenance: { since: T0.toISOString(), message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned', backBy: null } });
     try {
@@ -261,13 +278,13 @@ describe('maintenance', () => {
 
       // Turning it on again keeps the start (the timers shift by the whole maintenance) and logs nothing new.
       setNow(new Date(T0.getTime() + 10 * MIN));
-      const again = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned' });
+      const again = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned' }));
       expect(again.json()).toMatchObject({ maintenance: { since: T0.toISOString(), message: null, kind: 'unplanned' } });
       expect((await logEntries(deps, 'site.maintenance-on')).map((e) => e.detail)).toEqual(['{"kind":"planned"}']);
       const { rows } = await deps.db.query<{ since: Date }>('select maintenance_since as since from site_flags');
       expect(rows[0]!.since).toEqual(T0);
     } finally {
-      const off = await owner.send('PUT', '/staff/v1/site/maintenance', { on: false });
+      const off = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }));
       expect(off.statusCode, off.body).toBe(200);
       expect(off.json()).toMatchObject({ maintenance: null });
     }
@@ -283,12 +300,12 @@ describe('maintenance', () => {
   // internally". The two kinds are planned and unplanned; "emergency" is no kind at all.
   it('has two kinds, planned and unplanned; emergency is refused, and no stored row reads as emergency', async () => {
     setNow(T0);
-    const em = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'emergency' });
+    const em = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'emergency' }));
     expect({ status: em.statusCode, error: errorOf(em), field: (em.json() as { field?: string }).field }).toEqual({ status: 400, error: 'bad-request', field: 'kind' });
     expect((await site()).maintenance).toBeNull();
     try {
       for (const kind of ['planned', 'unplanned'] as const) {
-        const res = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind });
+        const res = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind }));
         expect(res.statusCode, res.body).toBe(200);
         expect(((await site()).maintenance as { kind: string }).kind).toBe(kind);
       }
@@ -296,7 +313,7 @@ describe('maintenance', () => {
       await expect(deps.db.query("update site_flags set maintenance_kind = 'emergency'")).rejects.toThrow(/check constraint/);
       await expect(deps.db.query('update site_flags set maintenance_kind = null')).rejects.toThrow(/check constraint/);
     } finally {
-      expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: false })).statusCode).toBe(200);
+      expect((await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }))).statusCode).toBe(200);
     }
   });
 
@@ -306,22 +323,22 @@ describe('maintenance', () => {
     setNow(T0);
     const backBy = new Date(T0.getTime() + 90 * MIN).toISOString();
     for (const bad of ['soon', T0.toISOString(), new Date(T0.getTime() - MIN).toISOString(), 5]) {
-      const res = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned', backBy: bad });
+      const res = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned', backBy: bad }));
       expect({ status: res.statusCode, error: errorOf(res), field: (res.json() as { field?: string }).field }, String(bad)).toEqual({ status: 400, error: 'bad-request', field: 'backBy' });
     }
     try {
-      const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned', message: 'A database fault. Trades are paused.', backBy });
+      const on = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned', message: 'A database fault. Trades are paused.', backBy }));
       expect(on.statusCode, on.body).toBe(200);
       expect((await site()).maintenance).toEqual({ kind: 'unplanned', message: 'A database fault. Trades are paused.', since: T0.toISOString(), backBy });
       // A new guess replaces the old one; null clears it.
       setNow(new Date(T0.getTime() + 30 * MIN));
       const later = new Date(T0.getTime() + 3 * 60 * MIN).toISOString();
-      await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned', backBy: later });
+      await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned', backBy: later }));
       expect(((await site()).maintenance as { backBy: string | null }).backBy).toBe(later);
-      await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned', backBy: null });
+      await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned', backBy: null }));
       expect(((await site()).maintenance as { backBy: string | null }).backBy).toBeNull();
     } finally {
-      expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: false })).statusCode).toBe(200);
+      expect((await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }))).statusCode).toBe(200);
     }
     expect((await deps.db.query('select maintenance_back_by from site_flags')).rows).toEqual([{ maintenance_back_by: null }]);
   });
@@ -387,28 +404,65 @@ describe('maintenance', () => {
     expect((await owner.send('PUT', '/staff/v1/site/maintenance/planned', { startsAt, endsAt, message: 'Upgrade.' })).statusCode).toBe(200);
     try {
       // An unplanned maintenance meanwhile keeps the plan for later.
-      await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'unplanned' });
+      await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'unplanned' }));
       expect((await site()).plannedMaintenance).toEqual({ startsAt, endsAt, message: 'Upgrade.' });
-      await owner.send('PUT', '/staff/v1/site/maintenance', { on: false });
+      await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }));
 
       setNow(new Date(Date.parse(startsAt)));
-      const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned' });
+      const on = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: true, kind: 'planned' }));
       expect(on.statusCode, on.body).toBe(200);
       expect(await site()).toMatchObject({
         maintenance: { kind: 'planned', message: 'Upgrade.', since: startsAt, backBy: endsAt },
         plannedMaintenance: null,
       });
     } finally {
-      expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: false })).statusCode).toBe(200);
+      expect((await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped({ on: false }))).statusCode).toBe(200);
       await owner.send('DELETE', '/staff/v1/site/maintenance/planned');
     }
   });
 
   it('refuses a bad body with bad-request', async () => {
     for (const body of [{}, { on: 'yes' }, { on: true, kind: 'surprise' }, { on: true, message: 5 }, { on: true, message: 'x'.repeat(501) }, { on: false, message: 'x' }, { on: true, extra: 1 }]) {
-      const res = await owner.send('PUT', '/staff/v1/site/maintenance', body);
+      const res = await owner.send('PUT', '/staff/v1/site/maintenance', await maintenanceTapped(body));
       expect({ status: res.statusCode, error: errorOf(res) }, JSON.stringify(body)).toEqual({ status: 400, error: 'bad-request' });
     }
     expect((await site()).maintenance).toBeNull();
+  });
+});
+
+describe('review p4t22 m2 (lead default): a stolen owner session without the key cannot publish or switch maintenance on', () => {
+  it('the banner: no tap, or a tap for another text or kind, is tap-invalid and shows nothing; the tap is used once', async () => {
+    const text = 'Moderators will never ask you to send XMR.';
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info' }))).toBe('tap-invalid');
+    const other = await seedTap(deps, ownerId, bannerPublishIntent({ bannerKind: 'info', text: 'Something else.' }));
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId: other }))).toBe('tap-invalid');
+    const kind = await seedTap(deps, ownerId, bannerPublishIntent({ bannerKind: 'warning', text }));
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId: kind }))).toBe('tap-invalid');
+    expect((await owner.send('GET', '/staff/v1/site')).json()).toMatchObject({ banner: null });
+    const tapId = await seedTap(deps, ownerId, bannerPublishIntent({ bannerKind: 'info', text }));
+    expect((await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId })).statusCode).toBe(200);
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'info', tapId }))).toBe('tap-invalid');
+    expect((await owner.send('DELETE', '/staff/v1/site/banner')).statusCode).toBe(204);
+  });
+
+  it('maintenance on: no tap, or one for another kind, message or back-by time, is tap-invalid and changes nothing; off needs none', async () => {
+    const message = 'Upgrading the database.';
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', message }))).toBe('tap-invalid');
+    for (const wrong of [
+      maintenanceOnIntent({ maintenanceKind: 'unplanned', message, backBy: null }),
+      maintenanceOnIntent({ maintenanceKind: 'planned', message: 'Send your XMR to support.', backBy: null }),
+      maintenanceOnIntent({ maintenanceKind: 'planned', message: null, backBy: null }),
+    ]) {
+      const tapId = await seedTap(deps, ownerId, wrong);
+      expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', message, tapId }))).toBe('tap-invalid');
+    }
+    expect((await owner.send('GET', '/staff/v1/site')).json()).toMatchObject({ maintenance: null });
+    const tapId = await seedTap(deps, ownerId, maintenanceOnIntent({ maintenanceKind: 'planned', message, backBy: null }));
+    const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, kind: 'planned', message, tapId });
+    expect(on.statusCode, on.body).toBe(200);
+    expect(on.json()).toMatchObject({ maintenance: { kind: 'planned', message } });
+    // Off takes no tap (and refuses one).
+    expect(errorOf(await owner.send('PUT', '/staff/v1/site/maintenance', { on: false, tapId }))).toBe('bad-request');
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: false })).statusCode).toBe(200);
   });
 });

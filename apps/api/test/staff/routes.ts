@@ -105,7 +105,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/site', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
-  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
+  // Review p4t22 m2: showing the banner, publishing or editing News are tapped.
+  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info', tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
   // J-04 (owner G19): a planned maintenance announced ahead.
@@ -114,8 +115,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
   // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
   { method: 'GET', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER },
-  { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
-  { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
+  { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.', tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.', tapId: '00000000-0000-4000-8000-000000000000' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
   // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },

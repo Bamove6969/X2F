@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 16: staff login, invite acceptance, owner setup and the owner's Feedback page
 // (Plan 5 Task 4's NEEDS_P4_STAFF_WEB_FEEDBACK_PAGE).
-import { NAV, inviteRegistrationChallenge, inviteTokenHash, ownerSetupChallenge, staffLoginChallenge, stampIssuedAt, tapChallenge } from '@x2f/staff';
+import { NAV, inviteRegistrationChallenge, inviteTokenHash, newsPublishIntent, ownerSetupChallenge, staffLoginChallenge, stampIssuedAt, tapChallenge } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -10,7 +10,7 @@ import { STAFF_REFUSALS, refusalOf } from '../src/refusals.js';
 import { canFinish, INVITE_GONE, keyCheckLine } from '../src/screens/Invite.js';
 import { LOCKED_TITLE } from '../src/screens/OwnerSetup.js';
 import { TERMS_TEXT_VERSION } from '../src/ui/kit.js';
-import { button, cleanup, click, fakeApi, field, refused, render, settle, tick, typeInto } from './helpers.js';
+import { button, cleanup, click, fakeApi, field, honestTapStart, refused, render, settle, tick, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -435,6 +435,9 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
       },
       'PUT /staff/v1/news/:id': (b) => ({ body: { ...ITEM, ...(b as object) } }),
       'DELETE /staff/v1/news/:id': { status: 204 },
+      // Review p4t22 m2: publishing and editing take the owner's key tap.
+      'POST /staff/v1/taps/start': honestTapStart('tap-7'),
+      'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-7' } },
     });
     await open('/overview');
     await click(document.querySelector('a[href="/overview/news"]'));
@@ -464,13 +467,20 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
     await click(toggle);
     expect(preview.querySelector<HTMLElement>('.x2f-post__body')!.hidden).toBe(false);
     await click(publish());
-    expect(api.calls.find((c) => c.method === 'POST')?.body).toEqual({ title: 'Zelle delays', body: 'Bank holiday.\nExpect delays.' });
+    // Review p4t22 m2 (lead default): nothing is published before the key tap, bound to the title and message.
+    expect(api.calls.some((c) => c.method === 'POST' && c.path === '/staff/v1/news')).toBe(false);
+    await click(button('Tap key and publish'));
+    const starts = () => api.calls.filter((c) => c.path === '/staff/v1/taps/start').map((c) => c.body);
+    expect(starts()).toEqual([newsPublishIntent({ newsId: null, title: 'Zelle delays', body: 'Bank holiday.\nExpect delays.' })]);
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/staff/v1/news')?.body).toEqual({ title: 'Zelle delays', body: 'Bank holiday.\nExpect delays.', tapId: 'tap-7' });
     expect(document.querySelectorAll('[data-part="news-row"]')).toHaveLength(2);
     await click(button('Edit'));
     expect((field('Title') as HTMLInputElement).value).toBe('Zelle delays');
     typeInto(field('Message'), 'Fixed.');
     await click(button('Save changes'));
-    expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/news/8', body: { title: 'Zelle delays', body: 'Fixed.' } });
+    await click(button('Tap key and publish'));
+    expect(starts()[1]).toEqual(newsPublishIntent({ newsId: 8, title: 'Zelle delays', body: 'Fixed.' }));
+    expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/news/8', body: { title: 'Zelle delays', body: 'Fixed.', tapId: 'tap-7' } });
     await click(button('Delete'));
     await click(button('Delete', document.querySelector('[role="dialog"]')!));
     expect(api.calls.find((c) => c.method === 'DELETE')?.path).toBe('/staff/v1/news/8');
