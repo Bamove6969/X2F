@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKeyWithId,
+  inspectPublicKey,
   isStaged,
   partnerMissing,
   partnerNeededBy,
@@ -42,6 +43,7 @@ import { Totp } from './Totp.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
+import { KeyEmailNote } from '../setup/PgpKey.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -324,13 +326,32 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
   );
 }
 
-function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
+/** Exported for its tests (owner demo note #144). */
+export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Owner demo note #144: the same check as setup, on the device as the key is pasted (the server
+  // checks again and is the one that decides).
+  const [check, setCheck] = useState<Awaited<ReturnType<typeof inspectPublicKey>> | null>(null);
+
+  useEffect(() => {
+    const armored = publicKey.trim();
+    if (armored === '') {
+      setCheck(null);
+      return;
+    }
+    let live = true;
+    void inspectPublicKey(armored, new Date()).then((r) => {
+      if (live) setCheck(r);
+    });
+    return () => {
+      live = false;
+    };
+  }, [publicKey]);
 
   const start = async () => {
     setBusy(true);
@@ -375,8 +396,14 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
             Your PGP public key
           </label>
           <textarea className="x2f-input x2f-textarea" id="add-pgp-key" rows={6} spellCheck={false} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} />
+          {check !== null && !check.ok ? (
+            <p className="x2f-error" role="alert" data-part="key-refused">
+              {check.detail}
+            </p>
+          ) : null}
+          <KeyEmailNote check={check} />
           <div className="x2f-row">
-            <Button variant={primary} disabled={busy || publicKey.trim() === ''} onClick={() => void start()}>
+            <Button variant={primary} disabled={busy || publicKey.trim() === '' || (check !== null && !check.ok)} onClick={() => void start()}>
               Add key
             </Button>
             <Button variant="quiet" disabled={busy} onClick={onCancel}>

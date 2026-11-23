@@ -14,7 +14,10 @@ export type KeyRefusal =
   | 'key-weak'
   | 'key-expired'
   | 'key-revoked'
+  /** Owner demo note #144 (23 Nov 2026): no part of the key can receive encrypted messages (a sign-only key). */
   | 'key-no-encryption'
+  /** Owner demo note #144: the key has an encryption subkey, but every one is expired, revoked or not valid now. */
+  | 'key-encryption-inactive'
   | 'key-not-yet-valid'
   // Plan 5 Task 10 review round 1 N3: past reputation, a key with no signing key usable now.
   | 'key-no-signing';
@@ -30,6 +33,11 @@ export type KeyInspection =
       name: string | null;
       /** Signup round 3: when the primary key was made. */
       createdAt: Date;
+      /**
+       * Owner demo note #144 (23 Nov 2026): some User ID on the key holds an email address (an "@"),
+       * so it is visible to anyone who has the public key. Never the address itself; never a refusal.
+       */
+      hasEmail: boolean;
     }
   | { ok: false; reason: KeyRefusal; detail: string };
 
@@ -179,12 +187,48 @@ function checkPrimary(info: openpgp.AlgorithmInfo, minRsaBits: number): PrimaryA
   return { ok: false, detail: unsupported(minRsaBits) };
 }
 
-function checkEncryption(info: openpgp.AlgorithmInfo, minRsaBits: number): string | null {
+/**
+ * The strength rule for the key part a login challenge is encrypted to (owner demo note #144: the
+ * same rule as the primary key, applied to the encryption subkey too). openpgp reports the
+ * encryption counterparts of the accepted signing types as: `ecdh` on `curve25519Legacy` (a v4
+ * "cv25519" subkey, the partner of a v4 Ed25519 key), `x25519` and `x448` (RFC 9580 keys, the
+ * partners of `ed25519` and `ed448`); RSA needs the same bits as a primary. Anything else (ECDH on
+ * a NIST or Brainpool curve, ElGamal) is refused. `isPrimary`: the primary key itself encrypts.
+ */
+function checkEncryption(info: openpgp.AlgorithmInfo, minRsaBits: number, isPrimary: boolean): string | null {
   const { algorithm, bits, curve } = info;
-  if (isRsa(algorithm)) return bits !== undefined && bits >= minRsaBits ? null : rsaTooShort(bits, minRsaBits);
+  const part = isPrimary ? 'This key' : "This key's encryption subkey";
+  const why = 'X2F sends your login code encrypted to it';
+  if (isRsa(algorithm)) {
+    return bits !== undefined && bits >= minRsaBits
+      ? null
+      : `${part} is RSA ${bits ?? 'of unknown size'}, which is too short. ${why}, so it needs RSA ${minRsaBits} or more, X25519 or X448.`;
+  }
   if (algorithm === 'ecdh' && curve === 'curve25519Legacy') return null;
   if (algorithm === 'x25519' || algorithm === 'x448') return null;
-  return `The encryption part of this key uses a type X2F does not accept; it needs RSA ${minRsaBits} or more, X25519 or X448.`;
+  return `${part} uses a type X2F does not accept for encryption. ${why}, so it needs RSA ${minRsaBits} or more, X25519 or X448.`;
+}
+
+const ENCRYPT_FLAGS = enums.keyFlags.encryptCommunication | enums.keyFlags.encryptStorage;
+const flagsEncrypt = (sig: { keyFlags?: Uint8Array | null } | null | undefined): boolean =>
+  ((sig?.keyFlags?.[0] ?? 0) & ENCRYPT_FLAGS) !== 0;
+
+/**
+ * Owner demo note #144: whether any part of the key was ever marked for encryption (by any of its
+ * signatures, valid now or not). False for a sign-only key; true for a key whose encryption
+ * subkeys have all expired or been revoked. Only chooses which refusal to give.
+ */
+function everEncryptionCapable(key: openpgp.Key): boolean {
+  if (key.subkeys.some((s) => s.bindingSignatures.some(flagsEncrypt))) return true;
+  // `directSignatures` is on every openpgp 6 key, but missing from its type declarations.
+  const direct = (key as unknown as { directSignatures?: { keyFlags?: Uint8Array | null }[] }).directSignatures ?? [];
+  if (direct.some(flagsEncrypt)) return true;
+  return key.users.some((u) => u.selfCertifications.some(flagsEncrypt));
+}
+
+/** Owner demo note #144: true when any User ID on the key (valid or not) contains an "@". */
+function userIdsHaveEmail(key: openpgp.Key): boolean {
+  return key.users.some((u) => typeof u.userID?.userID === 'string' && u.userID.userID.includes('@'));
 }
 
 /**
@@ -253,19 +297,43 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
     return refuse('key-expired', `This key expired on ${isoDate(expiresAt)}.`);
   }
 
-  const facts = { name: await userName(key, now), createdAt: key.getCreationTime() };
+  const facts = { name: await userName(key, now), createdAt: key.getCreationTime(), hasEmail: userIdsHaveEmail(key) };
   if (!requireEncryption) {
     return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };
   }
 
+  // Owner demo note #144 (23 Nov 2026): the login challenge is encrypted to this key, so it needs an
+  // encryption-capable part that is valid now (not expired, not revoked), and that part (the one
+  // openpgp picks: the newest valid encryption subkey, else an encryption-capable primary) must meet
+  // the strength rule. FIND_CONFIG finds it whatever its type, so a weak one is named, not skipped.
   let encryptionKey: openpgp.Key | openpgp.Subkey;
   try {
     encryptionKey = await key.getEncryptionKey(undefined, now, undefined, FIND_CONFIG);
   } catch {
-    return refuse('key-no-encryption', 'This key cannot receive encrypted messages; it needs an encryption subkey.');
+    return everEncryptionCapable(key)
+      ? refuse(
+          'key-encryption-inactive',
+          "This key's encryption subkey has expired or been revoked. X2F sends your login code encrypted to your key, so add a new encryption subkey in your PGP app, then paste the key again.",
+        )
+      : refuse(
+          'key-no-encryption',
+          'This key can only sign. X2F sends your login code encrypted to your key, so it needs an encryption subkey. Add one in your PGP app, then paste the key again.',
+        );
   }
-  const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo(), minRsaBits);
+  const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo(), minRsaBits, encryptionKey === key);
   if (encProblem !== null) return refuse('key-weak', encProblem);
+  // The part just checked must be the one `encryptChallenge` uses (STRICT_CONFIG, same date). A
+  // weaker, older encryption subkey beside it is never used: STRICT_CONFIG refuses it, so a
+  // challenge fails closed rather than fall back to it. Belt and braces: refuse if they differ.
+  let used: openpgp.Key | openpgp.Subkey | null;
+  try {
+    used = await key.getEncryptionKey(undefined, now, undefined, STRICT_CONFIG);
+  } catch {
+    used = null;
+  }
+  if (used === null || used.getFingerprint() !== encryptionKey.getFingerprint()) {
+    return refuse('key-weak', `This key's encryption subkey cannot be used to send your login code. It needs RSA ${minRsaBits} or more, X25519 or X448.`);
+  }
 
   return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };
 }

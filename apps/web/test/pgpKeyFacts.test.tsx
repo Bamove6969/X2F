@@ -13,6 +13,7 @@ const base = {
   bits: null,
   expiresAt: new Date('2027-03-04T23:30:00Z'),
   createdAt: new Date('2026-03-04T23:30:00Z'),
+  hasEmail: false,
 };
 
 describe('KeyFacts', () => {

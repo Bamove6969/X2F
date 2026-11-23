@@ -33,6 +33,20 @@ function expiry(at: Date | null): string {
   return at === null ? 'Never' : formatDate(at);
 }
 
+/**
+ * Owner demo note #144 (23 Nov 2026): a non-blocking heads-up when a User ID on the key holds an
+ * email address (`hasEmail`); the key is still accepted. Also shown by Settings, Add a PGP key.
+ */
+export function KeyEmailNote({ check }: { check: KeyInspection | null }) {
+  if (check === null || !check.ok || !check.hasEmail) return null;
+  return (
+    <p className="x2f-start__help" role="note" data-part="key-email-note">
+      {/* COPY-UNSIGNED (owner demo note #144, the owner's words) */}
+      Heads up: Your public key contains an email address, which will be visible in the key metadata.
+    </p>
+  );
+}
+
 /** The key's facts once it passes the check (board SetupPgpKey, plus signup round 3's name and dates). */
 export function KeyFacts({ check }: { check: Extract<KeyInspection, { ok: true }> }) {
   return (
@@ -146,6 +160,7 @@ export function PgpKey() {
         />
       </label>
       {check !== null && check.ok ? <KeyFacts check={check} /> : null}
+      <KeyEmailNote check={check} />
       {check !== null && !check.ok ? (
         <p className="x2f-error" role="alert" data-part="key-refused">
           {check.detail}
