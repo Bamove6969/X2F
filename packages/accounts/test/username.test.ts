@@ -551,7 +551,7 @@ describe('new names: a reserved word with a short pad', () => {
     'Ownership1', 'Systematic', 'Officially1', 'Steamboat9', 'SteamPunk1', 'Beetroot88', 'Homeowner7',
     'Landowner1', 'Teammate5', 'Rooted123', 'Ecosystem1', 'Commodore64', 'Hotmodel9', 'Teamster1',
     'Whelp_dog', 'MoneroFan', 'CryptoBob99', 'Satoshi_21', 'Alice2024', 'BobTheBuilder', 'TradeMaster',
-    'XmrTrader1', 'Quiet.Fox_7', 'Badminton7', 'Gamer007', 'user007x', 'Helping_Hand', 'Teams4Life', 'Supporter9', 'Gamer1999', 'satoshi_ghost', 'nightowl_44', 'kettle.moss', 'lowtide_rx',
+    'XmrTrader1', 'Quiet.Fox_7', 'Badminton7', 'Gamer007', 'user007x', 'Helping_Hand', 'Teams4Life', 'Supporter9', 'Gamer1999', 'Modibo_Keita', 'Modica_Ana', 'Systems99', 'Rootsy_Girl', 'Rooter_Fan', 'satoshi_ghost', 'nightowl_44', 'kettle.moss', 'lowtide_rx',
   ];
   test.each(LEGITIMATE)('accepts %s as a new display name and a new login name', (name) => {
     expect(checkNewDisplayName(name)).toMatchObject({ ok: true });

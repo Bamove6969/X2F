@@ -203,9 +203,9 @@ const NEW_RESERVED_WORDS = [
  * its own (`ModEst12`, `Team_work`, `Mod12345`).
  */
 const ORDINARY_WORDS = [
-  'mode', 'modu', 'modif', 'helpful', 'helpless', 'helping', 'whelp', 'teams', 'teamwork', 'teammate', 'teamster', 'steam',
-  'supporter', 'rootbeer', 'rooted', 'rooter', 'rootless', 'beetroot', 'taproot', 'arrowroot', 'ownership', 'homeowner',
-  'landowner', 'stafford', 'staffan', 'distaff', 'systematic', 'ecosystem', 'officially', 'badminton',
+  'mode', 'modu', 'modi', 'modif', 'modica', 'helpful', 'helpless', 'helping', 'whelp', 'teams', 'teamwork', 'teammate', 'teamster', 'steam',
+  'supporter', 'rootbeer', 'rooted', 'rooter', 'rootsy', 'rootless', 'beetroot', 'taproot', 'arrowroot', 'ownership', 'homeowner',
+  'landowner', 'stafford', 'staffan', 'distaff', 'systems', 'systematic', 'ecosystem', 'officially', 'badminton',
 ] as const;
 
 /** Digits drawn like letters, beyond lookAlikeKey's 0→o and 1→l: for the new-name check only. */
