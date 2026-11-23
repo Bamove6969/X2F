@@ -90,6 +90,20 @@ gift cards, Wise, PayPal):
 
 Every account has a password, an authenticator (throwaway secret) and one throwaway payout wallet.
 
+`lowtide_rx` also posts offers in euros (SEPA Instant) and pounds (Faster Payments), and the seed
+makes two trades through the real API so **My trades** has rows for `lowtide-login`: one it cancels
+at once (Completed, `cancelled`) and one left open in `setup` (Open). The escrow keys live in a
+browser, so the seed never sets up an escrow: the open one is cancelled by the API's timer 60
+minutes after the seed and then moves to Completed. No XMR or fiat moves for either. A released
+trade, a rating and a dispute need the escrow and are done by hand (the guide below). The demo
+runs no staff-web: the staff API listens on 127.0.0.1 only, so there are no moderator screens and
+nobody can take a dispute here.
+
+**The guide.** `GET /__demo/guide` on the gateway is a plain checklist of every screen, with a link
+to each and the seeded account to use (`tools/demo/guide-page.ts`, `tools/test/demo-guide.test.ts`).
+It reads what the seed made from `.demo/state/seed.json` (login names, offers, trade codes; no
+secrets) and, like `/__demo/codes`, never reaches the API.
+
 ## What is fake
 
 - **The money.** The chain is a private regtest chain on this machine (`--regtest --offline`, no
@@ -213,7 +227,12 @@ send in the browser (regtest only); keep each trader's page open from take to se
   quick tunnels (no account; `cloudflared` on the PATH, or its path in `DEMO_CLOUDFLARED`) to
   127.0.0.1:4400 and 127.0.0.1:4401, and builds the app for their `https://….trycloudflare.com`
   URLs (printed at the end and in `.demo/urls.json`). Or bring your own two HTTPS tunnel origins:
-  `DEMO_PUBLIC_ORIGIN=https://app… DEMO_PUBLIC_NODE_ORIGIN=https://node… npm run demo`. The web
+  `DEMO_PUBLIC_ORIGIN=https://app… DEMO_PUBLIC_NODE_ORIGIN=https://node… npm run demo`. An
+  explicit https port is kept, so a Tailscale Funnel works with its other ports:
+  `tailscale funnel --bg --https=8443 http://127.0.0.1:4400`, `tailscale funnel --bg --https=10000
+  http://127.0.0.1:4401`, then `DEMO_PUBLIC_ORIGIN=https://<host>.ts.net:8443
+  DEMO_PUBLIC_NODE_ORIGIN=https://<host>.ts.net:10000 npm run demo` (a funnel is public too; turn
+  each off with `tailscale funnel --https=8443 off`). The web
   build, the relay's wss URL, the node proxy URL, the allowed origins and the CSP then use them
   (`tools/demo/origins.ts`, `tools/test/demo-origins.test.ts`); localhost keeps working. **A quick
   tunnel is public: anyone who has the URL can open the demo and sign up.** It is fake money only

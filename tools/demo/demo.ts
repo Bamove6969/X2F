@@ -180,6 +180,7 @@ async function main(): Promise<void> {
     X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
     X2F_TOTP_KEYS: s.totpKeys,
     X2F_LOGIN_NAME_KEYS: s.loginNameKeys,
+    X2F_TRAINING_ID_KEY: s.trainingIdKey,
     X2F_VAPID_PUBLIC: s.vapidPublic,
     X2F_VAPID_PRIVATE: s.vapidPrivate,
     X2F_HOST: HOST,
@@ -266,6 +267,7 @@ async function main(): Promise<void> {
       ? '  GitHub:   comments go to the comms branch 30 s after each change, and at demo:stop (the Comment button says whether they are there yet; DEMO_NOTES_PUSH=0 turns this off)'
       : '  GitHub:   off (DEMO_NOTES_PUSH=0); comments stay on this computer',
   );
+  console.log(`  Guide:    ${PUBLIC_ORIGIN || LOCAL_ORIGIN}/__demo/guide (every screen, with the account to use)`);
   console.log(`  Codes:    ${LOCAL_ORIGIN}/__demo/codes (the authenticator codes; or npm run demo:code <login name>)`);
   console.log(`  Logs:     ${LOG_DIR}`);
 }

@@ -34,7 +34,10 @@ export class DemoOriginError extends Error {
   }
 }
 
-/** A bare https origin (no path, query, credentials or port other than 443), returned normalized. */
+/**
+ * A bare https origin (no path, query or credentials), returned normalized. An explicit port is
+ * kept (demo r5: a Tailscale Funnel serves only 443, 8443 and 10000, and 443 may already be taken).
+ */
 export function publicOrigin(name: string, raw: string): string {
   let u: URL;
   try {
@@ -46,7 +49,6 @@ export function publicOrigin(name: string, raw: string): string {
   if (u.username !== '' || u.password !== '' || (u.pathname !== '/' && u.pathname !== '') || u.search !== '' || u.hash !== '') {
     throw new DemoOriginError(`${name} must be a bare origin (no path, query or credentials)`);
   }
-  if (u.port !== '') throw new DemoOriginError(`${name} must use the default https port`);
   return u.origin;
 }
 
