@@ -31,7 +31,7 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
     if (r.field === 'displayName') throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
     throw new ApiError(400, r.reason === 'same' ? 'names-same' : 'login-name-invalid');
   }
-  // F4, review of second-signup-r3 M2 (ported 18 Nov): punctuation is ignored too (staffNameKey).
+  // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.display.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
   if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');

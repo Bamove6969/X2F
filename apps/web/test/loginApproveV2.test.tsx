@@ -74,8 +74,9 @@ describe('design tokens: the v2 scale', () => {
     }
     const styles = tokens.type.groups.flatMap((g) => g.styles);
     // One step up since the owner's demo layout (b8489a7b): sheet title 24/30 to 26/32, screen title 28/32 to 30/34.
-    expect(styles).toContainEqual(expect.objectContaining({ name: 'sheet-title', fontSize: '26px', lineHeight: '32px', fontWeight: 700, letterSpacing: '-0.01em' }));
-    expect(styles).toContainEqual(expect.objectContaining({ name: 'screen-title', fontSize: '30px', lineHeight: '34px', fontWeight: 700, letterSpacing: '-0.01em' }));
+    // Owner 16 Nov fonts D + sizing: sheet title 28/34, screen title 34/40.
+    expect(styles).toContainEqual(expect.objectContaining({ name: 'sheet-title', fontSize: '28px', lineHeight: '34px', fontWeight: 700, letterSpacing: '-0.01em' }));
+    expect(styles).toContainEqual(expect.objectContaining({ name: 'screen-title', fontSize: '34px', lineHeight: '40px', fontWeight: 700, letterSpacing: '-0.01em' }));
   });
 });
 
@@ -103,11 +104,12 @@ describe('UI kit: v2 rules the LoginApprove boards use', () => {
     expect(d).toContain('background: var(--x2f-surface-raised);');
   });
 
-  it('tertiary button: 44 px, muted, 15/600', () => {
+  // Owner 16 Nov fonts D + sizing: 16 px label (was 15).
+  it('tertiary button: 44 px, muted, 16/600', () => {
     const r = rule('.x2f-button--tertiary');
     expect(r).toContain('height: 44px;');
     expect(r).toContain('color: var(--x2f-ink-muted);');
-    expect(r).toContain('font-size: 15px;');
+    expect(r).toContain('font-size: 16px;');
   });
 
   it('number tiles sit on surface-raised with no outline until picked (picked stays ink)', () => {

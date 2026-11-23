@@ -11,7 +11,10 @@
  *   apps/web/test/identity-separation.test.ts);
  * - any file in apps/moderation imports fastify (or @fastify/*), a Node server module (http,
  *   https, http2, net, with or without `node:`), calls createServer, or imports @x2f/api or
- *   @x2f/relay (both load fastify); or its package.json depends on any of them.
+ *   @x2f/relay (both load fastify); or its package.json depends on any of them;
+ * - any file in apps/* or packages/* imports the local demo stack (`@x2f/demo` or a path into
+ *   `tools/demo`; see docs/demo.md), or a package.json there depends on `@x2f/demo`: the demo's
+ *   regtest-only code, faucet and throwaway secrets never reach a product build.
  *
  * Plan 4 Task 11 (the moderation internal API) makes two exceptions, and no other: the one file
  * `apps/moderation/src/internal/server.ts` may import `node:http` and call createServer, because it
@@ -30,7 +33,7 @@ export interface Violation {
   line: number;
 }
 
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.vite', 'coverage']);
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-demo', 'build', '.vite', 'coverage']);
 const SCANNED = /\.(?:[cm]?[jt]sx?|json|html)$/;
 
 const FORBIDDEN_IN_API_AND_WEB: Array<[string, RegExp]> = [
@@ -52,6 +55,9 @@ const IDENTITY_MAKER = 'apps/web/src/escrow/worker.ts';
 const SERVER_MODULE = /^(?:fastify(?:\/.*)?|@fastify\/.+|(?:node:)?(?:http|https|http2|net)|@x2f\/(?:api|relay)(?:\/.*)?)$/;
 /** `from '<m>'`, `import '<m>'`, `import('<m>')`, `require('<m>')`. */
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"])([^'"]+)\1/g;
+
+/** A specifier that reaches the demo stack: the package, or any relative or absolute path into tools/demo. */
+const DEMO_MODULE = /^(?:@x2f\/demo(?:\/.*)?|(?:.*\/)?tools\/demo(?:\/.*)?)$/;
 
 async function* files(dir: string): AsyncGenerator<string> {
   let entries;
@@ -124,6 +130,31 @@ export async function scanSeparation(root: string): Promise<Violation[]> {
     }
     const cs = /\bcreateServer\s*\(/.exec(text);
     if (cs) out.push({ file: relative(root, f), rule: 'apps/moderation must not create a server', line: lineOf(text, cs.index) });
+  }
+  for (const top of ['apps', 'packages']) {
+    for await (const f of files(join(root, top))) {
+      const text = await readFile(f, 'utf8');
+      const rel = relative(root, f);
+      if (f.endsWith('package.json')) {
+        let pkg: Record<string, unknown> = {};
+        try {
+          pkg = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          continue; // reported above for apps/moderation; other package.json files are npm's to reject
+        }
+        for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+          const deps = pkg[field];
+          if (typeof deps === 'object' && deps !== null && '@x2f/demo' in deps) {
+            out.push({ file: rel, rule: `${top}/* must not depend on @x2f/demo`, line: lineOf(text, text.indexOf('"@x2f/demo"')) });
+          }
+        }
+        continue;
+      }
+      for (const m of text.matchAll(SPECIFIER)) {
+        const spec = m[2] ?? '';
+        if (DEMO_MODULE.test(spec)) out.push({ file: rel, rule: `${top}/* must not import the demo stack (${spec})`, line: lineOf(text, m.index ?? 0) });
+      }
+    }
   }
   return out;
 }

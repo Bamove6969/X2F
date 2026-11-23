@@ -176,9 +176,44 @@ describe('S-014: only a strong password is accepted', () => {
   });
 });
 
-// Port of the review of second-signup-r3 (B1, M1, M2) to main's ASCII display names (lead call
-// 18 Nov): the review's attack names, at the API.
-describe('review B1, M1, M2: invisible characters and staff look-alikes', () => {
+// Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
+describe('signup round 3: display names with Unicode letters, spaces and common symbols', () => {
+  it('signs up as "Cash$ Ölaf  " (stored as normalised), and the name is found again by any case', async () => {
+    const b = new Browser(app);
+    const shown = `Cash$ Ölaf${n++}`;
+    const res = await b.post('/v1/register/password', {
+      displayName: `  ${shown.replace(' ', '   ')} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
+    expect(rows).toEqual([{ display_name: shown, display_key: shown.toLowerCase() }]);
+    // Someone else with the same name in another case is refused as taken.
+    const twin = await new Browser(app).post('/v1/register/password', {
+      displayName: shown.toUpperCase(), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(twin.statusCode).toBe(409);
+  });
+
+  it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (displayName) => {
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira${n++}` });
+    const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
+  });
+});
+
+// Review of third-signup-r3 (16 Nov 2026): the review's attack names, at the API.
+describe('signup round 3 review: invisible characters and staff look-alikes', () => {
   const reg = (displayName: string) => new Browser(app).post('/v1/register/password', {
     displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
@@ -198,27 +233,32 @@ describe('review B1, M1, M2: invisible characters and staff look-alikes', () => 
     }
   });
 
-  it('M1/M2: a staff name with "_", "-" or no dot for its dot, or 1 for its i, is reserved; with a dotless i or a comma it is refused', async () => {
+  it('M1/M2: a staff name with a dotless i, a comma or a space for its dot, and "Admın Desk", are reserved', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira.K${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('.', '_'), s.replace('.', '-'), s.replace('.', ''), s.replace('i', '1').replace('.', '_')]) {
+    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', ' '), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
       const res = await reg(attack);
       expect(res.statusCode, attack).toBe(400);
-      expect(res.json(), attack).toEqual({ error: 'display-name-reserved' });
+      expect(res.json()).toEqual({ error: 'display-name-reserved' });
     }
-    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', ' '), s.replace('M', 'ᴍ'), 'Admın_Desk']) {
-      const res = await reg(attack);
-      expect(res.statusCode, attack).toBe(400);
-      expect(res.json(), attack).toEqual({ error: 'display-name-invalid' });
-    }
+    const adm = await reg('Admın Desk');
+    expect(adm.statusCode, adm.body).toBe(400);
+    expect(adm.json()).toEqual({ error: 'display-name-reserved' });
   });
 
   it('M2: a team member name is held to the same staff comparison', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.L${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('.', '_'), s.replace('.', '-'), s.replace('.', '')]) {
+    for (const attack of [s.replace('.', ','), s.replace('.', ' '), s.replace('i', 'ı')]) {
       await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });
     }
     await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
   });
+});
+
+it('migration 800 (610 on wip/third-demo-r3): no database check compares display_key with lower(display_name) any more', async () => {
+  const { rows } = await deps.db.query(
+    `select conname from pg_constraint where conrelid in ('accounts'::regclass, 'team_members'::regclass) and pg_get_constraintdef(oid) like '%lower(display_name)%'`,
+  );
+  expect(rows).toEqual([]);
 });

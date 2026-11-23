@@ -80,8 +80,8 @@ export async function trustedDevice(deps: Pick<Deps, 'db' | 'clock' | 'config'>,
 
 /**
  * A confirm token for `action`, minted straight into the table for the session behind `cookies`
- * (as a PGP confirm would). For tests whose subject is not the confirm step itself (brought from
- * sign-up v2 with the 16 Nov 2026 login-method rules).
+ * (as a PGP confirm would). For tests whose subject is not the confirm step itself, now that the
+ * sign-up window lets a method be added but never replaced or doubled (review M1, 12 Nov 2026).
  */
 export async function confirmTokenFor(deps: Pick<Deps, 'db' | 'clock'>, cookies: Record<string, string>, action: ConfirmAction): Promise<string> {
   const { rows } = await deps.db.query<{ id: string; account_id: string }>('select id, account_id from sessions where token_hash = $1', [

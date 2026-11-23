@@ -19,6 +19,7 @@ import { isExpired, loginCantDo, refusalText } from './refusals.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 import { HelpLinks } from '../../ui/HelpLinks.js';
 
 /**
@@ -275,10 +276,11 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
           <label className="x2f-label" htmlFor="pgp-key">
             Your PGP public key
           </label>
+          {/* Owner demo note (12 Nov 2026, /login): the same width, much taller, so the whole key shows. */}
           <textarea
-            className="x2f-input x2f-textarea"
+            className="x2f-input x2f-textarea x2f-textarea--tall"
             id="pgp-key"
-            rows={6}
+            rows={18}
             autoComplete="off"
             spellCheck={false}
             value={publicKey}
@@ -475,10 +477,7 @@ function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
         <label className="x2f-label" htmlFor="login-password">
           Password
         </label>
-        <input
-          className="x2f-input"
-          id="login-password"
-          type="password"
+        <PasswordInput id="login-password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

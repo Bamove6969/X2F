@@ -65,14 +65,16 @@ async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' } =
   return { id, username, b };
 }
 
-async function enrolStart(b: Browser) {
-  const res = await b.post('/v1/account/totp/start', {});
+/** `replacing`: the account already has TOTP, so even the sign-up window needs a confirm token (review M1). */
+async function enrolStart(b: Browser, o: { replacing?: boolean } = {}) {
+  const confirmToken = o.replacing ? await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'totp' }) : undefined;
+  const res = await b.post('/v1/account/totp/start', confirmToken !== undefined ? { confirmToken } : {});
   expect(res.statusCode).toBe(200);
   return res.json() as { challengeId: string; otpauthUri: string; secret: string };
 }
 
-async function enrol(b: Browser): Promise<string> {
-  const s = await enrolStart(b);
+async function enrol(b: Browser, o: { replacing?: boolean } = {}): Promise<string> {
+  const s = await enrolStart(b, o);
   const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
   expect(res.statusCode).toBe(200);
   return s.secret;
@@ -126,12 +128,12 @@ describe('TOTP enrolment', () => {
     const again = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
     expect(again.json()).toEqual({ error: 'challenge-expired' });
 
-    const late = await enrolStart(b);
+    const late = await enrolStart(b, { replacing: true });
     setNow(at(5 * 60_000));
     const expired = await b.post('/v1/account/totp/finish', { challengeId: late.challengeId, code: codeAt(late.secret, now) });
     expect(expired.json()).toEqual({ error: 'challenge-expired' });
 
-    const s2 = await enrolStart(b);
+    const s2 = await enrolStart(b, { replacing: true });
     const other = await trader();
     const res = await other.b.post('/v1/account/totp/finish', { challengeId: s2.challengeId, code: codeAt(s2.secret, now) });
     expect(res.statusCode).toBe(400);
@@ -565,7 +567,7 @@ describe('no patterns in TOTP secrets (R9)', () => {
     const s2 = await enrol(b2);
     expect(s2).not.toBe(s1);
     setNow(at(STEP_MS));
-    expect(await enrol(b2)).not.toBe(s2);
+    expect(await enrol(b2, { replacing: true })).not.toBe(s2);
   });
 });
 

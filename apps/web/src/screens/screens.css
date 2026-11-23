@@ -76,7 +76,40 @@
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 17px;
+}
+
+/* Signup round 3: a password field with its 44 px show/hide button inside the field's right edge. */
+.x2f-password {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.x2f-password__input.x2f-input {
+  padding-right: 52px;
+}
+
+.x2f-password__eye {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--x2f-radius-sm);
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  cursor: pointer;
+}
+
+.x2f-password__eye:hover {
+  color: var(--x2f-ink);
 }
 
 /* The system's focus ring is ink, never orange (design review X3). */
@@ -93,7 +126,12 @@ textarea.x2f-input {
 .x2f-textarea {
   resize: vertical;
   font-family: var(--x2f-font-mono);
-  font-size: 13px;
+  font-size: 14px;
+}
+
+/* A box for a whole pasted PGP key (owner demo note, 12 Nov 2026, /login: "much bigger" top to bottom). */
+textarea.x2f-textarea--tall {
+  min-height: max(320px, 45dvh);
 }
 
 .x2f-select {
@@ -105,7 +143,7 @@ textarea.x2f-input {
   background: var(--x2f-surface);
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-pre {
@@ -118,14 +156,14 @@ textarea.x2f-input {
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: var(--x2f-font-mono);
-  font-size: 12px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
 .x2f-note {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -151,7 +189,7 @@ textarea.x2f-input {
 
 .x2f-error {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--x2f-danger);
 }
 
@@ -161,9 +199,30 @@ textarea.x2f-input {
   border-radius: var(--x2f-radius-sm);
   background: var(--x2f-surface-raised);
   font-family: var(--x2f-font-mono);
-  font-size: 16px;
+  font-size: 17px;
   letter-spacing: 0.08em;
   word-break: break-all;
+}
+
+/* Signup round 3: the authenticator secret in groups of four (the gap is visual only). */
+.x2f-secret__group {
+  display: inline-block;
+  margin-inline-end: 0.6em;
+}
+
+.x2f-totp-link {
+  text-decoration: none;
+}
+
+/* Signup round 3: the authenticator app's success state (owner: "it should turn green"). */
+.x2f-success {
+  margin: 0;
+  padding: var(--x2f-space-3);
+  border: 1px solid var(--x2f-good);
+  border-radius: var(--x2f-radius-sm);
+  color: var(--x2f-good);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 /* Cards group the sections of the Security screen. */
@@ -217,7 +276,7 @@ textarea.x2f-input {
 
 .x2f-list__time {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--x2f-ink-muted);
 }
 
@@ -249,7 +308,7 @@ textarea.x2f-input {
 
 .x2f-codes__item {
   font-family: var(--x2f-font-mono);
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0.04em;
 }
 
@@ -284,7 +343,7 @@ textarea.x2f-input {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-change__before {
@@ -298,7 +357,7 @@ textarea.x2f-input {
 }
 
 .x2f-change__k {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -313,7 +372,7 @@ textarea.x2f-input {
   padding: 12px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--x2f-caution) 30%, transparent);
   background: color-mix(in srgb, var(--x2f-caution) 12%, var(--x2f-surface));
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-changes-banner p {
@@ -337,7 +396,7 @@ textarea.x2f-input {
 
 /* Maintenance: the owner's signature under the message (design 7 Nov). */
 [data-screen='maintenance'] .x2f-meta {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }

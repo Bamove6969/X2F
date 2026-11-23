@@ -10,9 +10,33 @@ import type { RegisterPgpStart, SetupError, TermsAcceptance } from './register.j
 import './setup.css';
 
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
+/**
+ * What can be ticked on the login step (owner demo notes, 12 Nov 2026): the four login methods and
+ * an authenticator app, which is a password's second step (TOTP alone never logs in).
+ */
+export type SignupMethod = LoginMethod | 'totp';
+/**
+ * The order the ticked methods are set up in, one after another (owner, 12 Nov 2026: "it will take
+ * them to the next one of their selected security options"). The strong ones first, so the account
+ * is made with the strongest one ticked; the authenticator app after the password it belongs to.
+ */
+export const SIGNUP_ORDER: readonly SignupMethod[] = ['pgp', 'security-key', 'passkey', 'password', 'totp'];
 /** No authenticator app: it is no backup login (design build gaps Job 1). */
 export type BackupChoice = 'security-key' | 'pgp' | 'recovery-codes';
-export type Step = '' | 'name' | 'display-name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
+export type Step =
+  | ''
+  | 'name'
+  | 'display-name'
+  | 'login'
+  | 'pgp-key'
+  | 'pgp-code'
+  | 'password'
+  | 'security-key'
+  | 'passkey'
+  | 'authenticator'
+  | 'backup'
+  | 'wallet'
+  | 'welcome';
 
 export interface SetupState {
   /**
@@ -22,11 +46,22 @@ export interface SetupState {
   terms: TermsAcceptance | null;
   displayName: string;
   loginName: string;
+  /** The method the account was made with (the first ticked one in SIGNUP_ORDER). */
   method: LoginMethod;
+  /** Every method ticked on the login step, in SIGNUP_ORDER. */
+  methods: SignupMethod[];
+  /** The ticked methods set up so far. */
+  done: SignupMethod[];
   publicKey: string;
   challenge: RegisterPgpStart | null;
   registered: boolean;
   backup: BackupChoice | null;
+  /**
+   * The recovery code made on the backup step, kept in this flow's memory only (never the URL,
+   * storage or logs) so the step shows the same code again (owner, 12 Nov 2026: "If they hit back
+   * their code will be the same"). The server keeps only its hash.
+   */
+  recoveryCode: string | null;
   wallet: { app: WalletApp; addressEnd: string } | null;
 }
 
@@ -35,12 +70,38 @@ export const INITIAL: SetupState = {
   displayName: '',
   loginName: '',
   method: 'pgp',
+  methods: ['pgp'],
+  done: [],
   publicKey: '',
   challenge: null,
   registered: false,
   backup: null,
+  recoveryCode: null,
   wallet: null,
 };
+
+/** The step that sets up `m`. */
+export function stepOf(m: SignupMethod): Step {
+  if (m === 'pgp') return 'pgp-key';
+  if (m === 'totp') return 'authenticator';
+  return m;
+}
+
+/** The step after the ones done: the next ticked method not set up yet, else the recovery code. */
+export function nextStep(state: Pick<SetupState, 'methods' | 'done'>): Step {
+  const next = SIGNUP_ORDER.find((m) => state.methods.includes(m) && !state.done.includes(m));
+  return next === undefined ? 'backup' : stepOf(next);
+}
+
+/**
+ * Marks `m` set up and goes on to the next ticked method or the recovery code, with `replace`
+ * (Back never offers a step that is done).
+ */
+export function finishMethod(api: Pick<SetupApi, 'state' | 'update' | 'go'>, m: SignupMethod, patch: Partial<SetupState> = {}): void {
+  const done = api.state.done.includes(m) ? api.state.done : [...api.state.done, m];
+  api.update({ ...patch, done });
+  api.go(nextStep({ methods: api.state.methods, done }), { replace: true });
+}
 
 export interface SetupApi {
   state: SetupState;

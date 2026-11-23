@@ -46,7 +46,8 @@ const LABEL = 'Browser on Linux';
  * chat membership design tasks 4 and 6: the chat key record and the counterparty's fallback grant, called by the chat
  * engine through apps/web/src/chat/http.ts like the other /v1/chats routes; D-005: My trades' list, read by
  * apps/web/src/screens/trades/api.ts; Plan 4 Task 27: the ban notice, read by
- * apps/web/src/screens/account/AccountBanned.tsx). Any other new route still needs a client method.
+ * apps/web/src/screens/account/AccountBanned.tsx; sign-up v2, 12 Nov 2026: X2F's signing key as a file to import, a
+ * plain download link on the PGP code step). Any other new route still needs a client method.
  * Param names are spelled as the route tree reports them (srv.serverRoutes): the proof stack's
  * proofs/:id and the blur check's proofs/:proofId share one node, so all three of those routes read
  * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
@@ -56,6 +57,7 @@ const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/notes/:displayName|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
+  'GET /.well-known/x2f-signing-key.asc',
   'GET /v1/account/badges',
   // Plan 4 Task 27: the ban notice's own read, apps/web/src/screens/account/AccountBanned.tsx.
   'GET /v1/account/ban',

@@ -17,7 +17,11 @@
     "audit": "npm audit --omit=dev",
     "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --config tools/semgrep --error --metrics=off packages apps tools",
     "separation-check": "tsx tools/separation-check.ts",
-    "check": "bash tools/check.sh"
+    "check": "bash tools/check.sh",
+    "demo": "X2F_DEMO=1 tsx tools/demo/demo.ts",
+    "demo:stop": "tsx tools/demo/stop.ts",
+    "demo:code": "tsx tools/demo/codes.ts",
+    "demo:reply": "tsx tools/demo/reply.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.1",

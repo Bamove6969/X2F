@@ -18,6 +18,7 @@ import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
 import { refusalText } from './refusals.js';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 
 type Resolver = { resolve: (token: string) => void; reject: (reason: unknown) => void };
 
@@ -235,10 +236,7 @@ export function ConfirmMethods({
             <label className="x2f-label" htmlFor="confirm-password">
               Your password
             </label>
-            <input
-              className="x2f-input"
-              id="confirm-password"
-              type="password"
+            <PasswordInput id="confirm-password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

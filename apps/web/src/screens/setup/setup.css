@@ -66,13 +66,13 @@
 .x2f-start__title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .x2f-start__step {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -93,7 +93,7 @@
 }
 
 .x2f-start__time {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -126,7 +126,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   font-weight: 400;
   letter-spacing: normal;
@@ -142,9 +142,67 @@
 
 .x2f-start .x2f-textarea {
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   resize: none;
+}
+
+/*
+ * The public key box (owner demo note, 12 Nov 2026, /setup/pgp-key: "lots of screen real estate
+ * here so make the box MUCH wider so they can see their key fit"): the column's full width and
+ * about half the screen's height, so a whole key shows.
+ */
+.x2f-start .x2f-textarea--key {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: max(320px, 48dvh);
+  font-family: var(--x2f-font-mono);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+/* The recovery code typed back unseen: red until it matches, green when it does (owner, 12 Nov 2026). */
+.x2f-start__typeback {
+  font-family: var(--x2f-font-mono);
+  letter-spacing: 0.02em;
+}
+
+.x2f-start__typeback[data-match='no'] {
+  border-color: var(--x2f-danger);
+  outline-color: var(--x2f-danger);
+  color: var(--x2f-danger);
+}
+
+.x2f-start__typeback[data-match='yes'] {
+  border-color: var(--x2f-good);
+  outline-color: var(--x2f-good);
+  color: var(--x2f-good);
+}
+
+.x2f-start__match {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-start__match[data-tone='no'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__match[data-tone='yes'] {
+  color: var(--x2f-good);
+}
+
+/* The 64-symbol recovery code: four groups to a row. */
+.x2f-start .x2f-codes--long {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: var(--x2f-space-3);
+}
+
+.x2f-start .x2f-codes--long .x2f-codes__item {
+  font-size: 17px;
+  text-align: center;
 }
 
 .x2f-start__name,
@@ -160,7 +218,7 @@
   border-radius: var(--x2f-radius-sm);
   background: var(--x2f-surface);
   color: var(--x2f-ink-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 17px;
 }
 
@@ -169,7 +227,7 @@
   padding: 10px 12px;
   border: 1px solid var(--x2f-caution);
   border-radius: var(--x2f-radius-sm);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -178,7 +236,7 @@
   padding: 12px 14px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -190,7 +248,7 @@
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
 }
 
@@ -200,9 +258,14 @@
   font-size: 18px;
 }
 
+/* Owner 16 Nov 2026 (fonts D + sizing): the orange label is bigger and bold; the button is not. */
+.x2f-start__foot .x2f-button--primary {
+  font-size: clamp(17px, calc(13px + 1.8vw), 20px);
+}
+
 .x2f-start__foot .x2f-button--quiet {
   min-height: 44px;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .x2f-start__buttons {
@@ -227,21 +290,21 @@
 
 .x2f-start__lead {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-start__help {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-start__small {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -263,9 +326,40 @@
   background: transparent;
   color: var(--x2f-monero-ink);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* A text button standing on its own (not inside a sentence): a 44 px tap target (lead call, 12 Nov 2026). */
+.x2f-start__textbutton--tap {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* X2F's signing key on the PGP code step. */
+.x2f-start__signing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: 12px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-start__signing-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-start__signing-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 44px;
+  color: var(--x2f-monero-ink);
 }
 
 .x2f-start__textbutton:hover {
@@ -295,9 +389,63 @@
   cursor: pointer;
 }
 
-.x2f-start__choice[aria-checked='true'] {
+.x2f-start__choice[aria-checked='true'],
+.x2f-start__choice[data-checked='true'] {
   border-color: var(--x2f-ink);
   background: var(--x2f-surface-raised);
+}
+
+/* The login step's checkboxes (owner demo notes, 12 Nov 2026: tick every method wanted). */
+.x2f-start__choice--check:focus-within {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-start__choice--check[data-disabled='true'] {
+  cursor: default;
+}
+
+.x2f-start__choice--check[data-disabled='true'] .x2f-start__choice-name {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__tick {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+}
+
+/*
+ * The strength words (owner, 12 Nov 2026: "strong in green letters"; lead call: its own green
+ * token, --x2f-good). Medium and Weak take the caution and danger colours (for design to confirm).
+ */
+.x2f-start__strength {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.x2f-start__strength[data-strength='strong'] {
+  color: var(--x2f-good);
+}
+
+.x2f-start__strength[data-strength='medium'] {
+  color: var(--x2f-caution);
+}
+
+.x2f-start__strength[data-strength='weak'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__choice-warn {
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+.x2f-start__choice-needs {
+  font-style: italic;
 }
 
 .x2f-start__choice-head {
@@ -313,11 +461,11 @@
 }
 
 .x2f-start__option .x2f-start__choice-name {
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-start__option .x2f-start__choice-desc {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -326,13 +474,13 @@
   border-radius: var(--x2f-radius-pill);
   background: var(--x2f-surface-raised);
   color: var(--x2f-escrow);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .x2f-start__choice-desc,
 .x2f-start__choice-later {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
@@ -399,7 +547,7 @@
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
 }
 
@@ -414,7 +562,7 @@
   padding: 10px 12px;
   border: 1px solid var(--x2f-caution);
   border-radius: var(--x2f-radius-sm);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -426,18 +574,18 @@
   padding: 14px var(--x2f-space-4);
   border: 1px solid var(--x2f-escrow);
   border-radius: var(--x2f-radius-md);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-start__facts .x2f-start__small {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-start__mono {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -463,7 +611,7 @@
   gap: 6px;
   margin: 0;
   padding-left: 20px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
@@ -497,6 +645,23 @@
   color: var(--x2f-escrow);
 }
 
+/* A security key just added (owner 16 Nov 2026): the step turns green until Continue. */
+.x2f-start__keydone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-3);
+  border: 1px solid color-mix(in srgb, var(--x2f-escrow) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
+}
+
+.x2f-start__keyname {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The username's live check (SetupUsername): taken, or not checked right now. */
 .x2f-start__status[data-tone='danger'] {
   color: var(--x2f-danger);
@@ -515,7 +680,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-start__rule {
@@ -542,7 +707,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-start__meter-bars {
@@ -590,7 +755,7 @@
   padding: 12px 14px 12px 32px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -599,7 +764,7 @@
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .x2f-check .x2f-start__textbutton {
@@ -615,14 +780,14 @@
   border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
 .x2f-terms__note {
   margin: 0 0 12px;
   color: var(--x2f-caution);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-terms__section {
@@ -631,7 +796,7 @@
 
 .x2f-terms__heading {
   margin: 0 0 6px;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
 }
 
@@ -640,10 +805,20 @@
   color: var(--x2f-ink-muted);
 }
 
+.x2f-terms__bullets {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-terms__bullets li {
+  margin-bottom: 4px;
+}
+
 .x2f-terms__end {
   margin: 0;
   color: var(--x2f-ink-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .x2f-start--fit .x2f-start__main {
@@ -655,8 +830,14 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
+}
+
+/* A tick box whose whole row is the tap target (44 px tall), as on the recovery code's screen A. */
+.x2f-check--tap {
+  align-items: center;
+  min-height: 44px;
 }
 
 .x2f-check input {
@@ -685,7 +866,7 @@
 .x2f-sign__help {
   margin: 0;
   color: var(--x2f-ink-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
 }
 
@@ -722,7 +903,7 @@
   bottom: 4px;
   left: 0;
   color: #566070;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
 }
 
@@ -734,7 +915,7 @@
 }
 
 .x2f-sign__actions .x2f-start__textbutton {
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .x2f-sign__actions .x2f-start__textbutton:disabled {
@@ -794,7 +975,7 @@
   gap: 12px;
   padding: 14px 0;
   border-bottom: 1px solid var(--x2f-surface-raised);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .x2f-welcome__key,
@@ -821,7 +1002,7 @@
   gap: 16px;
   padding: 14px 0;
   border-bottom: 1px solid var(--x2f-surface-raised);
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .x2f-welcome__what {
@@ -877,7 +1058,7 @@
 }
 
 .x2f-start__preview {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
 }
 
@@ -886,7 +1067,7 @@
   align-items: center;
   gap: 6px;
   margin-right: auto;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--x2f-caution);
 }
 
@@ -914,4 +1095,73 @@
 /* SetupTerms board (S-043): the numbers in the key points are set in mono. */
 .x2f-terms__num {
   font-family: var(--x2f-font-mono);
+}
+
+/*
+ * Signup round 3 (owner's demo notes, 13 Nov 2026: "the fonts are much too small", "Bigger fonts
+ * needed here", "Bigger font"): body text on the setup screens one step bigger again; he accepts
+ * more scrolling. One step past the demo's sizes (the app's body text is 17 px there). The Terms screen is left as it is (its notes are handled on their own branch).
+ */
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__lead {
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__help,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__panel,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__choice-desc,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__choice-later,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__facts,
+.x2f-start:not([data-screen='setup-terms']) .x2f-label {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__mono,
+.x2f-start:not([data-screen='setup-terms']) .x2f-start__warn {
+  font-size: 16px;
+  line-height: 21px;
+}
+
+.x2f-start:not([data-screen='setup-terms']) .x2f-textarea--key {
+  font-size: 15px;
+}
+
+/* Signup round 3: the recovery-code reveal button's label fills the button (owner: "bigger wider font"). */
+.x2f-start .x2f-button.x2f-start__reveal {
+  width: 100%;
+  min-height: 60px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Signup round 3: the security-key step's placeholder illustration (design draws the real one). */
+.x2f-keyart {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.x2f-keyart__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-keyart__key {
+  width: 60px;
+  height: 96px;
+}
+
+.x2f-keyart__caption {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
 }

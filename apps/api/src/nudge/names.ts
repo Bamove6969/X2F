@@ -11,6 +11,13 @@ import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 export const PUBLIC_NAME = PUBLIC_NAME_COLUMN;
 export const PUBLIC_NAME_KEY = 'display_key';
 
+/**
+ * The stored key of a display name taken as is (no shape or reserved-word check): NFC, then lower
+ * case, exactly as `checkDisplayName` makes it (signup round 3: the database's lower() is not used,
+ * migration 800).
+ */
+export const displayKeyOf = (raw: string): string => raw.normalize('NFC').toLowerCase();
+
 /** An account found by its public name, case-insensitively; null for a name that is malformed or unknown. */
 export async function findByPublicName(
   db: Queryable,

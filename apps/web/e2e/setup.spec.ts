@@ -13,21 +13,31 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
-const RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`);
+/** The server's one recovery code (hold model v3), 64 symbols since the owner's demo notes (12 Nov 2026). */
+const RECOVERY_CODE = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789';
 
-/** Owner S-017: make the recovery codes, tick "I've written it down" and type back the code asked for. */
+/**
+ * Owner S-017 and demo notes (12 Nov 2026): make the recovery code, tick "I've written it down",
+ * Next, then type it back on the next screen (the code out of sight) and Next.
+ */
 async function saveRecoveryCodes(page: Page): Promise<void> {
   await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
   await page.click('[data-part="recovery-make"]');
-  const input = page.locator('#recovery-typeback');
-  const n = Number(await input.getAttribute('data-code-number'));
-  await expect(page.locator('[data-part="recovery-continue"]')).toBeDisabled();
+  await expect(page.locator('[data-part="recovery-next"]')).toBeDisabled();
   await page.check('[data-part="recovery-written"]');
-  await input.fill(RECOVERY_CODES[n - 1]!);
+  await page.click('[data-part="recovery-next"]');
+  await expect(page.locator('[data-part="recovery-continue"]')).toBeDisabled();
+  await page.fill('#recovery-typeback', RECOVERY_CODE);
   await page.click('[data-part="recovery-continue"]');
 }
 
-const TERMS_VERSION = '2026-11-12';
+/** Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP ticked first; tick only `id`. */
+async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void> {
+  await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
+  await page.check(`[data-method="${id}"] input[type="checkbox"]`);
+}
+
+const TERMS_VERSION = '2026-11-14';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -138,7 +148,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   await page.route('**/v1/account/recovery-codes', (r) => {
     record('recovery-codes', r);
     s.methods = [...s.methods, 'recovery-codes'];
-    return json({ codes: RECOVERY_CODES })(r);
+    return json({ codes: [RECOVERY_CODE] })(r);
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
@@ -244,9 +254,9 @@ for (const v of PHONES) {
     await pickNames(page, 'lumen.k', 'lumen-login-7');
 
     await expect(page).toHaveURL(/\/setup\/login\?/);
-    // PGP is first and picked by default.
-    await expect(page.locator('[role="radio"]').first()).toContainText('PGP key');
-    await expect(page.locator('[role="radio"]').first()).toHaveAttribute('aria-checked', 'true');
+    // PGP is first and picked (ticked) by default.
+    await expect(page.locator('[data-method]').first()).toContainText('PGP key');
+    await expect(page.locator('[data-method]').first().locator('input[type="checkbox"]')).toBeChecked();
     await expectParity(page, 'SetupLogin', { viewport: v });
     await page.click('[data-part="method-continue"]');
 
@@ -267,18 +277,17 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
-    // Owner S-017: the recovery codes come first and are required; then the extras are optional.
-    // The first view keeps the board's panel ("Your coins stay…"); the board is checked on the
-    // optional view after it, which is the board's own choice (parity.ts SetupBackup exceptions).
+    // Owner S-017: the recovery code is required. Lead call (12 Nov 2026): the optional "Add another
+    // backup" view is gone (the ticked login methods replace it), so the board is checked on the
+    // recovery-code view, which keeps the board's panel ("Your coins stay…"; parity.ts SetupBackup
+    // exceptions), and the code goes straight on to the wallet.
     await expect(page.locator('[data-part="recovery-make"]')).toBeVisible();
     await expect(page.getByText("Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.")).toBeVisible();
-    await saveRecoveryCodes(page);
-    await expect(page.locator('[data-part="backup-skip"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
-    // Design build gaps Job 1: no authenticator app as a backup.
-    await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
-    await expect(page.locator('[data-backup="security-key"]')).toHaveAttribute('aria-checked', 'true');
-    await page.click('[data-part="backup-skip"]');
+    await saveRecoveryCodes(page);
+    // Design build gaps Job 1: no authenticator app as a backup; lead call: no other backup offered here at all.
+    await expect(page.locator('[data-backup]')).toHaveCount(0);
+    await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
@@ -325,8 +334,8 @@ for (const v of PHONES) {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/password\?/);
 
     const setBtn = page.locator('[data-part="password-set"]');
@@ -424,8 +433,8 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   await expect(page).toHaveURL(/\/setup\/name\?/);
 
   await pickNames(page, 'lumen.k', 'lumen-login-7');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
@@ -433,7 +442,7 @@ test('the signature pad: drawn by touch, or a typed name by keyboard only; the s
   expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION, termsSignature: { kind: 'typed', name: 'Lumen K' } })]);
 });
 
-test('Mira.K_ shows exactly as typed after setup (password path, extra backup skipped)', async ({ page }) => {
+test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page }) => {
   const s = await stubApi(page);
   const urls: string[] = [];
   page.on('framenavigated', (f) => urls.push(f.url()));
@@ -441,15 +450,14 @@ test('Mira.K_ shows exactly as typed after setup (password path, extra backup sk
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
   await acceptTerms(page);
   await pickNames(page, 'Mira.K_', 'mira-signin-01');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
 
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await saveRecoveryCodes(page);
-  await page.click('[data-part="backup-skip"]');
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
 
@@ -513,8 +521,8 @@ test('a taken display name at register sends the person back to change their nam
   await page.goto('/setup');
   await acceptTerms(page);
   await pickNames(page, 'lumen.k', 'lumen-login-7');
-  await page.click('[data-method="password"]');
-  await page.click('[data-part="method-continue"]');
+  await chooseOnly(page, 'password');
+  await page.click('[data-part=\"method-continue\"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
@@ -587,11 +595,10 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.click('[data-part="pgp-verify"]');
   await page.click('[data-part="pgp-continue"]');
   await at('setup-backup');
-  // Owner S-017 (recovery codes required) knowingly overrides this test's "one tap per board" rule
-  // for this step: it needs a tap to show the codes, a tick and one code typed back before
-  // "Skip for now" appears (review S2b; confirmation asked of the owner).
+  // Owner S-017 (recovery code required) knowingly overrides this test's "one tap per board" rule
+  // for this step: it needs a tap to show the code, a tick, Next, and the code typed back (review
+  // S2b; owner demo notes 12 Nov 2026); then it goes straight on to the wallet (lead call).
   await saveRecoveryCodes(page);
-  await page.click('[data-part="backup-skip"]');
   await at('setup-wallet');
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
@@ -788,7 +795,7 @@ for (const v of PHONES) {
     await expect(page.locator('.x2f-sign__here')).toHaveText('Sign your name here with your finger or mouse. A scribble or an X is fine.');
     // Design 9 Nov (p11-15): the intro and the button's words.
     await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
-      "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
+      "Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toContainText('Start creating my account needs both the tick and your signature.');
@@ -812,8 +819,8 @@ test.describe('review fix round', () => {
     await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
   }
@@ -833,23 +840,10 @@ test.describe('review fix round', () => {
     await expect(page).toHaveURL(/\/setup\/pgp-key\?/);
   });
 
-  test('I1: a second PGP key already on another account gets its own sentence on the backup step', async ({ page }) => {
-    await stubApi(page, { signedIn: true, methods: ['pgp'] });
-    await page.route('**/v1/account/pgp/start', json({ challengeId: 'b1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
-    await page.route('**/v1/account/pgp/finish', json({ error: 'key-in-use' }, 409));
-    await page.goto(`/setup/backup?returnTo=${encodeURIComponent('/post')}`);
-    // Owner S-017: the extra backups are offered once the recovery codes are saved.
-    await saveRecoveryCodes(page);
-    await page.click('[data-backup="pgp"]');
-    await page.click('[data-part="backup-add"]');
-    await page.fill('#backup-pub', realKey);
-    await page.click('[data-part="backup-pgp-start"]');
-    await page.fill('#backup-code', '1234-5678-9ABC');
-    await page.click('[data-part="backup-pgp-finish"]');
-    await expect(page.locator('[data-part="backup-pgp"] [role="alert"]')).toHaveText(
-      'That key is already used by another X2F account. Use a different second key.',
-    );
-  });
+  // Lead call (12 Nov 2026): the optional extra backups (a second PGP key, a security key) left the
+  // backup step, so its I1 test of a second key already on another account went with them; a second
+  // PGP key is added in Settings, and that refusal stays covered by pgp.test.ts (adding a key already
+  // on another account → key-in-use at finish).
 
   test('I2: after a password sign-up, Back never reopens the sign-up steps or registers again', async ({ page }) => {
     const s = await stubApi(page);
@@ -909,8 +903,8 @@ test.describe('review fix round', () => {
     });
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="passkey"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'passkey');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', kind: 'passkey' }]);
     const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; termsSignature: unknown; deviceLabel: string; challengeId: string };
@@ -927,8 +921,8 @@ test.describe('review fix round', () => {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[data-method="passkey"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'passkey');
+    await page.click('[data-part=\"method-continue\"]');
     await expect(page.locator('[data-part="register-error"]')).toContainText('pick another way to log in');
     await expect(page).toHaveURL(/\/setup\/login\?/);
   });
@@ -958,8 +952,8 @@ test.describe('review fix round', () => {
     await page.click('[data-part="names-continue"]');
     await expect(page.locator('#display-name')).toHaveValue('lumen.k');
     await page.click('[data-part="display-continue"]');
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
+    await chooseOnly(page, 'password');
+    await page.click('[data-part=\"method-continue\"]');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await page.click('[data-part="password-set"]');
@@ -1067,7 +1061,7 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-part="wallet-error"]')).toHaveText('That is an integrated address. Paste a normal receive address from your wallet.');
   });
 
-  test('M8: the choice groups follow the radio pattern (arrow keys, one tab stop) and help text is linked', async ({ page }) => {
+  test('M8: the choice groups follow their pattern (login methods: checkboxes, one tab stop each) and help text is linked', async ({ page }) => {
     await stubApi(page);
     await page.goto('/setup');
     await expect(page.locator('[data-part="terms-tick"]')).toHaveAttribute('aria-describedby', /.+/);
@@ -1091,15 +1085,20 @@ test.describe('review fix round', () => {
     await described('display-name', 'display-name-help');
     await page.fill('#display-name', 'lumen.k');
     await page.click('[data-part="display-continue"]');
-    const radios = page.locator('[role="radiogroup"][aria-label="Login method"] [role="radio"]');
-    await expect(radios.nth(0)).toHaveAttribute('tabindex', '0');
-    await expect(radios.nth(1)).toHaveAttribute('tabindex', '-1');
-    await radios.nth(0).focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(radios.nth(1)).toHaveAttribute('aria-checked', 'true');
-    await expect(radios.nth(1)).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await page.keyboard.press('ArrowUp');
-    await expect(radios.nth(3)).toHaveAttribute('aria-checked', 'true');
+    // Owner demo notes (12 Nov 2026): the login methods are checkboxes now, each its own tab stop,
+    // ticked with Space, each linked to its description.
+    const boxes = page.locator('[role="group"][aria-label="Login methods"] input[type="checkbox"]');
+    await expect(boxes).toHaveCount(5);
+    await expect(boxes.nth(0)).toBeChecked();
+    await boxes.nth(0).focus();
+    await page.keyboard.press('Tab');
+    await expect(boxes.nth(1)).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(boxes.nth(1)).toBeChecked();
+    await expect(boxes.nth(0)).toBeChecked();
+    for (let i = 0; i < 5; i++) {
+      const d = (await boxes.nth(i).getAttribute('aria-describedby'))!;
+      await expect(page.locator(`[id="${d}"]`)).toHaveCount(1);
+    }
   });
 });

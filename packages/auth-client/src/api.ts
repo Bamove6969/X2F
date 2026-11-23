@@ -569,6 +569,8 @@ export interface AuthApi {
   cancelRecoverySession(id: string): Promise<void>;
   /** Hold model v3: `POST /v1/account/recovery-code/reveal`, once, by a full session opened after a recovery-code login. */
   revealRecoveryCode(): Promise<{ code: string }>;
+  /** `POST /v1/account/onboarding/end`: closes this session's sign-up window when sign-up ends (review M1). */
+  endOnboarding(): Promise<{ ok: true }>;
   /** Hold model v3: `GET /v1/account/hold`. */
   holdView(): Promise<HoldView>;
   /** Hold model v3: `POST /v1/account/hold/changes/submit`, exactly the drafts reviewed (409 `changes-changed` otherwise). */
@@ -813,6 +815,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
     cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
     revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
+    endOnboarding: () => post('/v1/account/onboarding/end'),
     holdView: () => get('/v1/account/hold'),
     submitHoldChanges: (b) => post('/v1/account/hold/changes/submit', b),
     approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),

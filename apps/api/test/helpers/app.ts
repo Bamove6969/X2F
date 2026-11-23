@@ -56,7 +56,8 @@ let signer: Promise<{ signer: PgpSigner; privateArmored: string }> | undefined;
 export function testSigner(): Promise<{ signer: PgpSigner; privateArmored: string }> {
   signer ??= (async () => {
     const k = await openpgp.generateKey({
-      type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'X2F test signing key' }],
+      // Signing-only, as the API requires of the official key: no encryption subkey.
+      type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'X2F test signing key' }], subkeys: [],
       date: new Date('2026-01-01T00:00:00Z'), format: 'armored',
     });
     const fingerprint = (await openpgp.readKey({ armoredKey: k.publicKey })).getFingerprint();

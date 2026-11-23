@@ -1,0 +1,18 @@
+{
+  "name": "@x2f/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DEMO ONLY: the local regtest demo stack (docs/demo.md). Never imported by apps/* or packages/*.",
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@x2f/escrow": "0.0.0",
+    "@x2f/moderation": "0.0.0",
+    "@x2f/trade": "0.0.0",
+    "libsodium-wrappers": "0.8.4",
+    "monero-ts": "0.11.16",
+    "openpgp": "6.3.2",
+    "pg": "8.23.1"
+  },
+  "devDependencies": { "@types/pg": "8.23.1" }
+}

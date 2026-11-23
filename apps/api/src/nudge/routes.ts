@@ -5,7 +5,7 @@ import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
-import { findByPublicName, PUBLIC_NAME } from './names.js';
+import { displayKeyOf, findByPublicName, PUBLIC_NAME } from './names.js';
 import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
 /**
@@ -294,14 +294,14 @@ async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { displayName } = req.params as { displayName: string };
   if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
-  // By the stored key (display_key = lower(display_name)), within my own blocks only, with no
+  // By the stored key (`displayKeyOf`, as `checkDisplayName` makes it), within my own blocks only, with no
   // name-shape or reserved-word check (review M1): a name that a later rule change would refuse
   // must still be unblockable. 404 only when no account has that name.
   const { rows } = await deps.db.query<{ found: boolean }>(
-    `with who as (select id from accounts where display_key = lower($2)),
+    `with who as (select id from accounts where display_key = $2),
           gone as (delete from account_blocks b using who where b.account_id = $1 and b.blocked_id = who.id returning 1)
      select exists (select 1 from who) as found`,
-    [req.auth.accountId, displayName],
+    [req.auth.accountId, displayKeyOf(displayName)],
   );
   if (rows[0]?.found !== true) throw new ApiError(404, 'not-found');
   return reply.code(204).send();
@@ -346,9 +346,9 @@ async function blockNoteHandler(req: FastifyRequest) {
   const note = trimmed === '' ? null : trimmed;
   const { rows } = await deps.db.query<{ note: string | null }>(
     `update account_blocks b set note = $3 from accounts a
-      where a.display_key = lower($2) and b.account_id = $1 and b.blocked_id = a.id
+      where a.display_key = $2 and b.account_id = $1 and b.blocked_id = a.id
       returning b.note`,
-    [req.auth.accountId, displayName, note],
+    [req.auth.accountId, displayKeyOf(displayName), note],
   );
   if (rows.length === 0) throw new ApiError(404, 'not-found');
   return { note: rows[0]!.note };

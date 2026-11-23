@@ -252,6 +252,8 @@ export function SellerConfirm({
               ? 'The XMR in escrow needs more confirmations before it can be released.'
               : RELEASE_IS_FINAL;
   const fiat = sums?.fiat ?? 'the payment';
+  /** The amount with its article ("the $50.05"), never "the the payment" when the amount is unknown. */
+  const theFiat = sums ? `the ${sums.fiat}` : 'the payment';
 
   return (
     <div className="x2f-release" data-screen="seller-confirm">
@@ -302,7 +304,7 @@ export function SellerConfirm({
               }}
             />
             <span>
-              I checked {firstPerson(place)} myself and the {fiat} from {method.name} is there.
+              I checked {firstPerson(place)} myself and {theFiat} from {method.name} is there.
             </span>
           </label>
         </section>

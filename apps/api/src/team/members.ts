@@ -138,7 +138,7 @@ export async function listMembers(db: Queryable, accountId: string, now: Date): 
 export async function checkMemberName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
   const r = checkDisplayName(typeof raw === 'string' ? raw : '');
   if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
-  // F4, review of second-signup-r3 M2 (ported 18 Nov): punctuation is ignored too (staffNameKey).
+  // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
   if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
