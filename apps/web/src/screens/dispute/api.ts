@@ -24,6 +24,8 @@ export interface DisputeTrade {
   /** Task 3's method profile sentence ("What is this?"), when the API has one. */
   whatItIs: string;
   amountAtomic: string;
+  /** The trade's fiat total (minor units), for the "Finish marking as paid" gate (payModel disputeNeedsFinish). */
+  fiatCents?: string;
   /** Who posted the offer: the poster pays the 1% fee, so it decides what a ruling pays out (lead review 7 Nov). */
   poster: Party;
   currency: string;
@@ -153,6 +155,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     methodId: v.methodId,
     whatItIs: methodOf(v).whatItIs,
     amountAtomic: v.amountAtomic,
+    fiatCents: v.fiatCents,
     poster: v.poster,
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,

@@ -1155,6 +1155,40 @@ describe('settling', () => {
       expect(again.statuses.some((s) => s.phase === 'error')).toBe(false);
     });
 
+    // The lead's 23 Nov flake of the test above (phase 'ready' read right after the record said
+    // done, under full-suite load): the status showed `done` only at the end of the tick, after the
+    // fresh run's payment-instructions hash check, which a slow hash here holds back on purpose.
+    it('after a refused rebind, the proven prior release shows done as soon as its record is saved, even while the instructions hash is slow', async () => {
+      const t = await boundThenGrown({ hold: true });
+      await until(() => pendingAt(t, grown) !== undefined);
+      refuseSwitch(t, grown);
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseRebindRefused === true);
+      const prior = (await t.buyer.store.load(CODE))!.releasePrior!.outcome;
+      await t.buyer.runtime.stopAll();
+      t.state.view = tradeView({ state: 'released', paidAt });
+      t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+      t.parties.landedFn = (role, o) => (role === 'buyer' && json(o.to) === json(prior.to) && o.builder === prior.builder ? 'b'.repeat(64) : null);
+      const subtle = globalThis.crypto.subtle;
+      const digest = subtle.digest.bind(subtle);
+      // Only the hash of the view's payment instructions is slow (the party's own setup is not).
+      const text = tradeView({ state: 'released', paidAt }).paymentInstructions as string;
+      const slow = vi.spyOn(subtle, 'digest').mockImplementation(async (...a: Parameters<SubtleCrypto['digest']>) => {
+        const data = a[1];
+        const bytes = data instanceof Uint8Array ? data : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer) : new Uint8Array(data as ArrayBuffer);
+        if (new TextDecoder().decode(bytes) === text) await new Promise((r) => setTimeout(r, 400));
+        return digest(...a);
+      });
+      try {
+        const again = await t.mk('buyer', { idb: t.buyer.idb });
+        await again.runtime.resumeAll();
+        await until(async () => (await again.store.load(CODE))?.intent?.done === true);
+        expect(again.last()?.phase).toBe('done');
+        expect(again.statuses.some((s) => s.phase === 'error')).toBe(false);
+      } finally {
+        slow.mockRestore();
+      }
+    });
+
     it('review M1: until the party has taken settle(grown), the status keeps the take amount as the sum and "I’ve paid" for the grown total is refused; once taken, the grown sum shows and the tap passes', async () => {
       const t = await boundThenGrown({ hold: true });
       await until(() => pendingAt(t, grown) !== undefined);

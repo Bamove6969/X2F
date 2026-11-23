@@ -30,6 +30,8 @@ export function DisputeOpen({
   now,
   onOpen,
   evidence,
+  finishFirst = false,
+  checking = false,
 }: {
   trade: DisputeTrade;
   methodName: string;
@@ -38,6 +40,14 @@ export function DisputeOpen({
   onOpen: (reason: Reason, note: string) => Promise<void>;
   /** Plan 5's "Add more evidence" (seams.tsx). */
   evidence?: ReactNode;
+  /**
+   * payModel `disputeNeedsFinish` on this device's escrow status: paid on the server, the tap not
+   * recorded here, so no fixed amount to co-sign a ruling with. The form is locked and the Finish
+   * step (in the trade room) comes first.
+   */
+  finishFirst?: boolean;
+  /** The buyer's paid trade, while this device's escrow record is still loading (DisputeScreen DEVICE_WAIT_MS): the form waits. */
+  checking?: boolean;
 }) {
   const [reason, setReason] = useState<Reason>('paid');
   const [note, setNote] = useState('');
@@ -46,12 +56,12 @@ export function DisputeOpen({
   const noteId = useId();
   const at = now();
   const entry = disputeEntry(trade, at);
-  const allowed = entry.kind === 'open';
+  const allowed = entry.kind === 'open' && !finishFirst && !checking;
   const back = `/trade/${encodeURIComponent(trade.code)}`;
   // The buyer may dispute from the trade's wait after marking paid (owner 2026-11-07 F9), often before the
   // seller's confirm window ends: the flag says it ran out only once it has.
   const timedOut =
-    trade.state === 'paid' && trade.role === 'buyer' && allowed && trade.confirmBy !== null && at.getTime() >= Date.parse(trade.confirmBy);
+    trade.state === 'paid' && trade.role === 'buyer' && entry.kind === 'open' && trade.confirmBy !== null && at.getTime() >= Date.parse(trade.confirmBy);
   const afterRefund = trade.state === 'refunded';
   const proofs = tradeProofs(trade);
 
@@ -98,7 +108,21 @@ export function DisputeOpen({
           </Link>
         </Notice>
 
-        {entry.kind === 'wait' ? (
+        {finishFirst ? (
+          // The trade room's Finish line (BuyerPay), then the way back to its button. COPY-UNSIGNED
+          <div className="dispute-stack-4" role="alert" data-part="dispute-finish-first">
+            <p className="dispute-lead">Your device hasn't recorded your payment. Finish marking as paid first, then you can open a dispute.</p>
+            <Button variant="primary" href={back}>
+              Finish marking as paid
+            </Button>
+          </div>
+        ) : checking && entry.kind === 'open' ? (
+          // COPY-UNSIGNED: a second or two while this device loads its record of the trade.
+          <p className="dispute-wait" role="status" data-part="dispute-checking">
+            <Icon name="clock" size={18} />
+            <span>Checking this trade on your device…</span>
+          </p>
+        ) : entry.kind === 'wait' ? (
           <p className="dispute-wait" role="status">
             <Icon name="clock" size={18} />
             <span>{entry.text}</span>
