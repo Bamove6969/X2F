@@ -265,6 +265,9 @@ const fromHexIdentity = (m: SealedParty['me']): Identity => ({
   boxSecret: sodium.from_hex(m.boxSecret),
 });
 
+/** Review p4t22 M2: how often the work loop runs the after-refund statement pass. */
+export const AFTER_REFUND_INTERVAL_MS = 60_000;
+
 /** The longest one call to the API's internal listener or the relay admin may take (headers and body). */
 export const LINK_FETCH_TIMEOUT_MS = 15_000;
 
@@ -784,9 +787,14 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
    * (`after-refund-statement`); a refusal is reported for the staff case view (`ruling-refused`).
    * Resolves with the trades whose statement the API took this pass.
    */
+  let afterRefundAt = -Infinity;
   const afterRefundTick = async (): Promise<string[]> => {
     const ar = gate?.afterRefund;
     if (!ar) return [];
+    // At most once a minute from the work loop (each check syncs the gate's registry first).
+    const t = now().getTime();
+    if (t - afterRefundAt < AFTER_REFUND_INTERVAL_MS) return [];
+    afterRefundAt = t;
     let codes: string[];
     try {
       codes = await ar.codes();
