@@ -141,4 +141,12 @@ describe('the rescue: a second approval on a ruling published on one tap (M1 e)'
     // The approver of round 1 can no longer take any part in the appeal.
     rule('not-eligible', () => applyDispute(next, { type: 'reply' }, senior, at(6), S));
   });
+  test('an after-refund seller-sends-xmr ruling, final and complying, can get it too (its statement needs the gate)', () => {
+    let d = newDispute({ code: 'K7M2-9QXA-4FTR-8WPN', openedBy: 'buyer', afterRefund: true, usdCents: 41_250n, limitUsdCents: LIMIT, firstResponseH: 4, now: T0 });
+    d = applyDispute(d, { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
+    d = applyDispute(d, { type: 'propose', gate: UNDER, ruling: { id: 'r1', outcome: 'seller-sends-xmr', accountAction: NONE, proposer: 'mod-1' } }, mod, at(2), S);
+    d = applyDispute(d, { type: 'window-closed' }, system, at(51), S);
+    expect(d.status).toBe('complying');
+    expect(applyDispute(d, { type: 'second-approve' }, senior, at(52), S).ruling?.approver).toBe('senior-1');
+  });
 });

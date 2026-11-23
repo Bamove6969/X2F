@@ -525,7 +525,8 @@ export function applyDispute(
   if (e.type === 'second-approve') {
     // Round 1 as the executor pays it: the current ruling, or round 1 once an appeal is open.
     const r1 = d.round === 1 ? d.ruling : d.round1;
-    const open1 = d.round === 1 ? d.status === 'published' || d.status === 'final' : d.status !== 'closed';
+    // `complying`: an after-refund seller-sends-xmr whose statement the gate refuses (review p4t22 M2).
+    const open1 = d.round === 1 ? d.status === 'published' || d.status === 'final' || d.status === 'complying' : d.status !== 'closed';
     if (!open1 || r1 === null || d.publishedAt === null || d.executedAt !== null || r1.approver !== null) return fail('wrong-state');
     if (!validAction(r1.accountAction, now)) return fail('invalid-action');
     if (!canApprove(by.role, r1.accountAction)) return fail('wrong-party');
