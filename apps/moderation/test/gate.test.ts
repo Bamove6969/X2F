@@ -29,7 +29,7 @@ import {
   type RecordedTerms,
   type StoredTap,
 } from '../src/gate/index.js';
-import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, type World } from './gateWorld.js';
+import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, tapOnNonce, type World } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
 
@@ -1549,19 +1549,66 @@ describe('review p4t22 F1: a ruling the gate authorised stays authorised when a 
     expect(await authorize(x.w, x.r1, x.taps, x.usd)).toEqual({ ok: false, reason: 'stopped' });
   });
 
-  it('only the very taps it was authorised on, for the ruling as authorised: a fresh tap by a retired key, or the stored ruling changed, is refused', async () => {
+  it('only the very taps it was authorised on: a fresh tap by a retired key, or one tap above the limit, is refused', async () => {
     const x = await authorisedRound1();
     resetSecurity(x.w, x.mod);
     await syncRegistry(x.w.api, x.w.gate, ctx());
     // The retired key tapped again for the same ruling (a new nonce the gate never bound).
     expect(await authorize(x.w, x.r1, [tapBy(x.mod, x.r1.intent('propose'))], x.usd)).toEqual({ ok: false, reason: 'revoked' });
-    // The API's stored ruling now says another outcome than the taps signed: the re-check fails,
-    // so the refusal stands as the ordinary check gave it.
-    const swapped = { ...x.r1, ruling: { ...x.r1.ruling, outcome: 'refund-to-seller' as const } };
-    expect(await authorize(x.w, swapped, x.taps, x.usd)).toEqual({ ok: false, reason: 'revoked' });
-    // Above the limit on one tap: the two-person rule (on the recorded terms) is still asked.
+    // Above the limit on one tap: the two-person rule (on the recorded terms) is still asked; the
+    // re-check fails, so the refusal stands as the ordinary check gave it.
     expect(await authorize(x.w, x.r1, x.taps, 500_000n)).toEqual({ ok: false, reason: 'revoked' });
     expect(await authorize(x.w, x.r1, x.taps, x.usd)).toEqual(x.first);
+  });
+
+  it('finding A: the outcome re-signed on the bound nonce is refused, by a removed, switched-off, reset or active signer', async () => {
+    for (const change of ['active', 'removed', 'switched-off', 'reset'] as const) {
+      const x = await authorisedRound1();
+      const row = x.w.api.staffRows.get(x.mod.id)!;
+      if (change === 'removed') (row.removed = true), (row.switchedOff = true);
+      if (change === 'switched-off') row.switchedOff = true;
+      if (change === 'reset') resetSecurity(x.w, x.mod);
+      await syncRegistry(x.w.api, x.w.gate, ctx());
+      // Same ruling id, the other outcome, signed now by the same (kept or retired) key on the nonce the gate bound.
+      const flipped = { ...x.r1, ruling: { ...x.r1.ruling, outcome: 'refund-to-seller' as const } };
+      const t = tapOnNonce(x.mod, x.r1.intent('propose', { outcome: 'refund-to-seller' }), x.taps[0]!.nonceHex);
+      expect(await authorize(x.w, flipped, [t], x.usd), change).toEqual({ ok: false, reason: change === 'active' ? 'replayed' : 'revoked' });
+      // The record of what it was authorised on is unchanged, and the honest taps still authorise it.
+      expect(await authorize(x.w, x.r1, x.taps, x.usd), change).toEqual(x.first);
+    }
+  });
+
+  it('finding A: an after-refund ruling (never in a payout record) re-signed with another outcome by a retired key is refused', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const r1 = ruling(mod, { outcome: 'seller-sends-xmr' });
+    const tap = tapBy(mod, r1.intent('propose'));
+    expect(await authorize(w, r1, [tap])).toEqual({ ok: true, settle: null });
+    resetSecurity(w, mod);
+    await syncRegistry(w.api, w.gate, ctx());
+    const flipped = { ...r1, ruling: { ...r1.ruling, outcome: 'seller-returns-fiat' as const } };
+    expect(await authorize(w, flipped, [tapOnNonce(mod, r1.intent('propose', { outcome: 'seller-returns-fiat' }), tap.nonceHex)])).toEqual({ ok: false, reason: 'revoked' });
+    expect(await authorize(w, r1, [tap])).toEqual({ ok: true, settle: null });
+  });
+
+  it('finding A: with two signers, the removed proposer re-signing alone on the bound nonce is refused', async () => {
+    const x = await authorisedRound1({ approver: true });
+    x.w.api.staffRows.get(x.mod.id)!.removed = true;
+    await syncRegistry(x.w.api, x.w.gate, ctx());
+    const flipped = { ...x.r1, ruling: { ...x.r1.ruling, outcome: 'refund-to-seller' as const } };
+    const t = tapOnNonce(x.mod, x.r1.intent('propose', { outcome: 'refund-to-seller' }), x.taps[0]!.nonceHex);
+    expect((await authorize(x.w, flipped, [t, x.taps[1]!], x.usd)).ok).toBe(false);
+    expect(await authorize(x.w, x.r1, x.taps, x.usd)).toEqual(x.first);
+  });
+
+  it('finding A: an authorised entry with no intents hash (written before it) fails closed for the re-check', async () => {
+    const x = await authorisedRound1();
+    expect(x.w.gate.rulingsSeen[x.r1.ruling.id]?.intentsSha256).toMatch(/^[0-9a-f]{64}$/);
+    delete x.w.gate.rulingsSeen[x.r1.ruling.id]!.intentsSha256;
+    x.w.api.staffRows.get(x.mod.id)!.removed = true;
+    await syncRegistry(x.w.api, x.w.gate, ctx());
+    expect(await authorize(x.w, x.r1, x.taps, x.usd)).toEqual({ ok: false, reason: 'revoked' });
   });
 
   it('retired keys never authorise a new ruling or a new round', async () => {

@@ -15,7 +15,7 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, RULING_WAIT_REPORT_MS, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
-import { BALANCE, ctx, newGate, newKey, recorded, resetSecurity, ruling, tapBy, world, type Case, type World } from './gateWorld.js';
+import { BALANCE, ctx, newGate, newKey, recorded, resetSecurity, ruling, tapBy, tapOnNonce, world, type Case, type Person, type World } from './gateWorld.js';
 import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
@@ -42,6 +42,8 @@ interface Setup {
   dir: string;
   key: Uint8Array;
   store: GateStore;
+  /** The moderator who proposed the round-1 ruling (review p4t22 F1, finding A re-signs with their key). */
+  signer: Person;
 }
 
 /** A pinned gate with a round-1 ruling by a moderator, its propose tap stored, the gate saved in a fresh dir. */
@@ -58,7 +60,7 @@ async function setup(o: { outcome?: 'release-to-buyer' | 'refund-to-seller' | 's
   const store = await openGateStore(dir, key);
   store.state = w.gate;
   await store.save();
-  return { w, c, dir, key, store };
+  return { w, c, dir, key, store, signer: mod };
 }
 
 /** The moderation signing key (MOD_SIGNING_SECRET) the executor signs its ruling statements with. */
@@ -729,6 +731,24 @@ describe('review p4t22 F1: a round 1 the gate authorised still pays once its sig
     const again = recordingParty();
     expect(await executor(s, await openGateStore(s.dir, s.key)).step(step(s, again.handle))).toBe('refused-stopped');
     expect(again.settles).toEqual([]);
+  });
+
+  it('finding A: authorised while a desk refund was armed, its moderator reset, the outcome re-signed on the bound nonce: nothing is handed', async () => {
+    for (const change of ['reset', 'active'] as const) {
+      const s = await setup({ outcome: 'release-to-buyer' });
+      const p = recordingParty();
+      expect(await executor(s).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: null } }))).toBe('desk-armed');
+      if (change === 'reset') resetSecurity(s.w, proposerOf(s));
+      // A compromised API swaps in the other outcome, signed by the (retired or active) key on the bound nonce.
+      const i = s.w.api.taps.findIndex((t) => (JSON.parse(t.intent) as { rulingId?: string }).rulingId === s.c.ruling.id);
+      s.w.api.taps[i] = tapOnNonce(s.signer, s.c.intent('propose', { outcome: 'refund-to-seller' }), s.w.api.taps[i]!.nonceHex);
+      s.w.api.rulings.set(s.c.ruling.code, { current: { ...s.c.ruling, outcome: 'refund-to-seller' }, round1: null, involved: [] });
+      const store = await openGateStore(s.dir, s.key);
+      const res = await executor(s, store).step(step(s, p.handle, { deskArmed: { kind: 'auto-refund', blocked: 'auto-refund-api-disputed' } }));
+      expect(res, change).toBe(change === 'reset' ? 'refused-revoked' : 'refused-replayed');
+      expect(p.settles, change).toEqual([]);
+      expect(store.state.executions[s.c.ruling.code], change).toBeUndefined();
+    }
   });
 
   it("F1's twin: round 1 never authorised, its moderator then reset: refused as revoked (re-proposable); an appeal decided by someone else pays", async () => {

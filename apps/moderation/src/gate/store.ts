@@ -57,6 +57,13 @@ export interface RulingSeen {
   round: 1 | 2;
   /** Who signed it (proposer, and approver when there was one), as this gate verified. R37 reads it. */
   signers: string[];
+  /**
+   * Review p4t22 F1, finding A: SHA-256 (hex) of the canonical intents it was authorised on (the
+   * proposer's, then the approver's or null). Once set, the ruling is only ever accepted again on
+   * these very intents (`replayed` otherwise), and F1's re-check of an authorised ruling needs it.
+   * Absent on a `signersOnly` entry and in an entry written before it (set on its next authorisation).
+   */
+  intentsSha256?: string;
   /** When this gate first authorised it (its own clock). */
   publishedSeenAt: string;
   firstSeenFinalAt?: string;

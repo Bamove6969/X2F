@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { normalizeTradeCode } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
@@ -59,6 +60,11 @@ const NONCE_HEX = /^(?:[0-9a-f]{2}){16,64}$/;
  * a security reset retired (`retiredCreds`). Only for reading who signed a ruling: a round 1 an
  * appeal reviews (R37), or a ruling this gate already authorised (`authorizeRuling`), never for
  * authorising anything new.
+ * Review p4t22 F1, finding B (known, accepted): a retired key may be lost or stolen, so R37 can read
+ * a round 1 its holder forged after the reset (with a compromised API presenting it as the round 1
+ * the appeal names). That only changes who counts as involved in round 1, and the log's list can
+ * only add to it; the forged round 1 is `signersOnly`, never pays, and round 2 still needs real
+ * taps by staff in good standing.
  */
 const credsOf = (g: GateState, accountId: string, pastSigner = false): { creds: PinnedCred[]; role: SignerRole } | { refused: GateRefusal } => {
   if (g.ownerAccountId !== null && accountId === g.ownerAccountId) return { creds: g.ownerCreds, role: 'owner' };
@@ -265,11 +271,12 @@ export function gateNeedsSecond(g: GateState, recorded: RecordedTerms, action: A
  *   (`bad-terms` when they do not make a payout). After-refund rulings are authorised with nothing
  *   to co-sign (their statement is the after-refund one, M2).
  * Review p4t22 F1 (lead call, owner question): a ruling this gate already authorised (in
- * `rulingsSeen` other than `signersOnly`, or named by its trade's payout record) stays authorised:
- * when a later check refuses it only for a signer's standing (`revoked`, `unknown-key`,
+ * `rulingsSeen` other than `signersOnly`, with the hash of the intents it was authorised on) stays
+ * authorised: when a later check refuses it only for a signer's standing (`revoked`, `unknown-key`,
  * `proposer-role`, `approver-role`: switched off, removed, reset or given another role since), it is
- * checked again with the very taps it was authorised on (each nonce already bound to it, the same
- * signers, past signers' keys counting, roles not asked again). The emergency stop still holds it
+ * checked again with the very taps it was authorised on (each nonce already bound to it, the very
+ * intents by their hash, the same signers, past signers' keys counting, roles not asked again).
+ * Finding A: an authorised ruling is never accepted on other intents (`replayed`), whoever signs. The emergency stop still holds it
  * (it is checked first), and so do the terms. A key retired at a security reset (`retiredCreds`) is
  * `revoked` for anything else and never authorises a new ruling or round.
  * On success the taps' nonces are bound to this ruling and the ruling is recorded in `rulingsSeen`
@@ -283,6 +290,8 @@ type Examined =
       steps: Array<{ step: 'propose' | 'approve'; accountId: string; role: SignerRole; nonceHex: string }>;
       checked: Array<Extract<TapCheck, { ok: true }> & { nonceHex: string }>;
       signers: string[];
+      /** Review p4t22 F1, finding A: the intents' hash (`RulingSeen.intentsSha256`). */
+      intentsSha256: string;
     };
 
 /**
@@ -347,7 +356,15 @@ async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'r
   if (proposer.accountId !== rul.proposer) return no('intent-mismatch');
   if (approver !== null && approver.accountId !== rul.approver) return no('intent-mismatch');
   const signers = [proposer.accountId, ...(approver !== null ? [approver.accountId] : [])];
-  if (authorised && before !== undefined && canonicalJson(before.signers) !== canonicalJson(signers)) return no('intent-mismatch');
+  // Review p4t22 F1, finding A: a tap's challenge is tapChallenge(intent, nonce), so a key can sign
+  // another intent on a nonce the gate already bound. A ruling this gate authorised is accepted again
+  // only on the very intents it was authorised on (also for a signer in good standing), and F1's
+  // re-check needs that record (an entry without it fails closed).
+  const intentOf = (s: { nonceHex: string } | null): string | null => (s === null ? null : canonicalJson(checked.find((c) => c.nonceHex === s.nonceHex)!.intent));
+  const intentsSha256 = createHash('sha256').update(canonicalJson([intentOf(proposer), intentOf(approver)])).digest('hex');
+  if (before !== undefined && before.signersOnly !== true && before.intentsSha256 !== undefined && before.intentsSha256 !== intentsSha256) return no('replayed');
+  if (authorised && (before === undefined || before.signersOnly === true || before.intentsSha256 === undefined)) return no('replayed');
+  if (authorised && canonicalJson(before!.signers) !== canonicalJson(signers)) return no('intent-mismatch');
   if (!authorised && !PROPOSERS.has(proposer.role)) return no('proposer-role');
   const needs = gateNeedsSecond(g, r.recorded, rul.accountAction);
   if (needs && approver === null) return no('needs-second');
@@ -355,22 +372,22 @@ async function examine(g: GateState, r: Pick<RulingInput, 'ruling' | 'taps' | 'r
     if (approver.accountId === proposer.accountId) return no('same-person');
     if (!authorised && !APPROVERS.has(approver.role)) return no('approver-role');
   }
-  return { ok: true, code, steps, checked, signers };
+  return { ok: true, code, steps, checked, signers, intentsSha256 };
 }
 
 /** The refusals that are about a signer's standing now, not about the ruling (review p4t22 F1). */
 const STANDING: ReadonlySet<GateRefusal> = new Set(['revoked', 'unknown-key', 'proposer-role', 'approver-role']);
 
 /**
- * Review p4t22 F1: this gate already authorised the ruling: it is in `rulingsSeen` other than for
- * its signers only (N1's `signersOnly`, never authorised), or its trade's payout record names it.
+ * Review p4t22 F1: this gate already authorised the ruling, on intents it recorded: it is in
+ * `rulingsSeen` other than for its signers only (N1's `signersOnly`, never authorised), with
+ * `intentsSha256` (finding A). A trade's payout record adds nothing: it is written only after the
+ * gate authorised that very ruling (and so recorded it here), and `forgetTrade` drops both together,
+ * never while the payout is pending. An entry written before the hash fails closed (pre-launch only).
  */
 function wasAuthorised(g: GateState, rul: GateRuling): boolean {
   const seen = typeof rul?.id === 'string' && Object.hasOwn(g.rulingsSeen, rul.id) ? g.rulingsSeen[rul.id] : undefined;
-  if (seen !== undefined) return seen.signersOnly !== true;
-  const code = typeof rul?.code === 'string' ? normalizeTradeCode(rul.code) : null;
-  const ex = code !== null && Object.hasOwn(g.executions, code) ? g.executions[code] : undefined;
-  return ex !== undefined && ex.rulingId === rul.id;
+  return seen !== undefined && seen.signersOnly !== true && seen.intentsSha256 !== undefined;
 }
 
 export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
@@ -385,7 +402,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     if (again.ok) e = again;
   }
   if (!e.ok) return e;
-  const { code, steps, checked, signers } = e;
+  const { code, steps, checked, signers, intentsSha256 } = e;
   const rul = r.ruling;
   /** Review p4t22 N1: round 1 as read for its signers only, recorded with this ruling on success. */
   let pastRound1: Extract<Examined, { ok: true }> | null = null;
@@ -441,6 +458,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     code,
     round: rul.round,
     signers,
+    // Finding A: the first intents it was authorised on stay its intents (never re-pointed).
+    intentsSha256: seen?.signersOnly !== true && seen?.intentsSha256 !== undefined ? seen.intentsSha256 : intentsSha256,
     publishedSeenAt: seen?.publishedSeenAt ?? ctx.now().toISOString(),
     ...(seen?.firstSeenFinalAt !== undefined ? { firstSeenFinalAt: seen.firstSeenFinalAt } : {}),
   };
