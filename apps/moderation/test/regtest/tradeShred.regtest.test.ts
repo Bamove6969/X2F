@@ -13,7 +13,7 @@ import type { Participants } from '@x2f/protocol';
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
 import { channelFor, escrowPlan, sweepMinimums, type AttestedTerms } from '@x2f/trade';
 import type { MoneroWalletFull } from 'monero-ts';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { escrowStore, loadParty, startModeration, walletPassword, TRADE_SHRED_TABLES, type ModerationHandle, type PartyIO } from '../../src/main.js';
 import { claimSweep } from '../../src/watcher.js';
 import { loadEscrow } from '../../src/keystore.js';
@@ -77,8 +77,17 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
     ctx.clock.now = new Date();
   });
 
+  // Each test's moderation process and escrow parties go when it ends, passed or failed: a failed
+  // assertion must not leave the instance lock held (or parties running) for the next test.
+  afterEach(async () => {
+    const m = mod;
+    mod = null;
+    await m?.stop().catch((e: unknown) => step(`moderation stop failed: ${String(e)}`));
+    for (const p of parties.splice(0)) await p.stop().catch(() => undefined);
+  });
+
   afterAll(async () => {
-    await mod?.stop();
+    await mod?.stop().catch(() => undefined);
     for (const p of parties.splice(0)) await p.stop().catch(() => undefined);
     await funder?.close();
     await ctx?.db.end();
@@ -93,6 +102,43 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
       out[t] = rows.map((r) => r.j);
     }
     return out;
+  }
+
+  /**
+   * What a shred that passes over an open trade must leave of it. Every row it keeps, exactly,
+   * except the escrow state: the trade's running moderator party re-seals that as it works (a
+   * fresh nonce on every save, its wallet blob re-encrypted by monero, its message counter and
+   * replay window moving on), so its sealed bytes and updated_at change though nothing was
+   * shredded. For that row: still exactly one, still opening under the trade's key, and its
+   * escrow (address, setup messages sent and received, release) still what it was.
+   */
+  async function keptOf(code: string): Promise<{ rows: Record<string, string[]>; escrowRows: number; escrow: PartyState | null }> {
+    const { mod_escrow_state: escrowRows = [], ...rows } = await rowsOf(code);
+    return { rows, escrowRows: escrowRows.length, escrow: await loadEscrow<PartyState>(ctx.db, ctx.keystoreKey, code) };
+  }
+
+  function expectKept(now: Awaited<ReturnType<typeof keptOf>>, before: Awaited<ReturnType<typeof keptOf>>, address: string): void {
+    expect(now.rows).toEqual(before.rows);
+    expect(before.escrowRows).toBe(1);
+    expect(now.escrowRows).toBe(1);
+    const was = before.escrow!;
+    const is = now.escrow;
+    expect(is).not.toBeNull();
+    expect(is!.v).toBe(1);
+    expect(is!.address).toBe(address);
+    expect(is!.address).toBe(was.address);
+    expect(is!.step).toBe(was.step);
+    expect(is!.release).toEqual(was.release);
+    // Its wallet's key material is still stored.
+    expect(is!.session.v).toBe(1);
+    expect(is!.session.keys.length).toBeGreaterThan(0);
+    expect(is!.session.cache.length).toBeGreaterThan(0);
+    // Nothing it sent or took in is gone or changed (a running party only adds to these).
+    for (const [k, v] of Object.entries(was.sent)) expect(is!.sent[k], `sent ${k}`).toEqual(v);
+    for (const [k, slot] of Object.entries(was.received)) {
+      for (const [role, r] of Object.entries(slot)) expect(is!.received[k]?.[role as Role]?.digest, `received ${k} from ${role}`).toBe(r!.digest);
+    }
+    expect(is!.seq).toBeGreaterThanOrEqual(was.seq);
   }
 
   async function dumpAll(): Promise<string> {
@@ -200,7 +246,7 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
 
     // The API purged A (off its list) and, lying, orders B shredded too while B is open and listed.
     net.states.delete(a.code);
-    const bBefore = await rowsOf(b.code);
+    const bBefore = await keptOf(b.code);
     net.tradeShred = [{ trade: a.code, purgedAt: ctx.clock.now.toISOString() }, { trade: b.code, purgedAt: ctx.clock.now.toISOString() }];
     expect(await mod.tradeShredTick()).toEqual([a.code]);
     expect(logs).toContain('trade-shred-held-listed');
@@ -214,12 +260,12 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
     expect(await dumpAll()).not.toContain(a.code);
 
     // B: untouched, and hidden from the list it is still kept (its party runs here).
-    expect(await rowsOf(b.code)).toEqual(bBefore);
+    expectKept(await keptOf(b.code), bBefore, bAddress);
     net.states.delete(b.code);
     net.tradeShred = [{ trade: b.code, purgedAt: ctx.clock.now.toISOString() }];
     expect(await mod.tradeShredTick()).toEqual([]);
     expect(logs).toContain('trade-shred-held-running');
-    expect(await rowsOf(b.code)).toEqual(bBefore);
+    expectKept(await keptOf(b.code), bBefore, bAddress);
 
     // What is stored for B still opens its escrow: a fresh moderator party resumed from the sealed
     // state and its R27 password shows the same address and the coins paid in.
