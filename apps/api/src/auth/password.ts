@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { passwordOnlyNow } from './setupOnly.js';
 import { checkPassword, needsStrongConfirm, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -277,7 +278,17 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
     return { status: 'second-factor' as const, pendingId, needs: ['totp'] };
   }
   // Task 16: a session now, or an approval from a logged-in device first.
-  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password'] });
+  const result = await traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password'] });
+  // Review M2: with no second method the session is setup-only (auth/setupOnly.ts), and the login says
+  // so, so the app goes straight to adding one. (TOTP was ruled out above.)
+  if (result.status === 'ok' && (await passwordOnlyLogin(deps, accountId))) return { status: 'ok' as const, setupOnly: true as const };
+  return result;
+}
+
+/** Whether a password login's account has no other login (it has no TOTP: checked before this). */
+async function passwordOnlyLogin(deps: Deps, accountId: string): Promise<boolean> {
+  const { rows } = await deps.db.query('select 1 from webauthn_credentials where account_id = $1 limit 1', [accountId]);
+  return rows.length === 0 && (await passwordOnlyNow(deps, accountId, deps.clock()));
 }
 
 async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {

@@ -214,7 +214,8 @@ describe('GET /v1/account/me', () => {
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', completedTrades: 0, methods: ['password'], hasBackup: false,
-      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
+      // Review M2: a password alone, outside the sign-up window: the session is setup-only.
+      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, setupOnly: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
       idleReminderMinutes: null,
       accountType: 'trader',

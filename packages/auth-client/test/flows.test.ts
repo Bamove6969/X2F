@@ -255,7 +255,9 @@ describe('onboarding', () => {
     });
     await own.api.logout();
     expect(apiError(await failure(own.api.newRecoveryCodes({}))).code).toBe('not-authenticated');
-    await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok' });
+    // Review M2: the password is the account's only login, so the session is setup-only (and says so).
+    await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok', setupOnly: true });
+    expect((await own.api.me()).setupOnly).toBe(true);
   });
 });
 

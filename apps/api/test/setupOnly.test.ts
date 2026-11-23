@@ -100,7 +100,9 @@ describe('review M2: a password alone gives a setup-only session', () => {
     const { b, nm } = await passwordOnly();
     setNow(new Date(now.getTime() + 31 * MIN));
     await b.post('/v1/logout');
-    const b2 = new Browser(app);
+    // The same browser (its device is trusted for the account: a new one with nothing logged in to
+    // approve it is refused, approval-unavailable, as before).
+    const b2 = b;
     const login = await b2.post('/v1/login/password', { loginName: nm.loginName, password: GOOD, deviceLabel: 'Q' });
     expect(login.statusCode, login.body).toBe(200);
     expect(login.json()).toEqual({ status: 'ok', setupOnly: true });

@@ -89,3 +89,18 @@ export async function confirmTokenFor(deps: Pick<Deps, 'db' | 'clock'>, cookies:
   ]);
   return issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId: rows[0]!.account_id, action, method: 'pgp' });
 }
+
+/**
+ * Security review of wip/lead-notes-all, M2 (owner 16 Nov 2026: a password does not stand alone):
+ * an account whose only login is a password gets a setup-only session once its sign-up window is
+ * over (auth/setupOnly.ts). Tests of a username-and-password LOGIN (hold model v3's weak session,
+ * device approval) give the account a second method it never uses: a security key with a key
+ * nobody holds. The login it makes is still a password alone, so it is still weak.
+ */
+export async function addUnusedSecurityKey(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  await deps.db.query(
+    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', 'Unused key', $4)`,
+    [accountId, randomBytes(32), randomBytes(77), deps.clock()],
+  );
+}

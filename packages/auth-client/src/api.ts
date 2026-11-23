@@ -174,7 +174,8 @@ export interface AuthenticationChallenge {
  * A password login: a session, (TOTP enrolled) a pending login for `loginSecondFactor`, or (Task 16)
  * a wait for a logged-in device to approve this one (`pollLoginApproval`).
  */
-export type PasswordLoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: ['totp'] } | ApprovalWait;
+/** Review M2: `setupOnly` when the account's only login is the password: the session may only add a second method. */
+export type PasswordLoginResult = { status: 'ok'; setupOnly?: true } | { status: 'second-factor'; pendingId: string; needs: ['totp'] } | ApprovalWait;
 
 /**
  * Task 16: the new device's poll. `ok`: the session has started (`loggedOut` names the devices
@@ -231,6 +232,12 @@ export interface AccountOverview {
   hasBackup: boolean;
   suggestions: Suggestion[];
   termsCurrent: boolean;
+  /**
+   * Review M2: this session is setup-only (the account's only login is a password, its sign-up
+   * window over): only adding a second method, the recovery code and logging out work. Optional:
+   * older API builds do not send it.
+   */
+  setupOnly?: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
   /** Hold model v3: the account's waiting changes (the banner), else null. Optional: older API builds do not send it. */
