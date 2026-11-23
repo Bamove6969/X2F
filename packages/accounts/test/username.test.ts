@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { LOOK_ALIKE_LETTERS, checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, lookAlikeKey, staffNameKey } from '@x2f/accounts';
+import { LOOK_ALIKE_LETTERS, checkDisplayName, displayKeyOf, checkLoginName, checkNames, checkNewDisplayName, lookAlikeKey, staffNameKey } from '@x2f/accounts';
 
 describe('checkDisplayName', () => {
   test('accepts a valid name, keeps it as typed, lower-cases the key', () => {
@@ -433,5 +433,37 @@ describe('review M1: the UTS #39 skeleton and the highly restrictive script rule
     ['Hangul with Hiragana', '이민호さくら'],
   ])('refused, scripts mixed beyond the highly restrictive level: %s', (_what, name) => {
     expect(checkDisplayName(name)).toEqual({ ok: false, reason: 'characters' });
+  });
+});
+
+// Security review of wip/lead-notes-all, L3 and L4: a display name's key is a full case fold
+// (NFKC_Casefold's effect: NFKC, upper then lower case, final sigma as sigma), so names that differ
+// only by case or a compatibility form are one name; displayKeyOf (a stored name looked up as is)
+// trims and collapses spaces as checkDisplayName does.
+describe('review L3/L4: the display key is a full case fold', () => {
+  test.each([
+    ['ΑΒΓΔΣ', 'αβγδσ'],
+    ['αβγδς', 'αβγδσ'],
+    ['ﬀabcd', 'ffabcd'],
+    ['Straße', 'STRASSE'],
+    ['Ǆabcd', 'ǆabcd'],
+    ['ǅabcd', 'DŽABCD'],
+  ])('%s and %s have one key', (a, b) => {
+    const ka = checkDisplayName(a);
+    const kb = checkDisplayName(b);
+    expect(ka.ok && kb.ok).toBe(true);
+    expect((ka as { key: string }).key).toBe((kb as { key: string }).key);
+    expect(displayKeyOf(a)).toBe((ka as { key: string }).key);
+  });
+
+  test('the key is NFKC, upper then lower case, with final sigma as sigma', () => {
+    expect(displayKeyOf('ΑΒΓΔΣ')).toBe('αβγδσ');
+    expect(displayKeyOf('ﬀabcd')).toBe('ffabcd');
+    expect(displayKeyOf('Straße')).toBe('strasse');
+  });
+
+  test('displayKeyOf trims and collapses spaces as checkDisplayName does (L4)', () => {
+    expect(displayKeyOf('  Bob   Smith ')).toBe('bob smith');
+    expect(displayKeyOf('  Bob   Smith ')).toBe((checkDisplayName('Bob Smith') as { key: string }).key);
   });
 });

@@ -311,3 +311,35 @@ it('migration 800 (610 on wip/third-demo-r3): no database check compares display
   );
   expect(rows).toEqual([]);
 });
+
+// Security review of wip/lead-notes-all, L3: the display key became a full case fold
+// (@x2f/accounts displayKeyOf). Migration 810 recomputes every stored key with the same fold in SQL
+// (display_key_fold, ICU case mapping), and refuses loudly (rekey_display_names raises) when two
+// names would then share a key.
+describe('review L3: migration 810 refolds stored display keys', () => {
+  const CORPUS = ['ΑΒΓΔΣ', 'αβγδς', 'Straße', 'STRASSE', 'ﬀabcd', 'Ǆabcd', 'ǅabcd', 'İstanbul', 'Ꮇira.Ꮶ', 'Ｆｕｌｌname', 'Ἀθηνᾶ', '東京の取引者', 'Zoë-Ann', 'Ölaf_Ünal', 'Привет мир', '  Bob   Smith ', 'Satoshi.N'];
+
+  it('the SQL fold equals the app fold on every name', async () => {
+    const { displayKeyOf } = await import('@x2f/accounts');
+    for (const name of CORPUS) {
+      const { rows } = await deps.db.query<{ k: string }>('select display_key_fold($1) as k', [name]);
+      expect(rows[0]!.k, name).toBe(displayKeyOf(name));
+    }
+  });
+
+  it('rekey_display_names recomputes a stale key, and fails on a collision, changing nothing', async () => {
+    const a = await seedAccount(deps, { loginName: `rk${++n}aa`, displayName: `ΑΒΓΔΣ${n}` });
+    await deps.db.query("update accounts set display_key = lower(display_name) where id = $1", [a]);
+    await deps.db.query('select rekey_display_names()');
+    const { rows } = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = $1', [a]);
+    expect(rows[0]!.display_key).toBe(`αβγδσ${n}`);
+
+    const s1 = await seedAccount(deps, { loginName: `rk${++n}bb`, displayName: `Straße${n}` });
+    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, displayName: `STRASSE${n}` });
+    await deps.db.query("update accounts set display_key = lower(display_name) where id = any($1)", [[s1, s2]]);
+    await expect(deps.db.query('select rekey_display_names()')).rejects.toThrow(/display key collision/);
+    const after = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = any($1)', [[s1, s2]]);
+    expect(after.rows.map((r) => r.display_key).sort()).toEqual([`strasse${n}`, `straße${n}`].sort());
+    await deps.db.query('delete from accounts where id = any($1)', [[s1, s2]]);
+  });
+});
