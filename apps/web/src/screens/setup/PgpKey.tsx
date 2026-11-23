@@ -126,7 +126,8 @@ export function PgpKey() {
         </Button>
       }
     >
-      <SetupIntro title="Add your PGP public key">
+      {/* Owner demo note #143 (23 Nov): "Add your public PGP key". */}
+      <SetupIntro title="Add your public PGP key">
         Paste the public key from your PGP app. X2F never asks for your private key, so don't paste it here.
       </SetupIntro>
       <label className="x2f-field x2f-label" htmlFor="pub">
