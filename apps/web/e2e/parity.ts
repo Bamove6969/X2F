@@ -196,6 +196,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupTerms: [
     {
+      text: "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.",
+      why: "Owner demo note #120 (23 Nov 2026, setup-terms key point): the page says \"Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.\" (Terms version 2026-11-23).",
+    },
+    {
       text: "Completed trades are erased on day 30.",
       why: "Owner demo note #119 (23 Nov 2026, setup-terms key point): the page says \"To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.\" (Terms version 2026-11-23).",
     },
