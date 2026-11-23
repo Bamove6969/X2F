@@ -108,6 +108,9 @@ export const METHODS: MethodDef[] = [
     desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.',
     // COPY-UNSIGNED (the owner's words, 12 Nov 2026)
     warn: 'It is strongly recommended you do not choose this as the only security method you use.',
+    // Owner demo note #139 (23 Nov), his second paragraph, in his words. COPY-UNSIGNED.
+    // not-a-refusal: explains the risk of a password-only account
+    more: 'Security Level: Low. While your coins are never stored on our site, an attacker who compromises a password-only account can still ruin your trading reputation and wipe out the time you invested building your profile. Because of this lower security level, certain major account changes will also trigger a mandatory 24-hour waiting period before taking effect to help protect your account.',
   },
 ];
 
