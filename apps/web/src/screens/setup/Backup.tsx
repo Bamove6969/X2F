@@ -57,10 +57,12 @@ export function Backup() {
           EXTREMELY IMPORTANT
         </p>
         {/* COPY-UNSIGNED (singular: owner, 12 Nov 2026; signup round 3 wording, 13 Nov 2026) */}
-        <SetupIntro title="Save your recovery code">
+        <SetupIntro title="Save your recovery code" />
+        {/* Owner demo note #151 (23 Nov): this paragraph in the same box as the one below it, the heading stays outside. */}
+        <p className="x2f-start__panel" data-part="backup-lead">
           X2F has no email address or phone number for you, so if you ever lose access to your login methods, your emergency recovery code is the
           only way back into your account to set up or update your current security methods.
-        </SetupIntro>
+        </p>
         <p className="x2f-start__panel">
           Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
         </p>
