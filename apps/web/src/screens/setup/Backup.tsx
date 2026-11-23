@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react';
 import { formatRecoveryInput, isStaged, normalizeRecoveryCode, withConfirm } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { Icon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
@@ -48,6 +49,13 @@ export function Backup() {
   return (
     <ConfirmOpenProvider value={open}>
       <SetupFrame screen="setup-backup" step={4} footer={null}>
+        {/* Owner demo note #149 (23 Nov): "EXTREMELY IMPORTANT" in big words above the heading, to show how
+            much this screen matters and to fill the empty space. A caution sign stands in for his optional "!",
+            which copy-lint does not allow in copy. COPY-UNSIGNED */}
+        <p className="x2f-start__shout" data-part="backup-important">
+          <Icon name="caution" size={32} stroke={2.25} />
+          EXTREMELY IMPORTANT
+        </p>
         {/* COPY-UNSIGNED (singular: owner, 12 Nov 2026; signup round 3 wording, 13 Nov 2026) */}
         <SetupIntro title="Save your recovery code">
           X2F has no email address or phone number for you, so if you ever lose access to your login methods, your emergency recovery code is the
