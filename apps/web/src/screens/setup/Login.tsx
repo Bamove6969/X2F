@@ -46,7 +46,8 @@ interface MethodDef {
 
 // COPY-UNSIGNED: the strength words are the owner's (12 Nov 2026), their colours are for design.
 // Owner demo note #129 (23 Nov): "I want it to say RATED-STRONG". COPY-UNSIGNED.
-const STRENGTH_WORDS: Record<Strength, string> = { strong: 'RATED-STRONG', medium: 'Medium', weak: 'Weak' };
+// Owner demo note #140 (23 Nov): Weak and Medium follow suit, on the right like RATED-STRONG.
+const STRENGTH_WORDS: Record<Strength, string> = { strong: 'RATED-STRONG', medium: 'RATED-MEDIUM', weak: 'RATED-WEAK' };
 
 /** The methods in the order shown (and set up, but for the authenticator app after the password). */
 export const METHODS: MethodDef[] = [

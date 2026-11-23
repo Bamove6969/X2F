@@ -166,9 +166,9 @@ for (const v of VIEWPORTS) {
       expect(await colour(page, `[data-method="${id}"] [data-part="strength"]`, 'color')).toBe(await token(page, '--x2f-good'));
       expect(await token(page, '--x2f-good')).not.toBe(await token(page, '--x2f-escrow'));
     }
-    await expect(page.locator('[data-method="totp"] [data-part="strength"]')).toHaveText('Medium');
+    await expect(page.locator('[data-method="totp"] [data-part="strength"]')).toHaveText('RATED-MEDIUM');
     await expect(page.locator('[data-method="totp"]')).toContainText('6-digit code');
-    await expect(page.locator('[data-method="password"] [data-part="strength"]')).toHaveText('Weak');
+    await expect(page.locator('[data-method="password"] [data-part="strength"]')).toHaveText('RATED-WEAK');
     await expect(page.locator('[data-method="password"]')).toContainText('It is strongly recommended you do not choose this as the only security method you use.');
     // Owner decision 16 Nov 2026 (reverses signup round 3 behaviour 1): PGP alone is not enough for
     // the authenticator app; it goes only with a password, and the M3 sentence is gone.
