@@ -370,7 +370,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
    * accountAction, reason, evidence, tapId}` (perm `rulings.approve`, a senior moderator or the
    * owner). A published round-1 escrow ruling that the moderation gate refuses as `revoked` (its
    * latest report for this dispute is `revoked` for this very ruling: 409 `not-refused` otherwise;
-   * its signer was switched off or removed before the payout ran) is replaced by the caller's own
+   * its signer was switched off, removed, or (review p4t22 F1 twin: the gate reports a key it retired
+   * at a security reset as `revoked` too) reset before the payout ran) is replaced by the caller's own
    * new round-1 ruling, before any appeal and before the payout ran (the machine's `re-propose`).
    * Exactly a normal proposal otherwise: a new ruling id, the caller's own `propose` tap for it
    * (rebuilt here as the proposal route does; anything else is 403 `tap-invalid`), the same
