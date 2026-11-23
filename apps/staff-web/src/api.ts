@@ -463,6 +463,10 @@ export const removeBanner = () => staffApi<unknown>('/staff/v1/site/banner', { m
 /** Review p4t22 m2: switching maintenance on is tapped (`maintenance-on`); off is not. */
 export const setMaintenance = (b: { on: true; kind: MaintenanceKind; message: string | null; tapId: string } | { on: false }) =>
   staffApi<StaffSite>('/staff/v1/site/maintenance', { method: 'PUT', body: b });
+/** Review p4t22 N2: announcing a planned maintenance is tapped (`maintenance-planned`); removing it is not. */
+export const announcePlannedMaintenance = (b: { startsAt: string; endsAt: string; message: string | null; tapId: string }) =>
+  staffApi<StaffSite>('/staff/v1/site/maintenance/planned', { method: 'PUT', body: b });
+export const removePlannedMaintenance = () => staffApi<unknown>('/staff/v1/site/maintenance/planned', { method: 'DELETE' });
 
 export interface RevenueBucket {
   period: string;

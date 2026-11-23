@@ -110,7 +110,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
   // J-04 (owner G19): a planned maintenance announced ahead.
-  { method: 'PUT', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER, body: { startsAt: '2099-01-01T00:00:00.000Z', endsAt: '2099-01-01T02:00:00.000Z' } },
+  // Review p4t22 N2: announcing it is tapped.
+  { method: 'PUT', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER, body: { startsAt: '2099-01-01T00:00:00.000Z', endsAt: '2099-01-01T02:00:00.000Z', tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   { method: 'DELETE', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
   // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
@@ -165,6 +166,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   // Review p4t22 M1 (e): the rescue's second approval of a ruling the gate refuses `needs-second`.
   { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/second-approval', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  // Review p4t22 N1: a senior's new round 1 in place of one the gate refuses as revoked.
+  { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/re-propose', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { rulingId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f', outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: 'A reason of at least forty characters for the new ruling.', evidence: [], tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/send-back', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { note: 'Look again.' } },
   { method: 'POST', url: '/staff/v1/freezes/:id/lift', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   // Plan 4 Task 24 (D-011): who may review an appeal; the owner only (review M1, lead call 12 Nov).
