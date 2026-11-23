@@ -981,13 +981,40 @@
   color: var(--x2f-escrow);
 }
 
+/* Owner demo note #165 (23 Nov): "Welcome to" big, then the X2F logo much bigger across the page;
+   the name below with its comma. Both scale with the width, so a phone never scrolls sideways. */
 .x2f-welcome__h1 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-2);
   margin: 0;
   font-family: var(--x2f-font-display);
-  font-size: 34px;
-  line-height: 38px;
+  font-size: clamp(36px, 7vw, 60px);
+  line-height: 1.05;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.x2f-welcome__to {
+  display: block;
+}
+
+.x2f-welcome__logo {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+
+.x2f-welcome__name {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: clamp(26px, 4vw, 34px);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 
 .x2f-welcome__rows {
@@ -1081,8 +1108,8 @@
   }
 
   .x2f-welcome__h1 {
-    font-size: 30px;
-    line-height: 34px;
+    font-size: 32px;
+    line-height: 36px;
   }
 }
 

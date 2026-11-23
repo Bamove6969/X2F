@@ -366,6 +366,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Owner demo notes 12 Nov 2026 (his own words): the lead line and the rows became his checklist ("Configured your secure methods of logging into X2F", "Emergency login method: recovery code documented", "Connected your wallet", one green tick each) and "Any information provided above can be changed later in Settings." (owner-copy.spec.ts). COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
     })),
     {
+      text: 'Welcome to X2F, lumen.k',
+      why: 'Owner demo note #165 (23 Nov): "Maybe we could say in big letters \'Welcome to\' and then X2F in our logo ... ditch the comma at the end of X2F. We will stay with their name below the welcoming to X2F, with a comma after their name". The h1 is "Welcome to" and the large logo (named X2F), and the name with its comma is its own line below. DESIGNER-REVIEW: the board is to be redrawn.',
+    },
+    {
       text: 'Authenticator app',
       why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',
     },

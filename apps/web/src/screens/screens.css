@@ -173,6 +173,14 @@ textarea.x2f-textarea--tall {
   color: var(--x2f-ink-muted);
 }
 
+/* Owner demo note #164 (23 Nov): the wallet confirm sheet's note ("This is your first payout
+   wallet, ...", the wait), bigger and in ink, not muted. */
+.x2f-note.x2f-note--wallet {
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--x2f-ink);
+}
+
 /* An inline link in small text (CantDoThat's "feedback", Login's "Use a backup"): invisible block
    padding grows its tap box to 24 px (WCAG 2.5.8, e2e/phone.ts) without moving a line. */
 .x2f-note .x2f-link,

@@ -22,6 +22,7 @@ import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
 import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
+import { Logo } from '../../ui/Logo.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, useSetup, type SetupState } from './kit.js';
 import { APP_LABELS } from '../wallets-model.js';
@@ -279,9 +280,15 @@ export function Welcome() {
           </svg>
         </span>
         <section className="x2f-start__intro">
+          {/* Owner demo note #165 (23 Nov): "Welcome to" in big letters, then X2F as the logo, much
+              bigger, across the page, with no comma after it; the name below with a comma after it, and
+              the paragraph right after. The heading reads "Welcome to X2F" (the logo's label). */}
           <h1 className="x2f-welcome__h1">
-            Welcome to X2F, <span data-username="">{name}</span>
+            <span className="x2f-welcome__to">Welcome to</span> <Logo height={160} className="x2f-welcome__logo" />
           </h1>
+          <p className="x2f-welcome__name" data-part="welcome-name">
+            <span data-username="">{name}</span>,
+          </p>
           <p className="x2f-start__lead">{WELCOME_COPY.lead}</p>
         </section>
         {/* Owner #97 (16 Nov): the rating, and for anything below highly secure, the way to raise it. DESIGNER-REVIEW */}

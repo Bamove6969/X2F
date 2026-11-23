@@ -276,6 +276,9 @@ for (const v of VIEWPORTS) {
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     await page.fill('#xmr-payout', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
+    // Owner #161: the saved first wallet shows its green check, then Continue.
+    await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+    await page.click('[data-part="wallet-continue"]');
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect.poll(() => s.calls.includes('onboarding-end')).toBe(true);
 
