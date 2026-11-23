@@ -12,9 +12,9 @@ export const AMOUNT = 200_000_000_000n;
 export const FEE = AMOUNT / 100n;
 export const LONG = 5 * 60_000;
 
-export const offer = (side: 'sell' | 'buy', maxUsd = '150') => ({
+export const offer = (side: 'sell' | 'buy', maxUsd = '150', currency = 'USD') => ({
   side,
-  currencies: [{ currency: 'USD', bands: [{ min: '20', max: maxUsd, marginBps: 0, minTrades: null }] }],
+  currencies: [{ currency, bands: [{ min: '20', max: maxUsd, marginBps: 0, minTrades: null }] }],
   methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: 'My payment details come in the trade chat.' }],
   terms: 'Regtest e2e offer.',
 });
@@ -58,11 +58,14 @@ export async function openTrade(
     xmr?: string;
     maxUsd?: string;
     poster?: Trader;
+    /** Review p4t22 M1: the offer's and the trade's currency (default USD; the regtest feed prices EUR at the USD figure). */
+    currency?: string;
   } = {},
 ): Promise<Open> {
+  const currency = o.currency ?? 'USD';
   void funder(); // mined and synced while the trade is set up
   const poster = o.poster ?? (await signUp(taker === 'seller' ? 'buyer' : 'seller', { vendor: true }));
-  if (!o.poster) await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell', o.maxUsd));
+  if (!o.poster) await poster.api.ok('POST', '/v1/offers', offer(taker === 'seller' ? 'buy' : 'sell', o.maxUsd, currency));
   const takerT = await signUp(taker);
   const p = await contextFor(browser, poster, size);
   const t = await contextFor(browser, takerT, size);
@@ -71,14 +74,14 @@ export async function openTrade(
   await o.buyerPage?.(taker === 'seller' ? p.page : t.page);
   await p.page.goto('/sell');
   // The taker sells to a buy ad on /sell, buys from a sell ad on /buy.
-  await t.page.goto(`/${taker === 'seller' ? 'sell' : 'buy'}/ZELLE?currency=USD`);
+  await t.page.goto(`/${taker === 'seller' ? 'sell' : 'buy'}/ZELLE?currency=${currency}`);
   await t.page.getByRole('button', { name: `Trade with ${poster.displayName}` }).click();
   // The amount in XMR (the buy quote opens in the fiat currency).
   await expect(t.page.locator('input[type=text]:visible').first()).toBeVisible();
   const inXmr = t.page.getByRole('button', { name: 'Enter XMR' });
   if (await inXmr.isVisible()) {
     await inXmr.click();
-    await expect(t.page.getByRole('button', { name: /^Enter (USD|\$)/ })).toBeVisible();
+    await expect(t.page.getByRole('button', { name: new RegExp(`^Enter (${currency}|\\$|€)`) })).toBeVisible();
   }
   await t.page.locator('input[type=text]:visible').first().fill(o.xmr ?? '0.2');
   await t.page.locator('input[type=radio][name=wallet]').first().check();

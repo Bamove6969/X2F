@@ -159,6 +159,41 @@ for (const [label, size] of SIZES) {
       }
     });
 
+    test('review p4t22 M1 (lead default, owner question OQ1): a EUR trade far under the limit needs two people; the moderator proposes, nothing moves; the owner approves; the buyer receives amount − 1% − network fee, the fee wallet exactly 1%', async ({ browser }) => {
+      const mod = await hire('mod');
+      // EUR 40 at the fixed feed (1 EUR = 1 USD): far under the $1,000 limit. Before the fix the API
+      // published it on one tap and the ruling gate refused it for good (needs-second): stranded coins.
+      const o = await openTrade(browser, size, 'seller', { currency: 'EUR' });
+      const own = await owner();
+      await inRooms(o, async () => {
+        expect(await disputed(o)).toBe(AMOUNT);
+        const before = { buyer: await incomingTxs(o.buyer.wallet), seller: await incomingTxs(o.seller.wallet) };
+        await withStaff(browser, mod, async (staff) => {
+          await takeCase(staff, o.code);
+          await expect(staff.locator('[data-part="case-chips"]')).toContainText('Needs a second approval: not in US dollars');
+          await proposeRuling(staff, 'Release to buyer');
+          await expect(staff.locator('[data-part="ruling-waiting"]')).toContainText('Waiting for approval', { timeout: LONG });
+        });
+        expect((await caseOf(o.code)).status).toBe('awaiting-approval');
+        for (let i = 0; i < 3; i++) {
+          await mine(1);
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+        expect(await incomingTxs(o.buyer.wallet)).toEqual(before.buyer);
+        expect(await incomingTxs(o.seller.wallet)).toEqual(before.seller);
+        await withStaff(browser, own, async (staff) => {
+          await staff.goto(caseUrl(o.code));
+          await approveRuling(staff);
+        }, { keys: [1] });
+        const tx = await settled(o.buyer, o.code, 'released', PAYOUT_WAIT);
+        await buyerPaid(o, tx, AMOUNT - FEE, FEE);
+        const log = await logFor(o.code);
+        expect(inOrder(log, ['dispute.opened', 'ruling.proposed', 'ruling.approved', 'ruling.published', 'ruling.executed']), log.join(', ')).toBe(true);
+        // The gate never refused it.
+        expect(log).not.toContain('ruling.gate-refused');
+      });
+    });
+
     test('appeal overturns: the seller appeals inside the window; a fresh senior moderator reviews and overturns; the round-1 payout stands (no second tx, Revision 2026-10-29) and the moderator\'s round-1 ruling counts as overturned on Performance', async ({ browser }) => {
       const mod = await hire('mod');
       const senior = await hire('senior');

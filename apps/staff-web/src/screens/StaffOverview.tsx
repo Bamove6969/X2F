@@ -162,6 +162,7 @@ export function StaffOverview() {
       intent: maintenanceOnIntent({ maintenanceKind, message: sent, backBy: null }),
       // COPY-UNSIGNED
       title: 'Turn maintenance mode on',
+      // not-a-refusal: a description of what switching maintenance on does, in the tap dialog.
       body: 'Tap your security key to turn maintenance mode on. Traders cannot use X2F until you turn it off.',
       tapLabel: 'Tap key and turn on',
       labels: { messageSha256: 'the message above' },
