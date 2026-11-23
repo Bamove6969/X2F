@@ -343,6 +343,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   SetupWallet: [
+    ...['Choose the wallet you want to be paid to. X2F never holds your coins.', 'Receive address from {{appName}}'].map((text) => ({
+      text,
+      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: the wallet names are a plain recommendation list ("and many more"), not chips that pick an app, then one field: "Use your favourite wallet and enter a receive address from it". COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
+    })),
     {
       text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
       why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',

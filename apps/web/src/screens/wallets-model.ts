@@ -26,6 +26,16 @@ export const APP_LABELS: Record<WalletApp, string> = {
   other: 'Other',
 };
 
+/**
+ * The Edge privacy tip (Wallets, TradeFund). Edge has no "Full Sync" setting (owner demo note 16 Nov
+ * #96: "inside the edge wallet i dont see anything"): a Monero wallet's menu in Edge has Wallet
+ * Settings, with LWS (Edge's light-wallet server, which sees incoming payments) or Full Node
+ * (edge-react-gui WalletListMenuModal/WalletSettingsModal, strings wallet_setting_backend_option_*).
+ * COPY-UNSIGNED
+ */
+export const EDGE_TIP =
+  "For best privacy, open your Monero wallet's menu in Edge, choose Wallet Settings and pick Full Node. With LWS, Edge's servers can see payments coming in.";
+
 /** The name used in "Receive address from <app>"; "Other" reads as "your wallet" (board). */
 export function appPromptName(app: WalletApp): string {
   return app === 'other' ? 'your wallet' : APP_LABELS[app];

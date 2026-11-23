@@ -42,20 +42,20 @@ describe('/setup/welcome (owner, 12 Nov)', () => {
 
   it('lists the login methods best to worst, never the recovery codes (their own item)', () => {
     expect(loginMethodsBestFirst({ methods: ['password', 'totp', 'pgp', 'recovery-codes', 'passkey', 'security-key'] }, fresh)).toEqual([
-      'Security key', 'Passkey', 'PGP key', 'Authenticator app', 'Password',
+      'Security key', 'Passkey', 'PGP key', 'Authenticator app', 'Username and password',
     ]);
     // What this setup just did counts before the account is read again.
-    expect(loginMethodsBestFirst({ methods: [] }, { registered: true, method: 'password', backup: 'security-key' })).toEqual(['Security key', 'Password']);
+    expect(loginMethodsBestFirst({ methods: [] }, { registered: true, method: 'password', backup: 'security-key' })).toEqual(['Security key', 'Username and password']);
     // A second PGP key as the backup.
-    expect(loginMethodsBestFirst({ methods: ['pgp'] }, { registered: true, method: 'pgp', backup: 'pgp' })).toEqual(['PGP keys (2)']);
+    expect(loginMethodsBestFirst({ methods: ['pgp'] }, { registered: true, method: 'pgp', backup: 'pgp' })).toEqual(['PGP keys (2)', 'Username']);
   });
 
   it('each item is done (one tick) only when it really is', () => {
     expect(checklist({ methods: ['pgp', 'recovery-codes'] }, [wallet()], fresh)).toEqual({
-      logins: ['PGP key'], loginDone: true, recoveryDone: true, wallet: { app: 'Cake Wallet', end: 'k3Fz' },
+      logins: ['PGP key', 'Username'], loginDone: true, recoveryDone: true, wallet: { app: 'Cake Wallet', end: 'k3Fz' },
     });
     // Opened only to add a wallet, with no recovery codes and no usable wallet yet.
-    expect(checklist({ methods: ['password'] }, [wallet({ usable: false })], fresh)).toEqual({ logins: ['Password'], loginDone: true, recoveryDone: false, wallet: null });
+    expect(checklist({ methods: ['password'] }, [wallet({ usable: false })], fresh)).toEqual({ logins: ['Username and password'], loginDone: true, recoveryDone: false, wallet: null });
     expect(checklist({ methods: [] }, [], fresh)).toMatchObject({ logins: [], loginDone: false });
     // The recovery codes made in this setup count before the account is read again.
     expect(checklist({ methods: ['password'] }, [], { registered: true, method: 'password', backup: 'recovery-codes' }).recoveryDone).toBe(true);
@@ -67,19 +67,19 @@ describe('carried over from summarize() (lead check, 12 Nov)', () => {
   it('reads the flow first: the method just set up, the recovery codes just made, the wallet', () => {
     // was: summarize(password + recovery-codes, flow password/recovery-codes) -> Password, Recovery codes, Cake Wallet …k3Fz
     expect(checklist({ methods: ['password', 'recovery-codes'] }, [wallet()], { registered: true, method: 'password', backup: 'recovery-codes' })).toEqual({
-      logins: ['Password'], loginDone: true, recoveryDone: true, wallet: { app: 'Cake Wallet', end: 'k3Fz' },
+      logins: ['Username and password'], loginDone: true, recoveryDone: true, wallet: { app: 'Cake Wallet', end: 'k3Fz' },
     });
     // was: a second PGP key from the flow -> "Second PGP key"
-    expect(checklist({ methods: ['pgp'] }, [], { registered: true, method: 'pgp', backup: 'pgp' }).logins).toEqual(['PGP keys (2)']);
+    expect(checklist({ methods: ['pgp'] }, [], { registered: true, method: 'pgp', backup: 'pgp' }).logins).toEqual(['PGP keys (2)', 'Username']);
   });
 
   it('a reload without the flow state still reads the account', () => {
     // was: pgp + security-key -> PGP key, backup Security key
-    expect(checklist({ methods: ['pgp', 'security-key'] }, [], fresh)).toMatchObject({ logins: ['Security key', 'PGP key'], loginDone: true, recoveryDone: false, wallet: null });
+    expect(checklist({ methods: ['pgp', 'security-key'] }, [], fresh)).toMatchObject({ logins: ['Security key', 'PGP key', 'Username'], loginDone: true, recoveryDone: false, wallet: null });
     // was: security-key alone -> backup None yet
-    expect(checklist({ methods: ['security-key'] }, [], fresh)).toMatchObject({ logins: ['Security key'], recoveryDone: false });
+    expect(checklist({ methods: ['security-key'] }, [], fresh)).toMatchObject({ logins: ['Security key', 'Username'], recoveryDone: false });
     // was: password + recovery-codes -> backup Recovery codes
-    expect(checklist({ methods: ['password', 'recovery-codes'] }, [], fresh)).toMatchObject({ logins: ['Password'], recoveryDone: true });
+    expect(checklist({ methods: ['password', 'recovery-codes'] }, [], fresh)).toMatchObject({ logins: ['Username and password'], recoveryDone: true });
     // was: no methods -> None yet, None yet
     expect(checklist({ methods: [] }, [], fresh)).toEqual({ logins: [], loginDone: false, recoveryDone: false, wallet: null });
   });
@@ -88,12 +88,12 @@ describe('carried over from summarize() (lead check, 12 Nov)', () => {
     // was: password + totp -> backup None yet. The app is listed only as a login method (a password's second step).
     const c = checklist({ methods: ['password', 'totp'] }, [], fresh);
     expect(c.recoveryDone).toBe(false);
-    expect(c.logins).toEqual(['Authenticator app', 'Password']);
+    expect(c.logins).toEqual(['Authenticator app', 'Username and password']);
   });
 
   it('the methods are ordered best to worst whatever order the account lists them in', () => {
-    expect(loginMethodsBestFirst({ methods: ['password', 'pgp', 'security-key'] }, fresh)).toEqual(['Security key', 'PGP key', 'Password']);
-    expect(loginMethodsBestFirst({ methods: ['totp', 'passkey', 'password'] }, fresh)).toEqual(['Passkey', 'Authenticator app', 'Password']);
+    expect(loginMethodsBestFirst({ methods: ['password', 'pgp', 'security-key'] }, fresh)).toEqual(['Security key', 'PGP key', 'Username and password']);
+    expect(loginMethodsBestFirst({ methods: ['totp', 'passkey', 'password'] }, fresh)).toEqual(['Passkey', 'Authenticator app', 'Username and password']);
   });
 
   it('only a usable wallet is ever shown, never one still waiting', () => {
