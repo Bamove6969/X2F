@@ -32,9 +32,10 @@ describe('/setup/welcome (owner, 12 Nov)', () => {
     // Owner demo note #166 (23 Nov): his two paragraphs replace the 12 Nov lead.
     expect(WELCOME_COPY.lead).toBe('Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.');
     expect(WELCOME_COPY.leadMore).toBe('Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.');
-    expect(WELCOME_COPY.loginItem).toBe('Configured your secure methods of logging into X2F');
-    expect(WELCOME_COPY.recoveryItem).toBe('Emergency login method: recovery code documented');
-    expect(WELCOME_COPY.walletItem).toBe('Connected your wallet');
+    // Owner demo note #168 (23 Nov): the 12 Nov checklist became every login method under one heading.
+    expect(WELCOME_COPY.loginsTitle).toBe('Secure X2F login methods');
+    expect(WELCOME_COPY.verdict).toBe('You have achieved level:');
+    expect(WELCOME_COPY.walletItem).toBe('Payout wallet:');
     expect(WELCOME_COPY.changeLater).toBe('Any information provided above can be changed later in Settings.');
     expect(WELCOME_COPY.nextLogin).toBe("Next, you'll log in for the first time and try the security methods you set up, which will welcome you to the X2F experience.");
     expect(WELCOME_COPY.fee).toBe('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.');

@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Wallet as WalletEntry } from '@x2f/auth-client';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { SUGGESTED_WALLETS, WALLET_COPY, Wallet } from '../src/screens/setup/Wallet.js';
-import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, leavePath, securityRating, startTradingPath } from '../src/screens/setup/Welcome.js';
+import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, leavePath, methodRows, securityRating, startTradingPath } from '../src/screens/setup/Welcome.js';
 import { render } from './render.js';
 
 const me = vi.hoisted(() => ({ current: { displayName: 'Lumen.K', methods: ['password'] } as Record<string, unknown> }));
@@ -182,14 +182,14 @@ describe('/setup/welcome (owner #97)', () => {
     return host;
   }
 
-  it('a password-only account: rated Weak, the way to raise it, and "Username and password" in the list', async () => {
+  it('a password-only account: rated Weak, the way to raise it', async () => {
     const host = await showWelcome(['password', 'recovery-codes'], walletList());
     const rating = host.querySelector('[data-part="security-rating"]')!;
     expect(rating.getAttribute('data-rating')).toBe('weak');
-    expect(rating.textContent).toContain(`${WELCOME_COPY.ratingTitle}: ${RATING_WORDS.weak}`);
+    expect(rating.textContent).toContain(`${WELCOME_COPY.verdict} ${RATING_WORDS.weak}`);
     expect(rating.textContent).toContain(WELCOME_COPY.ratingRaise);
     expect(host.querySelector('[data-part="rating-link"]')!.getAttribute('href')).toBe('/settings/security');
-    expect([...host.querySelectorAll('[data-part="login-methods"] li')].map((li) => li.textContent)).toEqual(['Username and password']);
+    expect(host.querySelector(`[data-method="password"] [data-part="method-state"]`)!.textContent).toBe("Set up");
   });
 
   it('owner #165: the heading is "Welcome to" and the big X2F logo (no comma), then the name with a comma, then the lead', async () => {
@@ -239,19 +239,83 @@ describe('/setup/welcome (owner #97)', () => {
     }
   });
 
-  it('a PGP account is Highly secure, with no raise line, and still lists the username', async () => {
+  it('a PGP account is Highly secure, with no raise line', async () => {
     const host = await showWelcome(['pgp', 'recovery-codes'], walletList());
     expect(host.querySelector('[data-part="rating-word"]')!.textContent).toBe('Highly secure');
     expect(host.querySelector('[data-part="rating-link"]')).toBeNull();
-    expect([...host.querySelectorAll('[data-part="login-methods"] li')].map((li) => li.textContent)).toEqual(['PGP key', 'Username']);
+  });
+
+  describe('owner #168: every login method, a big green check or red cross each, then the level reached', () => {
+    const rowsOf = (host: HTMLElement) =>
+      [...host.querySelectorAll('[data-part="method-row"]')].map((r) => ({
+        method: r.getAttribute('data-method'),
+        set: r.getAttribute('data-set'),
+        text: r.querySelector('.x2f-welcome__row-name')!.textContent + ' / ' + r.querySelector('[data-part="method-state"]')!.textContent,
+        mark: r.querySelector('[data-part^="mark-"]')!.getAttribute('data-part'),
+        link: r.querySelector('a')!.textContent,
+      }));
+
+    it('lists all six under the bold heading, set up or not in words, check or cross, Change or Add', async () => {
+      const host = await showWelcome(['password', 'totp', 'recovery-codes'], walletList());
+      expect(host.querySelector('#welcome-logins-title')!.textContent).toBe('Secure X2F login methods');
+      expect(host.querySelector('#welcome-logins-title')!.tagName).toBe('H2');
+      expect(rowsOf(host)).toEqual([
+        { method: 'pgp', set: 'false', text: 'PGP key / Not set up', mark: 'mark-unset', link: 'Add' },
+        { method: 'security-key', set: 'false', text: 'Security key / Not set up', mark: 'mark-unset', link: 'Add' },
+        { method: 'passkey', set: 'false', text: 'Passkey / Not set up', mark: 'mark-unset', link: 'Add' },
+        { method: 'totp', set: 'true', text: 'Authenticator app / Set up', mark: 'mark-set', link: 'Change' },
+        { method: 'password', set: 'true', text: 'Password / Set up', mark: 'mark-set', link: 'Change' },
+        { method: 'recovery-codes', set: 'true', text: 'Recovery code / Set up', mark: 'mark-set', link: 'Change' },
+      ]);
+      // The marks are pictures for the eye only: the words carry it for a screen reader.
+      for (const m of host.querySelectorAll('[data-part^="mark-"]')) expect(m.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('counts what this setup just did (the method that made the account, the backup)', () => {
+      const rows = methodRows({ methods: [] }, { registered: true, method: 'pgp', backup: 'recovery-codes' });
+      expect(rows.filter((r) => r.set).map((r) => r.id)).toEqual(['pgp', 'recovery-codes']);
+    });
+
+    for (const [level, methods, word] of [
+      ['high', ['pgp', 'recovery-codes'], 'Highly secure'],
+      ['medium', ['password', 'totp', 'recovery-codes'], 'Medium'],
+      ['weak', ['password', 'recovery-codes'], 'Weak'],
+    ] as const) {
+      it(`the verdict is the one rating line: "You have achieved level: ${word}"`, async () => {
+        const host = await showWelcome([...methods], walletList());
+        const lines = host.querySelectorAll('[data-part="security-rating"]');
+        expect(lines).toHaveLength(1);
+        expect(lines[0]!.getAttribute('data-rating')).toBe(level);
+        expect(host.querySelector('.x2f-welcome__rating-line')!.textContent).toBe(`You have achieved level: ${word}`);
+      });
+    }
+
+    it('right after sign-up each method link leaves the way Start trading does (owner G25)', async () => {
+      const host = await showWelcome(['password'], walletList(), { registered: true, method: 'password', backup: 'recovery-codes' });
+      for (const id of ['pgp', 'security-key', 'passkey', 'totp', 'password', 'recovery-codes']) {
+        const target = id === 'recovery-codes' ? WELCOME_LINKS.recovery : WELCOME_LINKS.login;
+        expect(host.querySelector(`[data-part="method-link-${id}"]`)!.getAttribute('href'), id).toBe(leavePath({ registered: true, target }).to);
+      }
+      act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-passkey"]')!.click());
+      await settle();
+      expect(posts.filter((u) => u.includes('/v1/logout'))).toHaveLength(1);
+      expect(where(host)).toBe(`/login?returnTo=${encodeURIComponent('/settings/security')}`);
+    });
+
+    it('the heading is underlined, the marks green and red by token', () => {
+      const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/setup/setup.css'), 'utf8');
+      expect(/\.x2f-welcome__logins-title\s*\{([^}]*)\}/.exec(css)![1]).toMatch(/border-bottom:[^;]*var\(--x2f-ink\)/);
+      expect(/\.x2f-welcome__mark\[data-part='mark-set'\]\s*\{([^}]*)\}/.exec(css)![1]).toContain('var(--x2f-good)');
+      expect(/\.x2f-welcome__mark\[data-part='mark-unset'\]\s*\{([^}]*)\}/.exec(css)![1]).toContain('var(--x2f-danger)');
+    });
   });
 
   it('each item links back to its setting: Change once done, Add before', async () => {
     let host = await showWelcome(['password', 'totp', 'recovery-codes'], walletList());
     expect(host.querySelector('[data-part="rating-word"]')!.textContent).toBe('Medium');
     for (const [part, href] of [
-      ['change-login', WELCOME_LINKS.login],
-      ['change-recovery', WELCOME_LINKS.recovery],
+      ['method-link-password', WELCOME_LINKS.login],
+      ['method-link-recovery-codes', WELCOME_LINKS.recovery],
       ['change-wallet', WELCOME_LINKS.wallet],
     ] as const) {
       const a = host.querySelector(`[data-part="${part}"]`)!;
@@ -262,7 +326,7 @@ describe('/setup/welcome (owner #97)', () => {
     expect(host.querySelector('[data-part="summary-wallet"]')!.textContent).toBe('Wallet 1 …k3Fz');
 
     host = await showWelcome(['pgp'], walletList({ usable: false }));
-    expect(host.querySelector('[data-part="change-recovery"]')!.textContent).toBe('Add');
+    expect(host.querySelector('[data-part="method-link-recovery-codes"]')!.textContent).toBe('Add');
     // Add a wallet keeps the returnTo that started setup.
     const w = host.querySelector('[data-part="change-wallet"]')!;
     expect(w.getAttribute('href')).toBe('/wallets?add=1&returnTo=%2Fsell');
@@ -271,7 +335,7 @@ describe('/setup/welcome (owner #97)', () => {
 
   it('someone already logged in (setup opened only for a wallet) follows a link straight there, still logged in', async () => {
     const host = await showWelcome(['password'], walletList(), { registered: false });
-    act(() => host.querySelector<HTMLAnchorElement>('[data-part="change-login"]')!.click());
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-password"]')!.click());
     await settle();
     expect(where(host)).toBe('/settings/security');
     expect(posts.filter((u) => u.includes('/v1/logout'))).toEqual([]);
@@ -281,13 +345,13 @@ describe('/setup/welcome (owner #97)', () => {
     const host = await showWelcome(['password'], walletList(), { registered: true, method: 'password', backup: 'recovery-codes' });
     for (const [part, target] of [
       ['rating-link', WELCOME_LINKS.rating],
-      ['change-login', WELCOME_LINKS.login],
-      ['change-recovery', WELCOME_LINKS.recovery],
+      ['method-link-password', WELCOME_LINKS.login],
+      ['method-link-recovery-codes', WELCOME_LINKS.recovery],
       ['change-wallet', WELCOME_LINKS.wallet],
     ] as const) {
       expect(host.querySelector(`[data-part="${part}"]`)!.getAttribute('href'), part).toBe(`/login?returnTo=${encodeURIComponent(target)}`);
     }
-    act(() => host.querySelector<HTMLAnchorElement>('[data-part="change-login"]')!.click());
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-password"]')!.click());
     await settle();
     expect(posts.filter((u) => u.includes('/v1/logout'))).toHaveLength(1);
     expect(where(host)).toBe(`/login?returnTo=${encodeURIComponent('/settings/security')}`);

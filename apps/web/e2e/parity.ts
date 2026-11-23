@@ -363,7 +363,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       'You can change any of these later in Settings.',
     ].map((text) => ({
       text,
-      why: 'Owner demo notes 12 Nov 2026 (his own words): the lead line and the rows became his checklist ("Configured your secure methods of logging into X2F", "Emergency login method: recovery code documented", "Connected your wallet", one green tick each) and "Any information provided above can be changed later in Settings." (owner-copy.spec.ts); the lead is his two paragraphs of 23 Nov (demo note #166). COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
+      why: 'Owner demo notes 12 Nov 2026 (his own words): the lead line and the rows became his checklist ("Configured your secure methods of logging into X2F", "Emergency login method: recovery code documented", "Connected your wallet", one green tick each) and "Any information provided above can be changed later in Settings." (owner-copy.spec.ts); the lead is his two paragraphs of 23 Nov (demo note #166), and since note #168 (23 Nov) the checklist lists every login method under "Secure X2F login methods", set up or not, ending in "You have achieved level: ...". COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
     })),
     {
       text: 'Welcome to X2F, lumen.k',
