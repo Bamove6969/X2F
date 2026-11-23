@@ -165,7 +165,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'What is the difference between a passkey and a security key?',
     a: 'A passkey logs you in with your face, fingerprint or phone PIN, and Apple or Google keep it synced across your devices. A security key is a small device, like a YubiKey, that you plug in or tap, and it needs its PIN or fingerprint each time. A key with no PIN set is refused until you set one in the key\'s settings.',
     sources: [
-      `${WEB}/setup/Login.tsx:76 Log in with your face`,
+      `${WEB}/setup/Login.tsx:78 They allow you to log in with your face`,
       `${WEB}/setup/Login.tsx:69 Log in by NFC tapping or USB inserting your YubiKey`,
       `${AUTH}/webauthn.ts:63 Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings`,
     ],

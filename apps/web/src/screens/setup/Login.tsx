@@ -75,7 +75,8 @@ export const METHODS: MethodDef[] = [
     name: 'Passkey',
     strength: 'medium',
     cta: 'Continue with passkey',
-    desc: 'Log in with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.',
+    // Owner demo note #133 (23 Nov), his words; "Passkeys people are" made "People are" and "pin" made "PIN".
+    desc: 'People are pretty familiar with passkeys by now. They allow you to log in with your face, fingerprint, or personal PIN. You can save them in your favorite password manager and also sync them across your devices.',
   },
   {
     id: 'totp',
