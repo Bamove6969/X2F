@@ -564,6 +564,11 @@ export interface DisputeCase {
   firstReplyAt: string | null;
   usd: string;
   overLimit: boolean;
+  /**
+   * Review p4t22 M1: why a second person is needed: `non-usd` (not priced in US dollars: lead default,
+   * owner question OQ1) or `over-limit`; null when one person rules. Absent from an older API.
+   */
+  secondReason?: 'non-usd' | 'over-limit' | null;
   /** The large-trade limit the dispute snapshotted when it opened, whole dollars. */
   limitUsd: number;
   assignee: string | null;

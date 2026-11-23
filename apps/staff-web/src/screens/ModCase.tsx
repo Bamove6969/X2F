@@ -248,7 +248,8 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   } else {
     chips.push(STATUS_TEXT[c.status]);
   }
-  if (c.overLimit) chips.push(`Above the ${limitText(c.limitUsd)} limit`);
+  // Review p4t22 M1: a trade not priced in US dollars needs a second person whatever its value. COPY-UNSIGNED
+  if (c.overLimit) chips.push(c.secondReason === 'non-usd' ? 'Needs a second approval: not in US dollars' : `Above the ${limitText(c.limitUsd)} limit`);
   chips.push(c.assignedToYou ? 'Assigned to you' : c.assignee !== null ? `Assigned to ${c.assignee}` : 'Unassigned');
 
   const take = async () => {
@@ -778,7 +779,12 @@ function ProposeForm({ c, buyer, seller, setTap, reload }: { c: DisputeCase; buy
         {/* not-a-refusal: an input check on the evidence lines */}
         {!evidenceOk ? <p className="x2f-staff-hint">{`At most ${EVIDENCE_MAX} lines, each up to ${EVIDENCE_LINE_MAX} characters.`}</p> : null}
       </div>
-      {c.overLimit ? (
+      {c.overLimit && c.secondReason === 'non-usd' ? (
+        // Review p4t22 M1 (lead default, owner question OQ1). COPY-UNSIGNED
+        <Notice tone="caution" title="Sent to a senior moderator or the owner for approval.">
+          This trade is not priced in US dollars, so its ruling needs a second person to approve it. Nothing is signed until they approve.
+        </Notice>
+      ) : c.overLimit ? (
         <Notice tone="caution" title="Above your limit: sent to a senior moderator or the owner for approval.">
           {`${usdText(c.usd)} is over the ${limitText(c.limitUsd)} large-trade limit. Nothing is signed until they approve.`}
         </Notice>

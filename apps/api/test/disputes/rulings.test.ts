@@ -442,7 +442,7 @@ describe('review p4t22 M1: the API is never laxer than the ruling gate', () => {
     const mod = await staff('mod');
     const view = await mod.b.get(url(code));
     expect(view.statusCode, view.body).toBe(200);
-    expect((view.json() as { overLimit: boolean }).overLimit).toBe(true);
+    expect(view.json() as { overLimit: boolean; secondReason: string | null }).toMatchObject({ overLimit: true, secondReason: 'non-usd' });
     const queue = await mod.b.get('/staff/v1/disputes');
     expect(queue.statusCode, queue.body).toBe(200);
     const row = (queue.json() as { rows: Array<{ code: string; approval: unknown }> }).rows.find((r) => r.code === code);

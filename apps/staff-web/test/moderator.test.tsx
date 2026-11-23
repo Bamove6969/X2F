@@ -481,6 +481,14 @@ describe('ModCase (board ModCase)', () => {
     }
   });
 
+  it('review p4t22 M1 (OQ1): a trade not priced in US dollars says it needs a second approval, not that it is above the limit', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes/:code': { body: kase({ status: 'open', assignedToYou: true, overLimit: true, secondReason: 'non-usd' }) } });
+    await open(`/disputes/${CODE}`);
+    expect(text('case-chips')).toContain('Needs a second approval: not in US dollars');
+    expect(text('case-chips')).not.toContain('Above the');
+    expect(document.body.textContent).toContain('This trade is not priced in US dollars, so its ruling needs a second person to approve it.');
+  });
+
   it('review p4t22 M1: the case says the moderation service will not carry out a ruling, and why; a senior adds the second approval it asks for (tapped)', async () => {
     const since = new Date(Date.now() - 2 * H).toISOString();
     const second = { rulingId: 'r1', outcome: 'release-to-buyer', reason: REASON, evidence: ['Bank statement'], proposedByYou: false };

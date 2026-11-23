@@ -442,6 +442,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       [code, d.round === 2 && d.appealedAt !== null ? d.appealedAt : d.openedAt],
     );
     const tk = taken.rows[0];
+    // Review p4t22 M1: the ruling gate's own inputs, as the propose route hands them to the machine.
+    const gate = gateValueOf({ amountAtomic: BigInt(t.amount_atomic), lockedRate: { currency: t.locked_currency, centsPerXmr: BigInt(t.locked_cents_per_xmr) } }, (await disputeSettings(deps.db)).largeTradeLimitUsd);
     return {
       code,
       incidentId: x.incident_id,
@@ -459,7 +461,10 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       usd: usd(d.usdCents),
       // Review p4t22 M1: the two-person rule as a proposal now meets it (the gate's own rule too:
       // every non-USD trade, and the limit in force now; lead default, owner question OQ1).
-      overLimit: needsSecond(d, 'release-to-buyer', { kind: 'none' }, gateValueOf({ amountAtomic: BigInt(t.amount_atomic), lockedRate: { currency: t.locked_currency, centsPerXmr: BigInt(t.locked_cents_per_xmr) } }, (await disputeSettings(deps.db)).largeTradeLimitUsd)),
+      overLimit: needsSecond(d, 'release-to-buyer', { kind: 'none' }, gate),
+      // Why a second person is needed: the trade is not priced in US dollars (the gate has no value
+      // of its own for it), or its value is at or above the limit; null when one person rules.
+      secondReason: gate.usdCents === null ? 'non-usd' : needsSecond(d, 'release-to-buyer', { kind: 'none' }, gate) ? 'over-limit' : null,
       // Plan 4 Task 18 (ModCase): the large-trade limit this dispute snapshotted when it opened, whole dollars.
       limitUsd: Number(d.limitUsdCents / 100n),
       assignee: x.assignee_name,
