@@ -11,7 +11,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { availabilityLine, useNameAvailability, type NameChecker } from './availability.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { checkNewLoginName, hasSpace, nameShapeProblem, spaceProblem } from './names.js';
+import { USERNAME_RESERVED, checkNewLoginName, hasSpace, nameShapeProblem, spaceProblem } from './names.js';
 
 export function Username({ check }: { check?: NameChecker } = {}) {
   const { state, update, go, path } = useSetup();
@@ -29,8 +29,8 @@ export function Username({ check }: { check?: NameChecker } = {}) {
       return;
     }
     if (!r.ok) {
-      // A login name has no reserved words (only a display name does), so any refusal is its shape.
-      setError(nameShapeProblem('Your username', r.reason === 'length' ? 'length' : 'characters'));
+      // Security follow-up (23 Nov 2026): a new username is checked for reserved words too.
+      setError(r.reason === 'reserved' ? USERNAME_RESERVED : nameShapeProblem('Your username', r.reason === 'length' ? 'length' : 'characters'));
       return;
     }
     if (availability.state === 'taken') {

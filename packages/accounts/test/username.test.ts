@@ -511,3 +511,65 @@ describe('review L3/L4: the display key is a full case fold', () => {
     expect(displayKeyOf('  Bob   Smith ')).toBe((checkDisplayName('Bob Smith') as { key: string }).key);
   });
 });
+
+// Security follow-up (23 Nov 2026): with the 8-20 minimum, a reserved word plus a short pad
+// (`Support1`, `Owner123`, `5upport1`) passed. A new or changed name, display or login, is refused
+// when its look-alike skeleton (digits drawn like letters folded too) has a reserved word standing
+// as its own word, starting or ending it, or making up half its letters, unless the word sits
+// glued inside an ordinary word (ORDINARY_WORDS). Stored names (checkDisplayName, checkLoginName)
+// are unchanged.
+describe('new names: a reserved word with a short pad', () => {
+  const PROBES = [
+    // The probe list of the follow-up.
+    'Support1', 'SUPPORT1', 'SupportX', 'Owner123', 'System01', 'Official1', 'Helpdesk', 'Mod12345',
+    'Rootuser', 'Theadmin', 'XAdmin12', '5upport1',
+    // More of the same: all capitals, a word break inside an ordinary word, the new reserved words,
+    // look-alike digits, a reserved word ending the letters before a digit pad.
+    'SUPPORTX', 'ModEst12', 'Team_work', 'BigOwner', 'Sysadmin', 'Escrow99', 'Security', 'Serv1ce_Bob',
+    'TheTeam1', 'R00tR00t', 'Helper99', 'ServiceDog', 'Maxmod12', 'Supp0rt_', 'H3lpdesk', '0wner_77',
+    'Adm1n_Bob', 'Escr0w_Svc',
+  ];
+  test.each(PROBES)('refuses %s as a new display name and a new login name', (name) => {
+    expect(checkNewDisplayName(name)).toEqual({ ok: false, reason: 'reserved' });
+    expect(checkNewLoginName(name)).toEqual({ ok: false, reason: 'reserved' });
+  });
+
+  test('a stored name is unchanged: these login names still parse, so their accounts log in', () => {
+    for (const name of PROBES) expect(checkLoginName(name), name).toMatchObject({ ok: true });
+    // Display names the earlier rule let through are still found and shown.
+    for (const name of ['Support1', 'Owner123', 'Rootuser', 'Mod12345', '5upport1', 'Helper99']) expect(checkDisplayName(name), name).toMatchObject({ ok: true });
+  });
+
+  // Ordinary names that hold a reserved word glued inside a word, or none, and the demo's names.
+  const LEGITIMATE = [
+    'Modesty12', 'Teamwork9', 'Rootbeer7', 'ModelCars1', 'Modern_Art', 'ModularBob', 'Helpful_Hannah',
+    'Ownership1', 'Systematic', 'Officially1', 'Steamboat9', 'SteamPunk1', 'Beetroot88', 'Homeowner7',
+    'Landowner1', 'Teammate5', 'Rooted123', 'Ecosystem1', 'Commodore64', 'Hotmodel9', 'Teamster1',
+    'Whelp_dog', 'MoneroFan', 'CryptoBob99', 'Satoshi_21', 'Alice2024', 'BobTheBuilder', 'TradeMaster',
+    'XmrTrader1', 'Quiet.Fox_7', 'Badminton7', 'Gamer007', 'user007x', 'satoshi_ghost', 'nightowl_44', 'kettle.moss', 'lowtide_rx',
+  ];
+  test.each(LEGITIMATE)('accepts %s as a new display name and a new login name', (name) => {
+    expect(checkNewDisplayName(name)).toMatchObject({ ok: true });
+    expect(checkNewLoginName(name)).toMatchObject({ ok: true });
+  });
+
+  test.each(['Müller_Hans', 'José_García', '東京の取引者です', 'Владимир88', 'mira.k.seed', 'demo_ana.seed'])('accepts the display name %s', (name) => {
+    expect(checkNewDisplayName(name)).toMatchObject({ ok: true });
+  });
+
+  test('the old prefix rule still refuses a display name starting with staff (Stafford22), a login name is free of it', () => {
+    expect(checkNewDisplayName('Stafford22')).toEqual({ ok: false, reason: 'reserved' });
+    expect(checkNewLoginName('Stafford22')).toMatchObject({ ok: true });
+  });
+
+  test('reserved words in other scripts\' look-alikes are found too', () => {
+    expect(checkNewDisplayName('Ꮪupport1')).not.toMatchObject({ ok: true });
+    expect(checkNewDisplayName('ѕupport_9')).not.toMatchObject({ ok: true });
+    expect(checkNewDisplayName('Ｓｕｐｐｏｒｔ１')).toEqual({ ok: false, reason: 'reserved' });
+  });
+
+  test('checkNames refuses a reserved login name on the loginName field', () => {
+    expect(checkNames('Quiet.Fox_7', 'Owner123')).toEqual({ ok: false, field: 'loginName', reason: 'reserved' });
+    expect(checkNames('Owner123', 'quiet-fox-7')).toEqual({ ok: false, field: 'displayName', reason: 'reserved' });
+  });
+});

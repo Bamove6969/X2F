@@ -197,11 +197,11 @@ describe('an owner name that looks like an existing trader or member (review lea
     const b = new StaffBrowser(app);
     expect((await enterCode(b, code)).statusCode).toBe(200);
     for (const displayName of ['Mira.Kay7', 'M1ra-kay7', 'ren.quinn7', 'Re_nQuinn7']) {
-      const res = await b.post('/staff/v1/setup/account', { displayName, loginName: 'owner-login' });
+      const res = await b.post('/staff/v1/setup/account', { displayName, loginName: 'lumen-login' });
       expect({ displayName, status: res.statusCode, error: errorOf(res) }).toEqual({ displayName, status: 400, error: 'display-name-reserved' });
     }
     expect((await deps.db.query("select 1 from accounts where kind = 'owner'")).rows).toHaveLength(0);
-    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.kai', loginName: 'owner-login' });
+    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.kai', loginName: 'lumen-login' });
     expect(ok.statusCode, ok.body).toBe(201);
   });
 });
