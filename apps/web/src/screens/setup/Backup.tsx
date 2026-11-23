@@ -143,7 +143,11 @@ export function RecoveryCodeStep({
     return (
       <div className="x2f-field" data-part="recovery-codes" data-screen-part="show">
         {/* COPY-UNSIGNED */}
-        <p className="x2f-note">Write it down now and keep it somewhere safe. It works once, and the next screen asks you to type it in.</p>
+        {/* Owner demo note #152 (23 Nov): his words, and a lot bigger, at least as big as the first paragraph. */}
+        <p className="x2f-note x2f-start__note-big">
+          Store it offline or in a secure vault before continuing. You will be tested on this code on the very next screen to confirm you recorded
+          it.
+        </p>
         {held !== null ? (
           <p className="x2f-note" role="status" data-part="held-note">
             {held}

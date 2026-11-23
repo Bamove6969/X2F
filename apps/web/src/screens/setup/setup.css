@@ -1249,3 +1249,11 @@
   letter-spacing: 0.04em;
   color: var(--x2f-danger);
 }
+
+/* Owner demo note #152 (23 Nov): the recovery-code instruction a lot bigger than the small note text. */
+.x2f-start__note-big {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
