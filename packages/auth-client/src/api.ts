@@ -554,6 +554,8 @@ export interface AuthApi {
   confirmPgpFinish(b: { challengeId: string; code: string }): Promise<ConfirmTokenResult>;
   confirmWebAuthnStart(b: { action: ConfirmAction }): Promise<AuthenticationChallenge>;
   confirmWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON }): Promise<ConfirmTokenResult>;
+  /** Review L1 (#94): the same finish for the `key-test` action, which answers `{ tested: true }` and no token. */
+  keyTestWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON }): Promise<{ tested: true }>;
 
   // Login methods of the account
   /**
@@ -811,6 +813,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     confirmPgpFinish: (b) => post('/v1/confirm/pgp/finish', b),
     confirmWebAuthnStart: (b) => post('/v1/confirm/webauthn/start', b),
     confirmWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
+    keyTestWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
 
     setPassword: (b) => stagedOrDone(call('PUT', '/v1/account/password', b)),
     addPgpKeyStart: (b) => post('/v1/account/pgp/start', b),

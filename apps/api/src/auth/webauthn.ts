@@ -949,6 +949,8 @@ async function confirmFinish(req: FastifyRequest) {
   const row = await verifyAssertion(deps, { accountId: confirmer.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
   assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
   assertListed(ch, row);
+  // Review L1 (owner demo note #94): the key test is this check alone; no token is issued for it.
+  if (action.kind === 'key-test') return { tested: true as const };
   // The method is the kind of the stored credential that just verified, never anything the client sent.
   const confirmToken = await issueConfirmToken(deps, {
     sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: row.kind,

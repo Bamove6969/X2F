@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Methods } from '../src/screens/settings/Methods.js';
 import { KEY_TEST_COPY, keyTestErrorText } from '../src/screens/auth/KeyTest.js';
+import { KEY_TEST_RECOVERY } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 let staged: unknown = undefined;
@@ -100,5 +101,8 @@ describe('note #94 in Settings: test a security key right after adding it', () =
     expect(keyTestErrorText(new KeyTestError('other-key'))).toBe(KEY_TEST_COPY.otherKey);
     expect(keyTestErrorText(new KeyTestError('not-listed'))).toBe(KEY_TEST_COPY.notListed);
     expect(keyTestErrorText(new Error('?'))).toBe(KEY_TEST_COPY.failed);
+    // Review L1: a backup (recovery) session cannot run the test: said plainly.
+    const { AuthApiError } = await import('@x2f/auth-client');
+    expect(keyTestErrorText(new AuthApiError(403, 'recovery-session'))).toBe(KEY_TEST_RECOVERY);
   });
 });

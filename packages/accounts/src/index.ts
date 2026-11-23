@@ -48,6 +48,7 @@ export {
   addressesHash,
   describeAction,
   STRONG_ONLY_ACTIONS,
+  WEBAUTHN_ONLY_ACTIONS,
   needsStrongConfirm,
 } from './confirmAction.js';
 export {

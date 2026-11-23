@@ -557,6 +557,12 @@ export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
 /** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
 export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
 
+/** The code a backup (recovery) session gets on a route it may not use. */
+export const RECOVERY_SESSION_CODE = 'recovery-session' satisfies CantDoCode;
+
+/** Review L1: a key test from a backup (recovery) session, which confirms nothing (403 `recovery-session`). COPY-UNSIGNED */
+export const KEY_TEST_RECOVERY = "You're logged in with a backup login, which can't test a key. Log in with your security key or another way, then test it from Settings.";
+
 /** Review M2: the code a setup-only session (a password alone) gets on every other route. */
 export const SECOND_METHOD_CODE = 'second-method-required' satisfies CantDoCode;
 
