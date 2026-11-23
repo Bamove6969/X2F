@@ -585,15 +585,16 @@ const ENTRIES: readonly Entry[] = [
     id: 'second-approver',
     topic: 'disputes',
     q: 'Does one moderator decide alone?',
-    a: 'One moderator rules, except on a large trade: its ruling also needs a senior moderator or the owner to approve it.',
-    sources: ['packages/staff/src/dispute.ts:212-213 needsSecond', 'apps/api/src/staff/settingsDefaults.ts:11-12 largeTradeLimitUsd', 'packages/staff/src/dispute.ts:271-272 const canApprove'],
+    // Review p4t22 M1 (lead default, owner question OQ1): a trade in any currency but US dollars needs two people too.
+    a: 'One moderator rules, except on a large trade or one priced in a currency other than US dollars: its ruling also needs a senior moderator or the owner to approve it.',
+    sources: ['packages/staff/src/dispute.ts:288-291 needsSecond', 'packages/staff/src/dispute.ts:255-258 gateUsdCents', 'apps/api/src/staff/settingsDefaults.ts:11-12 largeTradeLimitUsd', 'packages/staff/src/dispute.ts:349-350 const canApprove'],
   },
   {
     id: 'appeal',
     topic: 'disputes',
     q: 'Can I appeal a ruling?',
     a: 'Yes. Either side can appeal, normally within 48 hours of the ruling. A senior moderator or the owner who took no part in the first ruling looks at it again, and aims to decide within 48 hours.',
-    sources: ['apps/api/src/staff/settingsDefaults.ts:27 appealWindowH', 'apps/api/src/staff/settingsDefaults.ts:15 Hours after a ruling in which either side may appeal', 'packages/staff/src/dispute.ts:384 too-late', 'packages/staff/src/dispute.ts:278-279 eligibleForAppeal', 'packages/staff/src/dispute.ts:17 APPEAL_GOAL_H'],
+    sources: ['apps/api/src/staff/settingsDefaults.ts:27 appealWindowH', 'apps/api/src/staff/settingsDefaults.ts:15 Hours after a ruling in which either side may appeal', 'packages/staff/src/dispute.ts:463 too-late', 'packages/staff/src/dispute.ts:355-356 eligibleForAppeal', 'packages/staff/src/dispute.ts:17 APPEAL_GOAL_H'],
     facts: ['appealWindowHours', 'appealGoalHours'],
   },
   {
@@ -914,7 +915,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'Is there a fee when a moderator rules?',
     a: 'If the ruling releases the XMR to the buyer, the trade completes and the vendor pays the 1%. If everything goes back to where it came from, there is no X2F fee. While an appeal is open, the fee waits for its outcome.',
-    sources: ['packages/staff/src/dispute.ts:309-310 release-to-buyer', 'packages/staff/src/dispute.ts:318 return \'waits\';', `${T}/payouts.ts:29-32 'dispute-buyer'`],
+    sources: ['packages/staff/src/dispute.ts:385-386 release-to-buyer', 'packages/staff/src/dispute.ts:395 return \'waits\';', `${T}/payouts.ts:29-32 'dispute-buyer'`],
     facts: ['feePercent'],
   },
 ];
