@@ -169,7 +169,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 73 -> 72 (wip/lead-notes-integ, wip/third-demo-r3's sign-up round 3 merged onto main a981b348):
     // setup/Backup.tsx's one goes (its second-PGP-key input check moved out with the round-3 backup step).
     // The round's other counts (the tour's two notes, UNREADABLE_PAY_LINE) were already counted above.
-    expect(notARefusal).toBeLessThanOrEqual(72);
+    // 72 -> 73 (wip/lead-notes-all, Terms v2026-11-23, owner demo note #106, 17 Nov): setup/termsText.ts's
+    // late-payment bullet in the owner's own words ("you can't figure it out amicably ... call upon a
+    // moderator"), Terms text that explains, not a refusal (counted 69 -> 70 on wip/lead-note-terms).
+    expect(notARefusal).toBeLessThanOrEqual(73);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
