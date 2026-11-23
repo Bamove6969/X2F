@@ -293,7 +293,7 @@ for (const v of PHONES) {
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-wallet"]')).toBeVisible();
     await expectParity(page, 'SetupWallet', { viewport: v });
-    await page.fill('#addr', ADDRESS);
+    await page.fill('#xmr-payout', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
 
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
@@ -313,7 +313,7 @@ for (const v of PHONES) {
       expect.objectContaining({ challengeId: 'c1', code: '1234-5678-9ABC', acceptedTerms: TERMS_VERSION, termsSignature: DRAWN }),
     ]);
     // The first wallet goes with no confirm token and no confirm-it's-you call at all.
-    expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'cake', label: 'Wallet 1', address: ADDRESS }] }]);
+    expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'other', label: 'Wallet 1', address: ADDRESS }] }]);
     expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
   });
 
@@ -458,7 +458,7 @@ test('Mira.K_ shows exactly as typed after setup (password path)', async ({ page
 
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await saveRecoveryCodes(page);
-  await page.fill('#addr', ADDRESS);
+  await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
 
   await expect(page.locator('h1')).toHaveText('Welcome to X2F, Mira.K_');
@@ -600,7 +600,7 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   // S2b; owner demo notes 12 Nov 2026); then it goes straight on to the wallet (lead call).
   await saveRecoveryCodes(page);
   await at('setup-wallet');
-  await page.fill('#addr', ADDRESS);
+  await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
   await at('setup-welcome');
   await page.click('[data-part="start-trading"]');
@@ -711,13 +711,15 @@ test('a signed-in trader with no wallet who opens /setup lands on Link a wallet 
   const s = await stubApi(page, { signedIn: true, methods: ['pgp'], wallets: [] });
   await page.goto(`/setup?returnTo=${encodeURIComponent(TAKE)}`);
   await expect(page).toHaveURL(/\/setup\/wallet\?/);
-  await page.click('[data-app="edge"]');
-  await expect(page.getByText("For best privacy, turn on Full Sync in Edge's Monero settings.", { exact: false })).toBeVisible();
-  await page.fill('#addr', ADDRESS);
+  // Owner #96: a plain list of wallets (nothing to click) and the Edge tip with Edge's real setting.
+  await expect(page.locator('[data-part="wallet-list"] li')).toHaveText(['Cake Wallet', 'Edge', 'Feather', 'Monerujo', 'Stack', 'Monero GUI', 'Ledger or Trezor']);
+  await expect(page.locator('[data-part="wallet-list"] button')).toHaveCount(0);
+  await expect(page.getByText("Using Edge? For best privacy, open your Monero wallet's menu in Edge, choose Wallet Settings and pick Full Node.", { exact: false })).toBeVisible();
+  await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
   await expect(page).toHaveURL(/\/setup\/welcome\?/);
-  await expect(page.locator('[data-part="summary-wallet"]')).toHaveText('Edge …k3Fz');
-  expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'edge', label: 'Wallet 1', address: ADDRESS }] }]);
+  await expect(page.locator('[data-part="summary-wallet"]')).toHaveText('Wallet 1 …k3Fz');
+  expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'other', label: 'Wallet 1', address: ADDRESS }] }]);
   expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
 });
 
@@ -1018,7 +1020,7 @@ test.describe('review fix round', () => {
       r.request().method() === 'GET' ? json([])(r) : json({ error: 'address-integrated' }, 400)(r),
     );
     await page.goto(`/setup/wallet?returnTo=${encodeURIComponent('/post')}`);
-    await page.fill('#addr', `4${'9'.repeat(101)}k3Fz`);
+    await page.fill('#xmr-payout', `4${'9'.repeat(101)}k3Fz`);
     await page.click('[data-part="wallet-finish"]');
     await expect(page.locator('[data-part="wallet-error"]')).toHaveText('That is an integrated address. Paste a normal receive address from your wallet.');
   });

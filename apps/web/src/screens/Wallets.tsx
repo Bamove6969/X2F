@@ -16,6 +16,7 @@ import {
   MAX_WALLET_BATCH,
   WALLET_APPS,
   appPromptName,
+  EDGE_TIP,
   nameSuggestions,
   nextWalletName,
   ruleLines,
@@ -502,10 +503,7 @@ function WalletsScreen() {
               ))}
             </div>
             {app === 'edge' ? (
-              <p className="x2f-wallets__tip">
-                For best privacy, turn on Full Sync in Edge's Monero settings. Otherwise Edge's servers can see payments
-                coming in.
-              </p>
+              <p className="x2f-wallets__tip">{EDGE_TIP}</p>
             ) : null}
 
             <label className="x2f-wallets__field" htmlFor="wallet-label">

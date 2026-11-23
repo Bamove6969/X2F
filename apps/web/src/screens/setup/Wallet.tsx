@@ -1,25 +1,44 @@
 /**
- * Setup step 5 (board SetupWallet; spec 6.1 step 5, 6.4): the first payout wallet. Pick the app,
- * paste a receive address from it. This is the first-wallet path (Plan 2 R12; spec 6.3 "Wallet
+ * Setup step 5 (board SetupWallet; spec 6.1 step 5, 6.4): the first payout wallet. A plain list of
+ * well-known Monero wallets, then one address field (owner demo notes 12 Nov #32 and 16 Nov #96: the
+ * wallet names are a recommendation, not buttons that do something; "use your favourite and enter in
+ * an address from that wallet"). The wallet is saved under the app `other` ("your wallet"): nothing
+ * on this screen picks an app any more. The address checks are unchanged. This is the first-wallet path (Plan 2 R12; spec 6.3 "Wallet
  * rules refined", owner 2026-10-24): it goes with no confirm token while the account's sign-up
  * window is open, and the account's first wallet never waits, whenever it is added. Should the
  * server still ask for a confirm (someone coming back after the window), the confirm sheet asks;
  * the wallet still works at once.
  *
- * The app names, the "your wallet" wording for Other and the neutral first label ("Wallet 1") come
- * from Task 29's address book (wallets-model.ts).
+ * The app names and the neutral first label ("Wallet 1") come from Task 29's address book
+ * (wallets-model.ts).
  */
 import { useState } from 'react';
 import { isStaged, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { SetupFrame, SetupIntro, radioProps, useSetup } from './kit.js';
+import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { errorCode } from './register.js';
-import { APP_LABELS, WALLET_APPS, appPromptName, nextWalletName } from '../wallets-model.js';
+import { APP_LABELS, EDGE_TIP, WALLET_APPS, nextWalletName } from '../wallets-model.js';
 
 /** The first wallet's name: neutral, never where the money comes from (spec 6.3, "Labels"). */
 const FIRST_WALLET_LABEL = nextWalletName(0);
+
+/** No app is picked on this screen (owner #96): the wallet is "your wallet". */
+const APP: WalletApp = 'other';
+
+/** The recommendation list: the address book's apps in its order, without Other (owner #96: "and many more"). */
+export const SUGGESTED_WALLETS: readonly string[] = WALLET_APPS.filter((a) => a !== 'other').map((a) => APP_LABELS[a]);
+
+/** The words on this screen (owner demo notes 12 Nov #32, 16 Nov #96, from his wording). COPY-UNSIGNED */
+export const WALLET_COPY = {
+  intro: 'Any Monero wallet works. X2F never holds your coins.',
+  listTitle: 'Well-known Monero wallets',
+  more: 'and many more.',
+  /** Shown to everyone now no app is picked: wallets-model.ts EDGE_TIP (Edge's real setting, owner #96). */
+  edgeTip: `Using Edge? ${EDGE_TIP}`,
+  field: 'Use your favourite wallet and enter a receive address from it',
+} as const;
 
 /**
  * A Monero address: 95 base58 characters (standard or subaddress) or 106 (integrated). The server
@@ -36,11 +55,10 @@ const ERRORS: Record<string, string> = {
 export function Wallet() {
   const { update, go } = useSetup();
   const { prove, confirmUi, open } = useConfirm();
-  const [app, setApp] = useState<WalletApp>('cake');
+  const app = APP;
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const appName = appPromptName(app);
 
   const finish = async () => {
     const trimmed = address.trim();
@@ -91,30 +109,41 @@ export function Wallet() {
           </Button>
         }
       >
-        <SetupIntro title="Where should we send your XMR?">Choose the wallet you want to be paid to. X2F never holds your coins.</SetupIntro>
-        <div className="x2f-start__chips" role="radiogroup" aria-label="Wallet app">
-          {WALLET_APPS.map((a, i) => (
-            <button key={a} type="button" {...radioProps(WALLET_APPS, app, setApp, i)} className="x2f-start__chip" data-app={a}>
-              {APP_LABELS[a]}
-            </button>
-          ))}
-        </div>
-        {app === 'edge' ? (
-          <p className="x2f-start__tip" data-part="edge-tip">
-            For best privacy, turn on Full Sync in Edge's Monero settings. Otherwise Edge's servers can see payments coming in.
-          </p>
-        ) : null}
-        <label className="x2f-field x2f-label" htmlFor="addr">
-          Receive address from {appName}
+        <SetupIntro title="Where should we send your XMR?">{WALLET_COPY.intro}</SetupIntro>
+        {/* A recommendation, not a choice (owner #96): plain text, nothing here can be clicked. */}
+        <section className="x2f-start__suggest" data-part="wallet-list" aria-labelledby="wallet-list-title">
+          <h2 className="x2f-start__suggest-title" id="wallet-list-title">
+            {WALLET_COPY.listTitle}
+          </h2>
+          <ul className="x2f-start__suggest-list">
+            {SUGGESTED_WALLETS.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="x2f-start__suggest-more">{WALLET_COPY.more}</p>
+        </section>
+        <p className="x2f-start__tip" data-part="edge-tip">
+          {WALLET_COPY.edgeTip}
+        </p>
+        {/* Browser fill-in (owner #96, Edge): the id, name and autocomplete keep Edge/Chrome's address
+            and form autofill and the common password managers from offering anything here. */}
+        <label className="x2f-field x2f-label" htmlFor="xmr-payout">
+          {WALLET_COPY.field}
           <input
             className="x2f-input x2f-start__mono"
-            id="addr"
+            id="xmr-payout"
+            name="xmr-payout"
             type="text"
+            inputMode="text"
             placeholder="4… or 8…"
             autoComplete="off"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
+            data-1p-ignore=""
+            data-lpignore="true"
+            data-bwignore=""
+            data-form-type="other"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
           />

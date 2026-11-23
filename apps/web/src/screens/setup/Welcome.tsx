@@ -11,9 +11,13 @@
  * then asks for the session length (`afterLogin`) and goes on. Every setup step before this one
  * (backup, first wallet) still runs in the sign-up session and its 30-minute window. Someone
  * already logged in, who opened setup only to add a wallet, stays logged in.
+ *
+ * Owner demo note 16 Nov #97: the screen also says what the account's security rating is, always
+ * lists the username with the login methods ("Username and password" when there is a password), and
+ * each checklist item links back to the setting where it can be changed or made more secure.
  */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
 import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
@@ -42,7 +46,37 @@ export const WELCOME_COPY = {
   fee: 'Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.',
   none: 'None yet',
   done: 'Done',
+  /** Owner #97: the account's security rating, above the checklist. COPY-UNSIGNED */
+  ratingTitle: "Your account's security rating",
+  /** Owner #97: how to make it more secure, for an account not yet highly secure. COPY-UNSIGNED */
+  ratingRaise: 'Add a passkey, a security key or a PGP key to make it highly secure.',
+  ratingLink: 'Make it more secure',
+  /** Owner #97: "always add Username/Password as a bullet point". COPY-UNSIGNED */
+  usernamePassword: 'Username and password',
+  /** Every account logs in with its private username, password or not. COPY-UNSIGNED */
+  username: 'Username',
+  /** Owner #97: the link back to each setting. COPY-UNSIGNED */
+  change: 'Change',
+  add: 'Add',
 } as const;
+
+/** The rating's words (the same levels as the trade screen's, owner 17 Nov). COPY-UNSIGNED */
+export const RATING_WORDS: Record<SecurityRating, string> = {
+  high: 'Highly secure',
+  medium: 'Medium',
+  weak: 'Weak',
+};
+
+/** Where each checklist item is changed later (owner #97). */
+export const WELCOME_LINKS = {
+  rating: '/settings/security',
+  login: '/settings/security',
+  recovery: '/settings/security',
+  wallet: '/wallets',
+  walletAdd: '/wallets?add=1',
+} as const;
+
+export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /**
  * The login methods, best to worst (lead default, owner may reorder): a security key and a passkey
@@ -54,17 +88,42 @@ const BEST_FIRST: Array<{ id: MethodType; word: string }> = [
   { id: 'passkey', word: 'Passkey' },
   { id: 'pgp', word: 'PGP key' },
   { id: 'totp', word: 'Authenticator app' },
-  { id: 'password', word: 'Password' },
+  { id: 'password', word: WELCOME_COPY.usernamePassword },
 ];
 
 /** The account's login methods best to worst; what this setup just did counts before the account is read again. */
 export function loginMethodsBestFirst(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): string[] {
+  const have = methodsNow(me, flow);
+  // A second PGP key is not visible in the methods list; the flow knows.
+  const twoPgp = flow.registered && flow.method === 'pgp' && flow.backup === 'pgp';
+  const words = BEST_FIRST.filter((m) => have.has(m.id)).map((m) => (m.id === 'pgp' && twoPgp ? 'PGP keys (2)' : m.word));
+  // Owner #97: the username is always a line; with a password it is "Username and password".
+  if (words.length > 0 && !have.has('password')) words.push(WELCOME_COPY.username);
+  return words;
+}
+
+/** The account's methods as this setup leaves them: the account as read, plus what the flow just did. */
+function methodsNow(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): Set<string> {
   const have = new Set<string>(me.methods);
   if (flow.registered) have.add(flow.method);
   if (flow.backup === 'security-key' || flow.backup === 'pgp') have.add(flow.backup);
-  // A second PGP key is not visible in the methods list; the flow knows.
-  const twoPgp = flow.registered && flow.method === 'pgp' && flow.backup === 'pgp';
-  return BEST_FIRST.filter((m) => have.has(m.id)).map((m) => (m.id === 'pgp' && twoPgp ? 'PGP keys (2)' : m.word));
+  return have;
+}
+
+/**
+ * The account's security rating (owner #97). The API's own rating wins when it sends one (GET
+ * /v1/account/me `securityRating`, apps/api/src/auth/rating.ts on main); an API build without it
+ * gets the same three rules applied to the methods here, for display only (it authorises nothing):
+ * high with a PGP key, a passkey or a security key; medium with a password and an authenticator app;
+ * weak otherwise.
+ */
+export function securityRating(me: Pick<Me, 'methods'> & { securityRating?: SecurityRating | null }, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): SecurityRating {
+  const sent = me.securityRating;
+  if (sent === 'high' || sent === 'medium' || sent === 'weak') return sent;
+  const have = methodsNow(me, flow);
+  if (have.has('pgp') || have.has('passkey') || have.has('security-key')) return 'high';
+  if (have.has('password') && have.has('totp')) return 'medium';
+  return 'weak';
 }
 
 export interface Checklist {
@@ -82,7 +141,8 @@ export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
     logins,
     loginDone: logins.length > 0,
     recoveryDone: me.methods.includes('recovery-codes') || flow.backup === 'recovery-codes',
-    wallet: usable !== undefined ? { app: APP_LABELS[usable.app], end: usable.addressEnd } : null,
+    // A wallet saved as Other (setup no longer picks an app, owner #96) goes by its own name.
+    wallet: usable !== undefined ? { app: usable.app === 'other' ? usable.label || APP_LABELS.other : APP_LABELS[usable.app], end: usable.addressEnd } : null,
   };
 }
 
@@ -95,6 +155,15 @@ function Tick({ done }: { done: boolean }) {
         <path d="M5 12l4 4 10-10" />
       </svg>
     </span>
+  );
+}
+
+/** The link back to an item's setting (owner #97): "Change" once it is done, "Add" before. */
+function ChangeLink({ to, done, what }: { to: string; done: boolean; what: 'login' | 'recovery' | 'wallet' }) {
+  return (
+    <Link className="x2f-link x2f-welcome__link" to={to} data-part={`change-${what}`}>
+      {done ? WELCOME_COPY.change : WELCOME_COPY.add}
+    </Link>
   );
 }
 
@@ -161,6 +230,7 @@ export function Welcome() {
 
   const name = displayNameOf(me) || state.displayName;
   const c = checklist(me, wallets, state);
+  const rating = securityRating(me, state);
 
   return (
     <div className="x2f-start x2f-welcome" data-screen="setup-welcome">
@@ -176,6 +246,23 @@ export function Welcome() {
           </h1>
           <p className="x2f-start__lead">{WELCOME_COPY.lead}</p>
         </section>
+        {/* Owner #97 (16 Nov): the rating, and for anything below highly secure, the way to raise it. DESIGNER-REVIEW */}
+        <section className="x2f-welcome__rating" data-part="security-rating" data-rating={rating} aria-labelledby="welcome-rating-title">
+          <p className="x2f-welcome__rating-line">
+            <span className="x2f-welcome__title" id="welcome-rating-title">
+              {WELCOME_COPY.ratingTitle}:
+            </span>{' '}
+            <span data-part="rating-word">{RATING_WORDS[rating]}</span>
+          </p>
+          {rating !== 'high' ? (
+            <p className="x2f-welcome__rating-raise">
+              {WELCOME_COPY.ratingRaise}{' '}
+              <Link className="x2f-link x2f-welcome__link" to={WELCOME_LINKS.rating} data-part="rating-link">
+                {WELCOME_COPY.ratingLink}
+              </Link>
+            </p>
+          ) : null}
+        </section>
         {/* DESIGNER-REVIEW: the owner's checklist (12 Nov), plain until design restyles it. */}
         <ul className="x2f-welcome__checks" aria-label="Your setup">
           <li className="x2f-welcome__check" data-part="check-login">
@@ -190,12 +277,14 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key">{WELCOME_COPY.none}</span>
               )}
+              <ChangeLink to={WELCOME_LINKS.login} done={c.loginDone} what="login" />
             </div>
             <Tick done={c.loginDone} />
           </li>
           <li className="x2f-welcome__check" data-part="check-recovery">
             <div className="x2f-welcome__what">
               <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.recoveryItem}</span>
+              <ChangeLink to={WELCOME_LINKS.recovery} done={c.recoveryDone} what="recovery" />
             </div>
             <Tick done={c.recoveryDone} />
           </li>
@@ -209,6 +298,7 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key" data-part="summary-wallet">{WELCOME_COPY.none}</span>
               )}
+              <ChangeLink to={c.wallet !== null ? WELCOME_LINKS.wallet : WELCOME_LINKS.walletAdd} done={c.wallet !== null} what="wallet" />
             </div>
             <Tick done={c.wallet !== null} />
           </li>

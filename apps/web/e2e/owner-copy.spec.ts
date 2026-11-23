@@ -44,7 +44,7 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
   );
   const login = screen.locator('[data-part="check-login"]');
   await expect(login.locator('[data-part="check-title"]')).toHaveText('Configured your secure methods of logging into X2F');
-  await expect(login.locator('[data-part="login-methods"] li')).toHaveText(['Security key', 'Authenticator app', 'Password']);
+  await expect(login.locator('[data-part="login-methods"] li')).toHaveText(['Security key', 'Authenticator app', 'Username and password']);
   await expect(screen.locator('[data-part="check-recovery"] [data-part="check-title"]')).toHaveText('Emergency login method: recovery code documented');
   await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Connected your wallet');
   await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Cake Wallet …k3Fz');

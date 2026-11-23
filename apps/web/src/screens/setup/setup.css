@@ -52,7 +52,6 @@
 .x2f-start__textbutton:focus-visible,
 .x2f-start__choice:focus-visible,
 .x2f-start__option:focus-visible,
-.x2f-start__chip:focus-visible,
 .x2f-terms:focus-visible {
   outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
@@ -532,29 +531,34 @@
   border: 6px solid var(--x2f-ink);
 }
 
-/* Wallet app chips (SetupWallet). */
-.x2f-start__chips {
+/* The suggested wallets (SetupWallet; owner #96): a plain list, nothing that looks clickable.
+   DESIGNER-REVIEW: plain until design draws it. */
+.x2f-start__suggest {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--x2f-space-2);
+  flex-direction: column;
+  gap: 6px;
 }
 
-.x2f-start__chip {
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
-  background: transparent;
-  color: var(--x2f-ink);
-  font-family: inherit;
+.x2f-start__suggest-title {
+  margin: 0;
   font-size: 15px;
-  cursor: pointer;
+  font-weight: 600;
+  line-height: 20px;
 }
 
-.x2f-start__chip[aria-checked='true'] {
-  border: 2px solid var(--x2f-ink);
-  background: var(--x2f-surface-raised);
-  font-weight: 600;
+.x2f-start__suggest-list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__suggest-more {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-start__tip {
@@ -1171,4 +1175,29 @@
   line-height: 22px;
   color: var(--x2f-ink-muted);
   text-align: center;
+}
+
+/* Owner #97 (16 Nov 2026): the security rating above the checklist and the links back to each
+   setting. DESIGNER-REVIEW: plain until design restyles it. */
+.x2f-welcome__rating {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+  font-size: 17px;
+}
+
+.x2f-welcome__rating-line,
+.x2f-welcome__rating-raise {
+  margin: 0;
+}
+
+.x2f-welcome__rating-raise {
+  color: var(--x2f-ink-muted);
+  font-size: 15px;
+}
+
+.x2f-welcome__link {
+  align-self: flex-start;
 }

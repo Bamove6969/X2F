@@ -165,10 +165,10 @@ describe('TradeFund (seller)', () => {
     expect(host.textContent).toContain('Received 1.000000 of 1.250000 XMR, send the rest');
   });
 
-  it('shows the Edge Full Sync tip for an Edge wallet', async () => {
+  it('shows the Edge privacy tip (Wallet Settings, Full Node) for an Edge wallet', async () => {
     current = { ...base, funding: { ...base.funding!, walletApp: 'edge' } };
     const host = await room();
-    expect(host.textContent).toContain("For best privacy, turn on Full Sync in Edge's Monero settings.");
+    expect(host.textContent).toContain("For best privacy, open your Monero wallet's menu in Edge, choose Wallet Settings and pick Full Node. With LWS, Edge's servers can see payments coming in.");
   });
 
   it('shows the gift-card warning for a gift-card method', async () => {
