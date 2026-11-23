@@ -311,9 +311,14 @@ for (const v of PHONES) {
     await expectParity(page, 'SetupWallet', { viewport: v });
     await page.fill('#xmr-payout', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
+    // Owner #161: the saved first wallet shows its green check, then Continue.
+    await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+    await page.click('[data-part="wallet-continue"]');
 
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
-    await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.kai');
+    // Owner #165: "Welcome to" and the X2F logo (its label), then the name with a comma.
+    await expect(page.getByRole('heading', { level: 1, name: 'Welcome to X2F' })).toBeVisible();
+    await expect(page.locator('[data-part="welcome-name"]')).toHaveText('lumen.kai,');
     // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
     await expect(page.locator('[data-part="check-recovery"] [data-part="tick"]')).toHaveCount(1);
     await expectParity(page, 'SetupWelcome', { viewport: v });
@@ -479,8 +484,13 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   await saveRecoveryCodes(page);
   await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
+  // Owner #161: the saved first wallet shows its green check, then Continue.
+  await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+  await page.click('[data-part="wallet-continue"]');
 
-  await expect(page.locator('h1')).toHaveText('Welcome to X2F, Mira.Kay_');
+  // Owner #165: "Welcome to" and the X2F logo (its label), then the name with a comma.
+    await expect(page.getByRole('heading', { level: 1, name: 'Welcome to X2F' })).toBeVisible();
+    await expect(page.locator('[data-part="welcome-name"]')).toHaveText('Mira.Kay_,');
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.Kay_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
@@ -621,6 +631,9 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await at('setup-wallet');
   await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
+  // Owner #161: the saved first wallet shows its green check, then Continue.
+  await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+  await page.click('[data-part="wallet-continue"]');
   await at('setup-welcome');
   await page.click('[data-part="start-trading"]');
   // Owner G25: log in with what was just set up, choose the session length, then on.
@@ -675,6 +688,9 @@ test.describe('on a new device', () => {
     await page.click('[data-part="backup-skip"]');
     await page.fill('#addr', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
+    // Owner #161: the saved first wallet shows its green check, then Continue.
+    await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+    await page.click('[data-part="wallet-continue"]');
     await page.click('[data-part="start-trading"]');
     await expect(page.locator('[data-screen="login"]')).toBeVisible();
     await page.click('[data-method="password"]');
@@ -774,6 +790,9 @@ test('a signed-in trader with no wallet who opens /setup lands on Link a wallet 
   await expect(page.getByText("Using Edge? For best privacy, open your Monero wallet's menu in Edge, choose Wallet Settings and pick Full Node.", { exact: false })).toBeVisible();
   await page.fill('#xmr-payout', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
+  // Owner #161: the saved first wallet shows its green check, then Continue.
+  await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+  await page.click('[data-part="wallet-continue"]');
   await expect(page).toHaveURL(/\/setup\/welcome\?/);
   await expect(page.locator('[data-part="summary-wallet"]')).toHaveText('Wallet 1 …k3Fz');
   expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'other', label: 'Wallet 1', address: ADDRESS }] }]);

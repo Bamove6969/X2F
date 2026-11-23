@@ -189,6 +189,94 @@ describe('adding a wallet during onboarding (6.1 step 5, 6.4)', () => {
   });
 });
 
+/**
+ * Owner demo note #161 (23 Nov 2026, /setup/wallet): "the first wallet they add is supposed to let
+ * them add it no matter what without a 24 hour period ... any subsequent adds of wallets they will
+ * have to be security checked." The setup screen sends a batch of one (`{ wallets: [draft] }`).
+ * The rule is the existing one (walletConfirm + addHandler + gateChange): no confirm and no hold
+ * only for the account's first wallet ever, from the creating session, inside its 30-minute sign-up
+ * window. Everything else keeps the confirm and the wait/hold rules exactly as before.
+ */
+describe('owner demo note #161: the first wallet added in sign-up', () => {
+  const setupAdd = (b: Browser, address: string, extra: Record<string, unknown> = {}) =>
+    b.post('/v1/wallets', { wallets: [{ app: 'other', label: 'Wallet 1', address }], ...extra });
+  const weaken = (sessionId: string) => deps.db.query("update sessions set strength = 'weak-single' where id = $1", [sessionId]);
+  const stored = async (id: string) =>
+    (await deps.db.query<{ address: string; usable_from: Date }>('select address, usable_from from wallets where account_id = $1 and removed_at is null', [id])).rows;
+  const tokens = async (id: string) => (await deps.db.query('select 1 from confirm_tokens where account_id = $1', [id])).rows.length;
+
+  it('in the window: no confirm, no hold, stored and usable at once, even from a username-and-password login', async () => {
+    for (const weak of [false, true]) {
+      const { id, b, sessionId } = await trader({ firstSession: true });
+      if (weak) await weaken(sessionId);
+      setNow(at(29 * 60_000));
+      const address = fakeAddress();
+      const res = await setupAdd(b, address);
+      expect(res.statusCode, weak ? 'weak' : 'strong').toBe(201);
+      expect(res.json()).toMatchObject([{ address, addressEnd: address.slice(-6), usable: true }]);
+      expect(await stored(id)).toEqual([{ address, usable_from: now }]);
+      expect(await tokens(id)).toBe(0);
+      const { rows } = await deps.db.query<{ detail: { confirmedWith: string } }>("select detail from alerts where account_id = $1 and kind = 'wallet-added'", [id]);
+      expect(rows.map((r) => r.detail.confirmedWith)).toEqual(['onboarding']);
+      expect((await deps.db.query("select 1 from hold_changes where account_id = $1", [id])).rows).toHaveLength(0);
+    }
+  });
+
+  it('after the window: the existing rule, a confirm is required (the first wallet still never waits)', async () => {
+    const { id, b } = await trader({ firstSession: true });
+    setNow(at(30 * 60_000));
+    const address = fakeAddress();
+    const none = await setupAdd(b, address);
+    expect(none.statusCode).toBe(403);
+    expect(none.json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+    expect(await stored(id)).toEqual([]);
+    const ok = await setupAdd(b, address, { confirmToken: await confirmToken(b, walletsActionOf([address])) });
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json()).toMatchObject([{ address, usable: true }]);
+  });
+
+  it('after the window, a username-and-password login is still held (hold model v3), confirm or not', async () => {
+    const { id, b, sessionId } = await trader({ firstSession: true });
+    await weaken(sessionId);
+    setNow(at(31 * 60_000));
+    const address = fakeAddress();
+    expect((await setupAdd(b, address)).json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+    const staged = await setupAdd(b, address, { confirmToken: await confirmToken(b, walletsActionOf([address])) });
+    expect(staged.statusCode).toBe(202);
+    expect(staged.json()).toMatchObject({ status: 'staged' });
+    expect(await stored(id)).toEqual([]);
+  });
+
+  it('a second wallet in the window needs a confirm, and confirmed with a password it waits 24 hours', async () => {
+    const { id, b } = await trader({ firstSession: true });
+    expect((await setupAdd(b, fakeAddress())).statusCode).toBe(201);
+    const second = fakeAddress();
+    const refused = await setupAdd(b, second);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+    expect(await stored(id)).toHaveLength(1);
+    const ok = await setupAdd(b, second, { confirmToken: await confirmToken(b, walletsActionOf([second])) });
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json()).toMatchObject([{ address: second, usable: false, usableFrom: at(PAYOUT_WAIT_MS).toISOString() }]);
+  });
+
+  // A wallet removed and a new one added is not "first" either: 'keeps the first-wallet exemption to once per account' below.
+
+  it('a recovery session is refused as today, even one carrying a sign-up window, and nothing is stored', async () => {
+    const { id, b } = await trader({ firstSession: true, level: 'recovery' });
+    const res = await setupAdd(b, fakeAddress());
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-session' });
+    expect(await stored(id)).toEqual([]);
+  });
+
+  it('a later session of a new account (not the creating one) needs a confirm for its first wallet', async () => {
+    const { id } = await trader({ firstSession: true });
+    const later = await relogin(id);
+    expect((await setupAdd(later, fakeAddress())).json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+  });
+});
+
 describe('adding a wallet later (P2-C2, R17)', () => {
   it('refuses without a token seconds after a login, refuses a token for another address, accepts the right one', async () => {
     const { b } = await trader();

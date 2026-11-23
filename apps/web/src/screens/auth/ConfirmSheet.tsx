@@ -79,7 +79,8 @@ function WalletWaitNote({ batch }: { batch: boolean }) {
   }, []);
   if (rule === null) return null;
   return (
-    <p className="x2f-note" data-part="wallet-wait">
+    // Owner demo note #164 (23 Nov): this line in the wallet sheet, bigger (17 px, ink: screens.css).
+    <p className="x2f-note x2f-note--wallet" data-part="wallet-wait">
       {walletWaitNote(rule, batch)}
     </p>
   );

@@ -126,9 +126,11 @@ describe('/setup/wallet (owner #32, #96)', () => {
     act(() => type(host.querySelector<HTMLInputElement>('#xmr-payout')!, `  ${ADDRESS} `));
     act(() => host.querySelector<HTMLButtonElement>('[data-part="wallet-finish"]')!.click());
     // The add's confirm action hashes the address (WebCrypto, off the timer queue) before it is sent.
-    for (let i = 0; i < 40 && vi.mocked(api.go).mock.calls.length === 0; i++) await settle();
+    for (let i = 0; i < 40 && host.querySelector('[data-part="wallet-continue"]') === null; i++) await settle();
     expect(bodies).toEqual([{ wallets: [{ app: 'other', label: 'Wallet 1', address: ADDRESS }] }]);
     expect(api.update).toHaveBeenCalledWith({ wallet: { app: 'other', addressEnd: 'k3Fz' } });
+    // Owner #161: the saved wallet's green check, then Continue to Welcome.
+    act(() => host.querySelector<HTMLButtonElement>('[data-part="wallet-continue"]')!.click());
     expect(api.go).toHaveBeenCalledWith('welcome');
   });
 });
@@ -185,6 +187,24 @@ describe('/setup/welcome (owner #97)', () => {
     expect(rating.textContent).toContain(WELCOME_COPY.ratingRaise);
     expect(host.querySelector('[data-part="rating-link"]')!.getAttribute('href')).toBe('/settings/security');
     expect([...host.querySelectorAll('[data-part="login-methods"] li')].map((li) => li.textContent)).toEqual(['Username and password']);
+  });
+
+  it('owner #165: the heading is "Welcome to" and the big X2F logo (no comma), then the name with a comma, then the lead', async () => {
+    const host = await showWelcome(['pgp', 'recovery-codes'], walletList());
+    const h1 = host.querySelector('h1')!;
+    expect(h1.querySelector('.x2f-welcome__to')!.textContent).toBe('Welcome to');
+    const logo = h1.querySelector('svg[role="img"]')!;
+    expect(logo.getAttribute('aria-label')).toBe('X2F');
+    expect(logo.classList.contains('x2f-welcome__logo')).toBe(true);
+    // The heading's name: its text and the logo's label.
+    expect(`${h1.textContent!.trim()} ${logo.getAttribute('aria-label')}`).toBe('Welcome to X2F');
+    expect(h1.textContent).not.toContain(',');
+    expect(h1.querySelector('[data-username]')).toBeNull();
+    const nameLine = h1.nextElementSibling!;
+    expect(nameLine.getAttribute('data-part')).toBe('welcome-name');
+    expect(nameLine.textContent).toBe('Lumen.K,');
+    expect(nameLine.querySelector('[data-username]')!.textContent).toBe('Lumen.K');
+    expect(nameLine.nextElementSibling!.textContent).toBe(WELCOME_COPY.lead);
   });
 
   it('a PGP account is Highly secure, with no raise line, and still lists the username', async () => {

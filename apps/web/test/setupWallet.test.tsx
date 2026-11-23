@@ -82,8 +82,11 @@ async function finish(api: SetupApi, typed: string, answered: () => boolean): Pr
 describe('the first wallet in setup records the address typed on this device (review 17 Nov M4)', () => {
   it('records the typed address under the id the API gave it, and goes on to Welcome', async () => {
     const api = setup();
-    await finish(api, `  ${TYPED} `, () => vi.mocked(api.go).mock.calls.length > 0);
+    await finish(api, `  ${TYPED} `, () => document.querySelector('[data-part="wallet-continue"]') !== null);
     expect(typedAddressOf('w-first-0')).toBe(TYPED);
+    // Owner #161: the green check first, then Continue goes on to Welcome.
+    expect(api.go).not.toHaveBeenCalled();
+    fire(document.querySelector('[data-part="wallet-continue"]')!, new MouseEvent('click', { bubbles: true }));
     expect(api.go).toHaveBeenCalledWith('welcome');
     // Never sent anywhere: the only request carrying the address is the add itself.
     expect(calls.filter((c) => c.body.includes(TYPED) || c.url.includes(TYPED)).map((c) => `${c.method} ${c.url}`)).toEqual(['POST /v1/wallets']);

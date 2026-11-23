@@ -7,7 +7,10 @@
  * rules refined", owner 2026-10-24): it goes with no confirm token while the account's sign-up
  * window is open, and the account's first wallet never waits, whenever it is added. Should the
  * server still ask for a confirm (someone coming back after the window), the confirm sheet asks;
- * the wallet still works at once.
+ * the wallet still works at once. Owner demo note #161 (23 Nov) saw that sheet: his sign-up had run
+ * past the window's 30 minutes (ONBOARDING_MS, from when the account was made), so the server asked,
+ * as its rule says; inside the window nothing asks. Once the API has saved the wallet, the screen
+ * shows a big green "Valid Monero address" check (like "Key verified") and Continue to Welcome.
  *
  * The app names and the neutral first label ("Wallet 1") come from Task 29's address book
  * (wallets-model.ts).
@@ -15,6 +18,7 @@
 import { useState } from 'react';
 import { isStaged, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { Icon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
@@ -41,6 +45,20 @@ export const WALLET_COPY = {
   edgeTip: `Using Edge? ${EDGE_TIP}`,
   // Owner demo note #156 (23 Nov); the heading above already asks "Where should we send your XMR?".
   field: 'Enter your receiving wallet address below.',
+  /**
+   * Owner demo note #161 (23 Nov): once the first wallet is saved, a big green check like "Key
+   * verified". Truthful about what was checked: the API's validator (apps/api/src/wallets/address.ts,
+   * monero-ts) checks the network, the keys and the checksum. That proves the address is a real
+   * Monero address with no typo, not that it is this person's own wallet, so it never says so.
+   */
+  // Owner demo note #162 (23 Nov), his words: "Your first payout wallet has been added. You're all
+  // set—happy trading!" The app's copy has no "!" (tools/copy-lint.ts), so the last part is two
+  // plain sentences.
+  savedTitle: 'Your first payout wallet has been added.',
+  savedBody: "You're all set. Happy trading.",
+  verified: 'Valid Monero address',
+  verifiedHelp: 'X2F checked it: a real Monero address for this network, with a matching checksum, so nothing was mistyped.',
+  verifiedEnd: (end: string) => `Your payouts go to the address ending ${end}. Check that it matches the one in your wallet.`,
 } as const;
 
 /**
@@ -62,6 +80,8 @@ export function Wallet() {
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Owner #161: the end of the wallet the API saved, once it has; the screen then shows the green check.
+  const [saved, setSaved] = useState<string | null>(null);
 
   const finish = async () => {
     const trimmed = address.trim();
@@ -99,7 +119,15 @@ export function Wallet() {
           return;
         }
       }
-      update({ wallet: { app, addressEnd: added?.addressEnd ?? trimmed.slice(-4) } });
+      update({ wallet: { app, addressEnd: added?.addressEnd ?? trimmed.slice(-6) } });
+      // Owner #161: a wallet the API saved gets its green check before Welcome. A staged add (202) is
+      // not saved yet, so it goes on to Welcome as before, with no check.
+      if (added !== undefined) {
+        // Owner #163: the ending shown is the real end of the address typed here (the answer was
+        // checked above to name exactly that address), never a value from anywhere else.
+        setSaved(trimmed.slice(-6));
+        return;
+      }
       go('welcome');
     } catch (e) {
       const code = errorCode(e);
@@ -113,6 +141,33 @@ export function Wallet() {
       setBusy(false);
     }
   };
+
+  if (saved !== null) {
+    return (
+      <SetupFrame
+        screen="setup-wallet"
+        step={5}
+        footer={
+          <Button variant="primary" onClick={() => go('welcome')} data-part="wallet-continue">
+            Continue
+          </Button>
+        }
+      >
+        <SetupIntro title={WALLET_COPY.savedTitle}>{WALLET_COPY.savedBody}</SetupIntro>
+        <section className="x2f-start__verified" aria-label={WALLET_COPY.verified}>
+          {/* Owner demo note #161 (23 Nov): lit up green like "Key verified" (#148). COPY-UNSIGNED */}
+          <div className="x2f-start__verified-big" data-part="address-verified" role="status">
+            <Icon name="check" size={96} stroke={2.5} />
+            <p className="x2f-start__verified-word">{WALLET_COPY.verified}</p>
+          </div>
+          <p className="x2f-start__help">{WALLET_COPY.verifiedHelp}</p>
+          <p className="x2f-start__help" data-part="address-end">
+            {WALLET_COPY.verifiedEnd(saved)}
+          </p>
+        </section>
+      </SetupFrame>
+    );
+  }
 
   return (
     <ConfirmOpenProvider value={open}>
