@@ -136,7 +136,10 @@ export function PgpChallenge() {
         )
       }
     >
-      <SetupIntro title="Decrypt your first login code">You'll do the same thing each time you log in.</SetupIntro>
+      {/* Owner demo note #146 (23 Nov): once decrypted, the heading celebrates it. */}
+      <SetupIntro title={done ? 'You have successfully decrypted your first login code!' : 'Decrypt your first login code'}>
+        You'll do the same thing each time you log in.
+      </SetupIntro>
       {done ? (
         <section className="x2f-start__verified" aria-label="Key verified">
           <p className="x2f-start__status" data-tone="escrow">
