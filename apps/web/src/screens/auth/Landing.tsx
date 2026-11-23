@@ -33,7 +33,6 @@ export const LANDING_COPY = {
   create: 'Create account',
   login: 'Log in',
   recover: 'Lost access? Recover your account',
-  footer: 'Members only · Monero for cash, 2-of-3 escrow',
 } as const;
 
 function Lock() {
@@ -112,9 +111,7 @@ export function Landing() {
           </Link>
         </nav>
       </main>
-      <footer className="x2f-landing__foot">
-        <p>{LANDING_COPY.footer}</p>
-      </footer>
+      {/* Owner demo note #112 (23 Nov): the board's footer line is removed. */}
     </div>
   );
 }
