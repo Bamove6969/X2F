@@ -471,7 +471,7 @@ describe('the appeal round', () => {
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden' });
   });
 
-  it('an uninvolved senior overturns: final, overturned, round 2 published, the receiver of the coins liened (D-006)', async () => {
+  it('an uninvolved senior overturns: final, overturned, round 2 published; round 1 never paid, so nobody is liened (review p4t22 m1, OQ2)', async () => {
     const { code, buyer } = await appealed();
     const senior = await staff('senior');
     setNow(at(3 * H));
@@ -483,8 +483,11 @@ describe('the appeal round', () => {
     expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.published', 'ruling.proposed', 'ruling.published', 'ruling.final']);
     const { rows } = await deps.db.query<{ detail: string }>(`select detail from activity_log where trade_code = $1 and action = 'ruling.final'`, [code]);
     expect(JSON.parse(rows[0]!.detail)).toMatchObject({ round: 2, overturned: true });
+    // Lead default, owner question OQ2: round 2's own payout runs instead; the receiver of round 1's
+    // coins is liened only if round 1's payout is the one that ran (watchReports.test.ts).
     const liens = await deps.db.query(`select debtor_account_id::text as debtor, cause from liens where from_code = $1`, [code]);
-    expect(liens.rows).toEqual([{ debtor: buyer.id, cause: 'overturned' }]);
+    expect(liens.rows).toEqual([]);
+    void buyer;
   });
 
   it('a round-2 tap must name round 1\'s ruling: one naming another is tap-invalid (mod-gate review B2)', async () => {

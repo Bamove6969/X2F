@@ -191,11 +191,10 @@ describe('the ruling executor (Plan 4 Task 14)', () => {
     expect(p.settles).toEqual([]);
   });
 
-  it('after an appeal, round 1 still pays from its own ruling, once (Note 2026-10-30 M3); round 2 never reaches settle', async () => {
+  it('while an appeal is pending, round 1 still pays from its own ruling, once (Note 2026-10-30 M3)', async () => {
     const s = await setup({ outcome: 'release-to-buyer' });
-    const senior = s.w.hire('senior');
-    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
-    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    // Pending: the API has no decided round-2 ruling to give (current null), round 1 kept whole.
+    s.w.api.rulings.set(s.c.ruling.code, { current: null, round1: s.c.ruling, involved: [] });
     const want = await authorised({ ...s, c: s.c });
     const p = recordingParty();
     expect(await executor(s).step(step(s, p.handle))).toBe('handed');
@@ -518,5 +517,71 @@ describe('review p4t22 M1 (d): the gate refusal reaches the API, for the staff c
     await exec.step(step(s, p.handle, { recorded: recorded(500_000n), reportRefusal }));
     expect(sent).toEqual(['needs-second', 'needs-second', 'stopped']);
     expect(p.settles).toEqual([]);
+  });
+});
+
+describe('review p4t22 m1 (lead default, owner question OQ2): an appeal decided before round 1 paid', () => {
+  /** Round 1 release-to-buyer by a moderator; round 2 decided by an uninvolved senior, its tap stored. */
+  async function overturned(outcome: 'refund-to-seller' | 'release-to-buyer' = 'refund-to-seller') {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    return { s, r2 };
+  }
+
+  it("round 2's outcome pays, never the round 1 it overturned; the statement names round 2", async () => {
+    const { s, r2 } = await overturned();
+    const p = recordingParty();
+    const before = announced.length;
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    expect(p.settles).toHaveLength(1);
+    expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'seller' });
+    expect(s.store.state.executions[s.c.ruling.code]).toMatchObject({ rulingId: r2.ruling.id, winner: 'seller' });
+    const st = announced.slice(before).at(-1)!.statement;
+    expect(st).toMatchObject({ round: 2, rulingId: r2.ruling.id, outcome: 'refund-to-seller', winner: 'seller' });
+    // Round 1 was authorised first (unpaid), so the gate's R37 checks know its signers.
+    expect(Object.keys(s.store.state.rulingsSeen)).toEqual(expect.arrayContaining([s.c.ruling.id, r2.ruling.id]));
+    expect(executor(s).kindFor(s.c.ruling.code)).toBe('dispute-seller');
+  });
+
+  it('a round-1 payout already recorded (handed before the appeal was decided) is carried on, never swapped', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const p = recordingParty();
+    const exec = executor(s);
+    expect(await exec.step(step(s, p.handle))).toBe('handed');
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [] });
+    expect(await exec.step(step(s, p.handle))).toBe('in-flight');
+    // A restart: the record pins round 1's payout; round 1 is handed again, identical.
+    const again = recordingParty();
+    expect(await executor(s).step(step(s, again.handle))).toBe('handed');
+    expect(again.settles).toEqual(p.settles);
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(s.c.ruling.id);
+  });
+
+  it('round 2 by someone involved in round 1 is refused (R37 now guards a payout), and reported', async () => {
+    const s = await setup({ outcome: 'release-to-buyer' });
+    const senior = s.w.hire('senior');
+    const r2 = ruling(senior, { round: 2, round1Id: s.c.ruling.id, code: s.c.ruling.code, outcome: 'refund-to-seller' });
+    s.w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    s.w.api.rulings.set(s.c.ruling.code, { current: r2.ruling, round1: s.c.ruling, involved: [senior.id] });
+    const p = recordingParty();
+    const sent: Array<{ rulingId: string; reason: string | null }> = [];
+    expect(await executor(s).step(step(s, p.handle, { reportRefusal: async (r) => (sent.push(r), true) }))).toBe('refused-involved');
+    expect(p.settles).toEqual([]);
+    expect(sent).toEqual([{ rulingId: r2.ruling.id, reason: 'involved' }]);
+  });
+
+  it('"Decision stands" before round 1 paid: round 2 pays the same payout', async () => {
+    const { s, r2 } = await overturned('release-to-buyer');
+    const want = await authorised(s);
+    const p = recordingParty();
+    expect(await executor(s).step(step(s, p.handle))).toBe('handed');
+    expect(p.settles).toEqual([{ kind: 'release', to: want.payouts, builder: 'mod', cosigner: 'buyer' }]);
+    expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2.ruling.id);
   });
 });

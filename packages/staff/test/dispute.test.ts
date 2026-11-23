@@ -310,7 +310,7 @@ describe('appeal (48 h window)', () => {
   });
   test('an appeal is allowed after the coins moved (A1 dropped: it fixes the record)', () => {
     const d = run(published(), [
-      [{ type: 'executed' }, system, at(3)],
+      [{ type: 'executed', round: 1 }, system, at(3)],
       [{ type: 'appeal', involved: [] }, seller, at(20)],
     ]);
     expect(d.status).toBe('appealed');
@@ -333,7 +333,7 @@ describe('a trader may send only appeal', () => {
     { type: 'approve' },
     { type: 'send-back' },
     { type: 'window-closed' },
-    { type: 'executed' },
+    { type: 'executed', round: 1 },
     { type: 'complied' },
     { type: 'close' },
   ];
@@ -347,15 +347,15 @@ describe('a trader may send only appeal', () => {
 
 describe('execution at once (A1 dropped) and the window closing', () => {
   test('executed from published (system only, once)', () => {
-    const d = applyDispute(published(), { type: 'executed' }, system, at(2, 1), S);
+    const d = applyDispute(published(), { type: 'executed', round: 1 }, system, at(2, 1), S);
     expect(d.status).toBe('published');
     expect(d.executedAt).toEqual(at(2, 1));
-    rule('wrong-state', () => applyDispute(d, { type: 'executed' }, system, at(3), S));
-    rule('wrong-party', () => applyDispute(published(), { type: 'executed' }, owner, at(3), S));
+    rule('wrong-state', () => applyDispute(d, { type: 'executed', round: 1 }, system, at(3), S));
+    rule('wrong-party', () => applyDispute(published(), { type: 'executed', round: 1 }, owner, at(3), S));
   });
   test('window-closed after execution closes the case', () => {
     const d = run(published(), [
-      [{ type: 'executed' }, system, at(3)],
+      [{ type: 'executed', round: 1 }, system, at(3)],
       [{ type: 'window-closed' }, system, at(50)],
     ]);
     expect(d.status).toBe('closed');
@@ -363,7 +363,7 @@ describe('execution at once (A1 dropped) and the window closing', () => {
   test('window-closed before execution makes it final; executed then closes', () => {
     let d = applyDispute(published(), { type: 'window-closed' }, system, at(50), S);
     expect(d.status).toBe('final');
-    d = applyDispute(d, { type: 'executed' }, system, at(51), S);
+    d = applyDispute(d, { type: 'executed', round: 1 }, system, at(51), S);
     expect(d.status).toBe('closed');
   });
   test('window-closed only from the system, at or after appealEndsAt, in published', () => {
@@ -373,7 +373,7 @@ describe('execution at once (A1 dropped) and the window closing', () => {
   });
   test('an after-refund ruling is never executed', () => {
     const d = published({ afterRefund: true }, 'no-action');
-    rule('wrong-state', () => applyDispute(d, { type: 'executed' }, system, at(3), S));
+    rule('wrong-state', () => applyDispute(d, { type: 'executed', round: 1 }, system, at(3), S));
   });
   test('close by the system ends a final case', () => {
     const d = applyDispute(published(), { type: 'window-closed' }, system, at(50), S);
@@ -484,11 +484,11 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
     // Round 1's coins moved (or move) under round 1; the case waits for that, then closes.
     expect(d.status).toBe('final');
     expect(d.overturned).toBe(true);
-    expect(applyDispute(d, { type: 'executed' }, system, at(13), S).status).toBe('closed');
+    expect(applyDispute(d, { type: 'executed', round: 1 }, system, at(13), S).status).toBe('closed');
   });
   test('round 2 final after execution: decision stands → closed', () => {
     let d = run(published(), [
-      [{ type: 'executed' }, system, at(3)],
+      [{ type: 'executed', round: 1 }, system, at(3)],
       [{ type: 'appeal', involved: [] }, buyer, at(10)],
       [{ type: 'assign', staffId: 'owner-1', role: 'owner' }, owner, at(11)],
       [{ type: 'propose', gate: G, ruling: draft('owner-1', { id: 'r2' }) }, owner, at(12)],

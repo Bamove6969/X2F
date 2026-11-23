@@ -42,3 +42,13 @@ export async function appealDirect(deps: Pick<Deps, 'db' | 'clock'>, code: strin
     return next;
   });
 }
+
+/**
+ * Review p4t22 m1: the escrow payout of round `round`'s ruling seen, as the watcher's `settled`
+ * report records it (disputes/execution.ts), without the trade event: for tests whose premise is
+ * that the coins already moved under round 1.
+ */
+export async function executeDirect(deps: Pick<Deps, 'db' | 'clock'>, code: string, round: 1 | 2 = 1): Promise<Dispute> {
+  const S = { appealWindowH: DISPUTE_DEFAULTS.appealWindowH, firstResponseH: DISPUTE_DEFAULTS.firstResponseH };
+  return withDispute(deps, { code }, async (d, _client, now) => applyDispute(d, { type: 'executed', round }, { kind: 'system' }, now, S));
+}

@@ -216,7 +216,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     d = applyDispute(d, { type: 'propose', gate: { usdCents: d.usdCents, limitUsdCents: d.limitUsdCents }, ruling: { id: c.ruling.id, outcome, accountAction: { kind: 'none' }, proposer: mod.id } }, modActor, at(220), S);
     d = applyDispute(d, { type: 'approve' }, ownerActor, at(230), S);
     expect(d.status).toBe('published');
-    d = applyDispute(d, { type: 'executed' }, { kind: 'system' }, at(300), S);
+    d = applyDispute(d, { type: 'executed', round: 1 }, { kind: 'system' }, at(300), S);
     expect(d).toMatchObject({ status: 'published', executedAt: at(300) });
     d = applyDispute(d, { type: 'window-closed' }, { kind: 'system' }, new Date(d.appealEndsAt!.getTime() + 1), S);
     expect(d.status).toBe('closed');

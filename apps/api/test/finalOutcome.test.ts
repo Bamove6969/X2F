@@ -3,7 +3,7 @@ import { rulingFee, type RulingOutcome } from '@x2f/staff';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { disputeOutcomeSql, REVERSAL_OUTCOMES, SALE_OUTCOMES } from '../src/traders/finalOutcome.js';
-import { appealDirect, publishRuling } from './helpers/disputes.js';
+import { appealDirect, executeDirect, publishRuling } from './helpers/disputes.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 
@@ -52,6 +52,8 @@ describe('final outcome: sale and reversal against the fee split', () => {
     await publishRuling(deps, trade.code, { outcome: 'release-to-buyer' });
     await appealDirect(deps, trade.code, 'seller');
     expect(await outcome()).toBe('pending');
+    // Review p4t22 m1: the coins moved under round 1 (its payout ran) before the appeal was decided.
+    await executeDirect(deps, trade.code, 1);
     const d = await publishRuling(deps, trade.code, { outcome: 'refund-to-seller' });
     expect(rulingFee(d)).toBe('poster-pays');
     expect(await outcome()).toBe('reversed');

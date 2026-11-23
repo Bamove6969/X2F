@@ -2761,7 +2761,8 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     ['other outputs (the whole balance to the buyer, no fee)', async (t) => statement(t.mod.secret, 'buyer', {}, [{ address: ADDR.buyer, amountAtomic: balance() }])],
     ['another payout address', async (t) => statement(t.mod.secret, 'buyer', {}, [{ address: '4Attacker', amountAtomic: AMOUNT }, { address: FEE_WALLET, amountAtomic: plan.feeAtomic }])],
     ["another trade's statement", async (t) => statement(t.mod.secret, 'buyer', { trade: 'AAAA-BBBB-CCCC-DDDD' })],
-    ['round 2 (an overturn moves no coins)', async (t) => statement(t.mod.secret, 'buyer', { round: 2 })],
+    // Review p4t22 m1 (OQ2): round 2's statement pays (an appeal decided before round 1 paid); a round 3 is no statement.
+    ['round 3 (no such round)', async (t) => { const x = await statement(t.mod.secret, 'buyer'); return { statement: { ...x.statement, round: 3 }, sig: x.sig }; }],
     ['the other side the winner, with this side\'s set', async (t) => statement(t.mod.secret, 'seller', {}, setFor('buyer'))],
     ['malformed', async () => ({ statement: { v: 1, trade: CODE }, sig: 'zz' })],
   ];

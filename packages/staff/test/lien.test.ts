@@ -43,6 +43,11 @@ function appeal(d: Dispute, side: 'buyer' | 'seller'): Dispute {
   return applyDispute(d, { type: 'appeal', involved: ['mod-1'] }, { kind: 'trader', side }, at(3), S);
 }
 
+/** Review p4t22 m1: round 1's escrow payout ran (the coins moved under round 1). */
+function paid1(d: Dispute): Dispute {
+  return applyDispute(d, { type: 'executed', round: 1 }, { kind: 'system' }, at(3.5), S);
+}
+
 /** Round 2 decided by an uninvolved senior. */
 function decide(d: Dispute, outcome: RulingOutcome): Dispute {
   const a = applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(4), S);
@@ -159,7 +164,7 @@ describe('the appeal decides (D-006, D-008)', () => {
   });
 
   it('released at round 1, refunded on appeal: the buyer got the coins and is liened for the trade XMR; the fee was paid', () => {
-    const p = appeal(publish(opened(false), 'release-to-buyer'), 'seller');
+    const p = paid1(appeal(publish(opened(false), 'release-to-buyer'), 'seller'));
     for (const facts of [sellerPosted, buyerPosted]) {
       expect(lienSteps(p, decide(p, 'refund-to-seller'), facts, []), facts.poster).toEqual([
         { op: 'place', round: 2, debtor: 'buyer', cause: 'overturned', amountAtomic: A, feeAtomic: 0n },
@@ -168,7 +173,7 @@ describe('the appeal decides (D-006, D-008)', () => {
   });
 
   it('refunded at round 1, released on appeal: the seller got the coins; the unpaid 1% goes with whoever posted (D-063, D-062)', () => {
-    const p = appeal(publish(opened(false), 'refund-to-seller'), 'buyer');
+    const p = paid1(appeal(publish(opened(false), 'refund-to-seller'), 'buyer'));
     expect(lienSteps(p, decide(p, 'release-to-buyer'), sellerPosted, [])).toEqual([
       { op: 'place', round: 2, debtor: 'seller', cause: 'overturned', amountAtomic: A, feeAtomic: F },
     ]);
@@ -331,7 +336,7 @@ describe("re-verify R2: liens switched off, the debtor-poster's 1% is owed at fi
   });
 
   it('refunded at round 1, released on appeal against the seller who posted: no lien, the 1% owed', () => {
-    const p = appeal(publish(opened(false), 'refund-to-seller'), 'buyer');
+    const p = paid1(appeal(publish(opened(false), 'refund-to-seller'), 'buyer'));
     expect(lienSteps(p, decide(p, 'release-to-buyer'), off(sellerPosted), [])).toEqual([{ op: 'fee-owed', side: 'seller', amountAtomic: F }]);
   });
 

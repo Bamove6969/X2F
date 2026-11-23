@@ -76,9 +76,11 @@ describe('the ruling statement (Haveno review finding 2)', () => {
     expect(rulingStatementValid(otherEscrow, await signRulingStatement(otherEscrow, mod.privateKey), modPublic, want)).toEqual({ ok: false, reason: 'wrong-escrow' });
   });
 
-  it('a stale or later round is refused: only round 1 pays from the escrow', async () => {
+  it("review p4t22 m1 (OQ2): round 2's statement verifies (an appeal decided before round 1 paid); no other round is a statement", async () => {
     const r2 = statement({ round: 2 });
-    expect(rulingStatementValid(r2, await signRulingStatement(r2, mod.privateKey), modPublic, want)).toEqual({ ok: false, reason: 'wrong-round' });
+    expect(rulingStatementValid(r2, await signRulingStatement(r2, mod.privateKey), modPublic, want)).toEqual({ ok: true, statement: r2 });
+    const r3 = { ...statement(), round: 3 };
+    expect(rulingStatementValid(r3, 'a'.repeat(128), modPublic, want)).toEqual({ ok: false, reason: 'bad-signature' });
   });
 
   it('an altered payout is refused: another split, another address, another order, or the other side as winner', async () => {

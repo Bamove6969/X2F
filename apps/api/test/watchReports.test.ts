@@ -539,6 +539,73 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
   });
 });
 
+// Review p4t22 m1 (lead default, owner question OQ2): an appeal decided before round 1's payout ran.
+describe("an overturn before round 1 paid: round 2's payout, and no lien on who received nothing", () => {
+  // Liens switched on (review L2/R2: while off nothing is placed), so a lien that is due shows.
+  beforeAll(async () => {
+    await deps.db.query('update site_flags set liens_enabled = true');
+  });
+  afterAll(async () => {
+    await deps.db.query('update site_flags set liens_enabled = false');
+  });
+  async function overturned() {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    const d1 = await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, t.code, 'seller');
+    const d2 = await publishRuling(deps, t.code, { outcome: 'refund-to-seller' });
+    return { t, r1: d1.ruling!.id, r2: d2.ruling!.id, d2 };
+  }
+  const liens = async (code: string) =>
+    (await deps.db.query<{ cause: string; debtor_account_id: string }>('select cause, debtor_account_id::text from liens where from_code = $1', [code])).rows;
+  const executedLog = async (code: string) =>
+    (await deps.db.query<{ detail: string }>(`select detail from activity_log where trade_code = $1 and action = 'ruling.executed' order by id`, [code])).rows.map((r) => JSON.parse(r.detail));
+
+  it('the decided overturn places no lien; round 2 is final, waiting for its own payout', async () => {
+    const { t, d2 } = await overturned();
+    expect(d2).toMatchObject({ status: 'final', overturned: true, executedAt: null, executedRound: null });
+    expect(await liens(t.code)).toEqual([]);
+  });
+
+  it("round 2's payout (refund to the seller) is recorded as round 2's: refunded, closed, no lien", async () => {
+    const { t, r2 } = await overturned();
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-seller' });
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'refunded', txHash });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'closed', executedRound: 2, executedAt: NOW });
+    expect(await executedLog(t.code)).toEqual([{ rulingId: r2, txHash }]);
+    expect(await liens(t.code)).toEqual([]);
+  });
+
+  it("round 1's payout that still ran (handed before the appeal was decided) liens its receiver then (D-006)", async () => {
+    const { t, r1 } = await overturned();
+    const buyer = (await deps.db.query<{ id: string }>('select buyer_account_id::text as id from trades where code = $1', [t.code])).rows[0]!.id;
+    const txHash = randomBytes(32).toString('hex');
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer' })).statusCode).toBe(201);
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'closed', executedRound: 1 });
+    expect(await executedLog(t.code)).toEqual([{ rulingId: r1, txHash }]);
+    expect(await liens(t.code)).toEqual([{ cause: 'overturned', debtor_account_id: buyer }]);
+  });
+
+  it("the moderation process's round-2 statement is kept for the decided round 2", async () => {
+    const t = await trade();
+    const ESCROW = fakeAddress();
+    await driveTo(deps, t, 'settling', ESCROW);
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, t.code, 'seller');
+    const d2 = await publishRuling(deps, t.code, { outcome: 'refund-to-seller' });
+    const s: RulingStatement = {
+      v: 1, trade: t.code, escrowAddress: ESCROW, round: 2, rulingId: d2.ruling!.id, outcome: 'refund-to-seller', winner: 'seller',
+      payouts: [{ address: fakeAddress(), amountAtomic: '1000' }], issuedAt: NOW.toISOString(),
+    };
+    const res = await report({ kind: 'ruling-statement', trade: t.code, statement: s, sig: await signRulingStatement(s, modSecret) });
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+  });
+});
+
 // Plan 4 Task 14: the moderation process checkpoints the activity log's head (its id and hash, kept
 // in its own sealed gate store) and reports it; the API logs the checkpoint only for the row that
 // still has that hash. A failed daily verification is reported as an alarm (site_flags.log_alarm).
@@ -637,7 +704,8 @@ describe('the ruling statement (Haveno review finding 2)', () => {
     const { t, d } = await disputed();
     expect((await post(t.code, statementFor(t.code, randomBytes(16).toString('hex')))).json()).toEqual({ error: 'stale-ruling' });
     expect((await post(t.code, statementFor(t.code, d.ruling!.id, { outcome: 'refund-to-seller', winner: 'seller' }))).json()).toEqual({ error: 'stale-ruling' });
-    expect((await post(t.code, statementFor(t.code, d.ruling!.id, { round: 2 as 1 }))).statusCode).toBe(400);
+    // Review p4t22 m1: a round-2 statement is kept only for a decided round 2 (this one has none).
+    expect((await post(t.code, statementFor(t.code, d.ruling!.id, { round: 2 as 1 }))).json()).toEqual({ error: 'stale-ruling' });
     const open = await trade();
     await driveTo(deps, open, 'secured', ESCROW);
     expect((await post(open.code, statementFor(open.code, d.ruling!.id))).json()).toEqual({ error: 'wrong-state' });

@@ -114,7 +114,7 @@ describe('the rescue: a second approval on a ruling published on one tap (M1 e)'
     d = applyDispute(d, { type: 'window-closed' }, system, at(51), S);
     expect(d.status).toBe('final');
     expect(applyDispute(d, { type: 'second-approve' }, owner, at(52), S).ruling?.approver).toBe('owner-1');
-    const paid = applyDispute(d, { type: 'executed' }, system, at(52), S);
+    const paid = applyDispute(d, { type: 'executed', round: 1 }, system, at(52), S);
     rule('wrong-state', () => applyDispute(paid, { type: 'second-approve' }, owner, at(53), S));
   });
   test('never the proposer, never a moderator, never twice, never before publishing', () => {

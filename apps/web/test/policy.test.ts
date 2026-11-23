@@ -205,10 +205,11 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { escrowAddress: '5AnotherEscrow' } }) }, o)).toBe(false);
   });
 
-  it.each(['buyer', 'seller'] as const)('%s: a stale round (a round-2 statement) is refused: only round 1 pays', (role) => {
+  it.each(['buyer', 'seller'] as const)("%s: review p4t22 m1 (OQ2): round 2's statement is co-signed (an appeal decided before round 1 paid); no other round", (role) => {
     const base = ctx(role, { state: 'disputed', ruling: null });
     const o = out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base), 'mod', role);
-    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { round: 2 } }) }, o)).toBe(false);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { round: 2 } }) }, o)).toBe(true);
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { over: { round: 3 as 2 } }) }, o)).toBe(false);
   });
 
   it.each(['buyer', 'seller'] as const)('%s: an altered payout is refused: the statement and the set must both equal this device\'s own', (role) => {
@@ -412,7 +413,7 @@ describe('rulingOutcomeFor (Plan 4 Task 21: the runtime\'s ruling co-sign)', () 
     expect(rulingOutcomeFor(c)).toEqual(out(expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', c), 'mod', role));
   });
 
-  it.each(['buyer', 'seller'] as const)('%s: null when not disputed, without a statement, for the other side, another trade, escrow or round, other payouts or another key', (role) => {
+  it.each(['buyer', 'seller'] as const)('%s: null when not disputed, without a statement, for the other side, another trade, escrow or round (not 1 or 2), other payouts or another key', (role) => {
     const base = ctx(role, { state: 'disputed' });
     const other = role === 'buyer' ? 'seller' : 'buyer';
     const theirs = expected(other === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base);
@@ -422,7 +423,7 @@ describe('rulingOutcomeFor (Plan 4 Task 21: the runtime\'s ruling co-sign)', () 
       statementFor(base, { winner: other, to: theirs }),
       statementFor(base, { over: { trade: 'ZZ99-ZZ99-ZZ99-ZZ99' } }),
       statementFor(base, { over: { escrowAddress: '5OtherEscrow' } }),
-      statementFor(base, { over: { round: 2 } }),
+      statementFor(base, { over: { round: 3 as 2 } }),
       statementFor(base, { to: [{ address: role === 'buyer' ? BUYER : SELLER, amountAtomic: base.balance - 1n }, { address: FEE, amountAtomic: 1n }] }),
       statementFor(base, { key: sodium.crypto_sign_keypair().privateKey }),
       { ...statementFor(base), code: 'ZZ99-ZZ99-ZZ99-ZZ99' },

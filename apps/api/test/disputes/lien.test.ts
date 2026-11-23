@@ -11,7 +11,7 @@ import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { startDispute, withDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
 import { revenueReport } from '../../src/staff/revenue.js';
-import { appealDirect, publishRuling } from '../helpers/disputes.js';
+import { appealDirect, executeDirect, publishRuling } from '../helpers/disputes.js';
 import { insertOffer } from '../helpers/offers.js';
 import { AMOUNT, driveTo, seedTrade } from '../helpers/trades.js';
 import { tradeApp } from '../helpers/tradeApp.js';
@@ -192,6 +192,8 @@ describe('a won appeal liens whoever received the coins (D-006)', () => {
     const { seller, buyer, code } = await disputed({ afterRefund: false, poster: 'seller' });
     await publishRuling(deps, code, { outcome: 'release-to-buyer' });
     await appealDirect(deps, code, 'seller');
+    // Review p4t22 m1: the coins moved under round 1 (its payout ran) before the appeal was decided.
+    await executeDirect(deps, code, 1);
     await publishRuling(deps, code, { outcome: 'refund-to-seller' });
     expect(await liens(code)).toEqual([
       { debtor: buyer.id, creditor: seller.id, amount_atomic: AMOUNT.toString(), fee_atomic: '0', round: 2, cause: 'overturned', status: 'active', lifted: false },
@@ -203,6 +205,8 @@ describe('a won appeal liens whoever received the coins (D-006)', () => {
     const { seller, buyer, code } = await disputed({ afterRefund: false, poster: 'buyer' });
     await publishRuling(deps, code, { outcome: 'refund-to-seller' });
     await appealDirect(deps, code, 'buyer');
+    // Review p4t22 m1: the coins moved under round 1 (its payout ran) before the appeal was decided.
+    await executeDirect(deps, code, 1);
     await publishRuling(deps, code, { outcome: 'release-to-buyer' });
     expect(await liens(code)).toMatchObject([{ debtor: seller.id, creditor: buyer.id, fee_atomic: '0', cause: 'overturned', status: 'active' }]);
     expect(await owed(code)).toEqual([{ account: buyer.id, amount_atomic: FEE.toString(), collected_atomic: '0' }]);

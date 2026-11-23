@@ -48,10 +48,18 @@ describe('rulingFee (owner g63)', () => {
   });
 
   it('an appeal that overturns a ruling whose coins already moved: a lien, so the poster pays', () => {
+    // Review p4t22 m1: the coins moved under round 1 when round 1's payout is the one that ran.
     // Released at round 1 (fee taken), reversed on appeal: the buyer owes the XMR back under a lien.
-    expect(rulingFee(r2('final', 'release-to-buyer', 'refund-to-seller'))).toBe('poster-pays');
+    expect(rulingFee({ ...r2('closed', 'release-to-buyer', 'refund-to-seller'), executedRound: 1 })).toBe('poster-pays');
     // Refunded at round 1, released on appeal: the seller owes the XMR under a lien; the trade completes.
-    expect(rulingFee(r2('final', 'refund-to-seller', 'release-to-buyer'))).toBe('poster-pays');
+    expect(rulingFee({ ...r2('closed', 'refund-to-seller', 'release-to-buyer'), executedRound: 1 })).toBe('poster-pays');
+  });
+
+  it("review p4t22 m1 (OQ2): an overturn before round 1 paid: round 2's own payout, its own fee", () => {
+    for (const executedRound of [null, 2] as const) {
+      expect(rulingFee({ ...r2('final', 'release-to-buyer', 'refund-to-seller'), executedRound })).toBe('none');
+      expect(rulingFee({ ...r2('final', 'refund-to-seller', 'release-to-buyer'), executedRound })).toBe('poster-pays');
+    }
   });
 
   it('after a refund, an appeal decides by its own outcome (a lifted lien is no lien)', () => {

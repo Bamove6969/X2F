@@ -344,9 +344,10 @@ describe('authorizeRuling', () => {
     // An approver involved in round 1 too.
     const r2c = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, approver: senior });
     expect(await authorize(w, r2c, [tapBy(senior2, r2c.intent('propose')), tapBy(senior, r2c.intent('approve'))], 100_000n, { involved: [senior.id] })).toEqual({ ok: false, reason: 'involved' });
-    // An independent reviewer: authorised, and nothing to co-sign (round 2 never pays; an overturn is a lien).
+    // An independent reviewer: authorised; review p4t22 m1 (OQ2): an escrow round 2 has its payout,
+    // which the executor pays only when round 1's payout never ran.
     const ok = ruling(senior2, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
-    expect(await authorize(w, ok, [tapBy(senior2, ok.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    expect(await authorize(w, ok, [tapBy(senior2, ok.intent('propose'))], 41_250n, { involved: [] })).toMatchObject({ ok: true, settle: { winner: 'buyer' } });
     // A round 2 with no round 1 named is not one the gate can check.
     const bare = ruling(senior2, { round: 2 });
     expect(await authorize(w, bare, [tapBy(senior2, bare.intent('propose', { round1Id: r1.ruling.id }))])).toEqual({ ok: false, reason: 'intent-mismatch' });
@@ -479,7 +480,7 @@ describe('security review 2026-11-12', () => {
     const self = ruling(mod, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
     expect(await authorize(w, self, [tapBy(mod, self.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: false, reason: 'involved' });
     const fine = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
-    expect(await authorize(w, fine, [tapBy(senior, fine.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    expect(await authorize(w, fine, [tapBy(senior, fine.intent('propose'))], 41_250n, { involved: [] })).toMatchObject({ ok: true, settle: { winner: 'buyer' } });
   });
 
   it('M1/P5: a held-back older settings tap never undoes a newer one (the key\'s signature counter)', async () => {
@@ -835,7 +836,7 @@ describe('Haveno review 2026-11-12, finding 2 (lead call): rulings only move for
     const r1Tap = tapBy(mod, r1.intent('propose'));
     expect((await authorize(w, r1, [r1Tap])).ok).toBe(true);
     const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code });
-    expect(await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).toEqual({ ok: true, settle: null });
+    expect(await authorize(w, r2, [tapBy(senior, r2.intent('propose'))], 41_250n, { involved: [] })).toMatchObject({ ok: true, settle: { winner: 'buyer' } });
     // A new round-1 ruling on the same trade (another outcome), properly tapped: stale.
     const late = ruling(senior, { code: r1.ruling.code, outcome: 'refund-to-seller' });
     expect(await authorize(w, late, [tapBy(senior, late.intent('propose'))])).toEqual({ ok: false, reason: 'stale-round' });
