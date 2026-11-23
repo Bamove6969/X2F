@@ -118,8 +118,10 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
         {/* Owner demo notes 12 Nov #37 (DESIGNER-REVIEW): logo D and the screen name on every phone screen;
             the Landing board has its own large logo, and Buy/Sell draw this header in their own bar. The
-            foldable layouts (cover, panes, tabletop) keep their hinge-placed frames without it for now. */}
-        {layout === 'phone' && pathname !== '/' && !BROWSE.test(pathname) && !TRADE_ROOM.test(pathname) ? <ScreenHeader /> : null}
+            foldable postures the browser reports (cover, tabletop) keep their hinge-placed frames without it
+            for now. Owner demo note #147 (23 Nov): a 600-999 px window (layout `two`, e.g. 865x732) and the
+            tri-fold get it too, so every width shows it. */}
+        {(layout === 'phone' || layout === 'two' || layout === 'three') && pathname !== '/' && !BROWSE.test(pathname) && !TRADE_ROOM.test(pathname) ? <ScreenHeader /> : null}
         <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}

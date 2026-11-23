@@ -98,6 +98,27 @@ test('at 1280x800 before login the logo is top left with the screen name, and th
   await expect(page.locator('header.x2f-wide-top [data-part="screen-name"]')).toHaveText('Log in');
 });
 
+// Owner demo note #147 (23 Nov 2026, 865x732 on /setup/pgp-code): a 600-999 px window (fold layout
+// `two`) had neither the phone header nor the wide top. Every width shows logo D top left with the
+// screen's name, sign-up included; the Landing board keeps its own large logo.
+for (const [w, h] of [[390, 844], [865, 732], [1280, 800]] as const) {
+  test(`at ${w}x${h} before login, /setup and /login show logo D top left with the screen name (owner #147)`, async ({ page }) => {
+    await signedOut(page);
+    await page.setViewportSize({ width: w, height: h });
+    for (const [path, name] of [['/setup', 'Create account'], ['/login', 'Log in']] as const) {
+      await page.goto(path);
+      const header = page.locator('[data-screen-header]:visible');
+      await expect(header, path).toHaveCount(1);
+      await expect(header.locator('[data-part="screen-name"]'), path).toHaveText(name);
+      const logo = (await header.locator('svg[role="img"][aria-label="X2F"]').boundingBox())!;
+      expect(logo.x, path).toBeLessThanOrEqual(48);
+      expect(logo.y, path).toBeLessThanOrEqual(96);
+    }
+    await page.goto('/');
+    await expect(page.locator('[data-screen-header]')).toHaveCount(0);
+  });
+}
+
 // Review 12 Nov, L3: the help pages are read signed in too. Someone inside keeps the rail there;
 // someone not logged in gets the pre-login frame, as on /login.
 test('at 1280x800 the help pages keep the rail when signed in, and the pre-login frame when not', async ({ page }) => {
