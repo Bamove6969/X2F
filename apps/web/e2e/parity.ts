@@ -174,6 +174,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // now"; the board itself is not updated yet (its copy here is COPY-UNSIGNED, for design).
   SetupBackup: [
     {
+      text: 'Add {{choice}}',
+      why: 'Lead call (12 Nov 2026): the optional extra backups left this step (the ticked login methods replace them), so there is no "Add …" button; the board is checked on the recovery-code view.',
+    },
+    {
+      text: 'Skip for now',
+      why: 'Lead call (12 Nov 2026): with the optional extras gone there is nothing to skip; the saved recovery code goes straight on to the wallet.',
+    },
+    {
       text: 'Add a backup way to log in',
       why: 'S-017: by the time the optional backups show, a recovery code is already saved, so the heading reads "Add another backup (optional)" (COPY-UNSIGNED); the board predates S-017.',
     },
@@ -187,6 +195,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   SetupTerms: [
+    {
+      text: "No IP addresses are logged.",
+      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says \"We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
+    },
+    {
+      text: "Moderators can read your trade chat only if a dispute is opened.",
+      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\" (Terms version 2026-11-23).",
+    },
     {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
       why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
@@ -216,6 +232,22 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
     },
     {
+      text: "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+      why: 'Owner demo notes 13 Nov 2026 (setup-terms, section 7): "a government agency"; the page says "If police or a government agency sends us …", the rest word for word (Terms version 2026-11-14). Owner demo note #107 (17 Nov): "... what little information we hold within the scope of the writ." (Terms version 2026-11-23).',
+    },
+    {
+      text: 'If you post an ad, you pay a 1% fee when the trade completes.',
+      why: 'Owner demo note #116 (23 Nov 2026, setup-terms second key point): the page says "If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees." (Terms version 2026-11-23).',
+    },
+    {
+      text: 'X2F never holds your coins.',
+      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point (Terms version 2026-11-23).',
+    },
+    {
+      text: 'We answer lawful warrants with the little we have.',
+      why: 'Owner demo note #102 (17 Nov 2026, setup-terms key points): the page says "We answer lawful warrants with what very little information we collect." (Terms version 2026-11-23).',
+    },
+    {
       text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
       why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
     },
@@ -233,10 +265,23 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Dispute records are kept for 30 days.',
-      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling): two key points, "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, …"; this repo\'s mirror of the board is from 26 Oct.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by two key points, which owner demo notes #119 and #120 (23 Nov 2026) reworded in his words: the page says "To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion." and "Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day." (Terms version 2026-11-23). This repo\'s mirror of the board is from 26 Oct. Owner demo note #118\'s new point ("Moderators are at your disposal …") has no board counterpart, so parity needs nothing for it.',
+    },
+  ],
+  // Owner demo notes (12 Nov 2026, /setup/login): every method is a checkbox, several can be
+  // ticked and are set up one after another, so the lead says so (COPY-UNSIGNED). The board predates
+  // the notes.
+  SetupLogin: [
+    {
+      text: 'Choose one for now. You can add others later in Settings.',
+      why: 'Owner demo notes (12 Nov 2026): several methods can be ticked; the lead reads "Tick every way you want to use. We\'ll set them up one after another, then show you your recovery code. …" (COPY-UNSIGNED). The board predates the notes.',
     },
   ],
   SetupPgpKey: [
+    {
+      text: 'Set up your account',
+      why: 'Sign-up round 3 (signup-r3-spec-2026-11-13.md, owner 13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key".',
+    },
     {
       text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
       why: 'The board\'s example key, shortened with "…", is not a key: the key check (type, expiry, fingerprint) needs a real pasted key, so the page shows the key the test pastes (Task 28).',
@@ -249,8 +294,28 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '3F2A 9C41 7B0E D5A2 61C8 0E4B 92D7 1F6A C3B8 0D15',
       why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
     },
+    // Review of third-signup-r3 (16 Nov 2026), M5b. The header change is the owner's (demo note
+    // 2708e47a, 13 Nov 2026, on /setup/pgp-key: "Instead of create account - Adding your public PGP
+    // key"). The board keeps its old title until design redraws it and recaptures refs/SetupPgpKey.png
+    // (tools/parity/capture-refs.ts needs the canvas runtime support.js); remove this then.
+    {
+      text: 'Set up your account',
+      why: 'Owner demo note 2708e47a (13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key" instead; board redraw and reference recapture owed (design).',
+    },
   ],
   SetupPgpChallenge: [
+    // Review of third-signup-r3 (16 Nov 2026), M5b, found once SetupPgpKey passed: f1068c58 names
+    // PGPony in the app list, from the owner's demo note e6d8122c (13 Nov 2026: "recommend PGPony as
+    // the recommended Android app") and signup-r3 spec item 7. The board predates it; remove this
+    // when design redraws the board and recaptures refs/SetupPgpChallenge.png.
+    {
+      text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
+      why: 'Owner demo note e6d8122c (13 Nov 2026), signup-r3 spec item 7: the page reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."; board redraw and reference recapture owed (design).',
+    },
+    {
+      text: 'Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.',
+      why: 'Sign-up round 3 (owner 13-16 Nov 2026): PGPony is the PGP app recommended on Android, so the step reads "Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it."',
+    },
     {
       text: '4:12',
       why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
@@ -260,6 +325,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // username, and the public display name has its own screen after it (DisplayName.tsx). The board
   // still draws the old public username; it is not updated yet (the page's copy is for design).
   SetupUsername: [
+    {
+      text: 'Pick a username',
+      why: 'Owner demo note (12 Nov 2026, /setup/name): the heading reads "Pick a unique username" (his words). The board predates the note.',
+    },
     {
       text: 'lumen.k is available',
       why: "The board's example name. The page's live tick (POST /v1/register/name-check) says the same sentence for the name typed (\"lumen-login-7 is available\" in setup.spec), which is not the board's public example.",
@@ -288,8 +357,22 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: 'Authenticator app',
       why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',
     },
+    {
+      text: 'Cake Wallet …k3Fz',
+      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: setup no longer picks a wallet app (a plain recommendation list, then one address field), so the first wallet is saved as Other with the neutral label "Wallet 1", and the row reads "Wallet 1 …k3Fz" (setup.spec asserts the saved app and label). The board predates the notes.',
+    },
+  ],
+  SetupPassword: [
+    {
+      text: 'At least 10 characters, with upper and lower case letters, a number and a symbol.',
+      why: 'Owner demo note #108 (17 Nov 2026): no spaces in a password, so the lead reads "At least 10 characters, with upper and lower case letters, a number and a symbol, and no spaces." and the rules list gains "No spaces" (COPY-UNSIGNED). The board predates the note.',
+    },
   ],
   SetupWallet: [
+    ...['Choose the wallet you want to be paid to. X2F never holds your coins.', 'Receive address from {{appName}}'].map((text) => ({
+      text,
+      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: the wallet names are a plain recommendation list ("and many more"), not chips that pick an app, then one field: "Use your favourite wallet and enter a receive address from it". COPY-UNSIGNED, DESIGNER-REVIEW: the board is to be redrawn.',
+    })),
     {
       text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
       why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',

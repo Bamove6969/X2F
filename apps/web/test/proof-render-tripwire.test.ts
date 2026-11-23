@@ -161,7 +161,9 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
   });
 
   it('no Blob URL, no FileReader data URL, no download link: the bytes have no way to the screen but the redraw', () => {
-    for (const f of files) expect(byteWays(f, withoutSaveRecord(f, code(f))), f).toEqual([]);
+    // Sign-up v2's one download link is X2F's public signing key, a static file the API serves
+    // (`/.well-known/x2f-signing-key.asc`): no proof bytes. Any other download link still fails.
+    for (const f of files) expect(byteWays(f, withoutSaveRecord(f, code(f)).replace('download="x2f-signing-key.asc"', '')), f).toEqual([]);
   });
 
   it("the save-record exemption is Record.tsx's one text/plain link only, and the file reaches no proof or chat code", () => {

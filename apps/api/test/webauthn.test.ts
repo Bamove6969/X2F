@@ -20,7 +20,7 @@ import {
   webauthnRegistrationOptions,
 } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
-import { accountIdByLoginName, confirmTokenMethod, currentLoginTag, seedAccount as seedTagged } from './helpers/accounts.js';
+import { accountIdByLoginName, confirmTokenFor, confirmTokenMethod, currentLoginTag, seedAccount as seedTagged } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
@@ -643,24 +643,27 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 
   it("takes a trader's security key of any model, attested or not, even one outside the snapshot (owner demo 13 Nov)", async () => {
     // Owner, 16 Nov 2026: every security key verifies its user (PIN), so these keys do; the subject here is attestation.
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
-    const b = await loggedIn(traderId, true);
     // A browser may pass the key's own attestation on although 'none' was asked for.
+    // One new trader per key: since sign-up v2 (review M1(b)) the sign-up window adds a first key
+    // only; a second one needs a confirm token, which this test is not about.
     const keys = [
       createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: 'none' }),
       createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: UNLISTED, ca } }),
       createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, ca } }),
       createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, self: true } }),
     ];
+    const traders: string[] = [];
     for (const [i, key] of keys.entries()) {
-      const r = await staffAdd(b, key, 'security-key');
+      const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      traders.push(traderId);
+      const r = await staffAdd(await loggedIn(traderId, true), key, 'security-key');
       expect(r.options.attestation).toBe('none');
       expect(r.options.hints).toEqual(['security-key']);
       expect(r.options.pubKeyCredParams.map((p: { alg: number }) => p.alg)).toEqual([-8, -7, -257]);
       expect(r.options.authenticatorSelection).toMatchObject({ authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'required' });
       expect(r.res.statusCode, `key ${i}`).toBe(201);
     }
-    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = any($1::uuid[])', [traders]);
     expect(rows).toEqual(keys.map(() => ({ kind: 'security-key', attested: false })));
   });
 
@@ -669,14 +672,17 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // snapshot has not caught up with), or the leaf has expired: a trader's key still registers.
     const otherRoot = createTestCa();
     const expired = createTestCa({ expiredLeaves: true });
-    const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
-    const trader = await loggedIn(traderId, true);
+    // One new trader per key: since sign-up v2 the sign-up window adds a first key only.
+    const traders: string[] = [];
     for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
-      const r = await staffAdd(trader, createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
+      const id = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      traders.push(id);
+      const r = await staffAdd(await loggedIn(id, true), createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
       expect(r.res.statusCode, name).toBe(201);
     }
-    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = $1', [traderId]);
+    const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = any($1::uuid[])', [traders]);
     expect(rows).toEqual([1, 2, 3].map(() => ({ kind: 'security-key', attested: false })));
+    const trader = await loggedIn(await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' }), true);
 
     // The retry without the statement still checks the rest: a wrong origin is still 401.
     const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
@@ -1086,8 +1092,10 @@ describe('review fixes', () => {
   it('I2: at most MAX_SECURITY_KEYS security keys per account; the next one is refused at start and at finish', async () => {
     const t = await signUp('security-key');
     for (let i = 0; i < MAX_SECURITY_KEYS - 2; i++) await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
-    // Within onboarding: no confirm token needed. The fifth key is allowed.
-    const start = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    // The account already has security keys, so even within onboarding another one needs a confirm
+    // token (review M1). The fifth key is allowed.
+    const confirmToken = await confirmTokenFor(deps, t.b.cookies, { kind: 'add-method', method: 'security-key' });
+    const start = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key', confirmToken });
     expect(start.statusCode).toBe(200);
     const { challengeId, options } = start.json();
     // Another key reaches the table before this ceremony finishes: the finish is refused too.
@@ -1096,7 +1104,9 @@ describe('review fixes', () => {
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: fifth.register(options, ORIGIN), label: 'Sixth' });
     expect(fin.statusCode).toBe(409);
     expect(errorOf(fin)).toBe('security-key-limit');
-    const again = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    const again = await t.b.post('/v1/account/webauthn/start', {
+      kind: 'security-key', confirmToken: await confirmTokenFor(deps, t.b.cookies, { kind: 'add-method', method: 'security-key' }),
+    });
     expect(again.statusCode).toBe(409);
     expect(errorOf(again)).toBe('security-key-limit');
     // Passkeys are not counted.

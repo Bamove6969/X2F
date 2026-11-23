@@ -37,6 +37,7 @@ import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { termsChanged } from './register.js';
 import { SignaturePad } from './SignaturePad.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
+import { TermsParagraphs } from './TermsParagraphs.js';
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
@@ -167,11 +168,7 @@ export function TermsScreen({
             <h2 className="x2f-terms__heading" data-heading={s.heading}>
               {s.heading}
             </h2>
-            {s.paragraphs.map((p) => (
-              <p key={p} className="x2f-terms__p">
-                {p}
-              </p>
-            ))}
+            <TermsParagraphs paragraphs={s.paragraphs} />
           </section>
         ))}
         <p className="x2f-terms__end">{version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}</p>
@@ -246,8 +243,8 @@ export function SetupTerms() {
       title="Before you start"
       // Design 9 Nov (p11-15, canvas ea2a9ca8; owner p11-15 "please check the box if you agree to the
       // rules and terms of X2F and then please sign your name and hit begin account creation").
-      // COPY-UNSIGNED.
-      intro="Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade."
+      // "Terms" capitalised as this document's name (owner demo notes 13 Nov, setup-terms). COPY-UNSIGNED.
+      intro="Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again unless we update the Terms, in which case you will just have to agree to the new Terms."
       acceptLabel="Start creating my account"
       back={returnTo}
       after={

@@ -5,6 +5,7 @@
  * box shows what the server answered. No board draws this page yet: the words are COPY-UNSIGNED
  * (jabberCopy.ts) and the layout follows JabberSetup.
  */
+import { ALERTS_PATH } from './settingsCopy.js';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import type { JabberEventKind, JabberEvents, JabberStatus } from '@x2f/auth-client';
@@ -56,7 +57,7 @@ export function JabberEventsScreen() {
 
   return (
     <main className="x2f-screen" data-screen="jabber-events">
-      <Link className="x2f-button x2f-button--quiet" to="/settings/security" aria-label={C.back}>
+      <Link className="x2f-button x2f-button--quiet" to={ALERTS_PATH} aria-label={C.back}>
         ‹
       </Link>
       <p className="x2f-note">{C.kicker}</p>

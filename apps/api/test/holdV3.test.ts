@@ -26,7 +26,7 @@ import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
 import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName, makeVendor } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor, addUnusedSecurityKey } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { insertOffer } from './helpers/offers.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -105,6 +105,8 @@ async function passwordTrader(b = new Browser(app)) {
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
+  // Review M2: a password alone is setup-only; this account's password LOGIN is the weak one.
+  await addUnusedSecurityKey(deps, id);
   await onboarding(id, null);
   return { b, name, id };
 }
@@ -205,14 +207,15 @@ const holdView = async (b: Browser) => (await b.get('/v1/account/hold')).json() 
 
 const submit = (b: Browser, ids: string[]) => b.post('/v1/account/hold/changes/submit', { ids });
 
-describe('recovery code: one 16-character code', () => {
-  it('RECOVERY_CODE_COUNT is 1 and the route answers one code in the trade-code format', async () => {
+// Owner demo note (12 Nov 2026, /setup/backup): the one code is about four times longer, 64 symbols (was 16).
+describe('recovery code: one 64-character code', () => {
+  it('RECOVERY_CODE_COUNT is 1 and the route answers one code of 64 symbols', async () => {
     expect(RECOVERY_CODE_COUNT).toBe(1);
     const t = await passwordTrader();
     await onboarding(t.id, new Date(now.getTime() + HOUR));
     const r = (await t.b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
     expect(r.codes).toHaveLength(1);
-    expect(normalizeRecoveryCode(r.codes[0]!)?.replace(/-/g, '')).toHaveLength(16);
+    expect(normalizeRecoveryCode(r.codes[0]!)?.replace(/-/g, '')).toHaveLength(64);
   });
 });
 

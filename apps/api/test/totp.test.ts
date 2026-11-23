@@ -65,14 +65,16 @@ async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' } =
   return { id, username, b };
 }
 
-async function enrolStart(b: Browser) {
-  const res = await b.post('/v1/account/totp/start', {});
+/** `replacing`: the account already has TOTP, so even the sign-up window needs a confirm token (review M1). */
+async function enrolStart(b: Browser, o: { replacing?: boolean } = {}) {
+  const confirmToken = o.replacing ? await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'totp' }) : undefined;
+  const res = await b.post('/v1/account/totp/start', confirmToken !== undefined ? { confirmToken } : {});
   expect(res.statusCode).toBe(200);
   return res.json() as { challengeId: string; otpauthUri: string; secret: string };
 }
 
-async function enrol(b: Browser): Promise<string> {
-  const s = await enrolStart(b);
+async function enrol(b: Browser, o: { replacing?: boolean } = {}): Promise<string> {
+  const s = await enrolStart(b, o);
   const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
   expect(res.statusCode).toBe(200);
   return s.secret;
@@ -126,12 +128,12 @@ describe('TOTP enrolment', () => {
     const again = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
     expect(again.json()).toEqual({ error: 'challenge-expired' });
 
-    const late = await enrolStart(b);
+    const late = await enrolStart(b, { replacing: true });
     setNow(at(5 * 60_000));
     const expired = await b.post('/v1/account/totp/finish', { challengeId: late.challengeId, code: codeAt(late.secret, now) });
     expect(expired.json()).toEqual({ error: 'challenge-expired' });
 
-    const s2 = await enrolStart(b);
+    const s2 = await enrolStart(b, { replacing: true });
     const other = await trader();
     const res = await other.b.post('/v1/account/totp/finish', { challengeId: s2.challengeId, code: codeAt(s2.secret, now) });
     expect(res.statusCode).toBe(400);
@@ -314,8 +316,8 @@ describe('TOTP goes with a password (owner, 16 Nov 2026)', () => {
 /**
  * Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
  * needs TOTP or another login method (a PGP key, passkey or security key, each of which stands
- * alone). 409 `password-alone` when a removal would leave a password with neither. (The sign-up
- * half, 409 on `POST /v1/account/onboarding/end`, comes with sign-up v2: main has no such route.)
+ * alone). 409 `password-alone` when sign-up would finish, or a removal would leave, a password with
+ * neither.
  */
 describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
   const del = (b: Browser, type: string, id: string, confirmToken: string) =>
@@ -326,6 +328,23 @@ describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
     const { rows } = await deps.db.query<{ id: string }>('select id from pgp_keys where account_id = $1', [id]);
     return rows[0]!.id;
   };
+
+  it('finishing sign-up with only a password is refused, 409 password-alone; the sign-up window stays open', async () => {
+    const { id, b } = await trader();
+    const res = await b.post('/v1/account/onboarding/end', {});
+    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
+    const { rows } = await deps.db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where account_id = $1 and revoked_at is null', [id]);
+    expect(rows[0]!.onboarding_until).not.toBeNull();
+  });
+
+  it('with the authenticator app, or with another login method, sign-up finishes', async () => {
+    const one = await trader();
+    await enrol(one.b);
+    expect((await one.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
+    const two = await trader();
+    await pgpKey(two.id);
+    expect((await two.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
+  });
 
   it('removing the authenticator app from a password-only login is refused, 409 password-alone, token unspent', async () => {
     const { id, b } = await trader();
@@ -565,7 +584,7 @@ describe('no patterns in TOTP secrets (R9)', () => {
     const s2 = await enrol(b2);
     expect(s2).not.toBe(s1);
     setNow(at(STEP_MS));
-    expect(await enrol(b2)).not.toBe(s2);
+    expect(await enrol(b2, { replacing: true })).not.toBe(s2);
   });
 });
 

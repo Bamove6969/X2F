@@ -509,8 +509,12 @@ test('a member opening /settings/security sees the Security screen with no owner
   await expect(page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
   await expect(page.locator('[data-part="methods"]')).toHaveCount(0);
   await expect(page.locator('[data-part="devices-link"]')).toHaveCount(0);
-  await expect(page.locator('[data-part="alarm"]')).toBeVisible();
+  await expect(page.locator('[data-part="idle-reminder-link"]')).toBeVisible();
   await expectPhoneLayout(page);
+  // Owner demo note #101: the alarm settings moved to the Alerts tab, a member's too.
+  await page.goto('/settings/alerts');
+  await expect(page.locator('[data-part="alarm"]')).toBeVisible();
+  await expect(page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
 });
 
 // ---- 6. The trade side until Plan 3 Task 42 ----------------------------------------------------------

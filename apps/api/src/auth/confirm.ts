@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { actionHash, type ConfirmAction } from '@x2f/accounts';
+import { usablePgpIds } from './methods.js';
+import { actionHash, passwordAlone, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -121,6 +122,92 @@ export const staleTermsOnlyToExtend: preHandlerAsyncHookHandler = async function
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
 };
 
+/**
+ * Security review of sign-up v2, M1(b) (12 Nov 2026): inside the creating session's sign-up window
+ * a method may be ADDED without a confirm token, never REPLACED. Each kind the window covers, and
+ * how to tell the account already holds one.
+ */
+const HOLDS = {
+  password: 'select 1 from passwords where account_id = $1',
+  totp: 'select 1 from totp where account_id = $1',
+  'recovery-codes': 'select 1 from recovery_codes where account_id = $1 limit 1',
+  pgp: 'select 1 from pgp_keys where account_id = $1 limit 1',
+  passkey: "select 1 from webauthn_credentials where account_id = $1 and kind = 'passkey' limit 1",
+  'security-key': "select 1 from webauthn_credentials where account_id = $1 and kind = 'security-key' limit 1",
+} as const;
+export type NewMethodKind = keyof typeof HOLDS;
+
+/**
+ * The `onboarding` predicate for `requireConfirm`: true only while the account holds no `kind`
+ * yet (a function reads the kind from the request, as the WebAuthn add does).
+ */
+export function onlyIfNew(kind: NewMethodKind | ((req: FastifyRequest) => NewMethodKind)): (req: FastifyRequest) => Promise<boolean> {
+  return async (req) => {
+    const k = typeof kind === 'function' ? kind(req) : kind;
+    const { rows } = await req.server.deps.db.query(HOLDS[k], [req.auth.accountId]);
+    return rows.length === 0;
+  };
+}
+
+/** Requests that `requireConfirm` let through on the sign-up window alone (no token, not a recovery session). */
+const byWindow = new WeakSet<FastifyRequest>();
+
+/** True when this request's change was let through on the sign-up window, with no confirm token. */
+export const passedOnWindow = (req: FastifyRequest): boolean => byWindow.has(req);
+
+/**
+ * Re-verify R1 (12 Nov 2026): a change let through on the window (at a ceremony's start, or by a
+ * one-request route) is checked again where it writes, inside the transaction and after the
+ * account row is locked: the window must still be open and the account must still hold no `kind`.
+ * Otherwise 403 `confirm-required` `{ action }`, so a second ceremony opened in the window, or one
+ * that outlived `onboarding/end`, can neither replace nor double a method; a parallel twin loses.
+ */
+export async function recheckWindowInTx(db: Queryable, req: FastifyRequest, kind: NewMethodKind, action: ConfirmAction['kind']): Promise<void> {
+  const now = req.server.deps.clock();
+  const { rows } = await db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where id = $1', [req.auth.sessionId]);
+  const until = rows[0]?.onboarding_until ?? null;
+  const open = until !== null && until.getTime() > now.getTime();
+  const held = open ? (await db.query(HOLDS[kind], [req.auth.accountId])).rows.length > 0 : true;
+  if (!open || held) throw new ApiError(403, 'confirm-required', { action });
+}
+
+/**
+ * The kinds of login method the account holds (the keys of HOLDS it has one of). A PGP key counts
+ * only when it is usable now (review L4, as methods.ts's password-alone check: an expired or
+ * revoked key logs no one in).
+ */
+async function methodKindsOf(deps: Pick<Deps, 'db' | 'config'>, accountId: string, now: Date): Promise<NewMethodKind[]> {
+  const out: NewMethodKind[] = [];
+  for (const k of Object.keys(HOLDS) as NewMethodKind[]) {
+    if (k === 'pgp') {
+      if ((await usablePgpIds(deps.db, deps.config, accountId, now)).size > 0) out.push(k);
+    } else if ((await deps.db.query(HOLDS[k], [accountId])).rows.length > 0) out.push(k);
+  }
+  return out;
+}
+
+/**
+ * Review M1(a): `POST /v1/account/onboarding/end` closes the caller's own sign-up window (the
+ * web app sends it on reaching Welcome). Idempotent; any full session may call it for itself.
+ * Re-verify R1: it also uses up this session's open add ceremonies that were started on the
+ * window (`payload.window`), so none of them can finish after the window is closed. 409
+ * `password-alone` for an account whose only login is a password without TOTP (owner, 16 Nov 2026).
+ */
+export async function endOnboarding(req: FastifyRequest): Promise<{ ok: true }> {
+  const deps = req.server.deps;
+  // Owner, 16 Nov 2026: a password does not stand alone, so sign-up does not finish with only a
+  // password (409 `password-alone`, the window stays open for the authenticator app or another way
+  // to log in).
+  if (passwordAlone(await methodKindsOf(deps, req.auth.accountId, deps.clock()))) throw new ApiError(409, 'password-alone');
+  await deps.db.query('update sessions set onboarding_until = null where id = $1 and onboarding_until is not null', [req.auth.sessionId]);
+  await deps.db.query(
+    `update challenges set used_at = $2
+      where session_id = $1 and purpose in ('add-totp', 'add-key') and used_at is null and (payload->>'window')::boolean is true`,
+    [req.auth.sessionId, deps.clock()],
+  );
+  return { ok: true };
+}
+
 type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promise<ConfirmAction>);
 
 /**
@@ -153,6 +240,7 @@ export function requireConfirm(
       const inWindow = until !== null && until.getTime() > deps.clock().getTime();
       if (inWindow && (opts.onboarding === true || (await opts.onboarding(req)))) {
         req.confirmedAction = resolved;
+        byWindow.add(req);
         return;
       }
     }

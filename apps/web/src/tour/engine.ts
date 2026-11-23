@@ -8,7 +8,7 @@
  * Two flows (design, tour-stops.md 12 Nov):
  * - `screens`: the page-by-page tours (staff, team member): "n of m" counts the stops of this page,
  *   Next becomes "Next screen" after a page's last stop, and "Finish" at the end.
- * - `story`: the trader's first-trade tour: "n of 17" counts the whole tour, Next never becomes
+ * - `story`: the trader's first-trade tour: "n of 19" counts the whole tour, Next never becomes
  *   "Next screen" (a stop on a new screen pushes it in), and the last stop reads "Done".
  *
  * Pure: the shell (TourProvider.tsx) owns the state, the navigation and the drawing.
@@ -153,7 +153,7 @@ export function posOf(tour: TourDef, n: number): TourPos {
 }
 
 /**
- * The count on the card: the whole tour for a story ("3 of 17"), this page's stops for the
+ * The count on the card: the whole tour for a story ("3 of 19"), this page's stops for the
  * page-by-page tours ("3 of 7", so the number never looks long).
  */
 export function progressOf(tour: TourDef, pos: TourPos): { index: number; total: number } {

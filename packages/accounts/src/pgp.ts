@@ -20,7 +20,17 @@ export type KeyRefusal =
   | 'key-no-signing';
 
 export type KeyInspection =
-  | { ok: true; fingerprint: string; algorithm: 'rsa' | 'ed25519' | 'ed448'; bits: number | null; expiresAt: Date | null }
+  | {
+      ok: true;
+      fingerprint: string;
+      algorithm: 'rsa' | 'ed25519' | 'ed448';
+      bits: number | null;
+      expiresAt: Date | null;
+      /** Signup round 3: the primary user ID's name, never its email address; null without one. Shown to the person only, never stored. */
+      name: string | null;
+      /** Signup round 3: when the primary key was made. */
+      createdAt: Date;
+    }
   | { ok: false; reason: KeyRefusal; detail: string };
 
 export const MAX_ARMORED_KEY_BYTES = 32 * 1024;
@@ -243,8 +253,9 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
     return refuse('key-expired', `This key expired on ${isoDate(expiresAt)}.`);
   }
 
+  const facts = { name: await userName(key, now), createdAt: key.getCreationTime() };
   if (!requireEncryption) {
-    return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt };
+    return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };
   }
 
   let encryptionKey: openpgp.Key | openpgp.Subkey;
@@ -256,7 +267,35 @@ export async function inspectPublicKey(armored: string, now: Date, options: Insp
   const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo(), minRsaBits);
   if (encProblem !== null) return refuse('key-weak', encProblem);
 
-  return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt };
+  return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt, ...facts };
+}
+
+/** The longest user ID name shown, in code points. */
+const MAX_USER_NAME = 64;
+
+/**
+ * Signup round 3 (owner's demo notes, 13 Nov 2026): the name part of the key's primary user ID, for
+ * the person's own key check. Never the email address: the `<…>` part (and a `(comment)`) is
+ * dropped, and anything that looks like an address in the name itself is dropped too. Control and format characters
+ * are removed and the name is cut to 64 code points. Null when there is no name.
+ */
+async function userName(key: openpgp.Key, now: Date): Promise<string | null> {
+  // The raw user ID ("Name (comment) <address>"): openpgp's own parse gives up on some forms.
+  let raw: string | undefined;
+  try {
+    raw = (await key.getPrimaryUser(now)).user.userID?.userID;
+  } catch {
+    raw = key.users.find((u) => u.userID !== null)?.userID?.userID;
+  }
+  if (typeof raw !== 'string') return null;
+  const clean = raw
+    .replace(/<[^>]*>?/g, ' ')
+    .replace(/\([^)]*\)?/g, ' ')
+    .replace(/\S*@\S*/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u2028\u2029]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean === '' ? null : [...clean].slice(0, MAX_USER_NAME).join('').trim();
 }
 
 export const PGP_PURPOSE = {

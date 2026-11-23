@@ -20,7 +20,7 @@ import { insertPgpKey } from '../src/auth/pgp.js';
 import { PUSH_SUBSCRIPTION_CAP } from '../src/push/send.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName, makeVendor, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor, seedAccount, addUnusedSecurityKey } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
@@ -140,6 +140,8 @@ async function passwordTrader(a: FastifyInstance = app, d: Deps = deps, b = new 
   expect(res.statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(d, name))! }];
   const id = rows[0]!.id;
+  // Review M2: a password alone is setup-only; this account's password LOGIN is the weak one.
+  await addUnusedSecurityKey(d, id);
   await onboarding(d, id, null);
   return { b, name, id };
 }
@@ -506,7 +508,7 @@ describe('C1: a weak session cannot add a method and use it to skip the approval
     const added = await addPasskey(real.deps, thief, owner.id, thiefKey);
     expect(added.statusCode).toBe(202);
     expect(added.json()).toMatchObject({ status: 'staged' });
-    const stored = await real.deps.db.query('select 1 from webauthn_credentials where account_id = $1', [owner.id]);
+    const stored = await real.deps.db.query("select 1 from webauthn_credentials where account_id = $1 and kind = 'passkey'", [owner.id]);
     expect(stored.rows).toHaveLength(1); // the owner's only
     expect(await holdOf(real.deps, owner.id)).toBeNull();
     expect((await thief.post('/v1/account/hold/changes/submit', { ids: [changeIdOf(added)] })).statusCode).toBe(200);
@@ -521,7 +523,7 @@ describe('C1: a weak session cannot add a method and use it to skip the approval
     expect((await real.deps.db.query('select 1 from hold_changes where account_id = $1', [owner.id])).rows).toHaveLength(1);
     expect((await ownerB.delete('/v1/account/hold/changes')).statusCode).toBe(204);
     expect((await real.deps.db.query('select 1 from hold_changes where account_id = $1', [owner.id])).rows).toEqual([]);
-    const after = await real.deps.db.query('select 1 from webauthn_credentials where account_id = $1', [owner.id]);
+    const after = await real.deps.db.query("select 1 from webauthn_credentials where account_id = $1 and kind = 'passkey'", [owner.id]);
     expect(after.rows).toHaveLength(1);
   });
 
@@ -574,7 +576,8 @@ describe("C2: a weak session's changes touch nothing before their date", () => {
     }
     // Accepting the Terms is not a security change: it applies (lead decision 2026-10-30).
     expect((await b.post('/v1/account/terms', { version: TERMS, signature: SIG })).statusCode).toBe(204);
-    expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
+    // (The unused security key is the M2 second method passwordTrader adds.)
+    expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp', 'security-key']);
     expect((await submit(b, ids)).json()).toMatchObject({ status: 'queued', count: 4 });
 
     // The owner logs in with the passkey held before the submission: in; the waiting changes stay for
@@ -598,7 +601,7 @@ describe("C2: a weak session's changes touch nothing before their date", () => {
     expect((await submit(b, [changeIdOf(r)])).statusCode).toBe(200);
     setNow(new Date(now.getTime() + HOLD_MS));
     await settleDueChanges(deps.config, app.events).run(deps.db, now);
-    const { rows } = await deps.db.query('select 1 from webauthn_credentials where account_id = $1', [id]);
+    const { rows } = await deps.db.query("select 1 from webauthn_credentials where account_id = $1 and kind = 'passkey'", [id]);
     expect(rows).toEqual([]);
     expect(await alertsOf(deps, id, 'hold-changes-applied')).toEqual([{ applied: ['remove-method'], dropped: [] }]);
   });
@@ -986,6 +989,8 @@ describe('review round 2', () => {
       const id = await seedAccount(deps, { loginName: null });
       const h = await hashPassword(deps.config, GOOD);
       await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, h.hash, h.pepperId, now]);
+      // Review M2: a password alone is setup-only; the session below is the weak one.
+      await addUnusedSecurityKey(deps, id);
       const b = new Browser(app);
       expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
       await deps.db.query("update sessions set strength = 'weak-single' where account_id = $1", [id]);

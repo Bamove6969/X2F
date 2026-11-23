@@ -122,7 +122,7 @@
 
 .x2f-hero__line {
   color: var(--x2f-ink-muted);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -215,7 +215,7 @@
 }
 
 .x2f-hero__amount .x2f-xmr__unit {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -223,7 +223,7 @@
   color: var(--x2f-ink-muted);
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
 }
 
@@ -239,12 +239,12 @@
 
 .x2f-hero__row dt {
   color: var(--x2f-ink-muted);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
 .x2f-hero__row dd {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 24px;
   font-weight: 500;
 }
@@ -266,7 +266,7 @@
   justify-content: space-between;
   gap: var(--x2f-space-2);
   color: var(--x2f-ink-muted);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -339,7 +339,7 @@
 
 .x2f-stepper__label {
   color: var(--x2f-ink-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
   overflow-wrap: anywhere;
 }

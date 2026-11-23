@@ -21,9 +21,10 @@ X2F is a private, peer-to-peer way to trade Monero for cash. The interface stays
   - `danger`: disputes and scam warnings
 
 **Type.**
-- `display` and `title` use Familjen Grotesk.
-- Running text uses Atkinson Hyperlegible Next.
-- Every number, address and fingerprint uses Atkinson Hyperlegible Mono with tabular figures. That face keeps 0/O and 1/l/I distinct, which matters when people compare addresses.
+- Owner, 16 Nov 2026 (option D of the font comparison): DM Sans for titles and text, DM Mono for numbers. Before that, Familjen Grotesk, Atkinson Hyperlegible Next and Atkinson Hyperlegible Mono.
+- `display` and the titles use DM Sans at 700 with tight tracking; running text uses DM Sans 400, with 500/600/700 for emphasis.
+- Every number, address and fingerprint uses DM Mono (400 or 500, its heaviest) with tabular figures.
+- Only the weights the CSS uses are loaded, and the browser never fakes a bold or italic (`font-synthesis: none`).
 - Body text is never smaller than 16px on phones.
 
 **Spacing and shape.**

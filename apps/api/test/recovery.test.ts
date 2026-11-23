@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword } from '../src/auth/password.js';
 import { RECOVERY_HOLD_MS } from '../src/auth/recovery.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenFor, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { genKey, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -18,7 +18,9 @@ import { Browser, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/t
 
 const T0 = new Date('2026-10-17T06:00:00Z'); // a step boundary, early in the UTC day
 const HOUR = 3600_000;
-const CODE = /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+// Owner demo note, 12 Nov 2026 (/setup/backup): the recovery code is about four times longer than
+// the old 16 symbols: 64 Crockford base32 symbols in 16 groups of four (320 bits).
+const CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){15}$/;
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -87,8 +89,10 @@ async function withTotp(accountId: string): Promise<string> {
  */
 const endHold = (accountId: string) => deps.db.query('delete from account_holds where account_id = $1', [accountId]);
 
-async function newCodes(b: Browser): Promise<string[]> {
-  const res = await b.post('/v1/account/recovery-codes', {});
+/** `replacing`: the account already holds a code, so even the sign-up window needs a confirm token (review M1). */
+async function newCodes(b: Browser, o: { replacing?: boolean } = {}): Promise<string[]> {
+  const confirmToken = o.replacing ? await confirmTokenFor(deps, b.cookies, { kind: 'new-recovery-codes' }) : undefined;
+  const res = await b.post('/v1/account/recovery-codes', confirmToken !== undefined ? { confirmToken } : {});
   expect(res.statusCode).toBe(200);
   return (res.json() as { codes: string[] }).codes;
 }
@@ -140,7 +144,7 @@ async function racing<T>(prefix: string, n: number, run: () => Promise<T>): Prom
 }
 
 describe('POST /v1/account/recovery-codes', () => {
-  it('returns one code (hold model v3) in the trade-code format, stored only as its hash', async () => {
+  it('returns one code (hold model v3) of 64 symbols, stored only as its keyed hash', async () => {
     const { id } = await account();
     const codes = await newCodes(await loggedIn(id));
     expect(codes).toHaveLength(1);
@@ -182,7 +186,7 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(200);
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(401);
     await endHold(id);
-    await newCodes(await loggedIn(id));
+    await newCodes(await loggedIn(id), { replacing: true });
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[1]!)).statusCode).toBe(401);
     const { rows } = await deps.db.query('select 1 from recovery_codes where account_id = $1 and key_id is null', [id]);
     expect(rows).toEqual([]);
@@ -240,7 +244,7 @@ describe('backup login with a recovery code', () => {
     const { id, username } = await account();
     const owner = await loggedIn(id);
     const [old] = await newCodes(owner);
-    const codes = await newCodes(owner);
+    const codes = await newCodes(owner, { replacing: true });
     expect((await backup(new Browser(app), username, 'recovery-code', old!)).json()).toEqual({ error: 'credentials-invalid' });
 
     const b = new Browser(app);
@@ -258,6 +262,25 @@ describe('backup login with a recovery code', () => {
     const again = await backup(new Browser(app), username, 'recovery-code', codes[0]!);
     expect(again.statusCode).toBe(401);
     expect(again.json()).toEqual({ error: 'credentials-invalid' });
+  });
+
+  it('the long code logs in exactly as shown, dashes and all (79 characters), and once only', async () => {
+    const { id, username } = await account();
+    const [code] = await newCodes(await loggedIn(id));
+    expect(code).toHaveLength(79);
+    const res = await backup(new Browser(app), username, 'recovery-code', code!);
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { level: string }).level).toBe('recovery');
+    expect((await backup(new Browser(app), username, 'recovery-code', code!)).statusCode).toBe(401);
+  });
+
+  it('a code of the old 16-symbol format, stored before the change, still logs in once', async () => {
+    const { id, username } = await account();
+    const old = 'K7M2-9QXA-4FTR-8WPN';
+    const keyId = deps.config.recoveryCodeKeys.current;
+    await deps.db.query('insert into recovery_codes (account_id, code_hash, key_id) values ($1, $2, $3)', [id, currentKeyed(id, old), keyId]);
+    expect((await backup(new Browser(app), username, 'recovery-code', old.toLowerCase())).statusCode).toBe(200);
+    expect((await backup(new Browser(app), username, 'recovery-code', old)).statusCode).toBe(401);
   });
 
   it('a recovery session is refused on full-only routes and cannot confirm', async () => {
@@ -558,7 +581,7 @@ describe('no patterns in recovery codes (R9)', () => {
     const { id } = await account();
     expect((await newCodes(await loggedIn(id)))[0]).toMatch(CODE);
     const all = new Set<string>();
-    const counts = Array.from({ length: 16 }, () => new Array<number>(32).fill(0));
+    const counts = Array.from({ length: 64 }, () => new Array<number>(32).fill(0));
     const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
     for (let i = 0; i < 10_000; i++) {
       const c = newRecoveryCode();
@@ -569,7 +592,8 @@ describe('no patterns in recovery codes (R9)', () => {
     for (const position of counts) {
       const expected = 10_000 / 32;
       const chi = position.reduce((s, c) => s + (c - expected) ** 2 / expected, 0);
-      // 31 degrees of freedom; with the TOTP check, about one false alarm in 3,000 runs (R9).
+      // 31 degrees of freedom. With 64 positions (the 64-symbol code, 12 Nov 2026) at this threshold,
+      // about one false alarm in 1,500 runs, plus the TOTP check's share (R9; review I-1).
       expect(chi).toBeLessThan(76);
     }
   });

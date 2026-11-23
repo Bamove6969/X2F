@@ -6,6 +6,7 @@ import { ApiError } from '../errors.js';
 import { listedOfferCount } from '../offers/routes.js';
 import { reviewShownSql } from '../reviews/disputes.js';
 import { REVIEW_COLUMNS, toPublicReview, type PublicReview, type ReviewRow } from '../reviews/store.js';
+import { displayKeyOf } from '../nudge/names.js';
 import { hasBlocked } from '../traders/blocks.js';
 import { traderFacts } from '../traders/summary.js';
 import type { ImportedLine } from '../traders/tradedTotal.js';
@@ -81,11 +82,12 @@ export interface TraderProfile {
 export async function traderIdByName(q: Queryable, name: string, now: Date): Promise<string | null> {
   const { rows } = await q.query<{ id: string }>(
     `select a.id from accounts a
-      where a.display_key = lower($1) and a.kind = 'trader' and a.disabled_at is null and a.closed_at is null
+      where a.display_key = $1 and a.kind = 'trader' and a.disabled_at is null and a.closed_at is null
         and not exists (select 1 from account_bans b
                          where b.account_id = a.id and b.kind = 'site' and b.ended_at is null and b.lifted_at is null
                            and (b.until is null or b.until > $2))`,
-    [name, now],
+    // The stored key as checkDisplayName makes it (NFC, JavaScript lower case; migration 800), not lower().
+    [displayKeyOf(name), now],
   );
   return rows[0]?.id ?? null;
 }

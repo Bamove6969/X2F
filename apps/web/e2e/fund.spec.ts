@@ -284,11 +284,11 @@ test.describe('TradeFund (seller, phone)', () => {
     expect(await page.content()).not.toContain('tx_amount');
   });
 
-  test('Edge sellers get the Full Sync tip', async ({ page }) => {
+  test('Edge sellers get the Edge privacy tip (Wallet Settings, Full Node)', async ({ page }) => {
     await stub(page, () => sellerView({ funding: { ...(sellerView().funding as object), walletApp: 'edge' } }));
     await room(page);
     await expect(page.locator('[data-primary]')).toContainText('Open in Edge');
-    await expect(page.getByText("For best privacy, turn on Full Sync in Edge's Monero settings.")).toBeVisible();
+    await expect(page.getByText("For best privacy, open your Monero wallet's menu in Edge, choose Wallet Settings and pick Full Node. With LWS, Edge's servers can see payments coming in.")).toBeVisible();
   });
 });
 

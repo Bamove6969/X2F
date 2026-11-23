@@ -103,7 +103,7 @@
   padding: 0;
   border-radius: var(--x2f-radius-md);
   color: var(--x2f-ink-muted);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
 }
 
@@ -159,8 +159,9 @@
   padding: 0 4px;
   border: 0;
   background: none;
-  font-family: var(--x2f-font-mono);
-  font-size: 12px;
+  /* The unit words in DM Sans, so the chosen one can be truly bold: DM Mono stops at 500 (owner 16 Nov fonts D). */
+  font-family: var(--x2f-font-sans);
+  font-size: 13px;
   font-weight: 400;
   color: var(--x2f-ink-muted);
   cursor: pointer;
@@ -169,7 +170,7 @@
 /* Owner, 8 Nov: the chosen unit is bold and Monero orange (the text-safe ink of the token), the
    other smaller and muted. The one ruled exception to "selection is ink" (selection-ink.test.ts). */
 .post-unit button[aria-checked='true'] {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--x2f-monero-ink);
 }
@@ -189,14 +190,14 @@
 }
 
 .post-mintrades .x2f-chip-button {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .post-field {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-2);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }
@@ -212,7 +213,7 @@
 }
 
 .post-load-failed {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .post-field select,
@@ -223,7 +224,7 @@
   background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 17px;
   min-width: 0;
 }
 
@@ -252,7 +253,7 @@
 
 .post-error {
   color: var(--x2f-danger);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 18px;
 }
 
@@ -287,13 +288,13 @@
 
 .post-muted,
 .post-note {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
 .post-card .post-note {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -303,7 +304,7 @@
 
 .post-giftcard {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
 }
 
@@ -349,7 +350,7 @@
 .post-refusal {
   margin: 0;
   color: var(--x2f-danger);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
 }
 

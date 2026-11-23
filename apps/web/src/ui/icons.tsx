@@ -219,6 +219,20 @@ const SHAPES = {
   ),
   // BuyQuote's "This offer's bands" card (canvas v142): its 40 px tile, and the clip lines' arrows.
   bands: <path d="M4 20V14M10 20V9M16 20V12M22 20V5" />,
+  // Signup round 3: the password fields' show/hide button (placeholder shape until design draws one).
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  'eye-off': (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M4 4l16 16" />
+    </>
+  ),
   'arrow-up-right': <path d="M7 17L17 7M9 7h8v8" />,
   'arrow-down-right': <path d="M7 7l10 10M17 9v8H9" />,
 } satisfies Record<string, ReactElement>;

@@ -27,17 +27,18 @@ const SRC = join(import.meta.dirname, '..', 'src');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
 describe('the type scale, one step up (owner #43: bigger, noticeably, not much)', () => {
-  it('body 17/26, label 14/17, heading 19/26, screen title 30/34, the rest in proportion', () => {
+  // Owner 16 Nov fonts D + sizing: one more step up with DM Sans.
+  it('body 18/28, label 15/19, heading 21/28, screen title 34/40, the rest in proportion', () => {
     const css = read('theme/tokens.css');
     for (const d of [
-      '--x2f-body-size: 17px;', '--x2f-body-line: 26px;',
-      '--x2f-label-size: 14px;', '--x2f-label-line: 17px;',
-      '--x2f-heading-size: 19px;', '--x2f-heading-line: 26px;',
-      '--x2f-screen-title-size: 30px;', '--x2f-screen-title-line: 34px;',
-      '--x2f-sheet-title-size: 26px;', '--x2f-sheet-title-line: 32px;',
-      '--x2f-display-size: 42px;', '--x2f-display-line: 47px;',
+      '--x2f-body-size: 18px;', '--x2f-body-line: 28px;',
+      '--x2f-label-size: 15px;', '--x2f-label-line: 19px;',
+      '--x2f-heading-size: 21px;', '--x2f-heading-line: 28px;',
+      '--x2f-screen-title-size: 34px;', '--x2f-screen-title-line: 40px;',
+      '--x2f-sheet-title-size: 28px;', '--x2f-sheet-title-line: 34px;',
+      '--x2f-display-size: 46px;', '--x2f-display-line: 52px;',
       '--x2f-amount-size: 30px;', '--x2f-amount-line: 34px;',
-      '--x2f-address-size: 15px;', '--x2f-address-line: 21px;',
+      '--x2f-address-size: 16px;', '--x2f-address-line: 22px;',
     ]) expect(css, d).toContain(d);
   });
 });
@@ -46,13 +47,21 @@ describe('screenName: the name beside the logo, one per route', () => {
   it('names the front door, the browse boards and the screens behind the door', () => {
     for (const [p, name] of [
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
-      ['/setup', 'Create account'], ['/setup/welcome', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
+      ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'], ['/setup/welcome', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
       ['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security'],
       ['/help/faq', 'FAQ'], ['/help/getting-started', 'Getting started'], ['/help/support', 'Support'], ['/help/settings', 'Settings'],
     ] as const) expect([p, screenName(p)]).toEqual([p, name]);
     expect(screenName('/trade/K7M29QXA4FTR8WPN')).toEqual({ label: 'Trade', code: 'K7M2' });
     // The Landing board draws its own large logo: no header there.
     expect(screenName('/')).toBe('');
+  });
+});
+
+describe('/setup/pgp-key layout (owner #26)', () => {
+  it('widens /setup/pgp-key past 480 px so 64-character PGP lines fit across on wide screens', () => {
+    const css = read('screens/setup/setup.css');
+    const pgp = /\.x2f-start\[data-screen='setup-pgp-key'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(pgp).toContain('max-width: 680px;');
   });
 });
 

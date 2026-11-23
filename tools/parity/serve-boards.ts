@@ -1,7 +1,8 @@
 // Serves the X2F App boards (design/x2f-app/*.dc.html) on 127.0.0.1 for capture-refs.ts, with no
-// request leaving the machine: each board's Google Fonts <link> is swapped for the app's own
-// self-hosted @fontsource faces (the same files the app ships), so a reference renders with the
-// fonts the app uses. The canvas runtime is design/x2f-app/support.js, fetched by the controller
+// request leaving the machine: each board's Google Fonts <link> is swapped for the same faces
+// self-hosted from @fontsource, so a reference renders as the designer drew it. Since the owner's
+// font decision of 16 Nov 2026 the app ships DM Sans and DM Mono instead (apps/web/src/theme/fonts.css),
+// so references and app differ in type; the board faces stay apps/web devDependencies. The canvas runtime is design/x2f-app/support.js, fetched by the controller
 // (Task 15 controller step); without it the boards' templates do not render.
 //
 // Run by hand: `npx tsx tools/parity/serve-boards.ts [port]`, then open http://127.0.0.1:<port>/Main.dc.html.
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 export const BOARDS_DIR = fileURLToPath(new URL('../../design/x2f-app/', import.meta.url));
 const FONTSOURCE = fileURLToPath(new URL('../../node_modules/@fontsource/', import.meta.url));
 
-/** The faces and weights the boards load from Google Fonts (and apps/web/src/theme/fonts.css self-hosts). */
+/** The faces and weights the boards load from Google Fonts (the app's own faces were these until 16 Nov 2026). */
 const FACES: [pkg: string, weight: number][] = [
   ['familjen-grotesk', 600],
   ['familjen-grotesk', 700],

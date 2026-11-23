@@ -140,11 +140,12 @@ describe('IdentityRow, StatTiles, TraderCard (kit 2.4-2.6)', () => {
     expect(host.querySelector('.x2f-tag')!.textContent).toBe('X2F Moderator');
   });
 
-  it('stat tiles: three in a row, gap 6, radius 10, mono 16 value over a 12 muted label', () => {
+  // Owner 16 Nov fonts D + sizing: value 17 (was 16), label 13 (was 12).
+  it('stat tiles: three in a row, gap 6, radius 10, mono 17 value over a 13 muted label', () => {
     expect(rule('.x2f-stats')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;');
     expect(rule('.x2f-stat')).toContain('border-radius: var(--x2f-radius-tile);');
-    expect(rule('.x2f-stat__v')).toContain('font-family: var(--x2f-font-mono); font-size: 16px; line-height: 20px; font-weight: 500;');
-    expect(rule('.x2f-stat__l')).toContain('font-size: 12px;');
+    expect(rule('.x2f-stat__v')).toContain('font-family: var(--x2f-font-mono); font-size: 17px; line-height: 20px; font-weight: 500;');
+    expect(rule('.x2f-stat__l')).toContain('font-size: 13px;');
     const { host } = render(<StatTiles items={traderStats({ trades: 1284, positivePct: 99.4, xmrTraded: '275.4' })} />);
     expect([...host.querySelectorAll('dd')].map((d) => d.textContent)).toEqual(['1,284', '99.4%', '275.4']);
     expect([...host.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['trades', 'positive', 'XMR traded']);

@@ -24,7 +24,7 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator, withoutAttestation } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { confirmerOf, issueConfirmToken, onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
@@ -949,6 +949,8 @@ async function confirmFinish(req: FastifyRequest) {
   const row = await verifyAssertion(deps, { accountId: confirmer.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
   assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
   assertListed(ch, row);
+  // Review L1 (owner demo note #94): the key test is this check alone; no token is issued for it.
+  if (action.kind === 'key-test') return { tested: true as const };
   // The method is the kind of the stored credential that just verified, never anything the client sent.
   const confirmToken = await issueConfirmToken(deps, {
     sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: row.kind,
@@ -976,7 +978,8 @@ async function addKeyStart(req: FastifyRequest) {
     kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.display_name, exclude,
   });
   const challengeId = await storeChallenge(deps, req, {
-    accountId: account.id, sessionId: req.auth.sessionId, purpose: 'add-key', method: kind, challenge: options.challenge, payload: {},
+    accountId: account.id, sessionId: req.auth.sessionId, purpose: 'add-key', method: kind, challenge: options.challenge,
+    payload: { window: passedOnWindow(req) },
   });
   return { challengeId, options };
 }
@@ -1001,6 +1004,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
       // Task 17: the gate locks the account row first; a waiting login's new key starts the hold
       // and waits in it (it cannot log in, or end the hold, before the hold ends by time).
       held = await gateChange(client, req, { kind: 'webauthn', credential: stored, label: clean });
+      // Re-verify R1: a start let through on the window may add the first of its kind only.
+      if (ch.payload?.window === true) await recheckWindowInTx(client, req, kind, 'add-method');
       // The account row is locked (by the gate) so two parallel finishes cannot both pass the security-key count.
       if (held === null) await applyCredential(client, req.auth.accountId, stored, clean, now);
       await client.query('commit');
@@ -1054,7 +1059,7 @@ export function webauthnRoutes(app: FastifyInstance): void {
       preHandler: [
         requireSession({ allowRecovery: true }),
         requireNotHeld,
-        requireConfirm(addKeyAction, { onboarding: true, recovery: true }),
+        requireConfirm(addKeyAction, { onboarding: onlyIfNew((req) => credentialKind(record(req.body).kind)), recovery: true }),
       ],
     },
     addKeyStart,

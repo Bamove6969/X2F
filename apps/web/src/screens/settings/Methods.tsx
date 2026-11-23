@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
-  addWebAuthnKey,
+  addWebAuthnKeyWithId,
   isStaged,
   partnerMissing,
   partnerNeededBy,
@@ -25,6 +25,7 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { KeyTest } from '../auth/KeyTest.js';
 import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import {
@@ -38,6 +39,9 @@ import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
+import { PasswordInput } from '../../ui/PasswordInput.js';
+import { MessageBox } from '../../ui/MessageBox.js';
+import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -101,11 +105,22 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     void refresh().catch(() => setError('Could not load your login methods.'));
   }, [refresh]);
 
+  /** The security key just added here, offered for a test (owner demo note #94); null otherwise. */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
   const addWebAuthn = async (kind: WebAuthnKind) => {
     setBusy(true);
     setError(null);
+    setJustAdded(null);
     try {
-      noteStaged(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
+      const { staged: h, credentialId } = await withConfirm(
+        { kind: 'add-method', method: kind },
+        (t) => addWebAuthnKeyWithId(authApi, kind, t !== undefined ? { confirmToken: t } : {}),
+        prove,
+      );
+      noteStaged(h);
+      // A staged key (hold model v3) is not a login method yet, so only a key added now is tested.
+      if (kind === 'security-key' && !(h !== undefined && isStaged(h))) setJustAdded(credentialId);
       await refresh();
     } catch (e) {
       if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
@@ -115,6 +130,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   };
 
   const remove = async (m: MethodEntry) => {
+    setJustAdded(null);
     if (methods !== null && isOnlyLogin(m, methods)) {
       setLastMethod(true);
       return;
@@ -157,6 +173,15 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         </p>
       ) : null}
       {staged > 0 ? <StagedNote key={staged} /> : null}
+      {justAdded !== null ? (
+        <div data-part="key-just-added">
+          {/* COPY-UNSIGNED */}
+          <p className="x2f-note" role="status">
+            Security key added.
+          </p>
+          <KeyTest key={justAdded} credentialId={justAdded} />
+        </div>
+      ) : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
       {leavesAlone ? <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_ALONE_MESSAGE} from={PASSWORD_ALONE_CODE} onClose={() => setLeavesAlone(false)} /> : null}
       {keepsPassword ? (
@@ -217,6 +242,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
   const [burned, setBurned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const spaced = hasPasswordSpace(password);
 
   const save = async () => {
     setBusy(true);
@@ -232,7 +258,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       if (code !== '' && staged === undefined) setBurned(true);
       else onDone(staged);
     } catch (e) {
-      if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
+      if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol, and no spaces.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
       else if (code !== '' && e instanceof AuthApiError && e.code === 'credentials-invalid') setError(BURNED.passwordCodeWrong);
       else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
@@ -266,7 +292,13 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       <label className="x2f-label" htmlFor="new-password">
         New password
       </label>
-      <input className="x2f-input" id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <PasswordInput id="new-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      {/* Owner demo note #108: a new password holds no spaces; said as soon as one is typed. */}
+      {spaced ? (
+        <p className="x2f-error" data-part="password-space">
+          {spaceProblem('password')}
+        </p>
+      ) : null}
       <label className="x2f-label" htmlFor="password-recovery-code">
         {BURNED.passwordCodeLabel}
       </label>
@@ -281,7 +313,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       />
       <p className="x2f-note">{BURNED.passwordCodeHint}</p>
       <div className="x2f-row">
-        <Button variant={primary} disabled={busy || password === ''} onClick={() => void save()}>
+        <Button variant={primary} disabled={busy || password === '' || spaced} onClick={() => void save()}>
           Save
         </Button>
         <Button variant="quiet" disabled={busy} onClick={onCancel}>
@@ -357,9 +389,9 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
           <label className="x2f-label" htmlFor="add-pgp-message">
             Decrypt this message and paste the code
           </label>
-          <pre className="x2f-pre" id="add-pgp-message">
+          <MessageBox id="add-pgp-message">
             {message.encryptedMessage}
-          </pre>
+          </MessageBox>
           <input className="x2f-input" aria-label="Login code" value={code} onChange={(e) => setCode(e.target.value)} />
           <Button variant={primary} disabled={busy || code.trim() === ''} onClick={() => void finish()}>
             Confirm key

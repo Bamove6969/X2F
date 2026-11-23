@@ -55,6 +55,7 @@ describe('tokens.css', () => {
   });
 
   // Owner #43 (12 Nov): the type scale one step up; hero-number and result-headline in proportion.
+  // Owner 16 Nov fonts D + sizing: result-headline 38/44 (was 34/38).
   it('kit 1.5 token fixes: monero #ff6600, mod, radius 10, hero-number, result-headline, no title or monero-hold', () => {
     const colour = Object.fromEntries(json.color.tokens.map((t) => [t.name, t.value]));
     expect(colour['monero']).toEqual({ night: '#ff6600', day: '#ff6600' });
@@ -71,8 +72,8 @@ describe('tokens.css', () => {
       '--x2f-hero-number-weight: 500;',
       '--x2f-hero-number-tracking: -0.02em;',
       '--x2f-result-headline-family: var(--x2f-font-display);',
-      '--x2f-result-headline-size: 34px;',
-      '--x2f-result-headline-line: 38px;',
+      '--x2f-result-headline-size: 38px;',
+      '--x2f-result-headline-line: 44px;',
       '--x2f-result-headline-weight: 700;',
       '--x2f-result-headline-tracking: -0.02em;',
     ]) {

@@ -1,7 +1,7 @@
 /**
  * The first-trade tour's example screens (design, wip/design-brief b3b8315b: tour-stops.md §2 and
  * tour-motion.md §4-5, after tour-art/x2f-intro-prototype.html): Find a trade, Offers, Quote, Fund,
- * Check and release, Released, all on the one pretend trade (market $329.90; example_seller pays 2%
+ * Trade room, Check and release, Released, all on the one pretend trade (market $329.90; example_seller pays 2%
  * above it, $336.50, and takes $50 to $1,000; 0.594354 XMR for $200.00 by Cash App, trade
  * K7M2-9QXA-4FTR-8WPN). Every screen after Find a trade carries the Example chip (head designer's
  * ruling, 12 Nov); Find a trade says its counts and rates are examples.
@@ -20,7 +20,7 @@ import type { TourStageProps } from './engine.js';
 import './stage.css';
 
 /** The stop (0-based) each screen starts on. */
-const SCREENS = [0, 5, 10, 12, 14, 16] as const;
+const SCREENS = [0, 5, 10, 12, 14, 16, 18] as const;
 export function screenOf(stop: number): number {
   let s = 0;
   SCREENS.forEach((start, i) => {
@@ -36,6 +36,9 @@ const usd = (xmr: string) => {
   const cents = Math.round(n * RATE_CENTS);
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
+
+/** The trade room's stops and the two after it (0-based), as firstTradeTour.ts orders them. */
+const STOP = { room: 14, chat: 15, paid: 16, release: 17 } as const;
 
 /** Whether stop `n`'s action has happened by now (an earlier stop, or this one once it has played). */
 const done = (stop: number, acted: boolean, n: number) => stop > n || (stop === n && acted);
@@ -371,12 +374,91 @@ function Fund({ stop, acted }: TourStageProps) {
   );
 }
 
-function Check({ stop, acted, reduced }: TourStageProps) {
-  const paid = done(stop, acted, 14);
-  const holding = stop === 15 && acted;
-  const [released, setReleased] = useState(stop > 15);
+/**
+ * The trade room's chat (owner, 16 Nov 2026, demo note #100: "the actual trading window where there
+ * is an open chat and it lists the two members in the chat and maybe show some communication back and
+ * forth between them"). The pretend trade's own chat, drawn here: the tour never opens a real trade.
+ */
+export const ROOM_NOTICE = 'Chats are encrypted. If a dispute is opened, a moderator can read this conversation.';
+export const ROOM_LINES = [
+  { from: 'them', who: 'example_seller', at: '14:12', text: 'Hi. I see the escrow is locked. Sending $200.00 by Cash App now, with K7M2 in the note.' },
+  { from: 'me', who: 'You', at: '14:13', text: "Thanks. I'll check my Cash App and release as soon as it's there." },
+  { from: 'them', who: 'example_seller', at: '14:16', text: "Sent. Tapping I've paid." },
+] as const;
+
+/** Stop 16: the reply and the answer come in one by one (700 ms apart); all at once when calm. */
+function useLines(stop: number, acted: boolean, reduced: boolean): number {
+  const all = ROOM_LINES.length;
+  const playing = stop === STOP.chat && acted;
+  const [n, setN] = useState(stop > STOP.chat ? all : 1);
   useEffect(() => {
-    if (!holding) return setReleased(stop > 15);
+    if (stop > STOP.chat) return setN(all);
+    if (!playing) return setN(1);
+    if (reduced) return setN(all);
+    const timers = [setTimeout(() => setN(2), 200), setTimeout(() => setN(3), 900)];
+    return () => timers.forEach(clearTimeout);
+  }, [stop, playing, reduced, all]);
+  return n;
+}
+
+function TradeRoom({ stop, acted, reduced }: TourStageProps) {
+  const shown = useLines(stop, acted, reduced);
+  return (
+    <>
+      <TradeHead />
+      <Steps at={1} />
+      <section className="x2f-ex__card x2f-ex__members" data-tour="members" aria-label="In this chat">
+        <h2 className="x2f-ex__cap">In this chat</h2>
+        <ul className="x2f-ex__people">
+          <li className="x2f-ex__person">
+            <span className="x2f-ex__avatar" aria-hidden="true">
+              YO
+            </span>
+            <span className="x2f-ex__name">
+              <span>You</span>
+              <small>Seller</small>
+            </span>
+          </li>
+          <li className="x2f-ex__person">
+            <span className="x2f-ex__avatar" data-online="true" aria-hidden="true">
+              SG
+            </span>
+            <span className="x2f-ex__name">
+              <span>
+                example_seller <span className="x2f-ex__vendor">Vendor</span>
+              </span>
+              <small>Buyer · online</small>
+            </span>
+          </li>
+        </ul>
+      </section>
+      <section className="x2f-ex__chat" data-tour="chat" aria-label="Chat with example_seller">
+        <p className="x2f-ex__notice">{ROOM_NOTICE}</p>
+        <ol className="x2f-ex__lines" aria-label="Messages">
+          {ROOM_LINES.slice(0, shown).map((l) => (
+            <li key={l.at} className="x2f-ex__line x2f-ex__swap" data-from={l.from}>
+              <span className="x2f-ex__by">
+                {l.who} <small>{l.at}</small>
+              </span>
+              <span className="x2f-ex__bubble">{l.text}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="x2f-ex__compose" aria-hidden="true">
+          <span className="x2f-ex__input">Message example_seller</span>
+          <span className="x2f-ex__send">Send</span>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function Check({ stop, acted, reduced }: TourStageProps) {
+  const paid = done(stop, acted, STOP.paid);
+  const holding = stop === STOP.release && acted;
+  const [released, setReleased] = useState(stop > STOP.release);
+  useEffect(() => {
+    if (!holding) return setReleased(stop > STOP.release);
     const id = setTimeout(() => setReleased(true), 1500);
     return () => clearTimeout(id);
   }, [holding, stop, reduced]);
@@ -444,7 +526,7 @@ function Released() {
   );
 }
 
-const SCREEN_VIEWS = [FindATrade, Offers, Quote, Fund, Check, Released] as const;
+const SCREEN_VIEWS = [FindATrade, Offers, Quote, Fund, TradeRoom, Check, Released] as const;
 
 export function FirstTradeStage(props: TourStageProps) {
   const screen = screenOf(props.stop);

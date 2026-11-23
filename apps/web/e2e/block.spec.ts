@@ -106,8 +106,11 @@ for (const viewport of PHONE_VIEWPORTS) {
       ] as const) {
         await page.route(path, (r) => r.fulfill({ json: body }));
       }
-      await page.goto('/settings/security');
-      await page.locator('[data-part="blocked-link"]').getByRole('link', { name: 'Blocked traders' }).click();
+      await page.goto('/settings/account');
+      // Settings split into tabs (owner note #101): the row link itself carries data-part (SettingsRow).
+      const blocked = page.locator('a[data-part="blocked-link"]');
+      await expect(blocked).toHaveText('Blocked traders');
+      await blocked.click();
       await expect(page).toHaveURL('/settings/blocked');
       await expect(page.locator('[data-part="blocked-empty"]')).toHaveText("You haven't blocked anyone.");
     });

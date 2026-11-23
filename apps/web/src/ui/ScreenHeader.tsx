@@ -18,6 +18,8 @@ const MORE: [RegExp, string][] = [
   [/^\/login\/backup\/?$/, 'Use a backup'],
   [/^\/login\/?$/, 'Log in'],
   [/^\/session-length\/?$/, 'Session length'],
+  // Owner demo note #79 (13 Nov 2026): this step's name says what it is (wip/agy-layout e82c136b).
+  [/^\/setup\/pgp-key\/?$/, 'Adding your public PGP key'],
   [/^\/setup(\/|$)/, 'Create account'],
   [/^\/terms\/?$/, 'Terms'],
   [/^\/team\/join\/?$/, 'Join a team'],

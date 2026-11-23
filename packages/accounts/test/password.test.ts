@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { checkPassword, normalizePassword } from '@x2f/accounts';
+import { checkPassword, hasPasswordSpace, normalizePassword } from '@x2f/accounts';
 
 describe('checkPassword', () => {
   test('accepts a strong password', () => {
@@ -38,7 +38,47 @@ describe('checkPassword', () => {
   });
 
   test('whitespace is not a symbol', () => {
-    expect(checkPassword('No Symbols 123x')).toEqual({ ok: false, missing: ['symbol'] });
+    expect(checkPassword('No Symbols 123x')).toEqual({ ok: false, missing: ['symbol', 'space'] });
+  });
+
+  // Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display names".
+  test.each([
+    ['a space', 'Correct Horse-9'],
+    ['a space at the start', ' Correct-Horse-9'],
+    ['a space at the end', 'Correct-Horse-9 '],
+    ['a tab', 'Correct\tHorse-9'],
+    ['a line break', 'Correct\nHorse-9'],
+    ['a no-break space', 'Correct\u00a0Horse-9'],
+    ['an ideographic space', 'Correct\u3000Horse-9'],
+  ])('note #108: a new password with %s misses only the space rule', (_what, pw) => {
+    expect(checkPassword(pw)).toEqual({ ok: false, missing: ['space'] });
+  });
+
+  // Security review of note #108: characters that look blank but are not \s count as spaces too.
+  test.each([
+    ['a blank Braille pattern (U+2800)', 'Correct\u2800Horse-9'],
+    ['a Hangul filler (U+3164)', 'Correct\u3164Horse-9'],
+    ['a next-line control (U+0085)', 'Correct\u0085Horse-9'],
+    ['a zero-width space', 'Correct\u200bHorse-9'],
+    ['a zero-width joiner', 'Correct\u200dHorse-9'],
+    ['a soft hyphen', 'Correct\u00adHorse-9'],
+    ['a variation selector', 'Correct-Horse-9\ufe0f'],
+    ['a word joiner', 'Correct\u2060Horse-9'],
+  ])('note #108 review: a new password with %s misses the space rule', (_what, pw) => {
+    const r = checkPassword(pw);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.missing).toContain('space');
+    expect(hasPasswordSpace(pw)).toBe(true);
+  });
+
+  test('note #108 review: the probe from the review is refused, a clean password is not', () => {
+    expect(checkPassword('Correct\u2800Horse-9')).toEqual({ ok: false, missing: ['space'] });
+    expect(hasPasswordSpace('Correct-Horse-9')).toBe(false);
+    expect(hasPasswordSpace('Correct Horse-9')).toBe(true);
+  });
+
+  test('note #108: the space rule is listed with the others it misses', () => {
+    expect(checkPassword('short 1!A')).toEqual({ ok: false, missing: ['length', 'space'] });
   });
 });
 

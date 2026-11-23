@@ -2,9 +2,11 @@
 // wip/design-brief b3b8315b: tour-stops.md §1-2 and tour-motion.md §2-7). The first visit on a
 // device lands on the welcome screen (the logo's letters spring in, Take the tour / Skip and get
 // started, the links on tall screens, the tab bar); the tour follows one pretend sell trade on
-// example screens, stop by stop, with the scrim's hole and ring, the arrow and the card.
+// example screens, stop by stop (19, the trade room and its chat among them: demo note #100), with
+// the scrim's hole and ring, the arrow and the card.
 // Run at the owner's phone (443x794) and the boards' 390x844, plus the iPhone Duo folded
-// (466x678) and unfolded in landscape (890x626). DESIGNER-REVIEW.
+// (466x678), unfolded in landscape (890x626), and the owner's computer (1239x675, demo note #99).
+// DESIGNER-REVIEW.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
 import { stubBrowseApi } from './browse-stub.js';
@@ -68,7 +70,7 @@ async function expectRingOn(page: Page, target: Locator): Promise<void> {
 async function goTo(page: Page, n: number): Promise<void> {
   for (let i = Number((await count(page).textContent())!.split(' ')[0]); i < n; i++) {
     await next(page).click();
-    await expect(count(page)).toHaveText(`${i + 1} of 17`);
+    await expect(count(page)).toHaveText(`${i + 1} of 19`);
   }
 }
 
@@ -131,10 +133,10 @@ for (const size of PHONES) {
       await page.goto('/sell');
       await page.getByRole('button', { name: 'Take the tour' }).click();
       await expect(card(page)).toBeVisible();
-      await expect(count(page)).toHaveText('1 of 17');
+      await expect(count(page)).toHaveText('1 of 19');
       await expect(body(page)).toHaveText("First, decide why you're here: to buy Monero or to sell it.");
       await expect(card(page).locator('h2')).toHaveCount(0);
-      await expect(card(page).getByRole('img', { name: 'Page 1 of 6, Find a trade' })).toBeAttached();
+      await expect(card(page).getByRole('img', { name: 'Page 1 of 7, Find a trade' })).toBeAttached();
       await expectRingOn(page, stage(page).locator('[data-tour="buy"]'));
       await expect(page.locator('[data-part="tour-arrow"]')).toBeVisible();
       await expect(card(page).locator('[data-part="tour-back"]')).toBeDisabled();
@@ -156,11 +158,11 @@ for (const size of PHONES) {
 
       // Keys: → Next, ← Back.
       await page.keyboard.press('ArrowRight');
-      await expect(count(page)).toHaveText('3 of 17');
+      await expect(count(page)).toHaveText('3 of 19');
       await page.keyboard.press('ArrowLeft');
-      await expect(count(page)).toHaveText('2 of 17');
+      await expect(count(page)).toHaveText('2 of 19');
       await card(page).locator('[data-part="tour-back"]').click();
-      await expect(count(page)).toHaveText('1 of 17');
+      await expect(count(page)).toHaveText('1 of 19');
 
       // Stop 5: a centred card with the eye-off tile, no ring.
       await goTo(page, 5);
@@ -170,10 +172,10 @@ for (const size of PHONES) {
 
       // Stop 6: the Offers screen pushes in, marked Example.
       await next(page).click();
-      await expect(count(page)).toHaveText('6 of 17');
+      await expect(count(page)).toHaveText('6 of 19');
       await expect(stage(page).getByRole('heading', { level: 1 })).toHaveText('Sell XMR via Cash App');
       await expect(stage(page).locator('[data-part="example"]')).toBeVisible();
-      await expect(card(page).getByRole('img', { name: 'Page 2 of 6, Offers' })).toBeAttached();
+      await expect(card(page).getByRole('img', { name: 'Page 2 of 7, Offers' })).toBeAttached();
       await expectRingOn(page, stage(page).locator('[data-tour="ohead"]'));
       await next(page).click();
       await expect(body(page)).toHaveText("Each card tells you about the trader: the badges they've earned...");
@@ -186,7 +188,7 @@ for (const size of PHONES) {
       const closed = page.locator('[data-part="tour-closed"]');
       await expect(closed).toContainText('Tour closed. Take it again any time from Settings, under Help.');
       await closed.getByRole('button', { name: 'Restart' }).click();
-      await expect(count(page)).toHaveText('1 of 17');
+      await expect(count(page)).toHaveText('1 of 19');
       await page.keyboard.press('Escape');
       await expect(card(page)).toHaveCount(0);
       // The welcome screen is usable again.
@@ -204,11 +206,24 @@ for (const size of PHONES) {
       await expect(stage(page).locator('[data-tour="request-button"]')).toHaveText('Trade started');
       await goTo(page, 14);
       await expect(stage(page).locator('[data-tour="status"]')).toContainText('Locked in escrow');
+      // Demo note #100: the trade room, its two people and the chat back and forth.
       await goTo(page, 15);
-      await expect(stage(page).locator('[data-tour="tick"]')).toHaveAttribute('data-on', 'true');
+      await expect(card(page).getByRole('img', { name: 'Page 5 of 7, Trade room' })).toBeAttached();
+      const members = stage(page).locator('[data-tour="members"]');
+      await expect(members).toContainText('You');
+      await expect(members).toContainText('example_seller');
+      await expectRingOn(page, members);
       await goTo(page, 16);
-      await expect(stage(page).locator('[data-tour="release"]')).toContainText('Released 0.594354 XMR to example_seller');
+      const chat = stage(page).locator('[data-tour="chat"]');
+      await expect(chat.locator('.x2f-ex__line')).toHaveCount(3);
+      await expect(chat).toContainText('Chats are encrypted. If a dispute is opened, a moderator can read this conversation.');
+      await expectRingOn(page, chat);
+      await noSidewaysScroll(page);
       await goTo(page, 17);
+      await expect(stage(page).locator('[data-tour="tick"]')).toHaveAttribute('data-on', 'true');
+      await goTo(page, 18);
+      await expect(stage(page).locator('[data-tour="release"]')).toContainText('Released 0.594354 XMR to example_seller');
+      await goTo(page, 19);
       await expect(next(page)).toHaveText('Done');
       await expect(card(page).locator('[data-icon="tick"]')).toBeVisible();
       await next(page).click();
@@ -231,7 +246,7 @@ for (const size of PHONES) {
       await expect(line).toBeAttached();
       expect(await line.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
       await next(page).click();
-      await expect(count(page)).toHaveText('2 of 17');
+      await expect(count(page)).toHaveText('2 of 19');
     });
   });
 }
@@ -253,7 +268,7 @@ test('unfolded landscape (890x626): the card sits beside the highlight, the arro
   await stubApi(page);
   await page.goto('/welcome');
   await page.getByRole('button', { name: 'Take the tour' }).click();
-  await expect(count(page)).toHaveText('1 of 17');
+  await expect(count(page)).toHaveText('1 of 19');
   await expect(card(page)).toHaveAttribute('data-placement', 'side');
   await expect(stage(page)).toHaveAttribute('data-side', 'true');
   await expect
@@ -266,6 +281,53 @@ test('unfolded landscape (890x626): the card sits beside the highlight, the arro
   await noSidewaysScroll(page);
 });
 
+test('a computer screen (1239x675, demo note #99): each stop scrolls its target into view, and the wheel scrolls the screen behind', async ({ page }) => {
+  await page.setViewportSize({ width: 1239, height: 675 });
+  await stubApi(page);
+  await page.goto('/welcome');
+  await page.getByRole('button', { name: 'Take the tour' }).click();
+  await expect(card(page)).toHaveAttribute('data-placement', 'side');
+  const inView = async (target: Locator) => {
+    const b = (await target.boundingBox())!;
+    return b.y >= 0 && b.y + b.height <= 675;
+  };
+  // Stop 4: the payment list, low on Find a trade.
+  await goTo(page, 4);
+  await expect.poll(() => inView(stage(page).locator('[data-tour="methods"]'))).toBe(true);
+  // Stop 13: the QR code, below the fold of the pay screen at this height (the stage is taller than
+  // the screen), so the tour really scrolls the stage's own scroller to bring it into view. Wait
+  // for the stage to settle (the smooth scroll ends) before measuring.
+  await goTo(page, 13);
+  const scroller = stage(page).locator('[data-tour-scroll]');
+  const qr = stage(page).locator('[data-tour="qr"]');
+  await expect.poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => inView(qr)).toBe(true);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expectRingOn(page, qr);
+  // The wheel over the tour moves the screen behind it, and the ring follows.
+  let settled = -1;
+  await expect
+    .poll(async () => {
+      const t = await scroller.evaluate((el) => el.scrollTop);
+      const still = t === settled;
+      settled = t;
+      return still;
+    })
+    .toBe(true);
+  const before = settled;
+  await page.mouse.move(300, 300);
+  await page.mouse.wheel(0, before > 0 ? -200 : 200);
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).not.toBe(before);
+  await expect(count(page)).toHaveText('13 of 19');
+  await expectRingOn(page, qr);
+  // Stop 16: the chat in the trade room, on the screen (it fits at this height, so no scroll is owed).
+  await goTo(page, 16);
+  const chat = stage(page).locator('[data-tour="chat"]');
+  await expect.poll(() => inView(chat)).toBe(true);
+  await expectRingOn(page, chat);
+  await noSidewaysScroll(page);
+});
+
 test('Settings, Help: "Take the tour again", reading "Carry on the tour" once left half done; and the welcome screen', async ({ page }) => {
   await page.route('**/v1/account/me', (r) =>
     r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], member: null } }),
@@ -274,20 +336,20 @@ test('Settings, Help: "Take the tour again", reading "Carry on the tour" once le
   await page.route('**/v1/account/sessions', (r) => r.fulfill({ json: [] }));
   await page.route('**/v1/account/alerts', (r) => r.fulfill({ json: [] }));
   await page.addInitScript(() => window.localStorage.setItem('x2f.welcome.seen', '1'));
-  await page.goto('/settings/security');
+  await page.goto('/settings/help');
   const replay = page.locator('[data-part="tour-replay"]');
   await expect(replay).toContainText('Take the tour again');
   await expect(replay).toContainText('A quick walk through each screen');
   await replay.click();
-  await expect(count(page)).toHaveText('1 of 17');
+  await expect(count(page)).toHaveText('1 of 19');
   await next(page).click();
   await next(page).click();
-  await expect(count(page)).toHaveText('3 of 17');
+  await expect(count(page)).toHaveText('3 of 19');
   await card(page).locator('[data-part="tour-skip"]').click();
   await page.reload();
   await expect(replay).toContainText('Carry on the tour');
   await replay.click();
-  await expect(count(page)).toHaveText('3 of 17');
+  await expect(count(page)).toHaveText('3 of 19');
   await page.keyboard.press('Escape');
   const link = page.locator('[data-part="welcome-link"]');
   await expect(link).toHaveAttribute('href', '/welcome');

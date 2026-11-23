@@ -132,15 +132,15 @@ const ENTRIES: readonly Entry[] = [
     id: 'login-methods',
     topic: 'getting-started',
     q: 'Which ways can I log in?',
-    a: 'With a PGP key, a passkey, a security key or a password. You pick one when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password, and works only with one, so remove the app before you remove the password. Settings also refuses a removal that would leave a password with no authenticator app and no other way to log in.',
+    a: 'With a PGP key, a passkey, a security key or a password. You tick the ones you want when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password, and works only with one, so remove the app before you remove the password. Settings also refuses a removal that would leave a password with no authenticator app and no other way to log in.',
     sources: [
       `${AUTH}/methods.ts:29 PRIMARY`,
-      `${WEB}/setup/Login.tsx:99 You can add others later in Settings`,
+      `${WEB}/setup/Login.tsx:176 can be added later`,
       `${AUTH}/strength.ts:25 'password', 'totp'`,
       `${AUTH}/totp.ts:176 totp-needs-password`,
       `${AUTH}/methods.ts:426 password-has-totp`,
       `${AUTH}/methods.ts:436 password-alone`,
-      'apps/web/src/ui/cantDoCodes.ts:485 A password needs the authenticator app or another way to log in.',
+      'apps/web/src/ui/cantDoCodes.ts:552 A password needs the authenticator app or another way to log in.',
     ],
   },
   {
@@ -148,7 +148,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'How does logging in with a PGP key work?',
     a: 'You give X2F your public key. Each time you log in, X2F shows a message locked with that key: you unlock it in your PGP app and paste in the code inside. Each code works once, for 5 minutes.',
-    sources: [`${WEB}/setup/Login.tsx:31 Each time you log in, X2F shows`, `${AUTH}/pgp.ts:259 PGP_CHALLENGE_TTL_MS`],
+    sources: [`${WEB}/setup/PgpChallenge.tsx:146 X2F shows a message locked to your key`, `${AUTH}/pgp.ts:259 PGP_CHALLENGE_TTL_MS`],
     facts: ['pgpCodeMinutes'],
   },
   {
@@ -156,7 +156,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'Which PGP keys does X2F accept?',
     a: 'RSA keys of 4096 bits or more, Ed25519 keys and Ed448 keys. X2F never makes keys for you and never sees your private key.',
-    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:158 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:130 X2F never makes keys for`, `${SPEC}:42 users' PGP private keys`],
+    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:158 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:235 X2F never makes keys for`, `${SPEC}:42 users' PGP private keys`],
     facts: ['pgpRsaBits'],
   },
   {
@@ -165,8 +165,8 @@ const ENTRIES: readonly Entry[] = [
     q: 'What is the difference between a passkey and a security key?',
     a: 'A passkey logs you in with your face, fingerprint or phone PIN, and Apple or Google keep it synced across your devices. A security key is a small device, like a YubiKey, that you plug in or tap, and it needs its PIN or fingerprint each time. A key with no PIN set is refused until you set one in the key\'s settings.',
     sources: [
-      `${WEB}/setup/Login.tsx:37 Log in with your face`,
-      `${WEB}/setup/Login.tsx:43 Log in by tapping a YubiKey`,
+      `${WEB}/setup/Login.tsx:76 Log in with your face`,
+      `${WEB}/setup/Login.tsx:69 Log in by tapping or inserting your YubiKey`,
       `${AUTH}/webauthn.ts:63 Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings`,
     ],
   },
@@ -175,7 +175,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'What does my password need?',
     a: 'At least 10 characters, with upper and lower case letters, a number and a symbol. X2F also checks it against a list of leaked passwords.',
-    sources: ['packages/accounts/src/password.ts:7 PASSWORD_MIN', `${WEB}/setup/Login.tsx:50 a number and a symbol`, `${SPEC}:213 leaked-password list`],
+    sources: ['packages/accounts/src/password.ts:7 PASSWORD_MIN', `${WEB}/setup/Login.tsx:96 a number and a symbol`, `${SPEC}:213 leaked-password list`],
     facts: ['passwordMin'],
   },
   {
@@ -183,7 +183,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'What is the recovery code?',
     a: 'It is your one backup way in if you lose your login method, and you save it while you sign up. Each code works once: after you use it, X2F gives you a new one.',
-    sources: [`${AUTH}/recovery.ts:5 ONE 16-character code`, `${AUTH}/recovery.ts:9 used is replaced there by a new one`, `${WEB}/setup/SetupFlow.tsx:8 the recovery codes first, required`],
+    sources: [`${AUTH}/recovery.ts:5 ONE code (`, `${AUTH}/recovery.ts:10 used is replaced there by a new one`, `${WEB}/setup/SetupFlow.tsx:11 recovery code, required`],
   },
   {
     id: 'session-length',
@@ -707,7 +707,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'safety',
     q: 'What will X2F never ask me for?',
     a: 'Your PGP private key, your escrow key, your email or your phone number. X2F does not need any of them, so anyone asking for them in X2F\'s name is not X2F.',
-    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:130 X2F never makes keys for`],
+    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:235 X2F never makes keys for`],
   },
 
   // ---- Teams -----------------------------------------------------------------------------------

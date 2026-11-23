@@ -1,0 +1,54 @@
+/*
+ * Settings tabs (owner demo note #101; SettingsTabs.tsx). The bar is the Buy / Sell segment
+ * (browse.css `x2f-segment`) with four tabs; its tabs are links, so the chosen one is marked by
+ * aria-current instead of aria-selected, in the same look: a 2 px ink border on surface-raised,
+ * never orange. Tokens only. DESIGNER-REVIEW.
+ */
+
+.x2f-settings-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.x2f-settings-tabs__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 var(--x2f-space-1);
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.x2f-settings-tabs__tab[aria-current='page'] {
+  color: var(--x2f-ink);
+}
+
+.x2f-settings-tabs__tab[aria-current='page']::before {
+  border: 2px solid var(--x2f-ink);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-settings-tabs__tab:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-settings__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+/* A row that is one link: the link fills it, the row keeps the list's divider. */
+.x2f-settings__row {
+  padding: 0;
+}
+
+.x2f-settings__row > .x2f-row-link {
+  flex-grow: 1;
+}
+
+.x2f-settings__row:last-child {
+  border-bottom: 0;
+}

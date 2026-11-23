@@ -1,8 +1,10 @@
 /**
  * Setup step 3, PGP (board SetupPgpKey; spec 6.2): paste the public key. The key is checked on the
  * device as it is pasted (type, expiry and fingerprint, with the same rules as the server), and
- * Continue asks X2F for the first login message (`POST /v1/register/pgp/start`). Nothing inside the
- * key besides its fingerprint is shown.
+ * Continue asks X2F for the first login message (`POST /v1/register/pgp/start`). Signup round 3
+ * (owner's demo notes, 13 Nov 2026): the facts also show the user ID's name, if the key has one
+ * (never its email address), and the creation date, to the person only; nothing new is stored.
+ * Dates are UTC.
  */
 import { formatDate } from '../../ui/dates.js';
 import { useEffect, useState } from 'react';
@@ -29,6 +31,42 @@ function keyType(k: Extract<KeyInspection, { ok: true }>): string {
 
 function expiry(at: Date | null): string {
   return at === null ? 'Never' : formatDate(at);
+}
+
+/** The key's facts once it passes the check (board SetupPgpKey, plus signup round 3's name and dates). */
+export function KeyFacts({ check }: { check: Extract<KeyInspection, { ok: true }> }) {
+  return (
+    <section className="x2f-start__facts" aria-label="Key check" data-part="key-check">
+      <span className="x2f-start__status" data-tone="escrow">
+        <Icon name="check" size={18} stroke={2} />
+        Key accepted
+      </span>
+      {check.name !== null ? (
+        <div className="x2f-start__fact x2f-start__fact--wide" data-part="key-name">
+          {/* COPY-UNSIGNED */}
+          <span className="x2f-start__fact-name">Name on the key</span>
+          <span>{check.name}</span>
+        </div>
+      ) : null}
+      <div className="x2f-start__fact">
+        <span className="x2f-start__fact-name">Type</span>
+        <span>{keyType(check)}</span>
+      </div>
+      <div className="x2f-start__fact" data-part="key-created">
+        {/* COPY-UNSIGNED */}
+        <span className="x2f-start__fact-name">Created</span>
+        <span>{formatDate(check.createdAt)}</span>
+      </div>
+      <div className="x2f-start__fact">
+        <span className="x2f-start__fact-name">Expires</span>
+        <span>{expiry(check.expiresAt)}</span>
+      </div>
+      <div className="x2f-start__fact x2f-start__fact--wide">
+        <span className="x2f-start__fact-name">Fingerprint (your account ID)</span>
+        <span className="x2f-start__mono">{groupFingerprint(check.fingerprint)}</span>
+      </div>
+    </section>
+  );
 }
 
 export function PgpKey() {
@@ -78,6 +116,8 @@ export function PgpKey() {
   return (
     <SetupFrame
       screen="setup-pgp-key"
+      // COPY-UNSIGNED (owner's demo notes, 13 Nov 2026)
+      title="Adding your public PGP key"
       step={3}
       back={path('login')}
       footer={
@@ -91,10 +131,11 @@ export function PgpKey() {
       </SetupIntro>
       <label className="x2f-field x2f-label" htmlFor="pub">
         Public key
+        {/* Owner demo note (12 Nov 2026): a much bigger box, so the whole key shows. */}
         <textarea
-          className="x2f-input x2f-textarea"
+          className="x2f-input x2f-textarea x2f-textarea--key"
           id="pub"
-          rows={6}
+          rows={18}
           autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"
@@ -103,26 +144,7 @@ export function PgpKey() {
           onChange={(e) => setKey(e.target.value)}
         />
       </label>
-      {check !== null && check.ok ? (
-        <section className="x2f-start__facts" aria-label="Key check" data-part="key-check">
-          <span className="x2f-start__status" data-tone="escrow">
-            <Icon name="check" size={18} stroke={2} />
-            Key accepted
-          </span>
-          <div className="x2f-start__fact">
-            <span className="x2f-start__fact-name">Type</span>
-            <span>{keyType(check)}</span>
-          </div>
-          <div className="x2f-start__fact">
-            <span className="x2f-start__fact-name">Expires</span>
-            <span>{expiry(check.expiresAt)}</span>
-          </div>
-          <div className="x2f-start__fact x2f-start__fact--wide">
-            <span className="x2f-start__fact-name">Fingerprint (your account ID)</span>
-            <span className="x2f-start__mono">{groupFingerprint(check.fingerprint)}</span>
-          </div>
-        </section>
-      ) : null}
+      {check !== null && check.ok ? <KeyFacts check={check} /> : null}
       {check !== null && !check.ok ? (
         <p className="x2f-error" role="alert" data-part="key-refused">
           {check.detail}

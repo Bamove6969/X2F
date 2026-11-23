@@ -3,20 +3,60 @@
  * PGP app and paste the code. Verify finishes the sign-up (`POST /v1/register/pgp/finish` with
  * `acceptedTerms`), which opens the new account's session; then the board's "Key verified" state.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { authApi } from '../auth/authApi.js';
+import { groupFingerprint } from './PgpKey.js';
 import { serverClock } from '../../api/client.js';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
-import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
+import { RegisterError, SetupFrame, SetupIntro, finishMethod, useSetup } from './kit.js';
 import { errorCode, registerPgpFinish, registerPgpStart, setupError, termsChanged, type SetupError } from './register.js';
+import { MessageBox } from '../../ui/MessageBox.js';
+
+/** Where the API publishes X2F's signing key for import (apps/api/src/auth/pgp.ts SIGNING_KEY_WELL_KNOWN). */
+export const SIGNING_KEY_PATH = '/.well-known/x2f-signing-key.asc';
+
+/**
+ * X2F's official signing key (R7), which signs every login message (owner demo note, 12 Nov 2026:
+ * the decrypted message read "unknown signer"): a download to import once, and its fingerprint to
+ * check. Nothing shows when the key cannot be fetched; the message still works.
+ */
+function SigningKey() {
+  const [fp, setFp] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    authApi.getPgpSigningKey().then(
+      (k) => live && setFp(k.fingerprint),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (fp === null) return null;
+  return (
+    // COPY-UNSIGNED
+    <section className="x2f-start__signing" aria-label="X2F's signing key" data-part="signing-key">
+      <p className="x2f-start__signing-title">X2F's signing key</p>
+      <p className="x2f-start__help">
+        Import it into your PGP app once. Your app then shows each login message as signed by X2F. Check that the fingerprint matches:
+      </p>
+      <span className="x2f-start__mono">{groupFingerprint(fp)}</span>
+      <a className="x2f-start__signing-link" href={SIGNING_KEY_PATH} download="x2f-signing-key.asc">
+        Download X2F's signing key
+      </a>
+    </section>
+  );
+}
 
 /** Each login code expires 5 minutes after X2F sends it (spec 6.2). */
 const CODE_LIFETIME_MS = 5 * 60_000;
 
 export function PgpChallenge() {
-  const { state, update, go, path } = useSetup();
+  const api = useSetup();
+  const { state, update, go, path } = api;
   const challenge = state.challenge!;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -86,7 +126,7 @@ export function PgpChallenge() {
       {...(done ? {} : { back: path('pgp-key') })}
       footer={
         done ? (
-          <Button variant="primary" onClick={() => go('backup', { replace: true })} data-part="pgp-continue">
+          <Button variant="primary" onClick={() => finishMethod(api, 'pgp')} data-part="pgp-continue">
             Continue
           </Button>
         ) : (
@@ -113,7 +153,7 @@ export function PgpChallenge() {
         <>
           <ol className="x2f-start__steps">
             <li>Copy the encrypted message below.</li>
-            <li>Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.</li>
+            <li>Open your PGP app (Kleopatra, GPG Suite, PGPony or OpenKeychain) and decrypt it.</li>
             <li>Paste the code from inside the message.</li>
           </ol>
           <section className="x2f-start__message" aria-label="Encrypted message">
@@ -126,10 +166,11 @@ export function PgpChallenge() {
                 {copied ? 'Copied' : 'Copy message'}
               </button>
             </div>
-            <pre className="x2f-pre" data-part="pgp-message">
+            <MessageBox data-part="pgp-message">
               {challenge.encryptedMessage}
-            </pre>
+            </MessageBox>
           </section>
+          <SigningKey />
           <label className="x2f-field x2f-label" htmlFor="phrase">
             Code from the message
             <input
@@ -147,7 +188,7 @@ export function PgpChallenge() {
           </label>
           <RegisterError error={error} />
           {error !== null && !error.names && !error.keyInUse && !error.keyRefused ? (
-            <button type="button" className="x2f-start__textbutton" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
+            <button type="button" className="x2f-start__textbutton x2f-start__textbutton--tap" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
               Send a new message
             </button>
           ) : null}

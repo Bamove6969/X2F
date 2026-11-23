@@ -48,16 +48,20 @@ export {
   type WebAuthnKind,
 } from './api.js';
 export {
+  KEY_TEST_ACTION,
+  KeyTestError,
   addWebAuthnKey,
+  addWebAuthnKeyWithId,
   confirmWithWebAuthn,
   loginWithPasskey,
   loginWithSecurityKey,
   registerWithWebAuthn,
+  testWebAuthnKey,
   type AuthenticationCeremony,
   type RegistrationCeremony,
 } from './webauthn.js';
 export { becomeVendorAction, defaultDeviceLabel, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
-export { checkDisplayName, checkLoginName, checkNames, checkPassword, describeAction, inspectPublicKey, METHOD_PARTNERS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode, partnerMissing, partnerNeededBy, passwordAlone, STANDS_ALONE } from '@x2f/accounts';
+export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkPassword, describeAction, formatRecoveryInput, hasPasswordSpace, inspectPublicKey, METHOD_PARTNERS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode, partnerMissing, partnerNeededBy, passwordAlone, STANDS_ALONE } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
 export {
   IDLE_REMINDER_MINUTES, MAX_WALLET_BATCH, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,

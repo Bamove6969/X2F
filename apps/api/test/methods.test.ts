@@ -495,6 +495,17 @@ describe('removing a login method', () => {
     expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
   });
 
+  // Review L4: the sign-up's end counts PGP keys the same way (confirm.ts methodKindsOf).
+  it('password-alone: onboarding/end does not count an expired PGP key either (409), nor the setup-only gate', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
+    const b = await loggedIn(id);
+    const end = await b.post('/v1/account/onboarding/end', {});
+    expect([end.statusCode, errorOf(end)]).toEqual([409, 'password-alone']);
+    expect(((await b.get('/v1/account/me')).json() as { setupOnly: boolean }).setupOnly).toBe(true);
+  });
+
   it('password-alone: a revoked PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
     const { id } = await account();
     await addPassword(id);

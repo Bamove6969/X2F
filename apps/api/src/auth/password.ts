@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { passwordOnlyNow } from './setupOnly.js';
 import { checkPassword, needsStrongConfirm, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -13,7 +14,7 @@ import {
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
-import { issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { issueConfirmToken, onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
@@ -277,7 +278,17 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
     return { status: 'second-factor' as const, pendingId, needs: ['totp'] };
   }
   // Task 16: a session now, or an approval from a logged-in device first.
-  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password'] });
+  const result = await traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password'] });
+  // Review M2: with no second method the session is setup-only (auth/setupOnly.ts), and the login says
+  // so, so the app goes straight to adding one. (TOTP was ruled out above.)
+  if (result.status === 'ok' && (await passwordOnlyLogin(deps, accountId))) return { status: 'ok' as const, setupOnly: true as const };
+  return result;
+}
+
+/** Whether a password login's account has no other login (it has no TOTP: checked before this). */
+async function passwordOnlyLogin(deps: Deps, accountId: string): Promise<boolean> {
+  const { rows } = await deps.db.query('select 1 from webauthn_credentials where account_id = $1 limit 1', [accountId]);
+  return rows.length === 0 && (await passwordOnlyNow(deps, accountId, deps.clock()));
 }
 
 async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -406,6 +417,7 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
         await requireLiveSessionInTx(client, req.auth, now);
         const running = await holdInTx(client, settleOf(req), accountId, now);
         if (running !== null) throw holdRefusal(running.holdUntil);
+        if (passedOnWindow(req)) await recheckWindowInTx(client, req, 'password', 'set-password');
         const spent = await client.query('update recovery_codes set used_at = $2 where id = $1 and account_id = $3 and used_at is null', [code.codeId, now, accountId]);
         if ((spent.rowCount ?? 0) === 0) throw new ApiError(401, 'credentials-invalid');
         ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
@@ -414,6 +426,8 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
       } else {
         // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
         held = await gateChange(client, req, { kind: 'password', hash, pepperId });
+        // Re-verify R1: "none yet" again under the account lock, so a parallel twin loses.
+        if (passedOnWindow(req)) await recheckWindowInTx(client, req, 'password', 'set-password');
         if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
       }
       await client.query('commit');
@@ -492,7 +506,7 @@ export function passwordRoutes(app: FastifyInstance): void {
         checkNewPassword,
         // Owner S-110: an optional recovery code, checked before the confirm token is spent.
         checkChangeCode,
-        requireConfirm({ kind: 'set-password' }, { onboarding: true, recovery: true }),
+        requireConfirm({ kind: 'set-password' }, { onboarding: onlyIfNew('password'), recovery: true }),
       ],
     },
     setPasswordHandler,

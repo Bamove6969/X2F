@@ -44,7 +44,8 @@ test('/sell loads with zero CSP violations and zero requests to other origins', 
   await expect(page.locator('nav[aria-label="Main"]')).toBeAttached();
   // Every face the boards use loads from this origin under font-src 'self'.
   const loaded = await page.evaluate(async () => {
-    const faces = ['700 24px "Familjen Grotesk"', '400 16px "Atkinson Hyperlegible Next"', '500 16px "Atkinson Hyperlegible Mono"'];
+    // Owner 16 Nov fonts D: DM Sans for titles and text, DM Mono for numbers.
+    const faces = ['700 24px "DM Sans"', '400 16px "DM Sans"', '500 16px "DM Mono"'];
     const results = await Promise.all(faces.map((f) => document.fonts.load(f, 'X2F 1.250000')));
     return results.map((r) => r.length);
   });

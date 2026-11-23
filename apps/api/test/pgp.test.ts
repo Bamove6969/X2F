@@ -10,7 +10,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
-import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
@@ -307,6 +307,15 @@ describe('signing key (R7)', () => {
     expect(res.json().publicKey).not.toContain('PRIVATE KEY');
   });
 
+  it('GET /.well-known/x2f-signing-key.asc serves the public half as an armored key to import (owner demo note, 12 Nov 2026)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/.well-known/x2f-signing-key.asc' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/^application\/pgp-keys/);
+    expect(res.body).toBe(deps.pgpSigner.publicArmored);
+    expect(res.body).not.toContain('PRIVATE KEY');
+    expect((await openpgp.readKey({ armoredKey: res.body })).getFingerprint()).toBe(deps.config.pgpSigningFingerprint);
+  });
+
   describe('loadPgpSigner', () => {
     let dir: string;
     beforeAll(async () => {
@@ -339,6 +348,20 @@ describe('signing key (R7)', () => {
       await expect(loadPgpSigner(await write('pub.asc', signer.publicArmored), signer.fingerprint)).rejects.toThrow(/X2F_PGP_SIGNING_KEY_PATH/);
     });
 
+    it('refuses a key that can also encrypt: the official key is signing-only (lead, 12 Nov 2026)', async () => {
+      // openpgp's default ECC key carries an encryption subkey.
+      const k = await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 's' }], date: KEY_DATE });
+      const fp = (await openpgp.readKey({ armoredKey: k.publicKey })).getFingerprint();
+      await expect(loadPgpSigner(await write('both.asc', k.privateKey), fp)).rejects.toThrow(/signing-only/);
+    });
+
+    it('the test stand-in is signing-only too: no subkey, and nothing in it can encrypt', async () => {
+      const { signer } = await testSigner();
+      const pub = await openpgp.readKey({ armoredKey: signer.publicArmored });
+      expect(pub.getSubkeys()).toHaveLength(0);
+      await expect(pub.getEncryptionKey()).rejects.toThrow();
+    });
+
     it('refuses a passphrase-protected key', async () => {
       const k = await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 's' }], passphrase: 'secret', date: KEY_DATE });
       const fp = (await openpgp.readKey({ armoredKey: k.publicKey })).getFingerprint();
@@ -356,6 +379,19 @@ describe('login', () => {
     name = uniqueName();
     key = await genKey();
     home = await registerPgp(name, key);
+  });
+
+  it('the login code is 48 symbols in 12 groups (owner, 12 Nov 2026), and 12 of them never complete it (review m-5)', async () => {
+    const b = new Browser();
+    const s1 = await loginStart(b, key);
+    const code = codeOf(await dec(s1.json().encryptedMessage, key.privateKey, signerPublic));
+    expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){11}$/);
+    // The old 12-symbol length, taken from the code itself: refused like any wrong code.
+    const short = await loginFinish(b, s1.json().challengeId, code.slice(0, 14));
+    expect(short.statusCode).toBe(401);
+    expect(short.json()).toEqual({ error: 'code-invalid' });
+    // That used the challenge up (as any wrong code does): the full code no longer works either.
+    expect((await loginFinish(b, s1.json().challengeId, code)).statusCode).toBe(401);
   });
 
   it('a code works once, until exactly 5:00', async () => {
@@ -665,7 +701,9 @@ describe('binding', () => {
   it('an add-key challenge of account X cannot be finished by account Y', async () => {
     const y = await registerPgp(uniqueName(), await genKey());
     const newKey = await genKey();
-    const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey }); // onboarding: no token needed
+    // Y already has a PGP key, so a second one needs a confirm token even in the sign-up window (review M1).
+    const confirmToken = await confirmTokenFor(deps, y.cookies, { kind: 'add-method', method: 'pgp' });
+    const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey, confirmToken });
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, newKey.privateKey, signerPublic));
     // X's PGP-alone login may have started the 24-hour hold (Task 17, coolingOff.test.ts), which
@@ -742,7 +780,8 @@ describe('confirm and adding a key', () => {
     const taken = await genKey();
     await registerPgp(uniqueName(), taken);
     const b = await registerPgp(uniqueName(), await genKey());
-    const s = await b.post('/v1/account/pgp/start', { publicKey: taken.publicKey });
+    const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'pgp' });
+    const s = await b.post('/v1/account/pgp/start', { publicKey: taken.publicKey, confirmToken });
     expect(s.statusCode).toBe(200);
     const f = await b.post('/v1/account/pgp/finish', {
       challengeId: s.json().challengeId, code: codeOf(await dec(s.json().encryptedMessage, taken.privateKey)),

@@ -6,6 +6,8 @@ export {
   checkDisplayName,
   checkLoginName,
   checkNames,
+  checkNewDisplayName,
+  displayKeyOf,
   LOOK_ALIKE_LETTERS,
   lookAlikeKey,
   staffNameKey,
@@ -16,9 +18,10 @@ export {
   PASSWORD_MAX,
   PASSWORD_MIN,
   checkPassword,
+  hasPasswordSpace,
   normalizePassword,
 } from './password.js';
-export { newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
+export { formatRecoveryInput, newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
 export {
   type InspectOptions,
   type KeyInspection,
@@ -46,6 +49,7 @@ export {
   addressesHash,
   describeAction,
   STRONG_ONLY_ACTIONS,
+  WEBAUTHN_ONLY_ACTIONS,
   needsStrongConfirm,
 } from './confirmAction.js';
 export {

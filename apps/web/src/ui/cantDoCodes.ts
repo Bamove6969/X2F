@@ -44,6 +44,8 @@ export const CANT_DO_CODES = [
   'totp-needs-password',
   'password-has-totp',
   'password-alone',
+  // Security review of wip/lead-notes-all, M2: a password-only account's session is setup-only.
+  'second-method-required',
   'method-not-allowed',
   'account-disabled',
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
@@ -111,6 +113,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',
+  // Owner demo note #94: the key test's own results (KeyTestError in @x2f/auth-client, never an API
+  // answer), said inline by screens/auth/KeyTest.tsx; nothing was refused.
+  'other-key': 'a key test answered by another key than the one just added (KeyTest.tsx, inline)',
+  'not-listed': 'a key test for a key the confirm options did not list (KeyTest.tsx, inline)',
   // Plan 4 Task 12 (J-06): the staff ruling routes.
   'reason-too-short': "a ruling's reason under 40 characters (staff app only)",
   'same-person': 'a ruling approved by its own proposer (staff app only)',
@@ -550,6 +556,23 @@ export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
 
 /** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
 export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
+
+/** The code a backup (recovery) session gets on a route it may not use. */
+export const RECOVERY_SESSION_CODE = 'recovery-session' satisfies CantDoCode;
+
+/** Review L1: a key test from a backup (recovery) session, which confirms nothing (403 `recovery-session`). COPY-UNSIGNED */
+export const KEY_TEST_RECOVERY = "You're logged in with a backup login, which can't test a key. Log in with your security key or another way, then test it from Settings.";
+
+/** Review M2: the code a setup-only session (a password alone) gets on every other route. */
+export const SECOND_METHOD_CODE = 'second-method-required' satisfies CantDoCode;
+
+/** Review M2: what a setup-only session is told, above Login methods. COPY-UNSIGNED */
+export const SECOND_METHOD_TITLE = 'Add a second way to log in';
+export const SECOND_METHOD_MESSAGE =
+  "A password alone can't finish setting up your account. Add the authenticator app, a security key, a passkey or a PGP key below. Until then you can only add one, write down your recovery code, or log out.";
+
+/** Review M2: sign-up reached its end with a password alone (409 `password-alone` from onboarding/end). COPY-UNSIGNED */
+export const SECOND_METHOD_SIGNUP = "A password alone can't finish your sign-up. Choose a second way to log in: the authenticator app, a security key, a passkey or a PGP key.";
 
 /** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
 export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';

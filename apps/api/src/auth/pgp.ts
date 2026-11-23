@@ -14,8 +14,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { readFile } from 'node:fs/promises';
 import {
   PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
-  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection,
-} from '@x2f/accounts';
+  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection, WEBAUTHN_ONLY_ACTIONS } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
@@ -28,7 +27,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
+import { confirmerOf, issueConfirmToken, onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -39,6 +38,9 @@ import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
 // The official X2F signing key (R7)
+
+/** Where the official signing key's public half is published for import (also linked from setup). */
+export const SIGNING_KEY_WELL_KNOWN = '/.well-known/x2f-signing-key.asc';
 
 /** The official X2F PGP key every challenge is signed with; its fingerprint is published on the site. */
 export interface PgpSigner {
@@ -66,6 +68,17 @@ export async function pgpSignerFromArmored(armored: string, expectedFingerprint:
     await key.getSigningKey();
   } catch {
     throw new Error('config: X2F_PGP_SIGNING_KEY_PATH holds a key that cannot sign (expired, revoked or no signing key)');
+  }
+  // Signing-only (lead, 12 Nov 2026): the key users import only ever vouches for X2F's messages;
+  // nothing in it (primary key or subkey) may be used to encrypt to X2F.
+  let canEncrypt = true;
+  try {
+    await key.getEncryptionKey();
+  } catch {
+    canEncrypt = false;
+  }
+  if (canEncrypt) {
+    throw new Error('config: X2F_PGP_SIGNING_KEY_PATH must hold a signing-only key (it has a key that can encrypt; make it with no encryption subkey)');
   }
   return { key, fingerprint, publicArmored: key.toPublic().armor() };
 }
@@ -818,6 +831,8 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
 async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const action: ConfirmAction = parseConfirmAction(body(req).action);
+  // Review L1: the key test is a passkey's or security key's alone.
+  if (WEBAUTHN_ONLY_ACTIONS.includes(action.kind)) throw new ApiError(403, 'method-not-allowed');
   // A team member proves it's them with their own keys, and only for MEMBER_CONFIRM_ACTIONS (Q73).
   const confirmer = await confirmerOf(deps.db, req.auth, action);
   const stored = await storedKeys(deps, confirmer.accountId);
@@ -862,7 +877,7 @@ async function addKeyStart(req: FastifyRequest) {
   const { storable, pending } = await pendingKey(deps.config, key.armored, key.fingerprint, deps.clock());
   return issuePgpChallenge(deps, req, {
     accountId: req.auth.accountId, sessionId: req.auth.sessionId, purpose: 'add-key', purposeText: PGP_PURPOSE['add-key'],
-    armoredKeys: [storable], payload: { key: pending },
+    armoredKeys: [storable], payload: { key: pending, window: passedOnWindow(req) },
   });
 }
 
@@ -884,6 +899,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     try {
       // Hold model v3: a waiting login's new key is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc, recipient: pending.recipient ?? null });
+      // Re-verify R1: a start let through on the window may add the first key only, never a second.
+      if (row.payload.window === true) await recheckWindowInTx(client, req, 'pgp', 'add-method');
       if (held === null) await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
       await client.query('commit');
     } catch (e) {
@@ -1025,6 +1042,11 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
     fingerprint: req.server.deps.pgpSigner.fingerprint,
     publicKey: req.server.deps.pgpSigner.publicArmored,
   }));
+  // The same public key as a file to import into a PGP app (owner demo note, 12 Nov 2026: the
+  // decrypted login message read "unknown signer" until X2F's key is imported).
+  app.get(SIGNING_KEY_WELL_KNOWN, async (req, reply) =>
+    reply.type('application/pgp-keys; charset=utf-8').header('cache-control', 'public, max-age=3600').send(req.server.deps.pgpSigner.publicArmored),
+  );
 
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   // The Terms signature rides on the finish (owner, 8 Nov 2026): the default limit plus its room.
@@ -1046,7 +1068,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
         methodAllowed('pgp'),
         requireNotHeld,
         inspectNewKey,
-        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
+        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: onlyIfNew('pgp'), recovery: true }),
       ],
     },
     addKeyStart,

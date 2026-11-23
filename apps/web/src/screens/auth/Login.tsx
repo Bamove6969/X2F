@@ -19,7 +19,9 @@ import { isExpired, loginCantDo, refusalText } from './refusals.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
+import { PasswordInput } from '../../ui/PasswordInput.js';
 import { HelpLinks } from '../../ui/HelpLinks.js';
+import { MessageBox } from '../../ui/MessageBox.js';
 
 /**
  * Where a visitor is sent once the server says this browser has missed the password about ten
@@ -275,10 +277,11 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
           <label className="x2f-label" htmlFor="pgp-key">
             Your PGP public key
           </label>
+          {/* Owner demo note (12 Nov 2026, /login): the same width, much taller, so the whole key shows. */}
           <textarea
-            className="x2f-input x2f-textarea"
+            className="x2f-input x2f-textarea x2f-textarea--tall"
             id="pgp-key"
-            rows={6}
+            rows={18}
             autoComplete="off"
             spellCheck={false}
             value={publicKey}
@@ -294,9 +297,9 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
           <label className="x2f-label" htmlFor="pgp-message">
             Decrypt this message in your PGP app, then paste the code
           </label>
-          <pre className="x2f-pre" id="pgp-message" data-part="pgp-message">
+          <MessageBox id="pgp-message" data-part="pgp-message">
             {challenge.encryptedMessage}
-          </pre>
+          </MessageBox>
           <Button variant="secondary" onClick={copy} data-part="copy">
             {copied ? 'Copied' : 'Copy message'}
           </Button>
@@ -475,10 +478,7 @@ function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
         <label className="x2f-label" htmlFor="login-password">
           Password
         </label>
-        <input
-          className="x2f-input"
-          id="login-password"
-          type="password"
+        <PasswordInput id="login-password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

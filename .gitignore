@@ -12,6 +12,10 @@ design/x2f-app/support.js
 # Helper agents keep scratch files here (never commit them)
 .scratch/
 
+# The local demo stack (npm run demo): throwaway secrets, logs, chain and its web build
+.demo/
+apps/web/dist-demo/
+
 # TypeScript incremental build state (review P-m3)
 *.tsbuildinfo
 

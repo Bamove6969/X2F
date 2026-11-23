@@ -124,3 +124,32 @@ describe('S-014: the password strength meter', () => {
   });
 });
 
+
+// Owner demo note #108 (17 Nov 2026): no spaces in a new password.
+describe('note #108: no spaces in a new password', () => {
+  it('says so inline as soon as a space is typed, unticks "No spaces", and the password cannot be set', () => {
+    const host = show(<Password />, setup());
+    const pw = host.querySelector<HTMLInputElement>('#pw')!;
+    const again = host.querySelector<HTMLInputElement>('#pw2')!;
+    type(pw, 'Correct-Horse-9');
+    type(again, 'Correct-Horse-9');
+    expect(byPart(host, 'password-space')).toBeNull();
+    expect(host.querySelector('[data-rule="no-spaces"]')!.getAttribute('data-met')).toBe('true');
+    expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(false);
+    type(pw, 'Correct Horse-9');
+    type(again, 'Correct Horse-9');
+    expect(byPart(host, 'password-space')!.textContent).toBe('Remove the spaces. A password has no spaces.');
+    expect(host.querySelector('[data-rule="no-spaces"]')!.getAttribute('data-met')).toBe('false');
+    expect(byPart(host, 'password-meter')!.textContent).not.toContain('Strong');
+    expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('security review: a blank-looking character (Braille blank U+2800) counts as a space', () => {
+    const host = show(<Password />, setup());
+    type(host.querySelector<HTMLInputElement>('#pw')!, 'Correct\u2800Horse-9');
+    type(host.querySelector<HTMLInputElement>('#pw2')!, 'Correct\u2800Horse-9');
+    expect(byPart(host, 'password-space')!.textContent).toBe('Remove the spaces. A password has no spaces.');
+    expect(host.querySelector('[data-rule="no-spaces"]')!.getAttribute('data-met')).toBe('false');
+    expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(true);
+  });
+});

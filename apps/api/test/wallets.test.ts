@@ -6,7 +6,7 @@ import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { hashPassword } from '../src/auth/password.js';
 import { PAYOUT_WAIT_MS, applyWallets, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
-import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { confirmTokenMethod, seedAccount, addUnusedSecurityKey } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
@@ -97,6 +97,8 @@ async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' | '
   await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
     id, goodHash.hash, goodHash.pepperId, now,
   ]);
+  // Review M2: a password alone is setup-only outside the sign-up window; a second method, unused.
+  await addUnusedSecurityKey(deps, id);
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id, firstSession: o.firstSession ?? false, level: o.level ?? 'full' });
   expect(res.statusCode).toBe(200);
@@ -733,11 +735,15 @@ describe('GET /v1/wallets/rule (owner, 2026-10-24)', () => {
     return res.json();
   };
 
-  it('a password-only account: its first wallet works at once, later ones would wait', async () => {
-    const { b } = await trader();
-    expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
+  it('a password account (its security key unused): its first wallet works at once, later ones would wait; with the password alone it adds none', async () => {
+    const { id, b } = await trader();
+    expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: ['security-key'], password: 'immediate', waitHours: 24 });
     await addConfirmed(b);
+    expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: ['security-key'], password: 'waits', waitHours: 24 });
+    // Review M2: with the password alone the session is setup-only; it still reads the rule, and adds no wallet.
+    await deps.db.query('delete from webauthn_credentials where account_id = $1', [id]);
     expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 });
+    expect((await addWallet(b, { address: fakeAddress() })).json()).toEqual({ error: 'second-method-required' });
   });
 
   it('lists the strong methods the account holds; an account without a password says none', async () => {
@@ -765,6 +771,7 @@ describe('GET /v1/wallets/rule (owner, 2026-10-24)', () => {
 
   it('a strong-only account (a passkey, no password) before and after its first wallet', async () => {
     const { id, b } = await trader();
+    await deps.db.query('delete from webauthn_credentials where account_id = $1', [id]);
     await addKey(id, 'passkey');
     await deps.db.query('delete from passwords where account_id = $1', [id]);
     expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: ['passkey'], password: 'none', waitHours: 24 });

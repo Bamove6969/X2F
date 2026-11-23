@@ -69,7 +69,7 @@ async function finish(api: SetupApi, typed: string, answered: () => boolean): Pr
       </SetupContext.Provider>
     </MemoryRouter>,
   );
-  const input = document.querySelector<HTMLInputElement>('#addr')!;
+  const input = document.querySelector<HTMLInputElement>('#xmr-payout')!;
   const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   act(() => {
     setValue.call(input, typed);

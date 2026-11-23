@@ -11,9 +11,13 @@
  * then asks for the session length (`afterLogin`) and goes on. Every setup step before this one
  * (backup, first wallet) still runs in the sign-up session and its 30-minute window. Someone
  * already logged in, who opened setup only to add a wallet, stays logged in.
+ *
+ * Owner demo note 16 Nov #97: the screen also says what the account's security rating is, always
+ * lists the username with the login methods ("Username and password" when there is a password), and
+ * each checklist item links back to the setting where it can be changed or made more secure.
  */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
 import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
@@ -41,7 +45,41 @@ export const WELCOME_COPY = {
   done: 'Done',
   /** Review 12 Nov, C1: what a screen reader hears for an item not done yet. */
   notDone: 'Not done yet',
+  /** Owner #97: the account's security rating, above the checklist. COPY-UNSIGNED */
+  ratingTitle: "Your account's security rating",
+  /** Owner #97: how to make it more secure, for an account not yet highly secure. COPY-UNSIGNED */
+  ratingRaise: 'Add a passkey, a security key or a PGP key to make it highly secure.',
+  ratingLink: 'Make it more secure',
+  /** Owner #97: "always add Username/Password as a bullet point". COPY-UNSIGNED */
+  usernamePassword: 'Username and password',
+  /** Every account logs in with its private username, password or not. COPY-UNSIGNED */
+  username: 'Username',
+  /** Owner #97: the link back to each setting. COPY-UNSIGNED */
+  change: 'Change',
+  add: 'Add',
 } as const;
+
+/** The rating's words (the same levels as the trade screen's, owner 17 Nov). COPY-UNSIGNED */
+export const RATING_WORDS: Record<SecurityRating, string> = {
+  high: 'Highly secure',
+  medium: 'Medium',
+  weak: 'Weak',
+};
+
+/** Where each checklist item is changed later (owner #97). */
+export const WELCOME_LINKS = {
+  rating: '/settings/security',
+  login: '/settings/security',
+  recovery: '/settings/security',
+  wallet: '/wallets',
+} as const;
+
+/** Add a wallet, then back to what started setup (the take or the post), as Start trading's own wallet step. */
+export function walletAddPath(returnTo: string): string {
+  return `/wallets?add=1&returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /**
  * The login methods, best to worst (lead default, owner may reorder): a security key and a passkey
@@ -53,17 +91,42 @@ const BEST_FIRST: Array<{ id: MethodType; word: string }> = [
   { id: 'passkey', word: 'Passkey' },
   { id: 'pgp', word: 'PGP key' },
   { id: 'totp', word: 'Authenticator app' },
-  { id: 'password', word: 'Password' },
+  { id: 'password', word: WELCOME_COPY.usernamePassword },
 ];
 
 /** The account's login methods best to worst; what this setup just did counts before the account is read again. */
 export function loginMethodsBestFirst(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): string[] {
+  const have = methodsNow(me, flow);
+  // A second PGP key is not visible in the methods list; the flow knows.
+  const twoPgp = flow.registered && flow.method === 'pgp' && flow.backup === 'pgp';
+  const words = BEST_FIRST.filter((m) => have.has(m.id)).map((m) => (m.id === 'pgp' && twoPgp ? 'PGP keys (2)' : m.word));
+  // Owner #97: the username is always a line; with a password it is "Username and password".
+  if (words.length > 0 && !have.has('password')) words.push(WELCOME_COPY.username);
+  return words;
+}
+
+/** The account's methods as this setup leaves them: the account as read, plus what the flow just did. */
+function methodsNow(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): Set<string> {
   const have = new Set<string>(me.methods);
   if (flow.registered) have.add(flow.method);
   if (flow.backup === 'security-key' || flow.backup === 'pgp') have.add(flow.backup);
-  // A second PGP key is not visible in the methods list; the flow knows.
-  const twoPgp = flow.registered && flow.method === 'pgp' && flow.backup === 'pgp';
-  return BEST_FIRST.filter((m) => have.has(m.id)).map((m) => (m.id === 'pgp' && twoPgp ? 'PGP keys (2)' : m.word));
+  return have;
+}
+
+/**
+ * The account's security rating (owner #97). The API's own rating wins when it sends one (GET
+ * /v1/account/me `securityRating`, apps/api/src/auth/rating.ts on main); an API build without it
+ * gets the same three rules applied to the methods here, for display only (it authorises nothing):
+ * high with a PGP key, a passkey or a security key; medium with a password and an authenticator app;
+ * weak otherwise.
+ */
+export function securityRating(me: Pick<Me, 'methods'> & { securityRating?: SecurityRating | null }, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): SecurityRating {
+  const sent = me.securityRating;
+  if (sent === 'high' || sent === 'medium' || sent === 'weak') return sent;
+  const have = methodsNow(me, flow);
+  if (have.has('pgp') || have.has('passkey') || have.has('security-key')) return 'high';
+  if (have.has('password') && have.has('totp')) return 'medium';
+  return 'weak';
 }
 
 export interface Checklist {
@@ -81,7 +144,8 @@ export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
     logins,
     loginDone: logins.length > 0,
     recoveryDone: me.methods.includes('recovery-codes') || flow.backup === 'recovery-codes',
-    wallet: usable !== undefined ? { app: APP_LABELS[usable.app], end: usable.addressEnd } : null,
+    // A wallet saved as Other (setup no longer picks an app, owner #96) goes by its own name.
+    wallet: usable !== undefined ? { app: usable.app === 'other' ? usable.label || APP_LABELS.other : APP_LABELS[usable.app], end: usable.addressEnd } : null,
   };
 }
 
@@ -101,13 +165,49 @@ export function Tick({ done }: { done: boolean }) {
 }
 
 /**
+ * The link back to a setting (owner #97). Right after sign-up it leaves the way Start trading does
+ * (owner G25): `leave` ends the sign-up session and Log in comes next, then the setting. The href is
+ * where the link really goes, so it reads right without script.
+ */
+function LeaveLink({ target, leave, part, disabled, children }: { target: string; leave: Leave; part: string; disabled: boolean; children: string }) {
+  const { to } = leave.path(target);
+  return (
+    <Link
+      className="x2f-link x2f-welcome__link"
+      to={to}
+      data-part={part}
+      aria-disabled={disabled || undefined}
+      onClick={(e) => {
+        e.preventDefault();
+        if (!disabled) void leave.go(target);
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+interface Leave {
+  path: (target: string) => { logOut: boolean; to: string };
+  go: (target: string) => Promise<void>;
+}
+
+/**
+ * Where a link off the Welcome screen goes (owner G25 and #97): right after sign-up (`registered`) the
+ * sign-up session ends (`logOut`) and Log in comes next with `target` as its `returnTo`; someone
+ * already logged in goes straight there.
+ */
+export function leavePath(o: { registered: boolean; target: string }): { logOut: boolean; to: string } {
+  return o.registered ? { logOut: true, to: `/login?returnTo=${encodeURIComponent(safeReturnTo(o.target))}` } : { logOut: false, to: o.target };
+}
+
+/**
  * Where Start trading goes (owner G25). `registered`: this setup made the account, so the sign-up
  * session ends (`logOut`) and Log in comes next with the destination as its `returnTo`.
  */
 export function startTradingPath(o: { registered: boolean; usable: boolean; returnTo: string }): { logOut: boolean; to: string } {
   // Trading and posting need a usable payout wallet (spec 6.4): Add a wallet first, then on.
-  const next = o.usable ? o.returnTo : `/wallets?add=1&returnTo=${encodeURIComponent(o.returnTo)}`;
-  return o.registered ? { logOut: true, to: `/login?returnTo=${encodeURIComponent(safeReturnTo(next))}` } : { logOut: false, to: next };
+  return leavePath({ registered: o.registered, target: o.usable ? o.returnTo : walletAddPath(o.returnTo) });
 }
 
 export function Welcome() {
@@ -135,8 +235,7 @@ export function Welcome() {
   const usable = wallets?.some((w) => w.usable) ?? false;
 
   const [leaving, setLeaving] = useState(false);
-  const start = async () => {
-    const { logOut, to } = startTradingPath({ registered: state.registered, usable, returnTo });
+  const go = async ({ logOut, to }: { logOut: boolean; to: string }) => {
     if (logOut) {
       setLeaving(true);
       // Should the logout call fail, Log in still comes next: a login revokes the session this
@@ -145,6 +244,12 @@ export function Welcome() {
       refreshSession();
     }
     void navigate(to);
+  };
+  const start = () => go(startTradingPath({ registered: state.registered, usable, returnTo }));
+  // Owner #97 links: the same way out as Start trading (G25), then the setting.
+  const leave: Leave = {
+    path: (target) => leavePath({ registered: state.registered, target }),
+    go: (target) => go(leavePath({ registered: state.registered, target })),
   };
 
   if (!ready) {
@@ -163,6 +268,7 @@ export function Welcome() {
 
   const name = displayNameOf(me) || state.displayName;
   const c = checklist(me, wallets, state);
+  const rating = securityRating(me, state);
 
   return (
     <div className="x2f-start x2f-welcome" data-screen="setup-welcome">
@@ -178,6 +284,23 @@ export function Welcome() {
           </h1>
           <p className="x2f-start__lead">{WELCOME_COPY.lead}</p>
         </section>
+        {/* Owner #97 (16 Nov): the rating, and for anything below highly secure, the way to raise it. DESIGNER-REVIEW */}
+        <section className="x2f-welcome__rating" data-part="security-rating" data-rating={rating} aria-labelledby="welcome-rating-title">
+          <p className="x2f-welcome__rating-line">
+            <span className="x2f-welcome__title" id="welcome-rating-title">
+              {WELCOME_COPY.ratingTitle}:
+            </span>{' '}
+            <span data-part="rating-word">{RATING_WORDS[rating]}</span>
+          </p>
+          {rating !== 'high' ? (
+            <p className="x2f-welcome__rating-raise">
+              {WELCOME_COPY.ratingRaise}{' '}
+              <LeaveLink target={WELCOME_LINKS.rating} leave={leave} part="rating-link" disabled={leaving}>
+                {WELCOME_COPY.ratingLink}
+              </LeaveLink>
+            </p>
+          ) : null}
+        </section>
         {/* DESIGNER-REVIEW: the owner's checklist (12 Nov), plain until design restyles it. */}
         <ul className="x2f-welcome__checks" aria-label="Your setup">
           <li className="x2f-welcome__check" data-part="check-login">
@@ -192,12 +315,18 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key">{WELCOME_COPY.none}</span>
               )}
+              <LeaveLink target={WELCOME_LINKS.login} leave={leave} part="change-login" disabled={leaving}>
+                {c.loginDone ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.loginDone} />
           </li>
           <li className="x2f-welcome__check" data-part="check-recovery">
             <div className="x2f-welcome__what">
               <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.recoveryItem}</span>
+              <LeaveLink target={WELCOME_LINKS.recovery} leave={leave} part="change-recovery" disabled={leaving}>
+                {c.recoveryDone ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.recoveryDone} />
           </li>
@@ -211,6 +340,9 @@ export function Welcome() {
               ) : (
                 <span className="x2f-welcome__key" data-part="summary-wallet">{WELCOME_COPY.none}</span>
               )}
+              <LeaveLink target={c.wallet !== null ? WELCOME_LINKS.wallet : walletAddPath(returnTo)} leave={leave} part="change-wallet" disabled={leaving}>
+                {c.wallet !== null ? WELCOME_COPY.change : WELCOME_COPY.add}
+              </LeaveLink>
             </div>
             <Tick done={c.wallet !== null} />
           </li>

@@ -36,11 +36,13 @@ import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.j
 import { ONE_KEY_ALONE } from './escrowCopy.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
+import { EDGE_TIP } from '../wallets-model.js';
 import './trade.css';
 
 export const GIFT_CARD_WARNING =
   'When trading Monero for gift cards, you accept all risks and responsibilities that come with gift cards. Buyer beware.';
-export const EDGE_TIP = "For best privacy, turn on Full Sync in Edge's Monero settings.";
+/** Edge has no "Full Sync" setting (owner demo note 16 Nov #96); the wallet menu's Wallet Settings has LWS or Full Node. COPY-UNSIGNED */
+export { EDGE_TIP };
 
 /** What the seller sends: the funding amount while unfunded, else the amount plus the poster's fee. */
 function sellerFundsOf(view: TradeView): bigint {

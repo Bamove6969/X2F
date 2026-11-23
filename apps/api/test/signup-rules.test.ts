@@ -176,9 +176,45 @@ describe('S-014: only a strong password is accepted', () => {
   });
 });
 
-// Port of the review of second-signup-r3 (B1, M1, M2) to main's ASCII display names (lead call
-// 18 Nov): the review's attack names, at the API.
-describe('review B1, M1, M2: invisible characters and staff look-alikes', () => {
+// Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
+// Owner demo note #108 (17 Nov 2026): but no spaces inside it (the ends are still trimmed).
+describe('signup round 3: display names with Unicode letters and common symbols', () => {
+  it('signs up as "  Cash$Ölaf " (stored as normalised), and the name is found again by any case', async () => {
+    const b = new Browser(app);
+    const shown = `Cash$Ölaf${n++}`;
+    const res = await b.post('/v1/register/password', {
+      displayName: `  ${shown} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
+    expect(rows).toEqual([{ display_name: shown, display_key: shown.toLowerCase() }]);
+    // Someone else with the same name in another case is refused as taken.
+    const twin = await new Browser(app).post('/v1/register/password', {
+      displayName: shown.toUpperCase(), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(twin.statusCode).toBe(409);
+  });
+
+  it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (displayName) => {
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira${n++}` });
+    const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
+    const res = await new Browser(app).post('/v1/register/password', {
+      displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
+  });
+});
+
+// Review of third-signup-r3 (16 Nov 2026): the review's attack names, at the API.
+describe('signup round 3 review: invisible characters and staff look-alikes', () => {
   const reg = (displayName: string) => new Browser(app).post('/v1/register/password', {
     displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
@@ -198,27 +234,114 @@ describe('review B1, M1, M2: invisible characters and staff look-alikes', () => 
     }
   });
 
-  it('M1/M2: a staff name with "_", "-" or no dot for its dot, or 1 for its i, is reserved; with a dotless i or a comma it is refused', async () => {
+  it('M1/M2: a staff name with a dotless i, a comma or a space for its dot, and "Admın Desk", are reserved', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira.K${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('.', '_'), s.replace('.', '-'), s.replace('.', ''), s.replace('i', '1').replace('.', '_')]) {
+    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
       const res = await reg(attack);
       expect(res.statusCode, attack).toBe(400);
-      expect(res.json(), attack).toEqual({ error: 'display-name-reserved' });
+      expect(res.json()).toEqual({ error: 'display-name-reserved' });
     }
-    for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', ' '), s.replace('M', 'ᴍ'), 'Admın_Desk']) {
-      const res = await reg(attack);
-      expect(res.statusCode, attack).toBe(400);
-      expect(res.json(), attack).toEqual({ error: 'display-name-invalid' });
-    }
+    // Owner demo note #108: a space for its dot is now refused for the space itself.
+    const spaced = await reg(s.replace('.', ' '));
+    expect(spaced.statusCode).toBe(400);
+    expect(spaced.json()).toEqual({ error: 'display-name-invalid' });
+    const adm = await reg('Admın Desk');
+    expect(adm.statusCode, adm.body).toBe(400);
+    expect(adm.json()).toEqual({ error: 'display-name-reserved' });
   });
 
   it('M2: a team member name is held to the same staff comparison', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.L${n++}` });
     const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
-    for (const attack of [s.replace('.', '_'), s.replace('.', '-'), s.replace('.', '')]) {
+    for (const attack of [s.replace('.', ','), s.replace('i', 'ı')]) {
       await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });
     }
+    // Owner demo note #108: a member name with a space is refused for the space.
+    await expect(checkMemberName(deps.db, s.replace('.', ' '))).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
     await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
+  });
+});
+
+// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
+// names". New and changed values only: an account made before the rule keeps logging in.
+describe('note #108: no spaces in new usernames, display names or passwords', () => {
+  const reg = (body: Record<string, unknown>) =>
+    new Browser(app).post('/v1/register/password', { displayName: `Plain${n++}x`, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG, ...body });
+
+  it('sign-up refuses a display name with a space inside, and makes no account', async () => {
+    const before = await accountCount();
+    for (const displayName of [`Bob Smith${n++}`, `Bob   Smith${n++}`, `R&B Trader${n++}`]) {
+      const res = await reg({ displayName });
+      expect(res.statusCode, displayName).toBe(400);
+      expect(res.json()).toEqual({ error: 'display-name-invalid' });
+    }
+    expect(await accountCount()).toBe(before);
+    expect((await reg({ displayName: `  BobSmith${n++}  ` })).statusCode).toBe(201);
+  });
+
+  it('sign-up refuses a username with a space (as it always did)', async () => {
+    const res = await reg({ loginName: `bob smith${n++}` });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'login-name-invalid' });
+  });
+
+  it('sign-up and a password change refuse a password with a space, naming the rule', async () => {
+    // Security review of #108: blank-looking characters that are not white space count too.
+    for (const password of ['Correct Horse-9', ' Correct-Horse-9', 'Correct-Horse-9 ', 'Correct\tHorse-9', 'Correct\u2800Horse-9', 'Correct\u3164Horse-9', 'Correct\u200bHorse-9']) {
+      const res = await reg({ password });
+      expect(res.statusCode, password).toBe(400);
+      expect(res.json(), password).toEqual({ error: 'password-weak', missing: ['space'] });
+    }
+    const id = await seedAccount(deps, { loginName: name('sp') });
+    const b = new Browser(app);
+    expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
+    const res = await b.put('/v1/account/password', { password: 'Correct Horse-9' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'password-weak', missing: ['space'] });
+    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
+    expect(rows).toEqual([]);
+  });
+  // An account made before the rule keeps logging in: password.test.ts ("note #108").
+});
+
+it('migration 800 (610 on wip/third-demo-r3): no database check compares display_key with lower(display_name) any more', async () => {
+  const { rows } = await deps.db.query(
+    `select conname from pg_constraint where conrelid in ('accounts'::regclass, 'team_members'::regclass) and pg_get_constraintdef(oid) like '%lower(display_name)%'`,
+  );
+  expect(rows).toEqual([]);
+});
+
+// Security review of wip/lead-notes-all, L3: the display key became a full case fold
+// (@x2f/accounts displayKeyOf). Migration 810 recomputes every stored key with the same fold in SQL
+// (display_key_fold, ICU case mapping), and refuses loudly (rekey_display_names raises) when two
+// names would then share a key.
+describe('review L3: migration 810 refolds stored display keys', () => {
+  const CORPUS = ['ΑΒΓΔΣ', 'αβγδς', 'Straße', 'STRASSE', 'ﬀabcd', 'Ǆabcd', 'ǅabcd', 'İstanbul', 'Ꮇira.Ꮶ', 'Ｆｕｌｌname', 'Ἀθηνᾶ', '東京の取引者', 'Zoë-Ann', 'Ölaf_Ünal', 'Привет мир', '  Bob   Smith ', 'Satoshi.N'];
+
+  it('the SQL fold equals the app fold on every name', async () => {
+    const { displayKeyOf } = await import('@x2f/accounts');
+    for (const name of CORPUS) {
+      const { rows } = await deps.db.query<{ k: string }>('select display_key_fold($1) as k', [name]);
+      expect(rows[0]!.k, name).toBe(displayKeyOf(name));
+    }
+  });
+
+  it('rekey_display_names recomputes a stale key, and fails on a collision, changing nothing', async () => {
+    const a = await seedAccount(deps, { loginName: `rk${++n}aa`, displayName: `ΑΒΓΔΣ${n}` });
+    await deps.db.query("update accounts set display_key = lower(display_name) where id = $1", [a]);
+    await deps.db.query('select rekey_display_names()');
+    const { rows } = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = $1', [a]);
+    expect(rows[0]!.display_key).toBe(`αβγδσ${n}`);
+
+    const s1 = await seedAccount(deps, { loginName: `rk${++n}bb`, displayName: `Straße${n}` });
+    // Stored before the fold: two keys that differ (seeded apart, as the old key made them).
+    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, displayName: `Stras${n}` });
+    await deps.db.query('update accounts set display_name = $2 where id = $1', [s2, `STRASSE${n}`]);
+    await deps.db.query("update accounts set display_key = lower(display_name) where id = any($1)", [[s1, s2]]);
+    await expect(deps.db.query('select rekey_display_names()')).rejects.toThrow(/display key collision/);
+    const after = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = any($1)', [[s1, s2]]);
+    expect(after.rows.map((r) => r.display_key).sort()).toEqual([`strasse${n}`, `straße${n}`].sort());
+    await deps.db.query('delete from accounts where id = any($1)', [[s1, s2]]);
   });
 });

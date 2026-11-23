@@ -18,6 +18,8 @@ import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
 import { refusalText } from './refusals.js';
+import { PasswordInput } from '../../ui/PasswordInput.js';
+import { MessageBox } from '../../ui/MessageBox.js';
 
 type Resolver = { resolve: (token: string) => void; reject: (reason: unknown) => void };
 
@@ -216,9 +218,9 @@ export function ConfirmMethods({
               <label className="x2f-label" htmlFor="confirm-pgp-message">
                 Decrypt this message and paste the code
               </label>
-              <pre className="x2f-pre" id="confirm-pgp-message" data-part="pgp-message">
+              <MessageBox id="confirm-pgp-message" data-part="pgp-message">
                 {pgp.encryptedMessage}
-              </pre>
+              </MessageBox>
               <input className="x2f-input" inputMode="text" autoComplete="off" aria-label="Login code" value={pgpCode} onChange={(e) => setPgpCode(e.target.value)} />
               <Button variant="primary" disabled={busy !== null || pgpCode.trim() === ''} onClick={finishPgp}>
                 Confirm
@@ -235,10 +237,7 @@ export function ConfirmMethods({
             <label className="x2f-label" htmlFor="confirm-password">
               Your password
             </label>
-            <input
-              className="x2f-input"
-              id="confirm-password"
-              type="password"
+            <PasswordInput id="confirm-password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

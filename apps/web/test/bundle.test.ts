@@ -13,6 +13,26 @@ const run = promisify(execFile);
 const WEB = fileURLToPath(new URL('..', import.meta.url));
 const VITE = join(WEB, 'node_modules', 'vite', 'bin', 'vite.js');
 const FORBIDDEN = ['satoshi_ghost', 'mira.k', 'fixture'];
+
+/**
+ * The one deliberate exception: the first-trade tour's pretend trade is with satoshi_ghost, the
+ * design's example trader (design 12 Nov, docs/design-12nov/tour-stops.md and the intro prototype),
+ * drawn by src/tour/FirstTradeStage.tsx without any fixture. The bundle may carry exactly that
+ * file's code occurrences of the name, and not one more: fixture data still trips the check.
+ */
+const TOUR_STAGE = join(WEB, 'src', 'tour', 'FirstTradeStage.tsx');
+async function tourOccurrences(word: string): Promise<number> {
+  const code = (await readFile(TOUR_STAGE, 'utf8'))
+    .split('\n')
+    .filter((l) => !/^\s*(\*|\/\*|\/\/)/.test(l))
+    .join('\n')
+    .toLowerCase();
+  return code.split(word).length - 1;
+}
+
+async function expectNoFixtureData(text: string): Promise<void> {
+  for (const word of FORBIDDEN) expect(text.split(word).length - 1, word).toBe(await tourOccurrences(word));
+}
 const dirs: string[] = [];
 
 async function build(mode: string): Promise<string> {
@@ -49,12 +69,12 @@ afterAll(async () => {
 describe('production bundle', () => {
   it('contains no fixture data, even with VITE_FIXTURES=1', { timeout: 200_000 }, async () => {
     const text = (await bundleText(await build('production'))).toLowerCase();
-    for (const word of FORBIDDEN) expect(text, word).not.toContain(word);
+    await expectNoFixtureData(text);
   });
 
   it('a staging (or any other non-fixtures) build mode leaves fixture mode out too', { timeout: 200_000 }, async () => {
     const text = (await bundleText(await build('staging'))).toLowerCase();
-    for (const word of FORBIDDEN) expect(text, word).not.toContain(word);
+    await expectNoFixtureData(text);
   });
 
   it('a fixtures-mode build does include fixture mode (the check bites)', { timeout: 200_000 }, async () => {

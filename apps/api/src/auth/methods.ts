@@ -156,7 +156,7 @@ export function parseFactor(raw: unknown): LoginFactor | null {
  * still strong): the only ones a login challenge goes to. A stored key that cannot be opened counts
  * as unusable.
  */
-async function usablePgpIds(db: Queryable, config: Config, accountId: string, now: Date): Promise<Set<string>> {
+export async function usablePgpIds(db: Queryable, config: Config, accountId: string, now: Date): Promise<Set<string>> {
   const { rows } = await db.query<{ id: string; fingerprint: string; armored_enc: Buffer }>(
     'select id, fingerprint, armored_enc from pgp_keys where account_id = $1',
     [accountId],

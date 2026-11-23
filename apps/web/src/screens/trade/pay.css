@@ -58,7 +58,7 @@
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   cursor: pointer;
 }
 
@@ -126,7 +126,7 @@
   align-items: center;
   gap: var(--x2f-space-2);
   width: 100%;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .x2f-escrow__bar-label {
@@ -163,7 +163,7 @@
   background: var(--x2f-surface-raised);
   border: 1px solid var(--x2f-line);
   color: var(--x2f-ink);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   font-weight: 400;
   letter-spacing: 0;
@@ -198,7 +198,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -213,7 +213,7 @@
 }
 
 .x2f-pay-timer__hint {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -253,7 +253,7 @@
 }
 
 .x2f-pay-card__currency {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--x2f-ink-muted);
 }
 
@@ -261,7 +261,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-2);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 18px;
 }
 
@@ -279,7 +279,7 @@
 
 .x2f-pay-card__note {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
@@ -319,7 +319,7 @@
 .x2f-pay__caption {
   margin: 0;
   padding: 4px 8px 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
   text-align: center;
@@ -327,7 +327,7 @@
 
 .x2f-giftcard {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   color: var(--x2f-danger);
 }
@@ -369,12 +369,12 @@
 }
 
 .x2f-proof__title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
 }
 
 .x2f-proof__hint {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
@@ -395,7 +395,7 @@
   align-items: flex-start;
   gap: 12px;
   min-height: 44px;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   cursor: pointer;
 }
@@ -410,7 +410,7 @@
 /* Owner p7-2's "Do not show me this warning again": an aside, quieter than the required tick. */
 .x2f-paid__check--quiet {
   align-items: center;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
@@ -422,14 +422,14 @@
 
 .x2f-paid__grew {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   color: var(--x2f-caution);
 }
 
 .x2f-paid__note {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
@@ -437,7 +437,7 @@
 .x2f-paid__error,
 .x2f-room__error {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
   color: var(--x2f-danger);
 }
@@ -450,7 +450,7 @@
   background: var(--x2f-surface);
   border: 1px solid var(--x2f-caution);
   color: var(--x2f-ink);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
 }
 
@@ -461,7 +461,7 @@
   align-items: center;
   min-height: 44px;
   color: var(--x2f-ink-muted);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 /* The buyer's locked Open dispute and when it opens (board BuyerPaidWaiting window=in-window). */
@@ -475,7 +475,7 @@
 
 .x2f-room__dispute-locked .x2f-room__dispute-wait {
   min-height: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 18px;
   text-align: right;
 }
@@ -486,7 +486,7 @@
   align-items: flex-start;
   gap: 10px;
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 22px;
 }
 
@@ -507,7 +507,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--x2f-space-2);
-  font-size: 15px;
+  font-size: 16px;
   color: var(--x2f-ink-muted);
 }
 
@@ -519,7 +519,7 @@
 
 .x2f-proposal__text {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 22px;
 }
 
@@ -544,7 +544,7 @@
 }
 
 .x2f-wait__left {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--x2f-ink-muted);
 }
 
@@ -612,7 +612,7 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 .x2f-room__actions .x2f-button--primary {
   height: 52px;
   padding: 0 32px;
-  font-size: 17px;
+  font-size: 19px;
 }
 
 .x2f-room__actions .x2f-button--quiet,
@@ -673,7 +673,7 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 }
 
 .x2f-timeline__label {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -712,13 +712,13 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 }
 
 .x2f-counterparty__name {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .x2f-counterparty__line {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--x2f-ink-muted);
 }
 
@@ -728,7 +728,7 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 }
 
 .x2f-counterparty__badge {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -791,13 +791,13 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 }
 
 .x2f-paid-progress__label {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-room[data-layout='wide'] .x2f-paid-progress__label {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .x2f-paid-progress > li[data-status='current'] .x2f-paid-progress__label {
@@ -842,7 +842,7 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   height: 44px;
   padding: 0 8px;
   color: var(--x2f-danger);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   text-decoration: none;
 }
