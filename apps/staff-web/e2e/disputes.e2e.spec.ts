@@ -43,14 +43,8 @@ const SIZES: Array<[string, Size]> = [['phone 390Ã—844', PHONE], ['desktop 1280Ã
  * co-signed the moderator-built ruling set (no ruling statement reached cosignPolicy), and after a
  * refund the seller's /dispute page showed a seller-sends-xmr ruling without the tx-proof form.
  */
-/**
- * How long a row waits for a ruling's payout (a mod-built release on regtest takes 2-3 minutes).
- * Review p4t22 follow-up: 8 minutes, not 4. Late in the desktop sequence on a shared machine, the
- * winner's co-sign has twice run past 4 minutes (the EUR row in the re-review's run, the above-limit
- * row in this branch's run 2). Each time it was handed exactly once and never paid twice. A wait,
- * not a looser check: every amount is still checked in the wallets.
- */
-const PAYOUT_WAIT = 8 * 60_000;
+/** How long a row waits for a ruling's payout (a mod-built release on regtest takes 2-3 minutes). */
+const PAYOUT_WAIT = 4 * 60_000;
 
 const NOTE = 'I paid by Zelle and the seller stopped answering.';
 
