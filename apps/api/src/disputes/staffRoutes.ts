@@ -847,12 +847,19 @@ async function payoutWaitOf(q: Queryable, code: string): Promise<{ reason: 'winn
  * none, it was cleared, or it names a ruling this dispute no longer has. `secondApproval`: for a
  * `needs-second` refusal of round 1 (the ruling the executor pays) that has no approver and whose
  * payout has not run, the published reason and evidence a second approval's tap binds; else null.
+ * `rePropose` (review p4t22 N1): set when a senior or the owner may replace the refused ruling.
  */
 async function gateRefusalOf(
   q: Queryable,
   d: Dispute,
   viewer: string,
-): Promise<{ rulingId: string; reason: string; since: string; secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null } | null> {
+): Promise<{
+  rulingId: string;
+  reason: string;
+  since: string;
+  secondApproval: { rulingId: string; outcome: RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null;
+  rePropose: { rulingId: string } | null;
+} | null> {
   const { rows } = await q.query<{ detail: string; at: Date }>(
     "select detail, at from activity_log where trade_code = $1 and action = 'ruling.gate-refused' order by id desc limit 1",
     [d.code],
@@ -869,7 +876,10 @@ async function gateRefusalOf(
     const p = pub.rows[0];
     if (p) secondApproval = { rulingId: r1.id, outcome: r1.outcome, reason: p.reason, evidence: p.evidence, proposedByYou: r1.proposer === viewer };
   }
-  return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval };
+  // Review p4t22 N1: a published round-1 escrow ruling refused as revoked, before any appeal and
+  // before its payout ran, can be replaced by a senior's or the owner's new one (`…/re-propose`).
+  const canRePropose = x.reason === 'revoked' && d.round === 1 && !d.afterRefund && d.ruling?.id === x.rulingId && d.executedAt === null && d.publishedAt !== null && (d.status === 'published' || d.status === 'final');
+  return { rulingId: x.rulingId, reason: x.reason, since: r.at.toISOString(), secondApproval, rePropose: canRePropose ? { rulingId: x.rulingId } : null };
 }
 
 async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, code: string): Promise<Record<Side, boolean>> {

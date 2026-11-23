@@ -148,6 +148,16 @@ export type DisputeEvent =
    */
   | { type: 'second-approve' }
   /**
+   * Review p4t22 N1, the re-proposal: a published round-1 escrow ruling that the ruling gate refuses
+   * as `revoked` (its proposer or approver was switched off or removed before its payout ran; the
+   * API checks the gate's report) is replaced by a senior moderator's or the owner's new round-1
+   * ruling, before its payout ran and before any appeal. It is a normal proposal in every other way:
+   * a new ruling id, the proposer's own `propose` tap, the same two-person rule (`gate`), published
+   * at once with a fresh appeal window or waiting for a second person's normal approval. Never on an
+   * after-refund dispute (lead default, owner question: its lien was placed when round 1 published).
+   */
+  | { type: 're-propose'; ruling: Omit<RulingDraft, 'approver' | 'needsSecond'>; gate: GateValue }
+  /**
    * `involved`: the staff ids with an activity-log entry on the trade before this appeal's own
    * `appeal.opened` entry (`involvedIn(log, code, { beforeId })`, I3). They are added to `seen`
    * to make `round1.involved`, so a missed `markSeen` can only widen R37's list.
@@ -344,6 +354,7 @@ const SYSTEM_EVENTS: readonly DisputeEvent['type'][] = ['window-closed', 'execut
 const outcomeFits = (d: Dispute, o: RulingOutcome) =>
   (d.afterRefund ? (AFTER_REFUND_OUTCOMES as readonly string[]) : (ESCROW_OUTCOMES as readonly string[])).includes(o);
 
+const NO_ACTION: AccountAction = { kind: 'none' };
 const isSeniorOrOwner = (role: StaffRole) => role === 'senior' || role === 'owner';
 /** A second approver: a senior or the owner holding `rulings.approve` and the action's own perm. */
 const canApprove = (role: StaffRole, a: AccountAction) => {
@@ -540,6 +551,19 @@ export function applyDispute(
     if (d.assignee === by.id) return fail('not-eligible');
     const involved = d.round1!.involved.includes(by.id) ? d.round1!.involved : [...d.round1!.involved, by.id];
     return seenBy({ ...d, round1: { ...d.round1!, approver: by.id, needsSecond: true, involved } }, by.id);
+  }
+  if (e.type === 're-propose') {
+    const old = d.ruling;
+    if (d.round !== 1 || d.afterRefund || (d.status !== 'published' && d.status !== 'final')) return fail('wrong-state');
+    if (old === null || d.publishedAt === null || d.executedAt !== null || e.ruling.id === old.id) return fail('wrong-state');
+    if (!canApprove(by.role, NO_ACTION) || e.ruling.proposer !== by.id) return fail('wrong-party');
+    if (!outcomeFits(d, e.ruling.outcome)) return fail('wrong-state');
+    if (!validAction(e.ruling.accountAction, now)) return fail('invalid-action');
+    const second = needsSecond(d, e.ruling.outcome, e.ruling.accountAction, e.gate);
+    const ruling: RulingDraft = { id: e.ruling.id, outcome: e.ruling.outcome, accountAction: structuredClone(e.ruling.accountAction), proposer: by.id, approver: null, needsSecond: second };
+    // The withdrawn round 1 no longer stands: no window, no comply time, until the new one publishes.
+    const next = seenBy({ ...d, ruling, assignee: by.id, publishedAt: null, appealEndsAt: null, complyBy: null }, by.id);
+    return second ? { ...next, status: 'awaiting-approval' } : publishRound1(next, now, s);
   }
   // I2 (R37): nobody involved in round 1 takes any part in the appeal: not a reply, not an
   // assignment of someone else, not a send-back. Task 11's chat and message routes apply the same.

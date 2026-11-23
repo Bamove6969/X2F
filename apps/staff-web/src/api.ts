@@ -547,6 +547,8 @@ export interface CaseRuling {
     reason: string;
     since: string;
     secondApproval: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; proposedByYou: boolean } | null;
+    /** Review p4t22 N1: set when a senior or the owner may propose a new round 1 in place of a ruling refused `revoked`. Absent from an older API. */
+    rePropose?: { rulingId: string } | null;
   } | null;
 }
 export interface DisputeCase {
@@ -635,6 +637,12 @@ export const approveRuling = (code: string, rulingId: string, tapId: string) =>
 /** Review p4t22 M1 (e): a second approval for a ruling published on one tap that the gate refuses `needs-second`. */
 export const secondApproveRuling = (code: string, rulingId: string, tapId: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/second-approval`), { method: 'POST', body: { tapId } });
+/** Review p4t22 N1: a senior's new round-1 ruling in place of one the gate refuses `revoked` (their own propose tap). */
+export const reProposeRuling = (
+  code: string,
+  replaces: string,
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+) => staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(replaces)}/re-propose`), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const sendBackRuling = (code: string, rulingId: string, note: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
 
