@@ -43,7 +43,14 @@ afterAll(async () => {
 });
 beforeEach(() => setNow(new Date(T0.getTime() + ++step * 24 * HOUR)));
 
-const names = () => ({ loginName: `sox${process.pid % 1000}x${++n}`, displayName: `Setup${process.pid % 1000}x${n}` });
+// Fixed-width parts, so every name is 10 or 11 characters whatever the pid (new names are 8–20,
+// owner demo notes #126 and #127; an unpadded pid under 100 made `sox42x1`, 7, and failed sign-up).
+const pad = (v: number, w: number) => String(v).padStart(w, '0');
+const names = () => {
+  const p = pad(process.pid % 1000, 3);
+  const k = pad(++n, 2);
+  return { loginName: `soxp${p}n${k}`, displayName: `Setup${p}x${k}` };
+};
 
 /** A password-only sign-up; answers the creating browser and the names. */
 async function passwordOnly() {

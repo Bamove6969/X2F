@@ -9,7 +9,7 @@ import { HelpSettings, Security } from '../src/screens/settings/Security.js';
 import { AccountSettings, AlertsSettings } from '../src/screens/settings/SettingsTabs.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
 import { refreshSession } from '../src/session/useSession.js';
-import { render } from './render.js';
+import { render, waitFor, waitUntil } from './render.js';
 
 let isMember = false;
 let fetchedUrls: string[] = [];
@@ -55,12 +55,12 @@ afterEach(() => {
   refreshSession();
 });
 
-const settle = () => act(async () => new Promise<void>((r) => setTimeout(r, 10)));
 
 /** Each tab page, mounted for its own checks and unmounted before the session is reset. */
 const extra: (() => void)[] = [];
 
-async function mountAt(path: string, el: ReactNode): Promise<HTMLElement> {
+/** Mounts `el` at `path` and waits for `ready` (a selector that shows the page has loaded). */
+async function mountAt(path: string, el: ReactNode, ready: string): Promise<HTMLElement> {
   let host: HTMLElement = null!;
   await act(async () => {
     const res = render(
@@ -71,9 +71,11 @@ async function mountAt(path: string, el: ReactNode): Promise<HTMLElement> {
     host = res.host;
     extra.push(res.unmount);
   });
-  await settle();
+  await waitFor(host, ready);
   return host;
 }
+
+const tabs = (host: HTMLElement) => [...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent);
 
 describe('Security screen for team members vs owner (Order #2 M3)', () => {
   it('renders owner sections and links for the account owner', async () => {
@@ -88,23 +90,20 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
       );
       host = res.host;
     });
-    await settle();
+    await waitFor(host, '[data-part="devices-link"]');
+    await waitUntil(() => tabs(host).length === 4, 'the owner\'s four settings tabs');
 
     expect(host.querySelector('[data-owner-only]')).toBeNull();
-    expect(host.querySelector('[data-part="devices-link"]')).not.toBeNull();
     expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
     expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Account', 'Help']);
 
     // The owner's other tabs (note #101): Account's links, Help's tour replay, Alerts' list.
-    const account = await mountAt('/settings/account', <AccountSettings />);
-    expect(account.querySelector('[data-part="account-type-link"]')).not.toBeNull();
+    const account = await mountAt('/settings/account', <AccountSettings />, '[data-part="account-type-link"]');
     expect(account.querySelector('[data-part="team-link"]')).not.toBeNull();
     expect(account.querySelector('[data-part="blocked-link"]')).not.toBeNull();
-    const help = await mountAt('/settings/help', <HelpSettings />);
-    expect(help.querySelector('[data-part="tour-replay"]')).not.toBeNull();
-    const alerts = await mountAt('/settings/alerts', <AlertsSettings />);
-    expect(alerts.querySelector('#alerts-h')).not.toBeNull();
+    await mountAt('/settings/help', <HelpSettings />, '[data-part="tour-replay"]');
+    await mountAt('/settings/alerts', <AlertsSettings />, '#alerts-h');
   });
 
   it('renders member settings, hides owner sections, and does not fire owner fetches for a team member (M1, M2, M3, m1)', async () => {
@@ -124,7 +123,8 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     const ownerUrls = ['/v1/account/hold', '/v1/account/methods', '/v1/wallets/rule', '/v1/account/jabber', '/v1/account/alerts'];
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
 
-    await settle();
+    await waitFor(host, '[data-part="idle-reminder-link"]');
+    await waitUntil(() => tabs(host).length === 3, 'the member\'s three settings tabs');
 
     // No CantDoThat / OwnerOnly refusal
     expect(host.querySelector('[data-owner-only]')).toBeNull();
@@ -144,18 +144,16 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
 
     // Alerts tab: the alarm settings, not the owner's alerts list
-    const alerts = await mountAt('/settings/alerts', <AlertsSettings />);
-    expect(alerts.querySelector('[data-part="alarm"]')).not.toBeNull();
+    const alerts = await mountAt('/settings/alerts', <AlertsSettings />, '[data-part="alarm"]');
     expect(alerts.querySelector('[data-part="alerts"]')).toBeNull();
 
     // Help tab, m1: tour replay hidden for members, the welcome link kept
-    const help = await mountAt('/settings/help', <HelpSettings />);
+    const help = await mountAt('/settings/help', <HelpSettings />, '[data-part="welcome-link"]');
     expect(help.querySelector('[data-part="tour-replay"]')).toBeNull();
     expect(help.querySelector('[data-part="welcome-link"]')).not.toBeNull();
 
     // Account tab opened by address, M2: the owner-only refusal, no Blocked link
-    const account = await mountAt('/settings/account', <AccountSettings />);
-    expect(account.querySelector('[data-owner-only]')).not.toBeNull();
+    const account = await mountAt('/settings/account', <AccountSettings />, '[data-owner-only]');
     expect(account.querySelector('[data-part="blocked-link"] a[href="/settings/blocked"]')).toBeNull();
     expect(account.querySelector('[data-part="team-link"]')).toBeNull();
 
@@ -175,14 +173,11 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
       );
       host = res.host;
     });
-    await settle();
-
-    const methodsEl = host.querySelector('[data-part="methods"]');
-    const payoutEl = host.querySelector('[data-part="payout-wait"]');
-    expect(methodsEl).not.toBeNull();
-    expect(payoutEl).not.toBeNull();
+    const methodsEl = await waitFor(host, '[data-part="methods"]');
+    const payoutEl = await waitFor(host, '[data-part="payout-wait"]');
 
     // Trigger refreshSession(), which transitions useSession to loading
+    const asked = fetchedUrls.filter((u) => u === '/v1/account/me').length;
     await act(async () => {
       refreshSession();
     });
@@ -191,7 +186,8 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
     expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);
 
-    await settle();
+    await waitUntil(() => fetchedUrls.filter((u) => u === '/v1/account/me').length > asked, 'the session to be asked for again');
+    await waitUntil(() => true, 'the reloaded session to settle');
 
     expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
     expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);

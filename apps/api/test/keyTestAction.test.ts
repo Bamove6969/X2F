@@ -34,7 +34,10 @@ beforeEach(() => setNow(new Date(T0.getTime() + ++step * 24 * 3600_000)));
 /** A password sign-up that adds a security key inside its window. */
 async function withKey() {
   const b = new Browser(app);
-  const nm = { loginName: `kta${process.pid % 1000}x${++n}`, displayName: `Shown${process.pid % 1000}k${n}` };
+  // Fixed-width parts: 10 and 11 characters whatever the pid (new names are 8–20, owner notes #126/#127).
+  const p = String(process.pid % 1000).padStart(3, '0');
+  const k = String(++n).padStart(2, '0');
+  const nm = { loginName: `ktap${p}x${k}`, displayName: `Shown${p}k${k}` };
   expect((await b.post('/v1/register/password', { ...nm, password: GOOD, deviceLabel: 'P', acceptedTerms: deps.config.termsVersion, termsSignature: SIG })).statusCode).toBe(201);
   const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
   const s = await b.post('/v1/account/webauthn/start', { kind: 'security-key' });

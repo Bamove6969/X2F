@@ -57,8 +57,8 @@ const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignatur
 
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n, ...signed() });
-  return { res, loginName: n, displayName: `Mod${n}` };
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Kes${n}`, loginName: n, ...signed() });
+  return { res, loginName: n, displayName: `Kes${n}` };
 }
 
 async function addInviteKey(b: StaffBrowser, token: string, key: SoftAuthenticator, kind: 'security-key' | 'passkey' = 'security-key') {

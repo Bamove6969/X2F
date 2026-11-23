@@ -122,15 +122,15 @@ describe('account type', () => {
 
   it('a trader cannot invite a team member (403 not-vendor) and the confirm token is not spent', async () => {
     const t = await trader();
-    const action = { kind: 'team-invite' as const, name: 'Helper001', roles: 'offers' };
+    const action = { kind: 'team-invite' as const, name: 'Sailor001', roles: 'offers' };
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(t.browser), accountId: t.id, action, method: 'passkey' });
-    const res = await t.browser.post('/v1/team/invites', { displayName: 'Helper001', roles: ['offers'], confirmToken });
+    const res = await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken });
     expect(res.statusCode, res.body).toBe(403);
     expect(errorOf(res)).toBe('not-vendor');
     const { rows } = await deps.db.query('select used_at from confirm_tokens where account_id = $1', [t.id]);
     expect(rows[0]).toEqual({ used_at: null });
     await makeVendor(deps, t.id);
-    expect((await t.browser.post('/v1/team/invites', { displayName: 'Helper001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
+    expect((await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
   });
 });
 

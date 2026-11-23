@@ -170,11 +170,11 @@ describe('invites and the member limit', () => {
   it(`allows at most ${MAX_TEAM_MEMBERS} live members (open invites count); the next is too-many-members`, async () => {
     const owner = await team();
     for (let i = 0; i < MAX_TEAM_MEMBERS; i++) {
-      const res = await invite(owner, `Helper${n}${i}x`, ['offers']);
+      const res = await invite(owner, `Sailor${n}${i}x`, ['offers']);
       expect(res.statusCode, res.body).toBe(201);
       expect((res.json() as { invite: string }).invite).toMatch(/^[A-Za-z0-9_-]{43}$/);
     }
-    const fourth = await invite(owner, `Helper${n}9x`, ['trades']);
+    const fourth = await invite(owner, `Sailor${n}9x`, ['trades']);
     expect(fourth.statusCode).toBe(409);
     expect(fourth.json()).toEqual({ error: 'too-many-members', max: MAX_TEAM_MEMBERS });
     // Only the code's hash is stored.
