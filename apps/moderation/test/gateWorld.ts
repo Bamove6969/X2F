@@ -106,6 +106,16 @@ export function tapBy(p: Person, intent: KeyTapIntent, o: { key?: SoftAuthentica
   return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(norm), nonceHex: nonce.toString('hex'), response };
 }
 
+/**
+ * Review p4t22 F1, finding A: a tap by `p`'s key over another intent on a nonce the gate already
+ * bound (a challenge is `tapChallenge(intent, nonce)`, so a compromised API can ask a key for it).
+ */
+export function tapOnNonce(p: Person, intent: KeyTapIntent, nonceHex: string, key: SoftAuthenticator = p.key): StoredTap {
+  const challenge = tapChallenge(intent, new Uint8Array(Buffer.from(nonceHex, 'hex')));
+  const response = key.authenticate({ challenge: b64url(challenge), rpId: RP_ID, allowCredentials: [] }, ORIGIN);
+  return { id: randomUUID(), accountId: p.id, credentialId: key.credentialId, intent: canonicalJson(intent), nonceHex, response };
+}
+
 /** A key registration as a staff invite page makes it: the challenge is `inviteRegistrationChallenge(tokenHash)`. */
 export function registration(key: SoftAuthenticator, tokenHash: string): { credentialId: string; response: unknown } {
   const response = key.register(

@@ -153,8 +153,8 @@ type Who = { id: string } | { nameTag: string };
  *
  * Owner S-109 (p11-34, 9 Nov 2026): "a correct recovery code always gets in", even when logins are
  * throttled. So the throttle's refusal is held back until the code has been looked up: a correct
- * code returns its id whatever the throttle says (the code has 80 random bits, so the throttle adds
- * nothing against guessing it; it slows only the wrong ones); a wrong one gets the throttle's 429
+ * code returns its id whatever the throttle says (a code has 320 random bits, 64 symbols of 32; one
+ * of the old 16-symbol format, still accepted, has 80; so the throttle adds nothing against guessing it; it slows only the wrong ones); a wrong one gets the throttle's 429
  * while it waits, else `codeId` is null; either way the miss is counted (review L1). The caller spends the code and clears the streak (`throttleReset`) on
  * success. Returns the throttle key too.
  */

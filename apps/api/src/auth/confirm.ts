@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { usablePgpIds } from './methods.js';
 import { actionHash, passwordAlone, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
@@ -170,10 +171,18 @@ export async function recheckWindowInTx(db: Queryable, req: FastifyRequest, kind
   if (!open || held) throw new ApiError(403, 'confirm-required', { action });
 }
 
-/** The kinds of login method the account holds (the keys of HOLDS it has one of). */
-async function methodKindsOf(db: Queryable, accountId: string): Promise<NewMethodKind[]> {
+/**
+ * The kinds of login method the account holds (the keys of HOLDS it has one of). A PGP key counts
+ * only when it is usable now (review L4, as methods.ts's password-alone check: an expired or
+ * revoked key logs no one in).
+ */
+async function methodKindsOf(deps: Pick<Deps, 'db' | 'config'>, accountId: string, now: Date): Promise<NewMethodKind[]> {
   const out: NewMethodKind[] = [];
-  for (const k of Object.keys(HOLDS) as NewMethodKind[]) if ((await db.query(HOLDS[k], [accountId])).rows.length > 0) out.push(k);
+  for (const k of Object.keys(HOLDS) as NewMethodKind[]) {
+    if (k === 'pgp') {
+      if ((await usablePgpIds(deps.db, deps.config, accountId, now)).size > 0) out.push(k);
+    } else if ((await deps.db.query(HOLDS[k], [accountId])).rows.length > 0) out.push(k);
+  }
   return out;
 }
 
@@ -189,7 +198,7 @@ export async function endOnboarding(req: FastifyRequest): Promise<{ ok: true }> 
   // Owner, 16 Nov 2026: a password does not stand alone, so sign-up does not finish with only a
   // password (409 `password-alone`, the window stays open for the authenticator app or another way
   // to log in).
-  if (passwordAlone(await methodKindsOf(deps.db, req.auth.accountId))) throw new ApiError(409, 'password-alone');
+  if (passwordAlone(await methodKindsOf(deps, req.auth.accountId, deps.clock()))) throw new ApiError(409, 'password-alone');
   await deps.db.query('update sessions set onboarding_until = null where id = $1 and onboarding_until is not null', [req.auth.sessionId]);
   await deps.db.query(
     `update challenges set used_at = $2

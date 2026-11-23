@@ -522,7 +522,12 @@ test('the username and display name are checked before going on (8-20, owner not
   await page.fill('#uname', 'abcdefg');
   await go.click();
   await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username needs 8 to 20 characters.');
+  // Owner demo note #108: a space has its own message.
   await page.fill('#uname', 'Mira K');
+  await go.click();
+  await expect(page.locator('[data-part="names-error"]')).toHaveText('Remove the spaces. A username has no spaces.');
+  // Any other character outside the set gets the allowed-characters message.
+  await page.fill('#uname', 'Mira#Kai');
   await go.click();
   await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username can use only letters, numbers, dots, dashes and underscores.');
   // Wrong shapes are never sent to the live check.
@@ -678,15 +683,17 @@ test.describe('on a new device', () => {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.kai', 'lumen-login-7');
-    await page.click('[data-method="password"]');
+    // Sign-up v2 (owner ruling): a password alone is not enough, so the password goes with an
+    // authenticator app (the setup's own helpers), then the required recovery code and the wallet.
+    await chooseOnly(page, 'password');
     await page.click('[data-part="method-continue"]');
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
     await page.click('[data-part="password-set"]');
+    await addAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     await saveRecoveryCodes(page);
-    await page.click('[data-part="backup-skip"]');
-    await page.fill('#addr', ADDRESS);
+    await page.fill('#xmr-payout', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
     // Owner #161: the saved first wallet shows its green check, then Continue.
     await expect(page.locator('[data-part="address-verified"]')).toBeVisible();

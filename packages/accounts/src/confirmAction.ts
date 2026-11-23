@@ -49,7 +49,13 @@ export type ConfirmAction =
    * Owner 2 Nov 2026: the account holder switches the account from Trader to Vendor (it turns on
    * the 1% fee). Only a passkey, security key or PGP key may confirm it (`STRONG_ONLY_ACTIONS`).
    */
-  | { kind: 'become-vendor' };
+  | { kind: 'become-vendor' }
+  /**
+   * Owner demo note #94, security review of wip/lead-notes-all L1: "Test this key now". Only a
+   * passkey or security key confirms it (`WEBAUTHN_ONLY_ACTIONS`), and the server issues no token
+   * for it: the confirm ceremony is only the server's check of the key's answer.
+   */
+  | { kind: 'key-test' };
 
 /**
  * Actions only a passkey, security key or PGP key may confirm: the confirm sheet offers no
@@ -58,8 +64,11 @@ export type ConfirmAction =
 export const STRONG_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['become-vendor'];
 
 export function needsStrongConfirm(a: ConfirmAction): boolean {
-  return STRONG_ONLY_ACTIONS.includes(a.kind);
+  return STRONG_ONLY_ACTIONS.includes(a.kind) || WEBAUTHN_ONLY_ACTIONS.includes(a.kind);
 }
+
+/** Actions only a passkey or security key may confirm (no password, no PGP key): the key test. */
+export const WEBAUTHN_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['key-test'];
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
 function canonical(a: ConfirmAction): string {
@@ -121,6 +130,8 @@ export function describeAction(a: ConfirmAction): string {
       return 'stay logged in';
     case 'become-vendor':
       return 'switch to a vendor account';
+    case 'key-test':
+      return 'test your security key';
   }
 }
 

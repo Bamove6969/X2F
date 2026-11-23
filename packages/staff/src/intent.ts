@@ -136,7 +136,13 @@ export type KeyTapIntent =
   // published or edited (`newsId` null for a new one), bound to its title and body as sent; the
   // site banner shown, bound to its kind and text as sent. Switching maintenance off and removing a
   // banner or a message stay untapped.
+  /**
+   * `messageSha256` (review p4t22 N2): of the message the switch-on shows, which for a planned
+   * switch-on with no message of its own is the announced plan's (it inherits it).
+   */
   | { kind: 'maintenance-on'; maintenanceKind: 'planned' | 'unplanned'; messageSha256: string | null; backBy: string | null }
+  /** Review p4t22 N2: announcing a planned maintenance, its start and end as sent and its message's SHA-256. */
+  | { kind: 'maintenance-planned'; startsAt: string; endsAt: string; messageSha256: string | null }
   | { kind: 'news-publish'; newsId: string | null; titleSha256: string; bodySha256: string }
   | { kind: 'banner-publish'; bannerKind: 'info' | 'warning'; textSha256: string }
   | {
@@ -184,6 +190,7 @@ export const KEY_TAP_KINDS = [
   'revoke-device',
   'account-limit',
   'maintenance-on',
+  'maintenance-planned',
   'news-publish',
   'banner-publish',
   'ruling',
@@ -201,6 +208,10 @@ export function textSha256(text: string): string {
  */
 export function maintenanceOnIntent(a: { maintenanceKind: 'planned' | 'unplanned'; message: string | null; backBy: string | null }): KeyTapIntent {
   return { kind: 'maintenance-on', maintenanceKind: a.maintenanceKind, messageSha256: a.message === null ? null : textSha256(a.message), backBy: a.backBy };
+}
+/** Review p4t22 N2: the tap of a planned maintenance's announcement, from its start, end and message as sent. */
+export function maintenancePlannedIntent(a: { startsAt: string; endsAt: string; message: string | null }): KeyTapIntent {
+  return { kind: 'maintenance-planned', startsAt: a.startsAt, endsAt: a.endsAt, messageSha256: a.message === null ? null : textSha256(a.message) };
 }
 export function newsPublishIntent(a: { newsId: number | null; title: string; body: string }): KeyTapIntent {
   return { kind: 'news-publish', newsId: a.newsId === null ? null : String(a.newsId), titleSha256: textSha256(a.title), bodySha256: textSha256(a.body) };

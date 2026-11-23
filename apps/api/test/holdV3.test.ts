@@ -26,7 +26,7 @@ import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
 import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName, makeVendor } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor, addUnusedSecurityKey } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { insertOffer } from './helpers/offers.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -105,6 +105,8 @@ async function passwordTrader(b = new Browser(app)) {
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
+  // Review M2: a password alone is setup-only; this account's password LOGIN is the weak one.
+  await addUnusedSecurityKey(deps, id);
   await onboarding(id, null);
   return { b, name, id };
 }

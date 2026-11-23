@@ -13,7 +13,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE, ensureDeviceCookie } from '../src/auth/device.js';
 import { completeLogin, type LoginFactor } from '../src/auth/login.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
-import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, seedAccount, addUnusedSecurityKey } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -106,6 +106,8 @@ async function signUp(label = 'Firefox on Linux') {
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
+  // Review M2: a password alone is setup-only; this account's password LOGIN is what is approved.
+  await addUnusedSecurityKey(deps, rows[0]!.id);
   return { a: b, name, accountId: rows[0]!.id };
 }
 

@@ -21,6 +21,8 @@ import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { MovedSectionRedirect, SettingsPage, SettingsRow, useKnownMember } from './SettingsTabs.js';
 import { SETTINGS_COPY } from './settingsCopy.js';
+import { useSession } from '../../session/useSession.js';
+import { SECOND_METHOD_MESSAGE, SECOND_METHOD_TITLE } from '../../ui/cantDoCodes.js';
 import '../screens.css';
 import { WELCOME_PATH } from '../../tour/welcomeSeen.js';
 import { FIRST_TRADE_TOUR } from '../../tour/firstTradeTour.js';
@@ -107,6 +109,9 @@ export function Security() {
 function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
   const { ready, member } = useKnownMember();
+  const session = useSession();
+  // Review M2: a password alone, its sign-up over: this session may only add a second way to log in.
+  const setupOnly = session.status === 'signed-in' && (session.me as { setupOnly?: unknown }).setupOnly === true;
 
   return (
     <ConfirmOpenProvider value={open}>
@@ -114,6 +119,14 @@ function SecurityScreen() {
       <SettingsPage tab="security" screen="security">
         {!ready ? null : (
           <>
+            {setupOnly ? (
+              <section className="x2f-card" role="status" data-part="setup-only" aria-labelledby="setup-only-h">
+                <h2 className="x2f-card__title" id="setup-only-h">
+                  {SECOND_METHOD_TITLE}
+                </h2>
+                <p className="x2f-note">{SECOND_METHOD_MESSAGE}</p>
+              </section>
+            ) : null}
             {!member ? (
               <>
                 <HoldBanner />
@@ -127,6 +140,8 @@ function SecurityScreen() {
             {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it, and to
                 the idle reminder (owner Q75), both about how long a login lasts. A team member (order #2
                 M3) gets the idle reminder only: Devices is the owner's. */}
+            {/* A setup-only session (review M2) reaches neither screen. */}
+            {!setupOnly ? (
             <section className="x2f-card" data-part={member ? 'sessions-card' : 'devices-link'} aria-labelledby="settings-sessions-h">
               <h2 className="x2f-card__title" id="settings-sessions-h">
                 {SETTINGS_COPY.sessionsTitle}
@@ -142,6 +157,7 @@ function SecurityScreen() {
                 </SettingsRow>
               </ul>
             </section>
+            ) : null}
           </>
         )}
         {confirmUi}

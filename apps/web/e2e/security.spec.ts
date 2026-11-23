@@ -35,7 +35,7 @@ async function visiblePrimaries(page: Page): Promise<number> {
   return page.locator('[data-primary]').evaluateAll((els) => els.filter((e) => (e as HTMLElement).checkVisibility()).length);
 }
 
-test('the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices and alerts (no logout timer: session length, owner 2 Nov 2026)', async ({ page }) => {
+test('the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices, the alerts on their own tab (no logout timer: session length, owner 2 Nov 2026)', async ({ page }) => {
   await base(page, { methods: [{ type: 'passkey', id: 'k1', label: 'Passkey', createdAt: null, lastUsedAt: null }] });
   await page.goto('/settings/security');
 
@@ -45,8 +45,11 @@ test('the security screen shows methods, the payout-wait explanation (no 24-hour
   await expect(page.getByText('Make new payout addresses wait 24 hours')).toHaveCount(0);
   // C2-D1: Devices is its own screen; Security links to it.
   await expect(page.locator('[data-part="devices-link"] a[href="/settings/devices"]')).toHaveText('Devices and sessions');
-  await expect(page.locator('[data-part="alerts"]')).toBeVisible();
   await expect(page.locator('[data-part="logout-timer"]')).toHaveCount(0);
+  // Settings split into tabs (owner note #101): the alerts moved off Security to their own tab.
+  await expect(page.locator('[data-part="alerts"]')).toHaveCount(0);
+  await page.goto('/settings/alerts');
+  await expect(page.locator('[data-part="alerts"]')).toBeVisible();
 });
 
 test('a wrong password in the confirm sheet keeps the sheet and the action; the right one then completes it', async ({ page }) => {

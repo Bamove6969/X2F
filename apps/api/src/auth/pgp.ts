@@ -14,8 +14,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { readFile } from 'node:fs/promises';
 import {
   PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
-  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection,
-} from '@x2f/accounts';
+  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection, WEBAUTHN_ONLY_ACTIONS } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
@@ -837,6 +836,8 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
 async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const action: ConfirmAction = parseConfirmAction(body(req).action);
+  // Review L1: the key test is a passkey's or security key's alone.
+  if (WEBAUTHN_ONLY_ACTIONS.includes(action.kind)) throw new ApiError(403, 'method-not-allowed');
   // A team member proves it's them with their own keys, and only for MEMBER_CONFIRM_ACTIONS (Q73).
   const confirmer = await confirmerOf(deps.db, req.auth, action);
   const stored = await storedKeys(deps, confirmer.accountId);

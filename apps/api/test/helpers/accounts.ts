@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import type { AccountKind } from '@x2f/accounts';
+import { displayKeyOf, type AccountKind } from '@x2f/accounts';
 import { loginTag } from '../../src/accounts.js';
 import type { Deps } from '../../src/app.js';
 import type { ConfirmAction } from '@x2f/accounts';
@@ -44,7 +44,7 @@ export async function seedAccount(
     `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
     [
-      display, display.toLowerCase(), currentLoginTag(deps, a.loginName ?? display, keyId), keyId, a.loginName === null, kind, randomBytes(32),
+      display, displayKeyOf(display), currentLoginTag(deps, a.loginName ?? display, keyId), keyId, a.loginName === null, kind, randomBytes(32),
       terms, terms === null ? null : now, now, a.disabled ? now : null,
     ],
   );
@@ -88,4 +88,19 @@ export async function confirmTokenFor(deps: Pick<Deps, 'db' | 'clock'>, cookies:
     createHash('sha256').update(cookies[SESSION_COOKIE]!).digest(),
   ]);
   return issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId: rows[0]!.account_id, action, method: 'pgp' });
+}
+
+/**
+ * Security review of wip/lead-notes-all, M2 (owner 16 Nov 2026: a password does not stand alone):
+ * an account whose only login is a password gets a setup-only session once its sign-up window is
+ * over (auth/setupOnly.ts). Tests of a username-and-password LOGIN (hold model v3's weak session,
+ * device approval) give the account a second method it never uses: a security key with a key
+ * nobody holds. The login it makes is still a password alone, so it is still weak.
+ */
+export async function addUnusedSecurityKey(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  await deps.db.query(
+    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', 'Unused key', $4)`,
+    [accountId, randomBytes(32), randomBytes(77), deps.clock()],
+  );
 }

@@ -50,6 +50,8 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'team-limits': { memberId: (v) => UUID.test(v), band: (v) => bandFromKey(v) !== undefined, hours: (v) => hoursFromKey(v) !== undefined },
   'extend-session': {},
   'become-vendor': {},
+  // Review L1 (#94): the key test; confirmed only by a passkey or security key, and no token is issued.
+  'key-test': {},
 };
 
 /**

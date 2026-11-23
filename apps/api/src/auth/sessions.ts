@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { PASSWORD_ONLY_SQL, passwordOnlyNow, setupOnlyAllows } from './setupOnly.js';
 import { siteBanAllows } from '../banState.js';
 import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
 import type { BanReasonCode } from '@x2f/staff';
@@ -87,6 +88,11 @@ export interface AuthContext {
    * finishes the unfinished (D-005: GET /v1/trades).
    */
   siteBanned: boolean;
+  /**
+   * Review M2: the account's only login is a password and the sign-up window is over, so this
+   * session reaches only the set-up routes (setupOnly.ts); `me` says so.
+   */
+  setupOnly: boolean;
 }
 
 declare module 'fastify' {
@@ -378,6 +384,8 @@ interface SessionRow {
    */
   site_ban_reason: BanReasonCode | null;
   site_ban_until: Date | null;
+  /** Review M2: a password and no other login on the account (setupOnly.ts PASSWORD_ONLY_SQL). */
+  password_only: boolean;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -435,7 +443,8 @@ export function requireSession(
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, tm.hours as member_hours, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
-              sb.reason_code as site_ban_reason, sb.until as site_ban_until
+              sb.reason_code as site_ban_reason, sb.until as site_ban_until,
+              ${PASSWORD_ONLY_SQL} as password_only
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
@@ -494,6 +503,12 @@ export function requireSession(
         throw new ApiError(403, 'banned', { kind: 'site', reasonCode: row.site_ban_reason, until: row.site_ban_until?.toISOString() ?? null });
       }
     }
+    // Review M2 (owner 16 Nov 2026: a password does not stand alone): outside its sign-up window a
+    // password-only account's session reaches only the routes that set up a second method
+    // (setupOnly.ts); every other route is 403 `second-method-required`.
+    const windowOpen = row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime();
+    const setupOnly = row.password_only && !windowOpen && (await passwordOnlyNow(deps, row.account_id, now));
+    if (setupOnly && !setupOnlyAllows(req.method, req.routeOptions.url ?? '')) throw new ApiError(403, 'second-method-required');
     // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
     // member must have accepted the current Terms on their own login account too; the team
     // account's acceptance is the account owner's and never stands in for theirs.
@@ -528,6 +543,7 @@ export function requireSession(
       memberAbilities: row.member_id !== null ? (row.member_abilities ?? []) : [],
       memberName: row.member_id !== null ? row.member_name : null,
       siteBanned: row.kind === 'trader' && row.site_ban_reason !== null,
+      setupOnly,
     };
   };
   (handler as unknown as Record<symbol, true>)[SESSION_HOOK] = true;

@@ -25,11 +25,15 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
+import { SETUP_ONLY_HOME } from '../../session/frontDoor.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { PASSWORD_ALONE_CODE, SECOND_METHOD_SIGNUP, SECOND_METHOD_TITLE } from '../../ui/cantDoCodes.js';
 import { authApi } from '../auth/authApi.js';
 import { Backup } from './Backup.js';
 import { DisplayName } from './DisplayName.js';
 import { INITIAL, SetupContext, nextStep, stepPath, useSetup, type SetupState, type SignupMethod, type Step } from './kit.js';
 import { Login } from './Login.js';
+import { errorCode } from './register.js';
 import { AuthenticatorStep, KeyStep } from './MoreMethods.js';
 import { Password } from './Password.js';
 import { PgpChallenge } from './PgpChallenge.js';
@@ -110,14 +114,44 @@ export function SetupFlow() {
 /**
  * Security review M1(a) (12 Nov 2026): reaching Welcome after this flow made the account ends
  * sign-up, so the creating session's sign-up window (no confirm-it's-you for a first method) is
- * closed. Best effort: if the call fails the window still ends on its own after 30 minutes, and
- * Start trading logs the session out (G25).
+ * closed. If the call fails the window still ends on its own after 30 minutes, and Start trading
+ * logs the session out (G25). Security review of wip/lead-notes-all, M2: the answer is no longer
+ * ignored. 409 `password-alone` (the account's only login is a password, which does not finish
+ * sign-up) shows why and goes on to Security, Login methods, to add a second way to log in; any other failure says so
+ * with a Try again.
  */
-function EndSignup({ registered, children }: { registered: boolean; children: ReactNode }) {
+export function EndSignup({ registered, children }: { registered: boolean; children: ReactNode }) {
+  const navigate = useNavigate();
+  const [failed, setFailed] = useState<'alone' | 'other' | null>(null);
+  const [tries, setTries] = useState(0);
   useEffect(() => {
-    if (registered) void authApi.endOnboarding().catch(() => undefined);
-  }, [registered]);
-  return children;
+    if (!registered) return;
+    let live = true;
+    authApi.endOnboarding().then(
+      () => live && setFailed(null),
+      (e: unknown) => live && setFailed(errorCode(e) === PASSWORD_ALONE_CODE ? 'alone' : 'other'),
+    );
+    return () => {
+      live = false;
+    };
+  }, [registered, tries]);
+  if (failed === 'alone') {
+    return <CantDoThat title={SECOND_METHOD_TITLE} body={SECOND_METHOD_SIGNUP} from={PASSWORD_ALONE_CODE} onClose={() => void navigate(SETUP_ONLY_HOME, { replace: true })} />;
+  }
+  return (
+    <>
+      {failed === 'other' ? (
+        <p className="x2f-error" role="alert" data-part="end-signup-failed">
+          {/* COPY-UNSIGNED */}
+          Could not finish your sign-up.{' '}
+          <button type="button" className="x2f-link" onClick={() => setTries((n) => n + 1)} data-part="end-signup-retry">
+            Try again
+          </button>
+        </p>
+      ) : null}
+      {children}
+    </>
+  );
 }
 
 /**
