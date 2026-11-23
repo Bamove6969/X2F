@@ -173,7 +173,9 @@ export function Login() {
     >
       {/* COPY-UNSIGNED (signup round 3, the owner's words, 13 Nov 2026) */}
       <SetupIntro title="How do you want to log in?">
-        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes.
+        {/* Owner demo note #128 (23 Nov): his sentence continued, in his words. */}
+        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes, such as not
+        having to wait 24 hours for major changes to your account to take effect, which is explained in better detail in the FAQ.
       </SetupIntro>
       <div className="x2f-start__choices" role="group" aria-label="Login methods">
         {METHODS.map((m) => {
