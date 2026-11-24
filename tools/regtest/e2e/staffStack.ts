@@ -168,7 +168,7 @@ export async function prepareStaff(o: { root: string; work: string; logDir: stri
       if (code === null) throw new Error(`stack: the API printed no owner setup code; see ${apiLog}`);
       await staff.ok('POST', '/staff/v1/setup/code', { code });
       const tag = randomBytes(3).toString('hex');
-      const owner = { displayName: `Owner${tag}`, loginName: `owner-login-${tag}` };
+      const owner = { displayName: `Lumen${tag}`, loginName: `owner-login-${tag}` };
       await staff.ok('POST', '/staff/v1/setup/account', owner);
       const keys = [newKey(), newKey()];
       for (const [i, k] of keys.entries()) {
