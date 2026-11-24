@@ -674,7 +674,11 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
       const storedRow = current.rows[0];
       // The key was removed after start: the code proves a key the account no longer has.
       if (!storedRow) throw new ApiError(401, 'code-invalid');
-      const additions = await inspectRefreshAdditions(openKey(deps.config, storedRow.armored_enc, refreshed.fingerprint), refreshedArmored, now);
+      // Judged as of the challenge's start (review P7), the recipient subkey included.
+      const recipient = typeof row.payload.recipient === 'string' ? row.payload.recipient : null;
+      const additions = await inspectRefreshAdditions(
+        openKey(deps.config, storedRow.armored_enc, refreshed.fingerprint), refreshedArmored, row.created_at, recipient,
+      );
       if (!additions.ok) throw new ApiError(400, additions.reason, { detail: additions.detail });
       // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
       // ban list is checked here, after proof, before anything is stored (409 key-unavailable).

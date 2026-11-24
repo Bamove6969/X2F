@@ -591,14 +591,20 @@ const refreshDetail = (part: string): string =>
  * SHA-256 or stronger), and a user ID self-certification or direct-key signature it lacks (hashed
  * with SHA-256 or stronger). Only signatures that verify as the primary key's count: anything else
  * makes no part valid. Revocations only take away and third-party certifications never make a part
- * valid, so neither is judged. The subkey a login challenge went to is judged whenever it is new
- * or newly bound. `{ adds }` says whether anything was added; refusals are `key-weak`.
+ * valid, so neither is judged. Signatures are verified at `at`, the time the login challenge was
+ * made (so a binding that expires before the code comes back still counts). Belt and braces
+ * (review P7): `recipient`, the fingerprint of the subkey the challenge went to, when that subkey
+ * is not validly bound in the stored copy at `at`, must itself meet the new-key encryption rules
+ * (type and size, an ECDH KDF of SHA-256+ with AES, a valid binding at `at` hashed with SHA-256+).
+ * `{ adds }` says whether anything was added; refusals are `key-weak`.
  */
 export async function inspectRefreshAdditions(
   storedArmored: string,
   refreshedArmored: string,
-  now: Date,
+  at: Date,
+  recipient: string | null = null,
 ): Promise<{ ok: true; adds: boolean } | { ok: false; reason: KeyRefusal; detail: string }> {
+  const now = at;
   const [stored, refreshed] = await Promise.all([
     openpgp.readKey({ armoredKey: storedArmored, config: BASE_CONFIG }),
     openpgp.readKey({ armoredKey: refreshedArmored, config: BASE_CONFIG }),
@@ -642,5 +648,23 @@ export async function inspectRefreshAdditions(
       return fail('a subkey of a type or size X2F does not accept');
     }
   }
+
+  const target = recipient === null ? undefined : refreshed.subkeys.find((k) => k.getFingerprint() === recipient.toLowerCase());
+  const storedTarget = target && stored.subkeys.find((k) => k.getFingerprint() === target.getFingerprint());
+  if (target && !(storedTarget && (await validlyBound(storedTarget, at, FIND_CONFIG)))) {
+    if (checkEncryption(target.getAlgorithmInfo(), MIN_RSA_BITS, false) !== null) return fail('an encryption subkey of a type or size X2F does not accept');
+    if (!kdfStrong(target)) return fail('an encryption subkey whose key derivation is weaker than SHA-256 with AES');
+    if (!(await validlyBound(target, at, NEW_KEY_FIND_CONFIG))) return fail('an encryption subkey bound with SHA-1 or weaker');
+  }
   return { ok: true, adds };
+}
+
+/** True when `sub` has a binding valid at `at` under `config` (verified, not revoked, not expired). */
+async function validlyBound(sub: openpgp.Subkey, at: Date, config: openpgp.Config): Promise<boolean> {
+  try {
+    await sub.verify(at, config);
+    return true;
+  } catch {
+    return false;
+  }
 }

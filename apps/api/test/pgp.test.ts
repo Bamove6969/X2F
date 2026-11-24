@@ -1394,6 +1394,58 @@ describe('demo note #144: the encryption part of a pasted key', () => {
       await logsIn(only(1));
     }, 120_000);
 
+    it('review P7: a new binding of a stored weak subkey that expires between start and finish is still judged: refused', async () => {
+      // Ed25519 + an older cv25519 subkey with an MD5 KDF (its stored binding long expired) + a strong one.
+      const g = await openpgp.generateKey({
+        type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() - 2 * DAY),
+        subkeys: [{ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() - DAY) } as openpgp.SubkeyOptions], format: 'object',
+      });
+      await md5Kdf(g.privateKey.subkeys[0]!);
+      const k = await g.privateKey.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: KEY_DATE });
+      const { privateKey: full } = await openpgp.reformatKey({ privateKey: k, userIDs: [{ name: 'Test User' }], date: KEY_DATE, format: 'object' });
+      const weak = full.subkeys[0]!;
+      /** A SHA-512 encryption binding of the weak subkey made at `created`, with a key expiry or a signature expiry. */
+      const binding = async (created: Date, o: { keyExp?: number; sigExp?: number }) => {
+        const sig = new openpgp.SignaturePacket();
+        sig.signatureType = E.signature.subkeyBinding;
+        sig.publicKeyAlgorithm = full.keyPacket.algorithm;
+        sig.hashAlgorithm = E.hash.sha512;
+        sig.keyFlags = new Uint8Array([E.keyFlags.encryptCommunication | E.keyFlags.encryptStorage]);
+        if (o.keyExp !== undefined) sig.keyExpirationTime = o.keyExp;
+        if (o.sigExp !== undefined) {
+          sig.signatureExpirationTime = o.sigExp;
+          sig.signatureNeverExpires = false;
+        }
+        await signSelf(sig, full, { bind: weak.keyPacket }, created);
+        return sig;
+      };
+      const fingerprint = full.getFingerprint();
+      // Stored: the weak subkey's only binding gave it one day (long expired), so the strong one is used.
+      const storedPub = await openpgp.readKey({ armoredKey: full.toPublic().armor() });
+      storedPub.subkeys[0]!.bindingSignatures = [await binding(KEY_DATE, { keyExp: 86_400 })];
+      const id = await stored({ publicKey: storedPub.armor(), privateKey: full.armor(), fingerprint });
+      // Pasted: the weak subkey alone, re-bound a minute ago by a binding that expires 3 minutes after it.
+      const pasted = await openpgp.readKey({ armoredKey: storedPub.armor() });
+      pasted.subkeys = [pasted.subkeys[0]!];
+      pasted.subkeys[0]!.bindingSignatures.push(await binding(new Date(now.getTime() - MIN), { sigExp: 3 * 60 }));
+      const before = await storedRow(id);
+      const b = new Browser();
+      const s = await loginStart(b, { publicKey: pasted.armor(), privateKey: full.armor(), fingerprint });
+      expect(s.statusCode).toBe(200);
+      expect(await isDecoy(s)).toBe(false);
+      // The pasted copy has only the weak subkey, so the challenge went to it.
+      const { rows: ch } = await deps.db.query<{ payload: { recipient?: string } }>('select payload from challenges where id = $1', [s.json().challengeId]);
+      expect(ch[0]!.payload.recipient).toBe(weak.getFingerprint());
+      const code = codeOf(await dec(s.json().encryptedMessage, full.armor()));
+      // The code comes back after the new binding has expired.
+      setNow(new Date(now.getTime() + 3 * MIN));
+      const fin = await loginFinish(b, s.json().challengeId, code);
+      expect(fin.statusCode).toBe(400);
+      expect(fin.json()).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('key derivation') });
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+      expect(await storedRow(id)).toEqual(before);
+    }, 120_000);
+
     it('a pasted key identical to the stored one logs in as before, twice', async () => {
       const key = await genKey();
       await registerPgp(uniqueName(), key);
