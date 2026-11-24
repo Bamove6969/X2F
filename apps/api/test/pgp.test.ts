@@ -1260,4 +1260,91 @@ describe('demo note #144: the encryption part of a pasted key', () => {
       expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
     }, 120_000);
   });
+
+  // Security review of #144 follow-up: a login refresh that brings a subkey or a self-signature the
+  // stored copy lacks is held to the new-key rules (checked at finish, after the code proves the
+  // key); one that adds nothing keeps login's rules.
+  describe('a login refresh that adds parts (review of #144 follow-up)', () => {
+    const SHA1_SUBKEY_PUB = readFileSync(new URL('./helpers/gpg-sha1-subkey.pub.asc', import.meta.url), 'utf8');
+    const SHA1_SUBKEY_SEC = readFileSync(new URL('./helpers/gpg-sha1-subkey.sec.asc', import.meta.url), 'utf8');
+    /** `base` plus a newer cv25519 encryption subkey whose KDF hash is MD5, every part re-signed (SHA-256+). */
+    const withMd5KdfSubkey = async (base: Pair): Promise<Pair> => {
+      const k0 = await openpgp.readPrivateKey({ armoredKey: base.privateKey });
+      const k1 = await k0.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() + DAY) });
+      const kp = k1.subkeys[k1.subkeys.length - 1]!.keyPacket as unknown as { publicParams: { kdfParams: object }; computeFingerprintAndKeyID(): Promise<void> };
+      const KDF = kp.publicParams.kdfParams.constructor as new (o: { hash: number; cipher: number }) => object;
+      kp.publicParams.kdfParams = new KDF({ hash: openpgp.enums.hash.md5, cipher: openpgp.enums.symmetric.aes128 });
+      await kp.computeFingerprintAndKeyID();
+      const { privateKey } = await openpgp.reformatKey({ privateKey: k1, userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() + 2 * DAY), format: 'object' });
+      return pairOf(privateKey);
+    };
+    /** A trader account holding `key`, stored as an older X2F would have stored it. */
+    const stored = async (key: Pair): Promise<string> => {
+      const n = uniqueName();
+      const id = await seedAccount(deps, { loginName: n });
+      LOGIN_NAMES.set(key.fingerprint.toLowerCase(), n);
+      await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+      return id;
+    };
+    const storedRow = async (id: string) =>
+      (await deps.db.query<{ armored_enc: Buffer; proved_subkeys: string[]; last_used_at: Date | null }>(
+        'select armored_enc, proved_subkeys, last_used_at from pgp_keys where account_id = $1', [id],
+      )).rows;
+    const logsIn = async (key: Pair) => {
+      const b = new Browser();
+      const s = await loginStart(b, key);
+      expect(s.statusCode).toBe(200);
+      expect(await isDecoy(s)).toBe(false);
+      const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
+      expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
+    };
+
+    it('a strong stored key, pasted with an added MD5-KDF subkey: refused at finish as adding it would be, nothing stored; the original still logs in', async () => {
+      const key = await genKey();
+      const n = uniqueName();
+      await registerPgp(n, key);
+      const id = await accountId(n);
+      const refreshed = await withMd5KdfSubkey(key);
+      // Adding this key is refused; so is a login that would store it.
+      const asNew = await refusedAtRegister(refreshed);
+      expect(asNew).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('key derivation') });
+      const before = await storedRow(id);
+
+      const b = new Browser();
+      const s = await loginStart(b, refreshed);
+      // Start answers on the pasted key alone (login's rules): a real challenge, to the new subkey.
+      expect(s.statusCode).toBe(200);
+      expect(await isDecoy(s)).toBe(false);
+      const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, refreshed.privateKey)));
+      expect(fin.statusCode).toBe(400);
+      expect(fin.json()).toEqual(asNew);
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+      // The merged copy is not saved: the stored row is byte for byte what it was.
+      expect(await storedRow(id)).toEqual(before);
+
+      // A later login with the original key works, and the stored copy still has no MD5 subkey.
+      await logsIn(key);
+      const after = await storedRow(id);
+      const storedKey = await openpgp.readKey({ armoredKey: openKey(deps.config, after[0]!.armored_enc, key.fingerprint) });
+      expect(storedKey.subkeys.map((x) => x.getFingerprint())).toEqual((await openpgp.readKey({ armoredKey: key.publicKey })).subkeys.map((x) => x.getFingerprint()));
+    }, 120_000);
+
+    it('a pasted key identical to the stored one logs in as before, twice', async () => {
+      const key = await genKey();
+      const n = uniqueName();
+      await registerPgp(n, key);
+      await logsIn(key);
+      await logsIn(key);
+    }, 120_000);
+
+    it('a stored GnuPG RSA 4096 key whose encryption subkey is bound with SHA-1 still logs in (it adds nothing)', async () => {
+      const fingerprint = (await openpgp.readKey({ armoredKey: SHA1_SUBKEY_PUB })).getFingerprint();
+      const key: Pair = { publicKey: SHA1_SUBKEY_PUB, privateKey: SHA1_SUBKEY_SEC, fingerprint };
+      // New, it is refused (the binding is SHA-1); stored, it logs in, and again after its refresh.
+      expect(await refusedAtRegister(key)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('SHA-1') });
+      await stored(key);
+      await logsIn(key);
+      await logsIn(key);
+    }, 120_000);
+  });
 });
