@@ -40,6 +40,7 @@ export {
   encryptChallenge,
   CHALLENGE_PURPOSE_NOTATION,
   inspectPublicKey,
+  inspectRefreshAdditions,
   pastedRecipientStillValid,
 } from './pgp.js';
 export {

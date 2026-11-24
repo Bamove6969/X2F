@@ -556,3 +556,91 @@ export async function pastedRecipientStillValid(pasted: openpgp.Key, current: op
     return false;
   }
 }
+
+/** A signature's bytes, to tell signatures apart. */
+const sigBytes = (s: openpgp.SignaturePacket): string => Array.from(s.write(), (b) => b.toString(16).padStart(2, '0')).join('');
+
+/** A key's direct-key signatures (on every openpgp 6 key, missing from its type declarations). */
+const directSigs = (k: openpgp.Key): openpgp.SignaturePacket[] =>
+  (k as unknown as { directSignatures?: openpgp.SignaturePacket[] }).directSignatures ?? [];
+
+/** True when `sig` verifies as made by `primary` over `data` (login's rules: FIND_CONFIG); false otherwise. */
+async function selfSigVerifies(sig: openpgp.SignaturePacket, primary: openpgp.Key, data: object, now: Date): Promise<boolean> {
+  try {
+    await (sig as unknown as {
+      verify(key: unknown, type: number, data: object, date: Date, detached: boolean, config: openpgp.Config): Promise<void>;
+    }).verify(primary.keyPacket, sig.signatureType as number, { key: primary.keyPacket, ...data }, now, false, FIND_CONFIG);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const weakHash = (s: openpgp.SignaturePacket): boolean => NEW_KEY_FIND_CONFIG.rejectHashAlgorithms.has(s.hashAlgorithm as number);
+
+/** COPY-UNSIGNED: a login refresh adding a part the new-key rules refuse (web: refusals.ts shows `detail`). */
+const refreshDetail = (part: string): string =>
+  `Your updated key adds a part X2F doesn't accept (${part}). Paste the copy you used before, or re-make that part with SHA-256 or stronger.`;
+
+/**
+ * Security review of #144 follow-up: the parts a login refresh ADDS to the stored copy, judged by
+ * the new-key rules; parts already stored keep login's rules (so a stored key with older weak parts
+ * still logs in, and may be refreshed). `refreshed` is the merged copy the login would store.
+ * Added parts are: a subkey the stored copy lacks, or one with a binding signature it lacks
+ * (that subkey's algorithm and size, an ECDH KDF of SHA-256+ with AES, the added bindings hashed with
+ * SHA-256 or stronger), and a user ID self-certification or direct-key signature it lacks (hashed
+ * with SHA-256 or stronger). Only signatures that verify as the primary key's count: anything else
+ * makes no part valid. Revocations only take away and third-party certifications never make a part
+ * valid, so neither is judged. The subkey a login challenge went to is judged whenever it is new
+ * or newly bound. `{ adds }` says whether anything was added; refusals are `key-weak`.
+ */
+export async function inspectRefreshAdditions(
+  storedArmored: string,
+  refreshedArmored: string,
+  now: Date,
+): Promise<{ ok: true; adds: boolean } | { ok: false; reason: KeyRefusal; detail: string }> {
+  const [stored, refreshed] = await Promise.all([
+    openpgp.readKey({ armoredKey: storedArmored, config: BASE_CONFIG }),
+    openpgp.readKey({ armoredKey: refreshedArmored, config: BASE_CONFIG }),
+  ]);
+  const known = new Set<string>();
+  for (const s of directSigs(stored)) known.add(sigBytes(s));
+  for (const u of stored.users) for (const s of u.selfCertifications) known.add(sigBytes(s));
+  for (const k of stored.subkeys) for (const s of k.bindingSignatures) known.add(sigBytes(s));
+  const storedSubkeys = new Set(stored.subkeys.map((s) => s.getFingerprint()));
+  const fail = (part: string) => ({ ok: false as const, reason: 'key-weak' as const, detail: refreshDetail(part) });
+  let adds = false;
+
+  const primarySigs: [openpgp.SignaturePacket, object][] = [
+    ...directSigs(refreshed).map((s): [openpgp.SignaturePacket, object] => [s, {}]),
+    ...refreshed.users.flatMap((u) =>
+      u.selfCertifications.map((s): [openpgp.SignaturePacket, object] => [s, { userID: u.userID, userAttribute: u.userAttribute }]),
+    ),
+  ];
+  for (const [sig, data] of primarySigs) {
+    if (known.has(sigBytes(sig)) || !(await selfSigVerifies(sig, refreshed, data, now))) continue;
+    adds = true;
+    if (weakHash(sig)) return fail('a self-signature made with SHA-1 or weaker');
+  }
+
+  for (const sub of refreshed.subkeys) {
+    const isNew = !storedSubkeys.has(sub.getFingerprint());
+    const added: openpgp.SignaturePacket[] = [];
+    for (const sig of sub.bindingSignatures) {
+      if (known.has(sigBytes(sig))) continue;
+      if (await selfSigVerifies(sig, refreshed, { bind: sub.keyPacket }, now)) added.push(sig);
+    }
+    if (!isNew && added.length === 0) continue;
+    adds = true;
+    if (added.some(weakHash)) return fail('a subkey bound with SHA-1 or weaker');
+    const info = sub.getAlgorithmInfo();
+    const encrypts = added.some(flagsEncrypt) || (isNew && sub.bindingSignatures.some(flagsEncrypt));
+    if (encrypts) {
+      if (checkEncryption(info, MIN_RSA_BITS, false) !== null) return fail('an encryption subkey of a type or size X2F does not accept');
+      if (!kdfStrong(sub)) return fail('an encryption subkey whose key derivation is weaker than SHA-256 with AES');
+    } else if (!checkPrimary(info, MIN_RSA_BITS).ok) {
+      return fail('a subkey of a type or size X2F does not accept');
+    }
+  }
+  return { ok: true, adds };
+}

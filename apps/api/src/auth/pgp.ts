@@ -13,7 +13,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
-  PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
+  PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey, inspectRefreshAdditions,
   newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection, WEBAUTHN_ONLY_ACTIONS } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
@@ -525,8 +525,8 @@ function optStr(b: Record<string, unknown>, key: string): string | undefined {
  * 400 with the refusal and its plain-sentence `detail` (only ever about the key the person pasted).
  * `rules` (security review of #144): `'new-key'` for a key being added (sign-up, add a key, team,
  * staff and owner join), which also refuses SHA-1 self-signatures/bindings and a weak ECDH KDF;
- * `'login'` for a key already on an account, so a stored key keeps logging in. A login refresh
- * that adds a subkey or a self-signature is held to `'new-key'` at finish (`refreshAddsParts`).
+ * `'login'` for a key already on an account, so a stored key keeps logging in. What a login
+ * refresh adds is judged at finish (`inspectRefreshAdditions`).
  */
 async function inspectOrRefuse(armored: string, now: Date, rules: 'new-key' | 'login'): Promise<Extract<KeyInspection, { ok: true }>> {
   const r = await inspectPublicKey(armored, now, { newKey: rules === 'new-key' });
@@ -661,20 +661,21 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     if (row.payload.refreshed !== undefined) {
       const refreshed = readPendingKey(row.payload, 'refreshed');
       const refreshedArmored = openKey(deps.config, Buffer.from(refreshed.keyEnc, 'base64'), refreshed.fingerprint);
-      // Security review of #144 follow-up: a refresh that brings a subkey or a self-signature the
-      // stored copy lacks is held to the rules for a new key (sign-up, adding a key), so a login
-      // cannot slip in what adding the key would refuse; nothing is stored when it fails. Checked
-      // here, after the code proved the key, never at start: start refusals depend on the pasted
-      // key alone (the stored copy would make them an account oracle). A refresh that adds nothing
-      // keeps login's rules, so a stored key with older weak parts still logs in.
+      // Security review of #144 follow-up: the parts a refresh ADDS to the stored copy (a subkey, a
+      // binding, a self-signature) are held to the rules for a new key, the subkey the challenge went
+      // to included when it is new; parts already stored keep login's rules, so a stored key with
+      // older weak parts still logs in and can be refreshed. Nothing is stored when it fails. Checked
+      // here, after the code proved the key, never at start: start refusals depend on the pasted key
+      // alone (the stored copy would make them an account oracle).
       const current = await deps.db.query<{ armored_enc: Buffer }>(
         'select armored_enc from pgp_keys where account_id = $1 and fingerprint = $2',
         [account.id, refreshed.fingerprint],
       );
       const storedRow = current.rows[0];
-      if (storedRow && (await refreshAddsParts(openKey(deps.config, storedRow.armored_enc, refreshed.fingerprint), refreshedArmored))) {
-        await inspectOrRefuse(refreshedArmored, now, 'new-key');
-      }
+      // The key was removed after start: the code proves a key the account no longer has.
+      if (!storedRow) throw new ApiError(401, 'code-invalid');
+      const additions = await inspectRefreshAdditions(openKey(deps.config, storedRow.armored_enc, refreshed.fingerprint), refreshedArmored, now);
+      if (!additions.ok) throw new ApiError(400, additions.reason, { detail: additions.detail });
       // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
       // ban list is checked here, after proof, before anything is stored (409 key-unavailable).
       // Review MF2: never the account's own banned key (a site-banned person logs in to finish trades).
@@ -780,36 +781,6 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   // Always to exactly the one key the person pasted, so a code proves that key (staff pairs compare
   // key sets, and the second step's key must differ from the first's).
   return issueLoginChallenge(deps, req, { accountId: account.id, toKey: pasted, payload });
-}
-
-/** A signature packet's bytes, to tell signatures apart. */
-const sigBytes = (s: openpgp.SignaturePacket): string => Buffer.from(s.write()).toString('hex');
-
-/** A key's direct-key signatures (openpgp has them, its types do not name them). */
-const directSigs = (k: openpgp.Key): openpgp.SignaturePacket[] => (k as unknown as { directSignatures?: openpgp.SignaturePacket[] }).directSignatures ?? [];
-
-/**
- * True when `refreshedArmored` (the merged copy a login would store) has a subkey, or a signature
- * that can make a part valid (a user ID self-certification, a direct-key signature, a subkey
- * binding), that the stored copy lacks. Revocations only take away and third-party certifications
- * never make a part valid, so neither counts (a keyserver copy with others' certifications adds nothing).
- */
-async function refreshAddsParts(storedArmored: string, refreshedArmored: string): Promise<boolean> {
-  const [stored, refreshed] = await Promise.all([
-    openpgp.readKey({ armoredKey: storedArmored }), openpgp.readKey({ armoredKey: refreshedArmored }),
-  ]);
-  const known = new Set<string>();
-  const subkeys = new Set(stored.subkeys.map((s) => s.getFingerprint()));
-  for (const s of directSigs(stored)) known.add(sigBytes(s));
-  for (const u of stored.users) for (const s of u.selfCertifications) known.add(sigBytes(s));
-  for (const k of stored.subkeys) for (const s of k.bindingSignatures) known.add(sigBytes(s));
-  const added = (sigs: openpgp.SignaturePacket[]) => sigs.some((s) => !known.has(sigBytes(s)));
-  return (
-    refreshed.subkeys.some((k) => !subkeys.has(k.getFingerprint())) ||
-    added(directSigs(refreshed)) ||
-    refreshed.users.some((u) => added(u.selfCertifications)) ||
-    refreshed.subkeys.some((k) => added(k.bindingSignatures))
-  );
 }
 
 /** The stored key updated with the packets of a newer copy of the same key (same fingerprint). */
