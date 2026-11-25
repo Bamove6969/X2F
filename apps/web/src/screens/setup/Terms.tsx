@@ -35,7 +35,7 @@
  * trader sent here by a take or a post (both send any signed-out person to setup) is not made to
  * sign up again (Task 21 review follow-up). No board shows that line.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import type { TermsSignature } from '@x2f/auth-client';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
@@ -68,6 +68,7 @@ export function TermsScreen({
   acceptLabel = 'I accept',
   sign = false,
   waiting = false,
+  notice,
   onAccept,
 }: {
   screen: string;
@@ -85,6 +86,8 @@ export function TermsScreen({
   sign?: boolean;
   /** True while the screen does not know yet whether this person signs: the button waits. */
   waiting?: boolean;
+  /** A notice of the caller's own over the button (the session could not be read, with its retry). */
+  notice?: ReactNode;
   /** `signature` is null unless `sign`, and never null with it. */
   onAccept: (version: string, signature: TermsSignature | null) => Promise<void>;
 }) {
@@ -142,6 +145,16 @@ export function TermsScreen({
   };
 
   /**
+   * A tap anywhere on the tick row ticks the box (review of note #187, M2), except on the two
+   * buttons (they show their section) and on the box and its labels (the browser ticks those itself).
+   */
+  const tapRow = (e: MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (stale || t.closest('button, input, label') !== null) return;
+    setTicked((v) => !v);
+  };
+
+  /**
    * Scrolls the page to the full Terms' heading (`null`) or to a section heading, and moves the
    * focus to the Terms region so the keys go on from there (owner demo note #187: no box of its own).
    */
@@ -164,6 +177,31 @@ export function TermsScreen({
       {...(back !== undefined ? { back } : {})}
       footer={
         <>
+          {/* Review of note #187 (M1): the notices sit in the bottom bar, over the button, so they are on
+              screen whatever the scroll (the in-page Terms put them far below on a phone). */}
+          {loadFailed ? (
+            <p className="x2f-error" role="alert">
+              Could not load the Terms version.{' '}
+              <button type="button" className="x2f-start__textbutton" onClick={() => void load()}>
+                Try again
+              </button>
+            </p>
+          ) : null}
+          {error !== null ? (
+            <p className="x2f-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {stale ? (
+            <p className="x2f-error" role="alert" id="terms-stale" data-part="terms-stale">
+              The Terms have been updated.{' '}
+              <button type="button" className="x2f-start__textbutton" onClick={() => window.location.reload()}>
+                Reload the page
+              </button>{' '}
+              to read the new version.
+            </p>
+          ) : null}
+          {notice}
           {/* Owner demo note #190 (25 Nov 2026): disabled until ticked (and while the version loads, the page is stale or a call is busy). */}
           <Button
             variant="primary"
@@ -199,14 +237,14 @@ export function TermsScreen({
         <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
-            <h2
+            <h3
               className="x2f-terms__heading"
               data-heading={s.heading}
               tabIndex={-1}
               {...(s.heading === PRIVACY_HEADING ? { id: 'terms-privacy' } : {})}
             >
               {s.heading}
-            </h2>
+            </h3>
             <TermsParagraphs paragraphs={s.paragraphs} />
           </section>
         ))}
@@ -214,32 +252,11 @@ export function TermsScreen({
           {version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}
         </p>
       </div>
-      {loadFailed ? (
-        <p className="x2f-error" role="alert">
-          Could not load the Terms version.{' '}
-          <button type="button" className="x2f-start__textbutton" onClick={() => void load()}>
-            Try again
-          </button>
-        </p>
-      ) : null}
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {stale ? (
-        <p className="x2f-error" role="alert" id="terms-stale" data-part="terms-stale">
-          The Terms have been updated.{' '}
-          <button type="button" className="x2f-start__textbutton" onClick={() => window.location.reload()}>
-            Reload the page
-          </button>{' '}
-          to read the new version.
-        </p>
-      ) : null}
       {/* Owner demo note #189 (25 Nov 2026): the two links are buttons that show their section in this
           page, outside the checkbox's <label>, so tapping one never ticks the box. The box's name is
           still the whole line (aria-labelledby). */}
-      <div className="x2f-check" data-part="terms-agree">
+      {/* Review of note #187 (M2): the whole row (44 px tall) ticks the box, except the two buttons. */}
+      <div className="x2f-check x2f-check--tap x2f-check--row" data-part="terms-agree" onClick={tapRow}>
         <input
           type="checkbox"
           id="terms-tick"
@@ -325,6 +342,13 @@ export function Terms() {
   // does not (owner demo note #187). Until `me` answers, the button waits.
   const session = useSession();
   const member = session.status === 'signed-in' && session.me.member != null;
+  // Review of note #187 (L4): a session that could not be read can't say whether this person signs,
+  // so nobody posts until it is read again (a member must not post unsigned). One error is not a
+  // dead end to retry: `terms-required` (an API whose `me` refuses old Terms; frontDoor.tsx sends it
+  // here) says the person is signed in on old Terms, which is what this screen is for. Then the
+  // tick goes alone, and the API still refuses a member's unsigned accept (signature-required).
+  const failed = session.status === 'error' && session.code !== 'terms-required';
+  const unknown = session.status === 'loading' || failed;
   return (
     <TermsScreen
       screen="terms"
@@ -332,7 +356,18 @@ export function Terms() {
       // Owner demo note #190 (25 Nov 2026): no read-to-the-end gate, so the intro no longer asks for it. COPY-UNSIGNED.
       intro="The Terms of Service have changed. Read them and accept them to keep trading. The key points first:"
       sign={member}
-      waiting={session.status === 'loading'}
+      waiting={unknown}
+      notice={
+        failed ? (
+          <p className="x2f-error" role="alert" data-part="terms-session-error">
+            {/* COPY-UNSIGNED: review of owner demo note #187 (L4). */}
+            Could not check your account.{' '}
+            <button type="button" className="x2f-start__textbutton" onClick={() => refreshSession()}>
+              Try again
+            </button>
+          </p>
+        ) : null
+      }
       onAccept={async (version, signature) => {
         await authApi.acceptTerms(signature !== null ? { version, signature } : { version });
         refreshSession();

@@ -413,6 +413,26 @@ test('Privacy Policy shows the privacy section in this page, by mouse or keyboar
   await expect(page).toHaveURL(/\/setup(\?|$)/);
 });
 
+// Review of note #187 (M2): the whole tick row is one tap target, at least 44 px tall.
+test('the tick row is at least 44 px tall and a tap on it ticks the box; its two buttons do not', async ({ page }) => {
+  await setViewport(page, '390x844');
+  await stubApi(page);
+  await page.goto('/setup');
+  const tick = page.locator('[data-part="terms-tick"]');
+  const row = page.locator('[data-part="terms-agree"]');
+  await row.scrollIntoViewIfNeeded();
+  const box = (await row.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  // The right end of the row, past the words.
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  await expect(tick).toBeChecked();
+  await page.locator('[data-part="terms-show-tos"]').click();
+  await expect(tick).toBeChecked();
+  await row.scrollIntoViewIfNeeded();
+  await page.locator('[data-part="terms-show-privacy"]').click();
+  await expect(tick).toBeChecked();
+});
+
 // Owner demo note #187 (25 Nov 2026): no signature pad, no typed name; the keyboard alone ticks and accepts.
 test('no signature: no pad or typed name, and the keyboard alone ticks and accepts; the setup sends the version once', async ({ page }) => {
   const s = await stubApi(page);
@@ -1010,9 +1030,12 @@ test.describe('review fix round', () => {
       posts.push(JSON.parse(r.request().postData() ?? 'null'));
       return posts.length === 1 ? json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r) : r.fulfill({ status: 204 });
     });
+    // Review of note #187 (M1): on a 390 px phone the message is on screen, not below the Terms.
+    await setViewport(page, '390x844');
     await page.goto('/terms?returnTo=%2Fpost');
     await acceptTerms(page);
     await expect(page.locator('[data-screen="terms"] [role="alert"]')).toContainText('The Terms changed while you were reading');
+    await expect(page.locator('[data-screen="terms"] [role="alert"]')).toBeInViewport();
     await expect(page.locator('[data-part="terms-stale"]')).toHaveCount(0);
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
     expect(gets).toBeGreaterThanOrEqual(2);
@@ -1078,8 +1101,11 @@ test.describe('review fix round', () => {
     await stubApi(page);
     await page.unroute('**/v1/terms');
     await page.route('**/v1/terms', json({ version: '2099-01-01' }));
+    // Review of note #187 (M1): on a 390 px phone the notice is on screen, not below the Terms.
+    await setViewport(page, '390x844');
     await page.goto('/setup');
     await expect(page.locator('[data-part="terms-stale"]')).toHaveText('The Terms have been updated. Reload the page to read the new version.');
+    await expect(page.locator('[data-part="terms-stale"]')).toBeInViewport();
     await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
     await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
   });

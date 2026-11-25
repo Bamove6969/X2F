@@ -844,7 +844,6 @@
 .x2f-start .x2f-terms {
   flex: 0 0 auto;
   min-height: 0;
-  max-height: none;
   overflow: visible;
 }
 
@@ -887,7 +886,8 @@
 
 .x2f-start--fit .x2f-start__main {
   gap: 12px;
-  padding-bottom: 0;
+  /* Review of note #187 (L3): room between the last line and the bottom bar's top border. */
+  padding-bottom: 16px;
 }
 
 .x2f-check {
@@ -917,6 +917,11 @@
 
 /* Owner demo note #189: the Terms line's words are labels for the box; its two buttons are not. */
 .x2f-check label {
+  cursor: pointer;
+}
+
+/* Review of note #187 (M2): the Terms tick row is one tap target (with .x2f-check--tap, 44 px tall). */
+.x2f-check--row {
   cursor: pointer;
 }
 
