@@ -150,9 +150,16 @@ describe('setupError (review fix round M1, M2, I1)', () => {
 });
 
 describe('SetupTerms key points (build spec j33a section 1, S-043)', () => {
-  it('ends with the 60-day line, saying why: X2F is for people who trade regularly', () => {
-    // Owner demo note #123 (23 Nov), his words.
-    expect(KEY_POINTS.at(-1)).toBe('X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days or longer is closed automatically.');
+  it('ends with the 60-day line', () => {
+    // Owner demo note #189 (25 Nov): the draft one-liners (awaiting his OK); the 60-day rule stays last.
+    expect(KEY_POINTS.at(-1)).toBe('An account not signed into for 60 days or longer is closed automatically.');
+  });
+
+  it('are the six one-liners drafted for owner demo note #189', () => {
+    expect(KEY_POINTS).toHaveLength(6);
+    for (const k of KEY_POINTS) expect(k.length, k).toBeLessThanOrEqual(140);
+    expect(KEY_POINTS[0]).toMatch(/2-of-3 multisig escrow/);
+    expect(KEY_POINTS[1]).toBe('Whoever posts the ad pays a 1% fee when the trade completes. Taking an ad is free.');
   });
 });
 

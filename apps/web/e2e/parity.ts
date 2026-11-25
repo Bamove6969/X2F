@@ -197,11 +197,11 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   SetupTerms: [
     {
       text: "No IP addresses are logged.",
-      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says (opening reworded by owner demo note #183, 25 Nov) \"We never track our users. Period. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-25).",
+      why: "Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b); this one says \"We never track you: no IP addresses, email, phone numbers or device details are logged or stored.\" Before it, owner demo notes #121 and #183.",
     },
     {
       text: "Moderators can read your trade chat only if a dispute is opened.",
-      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\"; owner demo note #181 (25 Nov 2026) adds \"…, which gives that particular moderator the ability to unlock and decrypt the trade and have full access to all communications that have transpired so far.\" (Terms version 2026-11-25).",
+      why: "Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b); this one says \"Moderators step in only when asked. Opening a dispute lets that moderator decrypt the trade and its chat.\" Before it, owner demo notes #117 and #181.",
     },
     {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
@@ -237,15 +237,15 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'If you post an ad, you pay a 1% fee when the trade completes.',
-      why: 'Owner demo note #116 (23 Nov 2026, setup-terms second key point): the page says "If you post an ad, whether to sell or buy on X2F, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees." (Terms version 2026-11-23).',
+      why: 'Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b). This one says "Whoever posts the ad pays a 1% fee when the trade completes. Taking an ad is free." Before it, owner demo notes #116 and #179.',
     },
     {
       text: 'X2F never holds your coins.',
-      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point; owner demo note #177 (25 Nov 2026) reworded the sentence itself: the page says "X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain …" (Terms version 2026-11-25).',
+      why: 'Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b). This one says "X2F never holds your XMR: it sits in a 2-of-3 multisig escrow, and any two of the buyer, the seller and X2F must agree to move it." Before it, owner demo notes #115 and #177.',
     },
     {
       text: 'We answer lawful warrants with the little we have.',
-      why: 'Owner demo note #102 (17 Nov 2026), then #122 (23 Nov 2026) and #184 (25 Nov 2026, setup-terms key points): the page now has his privacy-by-design and lawful-orders paragraph in place of this line (Terms version 2026-11-25).',
+      why: 'Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b). None is about warrants: his note #184 privacy-by-design and lawful-orders paragraph (which had replaced this line, notes #102 and #122) is now section 7 of the full Terms.',
     },
     {
       text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
@@ -265,7 +265,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Dispute records are kept for 30 days.',
-      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by two key points, which owner demo notes #119 and #120 (23 Nov 2026) reworded in his words: the page says "To adhere to our privacy policy and to maintain strong confidentiality, all trades that have no disputes will be deleted on the 30th day after completion." (note #182, 25 Nov) and "Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day." (Terms version 2026-11-25). This repo\'s mirror of the board is from 26 Oct. Owner demo note #118\'s new point ("Moderators are at your disposal …") has no board counterpart, so parity needs nothing for it.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by the 30/90 rule, which owner demo notes #119, #120 and #182 reworded; owner demo note #189 (25 Nov 2026) made it one draft one-liner (awaiting his OK): the page says "Trades without a dispute are deleted after 30 days. Disputed trades are scrubbed and deleted after 90." (Terms version 2026-11-25b). This repo\'s mirror of the board is from 26 Oct.',
     },
   ],
   // Owner demo notes (12 Nov 2026, /setup/login): every method is a checkbox, several can be
