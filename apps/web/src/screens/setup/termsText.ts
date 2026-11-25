@@ -55,7 +55,8 @@ export const KEY_POINTS: readonly string[] = [
   // Owner demo note #180 (25 Nov): "trade intervention", not "site". COPY-UNSIGNED.
   'Moderators are at your disposal if something goes wrong, if you feel the need for trade intervention, or just to make sure a trade ends smoothly.',
   // Owner demo note #117 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  'Moderators can read your trade chat only if their presence is requested and a dispute is opened.',
+  // Owner demo note #181 (25 Nov), his words; "mod" written "moderator" and "&" as "and". COPY-UNSIGNED.
+  'Moderators can read your trade chat only if their presence is requested and a dispute is opened, which gives that particular moderator the ability to unlock and decrypt the trade and have full access to all communications that have transpired so far.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
   // "Dispute records are kept for 30 days." COPY-UNSIGNED.
   // Owner demo note #119 (23 Nov, on this key point), his words. COPY-UNSIGNED.
