@@ -263,9 +263,15 @@
   font-size: 18px;
 }
 
-/* Owner 16 Nov 2026 (fonts D + sizing): the orange label is bigger and bold; the button is not. */
+/* Owner 16 Nov 2026 (fonts D + sizing): the orange label is bigger and bold. Owner demo note #192
+   (25 Nov, setup-name): "Make the word continue much bigger. Remember never touch the top & bottom
+   or the sides", as on the landing's Create account (#172): every sign-up step's main button. */
 .x2f-start__foot .x2f-button--primary {
-  font-size: clamp(17px, calc(13px + 1.8vw), 20px);
+  height: auto;
+  min-height: 68px;
+  padding: 14px 24px;
+  font-size: 26px;
+  line-height: 32px;
 }
 
 .x2f-start__foot .x2f-button--quiet {
