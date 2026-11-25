@@ -59,7 +59,9 @@ describe('Invite: the Terms step (owner 9 Nov 2026, p11-14)', () => {
     // The same text as the trader app, never a copy: the key points, the draft note, every section.
     expect([...document.querySelectorAll('[aria-label="Key points"] li')].map((l) => l.textContent)).toEqual(KEY_POINTS);
     const text = part('terms-text')!;
-    expect(text.querySelector('.x2f-terms__note')?.textContent).toBe(TERMS_DRAFT_NOTE);
+    // Owner demo note #222: the draft placeholder is gone, so no note line shows.
+    expect(TERMS_DRAFT_NOTE).toBe('');
+    expect(text.querySelector('.x2f-terms__note')).toBeNull();
     expect([...text.querySelectorAll('.x2f-terms__heading')].map((h) => h.textContent)).toEqual(TERMS.map((s) => s.heading));
     expect(text.querySelectorAll('.x2f-terms__p')).toHaveLength(TERMS.reduce((n, s) => n + s.paragraphs.length, 0));
     expect(text.querySelector('.x2f-terms__end')?.textContent).toBe(`End of Terms. Version ${TERMS_TEXT_VERSION}.`);
