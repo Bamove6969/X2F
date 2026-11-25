@@ -124,10 +124,51 @@ function ordered(picks: ReadonlySet<SignupMethod>): SignupMethod[] {
   });
 }
 
+type LearnKey = 'pgp' | 'security-key' | 'passkey' | 'otp' | 'password';
+
+/**
+ * Owner demo note #221 (25 Nov): the "Learn About" list, in his order. PGP is his #141/#142
+ * paragraph word for word; the other four are COPY-UNSIGNED drafts for his review.
+ */
+const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
+  {
+    key: 'pgp',
+    label: 'PGP',
+    text:
+      'PGP uses free, open-source encryption to lock and unlock messages with a cryptographic key pair: a public key you share with X2F, and a private key that stays strictly on your device. You will need a PGP app each time you log in to decrypt a login challenge, such as Kleopatra (Windows/Linux), GPG Suite (macOS), or PGPony (com.pgpony.android on F-Droid, our top Android pick) and OpenKeychain on Android. Because X2F never generates keys on your behalf, your private key never leaves your control.',
+  },
+  {
+    key: 'security-key',
+    label: 'Security Key',
+    text:
+      'A security key is a small physical device, such as a YubiKey or a Nitrokey, that you plug into your computer or tap against your phone. When you log in, X2F asks the key to prove it is the one you registered, and you touch it to confirm. The secret inside it can never be copied off the device, so someone who steals your Login ID and password would still need the key in their hand to get in. Keep a second key or another login method as a backup in case one is lost.',
+  },
+  {
+    key: 'passkey',
+    label: 'Passkey',
+    text:
+      'A passkey is a login stored on your phone or computer and unlocked with your fingerprint, face or device PIN. Like a security key, it proves who you are without ever sending a secret that could be stolen or guessed. Passkeys are quick and easy to use, but some devices copy them to your Apple, Google or Microsoft account to sync them between devices, so pick a security key or PGP if you would rather nothing about your X2F login touches those accounts.',
+  },
+  {
+    key: 'otp',
+    label: 'OTP',
+    text:
+      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. Pair it with your password for a strong, simple login.',
+  },
+  {
+    key: 'password',
+    label: 'Password',
+    text:
+      'A password is the most familiar way to log in, and also the easiest to guess, reuse or steal. On X2F a password never stands alone: it must be paired with an authenticator app (OTP) or another login method, so a leaked password by itself can never open your account. Use a long, unique password from a password manager, and never use it anywhere else.',
+  },
+];
+
 export function Login() {
   const { state, update, go, path } = useSetup();
   const [picks, setPicks] = useState<ReadonlySet<SignupMethod>>(() => new Set(state.methods));
-  const [explain, setExplain] = useState(false);
+  const learnId = useId();
+  // Owner demo note #221 (25 Nov): which "Learn About" write-up is open, one at a time.
+  const [explain, setExplain] = useState<LearnKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SetupError | null>(null);
   const id = useId();
@@ -251,18 +292,38 @@ export function Login() {
         </p>
       ) : null}
       <RegisterError error={error} />
-      <button type="button" className="x2f-start__textbutton x2f-start__textbutton--tap" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
-        New to PGP?
-      </button>
-      {explain ? (
-        // Owner demo notes #141 and #142 (23 Nov): one paragraph, his words, bright and bold so it stands out.
-        <p className="x2f-start__help x2f-start__help--loud" data-part="pgp-explainer">
-          PGP uses free, open-source encryption to lock and unlock messages with a cryptographic key pair: a public key you share with X2F, and a
-          private key that stays strictly on your device. You will need a PGP app each time you log in to decrypt a login challenge, such as
-          Kleopatra (Windows/Linux), GPG Suite (macOS), or PGPony (com.pgpony.android on F-Droid, our top Android pick) and OpenKeychain on
-          Android. Because X2F never generates keys on your behalf, your private key never leaves your control.
-        </p>
-      ) : null}
+      {/* Owner demo note #221 (25 Nov): "Learn About", underlined, with the five methods straight down the
+          middle; each opens a write-up the way "New to PGP?" did. PGP keeps his #141/#142 paragraph. */}
+      <section className="x2f-start__learn" aria-labelledby={`${learnId}-head`} data-part="learn-about">
+        <h2 className="x2f-start__learn-head" id={`${learnId}-head`}>
+          Learn About
+        </h2>
+        <ul className="x2f-start__learn-list">
+          {LEARN.map((l) => (
+            <li key={l.key}>
+              <button
+                type="button"
+                className="x2f-start__textbutton x2f-start__textbutton--tap"
+                aria-expanded={explain === l.key}
+                aria-controls={`${learnId}-${l.key}`}
+                onClick={() => setExplain((x) => (x === l.key ? null : l.key))}
+                data-part={l.key === 'pgp' ? 'pgp-explain' : `learn-${l.key}`}
+              >
+                {l.label}
+              </button>
+              {explain === l.key ? (
+                <p
+                  className="x2f-start__help x2f-start__help--loud x2f-start__learn-text"
+                  id={`${learnId}-${l.key}`}
+                  data-part={l.key === 'pgp' ? 'pgp-explainer' : `learn-${l.key}-text`}
+                >
+                  {l.text}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </section>
     </SetupFrame>
   );
 }

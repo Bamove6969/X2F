@@ -1584,3 +1584,40 @@
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
+
+/* Owner demo note #221 (25 Nov): "Learn About", underlined, the methods straight down the middle. */
+.x2f-start__learn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin-top: var(--x2f-space-3);
+}
+.x2f-start__learn-head {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--x2f-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.x2f-start__learn-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.x2f-start__learn-list > li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.x2f-start__learn-text {
+  text-align: left;
+  width: 100%;
+}
