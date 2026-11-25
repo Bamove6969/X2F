@@ -114,7 +114,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'Do I need to give my name, email or phone number?',
     a: 'X2F asks for no email or phone number. To agree to the Terms you sign your name, but a scribble or an X is fine, and the signature is stored sealed and never shown. Your display name is shown to other traders, so pick one that does not identify you.',
     sources: [
-      `${WEB}/setup/Terms.tsx:250 sign your name`,
+      `${WEB}/setup/SignaturePad.tsx:205 Sign your name here`,
       `${WEB}/setup/SignaturePad.tsx:205 A scribble or an X is fine.`,
       'apps/api/src/termsSignature.ts:12 It is never shown to other users',
       'apps/api/src/termsSignature.ts:29 At rest it is sealed',
