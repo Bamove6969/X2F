@@ -403,7 +403,9 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     expect(card.tagName).toBe('SECTION');
     expect(card.getAttribute('aria-labelledby')).toBe('display-preview-h');
     expect(card.querySelector('#display-preview-h')?.textContent).toBe('What your trader card could look like');
-    expect(byPart(card, 'preview-example')?.textContent).toBe('Example');
+    // Owner demo note #224: the X2F mark in place of the word "Example".
+    expect(byPart(card, 'preview-example')).toBeNull();
+    expect(byPart(card, 'preview-logo')?.querySelector('svg.x2f-logo')).not.toBeNull();
     // The example name while the field is empty or invalid.
     expect(name().textContent).toBe('nightowl_44');
     expect(card.getAttribute('data-example-name')).toBe('true');
