@@ -22,14 +22,19 @@
 }
 /* Owner demo note #170: a staircase, "Welcome" on the top line at the left, "to" on the second
    line under the end of the word, then the logo on the third. The page is lowered to make room. */
+/* Owner demo note #201 (25 Nov): "Welcome to" bigger, and the same space between Welcome, to and
+   the logo. --x2f-welcome-gap is that one space; the margin takes back the main column's gap. */
 .x2f-landing__welcome {
-  display: block;
+  --x2f-welcome-gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-welcome-gap);
   align-self: flex-start;
   width: max-content;
-  margin: 0 0 -20px;
+  margin: 0 0 calc(var(--x2f-welcome-gap) - 36px);
   font-family: var(--x2f-font-display);
-  font-size: 32px;
-  line-height: 36px;
+  font-size: 48px;
+  line-height: 48px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--x2f-ink);
@@ -128,6 +133,9 @@
 .x2f-landing[data-wide='true'] .x2f-landing__main {
   gap: 44px;
   padding-top: 0;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__welcome {
+  margin-bottom: calc(var(--x2f-welcome-gap) - 44px);
 }
 .x2f-landing[data-wide='true'] .x2f-landing__slogan {
   font-size: 40px;
