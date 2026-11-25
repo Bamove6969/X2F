@@ -43,7 +43,7 @@ import { refreshSession, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { termsChanged } from './register.js';
+import { errorCode, termsChanged } from './register.js';
 import { SignaturePad } from './SignaturePad.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 import { TermsParagraphs } from './TermsParagraphs.js';
@@ -139,6 +139,11 @@ export function TermsScreen({
         // ("Reload the page") is the one thing to say; "read them again" only when the reloaded
         // version is this page's own text (review m2, Task 28 round 2).
         if (now === TERMS_TEXT_VERSION) setError('The Terms changed while you were reading. Read them again, then accept.');
+      } else if (errorCode(e) === 'signature-required') {
+        // The API says this login signs (a team member, owner 9 Nov 2026, p11-14) though the page
+        // did not know it: the caller shows the pad (`sign`), and this says what to do next.
+        // COPY-UNSIGNED: review of owner demo note #187.
+        setError('Your login signs the Terms too. Sign in the white box, then accept.');
       } else setError('Could not save that. Try again.');
       setBusy(false);
     }
@@ -339,9 +344,14 @@ export function Terms() {
   const navigate = useNavigate();
   const returnTo = returnToFrom(location.search);
   // A team member's session still signs (owner 9 Nov 2026, p11-14; the API requires it); a trader's
-  // does not (owner demo note #187). Until `me` answers, the button waits.
+  // does not (owner demo note #187). `GET /v1/account/me` answers on old Terms too
+  // (allowStaleTerms) and names a member session (`member`), so it tells the two apart here. Until
+  // it answers, the button waits.
   const session = useSession();
-  const member = session.status === 'signed-in' && session.me.member != null;
+  // Belt and braces: if the API refuses an unsigned accept with signature-required (a member the
+  // page could not tell apart, e.g. an API whose `me` refuses old Terms), the pad shows from then on.
+  const [mustSign, setMustSign] = useState(false);
+  const member = mustSign || (session.status === 'signed-in' && session.me.member != null);
   // Review of note #187 (L4): a session that could not be read can't say whether this person signs,
   // so nobody posts until it is read again (a member must not post unsigned). One error is not a
   // dead end to retry: `terms-required` (an API whose `me` refuses old Terms; frontDoor.tsx sends it
@@ -369,7 +379,12 @@ export function Terms() {
         ) : null
       }
       onAccept={async (version, signature) => {
-        await authApi.acceptTerms(signature !== null ? { version, signature } : { version });
+        try {
+          await authApi.acceptTerms(signature !== null ? { version, signature } : { version });
+        } catch (e) {
+          if (errorCode(e) === 'signature-required') setMustSign(true);
+          throw e;
+        }
         refreshSession();
         void navigate(returnTo, { replace: true });
       }}
