@@ -98,7 +98,7 @@ export type PendingChange =
   | { kind: 'password'; hash: string; pepperId: number }
   | { kind: 'totp'; secretEnc: string; step: number }
   | { kind: 'pgp'; fingerprint: string; keyEnc: string; recipient?: string | null }
-  | { kind: 'webauthn'; credential: StoredCredential; label: string }
+  | { kind: 'webauthn'; credential: StoredCredential; label: string | null }
   | { kind: 'recovery-codes'; keyId: number; hashes: string[] }
   | { kind: 'remove-method'; type: MethodType; id: string }
   /** FU-D: the name's keyed tag under `keyId`, never the name. */
@@ -614,6 +614,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // J-23 groundwork: the chat-key courier re-checks the session (strong, strictly) and the hold
   // under the account lock (auth/chatKeys.ts `strongCallerInTx`).
   ...CHAT_KEY_WRITE_ROUTES,
+  // Owner 25 Nov security-key report; security review of wip/lead-seckey-fix: naming a key re-checks
+  // the session, the hold and a waiting login under the account lock (auth/webauthn.ts `setKeyLabel`).
+  'PUT /v1/account/webauthn/label',
 ];
 
 /**
@@ -630,8 +633,6 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/account/onboarding/end': "only clears this session's own sign-up window, which narrows what the session may do (review M1)",
   'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
   'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
-  // Owner 25 Nov security-key report.
-  'PUT /v1/account/webauthn/label': "only the shown name of one of the caller's own keys (one label column); no key material, session, approval or security state",
   'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
   'POST /v1/confirm/pgp/start': 'writes only a confirm challenge bound to this session',
   'POST /v1/confirm/pgp/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
@@ -705,6 +706,8 @@ export const WEAK_LIMITED_ROUTES: readonly string[] = [
   // J-23 groundwork: a weak session may not use the chat-key courier at all (strictly 'strong',
   // auth/chatKeys.ts), on itself or anyone else.
   ...CHAT_KEY_WRITE_ROUTES,
+  // Security review of wip/lead-seckey-fix: a waiting session may not rename keys (auth/webauthn.ts `setKeyLabel`).
+  'PUT /v1/account/webauthn/label',
 ];
 
 /**

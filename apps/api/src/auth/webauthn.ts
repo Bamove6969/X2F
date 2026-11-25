@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { actionHash, checkKeyName, type AccountKind, type ConfirmAction } from '@x2f/accounts';
+import { actionHash, checkKeyName, defaultKeyName, sameKeyName, type AccountKind, type ConfirmAction } from '@x2f/accounts';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -29,7 +29,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
 import { realmOf, requireSession, startSession } from './sessions.js';
-import { gateChange, requireNotHeld, stagedReply } from './hold.js';
+import { gateChange, holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, stagedReply, weakOf, weakRefusal, withTx } from './hold.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
 
@@ -49,7 +49,6 @@ export const MAX_SECURITY_KEYS = 5;
  * only those. Verification accepts all three either way.
  */
 const ALGORITHMS = [-7, -8, -257];
-const LABEL_MAX = 60;
 /** base64url of a credential ID (at most 1023 bytes, WebAuthn's limit). */
 const CREDENTIAL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
 const ZERO_AAGUID = '00000000-0000-0000-0000-000000000000';
@@ -100,11 +99,29 @@ function credentialKind(v: unknown): CredentialKind {
   throw new ApiError(400, 'bad-request');
 }
 
-/** Control and format characters removed (as device labels), trimmed, at most 60 code points; a default when empty. */
-function cleanLabel(label: string | undefined, kind: CredentialKind): string {
-  const visible = (label ?? '').replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
-  const l = Array.from(visible).slice(0, LABEL_MAX).join('').trim();
-  return l === '' ? (kind === 'passkey' ? 'Passkey' : 'Security key') : l;
+/**
+ * A name sent with a new key, as `checkKeyName` keeps it, or null when none was sent or it does not
+ * pass (security review of wip/lead-seckey-fix, item 3: one rule for every key name). A null name
+ * never fails the registration: `insertCredential` gives the key its default name instead.
+ */
+function cleanLabel(label: string | undefined): string | null {
+  if (label === undefined) return null;
+  const checked = checkKeyName(label);
+  return checked.ok ? checked.name : null;
+}
+
+/**
+ * The name a new key is stored under: `label` unless null or already another key's name on the
+ * account (`sameKeyName`), else the first free "Security key N" / "Passkey N", N from the count of
+ * that kind plus one. The caller's transaction holds the account row where it can race.
+ */
+async function keyLabelFor(db: Queryable, accountId: string, kind: CredentialKind, label: string | null): Promise<string> {
+  const { rows } = await db.query<{ label: string; kind: string }>('select label, kind from webauthn_credentials where account_id = $1', [accountId]);
+  const taken = (l: string) => rows.some((r) => sameKeyName(r.label, l));
+  if (label !== null && !taken(label)) return label;
+  let n = rows.filter((r) => r.kind === kind).length + 1;
+  while (taken(defaultKeyName(kind, n))) n++;
+  return defaultKeyName(kind, n);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -226,8 +243,9 @@ async function assertSecurityKeyRoom(db: Queryable, accountId: string): Promise<
  * Stores a credential. A security key is counted against `MAX_SECURITY_KEYS` first; a caller that
  * must be race-proof locks the account row in its transaction (`addKeyFinish`).
  */
-async function insertCredential(db: Queryable, accountId: string, c: NewCredential, label: string, now: Date): Promise<string> {
+async function insertCredential(db: Queryable, accountId: string, c: NewCredential, name: string | null, now: Date): Promise<string> {
   if (c.kind === 'security-key') await assertSecurityKeyRoom(db, accountId);
+  const label = await keyLabelFor(db, accountId, c.kind, name);
   try {
     const { rows } = await db.query<{ id: string }>(
       `insert into webauthn_credentials
@@ -514,7 +532,7 @@ export async function verifyWebAuthnRegistrationOnly(
   const cred = await verifyRegistration(deps, {
     accountKind: account.kind, kind: o.kind ?? null, response, expectedChallenge: challengeString(expectedChallenge),
   });
-  const label = cleanLabel(o.label, cred.kind);
+  const label = cleanLabel(o.label);
   return {
     credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid, publicKey: cred.publicKey,
     store: (q) => insertCredential(q, accountId, cred, label, deps.clock()),
@@ -933,7 +951,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     try {
       accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms.version, termsSignature: terms.signature, now });
       await client.query('update accounts set webauthn_user_id = $2 where id = $1', [accountId, Buffer.from(userId, 'base64url')]);
-      await insertCredential(client, accountId, cred, cleanLabel(label, kind), now);
+      await insertCredential(client, accountId, cred, cleanLabel(label), now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -1018,7 +1036,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   assertMethodAllowed(req.auth.kind, kind);
   const cred = await verifyRegistration(deps, { accountKind: req.auth.kind, kind, response: body.response, expectedChallenge: ch.webauthn_challenge! });
   const stored = storedCredential(cred);
-  const clean = cleanLabel(label, kind);
+  const clean = cleanLabel(label);
   const now = deps.clock();
   const client = await deps.db.connect();
   let held: { changeId: string } | null = null;
@@ -1051,9 +1069,22 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
  * should let me name it"): names one of the caller's own passkeys or security keys, by the
  * credential ID the browser gave for it (base64url). The name is checked by `checkKeyName`
  * (trimmed, 1 to 32 letters, digits, spaces and a little punctuation): 400 `key-name-invalid`
- * `{ reason }` otherwise. Another account's credential, or one still staged for review (hold model
- * v3: no row yet), is 404 `not-found`. Only the `label` column changes: no key material, flags,
- * session, approval or security state, so no confirm, hold gate or alert.
+ * `{ reason }` otherwise, `reason: 'taken'` when another of the account's keys has that name
+ * (`sameKeyName`: trimmed, case and width folded). Another account's credential, or one still
+ * staged for review (hold model v3: no row yet), is 404 `not-found`. Only the `label` column
+ * changes: no key material, flags or session state.
+ *
+ * Security review of wip/lead-seckey-fix:
+ * - Trader accounts only (`kinds: ['trader']`): a staff or owner key is renamed, if ever, on the
+ *   staff API under its own rules; a team member's session is refused as for every owner-only route.
+ * - Under the account lock, the calling session must still be live (`requireLiveSessionInTx`,
+ *   401), and a trader's running hold refuses it (403 `recovery-hold`), as `gateChange` does. A
+ *   session whose changes must wait (`weakOf`: a username-and-password login outside its sign-up
+ *   window, a backup session) is refused (403 `weak-session`) rather than staged: a rename is not
+ *   worth a 24-hour draft, and a fresh, waiting session must not relabel the owner's keys.
+ * - Each rename queues a Jabber notice (jabber/changePaths.ts lists `label`, which is wanted
+ *   against a malicious rename), so renames are budgeted per account: `budgets.keyLabel`
+ *   (KEY_LABEL_BUCKET, 10 an hour), 429 `slow-down` past it, taken before any work.
  */
 async function setKeyLabel(req: FastifyRequest) {
   const deps = req.server.deps;
@@ -1062,11 +1093,24 @@ async function setKeyLabel(req: FastifyRequest) {
   if (!CREDENTIAL_ID.test(credentialId)) throw new ApiError(400, 'bad-request');
   const checked = checkKeyName(str(body, 'label'));
   if (!checked.ok) throw new ApiError(400, 'key-name-invalid', { reason: checked.problem });
-  const { rowCount } = await deps.db.query('update webauthn_credentials set label = $3 where account_id = $1 and credential_id = $2', [
-    req.auth.accountId, Buffer.from(credentialId, 'base64url'), checked.name,
-  ]);
-  if ((rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
-  return { label: checked.name };
+  req.server.budgets.keyLabel.take(req.auth.accountId);
+  const id = Buffer.from(credentialId, 'base64url');
+  return withTx(deps.db, async (db) => {
+    const now = deps.clock();
+    const session = await requireLiveSessionInTx(db, req.auth, now);
+    if (session.kind === 'trader') {
+      const running = await holdInTx(db, settleOf(req), req.auth.accountId, now);
+      if (running !== null) throw holdRefusal(running.holdUntil);
+    }
+    if (weakOf(session, now)) throw weakRefusal();
+    const { rows } = await db.query<{ credential_id: Buffer; label: string }>('select credential_id, label from webauthn_credentials where account_id = $1', [
+      req.auth.accountId,
+    ]);
+    if (!rows.some((r) => r.credential_id.equals(id))) throw new ApiError(404, 'not-found');
+    if (rows.some((r) => !r.credential_id.equals(id) && sameKeyName(r.label, checked.name))) throw new ApiError(400, 'key-name-invalid', { reason: 'taken' });
+    await db.query('update webauthn_credentials set label = $3 where account_id = $1 and credential_id = $2', [req.auth.accountId, id, checked.name]);
+    return { label: checked.name };
+  });
 }
 
 /** A verified credential in the form a pending change keeps it (JSON: the public key as base64url). */
@@ -1079,7 +1123,7 @@ const storedCredential = (c: NewCredential): StoredCredential => ({ ...c, public
  * by time), with the account row locked by the caller: the security-key limit, the insert, alert
  * `login-method-added`.
  */
-export async function applyCredential(db: Queryable, accountId: string, c: StoredCredential, label: string, now: Date): Promise<void> {
+export async function applyCredential(db: Queryable, accountId: string, c: StoredCredential, label: string | null, now: Date): Promise<void> {
   await db.query('select 1 from accounts where id = $1 for no key update', [accountId]);
   await insertCredential(db, accountId, { ...c, publicKey: Buffer.from(c.publicKey, 'base64url') }, label, now);
   await addAlert(db, accountId, 'login-method-added', { method: c.kind }, now);
@@ -1113,5 +1157,6 @@ export function webauthnRoutes(app: FastifyInstance): void {
   );
   app.post('/v1/account/webauthn/finish', { preHandler: [requireSession({ allowRecovery: true }), requireNotHeld] }, addKeyFinish);
   // Owner 25 Nov security-key report: naming a key just saved (or any of my own keys).
-  app.put('/v1/account/webauthn/label', { preHandler: [requireSession(), requireNotHeld] }, setKeyLabel);
+  // Traders only: staff and owner keys are managed on the staff API (an owner key change takes both owner keys).
+  app.put('/v1/account/webauthn/label', { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, setKeyLabel);
 }

@@ -36,7 +36,9 @@ export const KEY_SAVED_COPY = {
   problem: {
     empty: 'Give it a name.',
     'too-long': `Use ${KEY_NAME_MAX} characters or fewer.`,
-    characters: `Use letters, numbers, spaces and ${KEY_NAME_PUNCTUATION.split('').join(' ')} in the name.`,
+    characters: `Use letters, numbers, spaces and ${KEY_NAME_PUNCTUATION.split('').join(' ')} in the name, in one alphabet.`,
+    /** Security review of wip/lead-seckey-fix: another of the account's keys has this name. */
+    taken: 'Another of your keys has that name. Pick a different one.',
   } satisfies Record<KeyNameProblem, string>,
   saveFailed: 'The name was not saved. Try again, or continue and rename it later.',
 } as const;
@@ -84,7 +86,7 @@ export function KeySaved({
       onNamed?.(label);
     } catch (e) {
       const reason = e instanceof AuthApiError && e.code === 'key-name-invalid' ? e.reason : undefined;
-      if (reason === 'empty' || reason === 'too-long' || reason === 'characters') {
+      if (reason === 'empty' || reason === 'too-long' || reason === 'characters' || reason === 'taken') {
         setProblem(reason);
         setPhase({ kind: 'naming' });
       } else setPhase({ kind: 'failed', text: KEY_SAVED_COPY.saveFailed });

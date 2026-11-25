@@ -144,6 +144,19 @@ describe('note #94 in Settings: test a security key right after adding it', () =
     expect(host.querySelector('[data-part="key-name-input"]')).toBeNull();
   });
 
+  it('security review of wip/lead-seckey-fix: a list that cannot be read after the add still shows the saved key to name', async () => {
+    const host = await shown();
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url === '/v1/account/webauthn/label' && init?.method === 'PUT') return json(200, { label: 'Security key 1' });
+      return json(500, { error: 'internal' });
+    });
+    click(host.querySelector('[data-add="security-key"]'));
+    await flush();
+    expect(host.querySelector('[data-part="key-saved"]')!.textContent).toBe('Security key saved');
+    expect(host.querySelector<HTMLInputElement>('[data-part="key-name-input"]')!.value).toBe('Security key 1');
+    expect(host.querySelector('[data-part="methods-error"]')).toBeNull();
+  });
+
   it('the words for each failure', async () => {
     const { KeyTestError } = await import('@x2f/auth-client');
     expect(keyTestErrorText(new KeyTestError('other-key'))).toBe(KEY_TEST_COPY.otherKey);

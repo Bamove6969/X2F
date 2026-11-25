@@ -127,9 +127,17 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       );
       noteStaged(h);
       // A staged key (hold model v3) is not a login method yet (no key row), so only a key added now is named and tested.
-      const list = await authApi.listMethods();
-      setMethods(list);
-      if (!(h !== undefined && isStaged(h))) setJustAdded({ kind, credentialId, defaultName: defaultKeyName(kind, list.filter((m) => m.type === kind).length) });
+      // Security review of wip/lead-seckey-fix: the key is saved even when the list cannot be read
+      // now, so it is still acknowledged and named (never added twice); its number is then a guess.
+      let count = 1;
+      try {
+        const list = await authApi.listMethods();
+        setMethods(list);
+        count = list.filter((m) => m.type === kind).length;
+      } catch {
+        // The list stays as it was; the name step still shows.
+      }
+      if (!(h !== undefined && isStaged(h))) setJustAdded({ kind, credentialId, defaultName: defaultKeyName(kind, count) });
     } catch (e) {
       if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
     } finally {
