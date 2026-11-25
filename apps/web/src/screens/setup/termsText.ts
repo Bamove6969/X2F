@@ -52,7 +52,8 @@ export const KEY_POINTS: readonly string[] = [
   'If you post an ad, whether to sell or buy on X2F, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees.',
   // Owner demo note #118 (23 Nov): a new point between the fee and the chat ones, his words; a comma
   // and "if" added for grammar. COPY-UNSIGNED.
-  'Moderators are at your disposal if something goes wrong, if you feel the need for site intervention, or just to make sure a trade ends smoothly.',
+  // Owner demo note #180 (25 Nov): "trade intervention", not "site". COPY-UNSIGNED.
+  'Moderators are at your disposal if something goes wrong, if you feel the need for trade intervention, or just to make sure a trade ends smoothly.',
   // Owner demo note #117 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'Moderators can read your trade chat only if their presence is requested and a dispute is opened.',
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
