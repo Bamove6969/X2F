@@ -22,7 +22,10 @@
 // words is a proposal in docs/terms-legal-review-2026-11-23.md, waiting on him. COPY-UNSIGNED.
 // 2026-11-25: the owner's demo notes of 23 Nov (#114-#123) and 25 Nov (#177-#185, screen setup-terms)
 // applied in his words, tidied for grammar only. COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-25';
+// 2026-11-25b: owner demo note #189 (25 Nov): section 7 is his note #184 paragraph, section 6 names
+// the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
+// move for the whole note. COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
@@ -177,10 +180,12 @@ export const TERMS: TermsSection[] = [
   {
     heading: '7. Police and government requests',
     paragraphs: [
-      // Owner demo note #107 (17 Nov, de4e3eea): "within the scope of the writ." after "what little
-      // information we hold".
+      // Owner demo note #189 (25 Nov 2026): the law-enforcement paragraph (notes #107 and earlier)
+      // replaced by his note #184 paragraph, word for word. The lawyer placeholder, not about law
+      // enforcement, is kept on its own line. COPY-UNSIGNED.
       // not-a-refusal: Terms text
-      "If police or a government agency sends us a lawful request for data backed by a warrant, we will provide what little information we hold within the scope of the writ. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+      "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
+      '[Lawyer to word this.]',
     ],
   },
   {
