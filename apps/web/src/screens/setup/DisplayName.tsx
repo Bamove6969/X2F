@@ -5,9 +5,8 @@
  * A taken display name is found when the account is made (409 `display-name-taken`, before any
  * hashing), with a link back here.
  *
- * Owner demo notes #199 and #200 (25 Nov 2026): a live trader card preview under the field (the
- * offer card's pieces for a brand-new member: the avatar, the amber New badge, "0 trades" and the
- * profile's "No ratings yet"), 2-3 suggestion chips with a refresh chip (randomName.ts), the note
+ * Owner demo notes #199 and #200 (25 Nov 2026): a live trader card preview under the field (since
+ * note #220, an established trader's example card with the name as typed: `TraderPreview`), 2-3 suggestion chips with a refresh chip (randomName.ts), the note
  * that a display name is permanent (no API route changes it), and Continue straight under the
  * card rather than pinned to the bottom (SetupFrame `footerInline`), in thumb reach above a phone
  * keyboard.
@@ -20,9 +19,8 @@
  */
 import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
-import { Avatar } from '../../ui/Avatar.js';
-import { BadgePill } from '../../ui/BadgePill.js';
-import { NEW_BADGE, tradesWord } from '../browse/posterCopy.js';
+import { BADGE_SET, BadgeSeal } from '../../ui/Badges.js';
+import { IdentityRow, StatTiles, traderStats } from '../../ui/Identity.js';
 import { PROFILE_COPY } from '../profile/profileCopy.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { DISPLAY_SYMBOLS, checkNames, checkNewDisplayName, hasSpace, namesProblem, spaceProblem } from './names.js';
@@ -32,36 +30,74 @@ import { suggestDisplayNames } from './randomName.js';
 export const SUGGESTIONS = 3;
 
 /**
- * The trader card preview (owner demo note #199): the name as typed, on the offer card's pieces for
- * a member with no trades yet. A new member is not Graduated, so the offer card leads with the New
- * badge (OfferCard.tsx NEW_BADGE), says "0 trades" and no % positive until a rated review; the
- * profile says "No ratings yet" (profileCopy.ts noPct). Nothing here is the member's real record.
+ * The example trader card (owner demo note #220, 25 Nov 2026: "a mockup of a trader card if they had
+ * been using the site for a while ... badges on it ... an avatar on it ... just with the display
+ * name displayed exactly how they have it entered"). Every piece is the app's own, filled with an
+ * established trader's example record, and the card says it is an example:
+ * - the kit's identity row (ui/Identity.tsx IdentityRow: the Avatar with the Trusted ring and the
+ *   online dot, the name, the Vendor tag) with the profile's "member since" (profileCopy.ts);
+ * - the kit's stat tiles with its trader stats (traderStats: trades, % positive, XMR traded);
+ * - badge seals of real badges (ui/Badges.tsx BADGE_SET), each with its name; the record below
+ *   earns every one (Trusted: 200+ trades and 98%+; Veteran: over a year; 100 trades);
+ * - the profile's lines: typical payment time, "Disputes: none", "Account protected with PGP".
+ * The name is the one typed while it passes checkNewDisplayName, else the example name.
  */
+export const EXAMPLE_TRADER = {
+  // COPY-UNSIGNED (owner demo note #220: the example name while the field is empty or invalid;
+  // the boards' own example trader)
+  name: 'nightowl_44',
+  memberSince: '2024-09',
+  trades: 248,
+  positivePct: 99,
+  xmrTraded: '86.4',
+  typicalMinutes: 6,
+  badges: [BADGE_SET.trusted, BADGE_SET.veteran, BADGE_SET.fast, BADGE_SET.clean, BADGE_SET.m100, BADGE_SET.pgp],
+} as const;
+
 function TraderPreview({ name }: { name: string }) {
   // `name` is '' until what is typed passes checkNewDisplayName.
-  const empty = name === '';
-  // COPY-UNSIGNED (owner demo note #199: a neutral name while the field is empty)
-  const shown = empty ? 'Your display name' : name;
+  const example = name === '';
+  const shown = example ? EXAMPLE_TRADER.name : name;
+  const t = EXAMPLE_TRADER;
   return (
-    <section className="x2f-card x2f-start__preview-card" aria-labelledby="display-preview-h" data-part="trader-preview">
-      {/* COPY-UNSIGNED (owner demo note #199: "Trader Card Preview", in sentence case) */}
-      <h2 className="x2f-start__preview-h" id="display-preview-h">
-        Trader card preview
-      </h2>
-      <span className="x2f-start__preview-who">
-        <Avatar name={shown} size={48} {...(empty ? { initials: '?' } : {})} />
-        <span className="x2f-start__preview-text">
-          <span className="x2f-start__preview-name-row">
-            <span className="x2f-start__preview-name" data-username="" data-placeholder={empty ? 'true' : undefined} data-part="preview-name">
-              {shown}
-            </span>
-            <BadgePill tone={NEW_BADGE.tone} icon={NEW_BADGE.icon} label={NEW_BADGE.label} />
-          </span>
-          <span className="x2f-start__preview-meta" data-part="preview-stats">
-            <span className="x2f-digits">0</span> {tradesWord(0)} · {PROFILE_COPY.noPct}
-          </span>
+    <section
+      className="x2f-start__showcase"
+      aria-labelledby="display-preview-h"
+      data-part="trader-preview"
+      data-example-name={example ? 'true' : undefined}
+    >
+      <div className="x2f-start__showcase-top">
+        {/* COPY-UNSIGNED (owner demo note #220: the card is an example, not their record) */}
+        <h2 className="x2f-start__showcase-h" id="display-preview-h">
+          What your trader card could look like
+        </h2>
+        <span className="x2f-start__showcase-tag" data-part="preview-example">
+          Example
         </span>
-      </span>
+      </div>
+      <IdentityRow
+        person={{ name: shown, trusted: true, online: true, vendor: true, meta: PROFILE_COPY.presence(true, t.memberSince).replace(/^Online · /, '') }}
+        size={48}
+      />
+      {/* COPY-UNSIGNED (owner demo note #220): the stats are labelled as an example, for screen readers too. */}
+      <div className="x2f-start__showcase-stats" role="group" aria-label="Example stats" data-part="preview-stats">
+        <StatTiles items={traderStats({ trades: t.trades, positivePct: t.positivePct, xmrTraded: t.xmrTraded })} />
+      </div>
+      <ul className="x2f-start__showcase-badges" aria-label="Example badges" data-part="preview-badges">
+        {t.badges.map((b) => (
+          <li key={b.key} className="x2f-start__showcase-badge">
+            <BadgeSeal badge={b} size={28} />
+            <span>{b.name}</span>
+          </li>
+        ))}
+      </ul>
+      <ul className="x2f-start__showcase-facts" data-part="preview-facts">
+        <li>
+          <span className="x2f-digits">{PROFILE_COPY.typicalValue(t.typicalMinutes)}</span> {PROFILE_COPY.typical}
+        </li>
+        <li>{PROFILE_COPY.disputes({ won: 0, lost: 0 })}</li>
+        <li>{PROFILE_COPY.pgp}</li>
+      </ul>
     </section>
   );
 }
