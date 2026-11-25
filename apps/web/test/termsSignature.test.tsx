@@ -21,10 +21,15 @@ const auth = vi.hoisted(() => ({
   acceptTerms: vi.fn(async (_b: { version: string; signature?: TermsSignature }) => undefined),
 }));
 vi.mock('../src/screens/auth/authApi.js', () => ({ authApi: auth }));
-const who = vi.hoisted(() => ({ member: false }));
+const who = vi.hoisted(() => ({ member: false, status: 'signed-in' as 'signed-in' | 'loading' | 'error', code: 'network', refresh: vi.fn() }));
 vi.mock('../src/session/useSession.js', () => ({
-  refreshSession: () => undefined,
-  useSession: () => ({ status: 'signed-in', me: { member: who.member ? { name: 'AK', roles: [] } : null } }),
+  refreshSession: () => who.refresh(),
+  useSession: () =>
+    who.status === 'signed-in'
+      ? { status: 'signed-in', me: { member: who.member ? { name: 'AK', roles: [] } : null } }
+      : who.status === 'error'
+        ? { status: 'error', code: who.code }
+        : { status: 'loading' },
 }));
 
 const PAD_W = 320;
@@ -34,6 +39,9 @@ beforeEach(() => {
   auth.getTerms.mockImplementation(async () => ({ version: TERMS_TEXT_VERSION }));
   auth.acceptTerms.mockClear();
   who.member = false;
+  who.status = 'signed-in';
+  who.code = 'network';
+  who.refresh.mockClear();
   // happy-dom lays nothing out: give the pad a size.
   vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get').mockReturnValue(PAD_W);
   vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get').mockReturnValue(PAD_H);
@@ -315,6 +323,92 @@ describe('the Terms screen for a trader: the tick alone, no signature', () => {
     await flush();
     expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
     expect(auth.acceptTerms.mock.calls[0]![0]).not.toHaveProperty('signature');
+  });
+});
+
+// Review of owner demo note #187 (25 Nov 2026), fixes M1, M2, L4, L6 and test 9.
+describe('the Terms screen: review fixes', () => {
+  const mount = async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    return {
+      host,
+      tick: host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!,
+      accept: () => host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!,
+    };
+  };
+
+  it('while the session loads, the button waits even when ticked, and nothing is posted', async () => {
+    who.status = 'loading';
+    const { tick, accept } = await mount();
+    click(tick);
+    expect(tick.checked).toBe(true);
+    expect(accept().disabled).toBe(true);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).not.toHaveBeenCalled();
+  });
+
+  it('a session that could not be read says so with a retry, and nobody can post (a member must not post unsigned)', async () => {
+    who.status = 'error';
+    const { host, tick, accept } = await mount();
+    const notice = host.querySelector('[data-part="terms-session-error"]')!;
+    expect(notice.getAttribute('role')).toBe('alert');
+    expect(notice.closest('.x2f-start__foot')).not.toBeNull();
+    click(tick);
+    expect(accept().disabled).toBe(true);
+    click(notice.querySelector('button'));
+    expect(who.refresh).toHaveBeenCalledTimes(1);
+    expect(auth.acceptTerms).not.toHaveBeenCalled();
+  });
+
+  it('a terms-required session error is no dead end: signed in on old Terms, the tick alone posts', async () => {
+    who.status = 'error';
+    who.code = 'terms-required';
+    const { host, tick, accept } = await mount();
+    expect(host.querySelector('[data-part="terms-session-error"]')).toBeNull();
+    click(tick);
+    expect(accept().disabled).toBe(false);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
+  });
+
+  it('the notices sit in the bottom bar, over the button, not below the in-page Terms', async () => {
+    auth.getTerms.mockImplementation(async () => ({ version: '2099-01-01' }));
+    const { host, accept } = await mount();
+    const stale = host.querySelector('[data-part="terms-stale"]')!;
+    expect(stale.closest('.x2f-start__foot')).not.toBeNull();
+    expect(stale.compareDocumentPosition(accept()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('a tap anywhere on the tick row ticks the box, but the two buttons never do', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    const { host, tick } = await mount();
+    const row = host.querySelector<HTMLElement>('[data-part="terms-agree"]')!;
+    expect(row.classList.contains('x2f-check--tap')).toBe(true);
+    click(row);
+    expect(tick.checked).toBe(true);
+    click(row.querySelector('#terms-tick-line')!);
+    expect(tick.checked).toBe(false);
+    click(host.querySelector('[data-part="terms-show-privacy"]'));
+    click(host.querySelector('[data-part="terms-show-tos"]'));
+    expect(tick.checked).toBe(false);
+    click(tick);
+    expect(tick.checked).toBe(true);
+    // The accessible name is still the whole line.
+    expect(tick.getAttribute('aria-labelledby')).toBe('terms-tick-line');
+  });
+
+  it('the sections inside the full Terms are h3, under the cards\' h2', async () => {
+    const { host } = await mount();
+    const region = host.querySelector('[data-part="terms-text"]')!;
+    expect(region.querySelectorAll('h2')).toHaveLength(0);
+    expect(region.querySelectorAll('h3.x2f-terms__heading').length).toBe(TERMS.length);
   });
 });
 

@@ -171,8 +171,9 @@ export const JOIN_COPY = {
   // S-104 (owner p11-21): an invite from a username-and-password login carries no boxes yet. COPY-UNSIGNED
   invited: (name: string, roles: readonly TeamRole[]) =>
     roles.length === 0 ? `You are invited to a team as ${name}. The team lead sets what you may do; it starts later.` : `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
-  // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
-  termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
+  // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED. "to the end" dropped with
+  // the read-to-the-end gate (owner demo note #190, 25 Nov 2026).
+  termsIntro: 'Before you join, read the Terms of Service and accept them. The key points first:',
   // What the join enforces today; owner p7-9 (any login method) is not built yet (see TEAM_COPY.twoFactors).
   twoFactors: 'You log in with two factors: first a PGP key, then a security key, a passkey or a second PGP key.',
   loginNameLabel: 'Your private login name',
