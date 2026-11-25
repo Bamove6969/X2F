@@ -23,7 +23,6 @@ import {
 } from '../src/index.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
-import { SIG } from './helpers/routes.js';
 
 const GOOD = 'Correct-Horse-9';
 const LABEL = 'Browser on Linux';
@@ -67,7 +66,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const username = uniqueName('pgp');
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({
-    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG,
+    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version,
   });
   return { username, key };
 }
@@ -101,7 +100,7 @@ describe('onboarding', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('pass');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
@@ -184,7 +183,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
 
     const first = addedNow(await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) }));
@@ -213,7 +212,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
     const a = [fakeAddress(), fakeAddress()];
     const b = [fakeAddress(), fakeAddress()];
@@ -252,7 +251,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     const own = jar();
     const { version } = await own.api.getTerms();
     const login = uniqueName('bat');
-    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     const e = apiError(await failure(own.api.addWallets({ wallets: drafts([fakeAddress(), 'not-an-address']) })));
     expect(e.status).toBe(400);
     expect(e.code).toBe('address-invalid');
@@ -269,7 +268,7 @@ describe('new-device approval (Plan 2 Task 16)', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('appr');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     return { own, username };
   }
 

@@ -1,8 +1,16 @@
 /**
+ * Owner demo note #187 (25 Nov 2026): a trader no longer signs. The trader's sign-up and the Terms
+ * re-acceptance (`POST /v1/account/terms`) agree to the Terms with the tick alone (a clickwrap), so
+ * their routes take the signature as optional (`optionalTermsSignature`): absent, nothing is stored;
+ * sent (an older page), it is checked exactly as before and stored as before. A team member at join
+ * and a staff member at their invite still sign (`checkTermsSignature`, unchanged). The rest of this
+ * comment describes the signature where it is still given.
+ *
  * The signature given when accepting the Terms (owner, 8 Nov 2026): once, at account opening, and
  * again whenever the Terms version changes, never per trade. Everyone who gets a login signs (owner,
- * 9 Nov 2026, p11-14): a trader at sign-up, a team member at join (and on their own login account
- * when the Terms change), a staff member at their invite; not the owner's own account. Stored with the account
+ * 9 Nov 2026, p11-14): a team member at join (and on their own login account when the Terms
+ * change), a staff member at their invite; a trader only until owner demo note #187 (now only if an
+ * older page sends one); not the owner's own account. Stored with the account
  * (`accounts.terms_signature`, migration 316) next to `terms_version` and `terms_accepted_at`, and
  * erased when the account closes (owner, 9 Nov 2026, p11-13: "Erase it when the account closes"):
  * a deleted row takes it, and every close that keeps the row calls `eraseTermsSignature` in its
@@ -133,6 +141,18 @@ export function checkTermsSignature(value: unknown): TermsSignature {
     return { kind: 'typed', name };
   }
   throw invalid();
+}
+
+/**
+ * Owner demo note #187 (25 Nov 2026): the signature where it is optional (a trader's sign-up, the
+ * Terms re-acceptance). Absent (the key not in the body) → `null`, nothing to store. Anything else
+ * is "sent" and gets `checkTermsSignature`'s strict checks; an explicit `null` is not a way to skip
+ * them: it is 400 `signature-invalid`.
+ */
+export function optionalTermsSignature(value: unknown): TermsSignature | null {
+  if (value === undefined) return null;
+  if (value === null) throw invalid();
+  return checkTermsSignature(value);
 }
 
 const sealAad = (accountId: string) => Buffer.from(`x2f/terms-signature/${accountId}`, 'utf8');

@@ -165,12 +165,37 @@ describe('the Terms signature on sign-up (owner, 8 Nov 2026)', () => {
     }
   });
 
-  it('refuses a missing, wrong-type or too-large signature before hashing or creating anything', async () => {
+  // Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone.
+  it('registers a trader with no signature: the version is recorded, no signature is stored', async () => {
+    const res = await register('nosig.one', GOOD, { acceptedTerms: TERMS });
+    expect(res.statusCode, res.body).toBe(201);
+    const row = await accountRow('nosig.one');
+    expect(row!.terms_version).toBe(TERMS);
+    expect(row!.terms_accepted_at).toEqual(now);
+    const id = (await accountIdByLoginName(deps, 'nosig.one'))!;
+    const { rows } = await deps.db.query<{ terms_signature: Buffer | null }>('select terms_signature from accounts where id = $1', [id]);
+    expect(rows[0]!.terms_signature).toBeNull();
+  });
+
+  it('without a signature the version check is as strict as before', async () => {
+    const hash = vi.spyOn(argon2, 'hash');
+    for (const extra of [{}, { acceptedTerms: '2026-01-01' }, { acceptedTerms: null }, { acceptedTerms: `${TERMS} ` }]) {
+      const res = await register('nosig.two', GOOD, extra);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
+    }
+    expect(hash).not.toHaveBeenCalled();
+    expect(await accountRow('nosig.two')).toBeUndefined();
+  });
+
+  it('refuses a malformed, null, wrong-type or too-large signature when one is sent, before hashing or creating anything', async () => {
     const hash = vi.spyOn(argon2, 'hash');
     const big = { kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(8300)}` };
     const cases: [unknown, string][] = [
-      [undefined, 'signature-required'],
-      [null, 'signature-required'],
+      // Owner demo note #187: absent is "no signature"; an explicit null is not a way past the checks.
+      [null, 'signature-invalid'],
+      [{}, 'signature-invalid'],
+      [{ kind: 'drawn', width: 320, height: 120, path: 'M0 0L999 1' }, 'signature-invalid'],
       ['M0 0L1 1', 'signature-invalid'],
       [{ kind: 'png', data: 'iVBORw0KGgo=' }, 'signature-invalid'],
       [{ kind: 'drawn', width: 320, height: 120, path: '<path d="M0 0"/>' }, 'signature-invalid'],

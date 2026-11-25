@@ -13,7 +13,6 @@ import {
   registerWithWebAuthn,
   type AuthApi,
 } from '../src/index.js';
-import { SIG } from './helpers/routes.js';
 
 const CREATE = { challenge: 'c1', rp: { name: 'X2F', id: 'x2f.test' } } as unknown as PublicKeyCredentialCreationOptionsJSON;
 const GET = { challenge: 'c2', rpId: 'x2f.test' } as unknown as PublicKeyCredentialRequestOptionsJSON;
@@ -43,18 +42,18 @@ describe('WebAuthn ceremony wrappers', () => {
     const { api, calls } = fakeApi();
     const ceremony = registration();
     await expect(
-      registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'passkey', 'Browser on Linux', '2026-10-17', SIG, ceremony),
+      registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'passkey', 'Browser on Linux', '2026-10-17', ceremony),
     ).resolves.toEqual({ displayName: 'Alice' });
     expect(calls.registerWebAuthnStart).toHaveBeenCalledWith({ displayName: 'Alice', loginName: 'alice.login', kind: 'passkey' });
     expect(ceremony.startRegistration).toHaveBeenCalledWith({ optionsJSON: CREATE });
     expect(calls.registerWebAuthnFinish).toHaveBeenCalledWith({
-      challengeId: 'ch-reg', response: REG, deviceLabel: 'Browser on Linux', acceptedTerms: '2026-10-17', termsSignature: SIG,
+      challengeId: 'ch-reg', response: REG, deviceLabel: 'Browser on Linux', acceptedTerms: '2026-10-17',
     });
   });
 
   it('registerWithWebAuthn passes a credential label when given', async () => {
     const { api, calls } = fakeApi();
-    await registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'security-key', 'Browser', 'v', SIG, registration(), { label: 'YubiKey' });
+    await registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'security-key', 'Browser', 'v', registration(), { label: 'YubiKey' });
     expect(calls.registerWebAuthnFinish).toHaveBeenCalledWith(expect.objectContaining({ label: 'YubiKey' }));
   });
 
@@ -100,7 +99,7 @@ describe('WebAuthn ceremony wrappers', () => {
     const cancelled = new Error('NotAllowedError');
     await expect(loginWithPasskey(api, 'Browser', { startAuthentication: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
     expect(calls.loginWebAuthnFinish).not.toHaveBeenCalled();
-    await expect(registerWithWebAuthn(api, { displayName: 'Aaaaa', loginName: 'bbbbb' }, 'passkey', 'B', 'v', SIG, { startRegistration: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
+    await expect(registerWithWebAuthn(api, { displayName: 'Aaaaa', loginName: 'bbbbb' }, 'passkey', 'B', 'v', { startRegistration: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
     expect(calls.registerWebAuthnFinish).not.toHaveBeenCalled();
   });
 });

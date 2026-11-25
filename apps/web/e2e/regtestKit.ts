@@ -97,8 +97,8 @@ export async function signUp(prefix: string, o: { vendor?: boolean } = {}): Prom
     loginName: `${prefix}-login-${tag}`,
     password: PASSWORD,
     deviceLabel: 'e2e',
+    // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
     acceptedTerms: TERMS_TEXT_VERSION,
-    termsSignature: { kind: 'typed', name: displayName },
   });
   const wallet = await newTestWallet(s.monerod);
   const address = await wallet.getPrimaryAddress();

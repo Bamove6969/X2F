@@ -22,7 +22,10 @@
 // words is a proposal in docs/terms-legal-review-2026-11-23.md, waiting on him. COPY-UNSIGNED.
 // 2026-11-25: the owner's demo notes of 23 Nov (#114-#123) and 25 Nov (#177-#185, screen setup-terms)
 // applied in his words, tidied for grammar only. COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-25';
+// 2026-11-25b: owner demo note #189 (25 Nov): section 7 is his note #184 paragraph, section 6 names
+// the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
+// move for the whole note. COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
@@ -45,40 +48,14 @@ export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's l
 
 /** The board's key points, shown above the full text. */
 export const KEY_POINTS: readonly string[] = [
-  // Owner demo note #115 (23 Nov, on this key point): his explanation added after it, in his words;
-  // "The coins sit are held" tidied to "The coins are held". COPY-UNSIGNED.
-  // Owner demo notes #177 and #178 (25 Nov): first sentence, "Your coins" and "agree and" in his words. COPY-UNSIGNED.
-  'X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must agree and cryptographically sign off on the transaction.',
-  // Owner demo note #116 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  // Owner demo note #179 (25 Nov): "on X2F" added, his words. COPY-UNSIGNED.
-  'If you post an ad, whether to sell or buy on X2F, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees.',
-  // Owner demo note #118 (23 Nov): a new point between the fee and the chat ones, his words; a comma
-  // and "if" added for grammar. COPY-UNSIGNED.
-  // Owner demo note #180 (25 Nov): "trade intervention", not "site". COPY-UNSIGNED.
-  'Moderators are at your disposal if something goes wrong, if you feel the need for trade intervention, or just to make sure a trade ends smoothly.',
-  // Owner demo note #117 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  // Owner demo note #181 (25 Nov), his words; "mod" written "moderator" and "&" as "and". COPY-UNSIGNED.
-  'Moderators can read your trade chat only if their presence is requested and a dispute is opened, which gives that particular moderator the ability to unlock and decrypt the trade and have full access to all communications that have transpired so far.',
-  // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
-  // "Dispute records are kept for 30 days." COPY-UNSIGNED.
-  // Owner demo note #119 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  // Owner demo note #182 (25 Nov): "all trades that have no disputes", his words. COPY-UNSIGNED.
-  'To adhere to our privacy policy and to maintain strong confidentiality, all trades that have no disputes will be deleted on the 30th day after completion.',
-  // Owner demo note #120 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  'Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.',
-  // Owner demo note #121 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  // Owner demo note #183 (25 Nov): opening sentence in his words. COPY-UNSIGNED.
-  'We never track our users. Period. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.',
-  // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
-  // we collect." COPY-UNSIGNED
-  // Owner demo note #122 (23 Nov, on this key point): his paragraph in place of the #102 line. COPY-UNSIGNED.
-  // Owner demo note #184 (25 Nov): the whole point replaced with his paragraph, word for word. COPY-UNSIGNED.
-  // not-a-refusal: Terms text
-  "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
-  // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
-  // Owner demo note #123 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  // Owner demo note #185 (25 Nov): "60 days or longer", his words. COPY-UNSIGNED.
-  'X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days or longer is closed automatically.',
+  // COPY-UNSIGNED: draft one-liners for owner demo note #189 (25 Nov), replacing notes #109-#185's
+  // longer points; awaiting his OK.
+  'X2F never holds your XMR: it sits in a 2-of-3 multisig escrow, and any two of the buyer, the seller and X2F must agree to move it.',
+  'Whoever posts the ad pays a 1% fee when the trade completes. Taking an ad is free.',
+  'Moderators step in only when asked. Opening a dispute lets that moderator decrypt the trade and its chat.',
+  'Trades without a dispute are deleted after 30 days. Disputed trades are scrubbed and deleted after 90.',
+  'We never track you: no IP addresses, email, phone numbers or device details are logged or stored.',
+  'An account not signed into for 60 days or longer is closed automatically.',
 ];
 
 /** The heading of the section the tick box's "Privacy Policy" points at. */
@@ -170,17 +147,21 @@ export const TERMS: TermsSection[] = [
     paragraphs: [
       // COPY-UNSIGNED: owner demo notes 13 Nov: his 30/90 wording, and "keep all of this" for the
       // tracking sentence (comment d1a46566); the old third paragraph is "now redundant".
-      'X2F only provides access to completed trades for 30 days, after which the entirety of the trade is purged. The only exception to this is if there is a dispute, in which case the dispute is kept for 90 days after completion, after being scrubbed with our internal privacy tool, and used for training moderators. At the 90-day mark it is all purged, no exceptions. X2F does not track you, does not use analytics and removes location and device details from uploads.',
+      // Owner demo note #189 (25 Nov 2026): "(Exif and other metadata) from uploaded payment proofs",
+      // as proof/reencode.ts does (it redraws a proof and refuses any output still carrying metadata). COPY-UNSIGNED.
+      'X2F only provides access to completed trades for 30 days, after which the entirety of the trade is purged. The only exception to this is if there is a dispute, in which case the dispute is kept for 90 days after completion, after being scrubbed with our internal privacy tool, and used for training moderators. At the 90-day mark it is all purged, no exceptions. X2F does not track you, does not use analytics and removes location and device details (Exif and other metadata) from uploaded payment proofs.',
       'No IP addresses are logged, even in disputes.',
     ],
   },
   {
     heading: '7. Police and government requests',
     paragraphs: [
-      // Owner demo note #107 (17 Nov, de4e3eea): "within the scope of the writ." after "what little
-      // information we hold".
+      // Owner demo note #189 (25 Nov 2026): the law-enforcement paragraph (notes #107 and earlier)
+      // replaced by his note #184 paragraph, word for word. The lawyer placeholder, not about law
+      // enforcement, is kept on its own line. COPY-UNSIGNED.
       // not-a-refusal: Terms text
-      "If police or a government agency sends us a lawful request for data backed by a warrant, we will provide what little information we hold within the scope of the writ. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+      "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
+      '[Lawyer to word this.]',
     ],
   },
   {

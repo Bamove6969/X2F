@@ -1,11 +1,11 @@
 /**
  * The sign-up calls of Getting started (spec 6.1, Plan 2 register routes with FU-A's names). Every
  * register call takes the public `displayName` and the private `loginName` (they must differ) and
- * carries the Terms version the person accepted on the first screen (`acceptedTerms`, Plan 2 R10)
- * and the signature they gave with it (`termsSignature`, owner 8 Nov 2026).
+ * carries the Terms version the person accepted on the first screen (`acceptedTerms`, Plan 2 R10).
+ * No signature: a trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
  * All of them go through the typed client (`authApi`).
  */
-import { AuthApiError, registerWithWebAuthn, type PgpChallenge, type TermsSignature, type WebAuthnKind } from '@x2f/auth-client';
+import { AuthApiError, registerWithWebAuthn, type PgpChallenge, type WebAuthnKind } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import { authApi, deviceLabel } from '../auth/authApi.js';
 import { KEY_UNAVAILABLE, refusalText } from '../auth/refusals.js';
@@ -17,16 +17,15 @@ export interface Names {
 
 export type RegisterPgpStart = PgpChallenge & { fingerprint: string };
 
-/** What the Terms screen hands on: the version accepted and the signature given with it. */
+/** What the Terms screen hands on: the version accepted with the tick (owner demo note #187: no signature). */
 export interface TermsAcceptance {
   version: string;
-  signature: TermsSignature;
 }
 
 export function registerPassword(names: Names, password: string, terms: TermsAcceptance): Promise<{ displayName: string }> {
   return authApi.registerPassword({
     displayName: names.displayName, loginName: names.loginName, password, deviceLabel: deviceLabel(),
-    acceptedTerms: terms.version, termsSignature: terms.signature,
+    acceptedTerms: terms.version,
   });
 }
 
@@ -35,12 +34,12 @@ export function registerPgpStart(names: Names, publicKey: string): Promise<Regis
 }
 
 export async function registerPgpFinish(challengeId: string, code: string, terms: TermsAcceptance): Promise<void> {
-  await authApi.registerPgpFinish({ challengeId, code, deviceLabel: deviceLabel(), acceptedTerms: terms.version, termsSignature: terms.signature });
+  await authApi.registerPgpFinish({ challengeId, code, deviceLabel: deviceLabel(), acceptedTerms: terms.version });
 }
 
 /** A passkey or security key: the browser's ceremony between the start and the finish. */
 export async function registerWebAuthn(names: Names, kind: WebAuthnKind, terms: TermsAcceptance): Promise<void> {
-  await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), terms.version, terms.signature);
+  await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), terms.version);
 }
 
 /** The API's error code from either client, or `null` for anything else (a network failure, a cancelled ceremony). */

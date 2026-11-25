@@ -20,8 +20,9 @@
 
 /*
  * Like the boards, the frame is the screen's height: the middle scrolls, the buttons stay put. The
- * Terms box takes the room left; on a short phone, where the box at its minimum plus the signature
- * pad do not fit, the middle scrolls too, so nothing is ever cut off (owner, 8 Nov 2026: the pad).
+ * full Terms flow in that middle with no scroll box of their own (owner demo note #187, 25 Nov
+ * 2026: a box scrolling inside the scrolling page trapped the thumb on phones), so the middle is
+ * the one thing that scrolls.
  */
 .x2f-start--fit .x2f-start__main {
   overflow-y: auto;
@@ -312,6 +313,12 @@
   font-size: 15px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
+}
+
+/* Owner demo note #190 (25 Nov): "Already have an account? Log in" last, under the button. */
+.x2f-start__foot .x2f-start__help {
+  margin-top: 8px;
+  text-align: center;
 }
 
 /* Owner demo note #142 (23 Nov): the "New to PGP?" explainer bright and bold, so it sticks out. */
@@ -823,6 +830,11 @@
   line-height: inherit;
 }
 
+/*
+ * The Terms box. The staff invite's Terms step (apps/staff-web, unchanged) still scrolls it inside
+ * its step card; in the trader app's setup frame it is a card in the page with no height limit or
+ * scroll of its own (owner demo note #187, the rule below).
+ */
 .x2f-terms {
   flex: 1 1 auto;
   min-height: 140px;
@@ -833,6 +845,14 @@
   background: var(--x2f-surface);
   font-size: 16px;
   line-height: 22px;
+}
+
+/* Owner demo note #187 (25 Nov 2026): no box scrolling inside the scrolling page. */
+.x2f-start .x2f-terms {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 .x2f-terms__note {
@@ -900,6 +920,11 @@
 
 .x2f-check input:disabled + span {
   color: var(--x2f-ink-muted);
+}
+
+/* Owner demo note #189: the Terms line's words are labels for the box; its two buttons are not. */
+.x2f-check label {
+  cursor: pointer;
 }
 
 /*

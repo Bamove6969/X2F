@@ -105,19 +105,19 @@ const ENTRIES: readonly Entry[] = [
     id: 'create-account',
     topic: 'getting-started',
     q: 'How do I create an account?',
-    a: 'Agree to the Terms and sign them, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
-    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:3-6 the signature pad`],
+    // Owner demo note #187 (25 Nov 2026): agreeing is a tick, no signature.
+    a: 'Tick the box to agree to the Terms, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
+    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:254 I have read and agree to the`],
   },
   {
     id: 'personal-details',
     topic: 'getting-started',
     q: 'Do I need to give my name, email or phone number?',
-    a: 'X2F asks for no email or phone number. To agree to the Terms you sign your name, but a scribble or an X is fine, and the signature is stored sealed and never shown. Your display name is shown to other traders, so pick one that does not identify you.',
+    // Owner demo note #187 (25 Nov 2026): no signature or name to agree to the Terms, just a tick.
+    a: 'X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your display name is shown to other traders, so pick one that does not identify you.',
     sources: [
-      `${WEB}/setup/SignaturePad.tsx:205 Sign your name here`,
-      `${WEB}/setup/SignaturePad.tsx:205 A scribble or an X is fine.`,
-      'apps/api/src/termsSignature.ts:12 It is never shown to other users',
-      'apps/api/src/termsSignature.ts:29 At rest it is sealed',
+      `${WEB}/setup/Terms.tsx:254 I have read and agree to the`,
+      'apps/api/src/accounts.ts:342 absent → `null`',
       `${SPEC}:215 The display name is separate and public`,
     ],
   },
@@ -724,7 +724,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'teams',
     q: 'How do I add a team member?',
     a: 'Send an invite from Settings, under Team; it works for 24 hours. The member then signs the Terms and sets up their own login with a PGP key, passkey or security key.',
-    sources: ['apps/api/src/team/members.ts:37 INVITE_TTL_MS', `${AUTH}/methods.ts:37 kind === 'member'`, 'apps/api/src/termsSignature.ts:3-4 a team member at join'],
+    sources: ['apps/api/src/team/members.ts:37 INVITE_TTL_MS', `${AUTH}/methods.ts:37 kind === 'member'`, 'apps/api/src/termsSignature.ts:11 a team member at join'],
     facts: ['inviteHours'],
   },
   {
@@ -754,12 +754,12 @@ const ENTRIES: readonly Entry[] = [
     id: 'what-is-stored',
     topic: 'privacy',
     q: 'What does X2F keep about me?',
-    a: 'Your display name, your username stored only as a one-way code, and the signature you gave for the Terms, stored sealed. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, other public keys, or a password kept only as a hash. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.',
+    // Owner demo note #187 (25 Nov 2026): a trader gives no signature for the Terms, only the tick.
+    a: 'Your display name, your username stored only as a one-way code, and which version of the Terms you agreed to and when. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, other public keys, or a password kept only as a hash. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.',
     sources: [
       `${SPEC}:34 password hashes`,
       `${SPEC}:215 Stored only as HMAC-SHA-256`,
-      'apps/api/src/termsSignature.ts:5 Stored with the account',
-      'apps/api/src/termsSignature.ts:29 At rest it is sealed',
+      'apps/api/src/accounts.ts:342 absent → `null`',
       `${SPEC}:211 v4 keys, which are most keys in use, are stored whole, with their user IDs, which often hold a real name and email`,
       `${T}/retention.ts:6 An undisputed trade self-destructs`,
       `${SPEC}:15 X2F asks for no name, email or phone`,
@@ -865,16 +865,23 @@ const ENTRIES: readonly Entry[] = [
   {
     id: 'terms-signature',
     topic: 'privacy',
-    q: 'Who sees the signature I gave for the Terms?',
-    a: 'Nobody else. It is stored sealed with your account and never shown to other traders.',
-    sources: ['apps/api/src/termsSignature.ts:12 It is never shown to other users', 'apps/api/src/termsSignature.ts:29 At rest it is sealed'],
+    // Owner demo note #187 (25 Nov 2026): a trader no longer signs; a team member still does at join.
+    q: 'Do I sign anything to agree to the Terms?',
+    a: 'No. You agree with a single tick box, and nothing is drawn or typed. A team member signs once when joining a team; that signature is stored sealed with their own login and never shown to anyone.',
+    sources: [
+      `${WEB}/setup/Terms.tsx:254 I have read and agree to the`,
+      'apps/api/src/termsSignature.ts:5 A team member at join',
+      'apps/api/src/termsSignature.ts:20 It is never shown to other users',
+      'apps/api/src/termsSignature.ts:37 At rest it is sealed',
+    ],
   },
   {
     id: 'closed-account-data',
     topic: 'privacy',
     q: 'What happens to my details when my account closes after 60 days?',
-    a: 'Your PGP keys are deleted, so you can use the same key on a new account, and the signature you gave for the Terms is erased. Your username and display name stay taken.',
-    sources: ['apps/api/src/accountInactivity.ts:24-25 keys are deleted so the person can reuse one', 'apps/api/src/accountInactivity.ts:82 terms_signature = null', 'apps/api/src/termsSignature.ts:7 erased when the account closes', 'apps/api/src/accountInactivity.ts:36 INACTIVE_MS'],
+    // Owner demo note #187 (25 Nov 2026): the Terms signature sentence went with the trader's signature.
+    a: 'Your PGP keys are deleted, so you can use the same key on a new account. Your username and display name stay taken.',
+    sources: ['apps/api/src/accountInactivity.ts:24-25 keys are deleted so the person can reuse one', 'apps/api/src/accountInactivity.ts:36 INACTIVE_MS'],
     facts: ['inactiveDays'],
   },
 

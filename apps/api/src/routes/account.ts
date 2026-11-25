@@ -4,7 +4,7 @@ import {
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
-import { SIGNED_BODY_LIMIT, checkTermsSignature, sealTermsSignature } from '../termsSignature.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature, optionalTermsSignature, sealTermsSignature } from '../termsSignature.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -451,13 +451,19 @@ export function accountRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/terms',
     // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
-    // security change; refusing it could block finishing open trades). A changed version asks for
-    // a new signature too (owner, 8 Nov 2026): `{ version, signature }`, the signature replacing
-    // the one before (checkTermsSignature's 400s), with nothing else recorded about the signing.
+    // security change; refusing it could block finishing open trades). `{ version, signature? }`
+    // (owner, 8 Nov 2026; the signature optional since owner demo note #187), the signature, if
+    // any, replacing the one before, with nothing else recorded about the signing.
     // Only a changed version writes: repeating the current one answers 204 and changes nothing, so
     // a session can't rewrite what was signed or when.
     // Review 2026-11-08 F1: a team member accepts for themselves, on their own login account; the
     // team account's acceptance stays the account owner's (a member never accepts for the account).
+    // Owner demo note #187 (25 Nov 2026): a trader no longer signs, so for a trader's session
+    // `signature` is optional (`optionalTermsSignature`: absent → none; sent → the same strict
+    // 400s). A team member's session still signs (`checkTermsSignature`, as before; owner 9 Nov
+    // 2026, p11-14). The version check is unchanged and comes first. A trader's changed version
+    // writes the new signature, or null when none was given: a stored signature always belongs to
+    // the stored version, so the previous version's is never left beside the new one.
     { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
@@ -465,12 +471,13 @@ export function accountRoutes(app: FastifyInstance): void {
       const body = req.body as { version?: unknown; signature?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
-      const signature = checkTermsSignature(body !== null && typeof body === 'object' ? body.signature : undefined);
+      const givenSignature = body !== null && typeof body === 'object' ? body.signature : undefined;
+      const signed = req.auth.memberId !== null ? { member: checkTermsSignature(givenSignature) } : { trader: optionalTermsSignature(givenSignature) };
       const now = d.clock();
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
-        if (req.auth.memberId !== null) {
+        if ('member' in signed) {
           // The member signs too (owner 9 Nov 2026, p11-14), sealed to their own login account; only
           // a changed version writes, as for a trader.
           const { rows } = await db.query<{ member_account_id: string | null }>('select member_account_id from team_members where id = $1', [
@@ -481,12 +488,12 @@ export function accountRoutes(app: FastifyInstance): void {
             await db.query(
               `update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $4
                 where id = $1 and kind = 'member' and terms_version is distinct from $2`,
-              [memberAccountId, version, now, sealTermsSignature(d.config, signature, memberAccountId)],
+              [memberAccountId, version, now, sealTermsSignature(d.config, signed.member, memberAccountId)],
             );
           }
         } else {
           await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
-            req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),
+            req.auth.accountId, version, now, 'trader', signed.trader === null ? null : sealTermsSignature(d.config, signed.trader, req.auth.accountId),
           ]);
         }
       });
