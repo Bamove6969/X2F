@@ -11,6 +11,7 @@
  * card rather than pinned to the bottom (SetupFrame `footerInline`), in thumb reach above a phone
  * keyboard.
  */
+import { Logo } from '../../ui/Logo.js';
 import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { BADGE_SET, BadgeSeal } from '../../ui/Badges.js';
@@ -65,8 +66,9 @@ function TraderPreview({ name }: { name: string }) {
         <h2 className="x2f-start__showcase-h" id="display-preview-h">
           What your trader card could look like
         </h2>
-        <span className="x2f-start__showcase-tag" data-part="preview-example">
-          Example
+        {/* Owner demo note #224 (25 Nov): "Get rid of the word example and put the x2f logo". */}
+        <span className="x2f-start__showcase-logo" data-part="preview-logo">
+          <Logo size={24} decorative />
         </span>
       </div>
       <IdentityRow

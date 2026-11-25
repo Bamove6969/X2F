@@ -1526,17 +1526,6 @@
   color: var(--x2f-ink-muted);
 }
 
-.x2f-start__showcase-tag {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--x2f-ink-muted);
-}
 
 .x2f-start__showcase .x2f-ident__name {
   overflow-wrap: anywhere;
@@ -1583,4 +1572,11 @@
   font-size: 14px;
   line-height: 20px;
   color: var(--x2f-ink-muted);
+}
+
+/* Owner demo note #224 (25 Nov): the X2F mark in the card's corner, where "Example" was. */
+.x2f-start__showcase-logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--x2f-ink);
 }
