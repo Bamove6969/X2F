@@ -1,6 +1,7 @@
 // Plan 4 Task 7: staff management (members, invites, switch off and on, hours, roles, removal).
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { checkNewDisplayName } from '@x2f/accounts';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { recordBannedValues } from '../../src/bans.js';
@@ -55,8 +56,20 @@ const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${toke
 /** The Terms every staff invitee accepts and signs with their names (owner 9 Nov 2026, p11-14). */
 const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG });
 
+/**
+ * A login name whose display name `Kes<login>` passes the new-name rules. The base-36 clock part can
+ * spell a reserved word on the look-alike skeleton (digits fold to letters: `m0d`, `r00t`, `x2f`),
+ * which made this test flaky with 400 `display-name-reserved`; such a pick is skipped, never sent.
+ */
+function safeLoginName(): string {
+  for (;;) {
+    const n = loginName();
+    if (checkNewDisplayName(`Kes${n}`).ok) return n;
+  }
+}
+
 async function pickNames(b: StaffBrowser, token: string) {
-  const n = loginName();
+  const n = safeLoginName();
   const res = await b.post(acceptUrl(token, '/account'), { displayName: `Kes${n}`, loginName: n, ...signed() });
   return { res, loginName: n, displayName: `Kes${n}` };
 }

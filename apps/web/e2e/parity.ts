@@ -196,6 +196,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   SetupTerms: [
     {
+      text: "[Placeholder: the final text comes from X2F's lawyer.]",
+      why: "Owner's full-length Terms, 25 Nov 2026 (version 2026-11-25c), replaced the section text word for word.",
+    },
+    {
+      text: '7. Police and government requests',
+      why: "Owner's full-length Terms, 25 Nov 2026 (version 2026-11-25c), replaced the section text word for word.",
+    },
+    {
+      text: '9. Liability, changes and law',
+      why: "Owner's full-length Terms, 25 Nov 2026 (version 2026-11-25c), replaced the section text word for word.",
+    },
+    {
       text: "No IP addresses are logged.",
       why: "Owner demo note #189 (25 Nov 2026): the key points are six draft one-liners (awaiting his OK; Terms version 2026-11-25b); this one says \"We never track you: no IP addresses, email, phone numbers or device details are logged or stored.\" Before it, owner demo notes #121 and #183.",
     },
@@ -280,6 +292,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // ticked and are set up one after another, so the lead says so (COPY-UNSIGNED). The board predates
   // the notes.
   SetupLogin: [
+    {
+      text: 'New to PGP?',
+      why: "Owner demo note #221 (25 Nov 2026): the button is now 'Learn About' with PGP, Security Key, Passkey, OTP and Password; 'PGP' opens the same paragraph.",
+    },
     {
       text: 'Step 2 of 5',
       why: 'Owner demo note #199 (25 Nov 2026): the display-name screen after the username is "Step 2 of 5", so choosing the login methods reads "Step 3 of 5", one step with setting them up (the PGP, password and key boards already say "Step 3 of 5"); backup stays 4 and wallet 5. The board predates the display-name screen.',
