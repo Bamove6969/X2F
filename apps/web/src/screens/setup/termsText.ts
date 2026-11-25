@@ -45,7 +45,8 @@ export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's l
 export const KEY_POINTS: readonly string[] = [
   // Owner demo note #115 (23 Nov, on this key point): his explanation added after it, in his words;
   // "The coins sit are held" tidied to "The coins are held". COPY-UNSIGNED.
-  'X2F never holds your coins. The coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must cryptographically sign off on the transaction.',
+  // Owner demo note #177 (25 Nov): first sentence and "Your coins" in his words. COPY-UNSIGNED.
+  'X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain inside a special smart address (a multisig address) that is mathematically locked by three separate private keys: one held by the buyer, one by the seller, and one by X2F (the mediator). To move the coins out of that address, any two of those three keys must cryptographically sign off on the transaction.',
   // Owner demo note #116 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees.',
   // Owner demo note #118 (23 Nov): a new point between the fee and the chat ones, his words; a comma
