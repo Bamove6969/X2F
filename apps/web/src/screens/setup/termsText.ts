@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken"; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", and note #212 (section 7): the lawyer placeholder removed; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -159,11 +159,10 @@ export const TERMS: TermsSection[] = [
     heading: '7. Police and government requests',
     paragraphs: [
       // Owner demo note #189 (25 Nov 2026): the law-enforcement paragraph (notes #107 and earlier)
-      // replaced by his note #184 paragraph, word for word. The lawyer placeholder, not about law
-      // enforcement, is kept on its own line. COPY-UNSIGNED.
+      // replaced by his note #184 paragraph, word for word. The "[Lawyer to word this.]" line that
+      // followed is gone (owner demo note #212, 25 Nov: "get rid of this now"). COPY-UNSIGNED.
       // not-a-refusal: Terms text
       "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
-      '[Lawyer to word this.]',
     ],
   },
   {
