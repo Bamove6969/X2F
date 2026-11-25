@@ -141,7 +141,7 @@ const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
     key: 'security-key',
     label: 'Security Key',
     text:
-      'A security key is a small physical device, such as a YubiKey or a Nitrokey, that you plug into your computer or tap against your phone. When you log in, X2F asks the key to prove it is the one you registered, and you touch it to confirm. The secret inside it can never be copied off the device, so someone who steals your Login ID and password still cannot get in without the key in their hand. Keep a second key or another login method as a backup in case one is lost.',
+      'A security key is a small physical device, such as a YubiKey or a Nitrokey, that you plug into your computer or tap against your phone. When you log in, X2F asks the key to prove it is the one you registered, and you touch it to confirm. The secret inside it can never be copied off the device, so someone who steals your Login ID and password would still need the key in their hand to get in. Keep a second key or another login method as a backup in case one is lost.',
   },
   {
     key: 'passkey',
