@@ -25,6 +25,8 @@
 // 2026-11-25b: owner demo note #189 (25 Nov): section 7 is his note #184 paragraph, section 6 names
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
+// 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
+// "X2F is a facilitator."; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -68,7 +70,7 @@ export const TERMS: TermsSection[] = [
       // COPY-UNSIGNED: owner demo notes 13 Nov, his opening and the draft's married ("find a way to
       // marry them without overlap"). Owner demo note #93 (16 Nov, e596a8e5 and his reply 150862d3): a
       // period after "with each other", and the next sentence starts "Here they can exchange their".
-      'X2F is a place where like-minded, privacy-focused individuals or groups come together to trade Monero (XMR) with each other. Here they can exchange their hard-earned XMR for cash, bank transfers or the payment app that suits them, or, vice versa, buy XMR and pay for it in the way that is easiest or most convenient for them. X2F is a facilitator. It just brings those people together and lets them interact safely and securely, with a built-in escrow system and moderators to resolve disputes if one should ever happen. It is not a party to your trades, it is not a bank or an exchange, and it never holds your coins.',
+      'X2F is a place where like-minded, privacy-focused individuals or groups come together to trade Monero (XMR) with each other. Here they can exchange their hard-earned XMR for cash, bank transfers or the payment app that suits them, or, vice versa, buy XMR and pay for it in the way that is easiest or most convenient for them. X2F is a meeting place. It just brings those people together and lets them interact safely and securely, with a built-in escrow system and moderators to resolve disputes if one should ever happen. It is not a party to your trades, it is not a bank or an exchange, and it never holds your coins.',
     ],
   },
   {
