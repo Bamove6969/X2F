@@ -58,13 +58,36 @@ export function randomLoginName(random?: RandomFill): string {
  * and look-alike rule `isReservedNewName` of @x2f/accounts) and differ, ignoring case, from the
  * private login name (`avoid`), as checkNames requires. The API still checks the staff names and
  * whether a name is taken when the account is made.
+ *
+ * The display name "cannot be traced back to your login username" (owner demo note #195), so a
+ * suggestion that shares a word with the login name is skipped (`tracesBack`): amber_otter_42 must
+ * never be offered amber_otter_43, nor amber_heron_17.
  */
 export function suggestDisplayNames(count: number, avoid: string, random?: RandomFill): string[] {
   const out: string[] = [];
-  const avoidKey = avoid.toLowerCase();
   while (out.length < count) {
     const name = randomLoginName(random);
-    if (name.toLowerCase() !== avoidKey && !out.includes(name) && checkNewDisplayName(name).ok) out.push(name);
+    if (!tracesBack(name, avoid) && !out.includes(name) && checkNewDisplayName(name).ok) out.push(name);
   }
   return out;
+}
+
+/** The letter runs of a name, lower case ("Juniper.Oak_7" → ["juniper", "oak"]). */
+function wordsOf(name: string): string[] {
+  return name.toLowerCase().split(/[^a-z]+/).filter((w) => w !== '');
+}
+
+/**
+ * Whether a suggested display name would point back at the login name: the same name ignoring
+ * case, a word in common (the adjective or the animal of a generated login name, or any letter run
+ * of a typed one), or the login name's longest letter run anywhere inside it (from 3 letters, so
+ * "otter" in "otters" counts, but a lone "a" or "jo" does not empty the lists).
+ */
+export function tracesBack(suggestion: string, loginName: string): boolean {
+  const s = suggestion.toLowerCase();
+  if (s === loginName.toLowerCase()) return true;
+  const login = wordsOf(loginName);
+  if (wordsOf(suggestion).some((w) => login.includes(w))) return true;
+  const longest = login.reduce((a, w) => (w.length > a.length ? w : a), '');
+  return longest.length >= 3 && s.includes(longest);
 }

@@ -48,16 +48,18 @@ export function Username({ check }: { check?: NameChecker } = {}) {
   const next = () => {
     const r = checkNewLoginName(loginName);
     if (spaced) {
-      setError(spaceProblem('username'));
+      // The step calls it the Login ID (owner demo notes #197 and #199).
+      setError(spaceProblem('username', 'Login ID'));
       return;
     }
     if (!r.ok) {
       // A login name has no reserved words (only a display name does), so any refusal is its shape.
-      setError(nameShapeProblem('Your username', r.reason === 'length' ? 'length' : 'characters'));
+      setError(nameShapeProblem('Your Login ID', r.reason === 'length' ? 'length' : 'characters'));
       return;
     }
     if (availability.state === 'taken') {
-      setError('That username is taken. Pick another.');
+      // COPY-UNSIGNED (owner demo notes #197 and #199: "Login ID" on the sign-up)
+      setError('That Login ID is taken. Pick another.');
       return;
     }
     update({ loginName: r.name, challenge: null });
@@ -132,7 +134,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
         </span>
         {spaced && error === null ? (
           <p className="x2f-error" id="uname-space" data-part="name-space">
-            {spaceProblem('username')}
+            {spaceProblem('username', 'Login ID')}
           </p>
         ) : null}
         {/* Owner demo note #196: the rules tick as the person types (they were one grey sentence). COPY-UNSIGNED. */}

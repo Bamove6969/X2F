@@ -9,6 +9,7 @@ import { CHECK_DELAY_MS } from '../src/screens/setup/availability.js';
 import { DisplayName } from '../src/screens/setup/DisplayName.js';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
 import { checkNewDisplayName } from '../src/screens/setup/names.js';
+import { tracesBack } from '../src/screens/setup/randomName.js';
 import { Username } from '../src/screens/setup/Username.js';
 import { fire, render } from './render.js';
 
@@ -239,7 +240,7 @@ describe('note #108: no spaces in the names', () => {
     const host = show('username', api);
     const input = host.querySelector<HTMLInputElement>('#uname')!;
     type(input, 'juniper oak');
-    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A username has no spaces.');
+    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A Login ID has no spaces.');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.getAttribute('aria-describedby')).toContain('uname-space');
     await wait(CHECK_DELAY_MS * 2);
@@ -311,7 +312,7 @@ describe('notes #196 and #197: the private login ID step', () => {
     type(input, 'juniper oak');
     expect(states(host)).toEqual(['true', 'true', 'false']);
     // Owner demo note #108's inline line stays.
-    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A username has no spaces.');
+    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A Login ID has no spaces.');
     expect(host.querySelector('#uname')?.getAttribute('aria-describedby')).toBe('uname-space uname-status uname-rules uname-help');
     type(input, 'a'.repeat(21));
     expect(states(host)).toEqual(['false', 'true', 'true']);
@@ -382,10 +383,15 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     expect(card.querySelector('.x2f-badge')?.getAttribute('data-tone')).toBe('caution');
     expect(byPart(card, 'preview-stats')?.textContent).toBe('0 trades · No ratings yet');
     expect(card.textContent).not.toContain('100%');
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen');
-    expect(byPart(card, 'preview-name')?.textContent).toBe('Lumen');
+    // Only a name that passes the display-name rules is previewed (review of 6e984272).
+    for (const bad of ['Lumen', 'Lumen Kai12', 'x2f-support']) {
+      type(host.querySelector<HTMLInputElement>('#display-name')!, bad);
+      expect(byPart(card, 'preview-name')?.textContent, bad).toBe('Your display name');
+    }
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    expect(byPart(card, 'preview-name')?.textContent).toBe('Lumen.Kai');
     expect(byPart(card, 'preview-name')?.hasAttribute('data-placeholder')).toBe(false);
-    expect(card.querySelector('.x2f-avatar')?.textContent).toBe('LU');
+    expect(card.querySelector('.x2f-avatar')?.textContent).toBe('LK');
   });
 
   it('offers 3 suggestions that pass the display-name rules and differ from the Login ID; a tap fills the box; ↻ draws new ones', () => {
@@ -398,6 +404,7 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     for (const n of first) {
       expect(checkNewDisplayName(n).ok, n).toBe(true);
       expect(n.toLowerCase()).not.toBe('juniper.oak');
+      expect(tracesBack(n, 'juniper.oak'), n).toBe(false);
     }
     for (const c of chips()) expect(c.hasAttribute('data-primary')).toBe(false);
     fire(chips()[1]!, new MouseEvent('click', { bubbles: true }));

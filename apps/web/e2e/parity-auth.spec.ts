@@ -1,5 +1,5 @@
 // Phone checks for the Task 30 log-in screens, /login and /login/backup. No board shows these
-// screens: SetupLogin and SetupBackup are the sign-up steps ("Step 2 of 5", "Add a backup way to
+// screens: SetupLogin and SetupBackup are the sign-up steps ("Step 3 of 5" since owner demo note #199, "Add a backup way to
 // log in"), so their copy is not compared here (lead decision 2026-10-26; "Login and Login/backup
 // boards missing" is a design to-do for the owner). What expectParity blocks on besides copy is
 // still checked, at both phone sizes: exactly one visible primary action, no sideways scroll, and
