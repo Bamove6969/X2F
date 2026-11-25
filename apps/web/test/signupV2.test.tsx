@@ -119,6 +119,21 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     );
   });
 
+  it('Learn About lists the five methods down the middle and opens one write-up at a time (owner demo note #221)', () => {
+    const host = show(<Login />, setup());
+    const learn = byPart(host, 'learn-about')!;
+    expect(learn.querySelector('h2')!.textContent).toBe('Learn About');
+    expect([...learn.querySelectorAll('li > button')].map((b) => b.textContent)).toEqual(['PGP', 'Security Key', 'Passkey', 'OTP', 'Password']);
+    click(byPart(host, 'learn-passkey'));
+    expect(byPart(host, 'learn-passkey-text')!.textContent).toMatch(/fingerprint, face or device PIN/);
+    expect(byPart(host, 'learn-passkey')!.getAttribute('aria-expanded')).toBe('true');
+    click(byPart(host, 'learn-otp'));
+    expect(byPart(host, 'learn-passkey-text')).toBeNull();
+    expect(byPart(host, 'learn-otp-text')!.textContent).toMatch(/six-digit code every 30 seconds/);
+    click(byPart(host, 'learn-otp'));
+    expect(byPart(host, 'learn-otp-text')).toBeNull();
+  });
+
   it('recommends PGPony for PGP on Android', () => {
     const host = show(<Login />, setup());
     click(byPart(host, 'pgp-explain'));
