@@ -12,8 +12,9 @@ import { ApiCallError, api } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
 import { refusalText } from './auth/refusals.js';
+import { isCantDoCode, walletRenameCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import type { WalletView } from './wallets-model.js';
-import { RENAME } from './walletsCopy.js';
+import { RENAME, walletNameHelp } from './walletsCopy.js';
 
 /** Whether the name typed may be saved over `current`: allowed by the rule, and a change. */
 export function renameReady(raw: string, current: string): boolean {
@@ -21,13 +22,25 @@ export function renameReady(raw: string, current: string): boolean {
   return clean !== null && clean !== current;
 }
 
-export function RenameSheet({ wallet, onClose, onRenamed }: { wallet: WalletView; onClose: () => void; onRenamed: (label: string) => void }) {
+export function RenameSheet({
+  wallet,
+  onClose,
+  onRenamed,
+  onRefused,
+}: {
+  wallet: WalletView;
+  onClose: () => void;
+  onRenamed: (label: string) => void;
+  /** A refusal by a rule (403 `weak-session`, security review Medium 2): the screen shows it in CantDoThat. */
+  onRefused: (r: { code: CantDoCode; text: string }) => void;
+}) {
   const [name, setName] = useState(wallet.label);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clean = cleanWalletLabel(name);
   // Said only for something typed that the rule refuses (an empty field just keeps Save disabled).
-  const invalid = clean === null && name.trim() !== '';
+  const help = walletNameHelp(name);
+  const invalid = help !== null;
   const ready = renameReady(name, wallet.label);
 
   async function save() {
@@ -38,8 +51,12 @@ export function RenameSheet({ wallet, onClose, onRenamed }: { wallet: WalletView
       await api<unknown>(`/v1/wallets/${encodeURIComponent(wallet.id)}/label`, { method: 'PUT', body: { label: clean } });
       onRenamed(clean);
     } catch (e) {
-      if (e instanceof ApiCallError && e.code === 'not-found') setError(RENAME.gone);
-      else if (e instanceof ApiCallError && e.code === 'bad-request') setError(RENAME.invalid);
+      const code = e instanceof ApiCallError ? e.code : null;
+      const refused = isCantDoCode(code) ? walletRenameCantDoText(code) : null;
+      if (refused !== null && isCantDoCode(code)) onRefused({ code, text: refused });
+      else if (code === 'not-found') setError(RENAME.gone);
+      else if (code === 'bad-request') setError(walletNameHelp(name) ?? RENAME.failed);
+      else if (code === 'slow-down') setError(RENAME.capped);
       else setError(refusalText(e, RENAME.failed));
     } finally {
       setSaving(false);
@@ -72,7 +89,7 @@ export function RenameSheet({ wallet, onClose, onRenamed }: { wallet: WalletView
         <span aria-live="polite">
           {invalid ? (
             <span className="x2f-wallets__error" id="wallet-rename-invalid" data-part="wallet-rename-invalid">
-              {RENAME.invalid}
+              {help}
             </span>
           ) : null}
         </span>

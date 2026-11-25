@@ -538,6 +538,18 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null, 
 export const RECOVERY_SESSION_WALLETS =
   "You logged in with a backup, so you can't add wallets in this session. Log in with your usual method to add one.";
 
+/**
+ * Owner demo note #226, security review of wip/lead-note-226 (Medium 2): 403 `weak-session` on a
+ * wallet rename: a login that waits (just a username and password) renames no wallet. COPY-UNSIGNED (note #226)
+ */
+export const WALLET_RENAME_WEAK =
+  "This device logged in with just a username and password, so it can't rename wallets. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
+
+/** What a refused wallet rename says (owner demo note #226), for the codes with words of their own (else null). */
+export function walletRenameCantDoText(code: CantDoCode): string | null {
+  return code === 'weak-session' ? WALLET_RENAME_WEAK : null;
+}
+
 /** What a refused wallet add says, for the codes that have Wallets-specific words (else null). */
 export function walletsCantDoText(code: CantDoCode): string | null {
   return code === 'recovery-session' ? RECOVERY_SESSION_WALLETS : null;

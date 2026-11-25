@@ -5,7 +5,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { hashPassword } from '../src/auth/password.js';
-import { PAYOUT_WAIT_MS, applyWallets, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
+import { PAYOUT_WAIT_MS, WALLET_RENAMES_PER_DAY, applyWallets, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
+import { insertBan } from './helpers/bans.js';
 import { confirmTokenMethod, seedAccount, addUnusedSecurityKey } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
@@ -455,6 +456,8 @@ describe('staff and owner accounts hold no payout wallets (R3)', () => {
         await addWallet(b, { address, confirmToken: token }),
         await b.delete(`/v1/wallets/${crypto.randomUUID()}`),
         await b.get('/v1/wallets/rule'),
+        // Owner demo note #226: the rename.
+        await b.put(`/v1/wallets/${crypto.randomUUID()}/label`, { label: 'Savings' }),
       ];
       for (const res of responses) {
         expect(res.statusCode).toBe(403);
@@ -1305,13 +1308,88 @@ describe('renaming a wallet (owner demo note #226, 25 Nov 2026)', () => {
     expect((await rename(b, wallet.id, { label: 'Savings' })).statusCode).toBe(204);
   });
 
-  it('is cosmetic: from a username-and-password login it applies at once, stages nothing and needs no confirm', async () => {
+  it('security review Medium 2: a session whose changes must wait gets 403 weak-session, a waiting wallet included; nothing changes', async () => {
     const { id, b, sessionId } = await trader();
-    const { wallet } = await addConfirmed(b);
+    const { wallet: first } = await addConfirmed(b);
+    // A later wallet confirmed with a password waits 24 hours.
+    const { wallet: waiting } = await addConfirmed(b);
+    expect(waiting.usable).toBe(false);
     await deps.db.query(`update sessions set strength = 'weak-single' where id = $1`, [sessionId]);
-    expect((await rename(b, wallet.id, { label: 'Savings' })).statusCode).toBe(204);
-    expect((await row(wallet.id)).label).toBe('Savings');
+    for (const w of [first, waiting]) {
+      const res = await rename(b, w.id, { label: 'Savings' });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'weak-session' });
+      expect((await row(w.id)).label).toBe('Main');
+    }
     expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [id])).rows).toEqual([]);
-    expect((await deps.db.query('select 1 from account_holds where account_id = $1', [id])).rows).toEqual([]);
+    expect((await deps.db.query("select 1 from alerts where account_id = $1 and kind = 'wallet-renamed'", [id])).rows).toEqual([]);
+  });
+
+  it('security review Medium 1: a name that could pass for a wallet detail is refused at rename, add and sign-up (400)', async () => {
+    const { b } = await trader();
+    const { wallet } = await addConfirmed(b);
+    const spoofs = [
+      'Savings …Rk3Fz1', 'Main · Cake Wallet', 'Main • Ready', 'Main.. x', 'Default', 'd3fault wallet', 'READY', 'Usable', 'In use',
+      'Rk3Fz1', 'Wallet abc123x', 'S\u0430vings', '\u041Cy savings', 'Wallet \uA78F 2',
+    ];
+    for (const label of spoofs) {
+      const res = await rename(b, wallet.id, { label });
+      expect(res.statusCode, label).toBe(400);
+      expect(res.json()).toEqual({ error: 'bad-request' });
+    }
+    expect((await row(wallet.id)).label).toBe('Main');
+    // The add (and so the sign-up's first wallet, the same route) refuses them before any confirm is spent.
+    const address = fakeAddress();
+    const token = await confirmToken(b, walletAction(address));
+    for (const label of ['Default', 'Main · Cake Wallet', 'Rk3Fz1', 'S\u0430vings']) {
+      const res = await addWallet(b, { address, label, confirmToken: token });
+      expect(res.statusCode, label).toBe(400);
+    }
+    expect(await tokenUsed(token)).toBe(false);
+    const onboarding = await trader({ firstSession: true });
+    expect((await addWallet(onboarding.b, { address: fakeAddress(), label: 'Default' })).statusCode).toBe(400);
+    // Ordinary names still pass.
+    for (const label of ['Savings', 'Spending 2', 'Cake Wallet savings', 'Rent money', 'Monero GUI']) {
+      expect((await rename(b, wallet.id, { label })).statusCode, label).toBe(204);
+    }
+  });
+
+  it(`security review Medium 3: at most ${WALLET_RENAMES_PER_DAY} renames a day per account, then 429 slow-down; the next UTC day it works again`, async () => {
+    const { id, b } = await trader();
+    const { wallet } = await addConfirmed(b);
+    const { wallet: other } = await addConfirmed(b);
+    for (let i = 0; i < WALLET_RENAMES_PER_DAY; i++) {
+      expect((await rename(b, i % 2 === 0 ? wallet.id : other.id, { label: `Name ${String.fromCharCode(97 + i)}` })).statusCode, String(i)).toBe(204);
+    }
+    // The same name again is no change and is not counted.
+    expect((await rename(b, other.id, { label: (await row(other.id)).label })).statusCode).toBe(204);
+    const res = await rename(b, wallet.id, { label: 'One more' });
+    expect(res.statusCode).toBe(429);
+    expect((res.json() as { error: string }).error).toBe('slow-down');
+    expect((await row(wallet.id)).label).not.toBe('One more');
+    expect((await deps.db.query("select 1 from alerts where account_id = $1 and kind = 'wallet-renamed'", [id])).rows).toHaveLength(WALLET_RENAMES_PER_DAY);
+    const nextDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 1));
+    setNow(nextDay);
+    expect((await rename(await relogin(id), wallet.id, { label: 'One more' })).statusCode).toBe(204);
+  });
+
+  it('is refused like every wallet route: a staff session (wrong-account-kind), a banned account, stale Terms', async () => {
+    const owner = await trader();
+    const { wallet } = await addConfirmed(owner.b);
+    // (The site owner's account is unique in the database: the "staff and owner" test above covers it.)
+    const s = await trader({ kind: 'staff' });
+    const res = await rename(s.b, wallet.id, { label: 'Savings' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'wrong-account-kind' });
+    await insertBan(deps, owner.id, 'site');
+    const banned = await rename(owner.b, wallet.id, { label: 'Savings' });
+    expect(banned.statusCode).toBe(403);
+    expect((banned.json() as { error: string }).error).toBe('banned');
+    await deps.db.query('update account_bans set lifted_at = $2, lifted_by = account_id where account_id = $1', [owner.id, now]);
+    await deps.db.query("update accounts set terms_version = '2020-01-01' where id = $1", [owner.id]);
+    const stale = await rename(owner.b, wallet.id, { label: 'Savings' });
+    expect(stale.statusCode).toBe(403);
+    expect((stale.json() as { error: string }).error).toBe('terms-required');
+    expect((await row(wallet.id)).label).toBe('Main');
   });
 });

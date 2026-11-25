@@ -170,7 +170,7 @@ describe('owner #163: the ending shown is the real end of the address typed', ()
 
     // Welcome's "Wallet 1 …xxxx" comes from the saved wallet the API lists, so it is that address's end too.
     const c = checklist({ methods: ['pgp'] }, [{ id: 'w9', app: 'other', label: 'Wallet 1', address: typed, addressEnd: typed.slice(-6), usableFrom: '2026-11-23T00:00:00.000Z', usable: true, oneTime: false, isDefault: true, inUseByTrade: null }] as never, { registered: true, method: 'pgp', backup: 'recovery-codes' });
-    expect(c.wallet).toEqual({ app: 'Wallet 1', end: typed.slice(-6) });
+    expect(c.wallet).toEqual({ name: 'Wallet 1', app: null, end: typed.slice(-6) });
     expect(c.wallet!.end.endsWith(typed.slice(-4))).toBe(true);
   });
 });

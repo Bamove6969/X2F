@@ -826,7 +826,11 @@ test('owner demo note #226: the first wallet can be named in setup, and Welcome 
   // A name the API would refuse holds Finish setup back and says why (note #219's rule).
   await name.fill('a\u202Eb');
   await expect(page.locator('[data-part="wallet-finish"]')).toBeDisabled();
-  await expect(page.locator('[data-part="wallet-name-invalid"]')).toHaveText('Use 1 to 40 characters, with no hidden or control characters.');
+  await expect(page.locator('[data-part="wallet-name-invalid"]')).toHaveText('Use letters from one alphabet, digits and spaces, with no hidden characters.');
+  // Security review of wip/lead-note-226 (Medium 1): a name that could pass for a wallet's details.
+  await name.fill('Default');
+  await expect(page.locator('[data-part="wallet-finish"]')).toBeDisabled();
+  await expect(page.locator('[data-part="wallet-name-invalid"]')).toHaveText('Pick another name. Default, Ready, Usable, Waiting, Verified and In use are words X2F shows for a wallet.');
   await name.fill('  Cake Wallet savings ');
   await expect(page.locator('[data-part="wallet-finish"]')).toBeEnabled();
   await page.click('[data-part="wallet-finish"]');

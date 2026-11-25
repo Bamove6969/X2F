@@ -407,6 +407,40 @@ test('owner demo note #226: Rename on a row opens a small sheet; Save waits for 
   await expect(page.getByRole('button', { name: 'Rename Wallet 2' })).toBeVisible();
 });
 
+test('security review of wip/lead-note-226: a name that could pass for a wallet detail blocks Save, in the add form and the rename sheet', async ({ page }) => {
+  const s = await stub(page, [READY], RULE_FIRST, (body, _n, route) => route.fulfill({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) }));
+  await page.goto('/wallets');
+  await startAdding(page);
+  await fillWallet(page, address('C', 'AAAAA1'), 'Savings · Ready');
+  await expect(page.locator('[data-part="wallet-label-help"]')).toHaveText('Leave out dots, bullets and bars. X2F puts those between a name and its details.');
+  await expect(page.getByRole('button', { name: 'Save wallet' })).toBeDisabled();
+  await page.getByLabel('Name', { exact: true }).fill('Rk3Fz1');
+  await expect(page.locator('[data-part="wallet-label-help"]')).toContainText('address ending');
+  await expect(page.getByRole('button', { name: 'Save wallet' })).toBeDisabled();
+  await page.getByLabel('Name', { exact: true }).fill('Spending 2');
+  await expect(page.locator('[data-part="wallet-label-help"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save wallet' })).toBeEnabled();
+  expect(s.posts).toEqual([]);
+  await page.getByRole('button', { name: 'Rename Savings' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename wallet' });
+  await sheet.getByLabel('Wallet name').fill('Default');
+  await expect(sheet.getByRole('button', { name: 'Save name' })).toBeDisabled();
+  await expect(sheet.locator('[data-part="wallet-rename-invalid"]')).toContainText('Default, Ready, Usable');
+});
+
+test('security review of wip/lead-note-226: a rename from a username-and-password login is refused in the CantDoThat popup', async ({ page }) => {
+  await stub(page, [READY]);
+  await page.route('**/v1/wallets/*/label', (route) => route.fulfill({ status: 403, json: { error: 'weak-session' } }));
+  await page.goto('/wallets');
+  await page.getByRole('button', { name: 'Rename Savings' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename wallet' });
+  await sheet.getByLabel('Wallet name').fill('Rent money');
+  await sheet.getByRole('button', { name: 'Save name' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByText("This device logged in with just a username and password, so it can't rename wallets.", { exact: false })).toBeVisible();
+  await expect(page.locator('.x2f-wallet-row__name').first()).toHaveText('Savings');
+});
+
 test('the Save footer stays pinned on a 390x844 phone while the add form scrolls (review item 8)', async ({ page }) => {
   await stub(page, [READY, WAITING]);
   await page.goto('/wallets');

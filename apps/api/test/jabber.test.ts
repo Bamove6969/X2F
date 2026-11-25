@@ -774,3 +774,27 @@ describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO iden
     expect(() => parseBundleSecrets(sealedBundle, a.privateKey)).toThrow(); // still sealed, not readable as is
   });
 });
+
+describe('owner demo note #226: renaming a wallet queues the account-change notice (security review)', () => {
+  it('one notice per real rename, the fixed sentence only; the same name again queues nothing', async () => {
+    const t = await withJabber();
+    const addr = `5${'A'.repeat(94)}`;
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3) returning id`,
+      [t.id, addr, deps.clock()],
+    );
+    const id = rows[0]!.id;
+    await deps.db.query('delete from jabber_outbox');
+    const res = await t.browser.put(`/v1/wallets/${id}/label`, { label: 'Savings' });
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1', [t.id])).rows.map((r) => r.kind)).toEqual(['account-change']);
+    await sendAll();
+    expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
+    // Never the name or the address in the notice.
+    expect(JSON.stringify(sent)).not.toMatch(/Savings|Main|AAAAAA/);
+    sent.length = 0;
+    await deps.db.query('delete from jabber_outbox');
+    expect((await t.browser.put(`/v1/wallets/${id}/label`, { label: 'Savings' })).statusCode).toBe(204);
+    expect(await notices(t.id)).toBe(0);
+  });
+});

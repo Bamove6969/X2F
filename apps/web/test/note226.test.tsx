@@ -11,7 +11,8 @@ import { INITIAL, SetupContext, type SetupApi } from '../src/screens/setup/kit.j
 import { FIRST_WALLET_LABEL, WALLET_COPY, Wallet, setupWalletLabel } from '../src/screens/setup/Wallet.js';
 import { walletName } from '../src/screens/setup/Welcome.js';
 import { RenameSheet, renameReady } from '../src/screens/WalletRename.js';
-import { RENAME } from '../src/screens/walletsCopy.js';
+import { RENAME, WALLET_NAME_HELP } from '../src/screens/walletsCopy.js';
+import { WALLET_RENAME_WEAK } from '../src/ui/cantDoCodes.js';
 import { forgetTypedAddresses } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
@@ -136,7 +137,7 @@ describe('the sign-up wallet step: an optional name (note #226)', () => {
     type('#xmr-payout', TYPED);
     type('#wallet-name', 'a‮b');
     expect(finishButton().disabled).toBe(true);
-    expect(document.querySelector('[data-part="wallet-name-invalid"]')!.textContent).toBe(WALLET_COPY.nameInvalid);
+    expect(document.querySelector('[data-part="wallet-name-invalid"]')!.textContent).toBe(WALLET_NAME_HELP.characters);
     expect(document.querySelector('#wallet-name')!.getAttribute('aria-invalid')).toBe('true');
     type('#wallet-name', 'Savings');
     expect(finishButton().disabled).toBe(false);
@@ -160,7 +161,7 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
 
   it('starts on the current name with Save disabled, sends only the trimmed label, and reports it back', async () => {
     const onRenamed = vi.fn();
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} />);
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} onRefused={vi.fn()} />);
     const input = document.querySelector<HTMLInputElement>('#wallet-rename')!;
     const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
     expect(input.value).toBe('Wallet 1');
@@ -168,7 +169,7 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
     expect(save().textContent).toBe(RENAME.save);
     type('#wallet-rename', 'a‮b');
     expect(save().disabled).toBe(true);
-    expect(document.querySelector('[data-part="wallet-rename-invalid"]')!.textContent).toBe(RENAME.invalid);
+    expect(document.querySelector('[data-part="wallet-rename-invalid"]')!.textContent).toBe(WALLET_NAME_HELP.characters);
     type('#wallet-rename', '  Going to savings ');
     expect(save().disabled).toBe(false);
     fire(save(), new MouseEvent('click', { bubbles: true }));
@@ -180,7 +181,7 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
   it('a wallet gone meanwhile (404) says so in the sheet and reports nothing', async () => {
     reply = () => json(404, { error: 'not-found' });
     const onRenamed = vi.fn();
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} />);
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} onRefused={vi.fn()} />);
     type('#wallet-rename', 'Savings');
     fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
     await settle(() => document.querySelector('[data-part="wallet-rename-error"]') !== null);
@@ -191,9 +192,50 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
 
 describe('the Welcome checklist shows the name (note #226)', () => {
   it('a wallet saved as Other goes by its name; one in a named app gets the app after the name', () => {
-    expect(walletName({ app: 'other', label: 'Cake Wallet savings' })).toBe('Cake Wallet savings');
-    expect(walletName({ app: 'other', label: '' })).toBe('Other');
-    expect(walletName({ app: 'cake', label: 'Savings' })).toBe('Savings · Cake Wallet');
-    expect(walletName({ app: 'cake', label: '' })).toBe('Cake Wallet');
+    expect(walletName({ app: 'other', label: 'Cake Wallet savings' })).toEqual({ name: 'Cake Wallet savings', app: null });
+    expect(walletName({ app: 'other', label: '' })).toEqual({ name: 'Other', app: null });
+    expect(walletName({ app: 'cake', label: 'Savings' })).toEqual({ name: 'Savings', app: 'Cake Wallet' });
+    expect(walletName({ app: 'cake', label: '' })).toEqual({ name: 'Cake Wallet', app: null });
+  });
+});
+
+describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names and weak sessions', () => {
+  it('the setup field says why a spoofing name is refused, and holds Finish setup back', () => {
+    showSetup();
+    type('#xmr-payout', TYPED);
+    for (const [typed, why] of [
+      ['Savings …Rk3Fz1', 'separator'], ['Main · Cake', 'separator'], ['Default', 'status'], ['Ready', 'status'], ['Rk3Fz1', 'address'], ['S\u0430vings', 'characters'],
+    ] as const) {
+      type('#wallet-name', typed);
+      expect(finishButton().disabled, typed).toBe(true);
+      expect(document.querySelector('[data-part="wallet-name-invalid"]')!.textContent, typed).toBe(WALLET_NAME_HELP[why]);
+    }
+    type('#wallet-name', 'Spending 2');
+    expect(finishButton().disabled).toBe(false);
+  });
+
+  it('the rename sheet keeps Save disabled for a spoofing name and says why', () => {
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={vi.fn()} />);
+    const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
+    for (const [typed, why] of [['Wallet 1 · Default', 'separator'], ['Usable', 'status'], ['abc123x', 'address']] as const) {
+      type('#wallet-rename', typed);
+      expect(save().disabled, typed).toBe(true);
+      expect(document.querySelector('[data-part="wallet-rename-invalid"]')!.textContent).toBe(WALLET_NAME_HELP[why]);
+    }
+  });
+
+  it('403 weak-session is handed to the screen for CantDoThat; 429 slow-down says the day is used up', async () => {
+    reply = () => json(403, { error: 'weak-session' });
+    const onRefused = vi.fn();
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={onRefused} />);
+    type('#wallet-rename', 'Savings');
+    fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle(() => onRefused.mock.calls.length > 0);
+    expect(onRefused).toHaveBeenCalledWith({ code: 'weak-session', text: WALLET_RENAME_WEAK });
+
+    reply = () => json(429, { error: 'slow-down', retryAfterSeconds: 3600 });
+    fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle(() => document.querySelector('[data-part="wallet-rename-error"]') !== null);
+    expect(document.querySelector('[data-part="wallet-rename-error"]')!.textContent).toBe(RENAME.capped);
   });
 });

@@ -9,6 +9,7 @@ import { isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { StagedNote } from '../settings/HoldChanges.js';
 import { addError } from '../Wallets.js';
 import { ruleNote } from '../wallets-model.js';
+import { walletNameHelp } from '../walletsCopy.js';
 import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
@@ -41,9 +42,11 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
   }, []);
 
   const trimmed = address.trim();
+  // Owner demo note #226, security review Medium 1: the API's wallet-name rule, said under the field.
+  const nameHelp = walletNameHelp(label);
 
   async function save() {
-    if (trimmed === '' || saving) return;
+    if (trimmed === '' || saving || nameHelp !== null) return;
     setSaving(true);
     setError(null);
     const draft = { app: 'other' as const, label: label.trim() || DEFAULT_NEW_NAME, address: trimmed, oneTime: oneTime === 'one-time' };
@@ -107,6 +110,11 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
                 onChange={(e) => setLabel(e.target.value)}
               />
             </label>
+            {nameHelp !== null ? (
+              <span className="x2f-wallets__error" data-part="new-address-name-help">
+                {nameHelp}
+              </span>
+            ) : null}
             <span className="x2f-wallets__confirm-note">{C.nameHint}</span>
             <label className="x2f-wallets__field" htmlFor="new-address-address">
               {C.address}
@@ -141,7 +149,7 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
                 {error}
               </p>
             ) : null}
-            <Button variant="primary" onClick={() => void save()} disabled={trimmed === '' || saving}>
+            <Button variant="primary" onClick={() => void save()} disabled={trimmed === '' || saving || nameHelp !== null}>
               {C.save}
             </Button>
           </div>

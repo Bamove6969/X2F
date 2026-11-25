@@ -1,3 +1,5 @@
+import { walletLabelProblem, type WalletLabelProblem } from '@x2f/auth-client';
+
 // Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a payout wallet is saved for future
 // trades or is for one trade only (the API's `oneTime`; the trade that uses it takes it off the list).
 // COPY-UNSIGNED: every string in this file.
@@ -45,10 +47,31 @@ export const RENAME = {
   title: 'Rename wallet',
   field: 'Wallet name',
   help: 'Only the name changes. The address, the default and any wait stay as they are.',
-  invalid: 'Use 1 to 40 characters, with no hidden or control characters.',
+  // Security review of wip/lead-note-226 (Medium 3): 429 slow-down past the day's renames.
+  capped: 'You have renamed wallets 20 times today. Try again tomorrow.',
   save: 'Save name',
   cancel: 'Cancel',
   failed: 'That wallet could not be renamed. Try again.',
   // A 404: the wallet was removed meanwhile.
   gone: 'That wallet was removed from your list meanwhile.',
 } as const;
+
+/**
+ * Owner demo note #226 and the security review of wip/lead-note-226 (Medium 1): why a wallet name
+ * can't be used, by `walletLabelProblem` (@x2f/accounts, the API's own rule), said under the field.
+ * COPY-UNSIGNED (note #226)
+ */
+export const WALLET_NAME_HELP: Record<WalletLabelProblem, string> = {
+  length: 'Use 1 to 40 characters.',
+  characters: 'Use letters from one alphabet, digits and spaces, with no hidden characters.',
+  separator: 'Leave out dots, bullets and bars. X2F puts those between a name and its details.',
+  status: 'Pick another name. Default, Ready, Usable, Waiting, Verified and In use are words X2F shows for a wallet.',
+  address: 'Leave out anything that reads like an address ending, such as 6 or more letters with digits or capitals mixed in.',
+};
+
+/** The sentence for a typed name, or null when it may be saved (an empty field says nothing). */
+export function walletNameHelp(typed: string): string | null {
+  if (typed.trim() === '') return null;
+  const problem = walletLabelProblem(typed);
+  return problem === null ? null : WALLET_NAME_HELP[problem];
+}
