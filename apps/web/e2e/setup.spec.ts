@@ -1055,7 +1055,8 @@ test.describe('review fix round', () => {
     serverVersion = NEW;
     newBuild = true;
     await acceptTerms(page);
-    expect(posts).toEqual([{ version: TERMS_VERSION }]);
+    // With no pad to draw on, the click comes at once: wait for the POST rather than race it.
+    await expect.poll(() => posts).toEqual([{ version: TERMS_VERSION }]);
     // One message, the one the person can act on: reload. No "read them again" next to it.
     const stale = page.locator('[data-part="terms-stale"]');
     await expect(stale).toHaveText('The Terms have been updated. Reload the page to read the new version.');

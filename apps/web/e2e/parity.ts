@@ -252,6 +252,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
     },
     {
+      text: 'I have read and agree to the Terms of Service and Privacy Policy.',
+      why: 'Owner demo note #187 (25 Nov 2026): the tick line is exactly his words, "I have read and agree to the Terms of Service and Privacy Policy", with no full stop (the signature that followed it is gone).',
+    },
+    {
       text: 'Scroll to the end to continue',
       why: 'Owner demo note #190 (25 Nov 2026): his layout makes the tick box the only condition, so the read-to-the-end gate and this hint are gone (owner demo note #187 had first moved the gate from the box to the page).',
     },
