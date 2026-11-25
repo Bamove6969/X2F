@@ -781,11 +781,26 @@
   flex-direction: column;
   gap: 6px;
   margin: 0;
-  padding: 12px 14px 12px 32px;
+  padding: 0 0 0 18px;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--x2f-ink-muted);
+}
+/* Owner demo note #186 (25 Nov): the summary box, with an amber edge, and both boxes' headings in
+   the same type as the Terms' own section headings, one step bigger. */
+.x2f-terms__glance {
+  padding: 12px var(--x2f-space-4) 12px;
+  border: 1px solid var(--x2f-surface-raised);
+  border-left: 4px solid var(--x2f-caution);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  font-size: 15px;
-  line-height: 20px;
+}
+.x2f-terms__boxhead {
+  margin: 0 0 8px;
+  font-size: 19px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--x2f-ink);
 }
 
 .x2f-terms__hint {
@@ -1156,9 +1171,6 @@
 }
 
 /* SetupTerms board (S-043): the numbers in the key points are set in mono. */
-.x2f-terms__num {
-  font-family: var(--x2f-font-mono);
-}
 
 /*
  * Signup round 3 (owner's demo notes, 13 Nov 2026: "the fonts are much too small", "Bigger fonts
