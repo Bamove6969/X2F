@@ -136,6 +136,14 @@ export function ConfirmMethods({
   // PGP confirm is two steps: ask for a challenge, then take the decrypted code.
   const [pgp, setPgp] = useState<PgpChallenge | null>(null);
   const [pgpCode, setPgpCode] = useState('');
+  // Owner demo note #225 (25 Nov): "Lack of Copy PGP message button", as on the login screen.
+  const [pgpCopied, setPgpCopied] = useState(false);
+  const copyPgp = () => {
+    void navigator.clipboard?.writeText(pgp?.encryptedMessage ?? '').then(
+      () => setPgpCopied(true),
+      () => undefined,
+    );
+  };
 
   const run = useCallback(
     async (method: MethodType, fn: () => Promise<string>, wrong: string) => {
@@ -161,6 +169,7 @@ export function ConfirmMethods({
     try {
       setPgp(await authApi.confirmPgpStart({ action }));
       setPgpCode('');
+      setPgpCopied(false);
     } catch (e) {
       setError(refusalText(e, 'Could not start the PGP check. Try again.'));
     } finally {
@@ -222,6 +231,10 @@ export function ConfirmMethods({
               <MessageBox id="confirm-pgp-message" data-part="pgp-message">
                 {pgp.encryptedMessage}
               </MessageBox>
+              {/* COPY-UNSIGNED (owner demo note #225): the same words as the login screen's button. */}
+              <Button variant="secondary" onClick={copyPgp} data-part="copy">
+                {pgpCopied ? 'Copied' : 'Copy message'}
+              </Button>
               <input className="x2f-input" inputMode="text" autoComplete="off" aria-label="Login code" value={pgpCode} onChange={(e) => setPgpCode(e.target.value)} />
               <Button variant="primary" disabled={busy !== null || pgpCode.trim() === ''} onClick={finishPgp}>
                 Confirm
