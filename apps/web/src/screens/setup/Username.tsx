@@ -56,9 +56,9 @@ export function Username({ check }: { check?: NameChecker } = {}) {
           nothing else to give, since the next screens ask for a login method and a payout wallet) */}
       {/* Owner demo note #193 (25 Nov): the heading in his words. COPY-UNSIGNED. */}
       <SetupIntro title="Create your private login ID">
-        {/* Owner demo note #124 (23 Nov): his first two sentences, "login each and everytime" tidied. */}
-        You will type this to log in each and every time, and only you will know what it is. You will also create a unique display name,
-        which is the name you appear as to everybody else. Nobody can work out your username from your display name. X2F never asks for your
+        {/* Owner demo note #195 (25 Nov): the whole lead in his words, replacing #124's. */}
+        You'll use this private username to sign in—nobody else will ever see it. In the next step, you'll choose a separate public
+        display name that other traders see. Your display name cannot be traced back to your login username, and X2F never asks for an
         email address or phone number.
       </SetupIntro>
       <div className="x2f-field">

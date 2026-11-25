@@ -82,7 +82,7 @@ describe('step 1: one private username with a live tick', () => {
     expect(host.querySelector('#login-name')).toBeNull();
     expect(host.querySelector('label[for="uname"]')?.textContent).toBe('Username');
     expect(host.querySelector('#uname')?.getAttribute('autocomplete')).toBe('username');
-    expect(host.textContent).toContain('You will type this to log in each and every time, and only you will know what it is.');
+    expect(host.textContent).toContain('You\'ll use this private username to sign in—nobody else will ever see it.');
     expect(host.textContent).not.toContain('Traders will see');
   });
 
