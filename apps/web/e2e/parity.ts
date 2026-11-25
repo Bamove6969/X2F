@@ -331,7 +331,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   SetupUsername: [
     {
       text: 'Pick a username',
-      why: 'Owner demo note (12 Nov 2026, /setup/name): the heading reads "Pick a unique username" (his words). The board predates the note.',
+      why: 'Owner demo note (12 Nov 2026, /setup/name): the heading read "Pick a unique username" (his words); owner demo note #193 (25 Nov 2026) changed it to "Create your private login ID". The board predates both notes.',
     },
     {
       text: 'lumen.k is available',
