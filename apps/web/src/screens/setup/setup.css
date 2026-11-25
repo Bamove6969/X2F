@@ -269,8 +269,9 @@
 .x2f-start__foot .x2f-button--primary {
   height: auto;
   min-height: 68px;
-  padding: 14px 24px;
-  font-size: 26px;
+  padding: 14px 16px;
+  /* 26 px where it fits; "Start creating my account" stays on one line, clear of the sides, at 360. */
+  font-size: clamp(20px, 6.2vw, 26px);
   line-height: 32px;
 }
 
