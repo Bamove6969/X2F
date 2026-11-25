@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECK_DELAY_MS } from '../src/screens/setup/availability.js';
 import { DisplayName } from '../src/screens/setup/DisplayName.js';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
+import { checkNewDisplayName } from '../src/screens/setup/names.js';
 import { Username } from '../src/screens/setup/Username.js';
 import { fire, render } from './render.js';
 
@@ -46,7 +47,7 @@ const wait = (ms: number) =>
     await vi.advanceTimersByTimeAsync(ms);
   });
 
-const byPart = (host: ParentNode, part: string) => host.querySelector(`[data-part="${part}"]`);
+const byPart = <E extends Element = Element>(host: ParentNode, part: string) => host.querySelector<E>(`[data-part="${part}"]`);
 
 function type(input: HTMLInputElement, value: string) {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
@@ -80,7 +81,9 @@ describe('step 1: one private username with a live tick', () => {
     const host = show('username', setup());
     expect(host.querySelectorAll('input').length).toBe(1);
     expect(host.querySelector('#login-name')).toBeNull();
-    expect(host.querySelector('label[for="uname"]')?.textContent).toBe('Username');
+    // Owner demo note #197: the label reads "Private login ID", in the strong setup label style.
+    expect(host.querySelector('label[for="uname"]')?.textContent).toBe('Private login ID');
+    expect(host.querySelector('label[for="uname"]')?.classList.contains('x2f-start__field-label')).toBe(true);
     expect(host.querySelector('#uname')?.getAttribute('autocomplete')).toBe('username');
     expect(host.textContent).toContain('You\'ll use this private username to sign in—nobody else will ever see it.');
     expect(host.textContent).not.toContain('Traders will see');
@@ -119,15 +122,16 @@ describe('step 1: one private username with a live tick', () => {
     expect(byPart(host, 'name-status')).toBeNull();
   });
 
-  it('a taken name says so and Continue stays on the step', async () => {
+  it('a taken name says so and Continue is disabled (owner demo note #196)', async () => {
     const api = setup();
     const host = show('username', api);
     type(host.querySelector<HTMLInputElement>('#uname')!, 'taken.name');
     await wait(CHECK_DELAY_MS + 10);
     expect(byPart(host, 'name-status')?.textContent).toBe('taken.name is taken. Try another.');
     expect(byPart(host, 'name-status')?.getAttribute('data-tone')).toBe('danger');
+    expect(byPart<HTMLButtonElement>(host, 'names-continue')!.disabled).toBe(true);
     fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'names-error')?.textContent).toBe('That username is taken. Pick another.');
+    expect(byPart(host, 'names-error')).toBeNull();
     expect(api.go).not.toHaveBeenCalled();
   });
 
@@ -170,12 +174,20 @@ describe('step 1: one private username with a live tick', () => {
     expect(api.go).toHaveBeenCalledWith('display-name');
   });
 
-  it('a name of the wrong shape cannot continue', () => {
+  it('Continue is disabled until the name passes the rules (owner demo note #196)', () => {
     const api = setup();
     const host = show('username', api);
-    type(host.querySelector<HTMLInputElement>('#uname')!, 'abc');
-    fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'names-error')?.textContent).toBe('Your username needs 8 to 20 characters.');
+    const go = byPart<HTMLButtonElement>(host, 'names-continue')!;
+    const input = host.querySelector<HTMLInputElement>('#uname')!;
+    expect(go.disabled).toBe(true);
+    for (const bad of ['abc', 'abcdefg', 'Mira#Kai', 'Mira Kai12', 'a'.repeat(21)]) {
+      type(input, bad);
+      expect(go.disabled, bad).toBe(true);
+      fire(go, new MouseEvent('click', { bubbles: true }));
+      expect(byPart(host, 'names-error')).toBeNull();
+    }
+    type(input, 'abcdefgh');
+    expect(go.disabled).toBe(false);
     expect(api.go).not.toHaveBeenCalled();
   });
 });
@@ -186,7 +198,7 @@ describe('the display name step', () => {
     const host = show('display', api);
     expect(host.querySelectorAll('input').length).toBe(1);
     type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
-    expect(byPart(host, 'name-preview')?.textContent).toBe('Traders will see Lumen.Kai');
+    expect(byPart(host, 'preview-name')?.textContent).toBe('Lumen.Kai');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
     expect(api.go).toHaveBeenCalledWith('login');
@@ -197,7 +209,7 @@ describe('the display name step', () => {
     const host = show('display', api);
     type(host.querySelector<HTMLInputElement>('#display-name')!, 'Juniper.Oak');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name must be different from your username.');
+    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name must be different from your Login ID.');
     expect(api.go).not.toHaveBeenCalled();
   });
 
@@ -232,8 +244,9 @@ describe('note #108: no spaces in the names', () => {
     expect(input.getAttribute('aria-describedby')).toContain('uname-space');
     await wait(CHECK_DELAY_MS * 2);
     expect(checks()).toEqual([]);
+    // Owner demo note #196: Continue is disabled, so the click does nothing.
+    expect(byPart<HTMLButtonElement>(host, 'names-continue')!.disabled).toBe(true);
     fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'names-error')?.textContent).toBe('Remove the spaces. A username has no spaces.');
     expect(api.go).not.toHaveBeenCalled();
     type(input, 'juniper.oak');
     expect(byPart(host, 'name-space')).toBeNull();
@@ -246,7 +259,7 @@ describe('note #108: no spaces in the names', () => {
     type(input, 'Lumen K');
     expect(byPart(host, 'display-space')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(byPart(host, 'name-preview')).toBeNull();
+    expect(byPart(host, 'display-space')).not.toBeNull();
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(byPart(host, 'display-error')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
     expect(api.go).not.toHaveBeenCalled();
@@ -260,5 +273,159 @@ describe('note #108: no spaces in the names', () => {
     expect(byPart(host, 'display-space')).toBeNull();
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
+  });
+});
+
+// Owner demo notes #196 and #197 (25 Nov 2026, the advice he pasted): a live rule checklist, a
+// "Generate random" button, the input's attributes and an example placeholder.
+describe('notes #196 and #197: the private login ID step', () => {
+  const rule = (host: ParentNode, id: string) => host.querySelector(`#uname-rules [data-rule="${id}"]`)!;
+  const states = (host: ParentNode) => ['length', 'characters', 'no-spaces'].map((id) => rule(host, id).getAttribute('data-met'));
+
+  it('lists the rules as live rows, muted before anything is typed, with the advice as plain help', () => {
+    const host = show('username', setup());
+    expect([...host.querySelectorAll('#uname-rules li')].map((li) => li.firstChild?.nextSibling?.textContent)).toEqual([
+      '8–20 characters',
+      'Letters, numbers, dots, dashes and underscores only',
+      'No spaces',
+    ]);
+    expect(states(host)).toEqual(['unknown', 'unknown', 'unknown']);
+    expect(rule(host, 'length').querySelector('.x2f-sr-only')?.textContent).toBe(', not yet');
+    expect(host.querySelector('#uname-help')?.textContent).toBe("Pick something that isn't your real name or used elsewhere.");
+    expect(host.textContent).not.toContain('8 to 20 characters: letters');
+    expect(host.querySelector('#uname')?.getAttribute('aria-describedby')).toBe('uname-status uname-rules uname-help');
+  });
+
+  it('ticks each rule as it is met, and turns red only what typed text breaks', () => {
+    const host = show('username', setup());
+    const input = host.querySelector<HTMLInputElement>('#uname')!;
+    type(input, 'abc');
+    // Too short is "not yet", not red: the person is still typing.
+    expect(states(host)).toEqual(['unknown', 'true', 'true']);
+    type(input, 'juniper.oak');
+    expect(states(host)).toEqual(['true', 'true', 'true']);
+    expect(rule(host, 'length').querySelector('.x2f-sr-only')?.textContent).toBe(', met');
+    type(input, 'juniper#oak');
+    expect(states(host)).toEqual(['true', 'false', 'true']);
+    expect(rule(host, 'characters').querySelector('.x2f-sr-only')?.textContent).toBe(', not met');
+    type(input, 'juniper oak');
+    expect(states(host)).toEqual(['true', 'true', 'false']);
+    // Owner demo note #108's inline line stays.
+    expect(byPart(host, 'name-space')?.textContent).toBe('Remove the spaces. A username has no spaces.');
+    expect(host.querySelector('#uname')?.getAttribute('aria-describedby')).toBe('uname-space uname-status uname-rules uname-help');
+    type(input, 'a'.repeat(21));
+    expect(states(host)).toEqual(['false', 'true', 'true']);
+  });
+
+  it('"Generate random" fills a valid random name, the availability check runs, and Continue goes on', async () => {
+    const api = setup();
+    const host = show('username', api);
+    const gen = byPart<HTMLButtonElement>(host, 'name-generate')!;
+    expect(gen.textContent).toBe('Generate random');
+    expect(gen.classList.contains('x2f-start__textbutton')).toBe(true);
+    expect(gen.hasAttribute('data-primary')).toBe(false);
+    fire(gen, new MouseEvent('click', { bubbles: true }));
+    const name = host.querySelector<HTMLInputElement>('#uname')!.value;
+    expect(name).toMatch(/^[a-z]+_[a-z]+_[1-9][0-9]$/);
+    expect(states(host)).toEqual(['true', 'true', 'true']);
+    await wait(CHECK_DELAY_MS + 10);
+    expect(checks().map((c) => c.body)).toEqual([{ loginName: name }]);
+    expect(byPart(host, 'name-status')?.textContent).toBe(`${name} is available`);
+    fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
+    expect(api.update).toHaveBeenCalledWith({ loginName: name, challenge: null });
+  });
+
+  it('keeps autocapitalize, autocorrect and spellcheck off, and shows an example placeholder', () => {
+    const input = show('username', setup()).querySelector<HTMLInputElement>('#uname')!;
+    expect(input.getAttribute('autocapitalize')).toBe('none');
+    expect(input.getAttribute('autocorrect')).toBe('off');
+    expect(input.getAttribute('spellcheck')).toBe('false');
+    expect(input.getAttribute('placeholder')).toBe('e.g. midnight_otter_42');
+  });
+
+  it('the display name step uses the same strong label, still reading "Display name"', () => {
+    const label = show('display', setup({ loginName: 'juniper.oak' })).querySelector('label[for="display-name"]')!;
+    expect(label.textContent).toBe('Display name');
+    expect(label.classList.contains('x2f-start__field-label')).toBe(true);
+  });
+});
+
+// Owner demo note #199 (25 Nov 2026): the display-name screen is the second step, and it calls the
+// private name "your Login ID".
+describe('note #199: the display-name step', () => {
+  it('says "Step 2 of 5" with two bar segments lit; the username step stays step 1', () => {
+    const host = show('display', setup({ loginName: 'juniper.oak' }));
+    expect(host.querySelector('.x2f-start__step')?.textContent).toBe('Step 2 of 5');
+    expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('2');
+    expect([...host.querySelectorAll('.x2f-start__seg')].map((s) => s.getAttribute('data-on'))).toEqual(['true', 'true', 'false', 'false', 'false']);
+    expect(show('username', setup()).querySelector('.x2f-start__step')?.textContent).toBe('Step 1 of 5');
+  });
+
+  it('says "Login ID", never "username", on the step', () => {
+    const host = show('display', setup({ loginName: 'juniper.oak' }));
+    expect(host.querySelector('.x2f-start__lead')?.textContent).toBe('This is how traders see you. It must be different from your Login ID.');
+    expect(host.textContent).not.toMatch(/username/i);
+  });
+});
+
+// Owner demo notes #199 and #200 (25 Nov 2026): the trader card preview, suggestion chips, the
+// permanence note and Continue in the flow.
+describe('notes #199 and #200: preview, suggestions, permanence, inline Continue', () => {
+  it('previews the card live with a brand-new member\'s record: New, 0 trades, No ratings yet', () => {
+    const host = show('display', setup({ loginName: 'juniper.oak' }));
+    const card = byPart(host, 'trader-preview')!;
+    expect(card.querySelector('h2')?.textContent).toBe('Trader card preview');
+    expect(byPart(card, 'preview-name')?.textContent).toBe('Your display name');
+    expect(byPart(card, 'preview-name')?.getAttribute('data-placeholder')).toBe('true');
+    expect(card.querySelector('.x2f-avatar')?.textContent).toBe('?');
+    expect(card.querySelector('.x2f-badge')?.textContent).toBe('New');
+    expect(card.querySelector('.x2f-badge')?.getAttribute('data-tone')).toBe('caution');
+    expect(byPart(card, 'preview-stats')?.textContent).toBe('0 trades · No ratings yet');
+    expect(card.textContent).not.toContain('100%');
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen');
+    expect(byPart(card, 'preview-name')?.textContent).toBe('Lumen');
+    expect(byPart(card, 'preview-name')?.hasAttribute('data-placeholder')).toBe(false);
+    expect(card.querySelector('.x2f-avatar')?.textContent).toBe('LU');
+  });
+
+  it('offers 3 suggestions that pass the display-name rules and differ from the Login ID; a tap fills the box; ↻ draws new ones', () => {
+    const api = setup({ loginName: 'juniper.oak' });
+    const host = show('display', api);
+    const chips = () => [...host.querySelectorAll<HTMLButtonElement>('[data-part="display-suggestion"]')];
+    const first = chips().map((c) => c.textContent!);
+    expect(first).toHaveLength(3);
+    expect(new Set(first).size).toBe(3);
+    for (const n of first) {
+      expect(checkNewDisplayName(n).ok, n).toBe(true);
+      expect(n.toLowerCase()).not.toBe('juniper.oak');
+    }
+    for (const c of chips()) expect(c.hasAttribute('data-primary')).toBe(false);
+    fire(chips()[1]!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector<HTMLInputElement>('#display-name')!.value).toBe(first[1]);
+    expect(byPart(host, 'preview-name')?.textContent).toBe(first[1]);
+    const refresh = byPart(host, 'display-suggestions-refresh')!;
+    expect(refresh.getAttribute('aria-label')).toBe('More suggestions');
+    expect(refresh.textContent).toBe('↻');
+    fire(refresh, new MouseEvent('click', { bubbles: true }));
+    expect(chips()).toHaveLength(3);
+    fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
+    expect(api.update).toHaveBeenCalledWith({ displayName: first[1], challenge: null });
+  });
+
+  it('says the display name is permanent, in the owner\'s sentence, under the preview', () => {
+    const host = show('display', setup({ loginName: 'juniper.oak' }));
+    const note = byPart(host, 'display-permanent')!;
+    expect(note.textContent).toBe("Your display name is permanent—pick a handle you'll be happy building your trading reputation under.");
+    expect(byPart(host, 'trader-preview')!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('puts Continue in the flow right after the card on this step only (footerInline)', () => {
+    const host = show('display', setup({ loginName: 'juniper.oak' }));
+    const foot = byPart(host, 'display-continue')!.closest('footer')!;
+    expect(foot.classList.contains('x2f-start__foot--inline')).toBe(true);
+    expect(foot.parentElement?.classList.contains('x2f-start__main')).toBe(true);
+    const name = show('username', setup()).querySelector('[data-part="names-continue"]')!.closest('footer')!;
+    expect(name.classList.contains('x2f-start__foot--inline')).toBe(false);
+    expect(name.parentElement?.classList.contains('x2f-start')).toBe(true);
   });
 });

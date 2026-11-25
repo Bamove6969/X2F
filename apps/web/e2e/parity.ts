@@ -273,6 +273,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   // the notes.
   SetupLogin: [
     {
+      text: 'Step 2 of 5',
+      why: 'Owner demo note #199 (25 Nov 2026): the display-name screen after the username is "Step 2 of 5", so choosing the login methods reads "Step 3 of 5", one step with setting them up (the PGP, password and key boards already say "Step 3 of 5"); backup stays 4 and wallet 5. The board predates the display-name screen.',
+    },
+    {
       text: 'Choose one for now. You can add others later in Settings.',
       why: 'Owner demo notes (12 Nov 2026): several methods can be ticked; the lead reads "Tick every way you want to use. We\'ll set them up one after another, then show you your recovery code. …" (COPY-UNSIGNED). The board predates the notes.',
     },
@@ -343,7 +347,11 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
-      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6. Owner demo note #126 (23 Nov 2026, on /setup/name: "I want username changed to minimum of 8 characters"): the page says 8 to 20.',
+      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6. Owner demo note #126 (23 Nov 2026, on /setup/name: "I want username changed to minimum of 8 characters"): the page says 8 to 20. Owner demo note #196 (25 Nov 2026, the advice he pasted): the rules are a live checklist ("8–20 characters", "Letters, numbers, dots, dashes and underscores only", "No spaces") and "Pick something that isn\'t your real name or used elsewhere." is plain help on its own.',
+    },
+    {
+      text: 'Username',
+      why: 'Owner demo note #197 (25 Nov 2026): the field label above the input is "Private login ID" in sentence case, bold ink (the strong setup label). The board predates the note.',
     },
   ],
   SetupWelcome: [

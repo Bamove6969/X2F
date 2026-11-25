@@ -1419,3 +1419,106 @@
   color: var(--x2f-caution);
   font-weight: 600;
 }
+
+/* The strong field label (owner demo note #197, 25 Nov 2026): bold crisp ink, a step above the 18 px
+   lead and below the 26 px h1, 8 px above its field (the .x2f-field gap) and ~20 px below the lead
+   (the body gap). Used on the private login ID and the display name. */
+.x2f-start .x2f-label.x2f-start__field-label {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--x2f-ink);
+  text-decoration: none;
+}
+
+/* Buttons in the flow (SetupFrame footerInline, owner demo note #199): 28 px under the last part
+   (the 20 px body gap plus 8), no bar, no border, in thumb reach above a phone keyboard. */
+.x2f-start__foot--inline {
+  margin-top: 8px;
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+/* Suggestion chips (owner demo note #200): quiet outlined buttons in ink, never orange. */
+.x2f-start__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-start__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-mono);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.x2f-start__chip:hover {
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-start__chip:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+/* The trader card preview (owner demo note #199): a dark card with a border. */
+.x2f-start__preview-card {
+  gap: 12px;
+  border-color: var(--x2f-line);
+}
+
+.x2f-start__preview-h {
+  margin: 0;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__preview-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.x2f-start__preview-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-start__preview-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.x2f-start__preview-name {
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
+
+.x2f-start__preview-name[data-placeholder='true'] {
+  color: var(--x2f-ink-muted);
+  font-weight: 400;
+}
+
+.x2f-start__preview-meta {
+  font-size: 15px;
+  color: var(--x2f-ink-muted);
+}
