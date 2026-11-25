@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, note #214: "protect the site and our users", and note #215: the escrow-settling sentence removed from the account-closure paragraph; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, note #214: "protect the site and our users", note #215: the escrow-settling sentence removed from the account-closure paragraph, and note #216: the risks sentence in his words ("valuev etc.... and more" tidied to "value, and more"); 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -182,7 +182,7 @@ export const TERMS: TermsSection[] = [
   {
     heading: '9. Liability, changes and law',
     paragraphs: [
-      'X2F is provided as it is. Trading carries risk, including the risk that the other trader acts in bad faith and that the price of Monero changes. Take care, and only trade what you can afford to lose.',
+      'X2F is provided as it is. Trading carries risks, including: malicious vendors, scam traders, high volatility of XMR crypto value, and more. Take care, and only trade what you can afford to lose.',
       // COPY-UNSIGNED: owner's comment 4f01cb96; "feedback about the site", so it is not read as trade
       // feedback (draft Q-16). Draft item 16.
       'Remember, X2F is a new platform. We are evolving based on your feedback, and every rule can be reconsidered and changed for the good of the site and our users. We strongly encourage you to send us feedback about the site and help shape X2F. When these Terms change, X2F shows them again at your next login, and trading waits until you accept the new version.',
