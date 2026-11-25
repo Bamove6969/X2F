@@ -292,7 +292,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Set up your account',
-      why: 'Sign-up round 3 (signup-r3-spec-2026-11-13.md, owner 13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key".',
+      why: 'Sign-up round 3 (signup-r3-spec-2026-11-13.md, owner 13 Nov 2026) renamed the /setup/pgp-key header; since 25 Nov 2026 (owner, in chat) every sign-up step\'s header reads "Create account".',
     },
     {
       text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
@@ -312,7 +312,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     // (tools/parity/capture-refs.ts needs the canvas runtime support.js); remove this then.
     {
       text: 'Set up your account',
-      why: 'Owner demo note 2708e47a (13 Nov 2026): the /setup/pgp-key header reads "Adding your public PGP key" instead; board redraw and reference recapture owed (design).',
+      why: 'Owner demo note 2708e47a (13 Nov 2026) renamed the /setup/pgp-key header; since 25 Nov 2026 (owner, in chat) every sign-up step\'s header reads "Create account"; board redraw and reference recapture owed (design).',
     },
   ],
   SetupPgpChallenge: [
