@@ -70,8 +70,9 @@ export const KEY_POINTS: readonly string[] = [
   // Owner demo note #102 (17 Nov, f0aabdaf, on this key point): "... with what very little information
   // we collect." COPY-UNSIGNED
   // Owner demo note #122 (23 Nov, on this key point): his paragraph in place of the #102 line. COPY-UNSIGNED.
+  // Owner demo note #184 (25 Nov): the whole point replaced with his paragraph, word for word. COPY-UNSIGNED.
   // not-a-refusal: Terms text
-  'Our zero-log architecture is designed so that we do not collect or retain IP addresses, message contents, or personal identifying records. While we comply with valid, binding legal orders from courts of competent jurisdiction, any disclosure is strictly limited to the minimal, non-identifying operational data technically present on our servers at the time of the request. Furthermore, our corporate entity and server infrastructure are domiciled in privacy-focused jurisdictions with strong statutory data-protection laws and rigorous judicial standards for cross-border legal requests.',
+  "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
   // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
   // Owner demo note #123 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days is closed automatically.',
