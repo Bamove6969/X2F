@@ -102,8 +102,9 @@
   align-items: center;
   justify-content: center;
 }
-/* Owner demo note #172 (25 Nov): Create account much bigger and bolder, never touching the edges. */
-.x2f-landing__way[data-part='landing-create'] {
+/* Owner demo notes #172 and #173 (25 Nov): Create account much bigger and bolder, never touching the
+   edges; Log in much bigger too. */
+.x2f-landing__way {
   min-height: 68px;
   padding: 14px 24px;
   font-size: 26px;
