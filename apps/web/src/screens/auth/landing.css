@@ -94,9 +94,6 @@
   gap: 12px;
 }
 .x2f-landing__way {
-  min-height: 56px;
-  font-size: 18px;
-  line-height: 24px;
   text-decoration: none;
   display: flex;
   align-items: center;
