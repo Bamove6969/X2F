@@ -817,15 +817,29 @@
   line-height: inherit;
 }
 
-/* Owner demo note #187: a card in the page, no height limit or scroll of its own. */
+/*
+ * The Terms box. The staff invite's Terms step (apps/staff-web, unchanged) still scrolls it inside
+ * its step card; in the trader app's setup frame it is a card in the page with no height limit or
+ * scroll of its own (owner demo note #187, the rule below).
+ */
 .x2f-terms {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-height: 140px;
+  overflow-y: auto;
   padding: 12px var(--x2f-space-4);
   border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
   font-size: 16px;
   line-height: 22px;
+}
+
+/* Owner demo note #187 (25 Nov 2026): no box scrolling inside the scrolling page. */
+.x2f-start .x2f-terms {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 .x2f-terms__note {
