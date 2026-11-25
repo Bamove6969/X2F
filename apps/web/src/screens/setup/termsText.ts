@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", and note #206: "X2F is not party to your trades"; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", and note #207 (section 2): "private user ID"; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -81,7 +81,7 @@ export const TERMS: TermsSection[] = [
       // COPY-UNSIGNED: owner's /setup comment 9fe3fa43 (12 Nov, "Public display name"); the names
       // the setup screens use (username private, display name public). Terms draft 2026-11-12 item 1.
       // From "Keep your": owner demo notes 13 Nov.
-      'You pick a private username, which you type to log in and only you see, and a public display name, which is how other traders see you. Keep your login details and recovery codes safe and private. While your wallet and funds may be secure, your account age and reputation are irreplaceable. X2F has no way to reset them for you, so if you lose them you may lose the account without a way to recover it, but we provide you with ample, highly secure methods to protect the sanctity of your account. Your coins stay safe in your own wallet either way.',
+      'You pick a private user ID, which you type to log in and only you see, and a public display name, which is how other traders see you. Keep your login details and recovery codes safe and private. While your wallet and funds may be secure, your account age and reputation are irreplaceable. X2F has no way to reset them for you, so if you lose them you may lose the account without a way to recover it, but we provide you with ample, highly secure methods to protect the sanctity of your account. Your coins stay safe in your own wallet either way.',
       // COPY-UNSIGNED: owner's comment 4e04a245 (team members are allowed). Draft item 2.
       'One person, one account. If you want others to help you trade, set them up as team members of your account: each team member gets their own login. Do not sell, share or lend your account or your own login.',
     ],
