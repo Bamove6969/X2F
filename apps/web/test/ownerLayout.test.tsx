@@ -49,7 +49,7 @@ describe('screenName: the name beside the logo, one per route', () => {
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
       ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'],
       // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name (COPY-UNSIGNED).
-      ['/setup/name', 'Your username'], ['/setup/display-name', 'Your display name'], ['/setup/login', 'How you log in'],
+      ['/setup/name', 'Creating your login ID'], ['/setup/display-name', 'Your display name'], ['/setup/login', 'How you log in'],
       ['/setup/pgp-code', 'Your first login code'], ['/setup/password', 'Your password'], ['/setup/authenticator', 'Authenticator app'],
       ['/setup/security-key', 'Security key'], ['/setup/passkey', 'Passkey'], ['/setup/backup', 'Recovery code'],
       ['/setup/wallet', 'Your wallet'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
