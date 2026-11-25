@@ -1210,3 +1210,108 @@ describe('the default payout wallet (owner, 17 Nov 2026: answer to note #6 Q1)',
     expect(await defaults(b)).toHaveLength(1);
   });
 });
+
+describe('renaming a wallet (owner demo note #226, 25 Nov 2026)', () => {
+  const rename = (b: Browser, id: string, body: unknown) => b.put(`/v1/wallets/${id}/label`, body as Record<string, unknown>);
+  const row = async (id: string) =>
+    (await deps.db.query<{ label: string; address: string; is_default: boolean; usable_from: Date; app: string; one_time: boolean; removed_at: Date | null }>(
+      'select label, address, is_default, usable_from, app, one_time, removed_at from wallets where id = $1', [id],
+    )).rows[0]!;
+
+  it('renames an open wallet: trimmed, the label only; address, default and wait unchanged; one alert', async () => {
+    const { id, b } = await trader();
+    const { wallet: first } = await addConfirmed(b);
+    expect((await b.put(`/v1/wallets/${first.id}/default`, {})).statusCode).toBe(204);
+    // A later wallet confirmed with a password waits 24 hours: renaming it must not end the wait.
+    const { wallet: waiting } = await addConfirmed(b);
+    expect(waiting.usable).toBe(false);
+    const before = { first: await row(first.id), waiting: await row(waiting.id) };
+    const res = await rename(b, first.id, { label: '  Cake Wallet savings  ' });
+    expect(res.statusCode, res.body).toBe(204);
+    expect((await rename(b, waiting.id, { label: 'Spending' })).statusCode).toBe(204);
+    expect(await row(first.id)).toEqual({ ...before.first, label: 'Cake Wallet savings' });
+    expect(await row(waiting.id)).toEqual({ ...before.waiting, label: 'Spending' });
+    const listed = await list(b);
+    // Both added at the same clock (listed by id then): compared without their order.
+    expect(listed.map((w) => [w.id, w.label, w.address, w.isDefault, w.usable, w.usableFrom]).sort((x, y) => String(x[1]).localeCompare(String(y[1])))).toEqual([
+      [first.id, 'Cake Wallet savings', first.address, true, true, first.usableFrom],
+      [waiting.id, 'Spending', waiting.address, false, false, waiting.usableFrom],
+    ]);
+    const { rows } = await deps.db.query<{ detail: Record<string, unknown> }>(
+      "select detail from alerts where account_id = $1 and kind = 'wallet-renamed' order by created_at, id", [id],
+    );
+    // Both at the same clock: compared without their order.
+    expect(rows.map((r) => r.detail).sort((x, y) => String(x.label).localeCompare(String(y.label)))).toEqual([
+      { app: 'feather', from: 'Main', label: 'Cake Wallet savings', addressEnd: addressEnd(first.address) },
+      { app: 'feather', from: 'Main', label: 'Spending', addressEnd: addressEnd(waiting.address) },
+    ]);
+    // The same name again changes nothing and records nothing.
+    expect((await rename(b, first.id, { label: 'Cake Wallet savings' })).statusCode).toBe(204);
+    expect((await deps.db.query("select 1 from alerts where account_id = $1 and kind = 'wallet-renamed'", [id])).rows).toHaveLength(2);
+  });
+
+  it("answers 404 for another account's, a removed, a used-up, a staged or a malformed wallet, and changes nothing", async () => {
+    const one = await trader();
+    const other = await trader();
+    const { wallet: theirs } = await addConfirmed(other.b);
+    const { wallet: mine } = await addConfirmed(one.b);
+    expect((await rename(one.b, theirs.id, { label: 'Mine now' })).statusCode).toBe(404);
+    expect((await rename(one.b, 'nope', { label: 'Mine now' })).statusCode).toBe(404);
+    expect((await row(theirs.id)).label).toBe('Main');
+    const { wallet: once } = await addConfirmed(one.b, fakeAddress(), { oneTime: true });
+    await deps.db.query(`update wallets set removed_at = $2, used_by_trade = 'AAAA-BBBB-CCCC-DDDD' where id = $1`, [once.id, now]);
+    expect((await rename(one.b, once.id, { label: 'Again' })).statusCode).toBe(404);
+    expect((await one.b.delete(`/v1/wallets/${mine.id}`)).statusCode).toBe(204);
+    expect((await rename(one.b, mine.id, { label: 'Again' })).statusCode).toBe(404);
+    expect((await row(mine.id)).label).toBe('Main');
+    expect((await row(once.id)).label).toBe('Main');
+    expect((await deps.db.query("select 1 from alerts where kind = 'wallet-renamed' and account_id = any($1)", [[one.id, other.id]])).rows).toEqual([]);
+    expect((await new Browser(app).put(`/v1/wallets/${theirs.id}/label`, { label: 'x' })).statusCode).toBe(401);
+    const rec = await trader({ level: 'recovery' });
+    expect((await rename(rec.b, theirs.id, { label: 'x' })).json()).toEqual({ error: 'recovery-session' });
+  });
+
+  it('refuses a name outside the add\'s rule with 400 bad-request, and changes nothing', async () => {
+    const { b } = await trader();
+    const { wallet } = await addConfirmed(b);
+    for (const body of [
+      { label: '' }, { label: '   ' }, { label: 'x'.repeat(41) }, { label: 'a‮b' }, { label: 'a​b' }, { label: 'a\nb' },
+      { label: 7 }, { label: null }, {}, { label: 'Fine', address: fakeAddress() }, { label: 'Fine', isDefault: true },
+    ]) {
+      const res = await rename(b, wallet.id, body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.json()).toEqual({ error: 'bad-request' });
+    }
+    // 40 characters (code points, as the add counts them) is fine.
+    expect((await rename(b, wallet.id, { label: '🙂'.repeat(40) })).statusCode).toBe(204);
+    expect((await row(wallet.id)).label).toBe('🙂'.repeat(40));
+    // Names need not be unique on an account (the add never asked).
+    const { wallet: second } = await addConfirmed(b);
+    expect((await rename(b, second.id, { label: '🙂'.repeat(40) })).statusCode).toBe(204);
+  });
+
+  it('is refused during an account hold (403 recovery-hold) like every wallet write, and nothing changes', async () => {
+    const { id, b } = await trader();
+    const { wallet } = await addConfirmed(b);
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
+      [id, now, new Date(now.getTime() + DAY)],
+    );
+    const res = await rename(b, wallet.id, { label: 'Savings' });
+    expect(res.statusCode).toBe(403);
+    expect((res.json() as { error: string }).error).toBe('recovery-hold');
+    expect((await row(wallet.id)).label).toBe('Main');
+    await deps.db.query('delete from account_holds where account_id = $1', [id]);
+    expect((await rename(b, wallet.id, { label: 'Savings' })).statusCode).toBe(204);
+  });
+
+  it('is cosmetic: from a username-and-password login it applies at once, stages nothing and needs no confirm', async () => {
+    const { id, b, sessionId } = await trader();
+    const { wallet } = await addConfirmed(b);
+    await deps.db.query(`update sessions set strength = 'weak-single' where id = $1`, [sessionId]);
+    expect((await rename(b, wallet.id, { label: 'Savings' })).statusCode).toBe(204);
+    expect((await row(wallet.id)).label).toBe('Savings');
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [id])).rows).toEqual([]);
+    expect((await deps.db.query('select 1 from account_holds where account_id = $1', [id])).rows).toEqual([]);
+  });
+});

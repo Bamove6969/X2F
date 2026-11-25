@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { AuthApiError, isStaged, walletAction, withConfirm, type Staged, type Wallet, type WalletRule } from '@x2f/auth-client';
+import { AuthApiError, WALLET_LABEL_MAX, isStaged, walletAction, withConfirm, type Staged, type Wallet, type WalletRule } from '@x2f/auth-client';
 import { ApiCallError, api } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { ChoiceGroup } from '../../ui/Choice.js';
@@ -21,7 +21,7 @@ import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 // The device never trusts the API's echo either: the wallet handed back must carry the exact address
 // typed here, else nothing is picked (lead, 17 Nov: the API never swaps an address the device did not show).
 
-const LABEL_MAX = 40;
+const LABEL_MAX = WALLET_LABEL_MAX;
 
 export type NewAddressResult = { kind: 'usable'; wallet: Wallet } | { kind: 'waits'; wallet: Wallet } | { kind: 'staged' };
 

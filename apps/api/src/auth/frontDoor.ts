@@ -171,6 +171,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/wallets': 'adds my own payout wallets; answers them',
   'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
   'PUT /v1/wallets/:id/default': 'chooses which of my own payout wallets the trade screen picks first',
+  'PUT /v1/wallets/:id/label': 'renames one of my own payout wallets (the name only); no data back',
   'POST /v1/offers': 'posts my own offer; answers its id',
   'PATCH /v1/offers/:id': 'pauses, removes or relists my own offer (403 wrong-party for anyone else\'s)',
   'POST /v1/account/offers/status': 'turns my own offers on or off',

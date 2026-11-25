@@ -172,6 +172,18 @@ export interface Checklist {
   wallet: { app: string; end: string } | null;
 }
 
+/**
+ * The wallet's name on the checklist. Owner demo note #226 (25 Nov): "Traders want to know where each
+ * wallet is going", so the name the person gave it comes first. A wallet saved as Other (setup no
+ * longer picks an app, owner #96) goes by its name alone; one in a named app gets the app after it.
+ * COPY-UNSIGNED (note #226)
+ */
+export function walletName(w: Pick<WalletEntry, 'app' | 'label'>): string {
+  const label = w.label.trim();
+  if (w.app === 'other') return label || APP_LABELS.other;
+  return label === '' ? APP_LABELS[w.app] : `${label} · ${APP_LABELS[w.app]}`;
+}
+
 /** The Welcome checklist: each item is ticked only when it is really done. */
 export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry[], flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): Checklist {
   const logins = loginMethodsBestFirst(me, flow);
@@ -180,8 +192,7 @@ export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
     logins,
     loginDone: logins.length > 0,
     recoveryDone: me.methods.includes('recovery-codes') || flow.backup === 'recovery-codes',
-    // A wallet saved as Other (setup no longer picks an app, owner #96) goes by its own name.
-    wallet: usable !== undefined ? { app: usable.app === 'other' ? usable.label || APP_LABELS.other : APP_LABELS[usable.app], end: usable.addressEnd } : null,
+    wallet: usable !== undefined ? { app: walletName(usable), end: usable.addressEnd } : null,
   };
 }
 

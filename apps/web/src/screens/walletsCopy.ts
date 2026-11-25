@@ -33,3 +33,22 @@ export const NOT_MATCHING = 'This address does not match the one you typed on th
  */
 export const IN_USE_WORD = 'In use';
 export const IN_USE_NOTE = (code: string) => `By trade ${code}. It comes back if that trade is cancelled before it is funded, unless you remove it.`;
+
+/**
+ * Owner demo note #226 (25 Nov 2026): "an option to change it rename the wallet in settings later.
+ * Traders want to know where each wallet is going". The Rename action on a wallet row and its sheet.
+ * COPY-UNSIGNED (note #226)
+ */
+export const RENAME = {
+  action: 'Rename',
+  actionLabel: (name: string) => `Rename ${name}`,
+  title: 'Rename wallet',
+  field: 'Wallet name',
+  help: 'Only the name changes. The address, the default and any wait stay as they are.',
+  invalid: 'Use 1 to 40 characters, with no hidden or control characters.',
+  save: 'Save name',
+  cancel: 'Cancel',
+  failed: 'That wallet could not be renamed. Try again.',
+  // A 404: the wallet was removed meanwhile.
+  gone: 'That wallet was removed from your list meanwhile.',
+} as const;

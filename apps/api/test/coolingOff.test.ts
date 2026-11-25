@@ -1496,6 +1496,16 @@ describe('review round 2', () => {
           const wid = ((await o.b.get('/v1/wallets')).json() as Array<{ id: string }>)[0]!.id;
           return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/wallets/${wid}`) };
         },
+        // Owner demo note #226: renaming a wallet re-checks the session under the account lock.
+        'PUT /v1/wallets/:id/label': async () => {
+          const o = await passkeyWithPassword();
+          await deps.db.query('update accounts set had_wallet = true where id = $1', [o.id]);
+          const address = fakeAddress();
+          const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(o.b), accountId: o.id, action: walletAction(address), method: 'pgp' });
+          expect((await o.b.post('/v1/wallets', { app: 'feather', label: 'Main', address, confirmToken })).statusCode).toBe(201);
+          const wid = ((await o.b.get('/v1/wallets')).json() as Array<{ id: string }>)[0]!.id;
+          return { b: o.b, accountId: o.id, fire: () => o.b.put(`/v1/wallets/${wid}/label`, { label: 'Savings' }) };
+        },
         'POST /v1/account/approvals/:id': async () => {
           const o = await passkeyWithPassword();
           const a = (await passwordLogin(new Browser(app), o.name)).json() as { approvalId: string; number: number };
