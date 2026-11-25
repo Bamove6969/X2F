@@ -69,6 +69,14 @@
   color: var(--x2f-ink-muted);
   cursor: not-allowed;
 }
+/* Owner demo note #191 (25 Nov, setup-terms): "Change the box to our standard orange ... I hate lack
+   in cohesiveness". A primary that cannot be pressed yet stays orange, dimmed, everywhere. */
+.x2f-button--primary:disabled,
+.x2f-button--primary[aria-disabled='true'] {
+  background: var(--x2f-monero);
+  color: var(--x2f-on-monero);
+  opacity: 0.45;
+}
 
 /* Tertiary (visual system v2, section 10): 44 px, no fill, ink-muted 15/600 ("Not now"). */
 .x2f-button--tertiary {
