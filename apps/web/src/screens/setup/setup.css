@@ -1136,11 +1136,6 @@
   }
 }
 
-.x2f-start__preview {
-  font-size: 15px;
-  font-weight: 400;
-}
-
 .x2f-start__expires {
   display: flex;
   align-items: center;
@@ -1450,8 +1445,9 @@
 .x2f-start__chip {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
-  padding: 0 12px;
+  /* The setup tap size (.x2f-start__textbutton--tap): 44 px. */
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid var(--x2f-line);
   border-radius: var(--x2f-radius-pill);
   background: transparent;

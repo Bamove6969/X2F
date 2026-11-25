@@ -16,9 +16,10 @@ import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Avatar } from '../../ui/Avatar.js';
 import { BadgePill } from '../../ui/BadgePill.js';
+import { NEW_BADGE, tradesWord } from '../browse/posterCopy.js';
 import { PROFILE_COPY } from '../profile/profileCopy.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { DISPLAY_SYMBOLS, checkNames, hasSpace, namesProblem, spaceProblem } from './names.js';
+import { DISPLAY_SYMBOLS, checkNames, checkNewDisplayName, hasSpace, namesProblem, spaceProblem } from './names.js';
 import { suggestDisplayNames } from './randomName.js';
 
 /** How many suggestion chips the step shows (owner demo note #200: "2-3"). */
@@ -31,6 +32,7 @@ export const SUGGESTIONS = 3;
  * profile says "No ratings yet" (profileCopy.ts noPct). Nothing here is the member's real record.
  */
 function TraderPreview({ name }: { name: string }) {
+  // `name` is '' until what is typed passes checkNewDisplayName.
   const empty = name === '';
   // COPY-UNSIGNED (owner demo note #199: a neutral name while the field is empty)
   const shown = empty ? 'Your display name' : name;
@@ -47,10 +49,10 @@ function TraderPreview({ name }: { name: string }) {
             <span className="x2f-start__preview-name" data-username="" data-placeholder={empty ? 'true' : undefined} data-part="preview-name">
               {shown}
             </span>
-            <BadgePill tone="caution" icon="sprout" label="New" />
+            <BadgePill tone={NEW_BADGE.tone} icon={NEW_BADGE.icon} label={NEW_BADGE.label} />
           </span>
           <span className="x2f-start__preview-meta" data-part="preview-stats">
-            <span className="x2f-digits">0</span> trades · {PROFILE_COPY.noPct}
+            <span className="x2f-digits">0</span> {tradesWord(0)} · {PROFILE_COPY.noPct}
           </span>
         </span>
       </span>
@@ -64,6 +66,8 @@ export function DisplayName() {
   const [error, setError] = useState<string | null>(null);
   // Owner demo note #108: no spaces in a new display name.
   const spaced = hasSpace(displayName.trim());
+  const valid = checkNewDisplayName(displayName);
+  const previewName = valid.ok ? valid.name : '';
   const [suggestions, setSuggestions] = useState(() => suggestDisplayNames(SUGGESTIONS, state.loginName));
 
   const next = () => {
@@ -151,7 +155,8 @@ export function DisplayName() {
           </button>
         </div>
       </div>
-      <TraderPreview name={displayName.trim()} />
+      {/* The typed name only while it passes the display-name rules; else the neutral one (review). */}
+      <TraderPreview name={previewName} />
       {/* COPY-UNSIGNED: owner demo note #199, his sentence (verified 25 Nov 2026: no API route changes a display name). */}
       <p className="x2f-start__warn" data-part="display-permanent">
         Your display name is permanent—pick a handle you'll be happy building your trading reputation under.

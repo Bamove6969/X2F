@@ -3,7 +3,7 @@
 // look-alike rule in @x2f/accounts.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkNewDisplayName, checkNewLoginName } from '../src/screens/setup/names.js';
-import { ADJECTIVES, ANIMALS, randomBelow, randomLoginName, suggestDisplayNames } from '../src/screens/setup/randomName.js';
+import { ADJECTIVES, ANIMALS, randomBelow, randomLoginName, suggestDisplayNames, tracesBack } from '../src/screens/setup/randomName.js';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -64,6 +64,32 @@ describe('suggestDisplayNames (owner demo note #200)', () => {
         expect(n.toLowerCase()).not.toBe('midnight_otter_42');
       }
     }
+  });
+
+  it('never shares the login name\'s adjective or animal, ignoring case, so it cannot be traced back (review of 6e984272)', () => {
+    for (const login of ['amber_otter_42', 'Amber_Otter_42', 'midnight_heron_10']) {
+      const [adj, animal] = login.toLowerCase().split('_');
+      for (let i = 0; i < 200; i++) {
+        for (const n of suggestDisplayNames(3, login)) {
+          const [a, b] = n.split('_');
+          expect(a, `${login} -> ${n}`).not.toBe(adj);
+          expect(b, `${login} -> ${n}`).not.toBe(animal);
+        }
+      }
+    }
+  });
+
+  it('tracesBack: the same name, a shared word, or the login name\'s longest word inside', () => {
+    expect(tracesBack('amber_otter_43', 'amber_otter_42')).toBe(true);
+    expect(tracesBack('amber_heron_17', 'Amber_Otter_42')).toBe(true);
+    expect(tracesBack('quiet_otter_17', 'amber_otter_42')).toBe(true);
+    expect(tracesBack('amber_otter_42', 'AMBER_OTTER_42')).toBe(true);
+    // A typed login name: its longest letter run anywhere in the suggestion.
+    expect(tracesBack('kind_llama_12', 'llam.2024')).toBe(true);
+    expect(tracesBack('swift_marmot_88', 'juniper.oak')).toBe(false);
+    // Runs under 3 letters only count as whole words.
+    expect(tracesBack('noble_koala_23', 'jo.ko')).toBe(false);
+    expect(tracesBack('calm_otter_17', 'quiet_heron_42')).toBe(false);
   });
 
   it('never repeats the login name, ignoring case, even when the draw keeps landing on it', () => {

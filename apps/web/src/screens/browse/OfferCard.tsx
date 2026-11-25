@@ -7,6 +7,7 @@ import { marginParts, type MarginParts } from '../../ui/margin.js';
 import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
 import { cardRows, type RangeRows } from './offerAmounts.js';
+import { NEW_BADGE, tradesWord, type BadgeInfo } from './posterCopy.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
@@ -15,14 +16,7 @@ import './browse.css';
 // and `poster.stage` decides the amber New badge. The card never works out a stage from trade
 // counts or dates.
 
-interface BadgeInfo {
-  label: string;
-  icon: IconName;
-  tone: 'escrow' | 'caution';
-  meaning: string;
-}
-
-const NEW_BADGE: BadgeInfo = { label: 'New', icon: 'sprout', tone: 'caution', meaning: 'new to X2F, still on starter limits' };
+// NEW_BADGE and the trade count's word live in posterCopy.ts (the sign-up's trader card preview shows them too).
 
 /** Earned badges by API id (spec 5.4). Ids the app does not know are left off. */
 const BADGES: Record<string, BadgeInfo> = {
@@ -108,7 +102,7 @@ function posterLine(offer: Offer, now: Date): ReactNode {
       <span key="seen">{seen(p.lastSeenAt, now)}</span>
     ),
     <span key="trades">
-      <Num>{p.completedTrades.toLocaleString('en-US')}</Num> {p.completedTrades === 1 ? 'trade' : 'trades'}
+      <Num>{p.completedTrades.toLocaleString('en-US')}</Num> {tradesWord(p.completedTrades)}
     </span>,
   ];
   if (p.positivePct !== null) {

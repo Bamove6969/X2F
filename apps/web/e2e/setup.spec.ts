@@ -530,7 +530,7 @@ test('the username and display name are checked before going on (8-20, owner not
   await page.fill('#uname', 'Mira K12');
   await expect(go).toBeDisabled();
   await expect(rule('no-spaces')).toHaveAttribute('data-met', 'false');
-  await expect(page.locator('[data-part="name-space"]')).toHaveText('Remove the spaces. A username has no spaces.');
+  await expect(page.locator('[data-part="name-space"]')).toHaveText('Remove the spaces. A Login ID has no spaces.');
   // Any other character outside the set turns the characters row red.
   await page.fill('#uname', 'Mira#Kai');
   await expect(go).toBeDisabled();

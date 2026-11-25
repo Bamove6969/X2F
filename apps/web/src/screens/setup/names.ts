@@ -47,9 +47,13 @@ export function usernameRules(name: string): UsernameRules {
 /** What a value holds no spaces in: the inline sentence names it. */
 export type SpaceField = 'username' | 'display name' | 'password';
 
-/** COPY-UNSIGNED (owner demo note #108): the inline line under a field that holds a space. */
-export function spaceProblem(field: SpaceField): string {
-  return `Remove the spaces. A ${field} has no spaces.`;
+/**
+ * COPY-UNSIGNED (owner demo note #108): the inline line under a field that holds a space. `label`
+ * names the field otherwise where a screen calls it something else (the sign-up's "Login ID",
+ * owner demo notes #197 and #199); every other caller keeps `field`'s word.
+ */
+export function spaceProblem(field: SpaceField, label?: string): string {
+  return `Remove the spaces. A ${label ?? field} has no spaces.`;
 }
 
 export type NamesCheck = ReturnType<typeof checkNames>;
