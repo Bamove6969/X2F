@@ -197,11 +197,11 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   SetupTerms: [
     {
       text: "No IP addresses are logged.",
-      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says (opening reworded by owner demo note #183, 25 Nov) \"We never track our users. Period. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
+      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says (opening reworded by owner demo note #183, 25 Nov) \"We never track our users. Period. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-25).",
     },
     {
       text: "Moderators can read your trade chat only if a dispute is opened.",
-      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\"; owner demo note #181 (25 Nov 2026) adds \"…, which gives that particular moderator the ability to unlock and decrypt the trade and have full access to all communications that have transpired so far.\" (Terms version 2026-11-23).",
+      why: "Owner demo note #117 (23 Nov 2026, setup-terms key point): the page says \"Moderators can read your trade chat only if their presence is requested and a dispute is opened.\"; owner demo note #181 (25 Nov 2026) adds \"…, which gives that particular moderator the ability to unlock and decrypt the trade and have full access to all communications that have transpired so far.\" (Terms version 2026-11-25).",
     },
     {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
@@ -241,11 +241,11 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'X2F never holds your coins.',
-      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point; owner demo note #177 (25 Nov 2026) reworded the sentence itself: the page says "X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain …" (Terms version 2026-11-23).',
+      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point; owner demo note #177 (25 Nov 2026) reworded the sentence itself: the page says "X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain …" (Terms version 2026-11-25).',
     },
     {
       text: 'We answer lawful warrants with the little we have.',
-      why: 'Owner demo note #102 (17 Nov 2026), then #122 (23 Nov 2026) and #184 (25 Nov 2026, setup-terms key points): the page now has his privacy-by-design and lawful-orders paragraph in place of this line (Terms version 2026-11-23).',
+      why: 'Owner demo note #102 (17 Nov 2026), then #122 (23 Nov 2026) and #184 (25 Nov 2026, setup-terms key points): the page now has his privacy-by-design and lawful-orders paragraph in place of this line (Terms version 2026-11-25).',
     },
     {
       text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
@@ -257,7 +257,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Please read to the end. The key points first:',
-      why: 'Superseded on the canvas (design 9 Nov, p11-15, ea2a9ca8): the intro now reads "Read to the end. If you agree to X2F\'s rules and terms, …"; this repo\'s mirror of the board is from 26 Oct.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-15, ea2a9ca8): the intro read "Read to the end. If you agree to X2F\'s rules and terms, …", and owner demo note #176 (25 Nov 2026) replaced it with "Please take a quick moment to review our Terms of Service before getting started. …"; this repo\'s mirror of the board is from 26 Oct.',
     },
     {
       text: 'I accept',
@@ -265,7 +265,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Dispute records are kept for 30 days.',
-      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by two key points, which owner demo notes #119 and #120 (23 Nov 2026) reworded in his words: the page says "To adhere to our privacy policy and to maintain strong confidentiality, all trades that have no disputes will be deleted on the 30th day after completion." (note #182, 25 Nov) and "Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day." (Terms version 2026-11-23). This repo\'s mirror of the board is from 26 Oct. Owner demo note #118\'s new point ("Moderators are at your disposal …") has no board counterpart, so parity needs nothing for it.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling) by two key points, which owner demo notes #119 and #120 (23 Nov 2026) reworded in his words: the page says "To adhere to our privacy policy and to maintain strong confidentiality, all trades that have no disputes will be deleted on the 30th day after completion." (note #182, 25 Nov) and "Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day." (Terms version 2026-11-25). This repo\'s mirror of the board is from 26 Oct. Owner demo note #118\'s new point ("Moderators are at your disposal …") has no board counterpart, so parity needs nothing for it.',
     },
   ],
   // Owner demo notes (12 Nov 2026, /setup/login): every method is a checkbox, several can be
