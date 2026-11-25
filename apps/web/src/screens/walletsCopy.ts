@@ -66,12 +66,16 @@ export const WALLET_NAME_HELP: Record<WalletLabelProblem, string> = {
   characters: 'Use letters from one alphabet, digits and spaces, with no hidden characters.',
   separator: 'Leave out dots, bullets and bars. X2F puts those between a name and its details.',
   status: 'Pick another name. Default, Ready, Usable, Waiting, Verified and In use are words X2F shows for a wallet.',
-  address: 'Leave out anything that reads like an address ending, such as 6 or more letters with digits or capitals mixed in.',
+  address: 'Leave out anything that reads like an address ending, such as the end of one of your addresses, or letters with digits or capitals mixed in.',
 };
 
-/** The sentence for a typed name, or null when it may be saved (an empty field says nothing). */
-export function walletNameHelp(typed: string): string | null {
+/**
+ * The sentence for a typed name, or null when it may be saved (an empty field says nothing).
+ * `addresses`: the account's addresses this screen has (and the one typed), which the name may not
+ * spell the end of (verification review of wip/lead-note-226; the API checks all of them).
+ */
+export function walletNameHelp(typed: string, addresses: readonly string[] = []): string | null {
   if (typed.trim() === '') return null;
-  const problem = walletLabelProblem(typed);
+  const problem = walletLabelProblem(typed, addresses);
   return problem === null ? null : WALLET_NAME_HELP[problem];
 }
