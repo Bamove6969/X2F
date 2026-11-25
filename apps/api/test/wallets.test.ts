@@ -1354,6 +1354,42 @@ describe('renaming a wallet (owner demo note #226, 25 Nov 2026)', () => {
     }
   });
 
+  it('verification review: a name spelling (a look-alike of) the end of any of the account\'s addresses is refused at rename, add and batch add', async () => {
+    const { b } = await trader();
+    const end = 'kfzxqm';
+    const address = `${fakeAddress().slice(0, 89)}${end}`;
+    const { wallet } = await addConfirmed(b, address);
+    const tail = 'Rk3Fz1';
+    const other = `${fakeAddress().slice(0, 89)}${tail}`;
+    const { wallet: removed } = await addConfirmed(b, other);
+    expect((await b.delete(`/v1/wallets/${removed.id}`)).statusCode).toBe(204);
+    for (const label of [
+      'Savings kfzxqm', 'KFZXQ', 'kfz-xqm', 'k f z x q', 'ｋｆｚｘｑｍ', '𝐤𝐟𝐳𝐱𝐪',
+      // The removed wallet's end, and its base58-excluded and spaced look-alikes.
+      'Rk3Fz', 'k3Fz1', 'Rk3 Fz1', 'Rk3Fz0', 'rk3fzl', '\uFF32\uFF4B\uFF13\uFF26\uFF5A\uFF11', '\u{1D411}\u{1D424}\u{1D7D1}\u{1D405}\u{1D433}\u{1D7CF}',
+    ]) {
+      const res = await rename(b, wallet.id, { label });
+      expect(res.statusCode, label).toBe(400);
+    }
+    expect((await row(wallet.id)).label).toBe('Main');
+    // The add: the name may not spell the end of the address being added, nor of another in the batch.
+    const next = `${fakeAddress().slice(0, 89)}abcdeq`;
+    const token = await confirmToken(b, walletAction(next));
+    expect((await addWallet(b, { address: next, label: 'My abcde wallet', confirmToken: token })).statusCode).toBe(400);
+    expect((await addWallet(b, { address: next, label: 'Savings kfzxqm', confirmToken: token })).statusCode).toBe(400);
+    expect(await tokenUsed(token)).toBe(false);
+    const x = `${fakeAddress().slice(0, 89)}qwertz`;
+    const y = fakeAddress();
+    const batchToken = await confirmToken(b, walletsActionOf([x, y]));
+    const batch = await b.post('/v1/wallets', { wallets: [{ app: 'cake', label: 'Fine', address: x }, { app: 'cake', label: 'Savings qwert', address: y }], confirmToken: batchToken });
+    expect(batch.statusCode).toBe(400);
+    expect(await tokenUsed(batchToken)).toBe(false);
+    // Ordinary names still pass.
+    for (const label of ['Savings', 'Cake Wallet savings', 'Monero main', 'Spending 2', 'Wallet-2']) {
+      expect((await rename(b, wallet.id, { label })).statusCode, label).toBe(204);
+    }
+  });
+
   it(`security review Medium 3: at most ${WALLET_RENAMES_PER_DAY} renames a day per account, then 429 slow-down; the next UTC day it works again`, async () => {
     const { id, b } = await trader();
     const { wallet } = await addConfirmed(b);

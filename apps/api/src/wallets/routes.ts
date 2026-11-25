@@ -1,4 +1,4 @@
-import { MAX_WALLET_BATCH, WALLET_LABEL_MAX, addressEnd, addressEnds, addressHash, addressesHash, cleanWalletLabel, type ConfirmAction } from '@x2f/accounts';
+import { MAX_WALLET_BATCH, WALLET_LABEL_MAX, addressEnd, addressEnds, addressHash, addressesHash, cleanWalletLabel, labelSpoofsAddress, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
@@ -217,6 +217,10 @@ const checkWalletInput: preHandlerAsyncHookHandler = async function (req) {
     if (verdict !== 'ok') throw new ApiError(400, 'address-invalid');
   }
   const addresses = shapes.map((s) => s.address);
+  // Verification review of wip/lead-note-226 (Medium): no name may spell (a look-alike of) the end of
+  // any of the account's addresses: its wallets, removed ones included, and every one in this request.
+  const known = [...(await accountAddresses(deps.db, req.auth.accountId)), ...addresses];
+  if (shapes.some((s) => labelSpoofsAddress(s.label, known))) throw new ApiError(400, 'bad-request');
   const listed = await deps.db.query(
     'select 1 from wallets where account_id = $1 and address = any($2::text[]) and removed_at is null',
     [req.auth.accountId, addresses],
@@ -227,6 +231,12 @@ const checkWalletInput: preHandlerAsyncHookHandler = async function (req) {
     : { kind: 'add-wallet', addressHash: await addressHash(addresses[0]!), addressEnd: addressEnd(addresses[0]!) };
   walletInputs.set(req, { items: shapes, batch, action });
 };
+
+/** Every address the account has had as a wallet (open, removed, used up; purged ones are gone). */
+async function accountAddresses(db: Queryable, accountId: string): Promise<string[]> {
+  const { rows } = await db.query<{ address: string }>('select address from wallets where account_id = $1 and address is not null', [accountId]);
+  return rows.map((r) => r.address);
+}
 
 function walletInput(req: FastifyRequest): WalletInput {
   const input = walletInputs.get(req);
@@ -574,7 +584,8 @@ async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
  * skips no wait: like the default, it needs no confirm and is not staged; the hold still blocks it,
  * as every wallet write, and the session must still be live under the account lock. Security review
  * of wip/lead-note-226: the name follows the spoofing rule (`walletLabelProblem`: no separators,
- * status words, address-like runs or mixed scripts; Medium 1); a session whose changes must wait
+ * status words, address-like runs or mixed scripts; Medium 1; verification review: nor a look-alike
+ * of the end of any of the account's addresses, `labelSpoofsAddress`, read under the lock); a session whose changes must wait
  * (`weakOf`: a username-and-password login, a backup session) gets 403 `weak-session` (Medium 2: so a
  * weak foothold cannot rename any wallet, one still in its wait included); and at most
  * WALLET_RENAMES_PER_DAY renames a day, then 429 `slow-down` (Medium 3). A real change
@@ -601,6 +612,8 @@ async function renameHandler(req: FastifyRequest, reply: FastifyReply) {
     );
     const w = rows[0];
     if (!w) throw new ApiError(404, 'not-found');
+    // Verification review (Medium): read under the account lock, so no add slips in between.
+    if (labelSpoofsAddress(label, await accountAddresses(client, req.auth.accountId))) throw new ApiError(400, 'bad-request');
     if (w.label === label) return;
     await client.query('update wallets set label = $3 where id = $1 and account_id = $2 and removed_at is null', [id, req.auth.accountId, label]);
     // Counted only for a real change, after it: a refusal rolls the count back with the rename.

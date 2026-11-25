@@ -239,3 +239,31 @@ describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names 
     expect(document.querySelector('[data-part="wallet-rename-error"]')!.textContent).toBe(RENAME.capped);
   });
 });
+
+describe('verification review of wip/lead-note-226: a name may not spell the end of an address on the screen', () => {
+  it('setup: the end of the address typed (any case, spaced) holds Finish setup back', () => {
+    showSetup();
+    type('#xmr-payout', TYPED);
+    for (const typed of ['Savings aaaaa1', 'AAAAA', 'aa-aaa']) {
+      type('#wallet-name', typed);
+      expect(finishButton().disabled, typed).toBe(true);
+      expect(document.querySelector('[data-part="wallet-name-invalid"]')!.textContent).toBe(WALLET_NAME_HELP.address);
+    }
+    expect(setupWalletLabel('Savings aaaaa1', TYPED)).toBeNull();
+    expect(setupWalletLabel('Savings aaaaa1')).toBe('Savings aaaaa1');
+  });
+
+  it('rename: the end of any listed address, and its fullwidth form, keep Save disabled', () => {
+    const other = `4${'9'.repeat(88)}kfzxqm`;
+    render(<RenameSheet wallet={WALLET} addresses={[TYPED, other]} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={vi.fn()} />);
+    const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
+    for (const typed of ['Savings kfzxqm', 'ｋｆｚｘｑ', 'AAAAA1']) {
+      type('#wallet-rename', typed);
+      expect(save().disabled, typed).toBe(true);
+    }
+    type('#wallet-rename', 'Monero main');
+    expect(save().disabled).toBe(false);
+    expect(renameReady('Savings kfzxqm', 'Wallet 1', [other])).toBe(false);
+    expect(renameReady('Savings kfzxqm', 'Wallet 1')).toBe(true);
+  });
+});

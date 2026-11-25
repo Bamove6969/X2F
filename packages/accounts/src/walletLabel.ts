@@ -17,9 +17,12 @@
  * - `status`: a word the lists use for a wallet's state ("Default", "Ready", "Usable", "Waiting",
  *   "Verified", "In use", "One trade only"), as a word of its own, any case, look-alikes and digits
  *   drawn like letters folded (`D3fault`);
- * - `address`: something that reads like the end of a Monero address: a run of 6 or more base58
- *   characters ([1-9A-HJ-NP-Za-km-z]) holding a digit or a capital letter after its first character
- *   (address ends such as `Rk3Fz1`). Plain words are runs of base58 letters too ("Savings",
+ * - `address`: 5 or more characters of the end of one of the account's own wallet addresses, under
+ *   `addressFold` (NFKC, any case, 0/o and 1/i/l as one, spaces, hyphens and dots dropped:
+ *   `labelSpoofsAddress`); or, for any address, after NFKC, a run of 6 or more letters and digits
+ *   (base58 and its excluded look-alikes 0, O, I, l; joined across hyphens, dots and underscores)
+ *   holding a digit or a capital letter after its first character (address ends such as `Rk3Fz1`),
+ *   other than a word with a number after it ("Wallet-2"). Plain words are runs of base58 letters too ("Savings",
  *   "Spending"), so a run of lower-case letters after one capital is allowed.
  * Names need not be unique on an account (the add never asked). Stored names keep the rule they
  * were saved under.
@@ -32,16 +35,56 @@ export type WalletLabelProblem = 'length' | 'characters' | 'separator' | 'status
 
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
 /** The lists' separators and their look-alikes: ellipses, middle dots, bullets, bars, two dots or more. */
-const SEPARATOR = /[…··•‣‧∙⋅・･◦⁃⸱⸳᛫ᐧꞏ|¦❘]|\.{2,}/u;
+const SEPARATOR = /[⋯․‥✓✔☑…··•‣‧∙⋅・･◦⁃⸱⸳᛫ᐧꞏ|¦❘]|\.{2,}/u;
 /** The words the lists show for a wallet's state (Wallets.tsx, WalletPicker, AcceptedSheet), as look-alike keys. */
 const STATUS_WORDS = ['default', 'ready', 'usable', 'waiting', 'verified'].map(lookAlikeKey);
 const STATUS_PHRASES = [['in', 'use'], ['one', 'trade', 'only']].map((p) => p.map(lookAlikeKey));
-/** A run of base58 characters, 6 or more. */
-const BASE58_RUN = /[1-9A-HJ-NP-Za-km-z]{6,}/g;
+/**
+ * Verification review of wip/lead-note-226 (Medium): the fold an address end and a name are compared
+ * under, so a look-alike of the end cannot slip through: NFKC (full-width ｒ, mathematical 𝐑 and
+ * 𝟑 become plain r and 3), lower case, the base58-excluded look-alikes as one letter each (0 and o
+ * as o; 1, i and l as l), and every character but a letter or digit dropped (spaces, hyphens, dots).
+ */
+export function addressFold(s: string): string {
+  return s
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/0/g, 'o')
+    .replace(/[1i]/g, 'l')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
 
+/** The folded 5-character windows of an address's last 6 characters (what the lists show of it). */
+function endWindows(address: string): string[] {
+  const end = addressFold(address.trim().slice(-6));
+  const out = new Set<string>();
+  for (let i = 0; i + 5 <= end.length; i++) out.add(end.slice(i, i + 5));
+  return [...out];
+}
+
+/**
+ * Whether the name holds, under `addressFold`, 5 or more characters of the end of one of these
+ * addresses (the account's wallets, removed ones included, and the one being added): "Savings
+ * kfzxqm", "Rk3-Fz1" or "ＲＫ３ＦＺ１" against a wallet ending Rk3Fz1.
+ */
+export function labelSpoofsAddress(name: string, addresses: readonly string[]): boolean {
+  const folded = addressFold(name);
+  if (folded.length < 5) return false;
+  return addresses.some((a) => endWindows(a).some((w) => folded.includes(w)));
+}
+
+/**
+ * The backstop for any address end, the account's or not: after NFKC, a run of 6 or more characters
+ * drawn from base58 and its excluded look-alikes (0, O, I, l), joined across hyphens, dots and
+ * underscores (`Rk3-Fz1`), that holds a digit or a capital after its first character.
+ */
 function looksLikeAddressEnd(name: string): boolean {
-  for (const m of name.matchAll(BASE58_RUN)) {
+  const joined = name.normalize('NFKC').replace(/(?<=[A-Za-z0-9])[-._]+(?=[A-Za-z0-9])/g, '');
+  for (const m of joined.matchAll(/[A-Za-z0-9]{6,}/g)) {
     const run = m[0];
+    // A word and a number after it ("Wallet-2", "Monero2025") reads as a name; the account's own
+    // address ends of that shape are still caught by `labelSpoofsAddress`.
+    if (/^[A-Za-z][a-z]{2,}\d{1,4}$/.test(run)) continue;
     if (/\d/.test(run) || /[A-Z]/.test(run.slice(1))) return true;
   }
   return false;
@@ -56,21 +99,25 @@ function hasStatusWord(name: string): boolean {
   return STATUS_PHRASES.some((p) => words.some((_, i) => p.every((w, j) => words[i + j] === w)));
 }
 
-/** Why `raw` may not be a wallet's name, or null when it may (then `cleanWalletLabel` gives the name stored). */
-export function walletLabelProblem(raw: unknown): WalletLabelProblem | null {
+/**
+ * Why `raw` may not be a wallet's name, or null when it may (then `cleanWalletLabel` gives the name
+ * stored). `addresses`: the account's wallet addresses the name must not spoof (`labelSpoofsAddress`;
+ * the API passes all of them, removed ones and the one being added included; a client passes those it has).
+ */
+export function walletLabelProblem(raw: unknown, addresses: readonly string[] = []): WalletLabelProblem | null {
   if (typeof raw !== 'string') return 'characters';
   if (raw.length > WALLET_LABEL_MAX * 4) return 'length';
   const clean = raw.normalize('NFC').trim();
   const length = [...clean].length;
   if (length < 1 || length > WALLET_LABEL_MAX) return 'length';
   if (CONTROL.test(clean) || unsafeScripts(clean)) return 'characters';
-  if (SEPARATOR.test(clean) || SEPARATOR.test(lookAlikeKey(clean))) return 'separator';
+  if (SEPARATOR.test(clean) || SEPARATOR.test(clean.normalize('NFKC')) || SEPARATOR.test(lookAlikeKey(clean))) return 'separator';
   if (hasStatusWord(clean)) return 'status';
-  if (looksLikeAddressEnd(clean)) return 'address';
+  if (looksLikeAddressEnd(clean) || labelSpoofsAddress(clean, addresses)) return 'address';
   return null;
 }
 
 /** The name stored (NFC, trimmed) when `raw` is an allowed wallet name, else null. */
-export function cleanWalletLabel(raw: unknown): string | null {
-  return walletLabelProblem(raw) === null ? (raw as string).normalize('NFC').trim() : null;
+export function cleanWalletLabel(raw: unknown, addresses: readonly string[] = []): string | null {
+  return walletLabelProblem(raw, addresses) === null ? (raw as string).normalize('NFC').trim() : null;
 }
