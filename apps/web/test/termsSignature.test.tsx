@@ -17,10 +17,14 @@ import { fire, render } from './render.js';
 
 const auth = vi.hoisted(() => ({
   getTerms: vi.fn(async () => ({ version: '' })),
-  acceptTerms: vi.fn(async (_b: { version: string; signature: TermsSignature }) => undefined),
+  acceptTerms: vi.fn(async (_b: { version: string; signature?: TermsSignature }) => undefined),
 }));
 vi.mock('../src/screens/auth/authApi.js', () => ({ authApi: auth }));
-vi.mock('../src/session/useSession.js', () => ({ refreshSession: () => undefined }));
+const who = vi.hoisted(() => ({ member: false }));
+vi.mock('../src/session/useSession.js', () => ({
+  refreshSession: () => undefined,
+  useSession: () => ({ status: 'signed-in', me: { member: who.member ? { name: 'AK', roles: [] } : null } }),
+}));
 
 const PAD_W = 320;
 const PAD_H = 132;
@@ -28,6 +32,7 @@ const PAD_H = 132;
 beforeEach(() => {
   auth.getTerms.mockImplementation(async () => ({ version: TERMS_TEXT_VERSION }));
   auth.acceptTerms.mockClear();
+  who.member = false;
   // happy-dom lays nothing out: give the pad a size.
   vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get').mockReturnValue(PAD_W);
   vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get').mockReturnValue(PAD_H);
@@ -254,7 +259,52 @@ describe('the Terms screen: read to the end of the page', () => {
   });
 });
 
-describe('the Terms screen: I accept needs the tick and a signature', () => {
+// Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone (a clickwrap).
+describe('the Terms screen for a trader: the tick alone, no signature', () => {
+  async function mount() {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const accept = () => host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!;
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    return { host, accept, tick };
+  }
+
+  it('has no pad, no typed name and no sign help; the tick line is the owner\'s exact words', async () => {
+    const { host, tick } = await mount();
+    expect(host.querySelector('[data-part="signature-pad"]')).toBeNull();
+    expect(host.querySelector('[data-part="signature-type"]')).toBeNull();
+    expect(host.querySelector('#terms-sign-help')).toBeNull();
+    expect(host.textContent).not.toMatch(/sign your name|sign in the white box|scribble|Type your name/i);
+    expect(tick.closest('label')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('I have read and agree to the Terms of Service and Privacy Policy');
+    expect(tick.getAttribute('aria-describedby') ?? '').not.toContain('terms-sign-help');
+  });
+
+  it('the tick enables accepting, and accepting sends the version with no signature', async () => {
+    const { accept, tick } = await mount();
+    expect(tick.disabled).toBe(false); // happy-dom: the page shows everything, so it counts as read
+    expect(accept().disabled).toBe(true);
+    click(tick);
+    expect(accept().disabled).toBe(false);
+    click(tick);
+    expect(accept().disabled).toBe(true);
+    click(tick);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
+    expect(auth.acceptTerms.mock.calls[0]![0]).not.toHaveProperty('signature');
+  });
+});
+
+// A team member's session still signs on /terms (owner 9 Nov 2026, p11-14; the API requires it).
+describe('the Terms screen for a team member: I accept needs the tick and a signature', () => {
+  beforeEach(() => {
+    who.member = true;
+  });
+
   async function mount() {
     const { host } = render(
       <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>

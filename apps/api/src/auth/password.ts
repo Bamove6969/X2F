@@ -9,7 +9,7 @@ import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { addAlert } from '../alerts.js';
 import {
-  assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, retagLoginName, type LoginTags,
+  assertDisplayNameFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, retagLoginName, type LoginTags,
 } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
@@ -200,7 +200,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.register.take();
   const body = req.body as Record<string, unknown> | null;
-  const terms = assertTermsAccepted(
+  const terms = assertTraderTermsAccepted(
     deps,
     body !== null && typeof body === 'object' ? body.acceptedTerms : undefined,
     body !== null && typeof body === 'object' ? body.termsSignature : undefined,
@@ -483,8 +483,10 @@ export async function applyPassword(
  * `PUT /v1/account/password`. All refuse bodies over 4 KiB (register: 4 KiB plus the Terms
  * signature's room, `REGISTER_PASSWORD_BODY_LIMIT`) with 413 before hashing; the public
  * routes set the device cookie; register draws on the register budget, login on the start budget.
- * Register takes `{ displayName, loginName, password, deviceLabel, acceptedTerms, termsSignature }` and answers
- * `{ displayName }` only: the login name is never sent back.
+ * Register takes `{ displayName, loginName, password, deviceLabel, acceptedTerms, termsSignature? }` and answers
+ * `{ displayName }` only: the login name is never sent back. `termsSignature` is optional since owner
+ * demo note #187 (a trader agrees with the tick alone), strictly checked when sent
+ * (`assertTraderTermsAccepted`); the body limit keeps its room for one.
  */
 export function passwordRoutes(app: FastifyInstance): void {
   const opts = { bodyLimit: PASSWORD_BODY_LIMIT };

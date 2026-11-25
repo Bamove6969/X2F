@@ -2,23 +2,27 @@
  * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The full Terms flow in the page, with
  * no scroll box of their own (owner demo note #187, 25 Nov 2026: a box scrolling inside the
  * scrolling page trapped the thumb on phones); the tick box enables only once the page has been
- * scrolled to the "End of Terms" line (or shows it already, on a tall screen). Under it, the signature pad
- * (owner, 8 Nov 2026: the Terms are agreed once, at account opening, with a tick and a signature,
- * never per trade): the accept button (**I accept**; on SetupTerms **Start creating my account**,
- * design 9 Nov p11-15) needs both the tick and a signature, drawn or typed. The version
- * comes from `GET /v1/terms`.
+ * scrolled to the "End of Terms" line (or shows it already, on a tall screen). The Terms are agreed
+ * once, at account opening (owner, 8 Nov 2026), never per trade. A trader agrees with the tick
+ * alone, a clickwrap (owner demo note #187, 25 Nov 2026: "Drop the signature canvas completely"):
+ * the accept button (**I accept**; on SetupTerms **Start creating my account**, design 9 Nov
+ * p11-15) needs the tick. With `sign` (a team member, owner 9 Nov 2026, p11-14: everyone who gets a
+ * login signs; not changed by note #187) the signature pad shows under the tick and the button
+ * needs a signature too, drawn or typed. The version comes from `GET /v1/terms`.
  *
- * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version and the signature
- *   for the register call (`acceptedTerms`, `termsSignature`) and goes on to the names.
+ * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version for the register
+ *   call (`acceptedTerms`, no signature) and goes on to the names.
  * - `Terms` (`/terms`): a signed-in trader (or team member, on their own login account) refused
  *   with `terms-required` (the Terms changed). Accepting posts `POST /v1/account/terms`
- *   `{ version, signature }` (a new version asks for a new signature too) and returns to `returnTo`.
- * - `TermsScreen` in MemberInvite (`/team/join`): a team member signs the Terms before joining
- *   (review 2026-11-08 F1); the version goes with `POST /v1/team/join/start` (`acceptedTerms`), the
- *   signature with `POST /v1/team/join/finish` (`termsSignature`; owner 9 Nov 2026, p11-14).
+ *   `{ version }` for a trader, `{ version, signature }` for a team member (`me().member`), and
+ *   returns to `returnTo`.
+ * - `TermsScreen` in MemberInvite (`/team/join`, `sign`): a team member signs the Terms before
+ *   joining (review 2026-11-08 F1); the version goes with `POST /v1/team/join/start`
+ *   (`acceptedTerms`), the signature with `POST /v1/team/join/finish` (`termsSignature`; owner 9 Nov
+ *   2026, p11-14).
  *
- * The pad and its help line are not on the SetupTerms board; they sit under the tick box, before
- * the board's footer, and their wording is unsigned.
+ * The pad and its help line (team members only) are not on the SetupTerms board; they sit under
+ * the tick box, before the board's footer, and their wording is unsigned.
  *
  * Board: SetupTerms (design/x2f-app/, mirrored from the canvas 2026-10-26): "Before you start", the
  * key points, then the full text in the box. "Terms of Service" and "Privacy Policy" in the tick
@@ -32,7 +36,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import type { TermsSignature } from '@x2f/auth-client';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
-import { refreshSession } from '../../session/useSession.js';
+import { refreshSession, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
@@ -67,6 +71,8 @@ export function TermsScreen({
   back,
   after,
   acceptLabel = 'I accept',
+  sign = false,
+  waiting = false,
   onAccept,
 }: {
   screen: string;
@@ -77,7 +83,15 @@ export function TermsScreen({
   acceptLabel?: string;
   /** Shown under the tick box. */
   after?: ReactNode;
-  onAccept: (version: string, signature: TermsSignature) => Promise<void>;
+  /**
+   * A team member signs as well as ticking (owner 9 Nov 2026, p11-14): the pad shows and the
+   * button needs a signature. A trader never does (owner demo note #187).
+   */
+  sign?: boolean;
+  /** True while the screen does not know yet whether this person signs: the button waits. */
+  waiting?: boolean;
+  /** `signature` is null unless `sign`, and never null with it. */
+  onAccept: (version: string, signature: TermsSignature | null) => Promise<void>;
 }) {
   const [version, setVersion] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -138,11 +152,11 @@ export function TermsScreen({
   const stale = version !== null && version !== TERMS_TEXT_VERSION;
 
   const accept = async () => {
-    if (version === null || stale || signature === null) return;
+    if (version === null || stale || waiting || (sign && signature === null)) return;
     setBusy(true);
     setError(null);
     try {
-      await onAccept(version, signature);
+      await onAccept(version, sign ? signature : null);
     } catch (e) {
       if (termsChanged(e)) {
         // The Terms changed between loading and accepting (review M3): read the new version first.
@@ -182,7 +196,12 @@ export function TermsScreen({
       fit
       {...(back !== undefined ? { back } : {})}
       footer={
-        <Button variant="primary" disabled={!ticked || signature === null || version === null || stale || busy} onClick={() => void accept()} data-part="terms-accept">
+        <Button
+          variant="primary"
+          disabled={!ticked || (sign && signature === null) || waiting || version === null || stale || busy}
+          onClick={() => void accept()}
+          data-part="terms-accept"
+        >
           {acceptLabel}
         </Button>
       }
@@ -255,7 +274,7 @@ export function TermsScreen({
           disabled={!read || stale}
           checked={ticked}
           onChange={(e) => setTicked(e.target.checked)}
-          aria-describedby={[stale ? 'terms-stale' : !read ? 'terms-hint' : null, 'terms-sign-help'].filter((x) => x !== null).join(' ')}
+          aria-describedby={[stale ? 'terms-stale' : !read ? 'terms-hint' : null, sign ? 'terms-sign-help' : null].filter((x) => x !== null).join(' ') || undefined}
           data-part="terms-tick"
         />
         <span>
@@ -267,15 +286,20 @@ export function TermsScreen({
           <button type="button" className="x2f-start__textbutton" onClick={() => show(PRIVACY_HEADING)}>
             Privacy Policy
           </button>
-          .
+          {/* Owner demo note #187 (25 Nov 2026): the line is exactly his words, with no full stop. */}
         </span>
       </label>
-      <p className="x2f-sign__help" id="terms-sign-help">
-        {/* COPY-UNSIGNED: the button's name follows the screen's own (SetupTerms: design 9 Nov, p11-15). */}
-        Then sign in the white box with your finger, a pen or the mouse. A scribble or an X is fine. {acceptLabel} needs both the tick and
-        your signature.
-      </p>
-      <SignaturePad key={padKey} onChange={setSignature} describedBy="terms-sign-help" />
+      {/* Team members only (owner 9 Nov 2026, p11-14); a trader just ticks (owner demo note #187). */}
+      {sign ? (
+        <>
+          <p className="x2f-sign__help" id="terms-sign-help">
+            {/* COPY-UNSIGNED: the button's name follows the screen's own (SetupTerms: design 9 Nov, p11-15). */}
+            Then sign in the white box with your finger, a pen or the mouse. A scribble or an X is fine. {acceptLabel} needs both the tick and
+            your signature.
+          </p>
+          <SignaturePad key={padKey} onChange={setSignature} describedBy="terms-sign-help" />
+        </>
+      ) : null}
       {after}
     </SetupFrame>
   );
@@ -288,7 +312,8 @@ export function SetupTerms() {
       screen="setup-terms"
       title="Before you start"
       // Design 9 Nov (p11-15, canvas ea2a9ca8; owner p11-15 "please check the box if you agree to the
-      // rules and terms of X2F and then please sign your name and hit begin account creation").
+      // rules and terms of X2F and then please sign your name and hit begin account creation"; the
+      // signing dropped by owner demo note #187, 25 Nov).
       // "Terms" capitalised as this document's name (owner demo notes 13 Nov, setup-terms). COPY-UNSIGNED.
       // Owner demo note #176 (25 Nov), his words, replacing the whole intro (notes #174/#175 superseded);
       // a full stop added at the end.
@@ -304,8 +329,9 @@ export function SetupTerms() {
           </Link>
         </p>
       }
-      onAccept={async (version, signature) => {
-        update({ terms: { version, signature } });
+      // Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone, so no `sign`.
+      onAccept={async (version) => {
+        update({ terms: { version } });
         // NEEDS_OWNER_SITE_RULES (owner p11-24, 9 Nov 2026): "maybe we'll have a terms of service
         // that comes up, you agree to it, then we're going to have site rules that we expect people
         // to abide by, and they are then going to click and acknowledge that." A separate site
@@ -323,13 +349,19 @@ export function Terms() {
   const location = useLocation();
   const navigate = useNavigate();
   const returnTo = returnToFrom(location.search);
+  // A team member's session still signs (owner 9 Nov 2026, p11-14; the API requires it); a trader's
+  // does not (owner demo note #187). Until `me` answers, the button waits.
+  const session = useSession();
+  const member = session.status === 'signed-in' && session.me.member != null;
   return (
     <TermsScreen
       screen="terms"
       title="Updated Terms"
       intro="The Terms of Service have changed. Read them to the end and accept them to keep trading. The key points first:"
+      sign={member}
+      waiting={session.status === 'loading'}
       onAccept={async (version, signature) => {
-        await authApi.acceptTerms({ version, signature });
+        await authApi.acceptTerms(signature !== null ? { version, signature } : { version });
         refreshSession();
         void navigate(returnTo, { replace: true });
       }}

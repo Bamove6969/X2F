@@ -379,7 +379,7 @@ describe('the help library content', () => {
     expect(QUESTIONS.find((q) => q.id === 'member-chat')!.a).toMatch(/^Not yet\./);
     // The per-payment-method pay windows are placeholders (owner p11-29): no 90 minutes, 3 hours or the like.
     expect(all).not.toMatch(/\b90 minutes\b|\b3 hours\b/);
-    // Review B1: X2F does ask for a signature at sign-up, so no answer says it keeps no name.
+    // Review B1: X2F keeps names (the display name, PGP user IDs), so no answer says it keeps no name.
     expect(all).not.toMatch(/keeps no name|asks for no name|no name, email/i);
     // Review B2: the receiver of the trade's XMR pays the network fee, so nobody gets "the full trade amount".
     expect(all).not.toMatch(/full trade amount/i);
@@ -398,8 +398,12 @@ describe('the help library content', () => {
     // Re-review m1: the profile's typical payment time and opt-in traded line are named.
     expect(q('who-sees-profile')).toMatch(/typical payment time/);
     expect(q('who-sees-profile')).toMatch(/XMR you have traded if you chose to show it/);
-    // Re-review m4: the Terms signature is erased when the account closes.
-    expect(q('closed-account-data')).toMatch(/signature you gave for the Terms is erased/);
+    // Owner demo note #187 (25 Nov 2026): a trader gives no signature for the Terms, so no answer
+    // to a trader speaks of one as theirs (re-review m4's erase sentence went with it).
+    expect(q('closed-account-data')).not.toMatch(/signature/i);
+    expect(q('what-is-stored')).not.toMatch(/signature/i);
+    expect(q('personal-details')).not.toMatch(/sign your name|scribble/i);
+    expect(q('create-account')).not.toMatch(/sign them/i);
   });
 
   it('the proof-upload questions follow the flag: two answers, each with its own sources', () => {

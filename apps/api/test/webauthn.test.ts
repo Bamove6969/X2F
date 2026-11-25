@@ -219,8 +219,9 @@ describe('passkey sign-up and discoverable login', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
     }
-    // The signature too (owner, 8 Nov 2026), still before the challenge is used.
-    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'typed', name: '' }, 'signature-invalid']] as const) {
+    // A signature that is sent is checked (owner, 8 Nov 2026), still before the challenge is used;
+    // since owner demo note #187 a trader may send none, but an explicit null is not "none".
+    for (const [termsSignature, error] of [[null, 'signature-invalid'], [{ kind: 'typed', name: '' }, 'signature-invalid']] as const) {
       const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error });
@@ -232,6 +233,21 @@ describe('passkey sign-up and discoverable login', () => {
     const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where id = $1', [id]);
     expect(rows[0].terms_version).toBe(TERMS);
     expect(openTermsSignature(deps.config, rows[0].terms_signature, id)).toEqual(SIG);
+  });
+
+  // Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone.
+  it('registers with no signature: the current version is recorded and no signature is stored', async () => {
+    const b = new Browser();
+    const username = uniqueName('nosig');
+    const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(username), kind: 'passkey' })).json();
+    const response = auth.register(options, ORIGIN);
+    const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
+    expect(ok.statusCode).toBe(201);
+    const id = (await accountIdByLoginName(deps, username))!;
+    const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where id = $1', [id]);
+    expect(rows[0].terms_version).toBe(TERMS);
+    expect(rows[0].terms_signature).toBeNull();
   });
 
   it('puts a 32-byte user handle in the options, never the username', async () => {

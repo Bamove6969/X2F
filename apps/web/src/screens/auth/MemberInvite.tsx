@@ -202,8 +202,10 @@ export function MemberInvite() {
         screen="team-join-terms"
         title={C.title}
         intro={C.termsIntro}
+        // A team member still signs (owner 9 Nov 2026, p11-14; owner demo note #187 is the trader's sign-up only).
+        sign
         onAccept={async (version, signature) => {
-          setTerms({ version, signature });
+          if (signature !== null) setTerms({ version, signature });
         }}
       />
     );
