@@ -75,7 +75,8 @@ export const KEY_POINTS: readonly string[] = [
   "We build our service around privacy-by-design, meaning we don't collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, because we retain so little information, any response is naturally limited to the minimal, non-identifying technical data present on our servers at the time. Additionally, our company and servers are based in jurisdictions with strong statutory privacy laws and established judicial standards for reviewing cross-border requests.",
   // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
   // Owner demo note #123 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  'X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days is closed automatically.',
+  // Owner demo note #185 (25 Nov): "60 days or longer", his words. COPY-UNSIGNED.
+  'X2F is built as a lasting community, for people who trade regularly, so an account not signed into for 60 days or longer is closed automatically.',
 ];
 
 /** The heading of the section the tick box's "Privacy Policy" points at. */
