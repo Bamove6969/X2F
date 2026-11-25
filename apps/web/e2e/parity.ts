@@ -241,7 +241,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'X2F never holds your coins.',
-      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point (Terms version 2026-11-23).',
+      why: 'Owner demo note #115 (23 Nov 2026, setup-terms first key point): his multisig explanation follows this sentence in the same point; owner demo note #177 (25 Nov 2026) reworded the sentence itself: the page says "X2F is never in possession of your cryptocurrency (XMR). Your coins are held directly on the blockchain …" (Terms version 2026-11-23).',
     },
     {
       text: 'We answer lawful warrants with the little we have.',
