@@ -63,6 +63,12 @@ export interface SetupState {
    */
   recoveryCode: string | null;
   wallet: { app: WalletApp; addressEnd: string } | null;
+  /**
+   * Owner 25 Nov security-key report: the passkey or security key the account was just made with,
+   * while its "saved" screen asks for its name (memory only; a reload skips naming and the key keeps
+   * the server's default name).
+   */
+  keySaved: { kind: 'security-key' | 'passkey'; credentialId: string } | null;
 }
 
 export const INITIAL: SetupState = {
@@ -78,6 +84,7 @@ export const INITIAL: SetupState = {
   backup: null,
   recoveryCode: null,
   wallet: null,
+  keySaved: null,
 };
 
 /** The step that sets up `m`. */

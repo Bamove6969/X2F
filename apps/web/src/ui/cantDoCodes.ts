@@ -187,6 +187,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'confirm-required': 'asks for a confirm, then goes on',
   'confirm-invalid': 'an expired confirm (confirm again)',
   'webauthn-failed': 'the authenticator failed (a fault)',
+  // Owner 25 Nov security-key report: a key name outside checkKeyName (@x2f/accounts).
+  'key-name-invalid': 'an input check on a typed key name',
   'origin-refused': 'a CSRF guard (a fault)',
   'address-invalid': 'an input check on a typed address',
   'address-integrated': 'an input check on a typed address',

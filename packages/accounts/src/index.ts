@@ -61,3 +61,4 @@ export {
   IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
 } from './sessionLength.js';
 export { METHOD_PARTNERS, STANDS_ALONE, partnerMissing, partnerNeededBy, passwordAlone } from './methodPartners.js';
+export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, type KeyNameCheck, type KeyNameProblem } from './keyName.js';

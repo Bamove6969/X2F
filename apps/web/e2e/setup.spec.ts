@@ -969,9 +969,22 @@ test.describe('review fix round', () => {
     });
     await acceptTerms(page);
     await pickNames(page, 'lumen.kai', 'lumen-login-7');
+    const labels: unknown[] = [];
+    await page.route('**/v1/account/webauthn/label', (r) => {
+      const b = JSON.parse(r.request().postData() ?? 'null') as { label: string };
+      labels.push(b);
+      return json({ label: b.label })(r);
+    });
     await chooseOnly(page, 'passkey');
     await page.click('[data-part=\"method-continue\"]');
+    // Owner 25 Nov security-key report: the passkey is acknowledged and named before going on.
+    await expect(page.locator('[data-screen="setup-key-saved"] [data-part="key-saved"]')).toHaveText('Passkey saved');
+    await expect(page.locator('[data-part="key-name-input"]')).toHaveValue('Passkey 1');
+    await page.click('[data-part="key-name-save"]');
+    await expect(page.locator('[data-part="key-name"]')).toContainText('Passkey 1');
+    await page.click('[data-part="key-continue"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
+    expect(labels).toHaveLength(1);
     expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', kind: 'passkey' }]);
     const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; deviceLabel: string; challengeId: string };
     expect(finish.challengeId).toBe('w1');

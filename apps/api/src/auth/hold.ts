@@ -630,6 +630,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/account/onboarding/end': "only clears this session's own sign-up window, which narrows what the session may do (review M1)",
   'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
   'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
+  // Owner 25 Nov security-key report.
+  'PUT /v1/account/webauthn/label': "only the shown name of one of the caller's own keys (one label column); no key material, session, approval or security state",
   'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
   'POST /v1/confirm/pgp/start': 'writes only a confirm challenge bound to this session',
   'POST /v1/confirm/pgp/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',

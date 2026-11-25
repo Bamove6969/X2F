@@ -233,9 +233,20 @@ describe('onboarding', () => {
     const username = uniqueName('key');
     await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
+      credentialId: soft.credentialId,
     });
     const fresh = jar();
     await expect(approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
+  });
+
+  it('names the passkey just made by its credential id (owner 25 Nov security-key report)', async () => {
+    const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const username = uniqueName('nam');
+    const j = jar();
+    const { credentialId } = await registerWithWebAuthn(j.api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft));
+    await expect(j.api.renameWebAuthnKey({ credentialId, label: ' Phone  passkey ' })).resolves.toEqual({ label: 'Phone passkey' });
+    expect((await j.api.listMethods()).filter((m) => m.type === 'passkey').map((m) => m.label)).toEqual(['Phone passkey']);
+    await expect(j.api.renameWebAuthnKey({ credentialId, label: 'x'.repeat(33) })).rejects.toMatchObject({ status: 400, code: 'key-name-invalid', reason: 'too-long' });
   });
 
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
