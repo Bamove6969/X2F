@@ -842,7 +842,7 @@ for (const v of PHONES) {
     await expect(page.locator('.x2f-sign__here')).toHaveText('Sign your name here with your finger or mouse. A scribble or an X is fine.');
     // Design 9 Nov (p11-15): the intro and the button's words.
     await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
-      "Read to the end. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again unless we update the Terms, in which case you will just have to agree to the new Terms.",
+      "Please take the time to read through our Terms of Service because we ask that you agree to them to maintain access to and use of X2F.com. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You agree once, here, never again unless we update the Terms, in which case you will just have to agree to the new Terms.",
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toContainText('Start creating my account needs both the tick and your signature.');
