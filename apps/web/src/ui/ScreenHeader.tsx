@@ -20,22 +20,10 @@ const MORE: [RegExp, string][] = [
   [/^\/login\/backup\/?$/, 'Use a backup'],
   [/^\/login\/?$/, 'Log in'],
   [/^\/session-length\/?$/, 'Session length'],
-  // Owner demo note #79 (13 Nov 2026): this step's name says what it is (wip/agy-layout e82c136b).
-  [/^\/setup\/pgp-key\/?$/, 'Adding your public PGP key'],
-  // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name. COPY-UNSIGNED
-  // Owner demo note #194 (25 Nov): the username step's name in his words. COPY-UNSIGNED
-  [/^\/setup\/name\/?$/, 'Creating your login ID'],
-  [/^\/setup\/display-name\/?$/, 'Your display name'],
-  [/^\/setup\/login\/?$/, 'How you log in'],
-  [/^\/setup\/pgp-code\/?$/, 'Your first login code'],
-  [/^\/setup\/password\/?$/, 'Your password'],
-  [/^\/setup\/authenticator\/?$/, 'Authenticator app'],
-  [/^\/setup\/security-key\/?$/, 'Security key'],
-  [/^\/setup\/passkey\/?$/, 'Passkey'],
-  [/^\/setup\/backup\/?$/, 'Recovery code'],
-  [/^\/setup\/wallet\/?$/, 'Your wallet'],
+  // Owner 25 Nov 2026 (in chat, after demo note #194): "Create account" on every sign-up step, replacing
+  // demo notes #79's, #147's and #194's per-step names; the account exists by Welcome, which keeps its name.
+  // COPY-UNSIGNED
   [/^\/setup\/welcome\/?$/, 'Welcome'],
-  // `/setup` itself is the Terms step of sign-up.
   [/^\/setup(\/|$)/, 'Create account'],
   [/^\/terms\/?$/, 'Terms'],
   [/^\/team\/join\/?$/, 'Join a team'],
