@@ -80,7 +80,7 @@ const box = (host: ParentNode, id: string) => host.querySelector<HTMLInputElemen
 describe('/setup/name (owner, 12 Nov 2026)', () => {
   it('asks for a unique username and no longer says there is nothing else to give', () => {
     const host = show(<Username />, setup());
-    expect(host.querySelector('h1')!.textContent).toBe('Pick a unique username');
+    expect(host.querySelector('h1')!.textContent).toBe('Create your private login ID');
     expect(host.textContent).not.toContain('Nothing else to give');
     expect(host.textContent).toContain('You will type this to log in each and every time, and only you will know what it is.');
   });

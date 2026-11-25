@@ -54,7 +54,8 @@ export function Username({ check }: { check?: NameChecker } = {}) {
     >
       {/* COPY-UNSIGNED (owner, 12 Nov 2026: the heading is his words; the lead no longer says there is
           nothing else to give, since the next screens ask for a login method and a payout wallet) */}
-      <SetupIntro title="Pick a unique username">
+      {/* Owner demo note #193 (25 Nov): the heading in his words. COPY-UNSIGNED. */}
+      <SetupIntro title="Create your private login ID">
         {/* Owner demo note #124 (23 Nov): his first two sentences, "login each and everytime" tidied. */}
         You will type this to log in each and every time, and only you will know what it is. You will also create a unique display name,
         which is the name you appear as to everybody else. Nobody can work out your username from your display name. X2F never asks for your

@@ -150,7 +150,7 @@ for (const v of VIEWPORTS) {
     await acceptTerms(page);
 
     // /setup/name
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pick a unique username');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Create your private login ID');
     await expect(page.locator('[data-screen="setup-name"]')).not.toContainText('Nothing else to give');
     await expectPhoneLayout(page);
     await pickNames(page);
