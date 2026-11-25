@@ -128,7 +128,8 @@ type LearnKey = 'pgp' | 'security-key' | 'passkey' | 'otp' | 'password';
 
 /**
  * Owner demo note #221 (25 Nov): the "Learn About" list, in his order. PGP is his #141/#142
- * paragraph word for word; the other four are COPY-UNSIGNED drafts for his review.
+ * paragraph word for word; the other four are COPY-UNSIGNED drafts for his review, checked against
+ * the code (review: a password with a passkey or PGP key still logs in by itself on a trusted device).
  */
 const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
   {
@@ -141,7 +142,7 @@ const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
     key: 'security-key',
     label: 'Security Key',
     text:
-      'A security key is a small physical device, such as a YubiKey or a Nitrokey, that you plug into your computer or tap against your phone. When you log in, X2F asks the key to prove it is the one you registered, and you touch it to confirm. The secret inside it can never be copied off the device, so someone who steals your Login ID and password would still need the key in their hand to get in. Keep a second key or another login method as a backup in case one is lost.',
+      'A security key is a small physical device, such as a YubiKey or a Nitrokey, that you plug into your computer or tap against your phone. When you log in, X2F asks the key to prove it is the one you registered, and you touch it and enter its PIN (or use its fingerprint) to confirm; X2F only accepts keys that check a PIN or fingerprint. The secret inside the key never leaves it, so nobody can copy it from a website or a leaked list. Keep a second key or another login method as a backup in case one is lost.',
   },
   {
     key: 'passkey',
@@ -153,13 +154,13 @@ const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
     key: 'otp',
     label: 'OTP',
     text:
-      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. Pair it with your password for a strong, simple login.',
+      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. An authenticator app goes together with a password: each time you log in with your password, X2F then asks for the current code.',
   },
   {
     key: 'password',
     label: 'Password',
     text:
-      'A password is the most familiar way to log in, and also the easiest to guess, reuse or steal. On X2F a password never stands alone: it must be paired with an authenticator app (OTP) or another login method, so a leaked password by itself can never open your account. Use a long, unique password from a password manager, and never use it anywhere else.',
+      'A password is the most familiar way to log in, and also the easiest to guess, reuse or steal. On X2F a password never stands alone: you add it together with an authenticator app (OTP) or another login method. With an authenticator app, every password login also asks for the current code. Use a long, unique password from a password manager, and never use it anywhere else.',
   },
 ];
 
@@ -305,7 +306,7 @@ export function Login() {
                 type="button"
                 className="x2f-start__textbutton x2f-start__textbutton--tap"
                 aria-expanded={explain === l.key}
-                aria-controls={`${learnId}-${l.key}`}
+                aria-controls={explain === l.key ? `${learnId}-${l.key}` : undefined}
                 onClick={() => setExplain((x) => (x === l.key ? null : l.key))}
                 data-part={l.key === 'pgp' ? 'pgp-explain' : `learn-${l.key}`}
               >
