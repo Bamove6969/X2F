@@ -23,7 +23,8 @@ const MORE: [RegExp, string][] = [
   // Owner demo note #79 (13 Nov 2026): this step's name says what it is (wip/agy-layout e82c136b).
   [/^\/setup\/pgp-key\/?$/, 'Adding your public PGP key'],
   // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name. COPY-UNSIGNED
-  [/^\/setup\/name\/?$/, 'Your username'],
+  // Owner demo note #194 (25 Nov): the username step's name in his words. COPY-UNSIGNED
+  [/^\/setup\/name\/?$/, 'Creating your login ID'],
   [/^\/setup\/display-name\/?$/, 'Your display name'],
   [/^\/setup\/login\/?$/, 'How you log in'],
   [/^\/setup\/pgp-code\/?$/, 'Your first login code'],
