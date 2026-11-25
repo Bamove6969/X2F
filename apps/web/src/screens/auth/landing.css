@@ -31,7 +31,7 @@
   gap: var(--x2f-welcome-gap);
   align-self: flex-start;
   width: max-content;
-  margin: 0 0 calc(var(--x2f-welcome-gap) - 36px);
+  margin: 0 0 calc(var(--x2f-welcome-gap) + 2px - 36px);
   font-family: var(--x2f-font-display);
   font-size: 48px;
   line-height: 48px;
@@ -44,6 +44,8 @@
 }
 .x2f-landing__welcome-to {
   padding-left: 4.2em;
+  /* The line box leaves room under "Welcome" and above the short "to": pull "to" up so the ink gaps match (#201). */
+  margin-top: -15px;
 }
 .x2f-landing__logo svg {
   display: block;
@@ -135,7 +137,7 @@
   padding-top: 0;
 }
 .x2f-landing[data-wide='true'] .x2f-landing__welcome {
-  margin-bottom: calc(var(--x2f-welcome-gap) - 44px);
+  margin-bottom: calc(var(--x2f-welcome-gap) + 2px - 44px);
 }
 .x2f-landing[data-wide='true'] .x2f-landing__slogan {
   font-size: 40px;
