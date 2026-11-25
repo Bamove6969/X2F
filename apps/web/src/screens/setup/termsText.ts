@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, and note #213 (section 8): security or site policies; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, and note #214: "protect the site and our users"; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -176,7 +176,7 @@ export const TERMS: TermsSection[] = [
       'Do not try to break, overload or attempt to get around X2F’s security or site policies. We implement these things for the mutual benefit and protection of the site and our entire user base.',
       // COPY-UNSIGNED: owner's comment e5caa606, with "without always giving a reason" and the ban
       // notice's contact route (G39): lead's interim wording, waiting on the owner (draft Q-15).
-      'X2F may pause or close any account at its own discretion, without warning and without always giving a reason. If we believe an account is a threat to the site or to our users, we will act to protect them and ourselves. We do not take the security of our users lightly. If you think we got it wrong, you can reach out to a moderator. Coins in escrow are then settled by a moderator under the dispute rules.',
+      'X2F may pause or close any account at its own discretion, without warning and without always giving a reason. If we believe an account is a threat to the site or to our users, we will act to protect the site and our users. We do not take the security of our users lightly. If you think we got it wrong, you can reach out to a moderator. Coins in escrow are then settled by a moderator under the dispute rules.',
     ],
   },
   {
