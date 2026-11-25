@@ -109,6 +109,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/pgp/finish': 'adds a PGP key to my own account',
   'POST /v1/account/webauthn/start': 'registration options for my own account',
   'POST /v1/account/webauthn/finish': 'adds a passkey or security key to my own account',
+  'PUT /v1/account/webauthn/label': 'names one of my own passkeys or security keys; answers the name',
   'POST /v1/account/totp/start': 'an authenticator enrolment secret for my own account',
   'POST /v1/account/totp/finish': 'turns on the authenticator for my own account',
   'POST /v1/account/recovery-codes': 'new recovery codes for my own account',

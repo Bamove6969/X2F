@@ -43,7 +43,7 @@ describe('WebAuthn ceremony wrappers', () => {
     const ceremony = registration();
     await expect(
       registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'passkey', 'Browser on Linux', '2026-10-17', ceremony),
-    ).resolves.toEqual({ displayName: 'Alice' });
+    ).resolves.toEqual({ displayName: 'Alice', credentialId: REG.id });
     expect(calls.registerWebAuthnStart).toHaveBeenCalledWith({ displayName: 'Alice', loginName: 'alice.login', kind: 'passkey' });
     expect(ceremony.startRegistration).toHaveBeenCalledWith({ optionsJSON: CREATE });
     expect(calls.registerWebAuthnFinish).toHaveBeenCalledWith({

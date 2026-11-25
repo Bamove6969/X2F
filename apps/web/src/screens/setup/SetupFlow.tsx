@@ -35,7 +35,7 @@ import { DisplayName } from './DisplayName.js';
 import { INITIAL, SetupContext, nextStep, stepPath, useSetup, type SetupState, type SignupMethod, type Step } from './kit.js';
 import { Login } from './Login.js';
 import { errorCode } from './register.js';
-import { AuthenticatorStep, KeyStep } from './MoreMethods.js';
+import { AuthenticatorStep, FirstKeySaved, KeyStep } from './MoreMethods.js';
 import { Password } from './Password.js';
 import { PgpChallenge } from './PgpChallenge.js';
 import { PgpKey } from './PgpKey.js';
@@ -96,7 +96,8 @@ export function SetupFlow() {
         {/* NEEDS_OWNER_SITE_RULES (owner p11-24): a site rules step, if the owner makes one, goes between the Terms and `name` (see SetupTerms). */}
         <Route path="name" element={before(state.terms !== null, <Username />)} />
         <Route path="display-name" element={before(state.terms !== null && state.loginName !== '', <DisplayName />)} />
-        <Route path="login" element={before(named, <Login />)} />
+        {/* Owner 25 Nov security-key report: a passkey or security key just made here is acknowledged and named first. */}
+        <Route path="login" element={state.keySaved !== null ? <FirstKeySaved /> : before(named, <Login />)} />
         <Route path="pgp-key" element={before(named, <PgpKey />)} />
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />
         <Route path="password" element={state.registered ? more('password', <Password />) : before(named, <Password />)} />

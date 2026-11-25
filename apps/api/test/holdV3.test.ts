@@ -16,7 +16,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
+import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, startHold, withTx } from '../src/auth/hold.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
 import { APPROVALS_PER_HOUR } from '../src/auth/approval.js';
 import { purgeExpired } from '../src/auth/challenges.js';
@@ -26,7 +26,8 @@ import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
 import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName, makeVendor, addUnusedSecurityKey } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor, addUnusedSecurityKey, seedAccount } from './helpers/accounts.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { insertOffer } from './helpers/offers.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -1090,5 +1091,113 @@ describe('team member permissions from a password-only session', () => {
     // Job 1c: the member's boxes (migration 360) are unchanged until the staged change applies.
     const boxes = await deps.db.query<{ abilities: string[] }>('select abilities from team_members where id = $1', [memberId]);
     expect(boxes.rows[0]!.abilities).toEqual(['offers-see']);
+  });
+});
+
+// Security review of wip/lead-seckey-fix: naming a key (PUT /v1/account/webauthn/label) is refused
+// to a session whose changes must wait, during a hold, to a backup session and to a team member;
+// a staged key has no row to name; names are unique per account; renames are budgeted.
+describe('security review of wip/lead-seckey-fix: PUT /v1/account/webauthn/label', () => {
+  const rename = (b: Browser, credentialId: string, label: string) => b.put('/v1/account/webauthn/label', { credentialId, label });
+  const labelOf = async (credentialId: string) =>
+    (await deps.db.query<{ label: string }>('select label from webauthn_credentials where credential_id = $1', [Buffer.from(credentialId, 'base64url')])).rows[0]?.label;
+
+  async function strongOwner() {
+    const t = await ownerWithPasskey();
+    const strong = new Browser(app);
+    expect((await passkeyLogin(strong, t.auth)).json()).toEqual({ status: 'ok' });
+    return { ...t, strong };
+  }
+
+  it('a waiting (username and password) session is refused 403 weak-session; a passkey session names the key', async () => {
+    const t = await strongOwner();
+    const weak = await rename(t.b, t.auth.credentialId, 'Thief named it');
+    expect([weak.statusCode, errorOf(weak)]).toEqual([403, 'weak-session']);
+    expect(await labelOf(t.auth.credentialId)).toBe('Passkey 1');
+    const ok = await rename(t.strong, t.auth.credentialId, 'My phone');
+    expect([ok.statusCode, ok.json()]).toEqual([200, { label: 'My phone' }]);
+    expect(await labelOf(t.auth.credentialId)).toBe('My phone');
+  });
+
+  it('a key staged by a waiting session has no row yet: 404 not-found, nothing written', async () => {
+    const t = await strongOwner();
+    const staged = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const add = await addPasskey(t.b, t.id, staged);
+    expect([add.statusCode, add.json().status]).toEqual([202, 'staged']);
+    const res = await rename(t.strong, staged.credentialId, 'Early name');
+    expect([res.statusCode, errorOf(res)]).toEqual([404, 'not-found']);
+    expect(await labelOf(staged.credentialId)).toBeUndefined();
+  });
+
+  it('a running hold refuses it (403 recovery-hold)', async () => {
+    const t = await strongOwner();
+    await withTx(deps.db, async (db) => {
+      await lockAccount(db, t.id);
+      await startHold(db, t.id, now, { reason: 'weak-change', startedBy: null });
+    });
+    const res = await rename(t.strong, t.auth.credentialId, 'During hold');
+    expect([res.statusCode, errorOf(res)]).toEqual([403, 'recovery-hold']);
+    expect(await labelOf(t.auth.credentialId)).toBe('Passkey 1');
+  });
+
+  it('a backup (recovery) session is refused 403 recovery-session; a team member 403 owner-only', async () => {
+    const t = await strongOwner();
+    const rec = new Browser(app);
+    expect((await rec.post('/t/login', { accountId: t.id, level: 'recovery' })).statusCode).toBe(200);
+    const r = await rename(rec, t.auth.credentialId, 'Backup named it');
+    expect([r.statusCode, errorOf(r)]).toEqual([403, 'recovery-session']);
+
+    const loginId = await seedAccount(deps, { loginName: unique('keymember'), displayName: unique('km-'), kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, lower($2), $3, $4, $5, $4, $4)`,
+      [t.id, unique('KeyMem'), rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
+    );
+    const mb = new Browser(app);
+    expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const m = await rename(mb, t.auth.credentialId, 'Member named it');
+    expect([m.statusCode, errorOf(m)]).toEqual([403, 'owner-only']);
+    expect(await labelOf(t.auth.credentialId)).toBe('Passkey 1');
+  });
+
+  it('a staff account is refused (traders only: staff keys are managed on the staff API), nothing written', async () => {
+    const staffId = await seedAccount(deps, { loginName: unique('keystaff'), kind: 'staff' });
+    const auth = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    await deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
+       values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', true, 'Staff key', $4)`,
+      [staffId, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, now],
+    );
+    const sb = new Browser(app);
+    expect((await sb.post('/t/login', { accountId: staffId })).statusCode).toBe(200);
+    const res = await rename(sb, auth.credentialId, 'Renamed');
+    expect(res.statusCode).toBe(403);
+    expect(errorOf(res)).toBe('wrong-account-kind');
+    expect(await labelOf(auth.credentialId)).toBe('Staff key');
+  });
+
+  it("a name another of the account's keys has (trimmed, any case) is 400 key-name-invalid { reason: 'taken' }; its own name is fine", async () => {
+    const t = await strongOwner();
+    const second = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(t.strong), accountId: t.id, action: { kind: 'add-method', method: 'passkey' }, method: 'passkey' });
+    const s = await t.strong.post('/v1/account/webauthn/start', { kind: 'passkey', confirmToken });
+    expect((await t.strong.post('/v1/account/webauthn/finish', { challengeId: s.json().challengeId, response: second.register(s.json().options, ORIGIN) })).statusCode).toBe(201);
+    expect(await labelOf(second.credentialId)).toBe('Passkey 2');
+    const dup = await rename(t.strong, second.credentialId, '  passKEY 1 ');
+    expect([dup.statusCode, dup.json()]).toEqual([400, { error: 'key-name-invalid', reason: 'taken' }]);
+    expect(await labelOf(second.credentialId)).toBe('Passkey 2');
+    expect((await rename(t.strong, t.auth.credentialId, 'PASSKEY 1')).json()).toEqual({ label: 'PASSKEY 1' });
+  });
+
+  it('renames are budgeted per account (10, then 429 slow-down), so a loop cannot flood Jabber notices', async () => {
+    const t = await strongOwner();
+    for (let i = 1; i <= 10; i++) expect((await rename(t.strong, t.auth.credentialId, `Name ${i}`)).statusCode, `rename ${i}`).toBe(200);
+    const over = await rename(t.strong, t.auth.credentialId, 'Name 11');
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down' });
+    expect(await labelOf(t.auth.credentialId)).toBe('Name 10');
+    // Another account has its own budget.
+    const other = await strongOwner();
+    expect((await rename(other.strong, other.auth.credentialId, 'Fine')).statusCode).toBe(200);
   });
 });

@@ -334,6 +334,10 @@ const DISPLAY_CHARS = /^[\p{L}\p{M}\p{Nd} $&!?.,'\-_@#%*+():]+$/u;
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
 /** A combining mark at the start, after a non-letter, or a third one in a row. */
 const BAD_MARK = /(?:^|[^\p{L}\p{M}])\p{M}|\p{M}{3}/u;
+/** True when a combining mark starts the text, follows a non-letter, or is the third in a row (BAD_MARK; also key names, keyName.ts). */
+export function hasBadMarks(text: string): boolean {
+  return BAD_MARK.test(text);
+}
 /** Unicode 16.0.0's scripts (PropertyValueAliases.txt `sc`), Common, Inherited and Unknown aside. */
 const SCRIPT_NAMES = 'Adlam Caucasian_Albanian Ahom Arabic Imperial_Aramaic Armenian Avestan Balinese Bamum Bassa_Vah Batak Bengali Bhaiksuki Bopomofo Brahmi Braille Buginese Buhid Chakma Canadian_Aboriginal Carian Cham Cherokee Chorasmian Coptic Cypro_Minoan Cypriot Cyrillic Devanagari Dives_Akuru Dogra Deseret Duployan Egyptian_Hieroglyphs Elbasan Elymaic Ethiopic Garay Georgian Glagolitic Gunjala_Gondi Masaram_Gondi Gothic Grantha Greek Gujarati Gurung_Khema Gurmukhi Hangul Han Hanunoo Hatran Hebrew Hiragana Anatolian_Hieroglyphs Pahawh_Hmong Nyiakeng_Puachue_Hmong Katakana_Or_Hiragana Old_Hungarian Old_Italic Javanese Kayah_Li Katakana Kawi Kharoshthi Khmer Khojki Khitan_Small_Script Kannada Kirat_Rai Kaithi Tai_Tham Lao Latin Lepcha Limbu Linear_A Linear_B Lisu Lycian Lydian Mahajani Makasar Mandaic Manichaean Marchen Medefaidrin Mende_Kikakui Meroitic_Cursive Meroitic_Hieroglyphs Malayalam Modi Mongolian Mro Meetei_Mayek Multani Myanmar Nag_Mundari Nandinagari Old_North_Arabian Nabataean Newa Nko Nushu Ogham Ol_Chiki Ol_Onal Old_Turkic Oriya Osage Osmanya Old_Uyghur Palmyrene Pau_Cin_Hau Old_Permic Phags_Pa Inscriptional_Pahlavi Psalter_Pahlavi Phoenician Miao Inscriptional_Parthian Rejang Hanifi_Rohingya Runic Samaritan Old_South_Arabian Saurashtra SignWriting Shavian Sharada Siddham Khudawadi Sinhala Sogdian Old_Sogdian Sora_Sompeng Soyombo Sundanese Sunuwar Syloti_Nagri Syriac Tagbanwa Takri Tai_Le New_Tai_Lue Tamil Tangut Tai_Viet Telugu Tifinagh Tagalog Thaana Thai Tibetan Tirhuta Tangsa Todhri Toto Tulu_Tigalari Ugaritic Vai Vithkuqi Warang_Citi Wancho Old_Persian Cuneiform Yezidi Yi Zanabazar_Square'.split(' ');
 /** Each script this engine knows, as a Script_Extensions test (an engine on an older Unicode drops the newest). */
@@ -376,7 +380,7 @@ function resolvedScripts(chars: readonly string[]): Set<string> | null {
  * Hangul (Korean). Every other script stands alone, so a Cherokee, Lisu, Armenian, Coptic,
  * Cyrillic or Greek letter never sits among Latin ones.
  */
-function highlyRestrictive(name: string): boolean {
+export function highlyRestrictive(name: string): boolean {
   const chars = [...name];
   const all = resolvedScripts(chars);
   if (all === null || all.size > 0) return true;

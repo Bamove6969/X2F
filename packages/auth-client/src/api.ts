@@ -598,6 +598,12 @@ export interface AuthApi {
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
   removeMethod(type: MethodType, id: string, b: Token): Promise<Staged | undefined>;
+  /**
+   * `PUT /v1/account/webauthn/label` (owner 25 Nov security-key report): names one of the account's
+   * passkeys or security keys by its credential ID (the registration response's `id`). Answers the
+   * name as stored; 400 `key-name-invalid` `{ reason }` for a name outside `checkKeyName`.
+   */
+  renameWebAuthnKey(b: { credentialId: string; label: string }): Promise<{ label: string }>;
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
@@ -844,6 +850,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),
     removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
+    renameWebAuthnKey: (b) => call('PUT', '/v1/account/webauthn/label', b),
 
     me: () => get('/v1/account/me'),
     acceptTerms: (b) => done(post('/v1/account/terms', b)),

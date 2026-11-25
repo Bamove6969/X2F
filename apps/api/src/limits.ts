@@ -160,6 +160,13 @@ export class KeyedBuckets {
   }
 }
 
+/**
+ * `PUT /v1/account/webauthn/label` per account (security review of wip/lead-seckey-fix): every
+ * rename queues a Jabber notice (jabber/changePaths.ts), so 10 at once and 10 an hour. Naming a new
+ * key, and a few fixes, never come near it; a loop runs dry. Every try counts, refused ones too.
+ */
+export const KEY_LABEL_BUCKET: BucketSize = { capacity: 10, perMinute: 10 / 60 };
+
 /** `POST /v1/chats` (Task 20 review M7): new pre-trade chats per trader, 20 an hour. */
 export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 };
 /** `POST /v1/chats/:chat/envelopes` (Task 20 review M7): chat lines per trader across all chats, 30 a minute. */
@@ -233,6 +240,8 @@ export interface Budgets {
   pastRepFinish: KeyedBuckets;
   /** Per account: `POST /v1/trades/:code/payment-proof` (Plan 4 Task 12 review m4). */
   paymentProof: KeyedBuckets;
+  /** Per account: `PUT /v1/account/webauthn/label` (security review of wip/lead-seckey-fix). */
+  keyLabel: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -253,5 +262,6 @@ export function newBudgets(clock: () => Date): Budgets {
     proofPut: new KeyedBuckets(PROOF_PUT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
     paymentProof: new KeyedBuckets(PAYMENT_PROOF_BUCKET, clock),
+    keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
   };
 }

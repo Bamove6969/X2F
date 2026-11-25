@@ -29,6 +29,13 @@ export const KEY_ERROR = {
   noAlgorithm: "This key doesn't make the kind of key X2F needs. Use a different security key.",
   /** ConstraintError: a passkey needs a PIN, fingerprint or face check the device can't do yet. */
   needsPin: 'Your device needs a screen lock, PIN or fingerprint set up first. Set one up, then try again.',
+  /**
+   * Owner 25 Nov security-key report: a security key with no PIN (ConstraintError, or the API's 401
+   * `webauthn-failed` `{ reason: 'needs-pin' }`: the key answered without checking a PIN).
+   * COPY-UNSIGNED (owner 25 Nov security-key report)
+   */
+  keyNeedsPin:
+    "Your security key needs a PIN (or fingerprint) first. Set one in your key's app or your browser's security key settings, then try again.",
   /** No WebAuthn at all. */
   unsupported: "This browser doesn't support security keys or passkeys. Try an up-to-date Chrome, Firefox, Safari or Edge.",
   /** 401 webauthn-failed: the key answered, but its answer did not check out. */
@@ -56,11 +63,15 @@ export function keyErrorText(e: unknown, kind: KeyKind, fallback: string = KEY_E
   const name = e instanceof Error ? e.name : '';
   const code = typeof (e as { code?: unknown })?.code === 'string' ? (e as { code: string }).code : '';
   if (code === KEY_MODEL_REFUSED_CODE) return KEY_ERROR.notAccepted;
-  if (code === 'webauthn-failed') return KEY_ERROR.checkFailed(kind);
+  if (code === 'webauthn-failed') {
+    // Owner 25 Nov security-key report: the key answered, but without checking its PIN.
+    const reason = (e as { reason?: unknown }).reason;
+    return reason === 'needs-pin' ? (kind === 'passkey' ? KEY_ERROR.needsPin : KEY_ERROR.keyNeedsPin) : KEY_ERROR.checkFailed(kind);
+  }
   if (name === 'SecurityError' || code === 'ERROR_INVALID_RP_ID' || code === 'ERROR_INVALID_DOMAIN') return KEY_ERROR.wrongAddress;
   if (name === 'InvalidStateError' || code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED') return KEY_ERROR.already(kind);
   if (name === 'NotSupportedError') return KEY_ERROR.noAlgorithm;
-  if (name === 'ConstraintError') return KEY_ERROR.needsPin;
+  if (name === 'ConstraintError') return kind === 'passkey' ? KEY_ERROR.needsPin : KEY_ERROR.keyNeedsPin;
   if (name === 'NotAllowedError' || name === 'AbortError') return blockedByFrame(e as Error) ? KEY_ERROR.framed : KEY_ERROR.noAnswer(kind);
   if (e instanceof Error && /not supported in this browser/.test(e.message)) return KEY_ERROR.unsupported;
   return refusalText(e, fallback);
