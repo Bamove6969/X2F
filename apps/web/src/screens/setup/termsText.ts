@@ -60,7 +60,8 @@ export const KEY_POINTS: readonly string[] = [
   // Design 9 Nov (p11-9, canvas v161; owner 8 Nov 30/90 ruling): two lines in place of
   // "Dispute records are kept for 30 days." COPY-UNSIGNED.
   // Owner demo note #119 (23 Nov, on this key point), his words. COPY-UNSIGNED.
-  'To adhere to our privacy policy and to maintain strong confidentiality, all trades will be deleted on the 30th day after completion.',
+  // Owner demo note #182 (25 Nov): "all trades that have no disputes", his words. COPY-UNSIGNED.
+  'To adhere to our privacy policy and to maintain strong confidentiality, all trades that have no disputes will be deleted on the 30th day after completion.',
   // Owner demo note #120 (23 Nov, on this key point), his words. COPY-UNSIGNED.
   'Disputed trades will be kept up to 90 days, but first scrubbed by our in-house privacy tool to remove any personal and confidential information, and then used to train our moderators. They are deleted on the 90th day.',
   // Owner demo note #121 (23 Nov, on this key point), his words. COPY-UNSIGNED.
