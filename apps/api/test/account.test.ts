@@ -613,6 +613,17 @@ describe('Terms of Service (R10)', () => {
       expect(after.terms_accepted_at).toEqual(now);
       expect(after.terms_signature).toBeNull();
       expect((await me(b)).termsCurrent).toBe(true);
+
+      // Review of note #187 (test 8): a trader who does send a valid signature (an older page) still
+      // has it stored sealed, bound to their account, never in clear.
+      deps.config.termsVersion = '2026-11-06';
+      const drawn = { kind: 'drawn', width: 320, height: 120, path: 'M10 10L60 60' };
+      expect((await b.post('/v1/account/terms', { version: '2026-11-06', signature: drawn })).statusCode).toBe(204);
+      const sealed = (await row()).terms_signature!;
+      expect(sealed).not.toBeNull();
+      expect(sealed.includes('M10 10L60 60')).toBe(false);
+      expect(openTermsSignature(deps.config, sealed, id)).toEqual(drawn);
+      expect(() => openTermsSignature(deps.config, sealed, '00000000-0000-4000-8000-00000000000a')).toThrow();
     } finally {
       deps.config.termsVersion = oldVersion;
     }
