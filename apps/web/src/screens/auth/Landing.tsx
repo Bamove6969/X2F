@@ -19,6 +19,9 @@ import './landing.css';
 
 /** The board's copy. COPY-UNSIGNED except the slogan (the owner's) and his two button labels. */
 export const LANDING_COPY = {
+  // COPY: owner's demo note #170 (25 Nov): "Welcome" top left, "to" under its end, then the logo.
+  welcome: 'Welcome',
+  welcomeTo: 'to',
   sloganTop: 'You’ll need Fiat',
   sloganBottom: 'to believe it.',
   promises: [
@@ -80,6 +83,9 @@ export function Landing() {
   return (
     <div className="x2f-landing" data-screen="landing" data-wide={wide ? 'true' : 'false'}>
       <main className="x2f-landing__main">
+        <p className="x2f-landing__welcome" data-part="landing-welcome">
+          <span>{LANDING_COPY.welcome}</span> <span className="x2f-landing__welcome-to">{LANDING_COPY.welcomeTo}</span>
+        </p>
         <h1 className="x2f-landing__logo">
           <Logo height={wide ? 180 : 120} />
         </h1>
