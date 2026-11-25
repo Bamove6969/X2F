@@ -57,6 +57,8 @@ const OWNER_RULED: string[] = ["screens/post/PostOffer.css .post-unit button[ari
 const ORANGE_ALLOWED = [
   // The one primary action per screen and the press-and-hold release button.
   'ui/ui.css .x2f-button--primary',
+  // Owner demo note #191 (25 Nov): a disabled primary stays orange, dimmed.
+  "ui/ui.css .x2f-button--primary:disabled, .x2f-button--primary[aria-disabled='true']",
   'ui/ui.css .x2f-hold',
   'ui/ui.css .x2f-hold:not(:disabled):hover',
   // Links and text buttons (boards: a { color: var(--monero-ink) }).
