@@ -1,6 +1,8 @@
 /**
- * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The Terms text sits in a scroll box;
- * the tick box enables only once the box has been scrolled to its end. Under it, the signature pad
+ * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The full Terms flow in the page, with
+ * no scroll box of their own (owner demo note #187, 25 Nov 2026: a box scrolling inside the
+ * scrolling page trapped the thumb on phones); the tick box enables only once the page has been
+ * scrolled to the "End of Terms" line (or shows it already, on a tall screen). Under it, the signature pad
  * (owner, 8 Nov 2026: the Terms are agreed once, at account opening, with a tick and a signature,
  * never per trade): the accept button (**I accept**; on SetupTerms **Start creating my account**,
  * design 9 Nov p11-15) needs both the tick and a signature, drawn or typed. The version
@@ -46,6 +48,17 @@ export const FULL_HEADING = 'Full Terms of Service';
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
 
+/**
+ * Whether the "End of Terms" line has been reached: its bottom is inside what the screen shows, or
+ * above it. What the screen shows is the viewport, cut to the setup frame's middle (the part that
+ * scrolls; the button bar sits under it, outside it, so it never hides the line).
+ */
+export function endReached(end: HTMLElement): boolean {
+  const scroller = end.closest('.x2f-start__main');
+  const viewBottom = Math.min(window.innerHeight, scroller !== null ? scroller.getBoundingClientRect().bottom : Infinity);
+  return end.getBoundingClientRect().bottom <= viewBottom + END_SLACK;
+}
+
 /** The Terms screen itself; also the first step of a team member's join (MemberInvite, review 2026-11-08 F1). */
 export function TermsScreen({
   screen,
@@ -76,6 +89,7 @@ export function TermsScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const end = useRef<HTMLParagraphElement>(null);
 
   /** Loads the server's version; resolves to it, or to null when the load failed. */
   const load = useCallback(async (): Promise<string | null> => {
@@ -94,15 +108,29 @@ export function TermsScreen({
   }, [load]);
 
   const checkEnd = useCallback(() => {
-    const el = box.current;
-    if (el !== null && el.scrollTop + el.clientHeight >= el.scrollHeight - END_SLACK) setRead(true);
+    const el = end.current;
+    if (el !== null && endReached(el)) setRead(true);
   }, []);
 
-  // A box tall enough to show everything (a big screen) counts as read at once.
+  // Owner demo note #187: the gate follows the page's own scroll. A page short enough to show the
+  // end at once (a big screen) counts as read at once. Scroll events are caught on the document in
+  // the capture phase, so the frame's middle (which does the scrolling) and the window both count,
+  // whatever moved them: a thumb, the wheel, the keys or a focus change. An IntersectionObserver on
+  // the end line catches layout changes with no scroll (fonts loading, the version arriving).
   useLayoutEffect(() => {
     checkEnd();
+    document.addEventListener('scroll', checkEnd, { capture: true, passive: true });
     window.addEventListener('resize', checkEnd);
-    return () => window.removeEventListener('resize', checkEnd);
+    let seen: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver === 'function' && end.current !== null) {
+      seen = new IntersectionObserver(() => checkEnd());
+      seen.observe(end.current);
+    }
+    return () => {
+      document.removeEventListener('scroll', checkEnd, { capture: true });
+      window.removeEventListener('resize', checkEnd);
+      seen?.disconnect();
+    };
   }, [checkEnd]);
 
   // This page shows only the text it was built with: a server version it does not carry is not
@@ -122,8 +150,8 @@ export function TermsScreen({
         setRead(false);
         setSignature(null);
         setPadKey((k) => k + 1);
-        if (box.current !== null) box.current.scrollTop = 0;
-        // A box that shows everything has no scroll to wait for: it counts as read again at once.
+        box.current?.closest('.x2f-start__main')?.scrollTo({ top: 0 });
+        // A page that shows everything has no scroll to wait for: it counts as read again at once.
         checkEnd();
         const now = await load();
         // In real use the server moved to a version this page does not carry, so the stale notice
@@ -135,12 +163,15 @@ export function TermsScreen({
     }
   };
 
-  /** Scrolls the box to the top (`null`) or to a section heading. */
+  /**
+   * Scrolls the page to the full Terms' heading (`null`) or to a section heading, and moves the
+   * focus to the Terms region so the keys go on from there (owner demo note #187: no box of its own).
+   */
   const show = (heading: string | null) => {
     const el = box.current;
     if (el === null) return;
-    const target = heading === null ? null : el.querySelector<HTMLElement>(`[data-heading="${heading}"]`);
-    el.scrollTo({ top: target === null ? 0 : target.offsetTop - el.offsetTop });
+    const target = heading === null ? document.getElementById('terms-full-heading') : el.querySelector<HTMLElement>(`[data-heading="${heading}"]`);
+    target?.scrollIntoView?.({ block: 'start' });
     el.focus({ preventScroll: true });
   };
 
@@ -172,7 +203,9 @@ export function TermsScreen({
       <h2 className="x2f-terms__boxhead" id="terms-full-heading">
         {FULL_HEADING}
       </h2>
-      <div className="x2f-terms" ref={box} onScroll={checkEnd} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
+      {/* Owner demo note #187: in the page, no scroll box. Still a focusable region, so a keyboard
+          user can land on it and page through it (the frame's middle scrolls under the keys). */}
+      <div className="x2f-terms" ref={box} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
         <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
@@ -182,7 +215,9 @@ export function TermsScreen({
             <TermsParagraphs paragraphs={s.paragraphs} />
           </section>
         ))}
-        <p className="x2f-terms__end">{version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}</p>
+        <p className="x2f-terms__end" ref={end} data-part="terms-end">
+          {version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}
+        </p>
       </div>
       {loadFailed ? (
         <p className="x2f-error" role="alert">

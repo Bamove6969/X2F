@@ -339,10 +339,8 @@ test('21-23 a member joins: the invite, the PGP step, the second way', async ({ 
   await joinApi(page);
   await page.goto(`/team/join#${CODE}`);
   // The member signs the Terms first (review 2026-11-08 F1).
-  await page.locator('[data-part="terms-text"]').evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-    el.dispatchEvent(new Event('scroll'));
-  });
+  // Owner demo note #187: the page scrolls to the end of the Terms (no box of their own).
+  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
   await page.check('[data-part="terms-tick"]');
   // And signs (owner 9 Nov 2026, p11-14: everyone who gets a login signs).
   await page.click('[data-part="signature-type"]');

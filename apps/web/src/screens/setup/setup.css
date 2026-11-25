@@ -20,8 +20,9 @@
 
 /*
  * Like the boards, the frame is the screen's height: the middle scrolls, the buttons stay put. The
- * Terms box takes the room left; on a short phone, where the box at its minimum plus the signature
- * pad do not fit, the middle scrolls too, so nothing is ever cut off (owner, 8 Nov 2026: the pad).
+ * full Terms flow in that middle with no scroll box of their own (owner demo note #187, 25 Nov
+ * 2026: a box scrolling inside the scrolling page trapped the thumb on phones), so the middle is
+ * the one thing that scrolls.
  */
 .x2f-start--fit .x2f-start__main {
   overflow-y: auto;
@@ -816,10 +817,9 @@
   line-height: inherit;
 }
 
+/* Owner demo note #187: a card in the page, no height limit or scroll of its own. */
 .x2f-terms {
-  flex: 1 1 auto;
-  min-height: 140px;
-  overflow-y: auto;
+  flex-shrink: 0;
   padding: 12px var(--x2f-space-4);
   border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);

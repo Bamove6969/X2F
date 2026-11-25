@@ -210,12 +210,9 @@ async function setViewport(page: Page, v: ParityViewport): Promise<void> {
   await page.setViewportSize({ width, height });
 }
 
-/** Scrolls the Terms box to its end, as a reader would. */
+/** Scrolls the page to the end of the Terms, as a reader would (owner demo note #187: no box of its own). */
 async function readTermsToEnd(page: Page): Promise<void> {
-  await page.locator('[data-part="terms-text"]').evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-    el.dispatchEvent(new Event('scroll'));
-  });
+  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
 }
 
 /** Draws an X on the signature pad with the mouse (owner, 8 Nov 2026: a scribble or an X is fine). */
@@ -397,10 +394,9 @@ test('I accept stays disabled until the Terms are scrolled to the end and ticked
   await expect(tick).toBeDisabled();
   await expect(accept).toBeDisabled();
 
-  // Half way is not the end.
-  await page.locator('[data-part="terms-text"]').evaluate((el) => {
+  // Half way down the page is not the end (owner demo note #187: the page scrolls, not a box).
+  await page.locator('.x2f-start__main').evaluate((el) => {
     el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
-    el.dispatchEvent(new Event('scroll'));
   });
   await expect(tick).toBeDisabled();
   await expect(accept).toBeDisabled();
@@ -819,7 +815,7 @@ for (const v of PHONES) {
     await expectParity(page, 'SetupTerms', { viewport: v });
   });
 
-  test(`the Terms screen works at ${v}: one primary action, no sideways scroll, the box scrolls`, async ({ page }) => {
+  test(`the Terms screen works at ${v}: one primary action, no sideways scroll, one scroller`, async ({ page }) => {
     await setViewport(page, v);
     await stubApi(page);
     await page.goto('/setup');
@@ -827,8 +823,17 @@ for (const v of PHONES) {
     expect(await page.locator('[data-primary]').count()).toBe(1);
     const sideways = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(sideways).toBe(false);
-    const box = await page.locator('[data-part="terms-text"]').evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
-    expect(box.scroll).toBeGreaterThan(box.client);
+    // Owner demo note #187 (25 Nov 2026): the full Terms flow in the page, with no scroll box (or
+    // height limit) of their own; the frame's middle is the one thing that scrolls.
+    const box = await page.locator('[data-part="terms-text"]').evaluate((el) => {
+      const st = getComputedStyle(el);
+      return { scroll: el.scrollHeight, client: el.clientHeight, overflowY: st.overflowY, maxHeight: st.maxHeight };
+    });
+    expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+    expect(box.overflowY).toBe('visible');
+    expect(box.maxHeight).toBe('none');
+    const main = await page.locator('.x2f-start__main').evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+    expect(main.scroll).toBeGreaterThan(main.client);
     // I accept is reachable on a small phone without scrolling the page.
     const accept = await page.locator('[data-part="terms-accept"]').boundingBox();
     const [width, height] = v.split('x').map(Number) as [number, number];

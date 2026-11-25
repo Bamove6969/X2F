@@ -224,6 +224,36 @@ describe('the Terms text: bullets', () => {
   });
 });
 
+// Owner demo note #187 (25 Nov 2026): no scroll box of its own; the gate follows the page's scroll.
+describe('the Terms screen: read to the end of the page', () => {
+  it('the full Terms have no scroll box, and the tick waits until the end line is on screen', async () => {
+    let endBottom = 2000;
+    const rect = (bottom: number) => ({ x: 0, y: 0, top: bottom - 20, left: 0, right: 0, width: 0, height: 20, bottom, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.part === 'terms-end') return rect(endBottom);
+      if (this.classList.contains('x2f-start__main')) return rect(760);
+      return rect(0);
+    });
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const region = host.querySelector<HTMLElement>('[data-part="terms-text"]')!;
+    expect(region.getAttribute('role')).toBe('region');
+    expect(region.tabIndex).toBe(0);
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    expect(tick.disabled).toBe(true);
+    expect(host.querySelector('#terms-hint')?.textContent).toContain('Scroll to the end to continue');
+    // The page (the frame's middle) scrolls; the end line comes up to just above the button bar.
+    endBottom = 758;
+    fire(host.querySelector('.x2f-start__main')!, new Event('scroll'));
+    expect(tick.disabled).toBe(false);
+    expect(host.querySelector('#terms-hint')).toBeNull();
+  });
+});
+
 describe('the Terms screen: I accept needs the tick and a signature', () => {
   async function mount() {
     const { host } = render(
