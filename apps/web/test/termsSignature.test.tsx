@@ -279,7 +279,8 @@ describe('the Terms screen for a trader: the tick alone, no signature', () => {
     expect(host.querySelector('[data-part="signature-type"]')).toBeNull();
     expect(host.querySelector('#terms-sign-help')).toBeNull();
     expect(host.textContent).not.toMatch(/sign your name|sign in the white box|scribble|Type your name/i);
-    expect(tick.closest('label')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('I have read and agree to the Terms of Service and Privacy Policy');
+    const line = host.querySelector('#' + tick.getAttribute('aria-labelledby'))!;
+    expect(line.textContent!.replace(/\s+/g, ' ').trim()).toBe('I have read and agree to the Terms of Service and Privacy Policy');
     expect(tick.getAttribute('aria-describedby') ?? '').not.toContain('terms-sign-help');
   });
 
@@ -296,6 +297,43 @@ describe('the Terms screen for a trader: the tick alone, no signature', () => {
     await flush();
     expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
     expect(auth.acceptTerms.mock.calls[0]![0]).not.toHaveProperty('signature');
+  });
+});
+
+// Owner demo note #189 (25 Nov 2026): "Privacy Policy" opens the privacy section in place.
+describe('the Terms screen: the Privacy Policy and Terms of Service buttons', () => {
+  it('show their section in this page, focus it, never navigate and never tick the box', async () => {
+    const scrolled: string[] = [];
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+      scrolled.push(this.id || this.textContent || '');
+    });
+    const { host } = render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    const privacy = host.querySelector<HTMLButtonElement>('[data-part="terms-show-privacy"]')!;
+    expect(privacy.tagName).toBe('BUTTON');
+    expect(privacy.type).toBe('button');
+    expect(privacy.closest('label')).toBeNull();
+    expect(host.querySelector('a[href*="privacy" i]')).toBeNull();
+    const before = window.location.href;
+    click(privacy);
+    expect(tick.checked).toBe(false);
+    expect(scrolled).toEqual(['terms-privacy']);
+    const heading = host.querySelector('#terms-privacy')!;
+    expect(heading.textContent).toBe(PRIVACY_HEADING);
+    expect(document.activeElement).toBe(heading);
+    expect(privacy.getAttribute('aria-controls')).toBe('terms-privacy');
+    click(host.querySelector('[data-part="terms-show-tos"]'));
+    expect(tick.checked).toBe(false);
+    expect(scrolled).toEqual(['terms-privacy', 'terms-full-heading']);
+    expect(window.location.href).toBe(before);
+    // The words are the box's labels: tapping them ticks it.
+    click(host.querySelector('label[for="terms-tick"]'));
+    expect(tick.checked).toBe(true);
   });
 });
 

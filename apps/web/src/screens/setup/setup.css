@@ -895,6 +895,11 @@
   color: var(--x2f-ink-muted);
 }
 
+/* Owner demo note #189: the Terms line's words are labels for the box; its two buttons are not. */
+.x2f-check label {
+  cursor: pointer;
+}
+
 /*
  * The Terms signature pad (owner, 8 Nov 2026; no board yet). The pad is paper: white with dark ink
  * and a grey "Sign here" line in both themes (the owner asked for a white box), so these three

@@ -396,6 +396,27 @@ test('I accept stays disabled until the Terms are scrolled to the end and ticked
   await expect(accept).toBeEnabled();
 });
 
+// Owner demo note #189 (25 Nov 2026): "Privacy Policy" opens the privacy section in place.
+test('Privacy Policy shows the privacy section in this page, by mouse or keyboard, and never ticks the box or leaves /setup', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/setup');
+  const tick = page.locator('[data-part="terms-tick"]');
+  await expect(page.locator('[data-part="terms-accept"]')).toBeVisible();
+  const privacy = page.locator('[data-part="terms-show-privacy"]');
+  await privacy.click();
+  await expect(page).toHaveURL(/\/setup(\?|$)/);
+  await expect(page.locator('#terms-privacy')).toBeInViewport();
+  await expect(page.locator('#terms-privacy')).toBeFocused();
+  await expect(tick).not.toBeChecked();
+  // The keyboard: Enter on the button does the same.
+  await page.locator('.x2f-start__main').evaluate((el) => el.scrollTo({ top: 0 }));
+  await privacy.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#terms-privacy')).toBeFocused();
+  await expect(tick).not.toBeChecked();
+  await expect(page).toHaveURL(/\/setup(\?|$)/);
+});
+
 // Owner demo note #187 (25 Nov 2026): no signature pad, no typed name; the keyboard alone ticks and accepts.
 test('no signature: no pad or typed name, and the keyboard alone ticks and accepts; the setup sends the version once', async ({ page }) => {
   const s = await stubApi(page);

@@ -25,9 +25,10 @@
  * the tick box, before the board's footer, and their wording is unsigned.
  *
  * Board: SetupTerms (design/x2f-app/, mirrored from the canvas 2026-10-26): "Before you start", the
- * key points, then the full text in the box. "Terms of Service" and "Privacy Policy" in the tick
- * line scroll the box to the top and to the privacy section (the privacy policy is that section until
- * the lawyer's text). The setup screen also
+ * key points, then the full text. "Terms of Service" and "Privacy Policy" in the tick line are
+ * buttons, outside the box's label, that scroll this page to the full Terms and to the privacy
+ * section (the privacy policy is that section until the lawyer's text) and focus it: they open in
+ * place and never leave the page (owner demo note #189). The setup screen also
  * offers "Already have an account? Log in" (to `/login` with the same `returnTo`), so a returning
  * trader sent here by a take or a post (both send any signed-out person to setup) is not made to
  * sign up again (Task 21 review follow-up). No board shows that line.
@@ -186,7 +187,10 @@ export function TermsScreen({
     if (el === null) return;
     const target = heading === null ? document.getElementById('terms-full-heading') : el.querySelector<HTMLElement>(`[data-heading="${heading}"]`);
     target?.scrollIntoView?.({ block: 'start' });
-    el.focus({ preventScroll: true });
+    // Owner demo note #189 (25 Nov 2026): the section opens in place, never a new page, so the
+    // sign-up keeps its progress; the focus goes to the heading shown, so a keyboard or screen
+    // reader user lands on it and reads on from there.
+    (target ?? el).focus({ preventScroll: true });
   };
 
   return (
@@ -224,11 +228,16 @@ export function TermsScreen({
       </h2>
       {/* Owner demo note #187: in the page, no scroll box. Still a focusable region, so a keyboard
           user can land on it and page through it (the frame's middle scrolls under the keys). */}
-      <div className="x2f-terms" ref={box} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
+      <div className="x2f-terms" id="terms-text" ref={box} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
         <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
-            <h2 className="x2f-terms__heading" data-heading={s.heading}>
+            <h2
+              className="x2f-terms__heading"
+              data-heading={s.heading}
+              tabIndex={-1}
+              {...(s.heading === PRIVACY_HEADING ? { id: 'terms-privacy' } : {})}
+            >
               {s.heading}
             </h2>
             <TermsParagraphs paragraphs={s.paragraphs} />
@@ -268,27 +277,32 @@ export function TermsScreen({
           Scroll to the end to continue
         </p>
       ) : null}
-      <label className="x2f-check">
+      {/* Owner demo note #189 (25 Nov 2026): the two links are buttons that show their section in this
+          page, outside the checkbox's <label>, so tapping one never ticks the box. The box's name is
+          still the whole line (aria-labelledby). */}
+      <div className="x2f-check" data-part="terms-agree">
         <input
           type="checkbox"
+          id="terms-tick"
+          aria-labelledby="terms-tick-line"
           disabled={!read || stale}
           checked={ticked}
           onChange={(e) => setTicked(e.target.checked)}
           aria-describedby={[stale ? 'terms-stale' : !read ? 'terms-hint' : null, sign ? 'terms-sign-help' : null].filter((x) => x !== null).join(' ') || undefined}
           data-part="terms-tick"
         />
-        <span>
-          I have read and agree to the{' '}
-          <button type="button" className="x2f-start__textbutton" onClick={() => show(null)}>
+        <span id="terms-tick-line">
+          <label htmlFor="terms-tick">I have read and agree to the</label>{' '}
+          <button type="button" className="x2f-start__textbutton" onClick={() => show(null)} aria-controls="terms-text" data-part="terms-show-tos">
             Terms of Service
           </button>{' '}
-          and{' '}
-          <button type="button" className="x2f-start__textbutton" onClick={() => show(PRIVACY_HEADING)}>
+          <label htmlFor="terms-tick">and</label>{' '}
+          <button type="button" className="x2f-start__textbutton" onClick={() => show(PRIVACY_HEADING)} aria-controls="terms-privacy" data-part="terms-show-privacy">
             Privacy Policy
           </button>
           {/* Owner demo note #187 (25 Nov 2026): the line is exactly his words, with no full stop. */}
         </span>
-      </label>
+      </div>
       {/* Team members only (owner 9 Nov 2026, p11-14); a trader just ticks (owner demo note #187). */}
       {sign ? (
         <>
