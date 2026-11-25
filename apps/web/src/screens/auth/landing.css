@@ -170,3 +170,73 @@
 .x2f-landing[data-wide='true'] .x2f-landing__way {
   width: 280px;
 }
+
+/*
+ * Owner demo note #202 (25 Nov): the intro. "Welcome" slams in from off the left edge, then "to",
+ * then the three letters appear spinning fast and stop one at a time, X, then 2, then F, and the
+ * coin lands last. Plays once per load; nothing moves for people who ask for reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .x2f-landing__welcome > span:first-child {
+    animation: x2f-slam-in 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  .x2f-landing__welcome > .x2f-landing__welcome-to {
+    animation: x2f-slam-in 0.38s cubic-bezier(0.2, 1.4, 0.4, 1) 0.42s both;
+  }
+  .x2f-landing__mark .x2f-logo__letter {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation-name: x2f-letter-spin;
+    animation-timing-function: cubic-bezier(0.15, 0.6, 0.3, 1);
+    animation-fill-mode: both;
+    animation-delay: 0.85s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--x {
+    --x2f-turns: 1800deg;
+    animation-duration: 0.9s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--2 {
+    --x2f-turns: 2520deg;
+    animation-duration: 1.3s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--f {
+    --x2f-turns: 3240deg;
+    animation-duration: 1.7s;
+  }
+  .x2f-landing__mark .x2f-logo__coin {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: x2f-coin-drop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) 2.55s both;
+  }
+}
+@keyframes x2f-slam-in {
+  from {
+    transform: translateX(-110vw);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes x2f-letter-spin {
+  0% {
+    opacity: 0;
+    transform: rotateY(0deg);
+  }
+  4% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(var(--x2f-turns));
+  }
+}
+@keyframes x2f-coin-drop {
+  from {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

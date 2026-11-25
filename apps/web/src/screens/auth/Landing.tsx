@@ -87,7 +87,8 @@ export function Landing() {
           <span>{LANDING_COPY.welcome}</span> <span className="x2f-landing__welcome-to">{LANDING_COPY.welcomeTo}</span>
         </p>
         <h1 className="x2f-landing__logo">
-          <Logo height={wide ? 180 : 120} />
+          {/* Owner demo note #202 (25 Nov): the letters spin in, then stop one by one (landing.css). */}
+          <Logo height={wide ? 180 : 120} className="x2f-landing__mark" />
         </h1>
         <p className="x2f-landing__slogan">
           <span>{LANDING_COPY.sloganTop}</span> <span>{LANDING_COPY.sloganBottom}</span>
