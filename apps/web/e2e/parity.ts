@@ -233,7 +233,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
-      why: 'Owner demo note #189 (25 Nov 2026): section 7 is now his note #184 paragraph, word for word: the page says "We build our service around privacy-by-design, meaning we don\'t collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; …", then "[Lawyer to word this.]" on its own line (Terms version 2026-11-25b). Before it, owner demo notes 13 Nov ("a government agency") and #107 (17 Nov, "within the scope of the writ").',
+      why: 'Owner demo note #189 (25 Nov 2026): section 7 is now his note #184 paragraph, word for word: the page says "We build our service around privacy-by-design, meaning we don\'t collect or store IP addresses, message contents, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; …", (Terms version 2026-11-25b); the board\'s "[Lawyer to word this.]" was removed by owner demo note #212 (25 Nov 2026). Before it, owner demo notes 13 Nov ("a government agency") and #107 (17 Nov, "within the scope of the writ").',
     },
     {
       text: 'If you post an ad, you pay a 1% fee when the trade completes.',
