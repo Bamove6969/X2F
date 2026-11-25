@@ -210,14 +210,11 @@ async function setViewport(page: Page, v: ParityViewport): Promise<void> {
   await page.setViewportSize({ width, height });
 }
 
-/** Scrolls the page to the end of the Terms, as a reader would (owner demo note #187: no box of its own). */
-async function readTermsToEnd(page: Page): Promise<void> {
-  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
-}
-
-/** What every trader's accept carries: the version alone, no signature (owner demo note #187, 25 Nov 2026). */
+/**
+ * What every trader's accept carries: the version alone, no signature (owner demo note #187, 25 Nov
+ * 2026); the tick is the only condition (owner demo note #190: no read-to-the-end gate).
+ */
 async function acceptTerms(page: Page): Promise<void> {
-  await readTermsToEnd(page);
   await page.check('[data-part="terms-tick"]');
   await page.click('[data-part="terms-accept"]');
 }
@@ -368,25 +365,24 @@ for (const v of PHONES) {
   });
 }
 
-test('I accept stays disabled until the Terms are scrolled to the end and ticked', async ({ page }) => {
+// Owner demo note #190 (25 Nov 2026): his layout makes the tick box the only condition; no
+// read-to-the-end gate, no scroll hint. The order: the tick, the button, then the log-in line.
+test('Start creating my account is disabled until the box is ticked, with no scroll gate', async ({ page }) => {
   await stubApi(page);
   await page.goto('/setup');
   const tick = page.locator('[data-part="terms-tick"]');
   const accept = page.locator('[data-part="terms-accept"]');
   await expect(accept).toBeVisible();
-  await expect(tick).toBeDisabled();
   await expect(accept).toBeDisabled();
-
-  // Half way down the page is not the end (owner demo note #187: the page scrolls, not a box).
-  await page.locator('.x2f-start__main').evaluate((el) => {
-    el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2);
-  });
-  await expect(tick).toBeDisabled();
-  await expect(accept).toBeDisabled();
-
-  await readTermsToEnd(page);
+  // Not scrolled at all: the box can be ticked at once.
   await expect(tick).toBeEnabled();
-  await expect(accept).toBeDisabled();
+  await expect(page.locator('#terms-hint')).toHaveCount(0);
+  await expect(page.locator('[data-screen="setup-terms"]')).not.toContainText('Scroll to the end');
+  const y = async (sel: string) => (await page.locator(sel).boundingBox())!.y;
+  await tick.scrollIntoViewIfNeeded();
+  expect(await y('[data-part="terms-tick"]')).toBeLessThan(await y('[data-part="terms-accept"]'));
+  expect(await y('[data-part="terms-accept"]')).toBeLessThan(await y('[data-part="setup-login"]'));
+  await expect(page.locator('.x2f-start__foot')).toContainText('Already have an account? Log in');
   await page.check('[data-part="terms-tick"]');
   // The tick alone is enough: no signature (owner demo note #187, 25 Nov 2026).
   await expect(accept).toBeEnabled();
@@ -427,7 +423,6 @@ test('no signature: no pad or typed name, and the keyboard alone ticks and accep
   await expect(page.locator('[data-part="signature-type"]')).toHaveCount(0);
   await expect(page.locator('#terms-sign-help')).toHaveCount(0);
   await expect(page.locator('[data-screen="setup-terms"]')).not.toContainText('Sign your name');
-  await readTermsToEnd(page);
   const tick = page.locator('[data-part="terms-tick"]');
   await tick.focus();
   await page.keyboard.press('Space');
@@ -982,7 +977,6 @@ test.describe('review fix round', () => {
     await toPassword(page);
     await page.click('[data-part="password-set"]');
     await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
-    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
     await acceptTerms(page);
     // The names are kept (the private username, then the display name on its own screen); the
@@ -1072,7 +1066,8 @@ test.describe('review fix round', () => {
     // The reloaded page carries NEW: no stale notice, the box ends with NEW, and I can read and accept.
     await expect(page.locator('[data-part="terms-text"]')).toContainText(`Version ${NEW}.`);
     await expect(page.locator('[data-part="terms-stale"]')).toHaveCount(0);
-    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    await expect(page.locator('[data-part="terms-tick"]')).toBeEnabled();
+    await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
     await acceptTerms(page);
     await expect(page).toHaveURL(/\/post$/);
     expect(posts).toEqual([{ version: TERMS_VERSION }, { version: NEW }]);
@@ -1084,7 +1079,6 @@ test.describe('review fix round', () => {
     await page.route('**/v1/terms', json({ version: '2099-01-01' }));
     await page.goto('/setup');
     await expect(page.locator('[data-part="terms-stale"]')).toHaveText('The Terms have been updated. Reload the page to read the new version.');
-    await readTermsToEnd(page);
     await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
     await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
   });
@@ -1103,11 +1097,10 @@ test.describe('review fix round', () => {
   test('M8: the choice groups follow their pattern (login methods: checkboxes, one tab stop each) and help text is linked', async ({ page }) => {
     await stubApi(page);
     await page.goto('/setup');
-    await expect(page.locator('[data-part="terms-tick"]')).toHaveAttribute('aria-describedby', /.+/);
-    // The scroll hint alone: no signature line since owner demo note #187.
-    const ids = (await page.locator('[data-part="terms-tick"]').getAttribute('aria-describedby'))!.split(' ');
-    expect(ids).toHaveLength(1);
-    await expect(page.locator(`[id="${ids[0]}"]`)).toHaveText('Scroll to the end to continue');
+    // No scroll hint (owner demo note #190) and no signature line (#187): the box is named by its
+    // whole line and described by nothing until the page is stale.
+    await expect(page.locator('[data-part="terms-tick"]')).not.toHaveAttribute('aria-describedby', /.+/);
+    await expect(page.getByRole('checkbox', { name: 'I have read and agree to the Terms of Service and Privacy Policy' })).toBeVisible();
     await acceptTerms(page);
     // Each name's input is described by its help text (the username also by its live tick line,
     // which is empty until a check answers): every id it names exists, and the help is shown.

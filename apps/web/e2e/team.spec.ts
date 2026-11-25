@@ -223,8 +223,6 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
 /** Reads the Terms box to its end, ticks and accepts (as setup.spec does). */
 async function acceptTerms(page: Page): Promise<void> {
   await expect(page.locator('[data-screen="team-join-terms"]')).toBeVisible();
-  // Owner demo note #187: the page scrolls to the end of the Terms (no box of their own).
-  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
   await page.check('[data-part="terms-tick"]');
   // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs (the typed form, for brevity).
   await page.click('[data-part="signature-type"]');

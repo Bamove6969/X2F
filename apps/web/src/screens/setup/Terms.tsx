@@ -1,8 +1,10 @@
 /**
- * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The full Terms flow in the page, with
- * no scroll box of their own (owner demo note #187, 25 Nov 2026: a box scrolling inside the
- * scrolling page trapped the thumb on phones); the tick box enables only once the page has been
- * scrolled to the "End of Terms" line (or shows it already, on a tall screen). The Terms are agreed
+ * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). Owner demo note #190 (25 Nov 2026), his
+ * layout: "Key Highlights (TL;DR)", then "Full Terms of Service (Version <v>)" flowing in the page
+ * with no scroll box of its own (owner demo note #187: a box scrolling inside the scrolling page
+ * trapped the thumb on phones), then the tick box, the button (disabled until ticked) and, on
+ * SetupTerms, "Already have an account? Log in". The tick is the only condition the person meets:
+ * there is no read-to-the-end gate (note #190 dropped it). The Terms are agreed
  * once, at account opening (owner, 8 Nov 2026), never per trade. A trader agrees with the tick
  * alone, a clickwrap (owner demo note #187, 25 Nov 2026: "Drop the signature canvas completely"):
  * the accept button (**I accept**; on SetupTerms **Start creating my account**, design 9 Nov
@@ -33,7 +35,7 @@
  * trader sent here by a take or a post (both send any signed-out person to setup) is not made to
  * sign up again (Task 21 review follow-up). No board shows that line.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TermsSignature } from '@x2f/auth-client';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
@@ -56,20 +58,6 @@ export function fullHeading(version: string | null): string {
   return version === null ? FULL_HEADING : `${FULL_HEADING} (Version ${version})`;
 }
 
-/** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
-const END_SLACK = 4;
-
-/**
- * Whether the "End of Terms" line has been reached: its bottom is inside what the screen shows, or
- * above it. What the screen shows is the viewport, cut to the setup frame's middle (the part that
- * scrolls; the button bar sits under it, outside it, so it never hides the line).
- */
-export function endReached(end: HTMLElement): boolean {
-  const scroller = end.closest('.x2f-start__main');
-  const viewBottom = Math.min(window.innerHeight, scroller !== null ? scroller.getBoundingClientRect().bottom : Infinity);
-  return end.getBoundingClientRect().bottom <= viewBottom + END_SLACK;
-}
-
 /** The Terms screen itself; also the first step of a team member's join (MemberInvite, review 2026-11-08 F1). */
 export function TermsScreen({
   screen,
@@ -88,7 +76,7 @@ export function TermsScreen({
   back?: string;
   /** The accept button's words: SetupTerms says "Start creating my account" (design 9 Nov, p11-15). */
   acceptLabel?: string;
-  /** Shown under the tick box. */
+  /** Shown under the button, in the bar at the bottom (owner demo note #190: the log-in line last). */
   after?: ReactNode;
   /**
    * A team member signs as well as ticking (owner 9 Nov 2026, p11-14): the pad shows and the
@@ -102,7 +90,6 @@ export function TermsScreen({
 }) {
   const [version, setVersion] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [read, setRead] = useState(false);
   const [ticked, setTicked] = useState(false);
   const [signature, setSignature] = useState<TermsSignature | null>(null);
   /** Bumped to give a fresh, empty pad (the Terms changed: a new version needs a new signature). */
@@ -110,7 +97,6 @@ export function TermsScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const end = useRef<HTMLParagraphElement>(null);
 
   /** Loads the server's version; resolves to it, or to null when the load failed. */
   const load = useCallback(async (): Promise<string | null> => {
@@ -128,32 +114,6 @@ export function TermsScreen({
     void load();
   }, [load]);
 
-  const checkEnd = useCallback(() => {
-    const el = end.current;
-    if (el !== null && endReached(el)) setRead(true);
-  }, []);
-
-  // Owner demo note #187: the gate follows the page's own scroll. A page short enough to show the
-  // end at once (a big screen) counts as read at once. Scroll events are caught on the document in
-  // the capture phase, so the frame's middle (which does the scrolling) and the window both count,
-  // whatever moved them: a thumb, the wheel, the keys or a focus change. An IntersectionObserver on
-  // the end line catches layout changes with no scroll (fonts loading, the version arriving).
-  useLayoutEffect(() => {
-    checkEnd();
-    document.addEventListener('scroll', checkEnd, { capture: true, passive: true });
-    window.addEventListener('resize', checkEnd);
-    let seen: IntersectionObserver | null = null;
-    if (typeof IntersectionObserver === 'function' && end.current !== null) {
-      seen = new IntersectionObserver(() => checkEnd());
-      seen.observe(end.current);
-    }
-    return () => {
-      document.removeEventListener('scroll', checkEnd, { capture: true });
-      window.removeEventListener('resize', checkEnd);
-      seen?.disconnect();
-    };
-  }, [checkEnd]);
-
   // This page shows only the text it was built with: a server version it does not carry is not
   // accepted from here (review M4).
   const stale = version !== null && version !== TERMS_TEXT_VERSION;
@@ -168,17 +128,14 @@ export function TermsScreen({
       if (termsChanged(e)) {
         // The Terms changed between loading and accepting (review M3): read the new version first.
         setTicked(false);
-        setRead(false);
         setSignature(null);
         setPadKey((k) => k + 1);
         box.current?.closest('.x2f-start__main')?.scrollTo({ top: 0 });
-        // A page that shows everything has no scroll to wait for: it counts as read again at once.
-        checkEnd();
         const now = await load();
         // In real use the server moved to a version this page does not carry, so the stale notice
         // ("Reload the page") is the one thing to say; "read them again" only when the reloaded
         // version is this page's own text (review m2, Task 28 round 2).
-        if (now === TERMS_TEXT_VERSION) setError('The Terms changed while you were reading. Read them to the end again, then accept.');
+        if (now === TERMS_TEXT_VERSION) setError('The Terms changed while you were reading. Read them again, then accept.');
       } else setError('Could not save that. Try again.');
       setBusy(false);
     }
@@ -206,14 +163,18 @@ export function TermsScreen({
       fit
       {...(back !== undefined ? { back } : {})}
       footer={
-        <Button
-          variant="primary"
-          disabled={!ticked || (sign && signature === null) || waiting || version === null || stale || busy}
-          onClick={() => void accept()}
-          data-part="terms-accept"
-        >
-          {acceptLabel}
-        </Button>
+        <>
+          {/* Owner demo note #190 (25 Nov 2026): disabled until ticked (and while the version loads, the page is stale or a call is busy). */}
+          <Button
+            variant="primary"
+            disabled={!ticked || (sign && signature === null) || waiting || version === null || stale || busy}
+            onClick={() => void accept()}
+            data-part="terms-accept"
+          >
+            {acceptLabel}
+          </Button>
+          {after}
+        </>
       }
     >
       <SetupIntro title="Terms of Service">{intro}</SetupIntro>
@@ -229,7 +190,7 @@ export function TermsScreen({
           ))}
         </ul>
       </section>
-      <h2 className="x2f-terms__boxhead" id="terms-full-heading" data-part="terms-full-heading">
+      <h2 className="x2f-terms__boxhead" id="terms-full-heading" tabIndex={-1} data-part="terms-full-heading">
         {fullHeading(version)}
       </h2>
       {/* Owner demo note #187: in the page, no scroll box. Still a focusable region, so a keyboard
@@ -249,7 +210,7 @@ export function TermsScreen({
             <TermsParagraphs paragraphs={s.paragraphs} />
           </section>
         ))}
-        <p className="x2f-terms__end" ref={end} data-part="terms-end">
+        <p className="x2f-terms__end" data-part="terms-end">
           {version !== null ? `End of Terms. Version ${version}.` : 'End of Terms.'}
         </p>
       </div>
@@ -275,14 +236,6 @@ export function TermsScreen({
           to read the new version.
         </p>
       ) : null}
-      {!read ? (
-        <p className="x2f-note x2f-terms__hint" id="terms-hint">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-            <path d="M12 5v14M6 13l6 6 6-6" />
-          </svg>
-          Scroll to the end to continue
-        </p>
-      ) : null}
       {/* Owner demo note #189 (25 Nov 2026): the two links are buttons that show their section in this
           page, outside the checkbox's <label>, so tapping one never ticks the box. The box's name is
           still the whole line (aria-labelledby). */}
@@ -291,10 +244,10 @@ export function TermsScreen({
           type="checkbox"
           id="terms-tick"
           aria-labelledby="terms-tick-line"
-          disabled={!read || stale}
+          disabled={stale}
           checked={ticked}
           onChange={(e) => setTicked(e.target.checked)}
-          aria-describedby={[stale ? 'terms-stale' : !read ? 'terms-hint' : null, sign ? 'terms-sign-help' : null].filter((x) => x !== null).join(' ') || undefined}
+          aria-describedby={[stale ? 'terms-stale' : null, sign ? 'terms-sign-help' : null].filter((x) => x !== null).join(' ') || undefined}
           data-part="terms-tick"
         />
         <span id="terms-tick-line">
@@ -320,7 +273,6 @@ export function TermsScreen({
           <SignaturePad key={padKey} onChange={setSignature} describedBy="terms-sign-help" />
         </>
       ) : null}
-      {after}
     </SetupFrame>
   );
 }
@@ -377,7 +329,8 @@ export function Terms() {
     <TermsScreen
       screen="terms"
       title="Updated Terms"
-      intro="The Terms of Service have changed. Read them to the end and accept them to keep trading. The key points first:"
+      // Owner demo note #190 (25 Nov 2026): no read-to-the-end gate, so the intro no longer asks for it. COPY-UNSIGNED.
+      intro="The Terms of Service have changed. Read them and accept them to keep trading. The key points first:"
       sign={member}
       waiting={session.status === 'loading'}
       onAccept={async (version, signature) => {

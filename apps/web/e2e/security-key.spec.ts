@@ -91,8 +91,6 @@ async function virtualKey(page: Page, transport: 'usb' | 'nfc'): Promise<CDPSess
 /** Terms, names, PGP and security key ticked, the PGP key made: lands on /setup/security-key. */
 async function toSecurityKeyStep(page: Page): Promise<void> {
   await page.goto(`${ORIGIN}/setup?returnTo=%2Fpost`);
-  // Owner demo note #187: the page scrolls to the end of the Terms (no box of their own).
-  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
   await page.check('[data-part="terms-tick"]');
   // A trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
   await page.click('[data-part="terms-accept"]');

@@ -11,7 +11,8 @@ import {
   MAX_POINTS, MAX_TYPED_NAME, SIGNATURE_MAX_BYTES, drawnSignature, keepPoint, scaleStrokes, signatureBytes, strokesToPath, typedSignature,
 } from '../src/screens/setup/signature.js';
 import { SignaturePad } from '../src/screens/setup/SignaturePad.js';
-import { Terms } from '../src/screens/setup/Terms.js';
+import { INITIAL, SetupContext } from '../src/screens/setup/kit.js';
+import { SetupTerms, Terms } from '../src/screens/setup/Terms.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fire, render } from './render.js';
 
@@ -230,15 +231,13 @@ describe('the Terms text: bullets', () => {
   });
 });
 
-// Owner demo note #187 (25 Nov 2026): no scroll box of its own; the gate follows the page's scroll.
-describe('the Terms screen: read to the end of the page', () => {
-  it('the full Terms have no scroll box, and the tick waits until the end line is on screen', async () => {
-    let endBottom = 2000;
+// Owner demo note #187 (25 Nov 2026): no scroll box of its own. Owner demo note #190 (25 Nov 2026):
+// no read-to-the-end gate either; the tick is the only condition.
+describe('the Terms screen: in the page, no gate, the log-in line last', () => {
+  it('the tick is usable at once, with no scroll hint, even with the end of the Terms far off screen', async () => {
     const rect = (bottom: number) => ({ x: 0, y: 0, top: bottom - 20, left: 0, right: 0, width: 0, height: 20, bottom, toJSON: () => ({}) }) as DOMRect;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.dataset.part === 'terms-end') return rect(endBottom);
-      if (this.classList.contains('x2f-start__main')) return rect(760);
-      return rect(0);
+      return rect(this.dataset.part === 'terms-end' ? 5000 : 760);
     });
     const { host } = render(
       <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
@@ -250,13 +249,31 @@ describe('the Terms screen: read to the end of the page', () => {
     expect(region.getAttribute('role')).toBe('region');
     expect(region.tabIndex).toBe(0);
     const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
-    expect(tick.disabled).toBe(true);
-    expect(host.querySelector('#terms-hint')?.textContent).toContain('Scroll to the end to continue');
-    // The page (the frame's middle) scrolls; the end line comes up to just above the button bar.
-    endBottom = 758;
-    fire(host.querySelector('.x2f-start__main')!, new Event('scroll'));
     expect(tick.disabled).toBe(false);
     expect(host.querySelector('#terms-hint')).toBeNull();
+    expect(host.textContent).not.toMatch(/Scroll to the end/i);
+    expect(tick.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('on SetupTerms: the tick box, then the button, then "Already have an account? Log in"', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <SetupContext.Provider value={{ state: INITIAL, update: () => undefined, returnTo: '/post', go: () => undefined, path: (s) => `/setup/${s}` }}>
+          <SetupTerms />
+        </SetupContext.Provider>
+      </MemoryRouter>,
+    );
+    await flush();
+    const tick = host.querySelector('[data-part="terms-tick"]')!;
+    const accept = host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!;
+    const login = host.querySelector('[data-part="setup-login"]')!;
+    expect(accept.textContent).toBe('Start creating my account');
+    expect(accept.disabled).toBe(true);
+    expect(tick.compareDocumentPosition(accept) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(accept.compareDocumentPosition(login) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(login.closest('p')!.textContent).toBe('Already have an account? Log in');
+    click(tick);
+    expect(accept.disabled).toBe(false);
   });
 });
 
@@ -287,7 +304,7 @@ describe('the Terms screen for a trader: the tick alone, no signature', () => {
 
   it('the tick enables accepting, and accepting sends the version with no signature', async () => {
     const { accept, tick } = await mount();
-    expect(tick.disabled).toBe(false); // happy-dom: the page shows everything, so it counts as read
+    expect(tick.disabled).toBe(false); // no read-to-the-end gate (owner demo note #190)
     expect(accept().disabled).toBe(true);
     click(tick);
     expect(accept().disabled).toBe(false);

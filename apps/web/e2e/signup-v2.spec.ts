@@ -104,8 +104,6 @@ async function stubApi(page: Page): Promise<Stub> {
 }
 
 async function acceptTerms(page: Page): Promise<void> {
-  // Owner demo note #187: the page scrolls to the end of the Terms (no box of their own).
-  await page.locator('[data-part="terms-end"]').scrollIntoViewIfNeeded();
   await page.check('[data-part="terms-tick"]');
   // A trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
   await page.click('[data-part="terms-accept"]');
