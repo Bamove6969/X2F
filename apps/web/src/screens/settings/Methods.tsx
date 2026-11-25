@@ -349,6 +349,14 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
   const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
+  // Owner demo note #225 (25 Nov): a Copy message button, as on the login screen.
+  const [copied, setCopied] = useState(false);
+  const copyMessage = () => {
+    void navigator.clipboard?.writeText(message?.encryptedMessage ?? '').then(
+      () => setCopied(true),
+      () => undefined,
+    );
+  };
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -366,6 +374,7 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
         prove,
       );
       setMessage({ challengeId: challenge.challengeId, encryptedMessage: challenge.encryptedMessage });
+      setCopied(false);
     } catch (e) {
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not add that key. Check it and try again.'));
     } finally {
@@ -422,6 +431,10 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
           <MessageBox id="add-pgp-message">
             {message.encryptedMessage}
           </MessageBox>
+          {/* COPY-UNSIGNED (owner demo note #225): the same words as the login screen's button. */}
+          <Button variant="secondary" onClick={copyMessage} data-part="copy">
+            {copied ? 'Copied' : 'Copy message'}
+          </Button>
           <input className="x2f-input" aria-label="Login code" value={code} onChange={(e) => setCode(e.target.value)} />
           {/* Owner demo note #219: Confirm key waits for a whole login code (the server's normalizeLoginCode). */}
           <Button variant={primary} disabled={busy || normalizeLoginCode(code) === null} onClick={() => void finish()}>
