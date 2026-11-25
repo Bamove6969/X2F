@@ -190,6 +190,29 @@ describe('Team (settings)', () => {
     expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
   });
 
+  it('note #219: with every role unticked, Make an invite link is dimmed, says why, and sends nothing', async () => {
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
+    await settle();
+    const button = byPart(host, 'invite')!;
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+    expect(byPart(host, 'invite-pick-role')).toBeNull();
+    fire(host.querySelector('#invite-role-offers')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    const note = byPart(host, 'invite-pick-role')!;
+    expect(note.textContent).toBe('Pick at least one role.');
+    expect(button.getAttribute('aria-describedby')).toBe(note.id);
+    fire(button, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(calls.some((c) => c.url === '/v1/team/invites')).toBe(false);
+    fire(host.querySelector('#invite-role-trades')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(button.getAttribute('aria-disabled')).toBe('false');
+    expect(byPart(host, 'invite-pick-role')).toBeNull();
+  });
+
   it('the member limit opens CantDoThat with the feedback line', async () => {
     inviteReply = { status: 409, body: { error: 'too-many-members', max: 3 } };
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);

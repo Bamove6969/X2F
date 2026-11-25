@@ -33,6 +33,9 @@ import { ChoiceGroup } from '../ui/Choice.js';
 import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
 import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
+/** An address already in the list (was the error on Save; live since owner demo note #219). */
+export const ADDRESS_REPEATED = 'That address is already in your list.';
+
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
 // @x2f/auth-client's. Adding goes through `withConfirm(walletsAction(addresses), ...)` with Task 30's
@@ -253,12 +256,27 @@ function RulePopup({ rule, onContinue, onClose }: { rule: WalletRule | null; onC
  * rule popup or the confirm sheet it steps down to secondary, so there is one primary per state
  * (Task 30's convention, Task 15's parity check).
  */
-function WalletsFoot({ adding, count, saving, onSave, onAdd }: { adding: boolean; count: number; saving: boolean; onSave: () => void; onAdd: () => void }) {
+function WalletsFoot({
+  adding,
+  count,
+  saving,
+  blocked,
+  onSave,
+  onAdd,
+}: {
+  adding: boolean;
+  count: number;
+  saving: boolean;
+  /** Owner demo note #219: the address in the form is already in the list (said under the field). */
+  blocked: boolean;
+  onSave: () => void;
+  onAdd: () => void;
+}) {
   const variant = usePrimaryVariant();
   return (
     <footer className="x2f-wallets__foot">
       {adding ? (
-        <Button variant={variant} onClick={onSave} disabled={count === 0 || saving}>
+        <Button variant={variant} onClick={onSave} disabled={count === 0 || saving || blocked} {...(blocked ? { 'aria-describedby': 'wallet-address-repeated' } : {})}>
           {count > 1 ? `Save ${count} wallets` : 'Save wallet'}
         </Button>
       ) : (
@@ -353,12 +371,12 @@ function WalletsScreen() {
     return batch.some((d) => d.address === addr) || (wallets ?? []).some((w) => w.address === addr);
   }
 
+  // Owner demo note #219 (25 Nov 2026): an address already in the list disables Save and Add
+  // another, and the sentence that a click used to show is said under the field as it is typed.
+  const repeated = trimmed !== '' && duplicate(trimmed);
+
   function addAnother() {
-    if (trimmed === '' || batch.length + 1 >= MAX_WALLET_BATCH) return;
-    if (duplicate(trimmed)) {
-      setError('That address is already in your list.');
-      return;
-    }
+    if (trimmed === '' || repeated || batch.length + 1 >= MAX_WALLET_BATCH) return;
     setError(null);
     setBatch((b) => [...b, current()]);
     setLabel('');
@@ -367,11 +385,7 @@ function WalletsScreen() {
   }
 
   async function save() {
-    if (count === 0 || saving) return;
-    if (trimmed !== '' && duplicate(trimmed)) {
-      setError('That address is already in your list.');
-      return;
-    }
+    if (count === 0 || saving || repeated) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -597,12 +611,21 @@ function WalletsScreen() {
                   autoComplete="off"
                   spellCheck={false}
                   placeholder="4… or 8…"
+                  aria-describedby={repeated ? 'wallet-address-repeated' : undefined}
+                  aria-invalid={repeated ? true : undefined}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                 />
                 {/* The board's "Scan address QR code" button comes back with a scanner; a button that does nothing is not shown. */}
               </span>
             </label>
+            <span aria-live="polite">
+              {repeated ? (
+                <span className="x2f-wallets__error" id="wallet-address-repeated" data-part="wallet-repeated">
+                  {ADDRESS_REPEATED}
+                </span>
+              ) : null}
+            </span>
             <span className="x2f-wallets__confirm-note">
               For extra privacy, paste a fresh address from your wallet for each trade.
             </span>
@@ -625,7 +648,7 @@ function WalletsScreen() {
             <Button
               variant="secondary"
               onClick={addAnother}
-              disabled={trimmed === '' || batch.length + 1 >= MAX_WALLET_BATCH}
+              disabled={trimmed === '' || repeated || batch.length + 1 >= MAX_WALLET_BATCH}
             >
               Add another
             </Button>
@@ -672,7 +695,7 @@ function WalletsScreen() {
       </main>
 
       <ConfirmOpenProvider value={confirmOpen || popup}>
-        <WalletsFoot adding={adding} count={count} saving={saving} onSave={() => void save()} onAdd={() => setPopup(true)} />
+        <WalletsFoot adding={adding} count={count} saving={saving} blocked={repeated} onSave={() => void save()} onAdd={() => setPopup(true)} />
       </ConfirmOpenProvider>
 
       {popup ? (

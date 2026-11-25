@@ -67,6 +67,7 @@ import {
   usdValue,
   validate,
   type BandDraft,
+  type BandErrors,
   type FormErrors,
   type FormState,
   type MinTrades,
@@ -205,13 +206,66 @@ function useMethods(): [Methods, () => void] {
   return [methods, () => setAttempt((n) => n + 1)];
 }
 
+/**
+ * Owner demo note #219 (25 Nov 2026): the live check's problems the person should see now. A
+ * currency, terms or gift-card problem follows something they did, so it shows at once; a payment
+ * method's once they have been to the method box (or removed one); a band box's once they have left
+ * that box, and a band rule once they have left any box of that currency's bands.
+ */
+export function shownErrors(all: FormErrors, form: FormState, left: ReadonlySet<string>): FormErrors {
+  const out: FormErrors = {};
+  if (all.currencies !== undefined) out.currencies = all.currencies;
+  if (all.terms !== undefined) out.terms = all.terms;
+  if (all.giftCardTerms !== undefined) out.giftCardTerms = all.giftCardTerms;
+  if (all.country !== undefined && left.has('country')) out.country = all.country;
+  if (all.methods !== undefined && [...left].some((id) => id === 'method' || id.startsWith('method-'))) out.methods = all.methods;
+  if (all.bands !== undefined) {
+    const bands: NonNullable<FormErrors['bands']> = {};
+    for (const [currency, b] of Object.entries(all.bands)) {
+      const keys = (form.bands[currency] ?? []).map((d) => d.key);
+      const rows: Record<number, BandErrors> = {};
+      for (const key of keys) {
+        const e = b.rows[key];
+        if (e === undefined) continue;
+        const shown: BandErrors = {};
+        for (const part of ['min', 'max', 'margin'] as const) if (e[part] !== undefined && left.has(`${currency}-${key}-${part}`)) shown[part] = e[part];
+        if (Object.keys(shown).length > 0) rows[key] = shown;
+      }
+      const touched = keys.some((key) => ['min', 'max', 'margin'].some((part) => left.has(`${currency}-${key}-${part}`)));
+      if (Object.keys(rows).length > 0 || (touched && b.all !== undefined)) bands[currency] = { rows, ...(touched && b.all !== undefined ? { all: b.all } : {}) };
+    }
+    if (Object.keys(bands).length > 0) out.bands = bands;
+  }
+  return out;
+}
+
+/** The parts of the form the live check still refuses, in the form's order (note #219). */
+export function missingParts(all: FormErrors): string[] {
+  // COPY-UNSIGNED (owner demo note #219: the names of the parts in the hint by Post offer)
+  const parts: [keyof FormErrors, string][] = [
+    ['currencies', 'a currency'],
+    ['methods', 'payment methods'],
+    ['country', "the card's country"],
+    ['giftCardTerms', 'the gift card terms'],
+    ['bands', 'trade sizes and prices'],
+    ['terms', 'your terms'],
+  ];
+  return parts.filter(([k]) => all[k] !== undefined).map(([, words]) => words);
+}
+
+/** COPY-UNSIGNED (owner demo note #219): the quiet line by the dimmed Post offer. */
+export const POST_MISSING = (parts: readonly string[]): string => `To post this offer, finish ${parts.join(', ')}.`;
+
 function PostOfferForm() {
   const { tradingPaused } = useSiteInfo();
   const location = useLocation();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
   const [methods, retryMethods] = useMethods();
-  const [errors, setErrors] = useState<FormErrors>({});
+  // Owner demo note #219 (25 Nov 2026): the ids of the boxes the person has left (or the parts
+  // they removed), so a box's problem shows once they have been there, not before.
+  const [left, setLeft] = useState<ReadonlySet<string>>(() => new Set());
+  const leave = (id: string) => setLeft((l) => (l.has(id) ? l : new Set(l).add(id)));
   // J-17 (F13): the gift-card terms ticked; never kept in the draft, and cleared when the side (so
   // the poster's part with the card) changes.
   const [giftTicked, setGiftTicked] = useState<ReadonlySet<string>>(() => new Set());
@@ -260,13 +314,18 @@ function PostOfferForm() {
   const picked = new Set(form.currencies);
   const optionOf = (c: string) => options.find((o) => o.code === c);
   const giftCard = form.methods.some((m) => list?.find((x) => x.id === m.methodId)?.giftCard === true);
+  // Owner demo note #219: the form is checked as it is filled in, and Post offer stays dimmed until it passes.
+  const live = validate(form, { giftCard: (id) => list?.find((m) => m.id === id)?.giftCard === true, giftCardTicked: giftTicked });
+  const errors = shownErrors(live.errors, form, left);
+  const missing = live.body ? [] : missingParts(live.errors);
+  const missingId = `${ids}-missing`;
 
   async function submit(): Promise<void> {
-    const r = validate(form, { giftCard: (id) => list?.find((m) => m.id === id)?.giftCard === true, giftCardTicked: giftTicked });
-    setErrors(r.errors);
+    const r = live;
+    // Owner demo note #219: Post offer is disabled until the form passes; a click then does nothing.
+    if (!r.body) return;
     setRefusal(null);
     setCantDo(null);
-    if (!r.body) return;
     // Kept until the offer is posted, in case the API sends the page to setup or Add a wallet.
     const s = storage();
     if (s) saveDraft(s, form);
@@ -491,7 +550,7 @@ function PostOfferForm() {
         <h1 className="x2f-screen-title">Post an offer</h1>
       </header>
 
-      <main className="post-main">
+      <main className="post-main" onBlur={(e) => (e.target.id !== '' ? leave(e.target.id) : undefined)}>
         <div className="post-card">
           <section className="post-section">
             <span className="post-label" id={`${ids}-side`}>
@@ -507,7 +566,13 @@ function PostOfferForm() {
               {form.currencies.map((c) => {
                 const opt = optionOf(c);
                 return (
-                  <Button key={c} variant="secondary" onClick={() => edit((f) => removeCurrency(f, c))} aria-label={`Remove ${c}`} data-part="picked-currency">
+                  <Button
+                    key={c}
+                    variant="secondary"
+                    onClick={() => {
+                      leave('currency');
+                      edit((f) => removeCurrency(f, c));
+                    }} aria-label={`Remove ${c}`} data-part="picked-currency">
                     {opt ? currencyLabel(opt) : c} <Icon name="close" size={16} />
                   </Button>
                 );
@@ -556,7 +621,14 @@ function PostOfferForm() {
               <div key={m.methodId} className="post-method" data-part="method" data-method={m.methodId}>
                 <div className="post-band-head">
                   <span className="post-ink">{name}</span>
-                  <Button variant="quiet" onClick={() => edit((f) => removeMethod(f, m.methodId))} aria-label={`${POST_COPY.removeMethod} ${name}`}>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      leave('method');
+                      edit((f) => removeMethod(f, m.methodId));
+                    }}
+                    aria-label={`${POST_COPY.removeMethod} ${name}`}
+                  >
                     {POST_COPY.removeMethod}
                   </Button>
                 </div>
@@ -759,7 +831,20 @@ function PostOfferForm() {
         {refusal && cantDo !== null ? <CantDoThat title={POST_CANT_TITLE} body={refusal} from={cantDo} onClose={() => setCantDo(null)} /> : null}
         {/* Plan 4 Task 29: no new offer during the emergency stop (the API refuses it too, 409 trading-paused). */}
         {tradingPaused ? <TradingStopped /> : null}
-        <Button variant="primary" className="post-submit" onClick={() => void submit()} disabled={busy || tradingPaused} aria-busy={busy}>
+        {/* Owner demo note #219: what is still missing, as quiet help next to the dimmed button. */}
+        {missing.length > 0 && !tradingPaused ? (
+          <p className="post-muted" id={missingId} data-part="post-missing">
+            {POST_MISSING(missing)}
+          </p>
+        ) : null}
+        <Button
+          variant="primary"
+          className="post-submit"
+          onClick={() => void submit()}
+          disabled={busy || tradingPaused || !live.body}
+          aria-busy={busy}
+          {...(missing.length > 0 && !tradingPaused ? { 'aria-describedby': missingId } : {})}
+        >
           Post offer
         </Button>
       </footer>

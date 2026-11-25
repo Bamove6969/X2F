@@ -13,6 +13,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKeyWithId,
+  checkPassword,
+  normalizeLoginCode,
   isStaged,
   partnerMissing,
   partnerNeededBy,
@@ -244,8 +246,13 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const spaced = hasPasswordSpace(password);
+  // Owner demo note #219 (25 Nov 2026): Save is disabled until the password meets the rules
+  // (`checkPassword`, the server's own shape rule); the leaked list stays the server's to check.
+  const shaped = checkPassword(password).ok;
+  const short = password !== '' && !spaced && !shaped;
 
   const save = async () => {
+    if (!shaped) return;
     setBusy(true);
     setError(null);
     const code = recoveryCode.trim();
@@ -293,7 +300,19 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       <label className="x2f-label" htmlFor="new-password">
         New password
       </label>
-      <PasswordInput id="new-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <PasswordInput
+        id="new-password"
+        autoComplete="new-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        {...(short ? { 'aria-describedby': 'new-password-rules' } : {})}
+      />
+      {/* Owner demo note #219: why Save is still dimmed, as quiet help once something is typed. COPY-UNSIGNED */}
+      {short ? (
+        <p className="x2f-note" id="new-password-rules" data-part="password-rules">
+          Use at least 10 characters, with upper and lower case letters, a number and a symbol.
+        </p>
+      ) : null}
       {/* Owner demo note #108: a new password holds no spaces; said as soon as one is typed. */}
       {spaced ? (
         <p className="x2f-error" data-part="password-space">
@@ -314,7 +333,7 @@ export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAct
       />
       <p className="x2f-note">{BURNED.passwordCodeHint}</p>
       <div className="x2f-row">
-        <Button variant={primary} disabled={busy || password === '' || spaced} onClick={() => void save()}>
+        <Button variant={primary} disabled={busy || !shaped} onClick={() => void save()}>
           Save
         </Button>
         <Button variant="quiet" disabled={busy} onClick={onCancel}>
@@ -404,7 +423,8 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
             {message.encryptedMessage}
           </MessageBox>
           <input className="x2f-input" aria-label="Login code" value={code} onChange={(e) => setCode(e.target.value)} />
-          <Button variant={primary} disabled={busy || code.trim() === ''} onClick={() => void finish()}>
+          {/* Owner demo note #219: Confirm key waits for a whole login code (the server's normalizeLoginCode). */}
+          <Button variant={primary} disabled={busy || normalizeLoginCode(code) === null} onClick={() => void finish()}>
             Confirm key
           </Button>
         </>

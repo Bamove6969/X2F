@@ -152,11 +152,16 @@ describe('<PostOffer> on a gift card (J-17)', () => {
     setValue('#USD-1-min', '0.5');
     setValue('#USD-1-max', '2');
     const postButton = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Post offer')!;
+    // Owner demo note #219: Post offer is disabled until every term is ticked, and the hint says so.
+    expect(postButton().disabled).toBe(true);
+    expect(host.querySelector('[data-part="post-missing"]')?.textContent).toBe('To post this offer, finish the gift card terms.');
     fire(postButton(), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(posted).toEqual([]);
     expect(host.textContent).toContain(GIFT_CARD_TERMS_UNTICKED);
     for (const b of boxes) fire(b, new MouseEvent('click', { bubbles: true }));
+    expect(postButton().disabled).toBe(false);
+    expect(host.querySelector('[data-part="post-missing"]')).toBeNull();
     fire(postButton(), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(posted).toHaveLength(1);

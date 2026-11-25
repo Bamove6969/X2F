@@ -322,6 +322,29 @@ describe('Your wallets', () => {
   });
 });
 
+// Owner demo note #219 (25 Nov 2026): an address already in the list dims Save and Add another,
+// and says so under the field as it is typed (it was an error on Save).
+describe('note #219: an address already in the list', () => {
+  it('disables Save wallet and Add another, says why under the field, and sends nothing', async () => {
+    await mount();
+    await startAdding();
+    expect(button('Save wallet').disabled).toBe(true);
+    type('#wallet-address', READY.address);
+    expect(button('Save wallet').disabled).toBe(true);
+    expect(button('Add another').disabled).toBe(true);
+    const said = document.querySelector('[data-part="wallet-repeated"]');
+    expect(said?.textContent).toBe('That address is already in your list.');
+    expect(document.querySelector('#wallet-address')!.getAttribute('aria-describedby')).toBe('wallet-address-repeated');
+    expect(button('Save wallet').getAttribute('aria-describedby')).toBe('wallet-address-repeated');
+    await click('Save wallet');
+    expect(stub.calls.filter((c) => c.url === '/v1/wallets' && c.method === 'POST')).toEqual([]);
+    type('#wallet-address', ADDR_C);
+    expect(document.querySelector('[data-part="wallet-repeated"]')).toBeNull();
+    expect(button('Save wallet').disabled).toBe(false);
+    expect(button('Add another').disabled).toBe(false);
+  });
+});
+
 describe('one trade only or future trades (owner demo note #6)', () => {
   function pickKeep(value: 'saved' | 'one-time'): void {
     const input = document.querySelector<HTMLInputElement>(`[data-part="wallet-keep-for"] input[value="${value}"]`);

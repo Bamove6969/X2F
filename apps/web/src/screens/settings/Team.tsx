@@ -493,6 +493,12 @@ export function Team() {
               </p>
             </div>
             <RolePicker value={roles} onChange={setRoles} idPrefix="invite-role" />
+            {/* Owner demo note #219 (25 Nov 2026): with every box unticked, Invite is dimmed and says why here. */}
+            {roles.length === 0 ? (
+              <p className="x2f-note" id={`${fullId}-roles`} data-part="invite-pick-role">
+                {C.pickRole}
+              </p>
+            ) : null}
             {full ? (
               <p className="x2f-note" id={fullId} data-part="team-full">
                 {C.full(max)}
@@ -501,9 +507,9 @@ export function Team() {
             <Button
               variant="primary"
               data-primary=""
-              aria-disabled={busy || name.trim() === '' || nameSpaced || full}
-              aria-describedby={full ? fullId : undefined}
-              onClick={() => (full || name.trim() === '' || nameSpaced ? undefined : void invite())}
+              aria-disabled={busy || name.trim() === '' || nameSpaced || full || roles.length === 0}
+              aria-describedby={full ? fullId : roles.length === 0 ? `${fullId}-roles` : undefined}
+              onClick={() => (full || name.trim() === '' || nameSpaced || roles.length === 0 ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}
