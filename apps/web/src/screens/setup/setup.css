@@ -1496,13 +1496,29 @@
   outline-offset: 2px;
 }
 
-/* The trader card preview (owner demo note #199): a dark card with a border. */
-.x2f-start__preview-card {
-  gap: 12px;
-  border-color: var(--x2f-line);
+/* The example trader card (owner demo note #220): a raised dark card with a soft escrow-tinted
+   wash and a hairline border, the kit's identity row and stat tiles inside. */
+.x2f-start__showcase {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--x2f-line) 70%, transparent);
+  border-radius: var(--x2f-radius-lg);
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--x2f-escrow) 14%, transparent), transparent 60%),
+    var(--x2f-surface);
 }
 
-.x2f-start__preview-h {
+.x2f-start__showcase-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-start__showcase-h {
   margin: 0;
   font-size: 14px;
   line-height: 18px;
@@ -1510,42 +1526,62 @@
   color: var(--x2f-ink-muted);
 }
 
-.x2f-start__preview-who {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.x2f-start__preview-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.x2f-start__preview-name-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.x2f-start__preview-name {
-  overflow-wrap: anywhere;
-  font-size: 17px;
+.x2f-start__showcase-tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__showcase .x2f-ident__name {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+
+.x2f-start__showcase[data-example-name='true'] .x2f-ident__name {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-start__showcase .x2f-stat {
+  background: color-mix(in srgb, var(--x2f-surface-raised) 85%, transparent);
+}
+
+.x2f-start__showcase-badges,
+.x2f-start__showcase-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-start__showcase-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px 12px;
+}
+
+.x2f-start__showcase-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 18px;
   color: var(--x2f-ink);
 }
 
-.x2f-start__preview-name[data-placeholder='true'] {
-  color: var(--x2f-ink-muted);
-  font-weight: 400;
-}
-
-.x2f-start__preview-meta {
-  font-size: 15px;
+.x2f-start__showcase-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--x2f-surface-raised);
+  font-size: 14px;
+  line-height: 20px;
   color: var(--x2f-ink-muted);
 }
 

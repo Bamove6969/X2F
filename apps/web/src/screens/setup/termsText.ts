@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, note #214: "protect the site and our users", note #215: the escrow-settling sentence removed from the account-closure paragraph, and note #216: the risks sentence in his words ("valuev etc.... and more" tidied to "value, and more"), note #217: "to play a role in the shaping of the future of X2F", and note #218: the closing line about re-accepting removed; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, note #214: "protect the site and our users", note #215: the escrow-settling sentence removed from the account-closure paragraph, and note #216: the risks sentence in his words ("valuev etc.... and more" tidied to "value, and more"), note #217: "to play a role in the shaping of the future of X2F", note #218: the closing line about re-accepting removed, and note #222: the top lawyer placeholder removed; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -46,7 +46,8 @@ export interface TermsSection {
 }
 
 /** The board's note above the text, until the lawyer's text replaces the draft. */
-export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's lawyer.]";
+/** Owner demo note #222 (25 Nov): the lawyer placeholder at the top is gone ("Get rid of this too"); empty shows nothing. */
+export const TERMS_DRAFT_NOTE = '';
 
 /** The board's key points, shown above the full text. */
 export const KEY_POINTS: readonly string[] = [

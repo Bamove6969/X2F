@@ -107,7 +107,7 @@ export function TermsStep({
         ))}
       </ul>
       <div className="x2f-terms" ref={box} onScroll={checkEnd} tabIndex={0} role="region" aria-label="Full Terms of Service" data-part="terms-text">
-        <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
+        {TERMS_DRAFT_NOTE !== '' ? <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p> : null}
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
             <h3 className="x2f-terms__heading" data-heading={s.heading}>
