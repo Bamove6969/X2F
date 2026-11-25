@@ -239,7 +239,7 @@ export function TermsScreen({
       {/* Owner demo note #187: in the page, no scroll box. Still a focusable region, so a keyboard
           user can land on it and page through it (the frame's middle scrolls under the keys). */}
       <div className="x2f-terms" id="terms-text" ref={box} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
-        <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
+        {TERMS_DRAFT_NOTE !== '' ? <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p> : null}
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
             <h3
