@@ -197,7 +197,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   SetupTerms: [
     {
       text: "No IP addresses are logged.",
-      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says \"We don’t track you. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
+      why: "Owner demo note #121 (23 Nov 2026, setup-terms key point): the page says (opening reworded by owner demo note #183, 25 Nov) \"We never track our users. Period. We never log or save your IP address, location, device details, email, or phone number. You stay completely anonymous, and there is no personal data on our servers to leak or share.\" (Terms version 2026-11-23).",
     },
     {
       text: "Moderators can read your trade chat only if a dispute is opened.",
