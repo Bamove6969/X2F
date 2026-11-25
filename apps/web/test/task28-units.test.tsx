@@ -114,8 +114,8 @@ describe('copy', () => {
   it('the Terms draft states the fee rule (poster pays 1%, responding is free) and has no exclamation marks', () => {
     const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs.flatMap((p) => (typeof p === 'string' ? [p] : [p.text, ...p.bullets]))]).join('\n');
     const fees = TERMS.find((s) => s.heading === '4. Fees')!.paragraphs.map(paragraphText).join('\n');
-    expect(fees).toContain('X2F collects a fee of 1% of the total amount traded, paid in XMR when the trade completes. Whoever posts the ad is responsible for the bill');
-    expect(fees).toContain('Responding to someone else’s ad is always free');
+    expect(fees).toContain('X2F charges a 1% fee in XMR on completed trades. Whoever posts the ad pays the fee');
+    expect(fees).toContain("responding to someone else's ad is always free");
     expect(all).not.toContain('!');
   });
 });
