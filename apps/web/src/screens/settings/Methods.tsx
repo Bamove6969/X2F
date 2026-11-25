@@ -14,6 +14,7 @@ import {
   AuthApiError,
   addWebAuthnKeyWithId,
   checkPassword,
+  defaultKeyName,
   normalizeLoginCode,
   isStaged,
   partnerMissing,
@@ -27,7 +28,7 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
-import { KeyTest } from '../auth/KeyTest.js';
+import { KeySaved } from '../auth/KeySaved.js';
 import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import {
@@ -108,8 +109,11 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     void refresh().catch(() => setError('Could not load your login methods.'));
   }, [refresh]);
 
-  /** The security key just added here, offered for a test (owner demo note #94); null otherwise. */
-  const [justAdded, setJustAdded] = useState<string | null>(null);
+  /**
+   * The passkey or security key just added here: acknowledged and named (owner 25 Nov
+   * security-key report), a security key then offered for a test (owner demo note #94); null otherwise.
+   */
+  const [justAdded, setJustAdded] = useState<{ kind: WebAuthnKind; credentialId: string; defaultName: string } | null>(null);
 
   const addWebAuthn = async (kind: WebAuthnKind) => {
     setBusy(true);
@@ -122,9 +126,10 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         prove,
       );
       noteStaged(h);
-      // A staged key (hold model v3) is not a login method yet, so only a key added now is tested.
-      if (kind === 'security-key' && !(h !== undefined && isStaged(h))) setJustAdded(credentialId);
-      await refresh();
+      // A staged key (hold model v3) is not a login method yet (no key row), so only a key added now is named and tested.
+      const list = await authApi.listMethods();
+      setMethods(list);
+      if (!(h !== undefined && isStaged(h))) setJustAdded({ kind, credentialId, defaultName: defaultKeyName(kind, list.filter((m) => m.type === kind).length) });
     } catch (e) {
       if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
     } finally {
@@ -178,11 +183,15 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       {staged > 0 ? <StagedNote key={staged} /> : null}
       {justAdded !== null ? (
         <div data-part="key-just-added">
-          {/* COPY-UNSIGNED */}
-          <p className="x2f-note" role="status">
-            Security key added.
-          </p>
-          <KeyTest key={justAdded} credentialId={justAdded} />
+          <KeySaved
+            key={justAdded.credentialId}
+            kind={justAdded.kind}
+            credentialId={justAdded.credentialId}
+            defaultName={justAdded.defaultName}
+            continueLabel="Done"
+            onNamed={() => void refresh()}
+            onContinue={() => setJustAdded(null)}
+          />
         </div>
       ) : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}

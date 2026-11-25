@@ -22,7 +22,8 @@ import { passwordAlone } from '@x2f/auth-client';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { keyErrorText } from '../auth/keyErrors.js';
-import { RegisterError, SIGNUP_ORDER, SetupFrame, SetupIntro, nextStep, useSetup, type LoginMethod, type SignupMethod } from './kit.js';
+import { KEY_SAVED_COPY } from '../auth/KeySaved.js';
+import { RegisterError, SIGNUP_ORDER, SetupFrame, SetupIntro, useSetup, type LoginMethod, type SignupMethod } from './kit.js';
 import { errorCode, registerWebAuthn, setupError, termsChanged, type SetupError } from './register.js';
 
 export type Strength = 'strong' | 'medium' | 'weak';
@@ -199,18 +200,20 @@ export function Login() {
     setBusy(true);
     setError(null);
     try {
-      await registerWebAuthn({ displayName: state.displayName, loginName: state.loginName }, first, state.terms!);
-      update({ registered: true, done: [first] });
+      const { credentialId } = await registerWebAuthn({ displayName: state.displayName, loginName: state.loginName }, first, state.terms!);
+      // Owner 25 Nov security-key report: the key is saved, so say so and ask for its name
+      // (FirstKeySaved, shown in this step's place by SetupFlow) before going on.
+      update({ registered: true, done: [first], keySaved: { kind: first, credentialId } });
       refreshSession();
-      go(nextStep({ methods: chosen, done: [first] }), { replace: true });
     } catch (e) {
       if (termsChanged(e)) {
         update({ terms: null });
         go('');
         return;
       }
-      // The browser's own refusal says why (owner demo 13 Nov); anything else keeps the general sentence.
-      if (errorCode(e) === null) setError({ text: keyErrorText(e, first, 'That did not finish. Try again, or pick another way to log in.') });
+      // The browser's own refusal says why (owner demo 13 Nov), and so does a key that did not check
+      // its PIN (owner 25 Nov security-key report); anything else keeps the general sentence.
+      if (errorCode(e) === null || (e as { reason?: unknown }).reason === 'needs-pin') setError({ text: keyErrorText(e, first, 'That did not finish. Try again, or pick another way to log in.') });
       else setError(setupError(e, 'X2F could not set that up. Try again, or pick another way to log in.'));
     } finally {
       setBusy(false);
@@ -290,6 +293,11 @@ export function Login() {
         // COPY-UNSIGNED (owner decision, 16 Nov 2026: a password does not stand alone)
         <p className="x2f-start__help" role="status" data-part="password-partner">
           A password needs the authenticator app or another way to log in. Tick one of them too.
+        </p>
+      ) : null}
+      {busy && (first === 'security-key' || first === 'passkey') ? (
+        <p className="x2f-note" role="status" data-part="key-waiting">
+          {KEY_SAVED_COPY.waiting(first)}
         </p>
       ) : null}
       <RegisterError error={error} />

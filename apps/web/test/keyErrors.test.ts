@@ -30,6 +30,16 @@ describe('why a security key or passkey was not added', () => {
     expect(keyErrorText(new Error('WebAuthn is not supported in this browser'), 'security-key')).toBe(KEY_ERROR.unsupported);
   });
 
+  it('owner 25 Nov security-key report: a security key without a PIN says to set one (browser or API), a passkey keeps its device sentence', () => {
+    const noPin = new AuthApiError(401, 'webauthn-failed', { reason: 'needs-pin' });
+    expect(keyErrorText(noPin, 'security-key')).toBe(KEY_ERROR.keyNeedsPin);
+    expect(KEY_ERROR.keyNeedsPin).toMatch(/^Your security key needs a PIN/);
+    expect(keyErrorText(noPin, 'passkey')).toBe(KEY_ERROR.needsPin);
+    expect(keyErrorText(browserError('ConstraintError'), 'security-key')).toBe(KEY_ERROR.keyNeedsPin);
+    // Any other 401 stays the plain sentence.
+    expect(keyErrorText(new AuthApiError(401, 'webauthn-failed', { reason: 'other' }), 'security-key')).toBe(KEY_ERROR.checkFailed('security-key'));
+  });
+
   it('inside a frame that may not use keys, says to open its own tab', () => {
     vi.stubGlobal('window', { self: 1, top: 2 });
     expect(keyErrorText(browserError('NotAllowedError', undefined, "The 'publickey-credentials-create' feature is not enabled in this document."), 'security-key')).toBe(KEY_ERROR.framed);

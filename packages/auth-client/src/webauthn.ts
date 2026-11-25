@@ -29,7 +29,8 @@ const BROWSER_AUTHENTICATION: AuthenticationCeremony = { startAuthentication };
  * Sign-up with a passkey or a security key (traders). `acceptedTerms` is the Terms version the
  * person accepted on the Terms screen (R10), never fetched or made up on their behalf. No signature:
  * a trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
- * Starts a session on success.
+ * Starts a session on success. Also answers the new credential's id (the registration response's
+ * `id`), so the key can be named at once (owner 25 Nov security-key report).
  */
 export async function registerWithWebAuthn(
   api: AuthApi,
@@ -39,12 +40,13 @@ export async function registerWithWebAuthn(
   acceptedTerms: string,
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
   o: { label?: string } = {},
-): Promise<{ displayName: string }> {
+): Promise<{ displayName: string; credentialId: string }> {
   const { challengeId, options } = await api.registerWebAuthnStart({ displayName: names.displayName, loginName: names.loginName, kind });
   const response = await ceremony.startRegistration({ optionsJSON: options });
-  return api.registerWebAuthnFinish({
+  const done = await api.registerWebAuthnFinish({
     challengeId, response, deviceLabel, acceptedTerms, ...(o.label !== undefined ? { label: o.label } : {}),
   });
+  return { ...done, credentialId: response.id };
 }
 
 /** Passkey login without a name: the authenticator picks the account (traders). */

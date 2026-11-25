@@ -51,6 +51,8 @@ export type ApiErrorCode =
   // Review M2: a password-only account's setup-only session, outside the routes that add a second method.
   | 'second-method-required'
   | 'webauthn-failed'
+  // Owner 25 Nov security-key report: a key name outside checkKeyName (@x2f/accounts), with its `reason`.
+  | 'key-name-invalid'
   | 'security-key-limit'
   | 'origin-refused'
   | 'address-invalid'

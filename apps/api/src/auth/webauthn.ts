@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { actionHash, type AccountKind, type ConfirmAction } from '@x2f/accounts';
+import { actionHash, checkKeyName, type AccountKind, type ConfirmAction } from '@x2f/accounts';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -41,8 +41,14 @@ export const WEBAUTHN_TTL_MS = 5 * 60_000;
  * says whether a login name exists. The next key is refused with 409 `security-key-limit`.
  */
 export const MAX_SECURITY_KEYS = 5;
-/** EdDSA, ES256, RS256. */
-const ALGORITHMS = [-8, -7, -257];
+/**
+ * ES256, EdDSA, RS256, in that order of preference (owner 25 Nov security-key report). An
+ * authenticator makes its key with the first one it supports, so ES256 first: every FIDO2 key
+ * (YubiKey 5, Titan, Feitian, SoloKey, Nitrokey) and every platform does it, and Android's FIDO
+ * stack and some older key firmware handle it best; EdDSA and RS256 stay accepted for keys that do
+ * only those. Verification accepts all three either way.
+ */
+const ALGORITHMS = [-7, -8, -257];
 const LABEL_MAX = 60;
 /** base64url of a credential ID (at most 1023 bytes, WebAuthn's limit). */
 const CREDENTIAL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
@@ -62,6 +68,14 @@ const failed = (): ApiError => new ApiError(401, 'webauthn-failed');
  */
 export const KEY_NEEDS_PIN = "Your key needs its PIN (or fingerprint) to log in. Set one in your key's settings, then try again.";
 const expired = (): ApiError => new ApiError(400, 'challenge-expired');
+/**
+ * Owner 25 Nov security-key report: a registration refused only because the key did not verify its
+ * user (no PIN set, or the key was asked not to check it) says so with `reason: 'needs-pin'`, so the
+ * web can say "set a PIN on your key" instead of a bare "couldn't be checked". Sent only when the
+ * very same response verifies in every other way (challenge, origin, RP ID, presence, key); the key
+ * is still not added. The web words it (keyErrors.ts).
+ */
+const needsPin = (): ApiError => new ApiError(401, 'webauthn-failed', { reason: 'needs-pin' });
 
 function record(body: unknown): Record<string, unknown> {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
@@ -284,7 +298,7 @@ async function verifyRegistration(
   deps: Deps,
   a: { accountKind: AccountKind; kind: CredentialKind | null; response: unknown; expectedChallenge: string },
 ): Promise<NewCredential> {
-  const verify = (response: RegistrationResponseJSON) =>
+  const verify = (response: RegistrationResponseJSON, requireUserVerification = true) =>
     verifyRegistrationResponse({
       response,
       expectedChallenge: a.expectedChallenge,
@@ -293,9 +307,19 @@ async function verifyRegistration(
       expectedType: 'webauthn.create',
       requireUserPresence: true,
       // Owner, 16 Nov 2026: user verification on every registration, passkey and security key alike.
-      requireUserVerification: true,
+      requireUserVerification,
       supportedAlgorithmIDs: ALGORITHMS,
     });
+  /** The refusal for a response that did not verify: `needs-pin` when only user verification was missing. */
+  const refusal = async (response: RegistrationResponseJSON | null): Promise<ApiError> => {
+    if (response === null) return failed();
+    try {
+      const r = await verify(response, false);
+      return r.verified && !r.registrationInfo.userVerified ? needsPin() : failed();
+    } catch {
+      return failed();
+    }
+  };
   let result;
   try {
     result = await verify(a.response as RegistrationResponseJSON);
@@ -307,11 +331,11 @@ async function verifyRegistration(
     // another root, an expired leaf, an alg the statement does not list): a trader's `attested`
     // carries no weight, and the retry still checks challenge, origin, RP ID, type, flags and key.
     const plain = a.accountKind === 'trader' ? withoutAttestation(a.response as RegistrationResponseJSON) : null;
-    if (plain === null) throw failed();
+    if (plain === null) throw await refusal(a.accountKind === 'trader' ? null : (a.response as RegistrationResponseJSON));
     try {
       result = await verify(plain);
     } catch {
-      throw failed();
+      throw await refusal(plain);
     }
   }
   if (!result.verified) throw failed();
@@ -1022,6 +1046,29 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   return reply.code(201).send({ ok: true });
 }
 
+/**
+ * `PUT /v1/account/webauthn/label { credentialId, label }` (owner 25 Nov security-key report: "it
+ * should let me name it"): names one of the caller's own passkeys or security keys, by the
+ * credential ID the browser gave for it (base64url). The name is checked by `checkKeyName`
+ * (trimmed, 1 to 32 letters, digits, spaces and a little punctuation): 400 `key-name-invalid`
+ * `{ reason }` otherwise. Another account's credential, or one still staged for review (hold model
+ * v3: no row yet), is 404 `not-found`. Only the `label` column changes: no key material, flags,
+ * session, approval or security state, so no confirm, hold gate or alert.
+ */
+async function setKeyLabel(req: FastifyRequest) {
+  const deps = req.server.deps;
+  const body = record(req.body);
+  const credentialId = str(body, 'credentialId');
+  if (!CREDENTIAL_ID.test(credentialId)) throw new ApiError(400, 'bad-request');
+  const checked = checkKeyName(str(body, 'label'));
+  if (!checked.ok) throw new ApiError(400, 'key-name-invalid', { reason: checked.problem });
+  const { rowCount } = await deps.db.query('update webauthn_credentials set label = $3 where account_id = $1 and credential_id = $2', [
+    req.auth.accountId, Buffer.from(credentialId, 'base64url'), checked.name,
+  ]);
+  if ((rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+  return { label: checked.name };
+}
+
 /** A verified credential in the form a pending change keeps it (JSON: the public key as base64url). */
 export type StoredCredential = Omit<NewCredential, 'publicKey'> & { publicKey: string };
 
@@ -1065,4 +1112,6 @@ export function webauthnRoutes(app: FastifyInstance): void {
     addKeyStart,
   );
   app.post('/v1/account/webauthn/finish', { preHandler: [requireSession({ allowRecovery: true }), requireNotHeld] }, addKeyFinish);
+  // Owner 25 Nov security-key report: naming a key just saved (or any of my own keys).
+  app.put('/v1/account/webauthn/label', { preHandler: [requireSession(), requireNotHeld] }, setKeyLabel);
 }

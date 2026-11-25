@@ -37,9 +37,10 @@ export async function registerPgpFinish(challengeId: string, code: string, terms
   await authApi.registerPgpFinish({ challengeId, code, deviceLabel: deviceLabel(), acceptedTerms: terms.version });
 }
 
-/** A passkey or security key: the browser's ceremony between the start and the finish. */
-export async function registerWebAuthn(names: Names, kind: WebAuthnKind, terms: TermsAcceptance): Promise<void> {
-  await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), terms.version);
+/** A passkey or security key: the browser's ceremony between the start and the finish. Answers the new credential's id (to name it). */
+export async function registerWebAuthn(names: Names, kind: WebAuthnKind, terms: TermsAcceptance): Promise<{ credentialId: string }> {
+  const { credentialId } = await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), terms.version);
+  return { credentialId };
 }
 
 /** The API's error code from either client, or `null` for anything else (a network failure, a cancelled ceremony). */
