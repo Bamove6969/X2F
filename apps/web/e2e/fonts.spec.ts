@@ -99,6 +99,7 @@ for (const width of [360, 390, 1366]) {
         const text = range.getBoundingClientRect();
         const cs = getComputedStyle(b);
         return {
+          landingWay: b.classList.contains('x2f-landing__way'),
           label: (b.textContent ?? '').trim(),
           height: Math.round(box.height),
           fontSize: parseFloat(cs.fontSize),
@@ -114,9 +115,16 @@ for (const width of [360, 390, 1366]) {
     );
     expect(buttons.length).toBeGreaterThan(0);
     for (const b of buttons) {
-      expect(b.height, b.label).toBe(56);
-      expect(b.fontSize, b.label).toBeGreaterThanOrEqual(17);
-      expect(b.fontSize, b.label).toBeLessThanOrEqual(20);
+      if (b.landingWay) {
+        // Owner demo notes #172/#173 (25 Nov): the landing's Create account is much bigger and bolder,
+        // still clear of the edges (checked below with every other button).
+        expect(b.height, b.label).toBe(68);
+        expect(b.fontSize, b.label).toBe(26);
+      } else {
+        expect(b.height, b.label).toBe(56);
+        expect(b.fontSize, b.label).toBeGreaterThanOrEqual(17);
+        expect(b.fontSize, b.label).toBeLessThanOrEqual(20);
+      }
       expect(b.fontWeight, b.label).toBe('700');
       expect(b.lines, b.label).toBe(1);
       expect(b.overflow, b.label).toBe(false);
