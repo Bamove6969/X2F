@@ -36,6 +36,17 @@ export async function setPhone(page: Page, viewport: ParityViewport): Promise<vo
  * checkbox or radio inside a label of at least 44 px by MIN_TAP passes: the label is the target.
  */
 export async function expectPhoneLayout(page: Page): Promise<void> {
+  // Owner demo note #202 (25 Nov 2026): the landing's intro slides "Welcome" and "to" in from off the
+  // left edge and spins the logo; the layout is judged where everything comes to rest, so finite CSS
+  // animations finish first (infinite ones, such as spinners, are left running).
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+        .map((a) => a.finished.catch(() => undefined)),
+    ),
+  );
   const problems = await page.evaluate((minTap) => {
     const out: string[] = [];
     const doc = document.documentElement;

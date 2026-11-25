@@ -1606,6 +1606,10 @@
   align-items: center;
   width: 100%;
 }
+/* Phone tap size: the short labels ("PGP", "OTP") still give a 44 px wide target. */
+.x2f-start__learn-list > li > button {
+  min-width: 44px;
+}
 .x2f-start__learn-text {
   text-align: left;
   width: 100%;
