@@ -27,8 +27,8 @@ export {
   QUIET_LOCK_AT, QUIET_LOCK_MS, VISITOR_MISSES_BEFORE_LEAVING, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey,
   throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
-export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
-export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, type TermsSignature } from './termsSignature.js';
+export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, assertTraderTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
+export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, optionalTermsSignature, type TermsSignature } from './termsSignature.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {

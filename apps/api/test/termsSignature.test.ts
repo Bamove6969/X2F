@@ -5,8 +5,9 @@ import { BODY_LIMIT } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import {
   MAX_TYPED_NAME, SIGNATURE_BODY_ALLOWANCE, SIGNATURE_MAX_BYTES, SIGNATURE_SEALED_MAX_BYTES, SIGNED_BODY_LIMIT, checkTermsSignature,
-  openTermsSignature, sealTermsSignature, validPath, type TermsSignature,
+  openTermsSignature, optionalTermsSignature, sealTermsSignature, validPath, type TermsSignature,
 } from '../src/termsSignature.js';
+import { assertTermsAccepted, assertTraderTermsAccepted } from '../src/accounts.js';
 import { testConfig } from './helpers/app.js';
 
 const code = (f: () => unknown): string | undefined => {
@@ -139,6 +140,38 @@ describe('checkTermsSignature (owner, 8 Nov 2026)', () => {
 });
 
 // Security review 2026-11-08, finding 3.
+// Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone; a signature that is sent
+// is still checked strictly. Staff and team join keep checkTermsSignature (required).
+describe('optionalTermsSignature and the trader Terms check (owner demo note #187)', () => {
+  const deps = { config: testConfig() };
+  const version = deps.config.termsVersion;
+
+  it('absent is no signature; anything sent gets the strict checks, null included', () => {
+    expect(optionalTermsSignature(undefined)).toBeNull();
+    expect(code(() => optionalTermsSignature(null))).toBe('signature-invalid');
+    for (const bad of [{}, 'M0 0L1 1', 0, false, [], { kind: 'typed', name: ' ' }, { kind: 'drawn', width: 10, height: 10, path: 'M11 0' }]) {
+      expect(code(() => optionalTermsSignature(bad)), JSON.stringify(bad)).toBe('signature-invalid');
+    }
+    expect(code(() => optionalTermsSignature({ kind: 'typed', name: 'x'.repeat(SIGNATURE_MAX_BYTES) }))).toBe('signature-too-large');
+    expect(optionalTermsSignature({ kind: 'typed', name: ' Mira  K ' })).toEqual({ kind: 'typed', name: 'Mira K' });
+  });
+
+  it('the trader check binds the version exactly as strictly, before looking at the signature', () => {
+    for (const v of [undefined, null, '', `${version} `, `${version}x`, 7, [version], { version }]) {
+      expect(code(() => assertTraderTermsAccepted(deps, v, undefined)), String(v)).toBe('terms-not-accepted');
+      // A bad signature does not get ahead of the version check.
+      expect(code(() => assertTraderTermsAccepted(deps, v, null)), String(v)).toBe('terms-not-accepted');
+    }
+    expect(assertTraderTermsAccepted(deps, version, undefined)).toEqual({ version, signature: null });
+    expect(code(() => assertTraderTermsAccepted(deps, version, { kind: 'png' }))).toBe('signature-invalid');
+  });
+
+  it('the staff and team check still requires a signature', () => {
+    expect(code(() => assertTermsAccepted(deps, version, undefined))).toBe('signature-required');
+    expect(code(() => assertTermsAccepted(deps, '2020-01-01', { kind: 'typed', name: 'A' }))).toBe('terms-not-accepted');
+  });
+});
+
 describe('sealing a signature for storage', () => {
   const config = testConfig();
   const A = '00000000-0000-4000-8000-00000000000a';

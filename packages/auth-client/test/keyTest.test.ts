@@ -10,7 +10,6 @@ import { codeOf, decrypt, genKey, type Pair } from '../../../apps/api/test/helpe
 import { createSoftAuthenticator, type SoftAuthenticator } from '../../../apps/api/test/helpers/softAuthenticator.js';
 import { AuthApiError, KEY_TEST_ACTION, KeyTestError, addWebAuthnKeyWithId, confirmWithWebAuthn, testWebAuthnKey, withConfirm, type AuthenticationCeremony } from '../src/index.js';
 import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
-import { SIG } from './helpers/routes.js';
 
 const LABEL = 'Browser on Linux';
 let srv: Server;
@@ -34,7 +33,7 @@ async function account(): Promise<Jar> {
   const key = await genKey();
   const username = uniqueName('kt');
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
-  await j.api.registerPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version, termsSignature: SIG });
+  await j.api.registerPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version });
   return j;
 }
 

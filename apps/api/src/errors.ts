@@ -58,7 +58,8 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
-  // Owner, 8 Nov 2026: the signature given with the Terms (src/termsSignature.ts).
+  // Owner, 8 Nov 2026: the signature given with the Terms (src/termsSignature.ts). Since owner demo
+  // note #187 a trader's routes send these only for a signature that was sent; staff and team join still require one.
   | 'signature-required'
   | 'signature-invalid'
   | 'signature-too-large'

@@ -144,10 +144,8 @@ async function signUp(p: Person): Promise<DemoClient> {
   const c = new DemoClient(ORIGIN);
   await c.ok('GET', '/v1/site');
   await c.ok('POST', '/v1/register/password', {
+    // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
     displayName: seedName(p.displayName), loginName: seedName(p.loginName), password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
-    // Every sign-up signs the Terms (migration 316): the seed types the display name, as someone
-    // who cannot draw would.
-    termsSignature: { kind: 'typed', name: p.displayName },
   });
   await c.ok('POST', '/v1/wallets', { app: 'cake', label: 'Demo wallet', address: await throwawayAddress() });
   // An authenticator (during sign-up's onboarding window, no confirm needed): password + code is a

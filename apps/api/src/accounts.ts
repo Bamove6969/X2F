@@ -5,7 +5,7 @@ import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
 import { bannedTagSql, displayNameBanned } from './bans.js';
-import { checkTermsSignature, sealTermsSignature, type TermsSignature } from './termsSignature.js';
+import { checkTermsSignature, optionalTermsSignature, sealTermsSignature, type TermsSignature } from './termsSignature.js';
 
 /**
  * The two names of a new account: the display name as typed and as its case-insensitive key, and
@@ -335,6 +335,22 @@ export function assertTermsAccepted(
   return { version, signature: checkTermsSignature(termsSignature) };
 }
 
+/**
+ * A trader's sign-up (owner demo note #187, 25 Nov 2026: a tick, no signature): R10's version check
+ * exactly as `assertTermsAccepted` (400 `terms-not-accepted` `{ version }` unless it equals
+ * `config.termsVersion`), first; then the signature only if one was sent (`optionalTermsSignature`:
+ * absent → `null`; sent → `checkTermsSignature`'s 400s). Every trader register finish calls it
+ * before any hashing, challenge use or write.
+ */
+export function assertTraderTermsAccepted(
+  deps: Pick<Deps, 'config'>,
+  acceptedTerms: unknown,
+  termsSignature: unknown,
+): { version: string; signature: TermsSignature | null } {
+  const version = assertTermsVersion(deps, acceptedTerms);
+  return { version, signature: optionalTermsSignature(termsSignature) };
+}
+
 /** R10's version check alone: the current version, or 400 `terms-not-accepted` `{ version }`. */
 export function assertTermsVersion(deps: Pick<Deps, 'config'>, acceptedTerms: unknown): string {
   const version = deps.config.termsVersion;
@@ -343,13 +359,15 @@ export function assertTermsVersion(deps: Pick<Deps, 'config'>, acceptedTerms: un
 }
 
 /**
- * What a new account agreed to. Everyone who gets a login signs the Terms (owner, 9 Nov 2026,
- * p11-14: "Yes, everyone who gets a login signs"): a trader at sign-up, a team member on their own
- * login account (review 2026-11-08 F1), a staff member at their invite. Each passes
- * `assertTermsAccepted` first. Only the owner's account, made by the owner's setup, has neither.
+ * What a new account agreed to. A team member on their own login account (review 2026-11-08 F1)
+ * and a staff member at their invite sign the Terms (owner, 9 Nov 2026, p11-14), each passing
+ * `assertTermsAccepted` first. A trader agrees with the tick alone (owner demo note #187, 25 Nov
+ * 2026), passing `assertTraderTermsAccepted`: the signature is `null` unless an older page sent one.
+ * Only the owner's account, made by the owner's setup, has no Terms version.
  */
 export type NewAccountTerms =
-  | { kind: Exclude<AccountKind, 'owner'>; termsVersion: string; termsSignature: TermsSignature }
+  | { kind: 'trader'; termsVersion: string; termsSignature: TermsSignature | null }
+  | { kind: Exclude<AccountKind, 'owner' | 'trader'>; termsVersion: string; termsSignature: TermsSignature }
   | { kind: 'owner'; termsVersion: null; termsSignature?: never };
 
 /** The unique constraints a new account's names can still hit after `namesTaken` (a racing writer without the lock). */
@@ -365,8 +383,9 @@ const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key
  * exists). The names-differ check SQL can no longer make is here too (400 `names-same`;
  * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version,
  * acceptance time and signature are all null for the owner (`termsVersion` null); every other
- * account has all three, the signature sealed to the account (so its id is chosen here, not by the
- * database), and nothing else about the signing is stored.
+ * account has the version and time, and the signature when one was given (always for a member or
+ * staff; for a trader only if an older page sent one, owner demo note #187), sealed to the account
+ * (so its id is chosen here, not by the database); nothing else about the signing is stored.
  */
 export async function createAccount(
   db: Queryable,
@@ -385,7 +404,7 @@ export async function createAccount(
       [
         id, a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
         a.termsVersion, a.termsVersion === null ? null : a.now,
-        a.kind === 'owner' ? null : sealTermsSignature(config, a.termsSignature, id), a.now,
+        a.kind === 'owner' || a.termsSignature === null ? null : sealTermsSignature(config, a.termsSignature, id), a.now,
       ],
     );
     return id;

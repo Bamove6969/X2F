@@ -21,7 +21,7 @@ import type { Deps } from '../app.js';
 import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import { addAlert } from '../alerts.js';
 import { assertKeyNotBanned, hasBinding, keyFingerprints } from '../bans.js';
-import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -824,7 +824,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.register.take();
   const b = body(req);
-  const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
+  const terms = assertTraderTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
   const challengeId = str(b, 'challengeId');
   const code = str(b, 'code');
   const deviceLabel = str(b, 'deviceLabel');

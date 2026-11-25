@@ -227,8 +227,9 @@ describe('register', () => {
     const bad = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: '2020-01-01' });
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
-    // The signature too (owner, 8 Nov 2026), still before the challenge is used.
-    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'drawn', width: 1, height: 1, path: 'M9 9' }, 'signature-invalid']] as const) {
+    // A signature that is sent is checked (owner, 8 Nov 2026), still before the challenge is used;
+    // since owner demo note #187 a trader may send none, but an explicit null is not "none".
+    for (const [termsSignature, error] of [[null, 'signature-invalid'], [{ kind: 'drawn', width: 1, height: 1, path: 'M9 9' }, 'signature-invalid']] as const) {
       const unsigned = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature });
       expect(unsigned.statusCode).toBe(400);
       expect(unsigned.json()).toEqual({ error });
@@ -237,6 +238,23 @@ describe('register', () => {
     expect(ok.statusCode).toBe(201);
     const { rows } = await deps.db.query('select id, terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
     expect(openTermsSignature(deps.config, rows[0].terms_signature, rows[0].id)).toEqual(SIG);
+  });
+
+  // Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone.
+  it('registers with no signature: the current version is recorded and no signature is stored', async () => {
+    const b = new Browser();
+    const name = uniqueName();
+    const key = await genKey();
+    const start = await registerStart(b, name, key);
+    const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
+    const stale = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x' });
+    expect(stale.statusCode).toBe(400);
+    expect(stale.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
+    const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    expect(ok.statusCode).toBe(201);
+    const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
+    expect(rows[0].terms_version).toBe(TERMS);
+    expect(rows[0].terms_signature).toBeNull();
   });
 
   it('refuses a private key and stores nothing of it', async () => {

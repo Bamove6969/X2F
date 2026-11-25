@@ -493,14 +493,16 @@ export interface AuthApi {
    */
   nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  /** `acceptedTerms` and `termsSignature`: the Terms version accepted and the signature given with it (owner, 8 Nov 2026). */
+  /**
+   * `acceptedTerms`: the Terms version accepted with the tick. No signature: a trader agrees with the
+   * tick alone (owner demo note #187, 25 Nov 2026; the API still checks one if it is sent).
+   */
   registerPassword(b: {
     displayName: string;
     loginName: string;
     password: string;
     deviceLabel: string;
     acceptedTerms: string;
-    termsSignature: TermsSignature;
   }): Promise<{
     displayName: string;
   }>;
@@ -522,7 +524,7 @@ export interface AuthApi {
     holdUntil: string | null;
   }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string; termsSignature: TermsSignature }): Promise<{ displayName: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
@@ -537,7 +539,6 @@ export interface AuthApi {
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
-    termsSignature: TermsSignature;
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
@@ -600,8 +601,12 @@ export interface AuthApi {
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
-  /** `POST /v1/account/terms`: a changed Terms version, accepted with a new signature (owner, 8 Nov 2026). */
-  acceptTerms(b: { version: string; signature: TermsSignature }): Promise<void>;
+  /**
+   * `POST /v1/account/terms`: a changed Terms version, accepted with the tick. A trader sends no
+   * signature (owner demo note #187, 25 Nov 2026); a team member's session still signs (owner, 9 Nov
+   * 2026, p11-14), so `signature` is there for them.
+   */
+  acceptTerms(b: { version: string; signature?: TermsSignature }): Promise<void>;
   listSessions(): Promise<SessionEntry[]>;
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;

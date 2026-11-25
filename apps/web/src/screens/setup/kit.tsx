@@ -40,8 +40,8 @@ export type Step =
 
 export interface SetupState {
   /**
-   * The Terms version accepted on the first screen and the signature given there (owner, 8 Nov
-   * 2026); sent as `acceptedTerms` and `termsSignature` with the register call.
+   * The Terms version accepted on the first screen; sent as `acceptedTerms` with the register call
+   * (no signature since owner demo note #187, 25 Nov 2026).
    */
   terms: TermsAcceptance | null;
   displayName: string;
@@ -128,7 +128,7 @@ export function stepPath(step: Step, returnTo: string): string {
 /**
  * The frame every setup board shares: the back arrow, "Set up your account", "Step N of 5", the
  * five-part progress bar and "Takes about 2 minutes.", then the screen, then its buttons at the
- * bottom. `fit` keeps the whole frame in the viewport (the Terms box scrolls inside it).
+ * bottom. `fit` keeps the whole frame in the viewport (the middle scrolls; the Terms have no box of their own since owner demo note #187).
  * `footerInline` (owner demo note #199, the display-name step only for now) puts the buttons in the
  * flow, right under the screen's last part, instead of in the bar pinned to the bottom.
  */

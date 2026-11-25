@@ -135,6 +135,31 @@ for (const viewport of PHONE_VIEWPORTS) {
   });
 }
 
+// Review of owner demo note #187: after a Terms version bump, a member is sent to /terms. `me`
+// still answers there (the API's allowStaleTerms) and names the member, so the pad shows and the
+// accept carries the signature; a trader's /terms has no pad (setup.spec.ts).
+test('a member on old Terms re-accepts on /terms with the tick and a signature', async ({ page }) => {
+  let accepted: unknown = null;
+  await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
+  await page.route('**/v1/account/me', (r) => json({ ...memberMe(['offers-see']), termsCurrent: accepted !== null })(r));
+  await page.route('**/v1/account/alerts', (r) => (accepted === null ? json({ error: 'terms-required', version: TERMS_TEXT_VERSION }, 403)(r) : json([])(r)));
+  await page.route('**/v1/account/terms', (r) => {
+    accepted = r.request().postDataJSON();
+    return r.fulfill({ status: 204 });
+  });
+  await page.goto('/terms?returnTo=%2Falerts');
+  const accept = page.locator('[data-part="terms-accept"]');
+  await expect(page.locator('[data-part="signature-pad"]')).toBeVisible();
+  await page.check('[data-part="terms-tick"]');
+  await expect(accept).toBeDisabled();
+  await page.click('[data-part="signature-type"]');
+  await page.fill('[data-part="signature-name"]', 'AK');
+  await expect(accept).toBeEnabled();
+  await accept.click();
+  await expect.poll(() => accepted).toEqual({ version: TERMS_TEXT_VERSION, signature: { kind: 'typed', name: 'AK' } });
+  await expect(page).toHaveURL(/\/alerts$/);
+});
+
 test('a 4th member is refused through CantDoThat (too-many-members), from the server and from a full list', async ({ page }) => {
   await ownerApi(page, {
     members: [member('m1', 'Aurora', ['trades']), member('m2', 'Basil', ['offers'])],
@@ -223,10 +248,6 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
 /** Reads the Terms box to its end, ticks and accepts (as setup.spec does). */
 async function acceptTerms(page: Page): Promise<void> {
   await expect(page.locator('[data-screen="team-join-terms"]')).toBeVisible();
-  await page.locator('[data-part="terms-text"]').evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-    el.dispatchEvent(new Event('scroll'));
-  });
   await page.check('[data-part="terms-tick"]');
   // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs (the typed form, for brevity).
   await page.click('[data-part="signature-type"]');

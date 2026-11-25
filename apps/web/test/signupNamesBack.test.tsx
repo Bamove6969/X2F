@@ -23,7 +23,7 @@ const byPart = (host: ParentNode, part: string) => host.querySelector<HTMLElemen
 
 function setup(state: Partial<SetupState> = {}): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1', signature: { kind: 'typed', name: 'AK' } }, displayName: 'Lumen.K', loginName: 'juniper.oak', ...state },
+    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'Lumen.K', loginName: 'juniper.oak', ...state },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),

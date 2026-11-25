@@ -104,18 +104,8 @@ async function stubApi(page: Page): Promise<Stub> {
 }
 
 async function acceptTerms(page: Page): Promise<void> {
-  await page.locator('[data-part="terms-text"]').evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-    el.dispatchEvent(new Event('scroll'));
-  });
   await page.check('[data-part="terms-tick"]');
-  const pad = page.locator('[data-part="signature-pad"]');
-  await pad.scrollIntoViewIfNeeded();
-  const b = (await pad.boundingBox())!;
-  await page.mouse.move(b.x + b.width * 0.2, b.y + b.height * 0.2);
-  await page.mouse.down();
-  await page.mouse.move(b.x + b.width * 0.4, b.y + b.height * 0.7, { steps: 8 });
-  await page.mouse.up();
+  // A trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
   await page.click('[data-part="terms-accept"]');
 }
 

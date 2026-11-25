@@ -6,21 +6,31 @@ import { createHash } from 'node:crypto';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TermsSignature } from '@x2f/auth-client';
+import { AuthApiError, type TermsSignature } from '@x2f/auth-client';
 import {
   MAX_POINTS, MAX_TYPED_NAME, SIGNATURE_MAX_BYTES, drawnSignature, keepPoint, scaleStrokes, signatureBytes, strokesToPath, typedSignature,
 } from '../src/screens/setup/signature.js';
 import { SignaturePad } from '../src/screens/setup/SignaturePad.js';
-import { Terms } from '../src/screens/setup/Terms.js';
+import { INITIAL, SetupContext } from '../src/screens/setup/kit.js';
+import { SetupTerms, Terms } from '../src/screens/setup/Terms.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fire, render } from './render.js';
 
 const auth = vi.hoisted(() => ({
   getTerms: vi.fn(async () => ({ version: '' })),
-  acceptTerms: vi.fn(async (_b: { version: string; signature: TermsSignature }) => undefined),
+  acceptTerms: vi.fn(async (_b: { version: string; signature?: TermsSignature }) => undefined),
 }));
 vi.mock('../src/screens/auth/authApi.js', () => ({ authApi: auth }));
-vi.mock('../src/session/useSession.js', () => ({ refreshSession: () => undefined }));
+const who = vi.hoisted(() => ({ member: false, status: 'signed-in' as 'signed-in' | 'loading' | 'error', code: 'network', refresh: vi.fn() }));
+vi.mock('../src/session/useSession.js', () => ({
+  refreshSession: () => who.refresh(),
+  useSession: () =>
+    who.status === 'signed-in'
+      ? { status: 'signed-in', me: { member: who.member ? { name: 'AK', roles: [] } : null } }
+      : who.status === 'error'
+        ? { status: 'error', code: who.code }
+        : { status: 'loading' },
+}));
 
 const PAD_W = 320;
 const PAD_H = 132;
@@ -28,6 +38,10 @@ const PAD_H = 132;
 beforeEach(() => {
   auth.getTerms.mockImplementation(async () => ({ version: TERMS_TEXT_VERSION }));
   auth.acceptTerms.mockClear();
+  who.member = false;
+  who.status = 'signed-in';
+  who.code = 'network';
+  who.refresh.mockClear();
   // happy-dom lays nothing out: give the pad a size.
   vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get').mockReturnValue(PAD_W);
   vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get').mockReturnValue(PAD_H);
@@ -196,7 +210,8 @@ describe('the Terms text is pinned to its version', () => {
   // 2026-11-14: the owner's demo notes of 13 Nov (setup-terms) applied: new version.
   // 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107) applied: new version.
   // 2026-11-25: the owner's demo notes of 23 Nov (#114-#123) and 25 Nov (#177-#185) applied: new version.
-  const PIN = { version: '2026-11-25', sha256: '9e07c46c9d0c0a3f1ce7a5b215bf55e1bab6f49ab54710d35810206b0c7593f8' };
+  // 2026-11-25b: owner demo note #189 (section 7 his #184 paragraph, section 6 the proofs' metadata, the key points): new version.
+  const PIN = { version: '2026-11-25b', sha256: 'fa7f90b415a5609860a540b796ab26f2aa8f470f4fc50e7b62991d2019a8cdc9' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
@@ -224,7 +239,267 @@ describe('the Terms text: bullets', () => {
   });
 });
 
-describe('the Terms screen: I accept needs the tick and a signature', () => {
+// Owner demo note #187 (25 Nov 2026): no scroll box of its own. Owner demo note #190 (25 Nov 2026):
+// no read-to-the-end gate either; the tick is the only condition.
+describe('the Terms screen: in the page, no gate, the log-in line last', () => {
+  it('the tick is usable at once, with no scroll hint, even with the end of the Terms far off screen', async () => {
+    const rect = (bottom: number) => ({ x: 0, y: 0, top: bottom - 20, left: 0, right: 0, width: 0, height: 20, bottom, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return rect(this.dataset.part === 'terms-end' ? 5000 : 760);
+    });
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const region = host.querySelector<HTMLElement>('[data-part="terms-text"]')!;
+    expect(region.getAttribute('role')).toBe('region');
+    expect(region.tabIndex).toBe(0);
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    expect(tick.disabled).toBe(false);
+    expect(host.querySelector('#terms-hint')).toBeNull();
+    expect(host.textContent).not.toMatch(/Scroll to the end/i);
+    expect(tick.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('on SetupTerms: the tick box, then the button, then "Already have an account? Log in"', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <SetupContext.Provider value={{ state: INITIAL, update: () => undefined, returnTo: '/post', go: () => undefined, path: (s) => `/setup/${s}` }}>
+          <SetupTerms />
+        </SetupContext.Provider>
+      </MemoryRouter>,
+    );
+    await flush();
+    const tick = host.querySelector('[data-part="terms-tick"]')!;
+    const accept = host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!;
+    const login = host.querySelector('[data-part="setup-login"]')!;
+    expect(accept.textContent).toBe('Start creating my account');
+    expect(accept.disabled).toBe(true);
+    expect(tick.compareDocumentPosition(accept) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(accept.compareDocumentPosition(login) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(login.closest('p')!.textContent).toBe('Already have an account? Log in');
+    click(tick);
+    expect(accept.disabled).toBe(false);
+  });
+});
+
+// Owner demo note #187 (25 Nov 2026): a trader agrees with the tick alone (a clickwrap).
+describe('the Terms screen for a trader: the tick alone, no signature', () => {
+  async function mount() {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const accept = () => host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!;
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    return { host, accept, tick };
+  }
+
+  it('has no pad, no typed name and no sign help; the tick line is the owner\'s exact words', async () => {
+    const { host, tick } = await mount();
+    expect(host.querySelector('[data-part="signature-pad"]')).toBeNull();
+    expect(host.querySelector('[data-part="signature-type"]')).toBeNull();
+    expect(host.querySelector('#terms-sign-help')).toBeNull();
+    expect(host.textContent).not.toMatch(/sign your name|sign in the white box|scribble|Type your name/i);
+    const line = host.querySelector('#' + tick.getAttribute('aria-labelledby'))!;
+    expect(line.textContent!.replace(/\s+/g, ' ').trim()).toBe('I have read and agree to the Terms of Service and Privacy Policy');
+    expect(tick.getAttribute('aria-describedby') ?? '').not.toContain('terms-sign-help');
+  });
+
+  it('the tick enables accepting, and accepting sends the version with no signature', async () => {
+    const { accept, tick } = await mount();
+    expect(tick.disabled).toBe(false); // no read-to-the-end gate (owner demo note #190)
+    expect(accept().disabled).toBe(true);
+    click(tick);
+    expect(accept().disabled).toBe(false);
+    click(tick);
+    expect(accept().disabled).toBe(true);
+    click(tick);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
+    expect(auth.acceptTerms.mock.calls[0]![0]).not.toHaveProperty('signature');
+  });
+});
+
+// Review of owner demo note #187 (25 Nov 2026), fixes M1, M2, L4, L6 and test 9.
+describe('the Terms screen: review fixes', () => {
+  const mount = async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    return {
+      host,
+      tick: host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!,
+      accept: () => host.querySelector<HTMLButtonElement>('[data-part="terms-accept"]')!,
+    };
+  };
+
+  it('while the session loads, the button waits even when ticked, and nothing is posted', async () => {
+    who.status = 'loading';
+    const { tick, accept } = await mount();
+    click(tick);
+    expect(tick.checked).toBe(true);
+    expect(accept().disabled).toBe(true);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).not.toHaveBeenCalled();
+  });
+
+  it('a session that could not be read says so with a retry, and nobody can post (a member must not post unsigned)', async () => {
+    who.status = 'error';
+    const { host, tick, accept } = await mount();
+    const notice = host.querySelector('[data-part="terms-session-error"]')!;
+    expect(notice.getAttribute('role')).toBe('alert');
+    expect(notice.closest('.x2f-start__foot')).not.toBeNull();
+    click(tick);
+    expect(accept().disabled).toBe(true);
+    click(notice.querySelector('button'));
+    expect(who.refresh).toHaveBeenCalledTimes(1);
+    expect(auth.acceptTerms).not.toHaveBeenCalled();
+  });
+
+  it('a terms-required session error is no dead end: signed in on old Terms, the tick alone posts', async () => {
+    who.status = 'error';
+    who.code = 'terms-required';
+    const { host, tick, accept } = await mount();
+    expect(host.querySelector('[data-part="terms-session-error"]')).toBeNull();
+    click(tick);
+    expect(accept().disabled).toBe(false);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
+  });
+
+  it('a member the page could not tell apart: signature-required from the API brings up the pad, and the signed retry posts', async () => {
+    who.status = 'error';
+    who.code = 'terms-required';
+    auth.acceptTerms.mockImplementationOnce(async () => {
+      throw new AuthApiError(400, 'signature-required');
+    });
+    const { host, tick, accept } = await mount();
+    expect(host.querySelector('[data-part="signature-pad"]')).toBeNull();
+    click(tick);
+    click(accept());
+    await flush();
+    await flush();
+    expect(host.querySelector('[data-part="signature-pad"]')).not.toBeNull();
+    expect(host.querySelector('.x2f-start__foot [role="alert"]')!.textContent).toBe('Your login signs the Terms too. Sign in the white box, then accept.');
+    expect(accept().disabled).toBe(true);
+    draw(host.querySelector('[data-part="signature-pad"]')!, [[10, 10], [60, 60]]);
+    expect(accept().disabled).toBe(false);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenLastCalledWith({
+      version: TERMS_TEXT_VERSION, signature: { kind: 'drawn', width: PAD_W, height: PAD_H, path: 'M10 10L60 60' },
+    });
+  });
+
+  it('the notices sit in the bottom bar, over the button, not below the in-page Terms', async () => {
+    auth.getTerms.mockImplementation(async () => ({ version: '2099-01-01' }));
+    const { host, accept } = await mount();
+    const stale = host.querySelector('[data-part="terms-stale"]')!;
+    expect(stale.closest('.x2f-start__foot')).not.toBeNull();
+    expect(stale.compareDocumentPosition(accept()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('a tap anywhere on the tick row ticks the box, but the two buttons never do', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    const { host, tick } = await mount();
+    const row = host.querySelector<HTMLElement>('[data-part="terms-agree"]')!;
+    expect(row.classList.contains('x2f-check--tap')).toBe(true);
+    click(row);
+    expect(tick.checked).toBe(true);
+    click(row.querySelector('#terms-tick-line')!);
+    expect(tick.checked).toBe(false);
+    click(host.querySelector('[data-part="terms-show-privacy"]'));
+    click(host.querySelector('[data-part="terms-show-tos"]'));
+    expect(tick.checked).toBe(false);
+    click(tick);
+    expect(tick.checked).toBe(true);
+    // The accessible name is still the whole line.
+    expect(tick.getAttribute('aria-labelledby')).toBe('terms-tick-line');
+  });
+
+  it('the sections inside the full Terms are h3, under the cards\' h2', async () => {
+    const { host } = await mount();
+    const region = host.querySelector('[data-part="terms-text"]')!;
+    expect(region.querySelectorAll('h2')).toHaveLength(0);
+    expect(region.querySelectorAll('h3.x2f-terms__heading').length).toBe(TERMS.length);
+  });
+});
+
+// Owner demo note #190 (25 Nov 2026): the two cards' headings.
+describe('the Terms screen: the cards\' headings', () => {
+  it('reads "Key Highlights (TL;DR)" over the six points, and "Full Terms of Service (Version …)" once the version loads', async () => {
+    let answer: (v: { version: string }) => void = () => undefined;
+    auth.getTerms.mockImplementation(() => new Promise((r) => (answer = r)));
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(host.querySelector('#terms-glance-heading')!.textContent).toBe('Key Highlights (TL;DR)');
+    expect(host.querySelectorAll('[data-part="terms-glance"] li')).toHaveLength(KEY_POINTS.length);
+    const full = () => host.querySelector('[data-part="terms-full-heading"]')!.textContent;
+    expect(full()).toBe('Full Terms of Service');
+    await act(async () => answer({ version: TERMS_TEXT_VERSION }));
+    expect(full()).toBe(`Full Terms of Service (Version ${TERMS_TEXT_VERSION})`);
+    expect(TERMS_TEXT_VERSION).toBe('2026-11-25b');
+  });
+});
+
+// Owner demo note #189 (25 Nov 2026): "Privacy Policy" opens the privacy section in place.
+describe('the Terms screen: the Privacy Policy and Terms of Service buttons', () => {
+  it('show their section in this page, focus it, never navigate and never tick the box', async () => {
+    const scrolled: string[] = [];
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) {
+      scrolled.push(this.id || this.textContent || '');
+    });
+    const { host } = render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    const tick = host.querySelector<HTMLInputElement>('[data-part="terms-tick"]')!;
+    const privacy = host.querySelector<HTMLButtonElement>('[data-part="terms-show-privacy"]')!;
+    expect(privacy.tagName).toBe('BUTTON');
+    expect(privacy.type).toBe('button');
+    expect(privacy.closest('label')).toBeNull();
+    expect(host.querySelector('a[href*="privacy" i]')).toBeNull();
+    const before = window.location.href;
+    click(privacy);
+    expect(tick.checked).toBe(false);
+    expect(scrolled).toEqual(['terms-privacy']);
+    const heading = host.querySelector('#terms-privacy')!;
+    expect(heading.textContent).toBe(PRIVACY_HEADING);
+    expect(document.activeElement).toBe(heading);
+    expect(privacy.getAttribute('aria-controls')).toBe('terms-privacy');
+    click(host.querySelector('[data-part="terms-show-tos"]'));
+    expect(tick.checked).toBe(false);
+    expect(scrolled).toEqual(['terms-privacy', 'terms-full-heading']);
+    expect(window.location.href).toBe(before);
+    // The words are the box's labels: tapping them ticks it.
+    click(host.querySelector('label[for="terms-tick"]'));
+    expect(tick.checked).toBe(true);
+  });
+});
+
+// A team member's session still signs on /terms (owner 9 Nov 2026, p11-14; the API requires it).
+describe('the Terms screen for a team member: I accept needs the tick and a signature', () => {
+  beforeEach(() => {
+    who.member = true;
+  });
+
   async function mount() {
     const { host } = render(
       <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>

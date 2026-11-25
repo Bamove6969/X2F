@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SIG } from './helpers/routes.js';
 import { AuthApiError, MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH, createAuthApi, shouldSendAway } from '../src/index.js';
 
 interface Sent {
@@ -166,7 +165,21 @@ describe('createAuthApi requests', () => {
       status: 'second-factor', pendingId: 'p', needs: ['totp'],
     });
     const empty = recorder(() => new Response(null, { status: 204 }));
-    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v', signature: SIG })).resolves.toBeUndefined();
+    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
+  });
+
+  // Owner demo note #187 (25 Nov 2026): a trader agrees to the Terms with the tick alone.
+  it('a trader sign-up and a Terms re-acceptance send the version and no signature', async () => {
+    const { sent, fetch } = recorder();
+    const api = createAuthApi({ fetch });
+    await api.registerPassword({ displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' });
+    await api.registerPgpFinish({ challengeId: 'c', code: 'x', deviceLabel: 'B', acceptedTerms: 'v' });
+    await api.acceptTerms({ version: 'v' });
+    expect(sent.map(bodyOf)).toEqual([
+      { displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' },
+      { challengeId: 'c', code: 'x', deviceLabel: 'B', acceptedTerms: 'v' },
+      { version: 'v' },
+    ]);
   });
 
   it('refuses redirects instead of following them', async () => {

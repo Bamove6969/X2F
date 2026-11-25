@@ -501,6 +501,9 @@ describe('Terms of Service (R10)', () => {
       expect(blocked.statusCode).toBe(403);
       expect(blocked.json()).toEqual({ error: 'terms-required', version: newVersion });
       expect((await me(b)).termsCurrent).toBe(false);
+      // Review of owner demo note #187: on old Terms `me` still answers, with no member, so the
+      // web's /terms page shows a trader no signature pad.
+      expect(((await me(b)) as { member?: unknown }).member ?? null).toBeNull();
       expect((await b.get('/v1/account/sessions')).statusCode).toBe(200);
 
       const wrong = await b.post('/v1/account/terms', { version: oldVersion, signature: SIG });
@@ -511,9 +514,11 @@ describe('Terms of Service (R10)', () => {
         expect(r.statusCode).toBe(400);
         expect(errorOf(r)).toBe('terms-not-accepted');
       }
-      // A new version asks for a new signature too (owner, 8 Nov 2026).
+      // Owner demo note #187 (25 Nov 2026): a trader need not sign, but a signature that is sent is
+      // checked as strictly as before (owner, 8 Nov 2026).
       const unsigned: [unknown, string][] = [
-        [undefined, 'signature-required'],
+        [null, 'signature-invalid'],
+        [{ kind: 'drawn', width: 320, height: 120, path: 'M0 0L321 1' }, 'signature-invalid'],
         [{ kind: 'typed', name: ' ' }, 'signature-invalid'],
         [{ kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(8300)}` }, 'signature-too-large'],
       ];
@@ -575,6 +580,53 @@ describe('Terms of Service (R10)', () => {
       const second = { kind: 'typed', name: 'Second Signer' };
       expect((await b.post('/v1/account/terms', { version: later, signature: second })).statusCode).toBe(204);
       expect(openTermsSignature(deps.config, (await row()).terms_signature, id)).toEqual(second);
+    } finally {
+      deps.config.termsVersion = oldVersion;
+    }
+  });
+
+  // Owner demo note #187 (25 Nov 2026): the Terms screen asks for the tick alone.
+  it('a trader accepts a new version with no signature; the old version\'s signature does not stay beside it', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    const b = await loggedIn(id);
+    const row = async () =>
+      (await deps.db.query<{ terms_version: string; terms_accepted_at: Date; terms_signature: Buffer | null }>(
+        'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
+      )).rows[0]!;
+    const oldVersion = deps.config.termsVersion;
+    try {
+      deps.config.termsVersion = '2026-11-04';
+      expect((await b.post('/v1/account/terms', { version: '2026-11-04', signature: { kind: 'typed', name: 'Old Signer' } })).statusCode).toBe(204);
+      expect((await row()).terms_signature).not.toBeNull();
+
+      deps.config.termsVersion = '2026-11-05';
+      // The version binding is as strict without a signature.
+      for (const bad of [{}, { version: '2026-11-04' }, { version: null }, { version: 7 }]) {
+        const r = await b.post('/v1/account/terms', bad);
+        expect(r.statusCode).toBe(400);
+        expect(r.json()).toEqual({ error: 'terms-not-accepted', version: '2026-11-05' });
+      }
+      expect((await row()).terms_version).toBe('2026-11-04');
+      setNow(at(2 * MIN));
+      const ok = await b.post('/v1/account/terms', { version: '2026-11-05' });
+      expect(ok.statusCode).toBe(204);
+      const after = await row();
+      expect(after.terms_version).toBe('2026-11-05');
+      expect(after.terms_accepted_at).toEqual(now);
+      expect(after.terms_signature).toBeNull();
+      expect((await me(b)).termsCurrent).toBe(true);
+
+      // Review of note #187 (test 8): a trader who does send a valid signature (an older page) still
+      // has it stored sealed, bound to their account, never in clear.
+      deps.config.termsVersion = '2026-11-06';
+      const drawn = { kind: 'drawn', width: 320, height: 120, path: 'M10 10L60 60' };
+      expect((await b.post('/v1/account/terms', { version: '2026-11-06', signature: drawn })).statusCode).toBe(204);
+      const sealed = (await row()).terms_signature!;
+      expect(sealed).not.toBeNull();
+      expect(sealed.includes('M10 10L60 60')).toBe(false);
+      expect(openTermsSignature(deps.config, sealed, id)).toEqual(drawn);
+      expect(() => openTermsSignature(deps.config, sealed, '00000000-0000-4000-8000-00000000000a')).toThrow();
     } finally {
       deps.config.termsVersion = oldVersion;
     }

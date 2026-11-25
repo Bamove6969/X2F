@@ -52,7 +52,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function setup(): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1', signature: { kind: 'typed', name: 'AK' } }, displayName: 'lumen.k', loginName: 'lumen-login-7', registered: true, methods: ['pgp', 'security-key'], done: ['pgp'] },
+    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'lumen.k', loginName: 'lumen-login-7', registered: true, methods: ['pgp', 'security-key'], done: ['pgp'] },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),
