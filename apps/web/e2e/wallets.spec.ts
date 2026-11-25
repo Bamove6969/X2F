@@ -375,6 +375,38 @@ test('labels: neutral names are suggested and the screen warns against naming wh
   expect(s.posts[0]).toMatchObject({ wallets: [{ label: 'Wallet 2' }] });
 });
 
+test('owner demo note #226: Rename on a row opens a small sheet; Save waits for a valid new name; only the name changes', async ({ page }) => {
+  await stub(page, [{ ...READY, isDefault: true }, WAITING]);
+  const renames: Array<{ url: string; body: unknown }> = [];
+  await page.route('**/v1/wallets/*/label', (route) => {
+    renames.push({ url: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.goto('/wallets');
+  await page.getByRole('button', { name: 'Rename Savings' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename wallet' });
+  await expect(sheet).toBeVisible();
+  const field = sheet.getByLabel('Wallet name');
+  await expect(field).toHaveValue('Savings');
+  const save = sheet.getByRole('button', { name: 'Save name' });
+  await expect(save).toBeDisabled();
+  await field.fill('   ');
+  await expect(save).toBeDisabled();
+  await field.fill('Rent money');
+  await expect(save).toBeEnabled();
+  // One primary per state: the footer steps down under the sheet.
+  await expect(page.locator('[data-primary]:visible')).toHaveCount(1);
+  await save.click();
+  await expect(sheet).toHaveCount(0);
+  expect(renames).toEqual([{ url: '/v1/wallets/w-ready/label', body: { label: 'Rent money' } }]);
+  const row = page.locator('.x2f-wallet-row').first();
+  await expect(row.locator('.x2f-wallet-row__name')).toHaveText('Rent money');
+  await expect(row.locator('.x2f-wallet-row__addr')).toContainText('Rk3Fz1');
+  await expect(row.locator('[data-part="default"]')).toBeVisible();
+  // The waiting wallet can be renamed too (its wait is the API's, untouched).
+  await expect(page.getByRole('button', { name: 'Rename Wallet 2' })).toBeVisible();
+});
+
 test('the Save footer stays pinned on a 390x844 phone while the add form scrolls (review item 8)', async ({ page }) => {
   await stub(page, [READY, WAITING]);
   await page.goto('/wallets');

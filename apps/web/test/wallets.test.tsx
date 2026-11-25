@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
 import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
 import type { WalletView } from '../src/screens/wallets-model.js';
-import { KEEP_FOR } from '../src/screens/walletsCopy.js';
+import { KEEP_FOR, RENAME } from '../src/screens/walletsCopy.js';
 import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
 import { forgetTypedAddresses, recordTypedAddress, typedAddressOf } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
@@ -79,6 +79,8 @@ beforeEach(() => {
       }
       if (url === '/v1/wallets/rule') return json(200, stub.rule);
       if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(204, null);
+      // Owner demo note #226: renaming a wallet.
+      if (url.startsWith('/v1/wallets/') && url.endsWith('/label') && method === 'PUT') return json(204, null);
       if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
       if (url === '/v1/account/me') return json(200, { methods: ['password'] });
       if (url === '/v1/confirm/password') return json(200, { confirmToken: 'tok-1' });
@@ -511,5 +513,44 @@ describe('the one-time copy says only what the restore does (review 17 Nov M3)',
       expect(note).toContain('cancelled while it is still being set up');
       expect(note).not.toContain('before any XMR is sent');
     }
+  });
+});
+
+describe('renaming a wallet (owner demo note #226)', () => {
+  const IN_USE: WalletView = { ...READY, id: 'w-used', label: 'Once', address: address('U', 'USED01'), addressEnd: 'USED01', usable: false, oneTime: true, inUseByTrade: 'AAAA-BBBB-CCCC-DDDD' };
+
+  it('every open row has a Rename action (a wallet a trade used up has none)', async () => {
+    stub.wallets = [READY, IN_USE];
+    await mount();
+    const rows = [...document.querySelectorAll('.x2f-wallet-row')];
+    expect(rows[0]!.querySelector('[data-part="rename"]')!.textContent).toBe(RENAME.action);
+    expect(rows[0]!.querySelector('[data-part="rename"]')!.getAttribute('aria-label')).toBe('Rename Savings');
+    expect(rows[1]!.querySelector('[data-part="rename"]')).toBeNull();
+  });
+
+  it('opens a sheet on the current name; Save waits for a valid change; the row shows the new name, address and default unchanged', async () => {
+    stub.wallets = [{ ...READY, isDefault: true }];
+    await mount();
+    fire(document.querySelector('[data-part="rename"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('#wallet-rename')!;
+    const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
+    expect(input.value).toBe('Savings');
+    expect(save().disabled).toBe(true);
+    // One primary per state: the footer's Add a wallet steps down under the sheet.
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    act(() => {
+      setValue.call(input, 'Rent money');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(save().disabled).toBe(false);
+    fire(save(), new MouseEvent('click', { bubbles: true }));
+    await until(() => document.querySelector('#wallet-rename') === null);
+    expect(stub.calls.filter((c) => c.method === 'PUT').map((c) => [c.url, c.body])).toEqual([['/v1/wallets/w-ready/label', { label: 'Rent money' }]]);
+    const row = document.querySelector('.x2f-wallet-row')!;
+    expect(row.querySelector('.x2f-wallet-row__name')!.textContent).toBe('Rent money');
+    expect(row.querySelector('.x2f-wallet-row__addr')!.textContent).toContain('Rk3Fz1');
+    expect(row.querySelector('[data-part="default"]')).not.toBeNull();
   });
 });

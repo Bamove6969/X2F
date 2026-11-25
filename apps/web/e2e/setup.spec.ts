@@ -816,6 +816,27 @@ test('a signed-in trader with no wallet who opens /setup lands on Link a wallet 
   expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
 });
 
+test('owner demo note #226: the first wallet can be named in setup, and Welcome shows that name', async ({ page }) => {
+  const s = await stubApi(page, { signedIn: true, methods: ['pgp'], wallets: [] });
+  await page.goto(`/setup?returnTo=${encodeURIComponent(TAKE)}`);
+  await expect(page).toHaveURL(/\/setup\/wallet\?/);
+  const name = page.getByLabel('Wallet name (optional)');
+  await expect(name).toHaveAttribute('placeholder', 'e.g. Cake Wallet savings');
+  await page.fill('#xmr-payout', ADDRESS);
+  // A name the API would refuse holds Finish setup back and says why (note #219's rule).
+  await name.fill('a\u202Eb');
+  await expect(page.locator('[data-part="wallet-finish"]')).toBeDisabled();
+  await expect(page.locator('[data-part="wallet-name-invalid"]')).toHaveText('Use 1 to 40 characters, with no hidden or control characters.');
+  await name.fill('  Cake Wallet savings ');
+  await expect(page.locator('[data-part="wallet-finish"]')).toBeEnabled();
+  await page.click('[data-part="wallet-finish"]');
+  await expect(page.locator('[data-part="address-verified"]')).toBeVisible();
+  await page.click('[data-part="wallet-continue"]');
+  await expect(page).toHaveURL(/\/setup\/welcome\?/);
+  await expect(page.locator('[data-part="summary-wallet"]')).toHaveText('Cake Wallet savings …k3Fz');
+  expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'other', label: 'Cake Wallet savings', address: ADDRESS }] }]);
+});
+
 // SetupTerms (Getting started, screen 0) is mirrored in design/x2f-app/ with refs/SetupTerms.png
 // since 2026-10-26. Its "[TERMS TEXT: …]" placeholders and "[DATE]" are KNOWN_EXCEPTIONS.SetupTerms.
 for (const v of PHONES) {

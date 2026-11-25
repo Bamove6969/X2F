@@ -67,3 +67,5 @@ export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, type 
 export {
   IDLE_REMINDER_MINUTES, MAX_WALLET_BATCH, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
 } from '@x2f/accounts';
+// Owner demo note #226: the one wallet-name rule, shared with the API's add and rename routes.
+export { WALLET_LABEL_MAX, cleanWalletLabel } from '@x2f/accounts';

@@ -590,6 +590,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Session length (owner, 2 Nov 2026): the calling session's own length and "Stay logged in".
   'PUT /v1/account/session/length',
   'POST /v1/account/session/extend',
+  // Owner demo note #226: renaming one of the account's wallets re-checks the session under the
+  // account lock (wallets/routes.ts `renameHandler`).
+  'PUT /v1/wallets/:id/label',
   // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
   // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
   'POST /v1/team/invites',
@@ -720,6 +723,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'DELETE /v1/wallets/:id',
   // Owner 17 Nov 2026 (note #6 Q1): choosing the default payout wallet, a wallet write like the others.
   'PUT /v1/wallets/:id/default',
+  // Owner demo note #226: renaming a wallet, a wallet write like the others.
+  'PUT /v1/wallets/:id/label',
   'POST /v1/account/approvals/:id',
   // Plan 2 Task 18 (owner 2026-10-30): every team change waits out a hold; they also check it
   // under the account lock (team/members.ts `ownerWriteGate`).

@@ -53,7 +53,8 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
   expect((await screen.locator('[data-part="mark-set"]').first().boundingBox())!.width).toBeGreaterThanOrEqual(28);
   await expect(screen.locator('.x2f-welcome__rating-line')).toHaveText('You have achieved level: Highly secure');
   await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Payout wallet:');
-  await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Cake Wallet …k3Fz');
+  // Owner demo note #226: the wallet's own name first, then its app.
+  await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Wallet 1 · Cake Wallet …k3Fz');
   await expect(screen.locator('[data-part="check-wallet"] [data-part="tick"]')).toHaveCount(1);
   // Bigger than the lead line's size: the line under the checklist.
   const next = screen.locator('[data-part="change-later"]');

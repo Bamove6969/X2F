@@ -1,4 +1,4 @@
-import { MAX_WALLET_BATCH, addressEnd, addressEnds, addressHash, addressesHash, type ConfirmAction } from '@x2f/accounts';
+import { MAX_WALLET_BATCH, WALLET_LABEL_MAX, addressEnd, addressEnds, addressHash, addressesHash, cleanWalletLabel, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
@@ -17,7 +17,8 @@ export type WalletApp = (typeof WALLET_APPS)[number];
 export const PAYOUT_WAIT_MS = 24 * 3_600_000;
 /** A removed wallet's address is kept this long (then nulled by `purgeRemovedWalletAddresses`). */
 export const REMOVED_ADDRESS_RETENTION_MS = 90 * 24 * 3_600_000;
-export const LABEL_MAX = 40;
+/** A wallet name's longest (owner demo note #226: the one rule, `cleanWalletLabel` in @x2f/accounts). */
+export const LABEL_MAX = WALLET_LABEL_MAX;
 
 /** A payout wallet as the API shows it: never a balance. */
 export interface Wallet {
@@ -162,10 +163,6 @@ function bodyOf(req: FastifyRequest): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
-// Control characters (C0, C1, DEL) and format characters (bidi overrides such as U+202E, zero-width
-// characters): never part of a label shown back in lists and alerts.
-const CONTROL = /[\p{Cc}\p{Cf}]/u;
-
 /**
  * `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later),
  * `oneTime` absent or a boolean (owner demo note #6; absent is saved for future trades).
@@ -176,9 +173,10 @@ function checkItemShape(raw: unknown): WalletItem & { oneTime: boolean } {
   if (typeof app !== 'string' || !(WALLET_APPS as readonly string[]).includes(app)) throw new ApiError(400, 'bad-request');
   if (typeof label !== 'string' || typeof address !== 'string') throw new ApiError(400, 'bad-request');
   if (oneTime !== undefined && typeof oneTime !== 'boolean') throw new ApiError(400, 'bad-request');
-  const cleanLabel = label.trim();
-  const labelLength = [...cleanLabel].length;
-  if (labelLength < 1 || labelLength > LABEL_MAX || CONTROL.test(cleanLabel)) throw new ApiError(400, 'bad-request');
+  // Control and format characters (bidi overrides, zero-width) are refused: the label is shown back
+  // in lists and alerts. The same rule as a rename (`cleanWalletLabel`, owner demo note #226).
+  const cleanLabel = cleanWalletLabel(label);
+  if (cleanLabel === null) throw new ApiError(400, 'bad-request');
   return { app: app as WalletApp, label: cleanLabel, address: address.trim(), oneTime: oneTime === true };
 }
 
@@ -558,8 +556,47 @@ async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * `PUT /v1/wallets/:id/label` `{ label }` (owner demo note #226, 25 Nov 2026: "an option to ...
+ * rename the wallet in settings later. Traders want to know where each wallet is going"). Renames
+ * one of the account's open wallets: the label only, by the add's rule (`cleanWalletLabel`: trimmed,
+ * 1-40 characters, no control or format characters; names need not be unique, as on the add) → 400
+ * `bad-request` otherwise. 404 `not-found` for a wallet that is not the account's or not open
+ * (removed, used up by a trade, or a staged add, which has no wallet yet). The address, the default,
+ * `usable_from` and every other column stay as they are, so it redirects no money and starts or
+ * skips no wait: like the default, it needs no confirm and is not staged; the hold still blocks it,
+ * as every wallet write, and the session must still be live under the account lock. A real change
+ * records alert `wallet-renamed` (display details only: the app, both names and the address's last
+ * 6); the Jabber change notice goes out from the `wallets` row trigger (`label` is a change column,
+ * jabber/changePaths.ts). The same name again changes nothing and records nothing. 204.
+ */
+async function renameHandler(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
+  const { id } = req.params as { id: string };
+  if (!UUID.test(id)) throw new ApiError(404, 'not-found');
+  const body = bodyOf(req);
+  if (Object.keys(body).some((k) => k !== 'label')) throw new ApiError(400, 'bad-request');
+  const label = cleanWalletLabel(body.label);
+  if (label === null) throw new ApiError(400, 'bad-request');
+  const now = deps.clock();
+  await withTx(deps.db, async (client) => {
+    // Takes the account row lock and re-checks that the renaming session is still live.
+    await requireLiveSessionInTx(client, req.auth, now);
+    const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
+      'select app, label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
+      [id, req.auth.accountId],
+    );
+    const w = rows[0];
+    if (!w) throw new ApiError(404, 'not-found');
+    if (w.label === label) return;
+    await client.query('update wallets set label = $3 where id = $1 and account_id = $2 and removed_at is null', [id, req.auth.accountId, label]);
+    await addAlert(client, req.auth.accountId, 'wallet-renamed', { app: w.app, from: w.label, label, addressEnd: addressEnd(w.address) }, now);
+  });
+  return reply.code(204).send();
+}
+
+/**
  * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch),
- * `PUT /v1/wallets/:id/default` and `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
+ * `PUT /v1/wallets/:id/default`, `PUT /v1/wallets/:id/label` and `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
  * 2026-10-23.) Full trader sessions only (R3: staff and owner accounts never hold payout wallets).
  */
 export function walletRoutes(app: FastifyInstance): void {
@@ -593,4 +630,6 @@ export function walletRoutes(app: FastifyInstance): void {
   );
   app.delete('/v1/wallets/:id', { preHandler: [session, requireNotHeld] }, removeHandler);
   app.put('/v1/wallets/:id/default', { preHandler: [session, requireNotHeld] }, defaultHandler);
+  // Owner demo note #226: renaming a wallet, cosmetic (the label only).
+  app.put('/v1/wallets/:id/label', { preHandler: [session, requireNotHeld] }, renameHandler);
 }

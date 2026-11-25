@@ -62,3 +62,4 @@ export {
 } from './sessionLength.js';
 export { METHOD_PARTNERS, STANDS_ALONE, partnerMissing, partnerNeededBy, passwordAlone } from './methodPartners.js';
 export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, type KeyNameCheck, type KeyNameProblem } from './keyName.js';
+export { WALLET_LABEL_MAX, cleanWalletLabel } from './walletLabel.js';

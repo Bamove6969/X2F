@@ -383,7 +383,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Cake Wallet …k3Fz',
-      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: setup no longer picks a wallet app (a plain recommendation list, then one address field), so the first wallet is saved as Other with the neutral label "Wallet 1", and the row reads "Wallet 1 …k3Fz" (setup.spec asserts the saved app and label). The board predates the notes.',
+      why: 'Owner demo notes 12 Nov #32 and 16 Nov #96: setup no longer picks a wallet app (a plain recommendation list, then one address field), so the first wallet is saved as Other with the neutral label "Wallet 1", and the row reads "Wallet 1 …k3Fz" (setup.spec asserts the saved app and label). Owner demo note #226 (25 Nov): "Traders want to know where each wallet is going", so the row leads with the name the person gave the wallet ("Cake Wallet savings …k3Fz"), and a wallet in a named app reads "Wallet 1 · Cake Wallet …k3Fz". The board predates the notes.',
     },
   ],
   SetupPassword: [

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { AuthApiError, isStaged, walletsAction, withConfirm, type Staged } from '@x2f/auth-client';
+import { AuthApiError, WALLET_LABEL_MAX, isStaged, walletsAction, withConfirm, type Staged } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -30,7 +30,8 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG } from './walletsCopy.js';
+import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG, RENAME } from './walletsCopy.js';
+import { RenameSheet } from './WalletRename.js';
 import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
 /** An address already in the list (was the error on Save; live since owner demo note #219). */
@@ -41,7 +42,8 @@ export const ADDRESS_REPEATED = 'That address is already in your list.';
 // @x2f/auth-client's. Adding goes through `withConfirm(walletsAction(addresses), ...)` with Task 30's
 // ConfirmSheet, so the one confirm token is bound to the exact list in order (spec 6.4, R17).
 
-const LABEL_MAX = 40;
+/** Owner demo note #226: the API's own wallet-name rule (@x2f/accounts `cleanWalletLabel`). */
+const LABEL_MAX = WALLET_LABEL_MAX;
 
 /** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
 const when = (iso: string): string => formatDateTime(iso);
@@ -179,7 +181,17 @@ function useOpenEscrowKeys(): string[] {
   return codes;
 }
 
-function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w: WalletView) => void; onMakeDefault: (w: WalletView) => void }) {
+function WalletRow({
+  w,
+  onRemove,
+  onMakeDefault,
+  onRename,
+}: {
+  w: WalletView;
+  onRemove: (w: WalletView) => void;
+  onMakeDefault: (w: WalletView) => void;
+  onRename: (w: WalletView) => void;
+}) {
   // Review 17 Nov (b) M1: a one-time wallet a trade in setup is using; it can still be removed.
   const inUse = typeof w.inUseByTrade === 'string' ? w.inUseByTrade : null;
   const status = inUse !== null ? { label: IN_USE_WORD, tone: 'waiting' as const } : walletStatus(w);
@@ -208,6 +220,18 @@ function WalletRow({ w, onRemove, onMakeDefault }: { w: WalletView; onRemove: (w
         {w.isDefault !== true && w.oneTime !== true && w.usable && matches ? (
           <button type="button" className="x2f-link x2f-wallet-row__default" data-part="make-default" onClick={() => onMakeDefault(w)}>
             {MAKE_DEFAULT}
+          </button>
+        ) : null}
+        {/* Owner demo note #226: any open wallet can be renamed (a wallet a trade used up is not open). */}
+        {inUse === null ? (
+          <button
+            type="button"
+            className="x2f-link x2f-wallet-row__default"
+            data-part="rename"
+            aria-label={RENAME.actionLabel(w.label)}
+            onClick={() => onRename(w)}
+          >
+            {RENAME.action}
           </button>
         ) : null}
       </span>
@@ -319,6 +343,8 @@ function WalletsScreen() {
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [staged, setStaged] = useState(false);
+  // Owner demo note #226: the wallet whose Rename sheet is open.
+  const [renaming, setRenaming] = useState<WalletView | null>(null);
 
   const codes = useOpenEscrowKeys();
   const { prove, confirmUi, open: confirmOpen } = useConfirm();
@@ -523,7 +549,10 @@ function WalletsScreen() {
             <h2 className="x2f-wallets__section-label">Linked wallets</h2>
             <ul className="x2f-wallets__list">
               {wallets.map((w) => (
-                <WalletRow key={w.id} w={w} onRemove={remove} onMakeDefault={(x) => void makeDefault(x)} />
+                <WalletRow key={w.id} w={w} onRemove={remove} onMakeDefault={(x) => void makeDefault(x)} onRename={(x) => {
+                  setError(null);
+                  setRenaming(x);
+                }} />
               ))}
             </ul>
           </section>
@@ -694,7 +723,7 @@ function WalletsScreen() {
         ) : null}
       </main>
 
-      <ConfirmOpenProvider value={confirmOpen || popup}>
+      <ConfirmOpenProvider value={confirmOpen || popup || renaming !== null}>
         <WalletsFoot adding={adding} count={count} saving={saving} blocked={repeated} onSave={() => void save()} onAdd={() => setPopup(true)} />
       </ConfirmOpenProvider>
 
@@ -705,6 +734,17 @@ function WalletsScreen() {
           onContinue={() => {
             setPopup(false);
             setAdding(true);
+          }}
+        />
+      ) : null}
+      {renaming !== null ? (
+        <RenameSheet
+          wallet={renaming}
+          onClose={() => setRenaming(null)}
+          onRenamed={(label) => {
+            const id = renaming.id;
+            setWallets((prev) => (prev ?? []).map((x) => (x.id === id ? { ...x, label } : x)));
+            setRenaming(null);
           }}
         />
       ) : null}

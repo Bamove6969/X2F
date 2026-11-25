@@ -15,6 +15,8 @@ export type AlertKind =
   // Review of wip/third-trade-wallet 17 Nov (b) M1: a one-time wallet given back when its trade ended
   // in setup. Detail: app, label, addressEnd.
   | 'wallet-restored'
+  // Owner demo note #226: a wallet renamed (PUT /v1/wallets/:id/label). Detail: app, from, label, addressEnd.
+  | 'wallet-renamed'
   | 'device-key-added'
   // Task 16: new-device approval and "One device at a time".
   | 'login-approval'

@@ -674,6 +674,12 @@ export interface AuthApi {
    * 409 `wallet-not-ready` for a wallet still in its wait (review 17 Nov M1).
    */
   setDefaultWallet(id: string): Promise<void>;
+  /**
+   * Owner demo note #226: renames an open wallet (`PUT /v1/wallets/:id/label`, 204). The name only:
+   * the address, the default and any wait stay as they are, so no confirm. 400 `bad-request` for a
+   * name outside the rule (`cleanWalletLabel`), 404 `not-found` for a wallet not open on the account.
+   */
+  renameWallet(id: string, label: string): Promise<void>;
   // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
   // owner p11-26: a hold holds only the security changes made; see routes/account.ts).
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
@@ -875,6 +881,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
     setDefaultWallet: async (id) => {
       await call('PUT', `/v1/wallets/${seg(id)}/default`, {});
+    },
+    renameWallet: async (id, label) => {
+      await call('PUT', `/v1/wallets/${seg(id)}/label`, { label });
     },
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),

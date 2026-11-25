@@ -18,9 +18,16 @@
  *
  * The app names and the neutral first label ("Wallet 1") come from Task 29's address book
  * (wallets-model.ts).
+ *
+ * Owner demo note #226 (25 Nov 2026): "Make sure there is an option to name the wallet when they
+ * enter it in ... Traders want to know where each wallet is going". An optional name field under the
+ * address: left empty, the wallet keeps the neutral first label (spec 6.3 "Labels"); a name the
+ * person types overrides it. It follows the API's own rule (`cleanWalletLabel`, @x2f/accounts, the
+ * add's and the rename's), and, being optional, it holds Finish setup back (note #219) only when
+ * something typed there breaks that rule. It can be renamed later in Settings → Your wallets.
  */
 import { useState } from 'react';
-import { isStaged, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
+import { WALLET_LABEL_MAX, cleanWalletLabel, isStaged, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
@@ -31,8 +38,20 @@ import { APP_LABELS, EDGE_TIP, WALLET_APPS, nextWalletName } from '../wallets-mo
 import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
 import { ADD_SWAPPED } from '../walletsCopy.js';
 
-/** The first wallet's name: neutral, never where the money comes from (spec 6.3, "Labels"). */
-const FIRST_WALLET_LABEL = nextWalletName(0);
+/**
+ * The first wallet's default name: neutral, never where the money comes from (spec 6.3, "Labels").
+ * Since owner demo note #226 a name the person types overrides it (`setupWalletLabel`).
+ */
+export const FIRST_WALLET_LABEL = nextWalletName(0);
+
+/**
+ * Owner demo note #226: the label the first wallet is saved under. An empty (or all-space) field is
+ * the neutral default; anything else must pass the API's rule (`cleanWalletLabel`), else null (then
+ * Finish setup stays disabled and the field says why).
+ */
+export function setupWalletLabel(typed: string): string | null {
+  return typed.trim() === '' ? FIRST_WALLET_LABEL : cleanWalletLabel(typed);
+}
 
 /** No app is picked on this screen (owner #96): the wallet is "your wallet". */
 const APP: WalletApp = 'other';
@@ -63,6 +82,11 @@ export const WALLET_COPY = {
   verified: 'Valid Monero address',
   verifiedHelp: 'X2F checked it: a real Monero address for this network, with a matching checksum, so nothing was mistyped.',
   verifiedEnd: (end: string) => `Your payouts go to the address ending ${end}. Check that it matches the one in your wallet.`,
+  // Owner demo note #226 (25 Nov): the optional wallet name. COPY-UNSIGNED (note #226)
+  nameField: 'Wallet name (optional)',
+  namePlaceholder: 'e.g. Cake Wallet savings',
+  nameHelp: 'Left empty, it is saved as Wallet 1. You can rename it later in Settings.',
+  nameInvalid: 'Use 1 to 40 characters, with no hidden or control characters.',
 } as const;
 
 /**
@@ -85,6 +109,9 @@ export function Wallet() {
   const { prove, confirmUi, open } = useConfirm();
   const app = APP;
   const [address, setAddress] = useState('');
+  // Owner demo note #226: the optional name (empty: the neutral "Wallet 1").
+  const [name, setName] = useState('');
+  const label = setupWalletLabel(name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Owner #161: the end of the wallet the API saved, once it has; the screen then shows the green check.
@@ -96,10 +123,10 @@ export function Wallet() {
 
   const finish = async () => {
     const trimmed = address.trim();
-    if (!ADDRESS_RE.test(trimmed)) return;
+    if (!ADDRESS_RE.test(trimmed) || label === null) return;
     setBusy(true);
     setError(null);
-    const draft: WalletDraft = { app, label: FIRST_WALLET_LABEL, address: trimmed };
+    const draft: WalletDraft = { app, label, address: trimmed };
     try {
       const action = await walletsAction([trimmed]);
       const result = await withConfirm(
@@ -179,7 +206,7 @@ export function Wallet() {
         screen="setup-wallet"
         step={5}
         footer={
-          <Button variant={open ? 'secondary' : 'primary'} disabled={busy || !shaped} onClick={() => void finish()} data-part="wallet-finish">
+          <Button variant={open ? 'secondary' : 'primary'} disabled={busy || !shaped || label === null} onClick={() => void finish()} data-part="wallet-finish">
             Finish setup
           </Button>
         }
@@ -235,6 +262,42 @@ export function Wallet() {
               {ADDRESS_SHAPE}
             </p>
           ) : null}
+        </div>
+        {/* Owner demo note #226: an optional name; it overrides the neutral "Wallet 1". */}
+        <label className="x2f-field x2f-label" htmlFor="wallet-name">
+          {WALLET_COPY.nameField}
+          <input
+            className="x2f-input"
+            id="wallet-name"
+            name="wallet-name"
+            type="text"
+            placeholder={WALLET_COPY.namePlaceholder}
+            maxLength={WALLET_LABEL_MAX}
+            autoComplete="off"
+            data-1p-ignore=""
+            data-lpignore="true"
+            data-bwignore=""
+            data-form-type="other"
+            data-part="wallet-name"
+            aria-describedby={label === null ? 'wallet-name-invalid' : 'wallet-name-help'}
+            aria-invalid={label === null ? true : undefined}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
+          />
+        </label>
+        <div aria-live="polite">
+          {label === null ? (
+            <p className="x2f-start__help" id="wallet-name-invalid" data-part="wallet-name-invalid">
+              {WALLET_COPY.nameInvalid}
+            </p>
+          ) : (
+            <p className="x2f-start__help" id="wallet-name-help" data-part="wallet-name-help">
+              {WALLET_COPY.nameHelp}
+            </p>
+          )}
         </div>
         {error !== null ? (
           <p className="x2f-error" role="alert" data-part="wallet-error">
