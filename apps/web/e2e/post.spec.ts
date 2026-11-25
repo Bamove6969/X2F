@@ -175,7 +175,9 @@ test('50% above or below the market posts; 50.01% either way is refused inline a
     await f(page)[side].check();
     await f(page).margin.fill('50.01');
     await expect(preview.getByText('Set your percentage', { exact: true })).toBeVisible();
-    await f(page).post.click();
+    // Owner demo note #219: Post offer is disabled; the box's problem shows once it is left.
+    await expect(f(page).post).toBeDisabled();
+    await f(page).margin.blur();
     await expect(page.getByText('Enter a percentage from 0 to 50, like 0.5.', { exact: true })).toBeVisible();
     await expect(f(page).margin).toHaveAttribute('aria-invalid', 'true');
     await expect(f(page).margin).toHaveAccessibleDescription('Enter a percentage from 0 to 50, like 0.5.');
@@ -185,6 +187,7 @@ test('50% above or below the market posts; 50.01% either way is refused inline a
   await f(page).margin.fill('50');
   // $329.90 × 1.5 = $494.85.
   await expect(preview.getByText('$494.85 / XMR', { exact: true })).toBeVisible();
+  await expect(f(page).post).toBeEnabled();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]!.postDataJSON()).toMatchObject({ currencies: [{ currency: 'USD', bands: [{ marginBps: 5000 }] }] });
@@ -203,7 +206,8 @@ test('a smallest trade above the largest is refused inline and nothing is posted
   await page.goto('/post?method=ZELLE');
   await f(page).min.fill('500');
   await f(page).max.fill('100');
-  await f(page).post.click();
+  // Owner demo note #219: Post offer is disabled; the smallest box, left already, says why.
+  await expect(f(page).post).toBeDisabled();
   await expect(page.getByText("The smallest trade can't be more than the largest.", { exact: true })).toBeVisible();
   await expect(f(page).min).toHaveAttribute('aria-invalid', 'true');
   // The error describes the field; it is no part of the field's name.
@@ -414,7 +418,11 @@ test("a gift-card offer needs the card's country and sends it as `country` (Revi
   await f(page).method.selectOption('AMAZON_GIFT_CARD');
   await expect(f(page).country).toBeVisible();
   await fillBoard(page);
-  await f(page).post.click();
+  // Owner demo note #219: Post offer is disabled until the country is chosen; leaving the box says why.
+  await expect(f(page).post).toBeDisabled();
+  await expect(page.locator('[data-part="post-missing"]')).toHaveText("To post this offer, finish the card's country, the gift card terms.");
+  await f(page).country.focus();
+  await f(page).country.blur();
   await expect(page.getByText("Choose the card's country.", { exact: true })).toBeVisible();
   await expect(f(page).country).toHaveAttribute('aria-invalid', 'true');
   expect(posts).toHaveLength(0);
@@ -422,10 +430,11 @@ test("a gift-card offer needs the card's country and sends it as `country` (Revi
   // J-17 (F13): the poster's side's gift-card terms, each ticked first (a sell ad's poster checks the card).
   const terms = page.locator('[data-part="gift-card-terms"] input[type="checkbox"]');
   await expect(terms).toHaveCount(3);
-  await f(page).post.click();
+  await expect(f(page).post).toBeDisabled();
   await expect(page.getByText('Tick each gift card term to post.', { exact: true })).toBeVisible();
   expect(posts).toHaveLength(0);
   for (const box of await terms.all()) await box.check();
+  await expect(f(page).post).toBeEnabled();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]!.postDataJSON()).toMatchObject({ methods: [{ methodId: 'ZELLE' }, { methodId: 'AMAZON_GIFT_CARD' }], country: 'US', giftCardTerms: 'gift-card-terms-unsigned-1' });

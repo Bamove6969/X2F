@@ -27,3 +27,12 @@ function isMismatch(e: unknown): boolean {
 export function loginFailure(e: unknown): string {
   return isMismatch(e) ? PASSWORD_LOGIN_MISMATCH : refusalText(e, LOGIN_RETRY_LATER);
 }
+
+/**
+ * Owner demo note #219 (25 Nov 2026): a full authenticator code, read as the server reads it (api
+ * totp.ts `matchStep`: whitespace dropped, then exactly six digits). Buttons that send one stay
+ * disabled until this holds; whether the code is right is still the server's answer.
+ */
+export function isTotpCode(code: string): boolean {
+  return /^\d{6}$/.test(code.replace(/\s/g, ''));
+}

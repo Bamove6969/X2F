@@ -12,6 +12,10 @@
  * as its rule says; inside the window nothing asks. Once the API has saved the wallet, the screen
  * shows a big green "Valid Monero address" check (like "Key verified") and Continue to Welcome.
  *
+ * Owner demo note #219 (25 Nov 2026): Finish setup is disabled until the address has a Monero
+ * address's shape (ADDRESS_RE); once the person has left the field with something else in it, the
+ * shape sentence says why. The network and checksum stay the API's to check (its refusals below).
+ *
  * The app names and the neutral first label ("Wallet 1") come from Task 29's address book
  * (wallets-model.ts).
  */
@@ -68,6 +72,9 @@ export const WALLET_COPY = {
  */
 const ADDRESS_RE = /^(?:[1-9A-HJ-NP-Za-km-z]{95}|[1-9A-HJ-NP-Za-km-z]{106})$/;
 
+/** The shape sentence (was the error on Finish setup; since owner demo note #219, help under the field). */
+export const ADDRESS_SHAPE = "That doesn't look like a Monero address. Copy the whole receive address from your wallet.";
+
 const ERRORS: Record<string, string> = {
   'address-invalid': "That isn't a Monero address for this network. Copy it again from your wallet.",
   'address-integrated': 'That is an integrated address. Paste a normal receive address from your wallet.',
@@ -82,17 +89,14 @@ export function Wallet() {
   const [error, setError] = useState<string | null>(null);
   // Owner #161: the end of the wallet the API saved, once it has; the screen then shows the green check.
   const [saved, setSaved] = useState<string | null>(null);
+  // Owner demo note #219: Finish setup waits for an address of the right shape.
+  const [left, setLeft] = useState(false);
+  const shaped = ADDRESS_RE.test(address.trim());
+  const misshapen = !shaped && address.trim() !== '' && left;
 
   const finish = async () => {
     const trimmed = address.trim();
-    if (trimmed === '') {
-      setError('Paste a receive address from your wallet first.');
-      return;
-    }
-    if (!ADDRESS_RE.test(trimmed)) {
-      setError("That doesn't look like a Monero address. Copy the whole receive address from your wallet.");
-      return;
-    }
+    if (!ADDRESS_RE.test(trimmed)) return;
     setBusy(true);
     setError(null);
     const draft: WalletDraft = { app, label: FIRST_WALLET_LABEL, address: trimmed };
@@ -175,7 +179,7 @@ export function Wallet() {
         screen="setup-wallet"
         step={5}
         footer={
-          <Button variant={open ? 'secondary' : 'primary'} disabled={busy} onClick={() => void finish()} data-part="wallet-finish">
+          <Button variant={open ? 'secondary' : 'primary'} disabled={busy || !shaped} onClick={() => void finish()} data-part="wallet-finish">
             Finish setup
           </Button>
         }
@@ -215,10 +219,23 @@ export function Wallet() {
             data-lpignore="true"
             data-bwignore=""
             data-form-type="other"
+            aria-describedby={misshapen ? 'xmr-payout-shape' : undefined}
+            aria-invalid={misshapen ? true : undefined}
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              setAddress(e.target.value);
+              setError(null);
+            }}
+            onBlur={() => setLeft(true)}
           />
         </label>
+        <div aria-live="polite">
+          {misshapen ? (
+            <p className="x2f-start__help" id="xmr-payout-shape" data-part="wallet-shape">
+              {ADDRESS_SHAPE}
+            </p>
+          ) : null}
+        </div>
         {error !== null ? (
           <p className="x2f-error" role="alert" data-part="wallet-error">
             {error}

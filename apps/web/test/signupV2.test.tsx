@@ -337,6 +337,34 @@ describe('lead calls, 12 Nov 2026', () => {
   });
 });
 
+// Owner demo note #219 (25 Nov 2026): Verify stays disabled until a whole login code is pasted.
+describe('note #219: the PGP code step waits for a whole code', () => {
+  const challenge = { challengeId: 'c1', encryptedMessage: '-----BEGIN PGP MESSAGE-----', expiresAt: '2099-01-01T00:00:00.000Z', fingerprint: 'aa' } as SetupState['challenge'];
+
+  it('keeps Verify disabled for an empty or short code, says why once the field is left, and enables it for a whole code', async () => {
+    const api = setup({ challenge });
+    const host = show(<PgpChallenge />, api);
+    await flush();
+    const input = host.querySelector<HTMLInputElement>('#phrase')!;
+    expect(disabled(byPart(host, 'pgp-verify'))).toBe(true);
+    type(input, 'ABCD-EFGH');
+    expect(disabled(byPart(host, 'pgp-verify'))).toBe(true);
+    expect(byPart(host, 'pgp-code-short')).toBeNull();
+    fire(input, new FocusEvent('focusout', { bubbles: true }));
+    expect(byPart(host, 'pgp-code-short')!.textContent).toBe('That code is not complete yet. Paste the whole code from inside the message.');
+    expect(input.getAttribute('aria-describedby')).toBe('phrase-short');
+    click(byPart(host, 'pgp-verify'));
+    await flush();
+    expect(api.update).not.toHaveBeenCalled();
+    // 48 symbols, the new length, dashes or not; 12, the old length, also reads as whole.
+    type(input, 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
+    expect(disabled(byPart(host, 'pgp-verify'))).toBe(false);
+    expect(byPart(host, 'pgp-code-short')).toBeNull();
+    type(input, '1234-5678-9ABC');
+    expect(disabled(byPart(host, 'pgp-verify'))).toBe(false);
+  });
+});
+
 // Owner decision, 16 Nov 2026: the authenticator step follows the password; without one it is skipped
 // (the server refuses the enrolment, 409 totp-needs-password), and the M3 sentence is gone.
 describe('/setup/authenticator goes with a password (owner, 16 Nov 2026)', () => {
