@@ -17,18 +17,21 @@ import type { WalletView } from './wallets-model.js';
 import { RENAME, walletNameHelp } from './walletsCopy.js';
 
 /** Whether the name typed may be saved over `current`: allowed by the rule, and a change. */
-export function renameReady(raw: string, current: string): boolean {
-  const clean = cleanWalletLabel(raw);
+export function renameReady(raw: string, current: string, addresses: readonly string[] = []): boolean {
+  const clean = cleanWalletLabel(raw, addresses);
   return clean !== null && clean !== current;
 }
 
 export function RenameSheet({
   wallet,
+  addresses = [wallet.address],
   onClose,
   onRenamed,
   onRefused,
 }: {
   wallet: WalletView;
+  /** The account's addresses this screen has (verification review: the name may not spell their ends). */
+  addresses?: readonly string[];
   onClose: () => void;
   onRenamed: (label: string) => void;
   /** A refusal by a rule (403 `weak-session`, security review Medium 2): the screen shows it in CantDoThat. */
@@ -37,11 +40,11 @@ export function RenameSheet({
   const [name, setName] = useState(wallet.label);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const clean = cleanWalletLabel(name);
+  const clean = cleanWalletLabel(name, addresses);
   // Said only for something typed that the rule refuses (an empty field just keeps Save disabled).
-  const help = walletNameHelp(name);
+  const help = walletNameHelp(name, addresses);
   const invalid = help !== null;
-  const ready = renameReady(name, wallet.label);
+  const ready = renameReady(name, wallet.label, addresses);
 
   async function save() {
     if (!ready || saving || clean === null) return;
@@ -55,7 +58,7 @@ export function RenameSheet({
       const refused = isCantDoCode(code) ? walletRenameCantDoText(code) : null;
       if (refused !== null && isCantDoCode(code)) onRefused({ code, text: refused });
       else if (code === 'not-found') setError(RENAME.gone);
-      else if (code === 'bad-request') setError(walletNameHelp(name) ?? RENAME.failed);
+      else if (code === 'bad-request') setError(walletNameHelp(name, addresses) ?? RENAME.failed);
       else if (code === 'slow-down') setError(RENAME.capped);
       else setError(refusalText(e, RENAME.failed));
     } finally {

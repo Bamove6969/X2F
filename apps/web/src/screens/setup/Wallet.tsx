@@ -49,8 +49,9 @@ export const FIRST_WALLET_LABEL = nextWalletName(0);
  * the neutral default; anything else must pass the API's rule (`cleanWalletLabel`), else null (then
  * Finish setup stays disabled and the field says why).
  */
-export function setupWalletLabel(typed: string): string | null {
-  return typed.trim() === '' ? FIRST_WALLET_LABEL : cleanWalletLabel(typed);
+export function setupWalletLabel(typed: string, address = ''): string | null {
+  // Verification review: never the end of the address typed on this screen.
+  return typed.trim() === '' ? FIRST_WALLET_LABEL : cleanWalletLabel(typed, address.trim() === '' ? [] : [address.trim()]);
 }
 
 /** No app is picked on this screen (owner #96): the wallet is "your wallet". */
@@ -110,7 +111,7 @@ export function Wallet() {
   const [address, setAddress] = useState('');
   // Owner demo note #226: the optional name (empty: the neutral "Wallet 1").
   const [name, setName] = useState('');
-  const label = setupWalletLabel(name);
+  const label = setupWalletLabel(name, address);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Owner #161: the end of the wallet the API saved, once it has; the screen then shows the green check.
@@ -290,7 +291,7 @@ export function Wallet() {
         <div aria-live="polite">
           {label === null ? (
             <p className="x2f-start__help" id="wallet-name-invalid" data-part="wallet-name-invalid">
-              {walletNameHelp(name)}
+              {walletNameHelp(name, address.trim() === '' ? [] : [address.trim()])}
             </p>
           ) : (
             <p className="x2f-start__help" id="wallet-name-help" data-part="wallet-name-help">

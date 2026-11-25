@@ -407,7 +407,8 @@ function WalletsScreen() {
   const repeated = trimmed !== '' && duplicate(trimmed);
   // Owner demo note #226, security review Medium 1: a typed name the API's rule refuses blocks Save
   // and Add another, and says why under the field (left empty, the next neutral name is used).
-  const nameHelp = walletNameHelp(label);
+  // Verification review: nor the end of any address listed, in the batch or typed.
+  const nameHelp = walletNameHelp(label, [...(wallets ?? []).map((w) => w.address), ...batch.map((d) => d.address), ...(trimmed === '' ? [] : [trimmed])]);
   const blocked = repeated || nameHelp !== null;
 
   function addAnother() {
@@ -758,6 +759,7 @@ function WalletsScreen() {
       {renaming !== null ? (
         <RenameSheet
           wallet={renaming}
+          addresses={(wallets ?? []).map((w) => w.address)}
           onClose={() => setRenaming(null)}
           onRefused={(r) => {
             setRenaming(null);

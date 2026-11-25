@@ -417,6 +417,10 @@ test('security review of wip/lead-note-226: a name that could pass for a wallet 
   await page.getByLabel('Name', { exact: true }).fill('Rk3Fz1');
   await expect(page.locator('[data-part="wallet-label-help"]')).toContainText('address ending');
   await expect(page.getByRole('button', { name: 'Save wallet' })).toBeDisabled();
+  // Verification review: the end of a listed wallet's address (…Rk3Fz1), in any case or spaced.
+  await page.getByLabel('Name', { exact: true }).fill('savings rk3 fz');
+  await expect(page.locator('[data-part="wallet-label-help"]')).toContainText('the end of one of your addresses');
+  await expect(page.getByRole('button', { name: 'Save wallet' })).toBeDisabled();
   await page.getByLabel('Name', { exact: true }).fill('Spending 2');
   await expect(page.locator('[data-part="wallet-label-help"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save wallet' })).toBeEnabled();

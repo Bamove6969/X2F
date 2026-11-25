@@ -43,7 +43,7 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
 
   const trimmed = address.trim();
   // Owner demo note #226, security review Medium 1: the API's wallet-name rule, said under the field.
-  const nameHelp = walletNameHelp(label);
+  const nameHelp = walletNameHelp(label, trimmed === '' ? [] : [trimmed]);
 
   async function save() {
     if (trimmed === '' || saving || nameHelp !== null) return;

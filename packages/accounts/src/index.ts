@@ -61,4 +61,4 @@ export {
   IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
 } from './sessionLength.js';
 export { METHOD_PARTNERS, STANDS_ALONE, partnerMissing, partnerNeededBy, passwordAlone } from './methodPartners.js';
-export { type WalletLabelProblem, WALLET_LABEL_MAX, cleanWalletLabel, walletLabelProblem } from './walletLabel.js';
+export { type WalletLabelProblem, WALLET_LABEL_MAX, addressFold, cleanWalletLabel, labelSpoofsAddress, walletLabelProblem } from './walletLabel.js';
