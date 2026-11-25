@@ -39,6 +39,10 @@ import { SignaturePad } from './SignaturePad.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 import { TermsParagraphs } from './TermsParagraphs.js';
 
+/** Owner demo note #186 (25 Nov): the two boxes' headings (his suggested words). COPY-UNSIGNED. */
+export const GLANCE_HEADING = 'The Short Version (Key Takeaways)';
+export const FULL_HEADING = 'Full Terms of Service';
+
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
 
@@ -153,15 +157,22 @@ export function TermsScreen({
       }
     >
       <SetupIntro title="Terms of Service">{intro}</SetupIntro>
-      <ul className="x2f-terms__points" aria-label="Key points">
-        {KEY_POINTS.map((k) => (
-          <li key={k}>
-            {/* The board sets the numbers in mono ("1%", "60"). */}
-            {k.split(/(\b\d+%?)/).map((part, i) => (i % 2 === 1 ? <span key={i} className="x2f-terms__num">{part}</span> : part))}
-          </li>
-        ))}
-      </ul>
-      <div className="x2f-terms" ref={box} onScroll={checkEnd} tabIndex={0} role="region" aria-label="Full Terms of Service" data-part="terms-text">
+      {/* Owner demo note #186 (25 Nov): each box gets a heading so the summary reads as a summary, the
+          same type in both (the board's mono numbers dropped), and an amber edge marks the summary. */}
+      <section className="x2f-terms__glance" aria-labelledby="terms-glance-heading" data-part="terms-glance">
+        <h2 className="x2f-terms__boxhead" id="terms-glance-heading">
+          {GLANCE_HEADING}
+        </h2>
+        <ul className="x2f-terms__points" aria-label="Key points">
+          {KEY_POINTS.map((k) => (
+            <li key={k}>{k}</li>
+          ))}
+        </ul>
+      </section>
+      <h2 className="x2f-terms__boxhead" id="terms-full-heading">
+        {FULL_HEADING}
+      </h2>
+      <div className="x2f-terms" ref={box} onScroll={checkEnd} tabIndex={0} role="region" aria-labelledby="terms-full-heading" data-part="terms-text">
         <p className="x2f-terms__note">{TERMS_DRAFT_NOTE}</p>
         {TERMS.map((s) => (
           <section key={s.heading} className="x2f-terms__section">
