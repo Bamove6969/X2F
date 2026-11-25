@@ -237,7 +237,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'If you post an ad, you pay a 1% fee when the trade completes.',
-      why: 'Owner demo note #116 (23 Nov 2026, setup-terms second key point): the page says "If you post an ad, whether to sell or buy, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees." (Terms version 2026-11-23).',
+      why: 'Owner demo note #116 (23 Nov 2026, setup-terms second key point): the page says "If you post an ad, whether to sell or buy on X2F, you pay a 1% fee when the trade completes. Traders who just click on ads and engage in trades pay no fees." (Terms version 2026-11-23).',
     },
     {
       text: 'X2F never holds your coins.',
