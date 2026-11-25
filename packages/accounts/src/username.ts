@@ -385,6 +385,16 @@ function highlyRestrictive(name: string): boolean {
   return rest !== null && ['Jpan', 'Hanb', 'Kore'].some((x) => rest.has(x));
 }
 
+/**
+ * The display name's script checks, for other names X2F shows back (owner demo note #226's wallet
+ * names, walletLabel.ts): true when the text holds an invisible character or Hangul filler, a letter
+ * of a right-to-left script, a misplaced combining mark, or scripts mixed beyond UTS #39's "highly
+ * restrictive" level (`highlyRestrictive`: a Cyrillic or Greek look-alike among Latin letters).
+ */
+export function unsafeScripts(text: string): boolean {
+  return INVISIBLE.test(text) || HANGUL_FILLER.test(text) || RTL.test(text) || BAD_MARK.test(text) || !highlyRestrictive(text);
+}
+
 /** NFC, trimmed, runs of spaces as one: a display name as stored. */
 function tidyName(input: string): string {
   return input.normalize('NFC').replace(/ {2,}/g, ' ').replace(/^ +| +$/g, '');

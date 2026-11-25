@@ -235,7 +235,8 @@ export function AcceptedSheet({
                   checked={picked === w.id}
                   onChange={() => setPicked(w.id)}
                 />
-                <span className="x2f-accepted__label">{w.label}</span>
+                {/* Security review of wip/lead-note-226 (Medium 1): the name in its own isolated element, apart from the real address end. */}
+                <bdi className="x2f-accepted__label" data-part="wallet-name">{w.label}</bdi>
                 <span className="x2f-accepted__end">…{addressEnd(w.address)}</span>
                 {w.isDefault === true ? <span className="x2f-accepted__end">{DEFAULT_TAG}</span> : null}
               </label>

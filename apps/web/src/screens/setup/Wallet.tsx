@@ -36,7 +36,7 @@ import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { errorCode } from './register.js';
 import { APP_LABELS, EDGE_TIP, WALLET_APPS, nextWalletName } from '../wallets-model.js';
 import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
-import { ADD_SWAPPED } from '../walletsCopy.js';
+import { ADD_SWAPPED, walletNameHelp } from '../walletsCopy.js';
 
 /**
  * The first wallet's default name: neutral, never where the money comes from (spec 6.3, "Labels").
@@ -86,7 +86,6 @@ export const WALLET_COPY = {
   nameField: 'Wallet name (optional)',
   namePlaceholder: 'e.g. Cake Wallet savings',
   nameHelp: 'Left empty, it is saved as Wallet 1. You can rename it later in Settings.',
-  nameInvalid: 'Use 1 to 40 characters, with no hidden or control characters.',
 } as const;
 
 /**
@@ -291,7 +290,7 @@ export function Wallet() {
         <div aria-live="polite">
           {label === null ? (
             <p className="x2f-start__help" id="wallet-name-invalid" data-part="wallet-name-invalid">
-              {WALLET_COPY.nameInvalid}
+              {walletNameHelp(name)}
             </p>
           ) : (
             <p className="x2f-start__help" id="wallet-name-help" data-part="wallet-name-help">

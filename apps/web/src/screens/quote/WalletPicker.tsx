@@ -125,10 +125,12 @@ export function WalletPicker({
           <label key={w.id} className="x2f-quote__wallet" data-on={picked === w.id ? '' : undefined}>
             <input type="radio" name="wallet" value={w.id} checked={picked === w.id} onChange={() => onPick(w.id)} />
             <span className="x2f-quote__wallet-text">
-              <span className="x2f-quote__wallet-name">{name}</span>
+              {/* Security review of wip/lead-note-226 (Medium 1): the name isolated in its own element; the
+                  real address end and app each in theirs, so a name can never run into them. */}
+              <bdi className="x2f-quote__wallet-name" data-part="wallet-name">{name}</bdi>
               <span className="x2f-quote__muted-sm">
-                <span className="x2f-quote__mono">…{addressEnd(w.address)}</span>
-                {app !== undefined && app !== name ? ` · ${app}` : ''}
+                <span className="x2f-quote__mono" data-part="wallet-end">…{addressEnd(w.address)}</span>
+                {app !== undefined && app !== name ? <span data-part="wallet-app">{` · ${app}`}</span> : null}
                 {w.oneTime === true ? ` · ${ONE_TIME_TAG}` : ''}
                 {w.isDefault ? ` · ${DEFAULT_TAG}` : ''}
               </span>

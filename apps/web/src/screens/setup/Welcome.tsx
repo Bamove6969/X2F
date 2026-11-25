@@ -169,19 +169,24 @@ export interface Checklist {
   logins: string[];
   loginDone: boolean;
   recoveryDone: boolean;
-  wallet: { app: string; end: string } | null;
+  /**
+   * The usable wallet: its own name, its app's name (null for a wallet saved as Other), and the end
+   * of its address, kept apart so each is drawn in its own element (security review of
+   * wip/lead-note-226, Medium 1: a name can never run into the real app or address end).
+   */
+  wallet: { name: string; app: string | null; end: string } | null;
 }
 
 /**
- * The wallet's name on the checklist. Owner demo note #226 (25 Nov): "Traders want to know where each
- * wallet is going", so the name the person gave it comes first. A wallet saved as Other (setup no
- * longer picks an app, owner #96) goes by its name alone; one in a named app gets the app after it.
- * COPY-UNSIGNED (note #226)
+ * The wallet's name and app on the checklist. Owner demo note #226 (25 Nov): "Traders want to know
+ * where each wallet is going", so the name the person gave it comes first. A wallet saved as Other
+ * (setup no longer picks an app, owner #96) goes by its name alone (Other when it has none); one in
+ * a named app gets the app after it, in its own element. COPY-UNSIGNED (note #226)
  */
-export function walletName(w: Pick<WalletEntry, 'app' | 'label'>): string {
+export function walletName(w: Pick<WalletEntry, 'app' | 'label'>): { name: string; app: string | null } {
   const label = w.label.trim();
-  if (w.app === 'other') return label || APP_LABELS.other;
-  return label === '' ? APP_LABELS[w.app] : `${label} · ${APP_LABELS[w.app]}`;
+  if (w.app === 'other') return { name: label || APP_LABELS.other, app: null };
+  return label === '' ? { name: APP_LABELS[w.app], app: null } : { name: label, app: APP_LABELS[w.app] };
 }
 
 /** The Welcome checklist: each item is ticked only when it is really done. */
@@ -192,7 +197,7 @@ export function checklist(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
     logins,
     loginDone: logins.length > 0,
     recoveryDone: me.methods.includes('recovery-codes') || flow.backup === 'recovery-codes',
-    wallet: usable !== undefined ? { app: walletName(usable), end: usable.addressEnd } : null,
+    wallet: usable !== undefined ? { ...walletName(usable), end: usable.addressEnd } : null,
   };
 }
 
@@ -388,7 +393,9 @@ export function Welcome() {
               <span className="x2f-welcome__title" data-part="check-title">{WELCOME_COPY.walletItem}</span>
               {c.wallet !== null ? (
                 <span data-part="summary-wallet">
-                  {c.wallet.app} <span className="x2f-start__mono x2f-welcome__end">…{c.wallet.end}</span>
+                  <bdi data-part="wallet-name">{c.wallet.name}</bdi>
+                  {c.wallet.app !== null ? <span className="x2f-welcome__app" data-part="wallet-app">{` · ${c.wallet.app}`}</span> : null}{' '}
+                  <span className="x2f-start__mono x2f-welcome__end">…{c.wallet.end}</span>
                 </span>
               ) : (
                 <span className="x2f-welcome__key" data-part="summary-wallet">{WELCOME_COPY.none}</span>

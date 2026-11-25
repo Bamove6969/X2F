@@ -54,7 +54,7 @@ describe('/setup/welcome (owner, 12 Nov)', () => {
   it('each item is done (one tick) only when it really is', () => {
     // Owner demo note #226: the wallet's own name first, then its app.
     expect(checklist({ methods: ['pgp', 'recovery-codes'] }, [wallet()], fresh)).toEqual({
-      logins: ['PGP key', 'Username'], loginDone: true, recoveryDone: true, wallet: { app: 'Wallet 1 · Cake Wallet', end: 'k3Fz' },
+      logins: ['PGP key', 'Username'], loginDone: true, recoveryDone: true, wallet: { name: 'Wallet 1', app: 'Cake Wallet', end: 'k3Fz' },
     });
     // Opened only to add a wallet, with no recovery codes and no usable wallet yet.
     expect(checklist({ methods: ['password'] }, [wallet({ usable: false })], fresh)).toEqual({ logins: ['Username and password'], loginDone: true, recoveryDone: false, wallet: null });
@@ -69,7 +69,7 @@ describe('carried over from summarize() (lead check, 12 Nov)', () => {
   it('reads the flow first: the method just set up, the recovery codes just made, the wallet', () => {
     // was: summarize(password + recovery-codes, flow password/recovery-codes) -> Password, Recovery codes, Cake Wallet …k3Fz
     expect(checklist({ methods: ['password', 'recovery-codes'] }, [wallet()], { registered: true, method: 'password', backup: 'recovery-codes' })).toEqual({
-      logins: ['Username and password'], loginDone: true, recoveryDone: true, wallet: { app: 'Wallet 1 · Cake Wallet', end: 'k3Fz' },
+      logins: ['Username and password'], loginDone: true, recoveryDone: true, wallet: { name: 'Wallet 1', app: 'Cake Wallet', end: 'k3Fz' },
     });
     // was: a second PGP key from the flow -> "Second PGP key"
     expect(checklist({ methods: ['pgp'] }, [], { registered: true, method: 'pgp', backup: 'pgp' }).logins).toEqual(['PGP keys (2)', 'Username']);
@@ -101,7 +101,7 @@ describe('carried over from summarize() (lead check, 12 Nov)', () => {
   it('only a usable wallet is ever shown, never one still waiting', () => {
     // was: "You get paid to" shows only a usable wallet
     expect(checklist({ methods: ['pgp'] }, [wallet({ usable: false })], fresh).wallet).toBeNull();
-    expect(checklist({ methods: ['pgp'] }, [wallet({ usable: false }), wallet({ app: 'edge', addressEnd: 'Q9x2', usable: true })], fresh).wallet).toEqual({ app: 'Wallet 1 · Edge', end: 'Q9x2' });
+    expect(checklist({ methods: ['pgp'] }, [wallet({ usable: false }), wallet({ app: 'edge', addressEnd: 'Q9x2', usable: true })], fresh).wallet).toEqual({ name: 'Wallet 1', app: 'Edge', end: 'Q9x2' });
   });
 });
 

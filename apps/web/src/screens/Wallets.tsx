@@ -30,7 +30,7 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG, RENAME } from './walletsCopy.js';
+import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG, RENAME, walletNameHelp } from './walletsCopy.js';
 import { RenameSheet } from './WalletRename.js';
 import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
@@ -204,7 +204,9 @@ function WalletRow({
         <Icon name="wallet" size={18} />
       </span>
       <span className="x2f-wallet-row__text">
-        <span className="x2f-wallet-row__name">{w.label}</span>
+        {/* Security review of wip/lead-note-226 (Medium 1): the name is isolated in its own element,
+            apart from the address end and tags below it, so it can never run into them. */}
+        <bdi className="x2f-wallet-row__name" data-part="wallet-name">{w.label}</bdi>
         <span className="x2f-wallet-row__addr">
           <span>…{w.addressEnd}</span>
           {w.oneTime === true ? <span data-part="one-time"> · {ONE_TIME_TAG}</span> : null}
@@ -287,12 +289,15 @@ function WalletsFoot({
   blocked,
   onSave,
   onAdd,
+  blockedBy,
 }: {
   adding: boolean;
   count: number;
   saving: boolean;
   /** Owner demo note #219: the address in the form is already in the list (said under the field). */
   blocked: boolean;
+  /** The id of the sentence that says why Save is blocked (the repeated address, or the name: note #226). */
+  blockedBy?: string | undefined;
   onSave: () => void;
   onAdd: () => void;
 }) {
@@ -300,7 +305,7 @@ function WalletsFoot({
   return (
     <footer className="x2f-wallets__foot">
       {adding ? (
-        <Button variant={variant} onClick={onSave} disabled={count === 0 || saving || blocked} {...(blocked ? { 'aria-describedby': 'wallet-address-repeated' } : {})}>
+        <Button variant={variant} onClick={onSave} disabled={count === 0 || saving || blocked} {...(blocked && blockedBy !== undefined ? { 'aria-describedby': blockedBy } : {})}>
           {count > 1 ? `Save ${count} wallets` : 'Save wallet'}
         </Button>
       ) : (
@@ -400,9 +405,13 @@ function WalletsScreen() {
   // Owner demo note #219 (25 Nov 2026): an address already in the list disables Save and Add
   // another, and the sentence that a click used to show is said under the field as it is typed.
   const repeated = trimmed !== '' && duplicate(trimmed);
+  // Owner demo note #226, security review Medium 1: a typed name the API's rule refuses blocks Save
+  // and Add another, and says why under the field (left empty, the next neutral name is used).
+  const nameHelp = walletNameHelp(label);
+  const blocked = repeated || nameHelp !== null;
 
   function addAnother() {
-    if (trimmed === '' || repeated || batch.length + 1 >= MAX_WALLET_BATCH) return;
+    if (trimmed === '' || blocked || batch.length + 1 >= MAX_WALLET_BATCH) return;
     setError(null);
     setBatch((b) => [...b, current()]);
     setLabel('');
@@ -411,7 +420,7 @@ function WalletsScreen() {
   }
 
   async function save() {
-    if (count === 0 || saving || repeated) return;
+    if (count === 0 || saving || blocked) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -613,10 +622,19 @@ function WalletsScreen() {
                 autoComplete="off"
                 maxLength={LABEL_MAX}
                 placeholder={nextWalletName(known)}
+                aria-describedby={nameHelp !== null ? 'wallet-label-help' : undefined}
+                aria-invalid={nameHelp !== null ? true : undefined}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
               />
             </label>
+            <span aria-live="polite">
+              {nameHelp !== null ? (
+                <span className="x2f-wallets__error" id="wallet-label-help" data-part="wallet-label-help">
+                  {nameHelp}
+                </span>
+              ) : null}
+            </span>
             <div className="x2f-wallets__apps" aria-label="Suggested names">
               {nameSuggestions(known).map((name) => (
                 <button key={name} type="button" className="x2f-app-chip" onClick={() => setLabel(name)}>
@@ -677,7 +695,7 @@ function WalletsScreen() {
             <Button
               variant="secondary"
               onClick={addAnother}
-              disabled={trimmed === '' || repeated || batch.length + 1 >= MAX_WALLET_BATCH}
+              disabled={trimmed === '' || blocked || batch.length + 1 >= MAX_WALLET_BATCH}
             >
               Add another
             </Button>
@@ -724,7 +742,7 @@ function WalletsScreen() {
       </main>
 
       <ConfirmOpenProvider value={confirmOpen || popup || renaming !== null}>
-        <WalletsFoot adding={adding} count={count} saving={saving} blocked={repeated} onSave={() => void save()} onAdd={() => setPopup(true)} />
+        <WalletsFoot adding={adding} count={count} saving={saving} blocked={blocked} blockedBy={repeated ? 'wallet-address-repeated' : nameHelp !== null ? 'wallet-label-help' : undefined} onSave={() => void save()} onAdd={() => setPopup(true)} />
       </ConfirmOpenProvider>
 
       {popup ? (
@@ -741,6 +759,10 @@ function WalletsScreen() {
         <RenameSheet
           wallet={renaming}
           onClose={() => setRenaming(null)}
+          onRefused={(r) => {
+            setRenaming(null);
+            setCantDo(r);
+          }}
           onRenamed={(label) => {
             const id = renaming.id;
             setWallets((prev) => (prev ?? []).map((x) => (x.id === id ? { ...x, label } : x)));

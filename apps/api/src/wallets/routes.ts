@@ -4,7 +4,8 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
+import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { dailyCapInTx } from '../auth/throttle.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -17,6 +18,13 @@ export type WalletApp = (typeof WALLET_APPS)[number];
 export const PAYOUT_WAIT_MS = 24 * 3_600_000;
 /** A removed wallet's address is kept this long (then nulled by `purgeRemovedWalletAddresses`). */
 export const REMOVED_ADDRESS_RETENTION_MS = 90 * 24 * 3_600_000;
+/**
+ * Security review of wip/lead-note-226, Medium 3: renames an account may make in a UTC day (counted
+ * when one changes a name; past it 429 `slow-down`), so a stolen session cannot churn names.
+ */
+export const WALLET_RENAMES_PER_DAY = 20;
+export const walletRenameKey = (accountId: string) => `wallet-rename:${accountId}`;
+
 /** A wallet name's longest (owner demo note #226: the one rule, `cleanWalletLabel` in @x2f/accounts). */
 export const LABEL_MAX = WALLET_LABEL_MAX;
 
@@ -564,7 +572,12 @@ async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
  * (removed, used up by a trade, or a staged add, which has no wallet yet). The address, the default,
  * `usable_from` and every other column stay as they are, so it redirects no money and starts or
  * skips no wait: like the default, it needs no confirm and is not staged; the hold still blocks it,
- * as every wallet write, and the session must still be live under the account lock. A real change
+ * as every wallet write, and the session must still be live under the account lock. Security review
+ * of wip/lead-note-226: the name follows the spoofing rule (`walletLabelProblem`: no separators,
+ * status words, address-like runs or mixed scripts; Medium 1); a session whose changes must wait
+ * (`weakOf`: a username-and-password login, a backup session) gets 403 `weak-session` (Medium 2: so a
+ * weak foothold cannot rename any wallet, one still in its wait included); and at most
+ * WALLET_RENAMES_PER_DAY renames a day, then 429 `slow-down` (Medium 3). A real change
  * records alert `wallet-renamed` (display details only: the app, both names and the address's last
  * 6); the Jabber change notice goes out from the `wallets` row trigger (`label` is a change column,
  * jabber/changePaths.ts). The same name again changes nothing and records nothing. 204.
@@ -580,7 +593,8 @@ async function renameHandler(req: FastifyRequest, reply: FastifyReply) {
   const now = deps.clock();
   await withTx(deps.db, async (client) => {
     // Takes the account row lock and re-checks that the renaming session is still live.
-    await requireLiveSessionInTx(client, req.auth, now);
+    const live = await requireLiveSessionInTx(client, req.auth, now);
+    if (weakOf(live, now)) throw weakRefusal();
     const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
       'select app, label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
       [id, req.auth.accountId],
@@ -589,6 +603,8 @@ async function renameHandler(req: FastifyRequest, reply: FastifyReply) {
     if (!w) throw new ApiError(404, 'not-found');
     if (w.label === label) return;
     await client.query('update wallets set label = $3 where id = $1 and account_id = $2 and removed_at is null', [id, req.auth.accountId, label]);
+    // Counted only for a real change, after it: a refusal rolls the count back with the rename.
+    await dailyCapInTx(client, walletRenameKey(req.auth.accountId), WALLET_RENAMES_PER_DAY, now);
     await addAlert(client, req.auth.accountId, 'wallet-renamed', { app: w.app, from: w.label, label, addressEnd: addressEnd(w.address) }, now);
   });
   return reply.code(204).send();
