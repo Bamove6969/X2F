@@ -46,9 +46,15 @@ import { SignaturePad } from './SignaturePad.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 import { TermsParagraphs } from './TermsParagraphs.js';
 
-/** Owner demo note #186 (25 Nov): the two boxes' headings (his suggested words). COPY-UNSIGNED. */
-export const GLANCE_HEADING = 'The Short Version (Key Takeaways)';
+/** Owner demo note #190 (25 Nov): the summary card's heading, his words (note #186's replaced). COPY-UNSIGNED. */
+export const GLANCE_HEADING = 'Key Highlights (TL;DR)';
+/** Owner demo note #186 (25 Nov): the full Terms card's heading; note #190 adds the version once it has loaded. COPY-UNSIGNED. */
 export const FULL_HEADING = 'Full Terms of Service';
+
+/** Owner demo note #190 (25 Nov): "Full Terms of Service (Version 2026-11-25b)", or just the heading while the version loads. */
+export function fullHeading(version: string | null): string {
+  return version === null ? FULL_HEADING : `${FULL_HEADING} (Version ${version})`;
+}
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
@@ -223,8 +229,8 @@ export function TermsScreen({
           ))}
         </ul>
       </section>
-      <h2 className="x2f-terms__boxhead" id="terms-full-heading">
-        {FULL_HEADING}
+      <h2 className="x2f-terms__boxhead" id="terms-full-heading" data-part="terms-full-heading">
+        {fullHeading(version)}
       </h2>
       {/* Owner demo note #187: in the page, no scroll box. Still a focusable region, so a keyboard
           user can land on it and page through it (the frame's middle scrolls under the keys). */}

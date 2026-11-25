@@ -301,6 +301,27 @@ describe('the Terms screen for a trader: the tick alone, no signature', () => {
   });
 });
 
+// Owner demo note #190 (25 Nov 2026): the two cards' headings.
+describe('the Terms screen: the cards\' headings', () => {
+  it('reads "Key Highlights (TL;DR)" over the six points, and "Full Terms of Service (Version …)" once the version loads', async () => {
+    let answer: (v: { version: string }) => void = () => undefined;
+    auth.getTerms.mockImplementation(() => new Promise((r) => (answer = r)));
+    const { host } = render(
+      <MemoryRouter initialEntries={['/terms?returnTo=%2Falerts']}>
+        <Terms />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(host.querySelector('#terms-glance-heading')!.textContent).toBe('Key Highlights (TL;DR)');
+    expect(host.querySelectorAll('[data-part="terms-glance"] li')).toHaveLength(KEY_POINTS.length);
+    const full = () => host.querySelector('[data-part="terms-full-heading"]')!.textContent;
+    expect(full()).toBe('Full Terms of Service');
+    await act(async () => answer({ version: TERMS_TEXT_VERSION }));
+    expect(full()).toBe(`Full Terms of Service (Version ${TERMS_TEXT_VERSION})`);
+    expect(TERMS_TEXT_VERSION).toBe('2026-11-25b');
+  });
+});
+
 // Owner demo note #189 (25 Nov 2026): "Privacy Policy" opens the privacy section in place.
 describe('the Terms screen: the Privacy Policy and Terms of Service buttons', () => {
   it('show their section in this page, focus it, never navigate and never tick the box', async () => {

@@ -835,6 +835,9 @@ for (const v of PHONES) {
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toHaveCount(0);
+    // Owner demo note #190 (25 Nov 2026): the two cards' headings.
+    await expect(page.locator('#terms-glance-heading')).toHaveText('Key Highlights (TL;DR)');
+    await expect(page.locator('[data-part="terms-full-heading"]')).toHaveText(`Full Terms of Service (Version ${TERMS_VERSION})`);
   });
 }
 
