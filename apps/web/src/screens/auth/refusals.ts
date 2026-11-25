@@ -8,7 +8,9 @@
  *   cap waits until midnight UTC, so a long wait is given as a clock time);
  * - 400 `key-expired` / `key-revoked`: the key is turned away with the reason (spec 6.2); `key-no-encryption` /
  *   `key-encryption-inactive` (owner demo note #144): the key cannot receive the login code;
- * - a `detail` sentence about the pasted key: shown as the server wrote it;
+ * - a `detail` sentence about the pasted key: shown as the server wrote it, among them a PGP login
+ *   finish's 400 `key-weak` for a refresh that adds a part X2F doesn't accept (security review of
+ *   #144 follow-up; the words are @x2f/accounts `inspectRefreshAdditions`'s, COPY-UNSIGNED);
  * - 400 `challenge-expired`: the step ran out of time and must start again;
  * - 409 `security-key-limit` / `login-name-set` (FU-A): the key cap, a login name already chosen.
  *

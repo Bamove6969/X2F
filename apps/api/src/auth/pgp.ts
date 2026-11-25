@@ -13,7 +13,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
-  PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
+  PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey, inspectRefreshAdditions,
   newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection, WEBAUTHN_ONLY_ACTIONS } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
@@ -525,7 +525,8 @@ function optStr(b: Record<string, unknown>, key: string): string | undefined {
  * 400 with the refusal and its plain-sentence `detail` (only ever about the key the person pasted).
  * `rules` (security review of #144): `'new-key'` for a key being added (sign-up, add a key, team,
  * staff and owner join), which also refuses SHA-1 self-signatures/bindings and a weak ECDH KDF;
- * `'login'` for a key already on an account, so a stored key keeps logging in.
+ * `'login'` for a key already on an account, so a stored key keeps logging in. What a login
+ * refresh adds is judged at finish (`inspectRefreshAdditions`).
  */
 async function inspectOrRefuse(armored: string, now: Date, rules: 'new-key' | 'login'): Promise<Extract<KeyInspection, { ok: true }>> {
   const r = await inspectPublicKey(armored, now, { newKey: rules === 'new-key' });
@@ -660,6 +661,25 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     if (row.payload.refreshed !== undefined) {
       const refreshed = readPendingKey(row.payload, 'refreshed');
       const refreshedArmored = openKey(deps.config, Buffer.from(refreshed.keyEnc, 'base64'), refreshed.fingerprint);
+      // Security review of #144 follow-up: the parts a refresh ADDS to the stored copy (a subkey, a
+      // binding, a self-signature) are held to the rules for a new key, the subkey the challenge went
+      // to included when it is new; parts already stored keep login's rules, so a stored key with
+      // older weak parts still logs in and can be refreshed. Nothing is stored when it fails. Checked
+      // here, after the code proved the key, never at start: start refusals depend on the pasted key
+      // alone (the stored copy would make them an account oracle).
+      const current = await deps.db.query<{ armored_enc: Buffer }>(
+        'select armored_enc from pgp_keys where account_id = $1 and fingerprint = $2',
+        [account.id, refreshed.fingerprint],
+      );
+      const storedRow = current.rows[0];
+      // The key was removed after start: the code proves a key the account no longer has.
+      if (!storedRow) throw new ApiError(401, 'code-invalid');
+      // Judged as of the challenge's start (review P7), the recipient subkey included.
+      const recipient = typeof row.payload.recipient === 'string' ? row.payload.recipient : null;
+      const additions = await inspectRefreshAdditions(
+        openKey(deps.config, storedRow.armored_enc, refreshed.fingerprint), refreshedArmored, row.created_at, recipient,
+      );
+      if (!additions.ok) throw new ApiError(400, additions.reason, { detail: additions.detail });
       // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
       // ban list is checked here, after proof, before anything is stored (409 key-unavailable).
       // Review MF2: never the account's own banned key (a site-banned person logs in to finish trades).

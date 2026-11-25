@@ -20,6 +20,26 @@
 .x2f-landing__logo {
   margin: 0;
 }
+/* Owner demo note #170: a staircase, "Welcome" on the top line at the left, "to" on the second
+   line under the end of the word, then the logo on the third. The page is lowered to make room. */
+.x2f-landing__welcome {
+  display: block;
+  align-self: flex-start;
+  width: max-content;
+  margin: 0 0 -20px;
+  font-family: var(--x2f-font-display);
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--x2f-ink);
+}
+.x2f-landing__welcome span {
+  display: block;
+}
+.x2f-landing__welcome-to {
+  padding-left: 4.2em;
+}
 .x2f-landing__logo svg {
   display: block;
   max-width: 100%;

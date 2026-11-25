@@ -1260,4 +1260,237 @@ describe('demo note #144: the encryption part of a pasted key', () => {
       expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
     }, 120_000);
   });
+
+  // Security review of #144 follow-up: the parts a login refresh ADDS to the stored copy are held to
+  // the new-key rules (judged at finish, after the code proves the key); parts already stored keep
+  // login's rules. Real keys, made here.
+  describe('a login refresh that adds parts (review of #144 follow-up)', () => {
+    const E = openpgp.enums;
+    /** Signs `sig` as `sec`'s primary key over `data` (openpgp 6's `sign` takes a config its types leave out). */
+    const signSelf = (sig: openpgp.SignaturePacket, sec: openpgp.PrivateKey, data: object, date: Date) =>
+      (sig as unknown as { sign(k: unknown, d: object, date: Date, detached: boolean, c: openpgp.Config): Promise<void> })
+        .sign(sec.keyPacket, { key: sec.keyPacket, ...data }, date, false, ANY_HASH);
+    /** Signs with any hash, SHA-1 included, as an old GnuPG would. */
+    const ANY_HASH = { ...openpgp.config, rejectHashAlgorithms: new Set<number>(), nonDeterministicSignaturesViaNotation: false } as openpgp.Config;
+    /** A GnuPG-style RSA 4096 key whose encryption subkey is bound with SHA-1 (SHA-512 self-signature). */
+    const sha1BoundRsa = async (o: { keyExpirationTime?: number } = {}): Promise<openpgp.PrivateKey> => {
+      const { privateKey: sec } = await openpgp.generateKey({
+        type: 'rsa', rsaBits: 4096, userIDs: [{ name: 'Old Key' }], date: KEY_DATE, ...o, format: 'object',
+      });
+      const sub = sec.subkeys[0]!;
+      const b = new openpgp.SignaturePacket();
+      b.signatureType = E.signature.subkeyBinding;
+      b.publicKeyAlgorithm = sec.keyPacket.algorithm;
+      b.hashAlgorithm = E.hash.sha1;
+      b.keyFlags = new Uint8Array([E.keyFlags.encryptCommunication | E.keyFlags.encryptStorage]);
+      await signSelf(b, sec, { bind: sub.keyPacket }, KEY_DATE);
+      sub.bindingSignatures = [b];
+      return sec;
+    };
+    /** A new SHA-512 self-certification of the first user ID, the primary key expiring `expSecs` after its creation (gpg --quick-set-expire FPR 2y). */
+    const newUserCert = async (sec: openpgp.PrivateKey, date: Date, expSecs: number) => {
+      const s = new openpgp.SignaturePacket();
+      s.signatureType = E.signature.certPositive;
+      s.publicKeyAlgorithm = sec.keyPacket.algorithm;
+      s.hashAlgorithm = E.hash.sha512;
+      s.keyFlags = new Uint8Array([E.keyFlags.certifyKeys | E.keyFlags.signData]);
+      s.keyExpirationTime = expSecs;
+      await signSelf(s, sec, { userID: sec.users[0]!.userID }, date);
+      return s;
+    };
+    /** `sec`'s public half with a new user ID self-certification (an expiry extension of the primary only). */
+    const extended = async (sec: openpgp.PrivateKey, date: Date, expSecs: number): Promise<Pair> => {
+      const pub = await openpgp.readKey({ armoredKey: sec.toPublic().armor() });
+      pub.users[0]!.selfCertifications.push(await newUserCert(sec, date, expSecs));
+      return { publicKey: pub.armor(), privateKey: sec.armor(), fingerprint: sec.getFingerprint() };
+    };
+    /** Sets `sub`'s KDF hash to MD5 (its fingerprint changes; a later reformatKey re-binds it). */
+    const md5Kdf = async (sub: openpgp.Subkey) => {
+      const kp = sub.keyPacket as unknown as { publicParams: { kdfParams: object }; computeFingerprintAndKeyID(): Promise<void> };
+      const KDF = kp.publicParams.kdfParams.constructor as new (o: { hash: number; cipher: number }) => object;
+      kp.publicParams.kdfParams = new KDF({ hash: E.hash.md5, cipher: E.symmetric.aes128 });
+      await kp.computeFingerprintAndKeyID();
+    };
+    /** `base` plus a newer cv25519 encryption subkey whose KDF hash is MD5, every part re-signed (SHA-256+). */
+    const withMd5KdfSubkey = async (base: Pair): Promise<Pair> => {
+      const k0 = await openpgp.readPrivateKey({ armoredKey: base.privateKey });
+      const k1 = await k0.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() + DAY) });
+      await md5Kdf(k1.subkeys[k1.subkeys.length - 1]!);
+      const { privateKey } = await openpgp.reformatKey({ privateKey: k1, userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() + 2 * DAY), format: 'object' });
+      return pairOf(privateKey);
+    };
+    /** A trader account holding `key`, stored as an older X2F would have stored it. */
+    const stored = async (key: Pair): Promise<string> => {
+      const n = uniqueName();
+      const id = await seedAccount(deps, { loginName: n });
+      LOGIN_NAMES.set(key.fingerprint.toLowerCase(), n);
+      await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+      return id;
+    };
+    const storedRow = async (id: string) =>
+      (await deps.db.query<{ armored_enc: Buffer; proved_subkeys: string[]; last_used_at: Date | null }>(
+        'select armored_enc, proved_subkeys, last_used_at from pgp_keys where account_id = $1', [id],
+      )).rows;
+    const storedKey = async (id: string, fingerprint: string) =>
+      openpgp.readKey({ armoredKey: openKey(deps.config, (await storedRow(id))[0]!.armored_enc, fingerprint) });
+    /** Starts with `key` (a real challenge) and finishes with its code: the finish response. */
+    const startAndFinish = async (key: Pair, b = new Browser()) => {
+      const s = await loginStart(b, key);
+      expect(s.statusCode).toBe(200);
+      expect(await isDecoy(s)).toBe(false);
+      return loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
+    };
+    const logsIn = async (key: Pair) => {
+      const b = new Browser();
+      expect(await approvedLogin(deps, await startAndFinish(key, b), (u) => b.post(u, {}))).toEqual({ status: 'ok' });
+    };
+    /** The finish is refused as a refresh adding a part X2F doesn't accept, with no session and the row as it was. */
+    const refusedRefresh = async (id: string, key: Pair, part: string) => {
+      const before = await storedRow(id);
+      const b = new Browser();
+      const fin = await startAndFinish(key, b);
+      expect(fin.statusCode).toBe(400);
+      expect(fin.json()).toEqual({ error: 'key-weak', detail: expect.stringMatching(/^Your updated key adds a part X2F doesn't accept \(.+\)\. Paste the copy you used before/) });
+      expect(fin.json().detail).toContain(part);
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+      expect(await storedRow(id)).toEqual(before);
+    };
+
+    it('a strong stored key, pasted with an added MD5-KDF subkey: refused at finish, nothing stored; the original still logs in', async () => {
+      const key = await genKey();
+      const n = uniqueName();
+      await registerPgp(n, key);
+      const id = await accountId(n);
+      const refreshed = await withMd5KdfSubkey(key);
+      // Adding this key is refused too.
+      expect(await refusedAtRegister(refreshed)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('key derivation') });
+      // Start answers on the pasted key alone (login's rules): a real challenge, to the new subkey.
+      await refusedRefresh(id, refreshed, 'key derivation');
+      // A later login with the original key works, and the stored copy still has no MD5 subkey.
+      await logsIn(key);
+      const original = (await openpgp.readKey({ armoredKey: key.publicKey })).subkeys.map((x) => x.getFingerprint());
+      expect((await storedKey(id, key.fingerprint)).subkeys.map((x) => x.getFingerprint())).toEqual(original);
+    }, 120_000);
+
+    it('a strong stored key; a pasted copy holding only an OLDER-dated MD5-KDF subkey (the challenge goes to it): refused', async () => {
+      const g = await openpgp.generateKey({
+        type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() - 2 * DAY),
+        subkeys: [{ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() - DAY) } as openpgp.SubkeyOptions], format: 'object',
+      });
+      await md5Kdf(g.privateKey.subkeys[0]!);
+      const k = await g.privateKey.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: KEY_DATE });
+      const { privateKey: full } = await openpgp.reformatKey({ privateKey: k, userIDs: [{ name: 'Test User' }], date: KEY_DATE, format: 'object' });
+      // The whole key passes as new (its newest encryption subkey is the strong one); stored: primary + strong subkey.
+      expect((await inspectPublicKey(full.toPublic().armor(), now, { newKey: true })).ok).toBe(true);
+      const only = (i: number): Pair => {
+        const p = full.toPublic();
+        p.subkeys = [p.subkeys[i]!];
+        return { publicKey: p.armor(), privateKey: full.armor(), fingerprint: full.getFingerprint() };
+      };
+      const n = uniqueName();
+      await registerPgp(n, only(1));
+      const id = await accountId(n);
+      await refusedRefresh(id, only(0), 'key derivation');
+      await logsIn(only(1));
+    }, 120_000);
+
+    it('review P7: a new binding of a stored weak subkey that expires between start and finish is still judged: refused', async () => {
+      // Ed25519 + an older cv25519 subkey with an MD5 KDF (its stored binding long expired) + a strong one.
+      const g = await openpgp.generateKey({
+        type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'Test User' }], date: new Date(KEY_DATE.getTime() - 2 * DAY),
+        subkeys: [{ type: 'ecc', curve: 'curve25519Legacy', date: new Date(KEY_DATE.getTime() - DAY) } as openpgp.SubkeyOptions], format: 'object',
+      });
+      await md5Kdf(g.privateKey.subkeys[0]!);
+      const k = await g.privateKey.addSubkey({ type: 'ecc', curve: 'curve25519Legacy', date: KEY_DATE });
+      const { privateKey: full } = await openpgp.reformatKey({ privateKey: k, userIDs: [{ name: 'Test User' }], date: KEY_DATE, format: 'object' });
+      const weak = full.subkeys[0]!;
+      /** A SHA-512 encryption binding of the weak subkey made at `created`, with a key expiry or a signature expiry. */
+      const binding = async (created: Date, o: { keyExp?: number; sigExp?: number }) => {
+        const sig = new openpgp.SignaturePacket();
+        sig.signatureType = E.signature.subkeyBinding;
+        sig.publicKeyAlgorithm = full.keyPacket.algorithm;
+        sig.hashAlgorithm = E.hash.sha512;
+        sig.keyFlags = new Uint8Array([E.keyFlags.encryptCommunication | E.keyFlags.encryptStorage]);
+        if (o.keyExp !== undefined) sig.keyExpirationTime = o.keyExp;
+        if (o.sigExp !== undefined) {
+          sig.signatureExpirationTime = o.sigExp;
+          sig.signatureNeverExpires = false;
+        }
+        await signSelf(sig, full, { bind: weak.keyPacket }, created);
+        return sig;
+      };
+      const fingerprint = full.getFingerprint();
+      // Stored: the weak subkey's only binding gave it one day (long expired), so the strong one is used.
+      const storedPub = await openpgp.readKey({ armoredKey: full.toPublic().armor() });
+      storedPub.subkeys[0]!.bindingSignatures = [await binding(KEY_DATE, { keyExp: 86_400 })];
+      const id = await stored({ publicKey: storedPub.armor(), privateKey: full.armor(), fingerprint });
+      // Pasted: the weak subkey alone, re-bound a minute ago by a binding that expires 3 minutes after it.
+      const pasted = await openpgp.readKey({ armoredKey: storedPub.armor() });
+      pasted.subkeys = [pasted.subkeys[0]!];
+      pasted.subkeys[0]!.bindingSignatures.push(await binding(new Date(now.getTime() - MIN), { sigExp: 3 * 60 }));
+      const before = await storedRow(id);
+      const b = new Browser();
+      const s = await loginStart(b, { publicKey: pasted.armor(), privateKey: full.armor(), fingerprint });
+      expect(s.statusCode).toBe(200);
+      expect(await isDecoy(s)).toBe(false);
+      // The pasted copy has only the weak subkey, so the challenge went to it.
+      const { rows: ch } = await deps.db.query<{ payload: { recipient?: string } }>('select payload from challenges where id = $1', [s.json().challengeId]);
+      expect(ch[0]!.payload.recipient).toBe(weak.getFingerprint());
+      const code = codeOf(await dec(s.json().encryptedMessage, full.armor()));
+      // The code comes back after the new binding has expired.
+      setNow(new Date(now.getTime() + 3 * MIN));
+      const fin = await loginFinish(b, s.json().challengeId, code);
+      expect(fin.statusCode).toBe(400);
+      expect(fin.json()).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('key derivation') });
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+      expect(await storedRow(id)).toEqual(before);
+    }, 120_000);
+
+    it('a pasted key identical to the stored one logs in as before, twice', async () => {
+      const key = await genKey();
+      await registerPgp(uniqueName(), key);
+      await logsIn(key);
+      await logsIn(key);
+    }, 120_000);
+
+    it('a stored RSA 4096 key whose encryption subkey is bound with SHA-1 still logs in (it adds nothing)', async () => {
+      const sec = await sha1BoundRsa();
+      const key: Pair = { publicKey: sec.toPublic().armor(), privateKey: sec.armor(), fingerprint: sec.getFingerprint() };
+      // New, it is refused (the binding is SHA-1); stored, it logs in.
+      expect(await refusedAtRegister(key)).toMatchObject({ error: 'key-weak', detail: expect.stringContaining('SHA-1') });
+      await stored(key);
+      await logsIn(key);
+      await logsIn(key);
+    }, 120_000);
+
+    it('that SHA-1-bound key, refreshed with a primary expiry extension only (a SHA-512 self-signature): logs in and is stored', async () => {
+      const sec = await sha1BoundRsa();
+      const id = await stored({ publicKey: sec.toPublic().armor(), privateKey: sec.armor(), fingerprint: sec.getFingerprint() });
+      const refreshed = await extended(sec, new Date(KEY_DATE.getTime() + 10 * DAY), 2 * 365 * 86_400);
+      await logsIn(refreshed);
+      expect((await storedKey(id, sec.getFingerprint())).users[0]!.selfCertifications).toHaveLength(2);
+      await logsIn(refreshed);
+    }, 120_000);
+
+    it('a stored SHA-1-bound key whose primary EXPIRED, extended (primary only): logs in', async () => {
+      const sec = await sha1BoundRsa({ keyExpirationTime: 30 * 86_400 });
+      const old: Pair = { publicKey: sec.toPublic().armor(), privateKey: sec.armor(), fingerprint: sec.getFingerprint() };
+      await stored(old);
+      expect((await loginStart(new Browser(), old)).json()).toMatchObject({ error: 'key-expired' });
+      await logsIn(await extended(sec, new Date(now.getTime() - DAY), 2 * 365 * 86_400));
+    }, 120_000);
+
+    it('the key removed between start and finish: 401 code-invalid, no session', async () => {
+      const key = await genKey();
+      const n = uniqueName();
+      await registerPgp(n, key);
+      const b = new Browser();
+      const s = await loginStart(b, key);
+      await deps.db.query('delete from pgp_keys where account_id = $1', [await accountId(n)]);
+      const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
+      expect(fin.statusCode).toBe(401);
+      expect(fin.json()).toEqual({ error: 'code-invalid' });
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+    }, 120_000);
+  });
 });

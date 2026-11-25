@@ -113,7 +113,7 @@ export async function hire(role: 'mod' | 'senior', o: { hours?: LoginHours } = {
   await own.client.ok('POST', '/staff/v1/invites', { role, hours: o.hours ?? 'any', inviteId, token, expiresAt, tapId });
 
   const tag = randomBytes(3).toString('hex');
-  const displayName = `${role === 'mod' ? 'Mod' : 'Senior'}${tag}`;
+  const displayName = `${role === 'mod' ? 'Kestrel' : 'Senior'}${tag}`;
   const loginName = `${role}-login-${tag}`;
   const c = new StaffClient(s.api, s.origin);
   const url = (step = '') => `/staff/v1/invites/accept/${token}${step}`;
