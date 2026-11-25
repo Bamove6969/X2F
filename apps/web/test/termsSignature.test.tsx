@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TermsSignature } from '@x2f/auth-client';
+import { AuthApiError, type TermsSignature } from '@x2f/auth-client';
 import {
   MAX_POINTS, MAX_TYPED_NAME, SIGNATURE_MAX_BYTES, drawnSignature, keepPoint, scaleStrokes, signatureBytes, strokesToPath, typedSignature,
 } from '../src/screens/setup/signature.js';
@@ -376,6 +376,30 @@ describe('the Terms screen: review fixes', () => {
     click(accept());
     await flush();
     expect(auth.acceptTerms).toHaveBeenCalledWith({ version: TERMS_TEXT_VERSION });
+  });
+
+  it('a member the page could not tell apart: signature-required from the API brings up the pad, and the signed retry posts', async () => {
+    who.status = 'error';
+    who.code = 'terms-required';
+    auth.acceptTerms.mockImplementationOnce(async () => {
+      throw new AuthApiError(400, 'signature-required');
+    });
+    const { host, tick, accept } = await mount();
+    expect(host.querySelector('[data-part="signature-pad"]')).toBeNull();
+    click(tick);
+    click(accept());
+    await flush();
+    await flush();
+    expect(host.querySelector('[data-part="signature-pad"]')).not.toBeNull();
+    expect(host.querySelector('.x2f-start__foot [role="alert"]')!.textContent).toBe('Your login signs the Terms too. Sign in the white box, then accept.');
+    expect(accept().disabled).toBe(true);
+    draw(host.querySelector('[data-part="signature-pad"]')!, [[10, 10], [60, 60]]);
+    expect(accept().disabled).toBe(false);
+    click(accept());
+    await flush();
+    expect(auth.acceptTerms).toHaveBeenLastCalledWith({
+      version: TERMS_TEXT_VERSION, signature: { kind: 'drawn', width: PAD_W, height: PAD_H, path: 'M10 10L60 60' },
+    });
   });
 
   it('the notices sit in the bottom bar, over the button, not below the in-page Terms', async () => {

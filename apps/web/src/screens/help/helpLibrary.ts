@@ -107,7 +107,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'How do I create an account?',
     // Owner demo note #187 (25 Nov 2026): agreeing is a tick, no signature.
     a: 'Tick the box to agree to the Terms, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
-    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:271 I have read and agree to the`],
+    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:276 I have read and agree to the`],
   },
   {
     id: 'personal-details',
@@ -116,7 +116,7 @@ const ENTRIES: readonly Entry[] = [
     // Owner demo note #187 (25 Nov 2026): no signature or name to agree to the Terms, just a tick.
     a: 'X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your display name is shown to other traders, so pick one that does not identify you.',
     sources: [
-      `${WEB}/setup/Terms.tsx:271 I have read and agree to the`,
+      `${WEB}/setup/Terms.tsx:276 I have read and agree to the`,
       'apps/api/src/accounts.ts:342 absent → `null`',
       `${SPEC}:215 The display name is separate and public`,
     ],
@@ -869,7 +869,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'Do I sign anything to agree to the Terms?',
     a: 'No. You agree with a single tick box, and nothing is drawn or typed. A team member signs once when joining a team; that signature is stored sealed with their own login and never shown to anyone.',
     sources: [
-      `${WEB}/setup/Terms.tsx:271 I have read and agree to the`,
+      `${WEB}/setup/Terms.tsx:276 I have read and agree to the`,
       'apps/api/src/termsSignature.ts:5 A team member at join',
       'apps/api/src/termsSignature.ts:20 It is never shown to other users',
       'apps/api/src/termsSignature.ts:37 At rest it is sealed',

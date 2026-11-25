@@ -219,8 +219,14 @@ describe('a team member signs the Terms themselves', () => {
         expect(res.statusCode, url).toBe(403);
         expect(res.json(), url).toEqual({ error: 'terms-required', version: deps.config.termsVersion });
       }
-      const me = (await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean };
+      const meRes = await m.browser.get('/v1/account/me');
+      // Review of owner demo note #187: `me` still answers on old Terms and names the member
+      // session, which is how the web's /terms page knows a member must sign (and a trader not).
+      expect(meRes.statusCode).toBe(200);
+      const me = meRes.json() as { termsCurrent: boolean; member: { name: string } | null };
       expect(me.termsCurrent).toBe(false);
+      expect(me.member).not.toBeNull();
+      expect(me.member!.name).toEqual(expect.any(String));
       // The site view is the outside one.
       expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
     }

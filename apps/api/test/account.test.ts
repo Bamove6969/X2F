@@ -501,6 +501,9 @@ describe('Terms of Service (R10)', () => {
       expect(blocked.statusCode).toBe(403);
       expect(blocked.json()).toEqual({ error: 'terms-required', version: newVersion });
       expect((await me(b)).termsCurrent).toBe(false);
+      // Review of owner demo note #187: on old Terms `me` still answers, with no member, so the
+      // web's /terms page shows a trader no signature pad.
+      expect(((await me(b)) as { member?: unknown }).member ?? null).toBeNull();
       expect((await b.get('/v1/account/sessions')).statusCode).toBe(200);
 
       const wrong = await b.post('/v1/account/terms', { version: oldVersion, signature: SIG });
