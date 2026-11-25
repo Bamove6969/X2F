@@ -927,7 +927,8 @@ describe('confirm and adding a credential', () => {
     const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: second.register(options, ORIGIN), label: 'Spare' });
     expect(fin.statusCode).toBe(201);
     const { rows } = await deps.db.query('select label from webauthn_credentials where account_id = $1 order by created_at', [t.accountId]);
-    expect(rows.map((r) => r.label)).toEqual(['Security key', 'Spare']);
+    // Security review of wip/lead-seckey-fix: a key sent with no name gets "Security key N".
+    expect(rows.map((r) => r.label)).toEqual(['Security key 1', 'Spare']);
     const alerts = await deps.db.query("select detail from alerts where account_id = $1 and kind = 'login-method-added'", [t.accountId]);
     expect(alerts.rows).toEqual([{ detail: { method: 'security-key' } }]);
 
@@ -1252,7 +1253,7 @@ describe('owner 25 Nov security-key report', () => {
       expect((await put(t.b, bad)).statusCode, JSON.stringify(bad)).toBe(400);
     }
     const { rows } = await deps.db.query('select label from webauthn_credentials where account_id = $1', [t.accountId]);
-    expect(rows).toEqual([{ label: 'Passkey' }]);
+    expect(rows).toEqual([{ label: 'Passkey 1' }]);
   });
 
   it("another account's key is not found, and no session is not authenticated", async () => {
@@ -1263,6 +1264,57 @@ describe('owner 25 Nov security-key report', () => {
     expect(errorOf(res)).toBe('not-found');
     expect((await put(new Browser(), { credentialId: mine.auth.credentialId, label: 'X' })).statusCode).toBe(401);
     const { rows } = await deps.db.query('select label from webauthn_credentials where account_id = $1', [theirs.accountId]);
-    expect(rows).toEqual([{ label: 'Security key' }]);
+    expect(rows).toEqual([{ label: 'Security key 1' }]);
+  });
+});
+
+// Security review of wip/lead-seckey-fix.
+describe('security review of wip/lead-seckey-fix', () => {
+  it('needs-pin also on add-key (a signed-in trader) and on the staff and owner path', async () => {
+    const t = await signUp('passkey');
+    const start = (await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' })).json();
+    const noPin = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId: start.challengeId, response: noPin.register(start.options, ORIGIN) });
+    expect(fin.statusCode).toBe(401);
+    expect(fin.json()).toMatchObject({ error: 'webauthn-failed', reason: 'needs-pin' });
+
+    // Staff and owner: an attested key from the allowlist, without its PIN.
+    for (const id of [await seedAccount(deps, { loginName: uniqueName('pinstaff'), kind: 'staff' }), await seedOwner()]) {
+      const challenge = randomBytes(32);
+      const options = await webauthnRegistrationOptions(deps, id, { challenge });
+      const key = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: ALLOWED, ca } });
+      await expect(verifyWebAuthnRegistration(deps, id, key.register(options, ORIGIN), challenge, { kind: 'security-key' })).rejects.toMatchObject({
+        status: 401, code: 'webauthn-failed', extra: { reason: 'needs-pin' },
+      });
+      // A key outside the snapshot without its PIN is refused, never with the PIN hint (it would not be taken with one either).
+      const unknown = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: NO_STATEMENT, ca } });
+      const e = await verifyWebAuthnRegistration(deps, id, unknown.register(options, ORIGIN), challenge, { kind: 'security-key' }).catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(ApiError);
+      expect((e as ApiError).extra?.reason).toBeUndefined();
+      expect((await deps.db.query('select 1 from webauthn_credentials where account_id = $1', [id])).rows).toEqual([]);
+    }
+  });
+
+  it('one name rule at creation: an invalid or taken name falls back to the first free "Security key N"; the registration still succeeds', async () => {
+    const b = new Browser();
+    const start = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('lbl')), kind: 'security-key' })).json();
+    const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const reg = await b.post('/v1/register/webauthn/finish', {
+      challengeId: start.challengeId, response: key.register(start.options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS, label: 'YоbiKey‮',
+    });
+    expect(reg.statusCode).toBe(201);
+    const accountId = (await deps.db.query('select account_id from webauthn_credentials where credential_id = $1', [Buffer.from(key.credentialId, 'base64url')])).rows[0]!.account_id as string;
+    const labels = async () => (await deps.db.query('select label from webauthn_credentials where account_id = $1 order by label', [accountId])).rows.map((r) => r.label);
+    expect(await labels()).toEqual(['Security key 1']);
+    const add = async (label: string) => {
+      const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'security-key' });
+      const s = (await b.post('/v1/account/webauthn/start', { kind: 'security-key', confirmToken })).json();
+      const k = createSoftAuthenticator({ backedUp: false, userVerified: true });
+      expect((await b.post('/v1/account/webauthn/finish', { challengeId: s.challengeId, response: k.register(s.options, ORIGIN), label })).statusCode).toBe(201);
+    };
+    await add('  SECURITY key 1 ');
+    await add('x'.repeat(40));
+    await add(' Spare  ');
+    expect(await labels()).toEqual(['Security key 1', 'Security key 2', 'Security key 3', 'Spare']);
   });
 });

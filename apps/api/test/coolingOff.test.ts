@@ -1646,6 +1646,11 @@ describe('review round 2', () => {
           const o = await jabberOn();
           return { b: o.b, accountId: o.id, fire: () => o.b.delete('/v1/account/jabber') };
         },
+        // Security review of wip/lead-seckey-fix: naming a key re-checks the session under the account lock.
+        'PUT /v1/account/webauthn/label': async () => {
+          const o = await passkeyTrader();
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/webauthn/label', { credentialId: o.auth.credentialId, label: 'Renamed' }) };
+        },
         // J-23 groundwork: the chat-key courier (auth/chatKeys.ts), strong sessions only (a passkey session is).
         'POST /v1/account/chat-keys': async () => {
           const o = await passkeyWithPassword();

@@ -60,6 +60,7 @@ beforeEach(() => {
     if (url === '/v1/account/webauthn/label' && init?.method === 'PUT') {
       const b = JSON.parse(String(init.body)) as { credentialId: string; label: string };
       renames.push(b);
+      if (renameStatus === 409) return json(400, { error: 'key-name-invalid', reason: 'taken' });
       return renameStatus === 200 ? json(200, { label: b.label }) : json(renameStatus, { error: 'internal' });
     }
     return json(500, { error: 'internal' });
@@ -175,6 +176,18 @@ describe('owner 25 Nov: a security key that was saved says so, is named, and wai
     }
     expect(renames).toEqual([]);
     expect(byPart(host, 'key-continue')).toBeNull();
+  });
+
+  it("a name another of the account's keys has says so (the API's 'taken'), and can be changed", async () => {
+    renameStatus = 409;
+    const host = show(setup());
+    await addKey(host);
+    await saveName(host, 'Security key');
+    expect(byPart(host, 'key-name-problem')!.textContent).toBe('Another of your keys has that name. Pick a different one.');
+    expect(byPart(host, 'key-continue')).toBeNull();
+    renameStatus = 200;
+    await saveName(host, 'Blue');
+    expect(byPart(host, 'key-name')!.textContent).toContain('Blue');
   });
 
   it('a name that could not be saved says so and still lets the person continue', async () => {
