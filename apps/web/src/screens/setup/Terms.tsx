@@ -244,10 +244,9 @@ export function SetupTerms() {
       // Design 9 Nov (p11-15, canvas ea2a9ca8; owner p11-15 "please check the box if you agree to the
       // rules and terms of X2F and then please sign your name and hit begin account creation").
       // "Terms" capitalised as this document's name (owner demo notes 13 Nov, setup-terms). COPY-UNSIGNED.
-      // First sentence: owner demo note #174 (25 Nov), his words; "we all that" read as "we ask that",
-      // "access and use of" tidied to "access to and use of". Last two sentences: owner demo note #175
-      // (25 Nov), his words, "terms" capitalised as this document's name.
-      intro="Please take the time to read through our Terms of Service because we ask that you agree to them to maintain access to and use of X2F.com. If you agree to X2F's rules and Terms, tick the box, sign your name and start creating your account. You only need to accept these Terms once. If we make occasional updates in the future, we'll prompt you to review and agree to the changes before you continue."
+      // Owner demo note #176 (25 Nov), his words, replacing the whole intro (notes #174/#175 superseded);
+      // a full stop added at the end.
+      intro="Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll highlight what changed to make it easy to spot, and prompt you to review and agree before continuing."
       acceptLabel="Start creating my account"
       back={returnTo}
       after={
