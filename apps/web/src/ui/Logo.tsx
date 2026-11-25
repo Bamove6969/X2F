@@ -24,8 +24,13 @@ const MARKS = {
  * inner rim. The letters take the text colour (`currentColor`) and the coin the theme's Monero
  * orange, so one drawing serves night and day.
  */
-const LARGE_LETTERS =
-  'M0 120L0 119.1L35.4 56.3L5.1 0.9L5.1 0L32.6 0L54.3 40.2L58 40.2L79.1 0L105.5 0L105.5 0.9L75.4 56.3L110.5 119.1L110.5 120L81.8 120L56.6 72.5L52.9 72.5L27.4 120ZM115.1 120L115.1 99.7Q127.8 90 137.4 82.2Q146.9 74.5 153.7 68Q163.8 58.5 169 50.8Q174.2 43.1 174.2 34.6Q174.2 26.9 169.8 22.1Q165.4 17.2 157.1 17.2Q147.7 17.2 142.9 23.3Q138.2 29.4 138.2 39.4L115.1 39.4Q115.1 26.9 119.8 17.5Q124.6 8.2 134.1 3Q143.5 -2.2 157.5 -2.2Q177.4 -2.2 188.2 7.9Q199.1 18 199.1 34.5Q199.1 46.3 192.9 56.2Q186.8 66.2 174.6 77.1Q169.4 81.8 163 86.8Q156.6 91.8 150.3 96L150.3 99.7L203.1 99.7L203.1 120ZM212.9 0H292V20.3H238.5V47.5H255.4V66.3H238.5V120H212.9Z';
+/** The large mark's three letters, drawn separately so the Landing can spin each (owner demo note #202). */
+const LARGE_X =
+  'M0 120L0 119.1L35.4 56.3L5.1 0.9L5.1 0L32.6 0L54.3 40.2L58 40.2L79.1 0L105.5 0L105.5 0.9L75.4 56.3L110.5 119.1L110.5 120L81.8 120L56.6 72.5L52.9 72.5L27.4 120Z';
+const LARGE_2 =
+  'M115.1 120L115.1 99.7Q127.8 90 137.4 82.2Q146.9 74.5 153.7 68Q163.8 58.5 169 50.8Q174.2 43.1 174.2 34.6Q174.2 26.9 169.8 22.1Q165.4 17.2 157.1 17.2Q147.7 17.2 142.9 23.3Q138.2 29.4 138.2 39.4L115.1 39.4Q115.1 26.9 119.8 17.5Q124.6 8.2 134.1 3Q143.5 -2.2 157.5 -2.2Q177.4 -2.2 188.2 7.9Q199.1 18 199.1 34.5Q199.1 46.3 192.9 56.2Q186.8 66.2 174.6 77.1Q169.4 81.8 163 86.8Q156.6 91.8 150.3 96L150.3 99.7L203.1 99.7L203.1 120Z';
+const LARGE_F =
+  'M212.9 0H292V20.3H238.5V47.5H255.4V66.3H238.5V120H212.9Z';
 export const LARGE_RIM =
   'M264.2 56.9a10.9 10.9 0 1 1 21.7 0a10.9 10.9 0 1 1 -21.7 0ZM265.4 56.9a9.7 9.7 0 1 1 19.4 0a9.7 9.7 0 1 1 -19.4 0Z';
 
@@ -61,9 +66,13 @@ function LargeLogo({ height, className }: { height: number; className?: string |
       aria-label="X2F"
       data-part="logo"
     >
-      <path fill="currentColor" d={LARGE_LETTERS} />
-      <circle fill="var(--x2f-monero)" cx="275.1" cy="56.9" r="15.1" />
-      <path fill="color-mix(in srgb, var(--x2f-monero) 74%, var(--x2f-on-monero))" fillRule="evenodd" d={LARGE_RIM} />
+      <path className="x2f-logo__letter x2f-logo__letter--x" fill="currentColor" d={LARGE_X} />
+      <path className="x2f-logo__letter x2f-logo__letter--2" fill="currentColor" d={LARGE_2} />
+      <path className="x2f-logo__letter x2f-logo__letter--f" fill="currentColor" d={LARGE_F} />
+      <g className="x2f-logo__coin">
+        <circle fill="var(--x2f-monero)" cx="275.1" cy="56.9" r="15.1" />
+        <path fill="color-mix(in srgb, var(--x2f-monero) 74%, var(--x2f-on-monero))" fillRule="evenodd" d={LARGE_RIM} />
+      </g>
     </svg>
   );
 }

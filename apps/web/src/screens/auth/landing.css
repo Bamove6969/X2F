@@ -22,14 +22,19 @@
 }
 /* Owner demo note #170: a staircase, "Welcome" on the top line at the left, "to" on the second
    line under the end of the word, then the logo on the third. The page is lowered to make room. */
+/* Owner demo note #201 (25 Nov): "Welcome to" bigger, and the same space between Welcome, to and
+   the logo. --x2f-welcome-gap is that one space; the margin takes back the main column's gap. */
 .x2f-landing__welcome {
-  display: block;
+  --x2f-welcome-gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-welcome-gap);
   align-self: flex-start;
   width: max-content;
-  margin: 0 0 -20px;
+  margin: 0 0 calc(var(--x2f-welcome-gap) + 2px - 36px);
   font-family: var(--x2f-font-display);
-  font-size: 32px;
-  line-height: 36px;
+  font-size: 48px;
+  line-height: 48px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--x2f-ink);
@@ -39,6 +44,8 @@
 }
 .x2f-landing__welcome-to {
   padding-left: 4.2em;
+  /* The line box leaves room under "Welcome" and above the short "to": pull "to" up so the ink gaps match (#201). */
+  margin-top: -15px;
 }
 .x2f-landing__logo svg {
   display: block;
@@ -129,6 +136,9 @@
   gap: 44px;
   padding-top: 0;
 }
+.x2f-landing[data-wide='true'] .x2f-landing__welcome {
+  margin-bottom: calc(var(--x2f-welcome-gap) + 2px - 44px);
+}
 .x2f-landing[data-wide='true'] .x2f-landing__slogan {
   font-size: 40px;
   line-height: 44px;
@@ -159,4 +169,74 @@
 }
 .x2f-landing[data-wide='true'] .x2f-landing__way {
   width: 280px;
+}
+
+/*
+ * Owner demo note #202 (25 Nov): the intro. "Welcome" slams in from off the left edge, then "to",
+ * then the three letters appear spinning fast and stop one at a time, X, then 2, then F, and the
+ * coin lands last. Plays once per load; nothing moves for people who ask for reduced motion.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .x2f-landing__welcome > span:first-child {
+    animation: x2f-slam-in 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  .x2f-landing__welcome > .x2f-landing__welcome-to {
+    animation: x2f-slam-in 0.38s cubic-bezier(0.2, 1.4, 0.4, 1) 0.42s both;
+  }
+  .x2f-landing__mark .x2f-logo__letter {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation-name: x2f-letter-spin;
+    animation-timing-function: cubic-bezier(0.15, 0.6, 0.3, 1);
+    animation-fill-mode: both;
+    animation-delay: 0.85s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--x {
+    --x2f-turns: 1800deg;
+    animation-duration: 0.9s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--2 {
+    --x2f-turns: 2520deg;
+    animation-duration: 1.3s;
+  }
+  .x2f-landing__mark .x2f-logo__letter--f {
+    --x2f-turns: 3240deg;
+    animation-duration: 1.7s;
+  }
+  .x2f-landing__mark .x2f-logo__coin {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: x2f-coin-drop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) 2.55s both;
+  }
+}
+@keyframes x2f-slam-in {
+  from {
+    transform: translateX(-110vw);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes x2f-letter-spin {
+  0% {
+    opacity: 0;
+    transform: rotateY(0deg);
+  }
+  4% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: rotateY(var(--x2f-turns));
+  }
+}
+@keyframes x2f-coin-drop {
+  from {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
