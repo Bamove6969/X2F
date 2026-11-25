@@ -20,7 +20,9 @@
 // 2026-11-23: the owner's demo notes of 16-17 Nov (#93, #102-#107, screen setup-terms) applied in his
 // words, tidied for grammar only. The #92 legal pass applied nothing: every suggestion beyond his
 // words is a proposal in docs/terms-legal-review-2026-11-23.md, waiting on him. COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-23';
+// 2026-11-25: the owner's demo notes of 23 Nov (#114-#123) and 25 Nov (#177-#185, screen setup-terms)
+// applied in his words, tidied for grammar only. COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-25';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
