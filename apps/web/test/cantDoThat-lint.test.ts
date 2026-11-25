@@ -180,7 +180,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // Level: Medium. We strongly recommend ..."), advice on choosing login methods, not a refusal.
     // Owner demo note #139 (23 Nov): the password option's "Security Level: Low…" paragraph explains
     // the risk of a password-only account; nothing was tried and refused. 76 -> 77
-    expect(notARefusal).toBeLessThanOrEqual(77);
+    // 77 -> 78 (wip/lead-note-196, owner demo notes #195 and #196, 25 Nov): setup/Username.tsx's lead
+    // in the owner's words ("Your display name cannot be traced back to your login username"), a
+    // privacy reassurance, not a refusal.
+    expect(notARefusal).toBeLessThanOrEqual(78);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

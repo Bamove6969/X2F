@@ -1,5 +1,5 @@
 /**
- * Setup step 2 (board SetupLogin; spec 6.2; owner demo notes, 12 Nov 2026): how to log in. Every
+ * Setup step 3 (owner demo note #199; was step 2 on board SetupLogin; spec 6.2; owner demo notes, 12 Nov 2026): how to log in. Every
  * method is a checkbox, so several can be ticked (owner: "checking all the security options they
  * want to setup"); PGP is first and ticked by default. Continue sets up the first ticked one in
  * SIGNUP_ORDER, which makes the account; each step after that goes on to the next ticked one
@@ -178,7 +178,9 @@ export function Login() {
   return (
     <SetupFrame
       screen="setup-login"
-      step={2}
+      // Owner demo note #199: the display name is step 2 now, so choosing and setting up the login
+      // methods is step 3 together (the method screens were already 3), and "of 5" stays true.
+      step={3}
       // Review F8: the screen before this one is the display name.
       back={path('display-name')}
       footer={

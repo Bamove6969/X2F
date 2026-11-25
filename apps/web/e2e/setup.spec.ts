@@ -498,23 +498,28 @@ test('the username and display name are checked before going on (8-20, owner not
 
   // Step 1 is one private field: no second name on this screen.
   await expect(page.locator('[data-screen="setup-name"] input')).toHaveCount(1);
+  // Owner demo note #196: Continue is disabled until the name passes the rules, which tick live
+  // (too short is "not yet", never red; a wrong character or a space is red).
+  const rule = (id: string) => page.locator(`#uname-rules [data-rule="${id}"]`);
+  await expect(go).toBeDisabled();
   await page.fill('#uname', 'abcdefg');
-  await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username needs 8 to 20 characters.');
+  await expect(go).toBeDisabled();
+  await expect(rule('length')).toHaveAttribute('data-met', 'unknown');
   // Owner demo note #108: a space has its own message.
-  await page.fill('#uname', 'Mira K');
-  await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('Remove the spaces. A username has no spaces.');
-  // Any other character outside the set gets the allowed-characters message.
+  await page.fill('#uname', 'Mira K12');
+  await expect(go).toBeDisabled();
+  await expect(rule('no-spaces')).toHaveAttribute('data-met', 'false');
+  await expect(page.locator('[data-part="name-space"]')).toHaveText('Remove the spaces. A username has no spaces.');
+  // Any other character outside the set turns the characters row red.
   await page.fill('#uname', 'Mira#Kai');
-  await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username can use only letters, numbers, dots, dashes and underscores.');
+  await expect(go).toBeDisabled();
+  await expect(rule('characters')).toHaveAttribute('data-met', 'false');
   // Wrong shapes are never sent to the live check.
   expect(s.bodies['name-check'] ?? []).toEqual([]);
   await page.fill('#uname', 'taken.name');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('taken.name is taken. Try another.');
-  await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('That username is taken. Pick another.');
+  await expect(go).toBeDisabled();
+  await expect(page.locator('[data-part="names-error"]')).toHaveCount(0);
   await expect(page).toHaveURL(/\/setup\/name/);
 
   await page.fill('#uname', 'login-name-1');
@@ -523,7 +528,7 @@ test('the username and display name are checked before going on (8-20, owner not
   await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
   await page.fill('#display-name', 'login-NAME-1');
   await page.click('[data-part="display-continue"]');
-  await expect(page.locator('[data-part="display-error"]')).toHaveText('Your display name must be different from your username.');
+  await expect(page.locator('[data-part="display-error"]')).toHaveText('Your display name must be different from your Login ID.');
   await expect(page).toHaveURL(/\/setup\/display-name/);
 });
 

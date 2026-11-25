@@ -129,6 +129,8 @@ export function stepPath(step: Step, returnTo: string): string {
  * The frame every setup board shares: the back arrow, "Set up your account", "Step N of 5", the
  * five-part progress bar and "Takes about 2 minutes.", then the screen, then its buttons at the
  * bottom. `fit` keeps the whole frame in the viewport (the middle scrolls; the Terms have no box of their own since owner demo note #187).
+ * `footerInline` (owner demo note #199, the display-name step only for now) puts the buttons in the
+ * flow, right under the screen's last part, instead of in the bar pinned to the bottom.
  */
 export function SetupFrame({
   screen,
@@ -136,6 +138,7 @@ export function SetupFrame({
   back,
   title = 'Set up your account',
   fit = false,
+  footerInline = false,
   footer,
   children,
 }: {
@@ -144,6 +147,7 @@ export function SetupFrame({
   back?: string;
   title?: string;
   fit?: boolean;
+  footerInline?: boolean;
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -172,8 +176,11 @@ export function SetupFrame({
           </>
         ) : null}
       </header>
-      <main className="x2f-start__main">{children}</main>
-      <footer className="x2f-start__foot">{footer}</footer>
+      <main className="x2f-start__main">
+        {children}
+        {footerInline ? <footer className="x2f-start__foot x2f-start__foot--inline">{footer}</footer> : null}
+      </main>
+      {footerInline ? null : <footer className="x2f-start__foot">{footer}</footer>}
     </div>
   );
 }

@@ -21,6 +21,29 @@ export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, chec
 /** Whether a typed value holds a space or other white space (note #108). */
 export const hasSpace = (s: string): boolean => /\s/u.test(s);
 
+/** A rule row's state: met, broken by what was typed, or not met yet (muted, nothing wrong typed). */
+export type UsernameRuleState = 'true' | 'false' | 'unknown';
+
+export interface UsernameRules {
+  length: UsernameRuleState;
+  characters: UsernameRuleState;
+  noSpaces: UsernameRuleState;
+}
+
+/**
+ * The live checklist for what has been typed (note #196). Too short is "not yet", never red (the
+ * person is still typing); more than 20, a character outside the set, or a space is red. The
+ * characters row leaves spaces to the "No spaces" row, so a space turns only that one red.
+ */
+export function usernameRules(name: string): UsernameRules {
+  if (name === '') return { length: 'unknown', characters: 'unknown', noSpaces: 'unknown' };
+  const len = [...name].length;
+  const length = len > 20 ? 'false' : len >= 8 ? 'true' : 'unknown';
+  const rest = name.replace(/\s/gu, '');
+  const characters = rest === '' ? 'unknown' : /^[A-Za-z0-9._-]+$/.test(rest) ? 'true' : 'false';
+  return { length, characters, noSpaces: hasSpace(name) ? 'false' : 'true' };
+}
+
 /** What a value holds no spaces in: the inline sentence names it. */
 export type SpaceField = 'username' | 'display name' | 'password';
 
@@ -47,16 +70,18 @@ export function nameShapeProblem(which: string, reason: 'length' | 'characters' 
  */
 export const DISPLAY_SYMBOLS = '$ & ? @ # % + ( )';
 
-/** The sentence for a refused pair of names. */
+/** The sentence for a refused pair of names (shown on the display-name step only, so in its words: note #199). */
 export function namesProblem(r: Extract<NamesCheck, { ok: false }>): string {
   switch (r.reason) {
     case 'length':
     case 'characters':
     case 'spaces':
-      return nameShapeProblem(r.field === 'displayName' ? 'Your display name' : 'Your username', r.reason);
+      // Owner demo note #199 (25 Nov): the display-name step calls the private name "your Login ID".
+      return nameShapeProblem(r.field === 'displayName' ? 'Your display name' : 'Your Login ID', r.reason);
     case 'reserved':
       return 'That display name is kept for X2F. Pick another.';
     case 'same':
-      return 'Your display name must be different from your username.';
+      // COPY-UNSIGNED (owner demo note #199: "It must be different from your Login ID")
+      return 'Your display name must be different from your Login ID.';
   }
 }
