@@ -199,7 +199,7 @@ describe('the display name step', () => {
     const host = show('display', api);
     expect(host.querySelectorAll('input').length).toBe(1);
     type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
-    expect(byPart(host, 'preview-name')?.textContent).toBe('Lumen.Kai');
+    expect(host.querySelector('[data-part="trader-preview"] .x2f-ident__name')?.textContent).toBe('Lumen.Kai');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
     expect(api.go).toHaveBeenCalledWith('login');
@@ -372,26 +372,49 @@ describe('note #199: the display-name step', () => {
 // Owner demo notes #199 and #200 (25 Nov 2026): the trader card preview, suggestion chips, the
 // permanence note and Continue in the flow.
 describe('notes #199 and #200: preview, suggestions, permanence, inline Continue', () => {
-  it('previews the card live with a brand-new member\'s record: New, 0 trades, No ratings yet', () => {
+  it('owner demo note #220: an established trader\'s example card, live with the name as typed, labelled as an example', () => {
     const host = show('display', setup({ loginName: 'juniper.oak' }));
     const card = byPart(host, 'trader-preview')!;
-    expect(card.querySelector('h2')?.textContent).toBe('Trader card preview');
-    expect(byPart(card, 'preview-name')?.textContent).toBe('Your display name');
-    expect(byPart(card, 'preview-name')?.getAttribute('data-placeholder')).toBe('true');
-    expect(card.querySelector('.x2f-avatar')?.textContent).toBe('?');
-    expect(card.querySelector('.x2f-badge')?.textContent).toBe('New');
-    expect(card.querySelector('.x2f-badge')?.getAttribute('data-tone')).toBe('caution');
-    expect(byPart(card, 'preview-stats')?.textContent).toBe('0 trades · No ratings yet');
-    expect(card.textContent).not.toContain('100%');
-    // Only a name that passes the display-name rules is previewed (review of 6e984272).
+    const name = () => card.querySelector('.x2f-ident__name')!;
+    // One labelled region, said to be an example.
+    expect(card.tagName).toBe('SECTION');
+    expect(card.getAttribute('aria-labelledby')).toBe('display-preview-h');
+    expect(card.querySelector('#display-preview-h')?.textContent).toBe('What your trader card could look like');
+    expect(byPart(card, 'preview-example')?.textContent).toBe('Example');
+    // The example name while the field is empty or invalid.
+    expect(name().textContent).toBe('nightowl_44');
+    expect(card.getAttribute('data-example-name')).toBe('true');
     for (const bad of ['Lumen', 'Lumen Kai12', 'x2f-support']) {
       type(host.querySelector<HTMLInputElement>('#display-name')!, bad);
-      expect(byPart(card, 'preview-name')?.textContent, bad).toBe('Your display name');
+      expect(name().textContent, bad).toBe('nightowl_44');
     }
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
-    expect(byPart(card, 'preview-name')?.textContent).toBe('Lumen.Kai');
-    expect(byPart(card, 'preview-name')?.hasAttribute('data-placeholder')).toBe(false);
+    // Exactly as typed once it passes the display-name rules.
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai$');
+    expect(name().textContent).toBe('Lumen.Kai$');
+    expect(name().hasAttribute('data-username')).toBe(true);
+    expect(card.hasAttribute('data-example-name')).toBe(false);
     expect(card.querySelector('.x2f-avatar')?.textContent).toBe('LK');
+    // The real pieces: Trusted ring and online dot, the Vendor tag, member since, the kit's stat tiles.
+    expect(card.querySelector('.x2f-avatar')?.getAttribute('data-trusted')).toBe('true');
+    expect(card.querySelector('.x2f-ident__meta')?.textContent).toBe('Online · member since Sep 2024');
+    expect(card.textContent).toContain('Vendor');
+    const stats = byPart(card, 'preview-stats')!;
+    expect(stats.getAttribute('role')).toBe('group');
+    expect(stats.getAttribute('aria-label')).toBe('Example stats');
+    expect([...stats.querySelectorAll('.x2f-stat')].map((t) => `${t.querySelector('dd')?.textContent} ${t.querySelector('dt')?.textContent}`)).toEqual([
+      '248 trades',
+      '99% positive',
+      '86.4 XMR traded',
+    ]);
+    const badges = byPart(card, 'preview-badges')!;
+    expect(badges.getAttribute('aria-label')).toBe('Example badges');
+    expect([...badges.querySelectorAll('li > span:last-child')].map((n) => n.textContent)).toEqual(['Trusted', 'Veteran', 'Fast', 'Clean record', '100 trades', 'PGP verified']);
+    for (const seal of badges.querySelectorAll('.x2f-seal')) expect(seal.getAttribute('aria-hidden')).toBe('true');
+    expect([...byPart(card, 'preview-facts')!.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      '~6 min typical payment time',
+      'Disputes: none',
+      'Account protected with PGP',
+    ]);
   });
 
   it('offers 3 suggestions that pass the display-name rules and differ from the Login ID; a tap fills the box; ↻ draws new ones', () => {
@@ -409,7 +432,7 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     for (const c of chips()) expect(c.hasAttribute('data-primary')).toBe(false);
     fire(chips()[1]!, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector<HTMLInputElement>('#display-name')!.value).toBe(first[1]);
-    expect(byPart(host, 'preview-name')?.textContent).toBe(first[1]);
+    expect(host.querySelector('[data-part="trader-preview"] .x2f-ident__name')?.textContent).toBe(first[1]);
     const refresh = byPart(host, 'display-suggestions-refresh')!;
     expect(refresh.getAttribute('aria-label')).toBe('More suggestions');
     expect(refresh.textContent).toBe('↻');
