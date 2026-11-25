@@ -2,8 +2,11 @@
  * Setup step 3, PGP (board SetupPgpChallenge; spec 6.2): decrypt the first login message in the
  * PGP app and paste the code. Verify finishes the sign-up (`POST /v1/register/pgp/finish` with
  * `acceptedTerms`), which opens the new account's session; then the board's "Key verified" state.
+ * Owner demo note #219 (25 Nov 2026): Verify is disabled until the pasted code has a login code's
+ * full length (`normalizeLoginCode`, the server's own reading); a wrong code is still the server's.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { normalizeLoginCode } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
 import { groupFingerprint } from './PgpKey.js';
 import { serverClock } from '../../api/client.js';
@@ -62,16 +65,17 @@ export function PgpChallenge() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<SetupError | null>(null);
   const [copied, setCopied] = useState(false);
+  // Owner demo note #219: the field has been left once, so a short code may be said.
+  const [left, setLeft] = useState(false);
   const done = state.registered;
+  const whole = normalizeLoginCode(code) !== null;
+  const short = !whole && code.trim() !== '' && left;
   // The server's clock at the moment the message arrived is its expiry less the code's lifetime, so
   // the countdown follows the server and never the device's own time of day.
   const clock = useMemo(() => serverClock(new Date(Date.parse(challenge.expiresAt) - CODE_LIFETIME_MS)), [challenge]);
 
   const verify = async () => {
-    if (code.trim() === '') {
-      setError({ text: 'Paste the code from the decrypted message first.' });
-      return;
-    }
+    if (!whole) return;
     setBusy(true);
     setError(null);
     try {
@@ -130,7 +134,7 @@ export function PgpChallenge() {
             Continue
           </Button>
         ) : (
-          <Button variant="primary" disabled={busy} onClick={() => void verify()} data-part="pgp-verify">
+          <Button variant="primary" disabled={busy || !whole} onClick={() => void verify()} data-part="pgp-verify">
             Verify
           </Button>
         )
@@ -187,10 +191,20 @@ export function PgpChallenge() {
               autoCorrect="off"
               spellCheck={false}
               placeholder="Paste the code"
+              aria-describedby={short ? 'phrase-short' : undefined}
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              onBlur={() => setLeft(true)}
             />
           </label>
+          <div aria-live="polite">
+            {short ? (
+              // COPY-UNSIGNED (owner demo note #219: why Verify is still dimmed)
+              <p className="x2f-start__help" id="phrase-short" data-part="pgp-code-short">
+                That code is not complete yet. Paste the whole code from inside the message.
+              </p>
+            ) : null}
+          </div>
           <RegisterError error={error} />
           {error !== null && !error.names && !error.keyInUse && !error.keyRefused ? (
             <button type="button" className="x2f-start__textbutton x2f-start__textbutton--tap" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">

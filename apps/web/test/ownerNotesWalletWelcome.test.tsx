@@ -107,12 +107,24 @@ describe('/setup/wallet (owner #32, #96)', () => {
     });
     const api = setup();
     const host = show(<Wallet />, api);
-    act(() => type(host.querySelector<HTMLInputElement>('#xmr-payout')!, `4${'9'.repeat(93)}`));
-    act(() => host.querySelector<HTMLButtonElement>('[data-part="wallet-finish"]')!.click());
+    const input = host.querySelector<HTMLInputElement>('#xmr-payout')!;
+    const finish = host.querySelector<HTMLButtonElement>('[data-part="wallet-finish"]')!;
+    // Owner demo note #219: Finish setup is disabled until the address has a Monero address's shape.
+    expect(finish.disabled).toBe(true);
+    act(() => type(input, `4${'9'.repeat(93)}`));
+    expect(finish.disabled).toBe(true);
+    // The shape sentence waits until the field is left, then shows as help tied to the field.
+    expect(host.querySelector('[data-part="wallet-shape"]')).toBeNull();
+    act(() => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+    expect(host.querySelector('[data-part="wallet-shape"]')!.textContent).toBe("That doesn't look like a Monero address. Copy the whole receive address from your wallet.");
+    expect(input.getAttribute('aria-describedby')).toBe('xmr-payout-shape');
+    act(() => finish.click());
     await settle();
-    expect(host.querySelector('[data-part="wallet-error"]')!.textContent).toBe("That doesn't look like a Monero address. Copy the whole receive address from your wallet.");
     expect(calls.filter((u) => u.includes('/v1/wallets'))).toEqual([]);
     expect(api.go).not.toHaveBeenCalled();
+    act(() => type(input, ADDRESS));
+    expect(finish.disabled).toBe(false);
+    expect(host.querySelector('[data-part="wallet-shape"]')).toBeNull();
   });
 
   it('sends the address exactly as entered (trimmed) under the app Other, then goes on to Welcome', async () => {

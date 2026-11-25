@@ -9,12 +9,14 @@
  * grouped in fours on screen (the text itself has no spaces) and has a copy button. The secret goes
  * only to the screen, the clipboard and that link: never into the URL, storage or a log. Once the
  * code verifies, a green success state stays until Continue (it no longer just disappears).
+ * Owner demo note #219 (25 Nov 2026): Confirm is disabled until six digits are typed (`isTotpCode`).
  */
 import { useState } from 'react';
 import { withConfirm, type ConfirmAction, type Staged } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { isTotpCode } from '../auth/loginRules.js';
 import { refusalText } from '../auth/refusals.js';
 import { reportChangesCap } from './HoldChanges.js';
 import { Qr } from './Qr.js';
@@ -135,7 +137,7 @@ export function Totp({
             6-digit code
           </label>
           <input className="x2f-input" id="totp-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />
-          <Button variant={primary} disabled={busy || code.trim() === ''} onClick={() => void finish()} data-part="totp-finish">
+          <Button variant={primary} disabled={busy || !isTotpCode(code)} onClick={() => void finish()} data-part="totp-finish">
             Confirm
           </Button>
         </>

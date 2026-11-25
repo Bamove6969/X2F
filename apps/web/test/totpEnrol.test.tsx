@@ -74,6 +74,21 @@ describe('authenticator enrolment (signup round 3)', () => {
     expect(seen.filter((s) => s.body.includes(SECRET) || s.url.includes(SECRET))).toEqual([]);
   });
 
+  it('note #219: Confirm is disabled until six digits are typed (spaces ignored, as the server reads it)', async () => {
+    const { host } = await started();
+    const confirm = byPart(host, 'totp-finish') as HTMLButtonElement;
+    const input = host.querySelector<HTMLInputElement>('#totp-code')!;
+    expect(confirm.disabled).toBe(true);
+    type(input, '12345');
+    expect(confirm.disabled).toBe(true);
+    type(input, '12a456');
+    expect(confirm.disabled).toBe(true);
+    type(input, '123 456');
+    expect(confirm.disabled).toBe(false);
+    type(input, '123456');
+    expect(confirm.disabled).toBe(false);
+  });
+
   it('a verified code shows the green success state, and moves on only on Continue', async () => {
     const { host, onDone } = await started();
     type(host.querySelector<HTMLInputElement>('#totp-code')!, '123456');

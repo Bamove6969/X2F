@@ -11,6 +11,12 @@
  * that a display name is permanent (no API route changes it), and Continue straight under the
  * card rather than pinned to the bottom (SetupFrame `footerInline`), in thumb reach above a phone
  * keyboard.
+ *
+ * Owner demo note #219 (25 Nov 2026): Continue is disabled (the dimmed primary) until the name
+ * passes `checkNames` (the display-name rules, and not the Login ID). What is wrong is said under
+ * the field as quiet help once the person has typed: a reserved word or the Login ID at once, a
+ * wrong length or character once they leave the field. A taken name is still only the server's to
+ * know (409 at register, RegisterError links back here).
  */
 import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
@@ -63,19 +69,23 @@ function TraderPreview({ name }: { name: string }) {
 export function DisplayName() {
   const { state, update, go, path } = useSetup();
   const [displayName, setDisplayName] = useState(state.displayName);
-  const [error, setError] = useState<string | null>(null);
+  // Owner demo note #219: the field has been left once, so a length or character problem may be said.
+  const [left, setLeft] = useState(false);
   // Owner demo note #108: no spaces in a new display name.
   const spaced = hasSpace(displayName.trim());
   const valid = checkNewDisplayName(displayName);
   const previewName = valid.ok ? valid.name : '';
   const [suggestions, setSuggestions] = useState(() => suggestDisplayNames(SUGGESTIONS, state.loginName));
 
+  // Owner demo note #219: Continue is disabled until the names pass; the click is a no-op otherwise.
+  const names = checkNames(displayName, state.loginName);
+  const problem =
+    names.ok || spaced || displayName.trim() === '' || !(left || names.reason === 'reserved' || names.reason === 'same') ? null : namesProblem(names);
+  const describedBy = [spaced ? 'display-name-space' : '', problem !== null ? 'display-name-problem' : '', 'display-name-help'].filter((id) => id !== '');
+
   const next = () => {
-    const r = checkNames(displayName, state.loginName);
-    if (!r.ok) {
-      setError(namesProblem(r));
-      return;
-    }
+    const r = names;
+    if (!r.ok) return;
     update({ displayName: r.display.name, challenge: null });
     go('login');
   };
@@ -89,7 +99,7 @@ export function DisplayName() {
       // Owner demo note #199: Continue sits under the card, not pinned to the bottom of the screen.
       footerInline
       footer={
-        <Button variant="primary" onClick={next} data-part="display-continue">
+        <Button variant="primary" onClick={next} disabled={!names.ok} data-part="display-continue">
           Continue
         </Button>
       }
@@ -110,19 +120,25 @@ export function DisplayName() {
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
-          aria-describedby={spaced ? 'display-name-space display-name-help' : 'display-name-help'}
-          aria-invalid={spaced ? true : undefined}
+          aria-describedby={describedBy.join(' ')}
+          aria-invalid={spaced || problem !== null ? true : undefined}
           value={displayName}
-          onChange={(e) => {
-            setDisplayName(e.target.value);
-            setError(null);
-          }}
+          onChange={(e) => setDisplayName(e.target.value)}
+          onBlur={() => setLeft(true)}
         />
-        {spaced && error === null ? (
+        {spaced ? (
           <p className="x2f-error" id="display-name-space" data-part="display-space">
             {spaceProblem('display name')}
           </p>
         ) : null}
+        {/* Owner demo note #219: why Continue is still dimmed, once there is something to say (namesProblem's sentences). */}
+        <div aria-live="polite">
+          {problem !== null ? (
+            <p className="x2f-start__help" id="display-name-problem" data-part="display-problem">
+              {problem}
+            </p>
+          ) : null}
+        </div>
         <p className="x2f-start__help" id="display-name-help">
           {/* COPY-UNSIGNED (signup round 3: the display name's wider set; owner demo note #108: no spaces; #127: 8 to 20) */}
           8 to 20 characters: letters, numbers and common symbols such as {DISPLAY_SYMBOLS}, with no spaces.
@@ -135,10 +151,7 @@ export function DisplayName() {
               type="button"
               className="x2f-start__chip"
               data-part="display-suggestion"
-              onClick={() => {
-                setDisplayName(n);
-                setError(null);
-              }}
+              onClick={() => setDisplayName(n)}
             >
               <span data-username="">{n}</span>
             </button>
@@ -161,11 +174,6 @@ export function DisplayName() {
       <p className="x2f-start__warn" data-part="display-permanent">
         Your display name is permanent—pick a handle you'll be happy building your trading reputation under.
       </p>
-      {error !== null ? (
-        <p className="x2f-error" role="alert" data-part="display-error">
-          {error}
-        </p>
-      ) : null}
     </SetupFrame>
   );
 }

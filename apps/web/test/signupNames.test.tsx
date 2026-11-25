@@ -209,20 +209,42 @@ describe('the display name step', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
     type(host.querySelector<HTMLInputElement>('#display-name')!, 'Juniper.Oak');
+    // Owner demo note #219: Continue is disabled and the reason is said at once, as quiet help.
+    expect(byPart<HTMLButtonElement>(host, 'display-continue')!.disabled).toBe(true);
+    expect(byPart(host, 'display-problem')?.textContent).toBe('Your display name must be different from your Login ID.');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name must be different from your Login ID.');
     expect(api.go).not.toHaveBeenCalled();
   });
 
   it('refuses reserved words and wrong shapes in the board words', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'x2f-support');
-    fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('That display name is kept for X2F. Pick another.');
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'ab');
-    fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('Your display name needs 8 to 20 characters.');
+    const input = host.querySelector<HTMLInputElement>('#display-name')!;
+    const go = byPart<HTMLButtonElement>(host, 'display-continue')!;
+    type(input, 'x2f-support');
+    expect(go.disabled).toBe(true);
+    expect(byPart(host, 'display-problem')?.textContent).toBe('That display name is kept for X2F. Pick another.');
+    // A length problem waits until the field is left (owner demo note #219: no nagging mid-word).
+    type(input, 'ab');
+    expect(go.disabled).toBe(true);
+    expect(byPart(host, 'display-problem')).toBeNull();
+    fire(input, new FocusEvent('focusout', { bubbles: true }));
+    expect(byPart(host, 'display-problem')?.textContent).toBe('Your display name needs 8 to 20 characters.');
+    expect(input.getAttribute('aria-describedby')).toContain('display-name-problem');
+    type(input, 'Lumen.Kai');
+    expect(go.disabled).toBe(false);
+    expect(byPart(host, 'display-problem')).toBeNull();
+    expect(api.go).not.toHaveBeenCalled();
+  });
+
+  it('note #219: Continue is disabled while the field is empty and enabled once the name passes', () => {
+    const api = setup({ loginName: 'juniper.oak' });
+    const host = show('display', api);
+    const go = byPart<HTMLButtonElement>(host, 'display-continue')!;
+    expect(go.disabled).toBe(true);
+    expect(byPart(host, 'display-problem')).toBeNull();
+    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    expect(go.disabled).toBe(false);
   });
 
   it('makes no availability request (display names are checked when the account is made)', () => {
@@ -261,8 +283,9 @@ describe('note #108: no spaces in the names', () => {
     expect(byPart(host, 'display-space')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(byPart(host, 'display-space')).not.toBeNull();
+    // Owner demo note #219: Continue is disabled, so the click does nothing.
+    expect(byPart<HTMLButtonElement>(host, 'display-continue')!.disabled).toBe(true);
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'display-error')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
     expect(api.go).not.toHaveBeenCalled();
     expect(host.querySelector('#display-name-help')?.textContent).toContain('with no spaces');
   });

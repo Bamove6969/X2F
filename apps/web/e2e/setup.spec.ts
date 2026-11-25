@@ -546,10 +546,16 @@ test('the username and display name are checked before going on (8-20, owner not
   await expect(page.locator('[data-part="name-status"]')).toHaveText('login-name-1 is available');
   await go.click();
   await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
+  // Owner demo note #219: Continue is disabled until the display name passes, with the reason as help.
+  const display = page.locator('[data-part="display-continue"]');
+  await expect(display).toBeDisabled();
   await page.fill('#display-name', 'login-NAME-1');
-  await page.click('[data-part="display-continue"]');
-  await expect(page.locator('[data-part="display-error"]')).toHaveText('Your display name must be different from your Login ID.');
+  await expect(display).toBeDisabled();
+  await expect(page.locator('[data-part="display-problem"]')).toHaveText('Your display name must be different from your Login ID.');
   await expect(page).toHaveURL(/\/setup\/display-name/);
+  await page.fill('#display-name', 'Lumen.Kai');
+  await expect(display).toBeEnabled();
+  await expect(page.locator('[data-part="display-problem"]')).toHaveCount(0);
 });
 
 test('a taken display name at register sends the person back to change their names, both kept', async ({ page }) => {
