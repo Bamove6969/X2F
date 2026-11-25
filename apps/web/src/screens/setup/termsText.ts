@@ -68,7 +68,6 @@ export const PRIVACY_HEADING = '6. Privacy and data';
 export const TERMS: TermsSection[] = [
   // Owner, 25 Nov 2026 (in chat, after demo note #223): the whole full-length Terms replaced with his
   // "updated modern version", word for word. Earlier per-note history is in git. COPY-UNSIGNED.
-  // not-a-refusal: Terms text
   {
     heading: "1. What X2F is",
     paragraphs: [
@@ -79,6 +78,7 @@ export const TERMS: TermsSection[] = [
     heading: "2. Your account",
     paragraphs: [
       "You need an account to trade or post an ad. Because X2F is built for privacy, we never ask for an email address or phone number. Instead, you create a private user ID (used only to log in) and a public display name that other traders see.",
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "Keep your login credentials and recovery codes secure. While your XMR stays in your own wallet—or locked in on-chain 2-of-3 multisig escrow during an active trade—your account age and reputation cannot be restored if you lose access. X2F cannot reset your credentials for you.",
       "One person, one account. Do not sell, share, or lend your login. If you operate with a team, add them as team members so each person has their own separate credentials. Accounts that remain inactive (not signed into) for 60 days or longer are closed automatically.",
     ],
@@ -88,15 +88,18 @@ export const TERMS: TermsSection[] = [
     paragraphs: [
       "X2F holds one of the three keys in a trade’s 2-of-3 multisig escrow and can never move funds on its own. Because escrow settlements are standard Monero transactions, amounts and addresses remain private on the blockchain.",
       "You choose whom to trade with and under what terms—always read a vendor's conditions before accepting an offer. Only the seller funds the escrow, which commits them to the trade. The buyer must then pay using the exact method requested, upload proof of payment if required, and mark the trade as paid.",
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "Screenshots are helpful, but they can be forged. Sellers must verify that funds have actually arrived in their own account before releasing escrow. Marking a trade complete automatically sends the XMR to the buyer’s external wallet, minus X2F’s 1% fee. Once XMR is released from escrow, the blockchain transaction is irreversible—if a dispute is opened afterward, moderators can review the case and take action against a bad actor's account, but X2F cannot pull back funds already sent to an external wallet.",
       {
         text: "Every trade has a countdown timer displayed on the trade screen based on the chosen payment method. If the timer expires before the buyer marks the trade paid, the seller can cancel the trade and reclaim their escrowed XMR. If you are running close to the deadline:",
         bullets: [
+          // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
           "Complete the payment and mark the trade paid before the clock runs out so the trade cannot be canceled.",
           "Message the other trader immediately if there is a delay so they know you are active.",
           "Use the audio \"nudge\" feature if the other trader is unresponsive.",
         ],
       },
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "If you send payment after the timer expires and the seller cancels the trade—and you cannot resolve it between yourselves—open a dispute so a moderator can review the payment proof and mediate a fair resolution.",
     ],
   },
@@ -109,7 +112,9 @@ export const TERMS: TermsSection[] = [
   {
     heading: "5. Disputes and moderators",
     paragraphs: [
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "If a trade goes wrong and you cannot resolve it directly with the other party, either trader can open a dispute during the trade or within the post-trade window shown on the trade screen.",
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "Trade chats are encrypted, and no IP addresses are logged even during a dispute. When a dispute is opened, the assigned moderator is granted temporary decryption access to the trade chat and evidence to review what happened. A moderator’s primary goal is to see valid trades completed, or to execute a full reversal if the trade cannot be salvaged.",
       "If either party disagrees with a ruling, they may request one appeal. A senior moderator will review the case with the same access and issue a final, binding decision. All moderator actions are logged internally for auditing and accountability.",
     ],
@@ -123,6 +128,7 @@ export const TERMS: TermsSection[] = [
   {
     heading: "7. Law enforcement and legal requests",
     paragraphs: [
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "Because X2F is engineered around privacy-by-design, we do not collect IP addresses, plaintext chat logs, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, any response is strictly limited to whatever minimal, non-identifying technical data exists on our servers at that moment. Our infrastructure and operations are based in jurisdictions with strong statutory privacy protections and strict judicial standards for cross-border requests.",
     ],
   },

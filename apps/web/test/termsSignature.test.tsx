@@ -231,12 +231,10 @@ describe('the Terms text: bullets', () => {
     await flush();
     const lists = host.querySelectorAll('[data-part="terms-text"] ul.x2f-terms__bullets');
     expect(lists).toHaveLength(1);
-    expect(lists[0]!.previousElementSibling?.textContent).toMatch(/^Each trade has timers,.*always make sure to:$/);
-    expect([...lists[0]!.querySelectorAll('li')].map((li) => li.textContent)).toHaveLength(4);
-    // Owner demo note #106 (17 Nov): his late-payment sentence in place of the 14 Nov bullet.
-    expect(lists[0]!.lastElementChild?.textContent).toBe(
-      'If for some reason you don’t pay until after your allotted time runs out, the seller triggers a cancellation that automatically refunds the XMR to the seller, and you can’t figure it out amicably between yourself and the other trader, then this is a scenario when you would call upon a moderator to help settle the dispute, whether that means seeing the XMR transferred to you or a refund of the payment you made. The outcome will always be fair. The trade screen always shows the time left.',
-    );
+    // The owner's full-length Terms (25 Nov, after note #223): the countdown paragraph and its three bullets.
+    expect(lists[0]!.previousElementSibling?.textContent).toMatch(/^Every trade has a countdown timer.*running close to the deadline:$/);
+    expect([...lists[0]!.querySelectorAll('li')].map((li) => li.textContent)).toHaveLength(3);
+    expect(lists[0]!.lastElementChild?.textContent).toBe('Use the audio "nudge" feature if the other trader is unresponsive.');
   });
 });
 
