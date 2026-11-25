@@ -26,7 +26,7 @@
 // the uploads' metadata, and the key points are six one-liners (drafts awaiting his OK). One version
 // move for the whole note. COPY-UNSIGNED.
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
-// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere; 25b was never released, so the label stays. COPY-UNSIGNED.
+// "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, and note #210 (section 3): "under what conditions"; 25b was never released, so the label stays. COPY-UNSIGNED.
 export const TERMS_TEXT_VERSION = '2026-11-25b';
 
 /**
@@ -92,7 +92,7 @@ export const TERMS: TermsSection[] = [
       // COPY-UNSIGNED: the last sentence answers the owner's comment e79231ba (lead call, draft Q-1).
       'Your coins stay in your own wallet, except while they are locked in a trade’s 2-of-3 escrow. X2F holds one of the three escrow keys and can never move coins on its own. Escrow payments are ordinary Monero transactions, so amounts and addresses stay hidden on the blockchain.',
       // COPY-UNSIGNED: from "Read the": owner demo notes 13 Nov.
-      'You decide whom you trade with and on what terms. Read the vendor’s terms before you take an offer. Buyer and seller beware. Educating yourself on how everything works will help keep you from ever being disadvantaged or, hopefully, from being taken advantage of, but regardless, our moderators are here to see that fair endings = happy endings.',
+      'You decide whom you trade with and under what conditions. Read the vendor’s terms before you take an offer. Buyer and seller beware. Educating yourself on how everything works will help keep you from ever being disadvantaged or, hopefully, from being taken advantage of, but regardless, our moderators are here to see that fair endings = happy endings.',
       // COPY-UNSIGNED: owner's comment ca2b6a83 ("disrupted" read as "disputed"; draft item 4, Q-3);
       // from "instantly undone": owner demo notes 13 Nov. Owner demo notes #103-#105 (17 Nov, 3b5808fc,
       // 8889fe12, 001b37f2): a period after "requested", his proof sentence, his seller sentence and
