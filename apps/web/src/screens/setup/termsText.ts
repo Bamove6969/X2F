@@ -173,7 +173,9 @@ export const TERMS: TermsSection[] = [
     paragraphs: [
       // COPY-UNSIGNED: owner demo notes 13 Nov: his 30/90 wording, and "keep all of this" for the
       // tracking sentence (comment d1a46566); the old third paragraph is "now redundant".
-      'X2F only provides access to completed trades for 30 days, after which the entirety of the trade is purged. The only exception to this is if there is a dispute, in which case the dispute is kept for 90 days after completion, after being scrubbed with our internal privacy tool, and used for training moderators. At the 90-day mark it is all purged, no exceptions. X2F does not track you, does not use analytics and removes location and device details from uploads.',
+      // Owner demo note #189 (25 Nov 2026): "(Exif and other metadata) from uploaded payment proofs",
+      // as proof/reencode.ts does (it redraws a proof and refuses any output still carrying metadata). COPY-UNSIGNED.
+      'X2F only provides access to completed trades for 30 days, after which the entirety of the trade is purged. The only exception to this is if there is a dispute, in which case the dispute is kept for 90 days after completion, after being scrubbed with our internal privacy tool, and used for training moderators. At the 90-day mark it is all purged, no exceptions. X2F does not track you, does not use analytics and removes location and device details (Exif and other metadata) from uploaded payment proofs.',
       'No IP addresses are logged, even in disputes.',
     ],
   },
