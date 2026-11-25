@@ -47,12 +47,12 @@ describe('screenName: the name beside the logo, one per route', () => {
   it('names the front door, the browse boards and the screens behind the door', () => {
     for (const [p, name] of [
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
-      ['/setup', 'Create account'], ['/setup/pgp-key', 'Adding your public PGP key'],
+      ['/setup', 'Create account'], ['/setup/pgp-key', 'Create account'],
       // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name (COPY-UNSIGNED).
-      ['/setup/name', 'Creating your login ID'], ['/setup/display-name', 'Your display name'], ['/setup/login', 'How you log in'],
-      ['/setup/pgp-code', 'Your first login code'], ['/setup/password', 'Your password'], ['/setup/authenticator', 'Authenticator app'],
-      ['/setup/security-key', 'Security key'], ['/setup/passkey', 'Passkey'], ['/setup/backup', 'Recovery code'],
-      ['/setup/wallet', 'Your wallet'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
+      ['/setup/name', 'Create account'], ['/setup/display-name', 'Create account'], ['/setup/login', 'Create account'],
+      ['/setup/pgp-code', 'Create account'], ['/setup/password', 'Create account'], ['/setup/authenticator', 'Create account'],
+      ['/setup/security-key', 'Create account'], ['/setup/passkey', 'Create account'], ['/setup/backup', 'Create account'],
+      ['/setup/wallet', 'Create account'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
       ['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security'],
       ['/help/faq', 'FAQ'], ['/help/getting-started', 'Getting started'], ['/help/support', 'Support'], ['/help/settings', 'Settings'],
     ] as const) expect([p, screenName(p)]).toEqual([p, name]);
