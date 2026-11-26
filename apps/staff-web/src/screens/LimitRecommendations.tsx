@@ -85,7 +85,7 @@ export function LimitRecommendations({ role }: { role: StaffRole }) {
       ) : null}
       {list?.map((r) => (
         <article key={r.id} className="x2f-card" data-part="limit-rec">
-          <h2 className="x2f-h2">{`${r.displayName}: ${limitWhatText(r)}`}</h2>
+          <h2 className="x2f-h2">{`${r.tradeTag}: ${limitWhatText(r)}`}</h2>
           <p className="x2f-staff-hint">
             {`Now on ${STAGE_WORDS[r.currentStage]}${r.currentCapUsdCents === null ? ', no cap per trade' : `, up to $${(Number(r.currentCapUsdCents) / 100).toLocaleString('en-US')} per trade`}. Recommended by ${r.recommendedBy}${r.code === null ? '' : ` from case ${codeText(r.code)}`}.`}
           </p>
@@ -108,8 +108,8 @@ export function LimitRecommendations({ role }: { role: StaffRole }) {
         <KeyTapDialog
           intent={intentOf(tap.r, tap.approve)}
           title={tap.approve ? 'Approve these limits' : 'Decline these limits'}
-          body={`Tap your security key to ${tap.approve ? 'approve' : 'decline'}: ${tap.r.displayName}, ${limitWhatText(tap.r).toLowerCase()}.`}
-          labels={{ accountId: tap.r.displayName, recId: 'this recommendation' }}
+          body={`Tap your security key to ${tap.approve ? 'approve' : 'decline'}: ${tap.r.tradeTag}, ${limitWhatText(tap.r).toLowerCase()}.`}
+          labels={{ accountId: tap.r.tradeTag, recId: 'this recommendation' }}
           onCancel={() => setTap(null)}
           onDone={(tapId) => {
             const t = tap;

@@ -63,18 +63,18 @@ async function reviewed(seller: Who, buyer: Who, reviewer: 'buyer' | 'seller', i
 const profile = (viewer: Who, name: string) => viewer.browser.get(`/v1/traders/${encodeURIComponent(name)}`);
 
 describe('GET /v1/traders/:name', () => {
-  it('answers the public profile by display name, with the stats, badges, reviews and nothing private', async () => {
+  it('answers the public profile by Trade Tag, with the stats, badges, reviews and nothing private', async () => {
     const seller = await trader();
     const buyer = await trader();
     const viewer = await trader();
     const fingerprint = await veteranWithKeys(seller);
     const code = await reviewed(seller, buyer, 'buyer', { neutral: false, stars: 5, phrases: ['Fast release'], tradeBadges: [], note: 'Smooth trade' });
 
-    const res = await profile(viewer, seller.displayName.toLowerCase());
+    const res = await profile(viewer, seller.tradeTag.toLowerCase());
     expect(res.statusCode, res.body).toBe(200);
     const p = res.json() as Record<string, unknown> & { stats: Record<string, unknown>; badges: { featured: string[]; more: string[] }; reviews: unknown[] };
     expect(p).toMatchObject({
-      displayName: seller.displayName, self: false, memberSince: '2024-09', pgpProtected: true, recordPublic: false, offers: 0,
+      tradeTag: seller.tradeTag, self: false, memberSince: '2024-09', pgpProtected: true, recordPublic: false, offers: 0,
       stats: { completedTrades: 1, positivePct: 100, ratedReviews: 1, reviewCount: 1, disputes: { won: 0, lost: 0 } },
     });
     // New (starter) is featured first; Veteran takes the other slot by default (spec 5.4).
@@ -83,7 +83,7 @@ describe('GET /v1/traders/:name', () => {
     expect(p.reviews).toEqual([{ neutral: false, stars: 5, phrases: ['Fast release'], tradeBadges: [], note: 'Smooth trade', method: 'Zelle', age: 'Oct 2026', underReview: false }]);
     // Share the bare minimum: no login name, account id, trade code, fingerprint, amount or exact
     // time other than the coarse lastSeenAt (the only ISO time in the body).
-    for (const bad of [seller.loginName, seller.id, buyer.id, buyer.displayName, code, fingerprint, 'usd', 'amount', 'cancel', 'username', 'login']) {
+    for (const bad of [seller.loginName, seller.id, buyer.id, buyer.tradeTag, code, fingerprint, 'usd', 'amount', 'cancel', 'username', 'login']) {
       expect(res.body.toLowerCase(), bad).not.toContain(bad.toLowerCase());
     }
     expect(res.body.match(/\d{4}-\d{2}-\d{2}T/g) ?? []).toHaveLength(p.lastSeenAt === null ? 0 : 1);
@@ -91,8 +91,8 @@ describe('GET /v1/traders/:name', () => {
 
   it('own profile says self; a login name, an unknown name, a staff name and a blocker all get the same 404', async () => {
     const me = await trader();
-    const own = await profile(me, me.displayName);
-    expect(own.json()).toMatchObject({ self: true, displayName: me.displayName });
+    const own = await profile(me, me.tradeTag);
+    expect(own.json()).toMatchObject({ self: true, tradeTag: me.tradeTag });
 
     const unknown = await profile(me, 'NoSuchTrader9');
     expect(unknown.statusCode).toBe(404);
@@ -100,22 +100,22 @@ describe('GET /v1/traders/:name', () => {
     expect(byLogin.statusCode).toBe(404);
     expect(byLogin.body).toBe(unknown.body);
     const staff = await trader('staff');
-    expect((await profile(me, staff.displayName)).body).toBe(unknown.body);
+    expect((await profile(me, staff.tradeTag)).body).toBe(unknown.body);
 
     // The trader who blocked me answers as an unknown name; I still see the person I blocked.
     const blocker = await trader();
-    expect((await blocker.browser.post('/v1/account/blocks', { displayName: me.displayName })).statusCode).toBe(204);
-    const blocked = await profile(me, blocker.displayName);
+    expect((await blocker.browser.post('/v1/account/blocks', { tradeTag: me.tradeTag })).statusCode).toBe(204);
+    const blocked = await profile(me, blocker.tradeTag);
     expect(blocked.statusCode).toBe(404);
     expect(blocked.body).toBe(unknown.body);
-    expect((await profile(blocker, me.displayName)).statusCode).toBe(200);
+    expect((await profile(blocker, me.tradeTag)).statusCode).toBe(200);
   });
 
   it('counts the live offers anyone may see', async () => {
     const p = await trader();
     const viewer = await trader();
     await postOffer(p);
-    expect((await profile(viewer, p.displayName)).json()).toMatchObject({ offers: 1 });
+    expect((await profile(viewer, p.tradeTag)).json()).toMatchObject({ offers: 1 });
   });
 
   // Lead call 18 Nov on OQ1: disabled (a ban, a staff switch-off) and closed accounts answer exactly as
@@ -127,13 +127,13 @@ describe('GET /v1/traders/:name', () => {
     for (const how of ['disabled', 'closed'] as const) {
       const p = await trader();
       expect((await p.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
-      expect((await profile(viewer, p.displayName)).statusCode, how).toBe(200);
-      expect((await viewer.browser.get(`/v1/traders/${p.displayName}/record`)).statusCode, how).toBe(200);
+      expect((await profile(viewer, p.tradeTag)).statusCode, how).toBe(200);
+      expect((await viewer.browser.get(`/v1/traders/${p.tradeTag}/record`)).statusCode, how).toBe(200);
       if (how === 'disabled') await deps.db.query('update accounts set disabled_at = $2 where id = $1', [p.id, deps.clock()]);
       else await deps.db.query(`update accounts set disabled_at = $2, closed_at = $2, closed_reason = 'inactive' where id = $1`, [p.id, deps.clock()]);
-      const gone = await profile(viewer, p.displayName);
+      const gone = await profile(viewer, p.tradeTag);
       expect([gone.statusCode, gone.body], how).toEqual([404, unknown.body]);
-      const goneRecord = await viewer.browser.get(`/v1/traders/${p.displayName}/record`);
+      const goneRecord = await viewer.browser.get(`/v1/traders/${p.tradeTag}/record`);
       expect([goneRecord.statusCode, goneRecord.body], how).toEqual([404, unknownRecord.body]);
     }
   });
@@ -150,8 +150,8 @@ describe('GET /v1/traders/:name', () => {
       return p;
     };
     const seen = async (p: Who) => {
-      const prof = await profile(viewer, p.displayName);
-      const rec = await viewer.browser.get(`/v1/traders/${p.displayName}/record`);
+      const prof = await profile(viewer, p.tradeTag);
+      const rec = await viewer.browser.get(`/v1/traders/${p.tradeTag}/record`);
       return [prof.statusCode === 200 ? 'shown' : [prof.statusCode, prof.body], rec.statusCode === 200 ? 'shown' : [rec.statusCode, rec.body]];
     };
     const gone = [[404, unknown.body], [404, unknownRecord.body]];
@@ -239,7 +239,7 @@ describe('badge settings', () => {
     const hidden = await choose(me, 'pgp', 'hidden');
     expect(hidden.json()).toMatchObject({ featured: ['new', 'veteran-1'], more: ['security-key'], notice: null });
 
-    const p = (await profile(viewer, me.displayName)).json() as { badges: unknown; pgpProtected: boolean };
+    const p = (await profile(viewer, me.tradeTag)).json() as { badges: unknown; pgpProtected: boolean };
     // P5-A17: hiding the PGP badge hides the "Account protected with PGP" line too.
     expect(p).toMatchObject({ badges: { featured: ['new', 'veteran-1'], more: ['security-key'] }, pgpProtected: false });
     const summary = (await traderSummaries(deps.db, [me.id], deps.clock(), viewer.id)).get(me.id)!;
@@ -315,12 +315,12 @@ describe('the signed record (Task 12)', () => {
     expect(res.statusCode, res.body).toBe(200);
     const text = await verified((res.json() as { text: string }).text);
     expect(text.split('\n')[0]).toBe(RECORD_HEADER);
-    expect(text).toContain(`Display name: ${seller.displayName}`);
+    expect(text).toContain(`Trade Tag: ${seller.tradeTag}`);
     expect(text).toContain('Member since: Sep 2024');
     expect(text).toContain('Completed trades: 2');
     expect(text).toContain('Oct 2026 · seller · 4 stars · Friendly');
     expect(text).toContain('Oct 2026 · buyer · Neutral');
-    for (const bad of ['Secret note', 'Zelle', buyer.displayName, seller.loginName, fingerprint, fingerprint.toUpperCase(), '$']) expect(text, bad).not.toContain(bad);
+    for (const bad of ['Secret note', 'Zelle', buyer.tradeTag, seller.loginName, fingerprint, fingerprint.toUpperCase(), '$']) expect(text, bad).not.toContain(bad);
 
     // Once a minute per account.
     const again = await seller.browser.get('/v1/account/record');
@@ -351,16 +351,16 @@ describe('the signed record (Task 12)', () => {
     const staff = await trader('staff');
     expect((await me.browser.put('/v1/account/record/public', { on: true })).statusCode).toBe(200);
     const unknown = await viewer.browser.get('/v1/traders/NoSuchTrader9/record');
-    expect((await viewer.browser.get(`/v1/traders/${me.displayName}/record`)).statusCode).toBe(200);
+    expect((await viewer.browser.get(`/v1/traders/${me.tradeTag}/record`)).statusCode).toBe(200);
     const byLogin = await viewer.browser.get(`/v1/traders/${me.loginName}/record`);
     expect([byLogin.statusCode, byLogin.body]).toEqual([404, unknown.body]);
-    const byStaff = await viewer.browser.get(`/v1/traders/${staff.displayName}/record`);
+    const byStaff = await viewer.browser.get(`/v1/traders/${staff.tradeTag}/record`);
     expect([byStaff.statusCode, byStaff.body]).toEqual([404, unknown.body]);
-    expect((await me.browser.post('/v1/account/blocks', { displayName: viewer.displayName })).statusCode).toBe(204);
-    const blocked = await viewer.browser.get(`/v1/traders/${me.displayName}/record`);
+    expect((await me.browser.post('/v1/account/blocks', { tradeTag: viewer.tradeTag })).statusCode).toBe(204);
+    const blocked = await viewer.browser.get(`/v1/traders/${me.tradeTag}/record`);
     expect([blocked.statusCode, blocked.body]).toEqual([404, unknown.body]);
     // The blocker still reads the blocked person's profile (where Unblock is): the block is one way here.
-    expect((await profile(me, viewer.displayName)).statusCode).toBe(200);
+    expect((await profile(me, viewer.tradeTag)).statusCode).toBe(200);
   });
 
   it('the public copy is a 404 identical to an unknown name until shown, and never lists a fingerprint', async () => {
@@ -368,14 +368,14 @@ describe('the signed record (Task 12)', () => {
     const viewer = await trader();
     await veteranWithKeys(me);
     const unknown = await viewer.browser.get('/v1/traders/NoSuchTrader9/record');
-    const priv = await viewer.browser.get(`/v1/traders/${me.displayName}/record`);
+    const priv = await viewer.browser.get(`/v1/traders/${me.tradeTag}/record`);
     expect([unknown.statusCode, priv.statusCode]).toEqual([404, 404]);
     expect(priv.body).toBe(unknown.body);
 
     const on = await me.browser.put('/v1/account/record/public', { on: true });
     expect([on.statusCode, on.json()]).toEqual([200, { on: true }]);
-    expect((await profile(viewer, me.displayName)).json()).toMatchObject({ recordPublic: true });
-    const pub = await viewer.browser.get(`/v1/traders/${me.displayName}/record`);
+    expect((await profile(viewer, me.tradeTag)).json()).toMatchObject({ recordPublic: true });
+    const pub = await viewer.browser.get(`/v1/traders/${me.tradeTag}/record`);
     expect(pub.statusCode, pub.body).toBe(200);
     const text = await verified((pub.json() as { text: string }).text);
     expect(text.startsWith(RECORD_HEADER)).toBe(true);
@@ -384,6 +384,6 @@ describe('the signed record (Task 12)', () => {
 
     expect((await me.browser.put('/v1/account/record/public', { on: 'yes' })).statusCode).toBe(400);
     await me.browser.put('/v1/account/record/public', { on: false });
-    expect((await viewer.browser.get(`/v1/traders/${me.displayName}/record`)).body).toBe(unknown.body);
+    expect((await viewer.browser.get(`/v1/traders/${me.tradeTag}/record`)).body).toBe(unknown.body);
   });
 });

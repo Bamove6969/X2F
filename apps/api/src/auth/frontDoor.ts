@@ -46,7 +46,7 @@ export function runsInside(preHandler: unknown): boolean {
  * (review 2026-11-08 F2). `test/frontDoor.test.ts` fails when a session-guarded GET is neither.
  */
 export const OWN_DATA_READS: Readonly<Record<string, string>> = {
-  'GET /v1/account/me': "who I am: my display name, login methods, session level and Terms state (read on stale Terms and setup-only to route me)",
+  'GET /v1/account/me': "who I am: my Trade Tag, login methods, session level and Terms state (read on stale Terms and setup-only to route me)",
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
@@ -60,7 +60,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
   'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',
   'GET /v1/account/methods': 'my own login methods',
-  'GET /v1/account/notes/:displayName': "my own account's private notes on a trader (the account owner, or a member with the notes-view box); the notes themselves, never the trader's data",
+  'GET /v1/account/notes/:tradeTag': "my own account's private notes on a trader (the account owner, or a member with the notes-view box); the notes themselves, never the trader's data",
   'GET /v1/account/nudges': 'my own nudge setting',
   'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
   'GET /v1/account/past-rep': 'my own imported past reputation',
@@ -157,8 +157,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   // Settings and social rows (my own account).
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
-  'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
-  'PUT /v1/account/blocks/:displayName/note': "my own private note on a block row of mine (S-093); answers that note",
+  'DELETE /v1/account/blocks/:tradeTag': 'removes a block row of mine; no data back',
+  'PUT /v1/account/blocks/:tradeTag/note': "my own private note on a block row of mine (S-093); answers that note",
   'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
   'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',

@@ -114,10 +114,10 @@ async function team(): Promise<Who & { wallet: string }> {
 async function member(teamId: string, roles: Role[] | { abilities: string[] }): Promise<{ id: string; loginId: string; name: string; browser: Browser }> {
   const abilities = Array.isArray(roles) ? rolesToAbilities(roles) : roles.abilities;
   const name = `Member${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `mlogin${n}x`, displayName: `m-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `mlogin${n}x`, tradeTag: `m-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -143,10 +143,10 @@ async function sessionId(b: Browser): Promise<string> {
   return rows[0]!.id;
 }
 
-async function invite(owner: Who, displayName: string, roles: Role[]) {
-  const action = { kind: 'team-invite' as const, name: displayName, roles: roles.join(',') };
+async function invite(owner: Who, tradeTag: string, roles: Role[]) {
+  const action = { kind: 'team-invite' as const, name: tradeTag, roles: roles.join(',') };
   const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
-  return owner.browser.post('/v1/team/invites', { displayName, roles, confirmToken });
+  return owner.browser.post('/v1/team/invites', { tradeTag, roles, confirmToken });
 }
 
 const OFFER = {
@@ -185,19 +185,19 @@ describe('invites and the member limit', () => {
 
   it('an invite needs confirm-it is-you bound to its roles', async () => {
     const owner = await team();
-    const none = await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xx`, roles: ['offers'] });
+    const none = await owner.browser.post('/v1/team/invites', { tradeTag: `Plain${n}xx`, roles: ['offers'] });
     expect(none.statusCode).toBe(403);
     expect(none.json()).toEqual({ error: 'confirm-required', action: 'team-invite' });
     const action = { kind: 'team-invite' as const, name: `Plain${n}xy`, roles: 'offers' };
     const token = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
-    const wrong = await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xy`, roles: ['offers', 'trades'], confirmToken: token });
+    const wrong = await owner.browser.post('/v1/team/invites', { tradeTag: `Plain${n}xy`, roles: ['offers', 'trades'], confirmToken: token });
     expect(err(wrong)).toEqual({ status: 403, error: 'confirm-invalid' });
     // Review M9(a): the token names the member too, so it cannot invite someone else with the same roles.
     const token2 = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
-    const otherName = await owner.browser.post('/v1/team/invites', { displayName: `Mallory${n}x`, roles: ['offers'], confirmToken: token2 });
+    const otherName = await owner.browser.post('/v1/team/invites', { tradeTag: `Mallory${n}x`, roles: ['offers'], confirmToken: token2 });
     expect(err(otherName)).toEqual({ status: 403, error: 'confirm-invalid' });
     const token3 = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
-    expect((await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xy`, roles: ['offers'], confirmToken: token3 })).statusCode).toBe(201);
+    expect((await owner.browser.post('/v1/team/invites', { tradeTag: `Plain${n}xy`, roles: ['offers'], confirmToken: token3 })).statusCode).toBe(201);
   });
 });
 
@@ -211,13 +211,13 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     // Review 2026-11-08 F3: whoever holds the link, before joining, learns only what the invite
     // asks of them; the vendor is named only once they are inside.
     // Job 1c: the invite's boxes (and their preset) are what it asks of them too.
-    expect(Object.keys(view.json() as object).sort()).toEqual(['abilities', 'displayName', 'expiresAt', 'preset', 'roles']);
-    expect(view.json()).toMatchObject({ displayName: `Joiner${n}x`, roles: ['trades'] });
-    expect(view.body).not.toContain(owner.displayName);
+    expect(Object.keys(view.json() as object).sort()).toEqual(['abilities', 'expiresAt', 'preset', 'roles', 'tradeTag']);
+    expect(view.json()).toMatchObject({ tradeTag: `Joiner${n}x`, roles: ['trades'] });
+    expect(view.body).not.toContain(owner.tradeTag);
     // Review 6a5949a6 F6: the vendor's name is not even loaded, so no later spread can send it.
     const row = await openInvite(deps.db, { code: created.invite }, deps.clock());
-    expect(Object.keys(row).sort()).toEqual(['abilities', 'account_id', 'display_name', 'id', 'invite_expires_at']);
-    expect(Object.values(row)).not.toContain(owner.displayName);
+    expect(Object.keys(row).sort()).toEqual(['abilities', 'account_id', 'id', 'invite_expires_at', 'trade_tag']);
+    expect(Object.values(row)).not.toContain(owner.tradeTag);
 
     const k1 = await genKey();
     const k2 = await genKey();
@@ -251,7 +251,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const used = await new Browser(app).post('/v1/team/invite', { invite: created.invite });
     expect(used.statusCode).toBe(404);
     expect(used.body).toBe('{"error":"not-found"}');
-    expect(used.body).not.toContain(owner.displayName);
+    expect(used.body).not.toContain(owner.tradeTag);
 
     // The same key again is not a second factor.
     const same = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: k1.publicKey });
@@ -268,14 +268,14 @@ describe('the member sign-up (two factors, the staff rule)', () => {
       setupId, challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k2.privateKey, undefined, deps.clock())), deviceLabel: 'Test',
     });
     expect(f2.statusCode, f2.body).toBe(201);
-    const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
-    expect(me.displayName).toBe(owner.displayName);
+    const me = (await b.get('/v1/account/me')).json() as { tradeTag: string; member: unknown; termsCurrent: boolean };
+    expect(me.tradeTag).toBe(owner.tradeTag);
     // Job 1c: the member's boxes (the old Trades role's), their preset (none: Custom) and the old roles they read as.
     // J-20 F8 (MEMBER_SEES_OWN_LIMITS, lead default on): and their own limits, none yet.
     expect(me.member).toEqual({
       name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'],
       // S-105 (owner p11-25): how chats show them, the lead's name and their number; never their own name.
-      chatLabel: `${owner.displayName} Assistant 1`,
+      chatLabel: `${owner.tradeTag} Assistant 1`,
       limits: { band: null, hours: 'any' },
     });
     // The member's own login account carries the Terms they signed, and they are inside.
@@ -406,7 +406,7 @@ describe('owner-only', () => {
     const refused = [
       await m.browser.post('/v1/wallets', { app: 'cake', label: 'Mine', address: fakeAddress() }),
       await m.browser.delete(`/v1/wallets/${owner.wallet}`),
-      await m.browser.post('/v1/team/invites', { displayName: 'Sneaky01', roles: ['offers'] }),
+      await m.browser.post('/v1/team/invites', { tradeTag: 'Sneaky01', roles: ['offers'] }),
       await m.browser.get('/v1/team'),
       await m.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
@@ -534,10 +534,10 @@ describe('removing a member', () => {
     expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
     // Review M6: the member's login account (login name, keys) is deleted; the row keeps the name for the log.
     expect((await deps.db.query('select 1 from accounts where id = $1', [m.loginId])).rowCount).toBe(0);
-    const { rows } = await deps.db.query<{ display_name: string; member_account_id: string | null; removed_at: Date | null }>(
-      'select display_name, member_account_id, removed_at from team_members where id = $1', [m.id],
+    const { rows } = await deps.db.query<{ trade_tag: string; member_account_id: string | null; removed_at: Date | null }>(
+      'select trade_tag, member_account_id, removed_at from team_members where id = $1', [m.id],
     );
-    expect(rows[0]).toMatchObject({ display_name: m.name, member_account_id: null });
+    expect(rows[0]).toMatchObject({ trade_tag: m.name, member_account_id: null });
     expect(rows[0]!.removed_at).not.toBeNull();
     // The owner's own session is untouched.
     expect((await owner.browser.get('/v1/account/me')).statusCode).toBe(200);
@@ -932,15 +932,15 @@ describe('purgeTeamLeftovers (review M6)', () => {
     const owner = await team();
     const live = await member(owner.id, ['offers']);
     // A sign-up that ran out: a login account with a key, never joined.
-    const stale = await seedAccount(deps, { loginName: `stalelogin${++n}`, displayName: `m-${n}-stale`, kind: 'member' });
+    const stale = await seedAccount(deps, { loginName: `stalelogin${++n}`, tradeTag: `m-${n}-stale`, kind: 'member' });
     const past = new Date(deps.clock().getTime() - DAY);
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, created_at)
        values ($1, $2, $3, '{trades-see-active}', $4, $5, $4)`,
       [owner.id, `Stale${n}xx`, `stale${n}xx`, past, stale],
     );
     // A member login whose team row is gone (as after the team account is deleted).
-    const orphan = await seedAccount(deps, { loginName: `orphanlogin${++n}`, displayName: `m-${n}-orphan`, kind: 'member' });
+    const orphan = await seedAccount(deps, { loginName: `orphanlogin${++n}`, tradeTag: `m-${n}-orphan`, kind: 'member' });
     expect(await purgeTeamLeftovers.run(deps.db, deps.clock())).toBeGreaterThanOrEqual(3);
     const left = await deps.db.query<{ id: string }>('select id from accounts where id = any($1)', [[stale, orphan, live.loginId]]);
     expect(left.rows.map((r) => r.id)).toEqual([live.loginId]);
@@ -1065,7 +1065,7 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     const refused = [
       await m.browser.post('/v1/wallets', { app: 'cake', label: 'Mine', address: fakeAddress() }),
       await m.browser.delete(`/v1/wallets/${owner.wallet}`),
-      await m.browser.post('/v1/team/invites', { displayName: 'Sneaky02', abilities: ['offers-see'] }),
+      await m.browser.post('/v1/team/invites', { tradeTag: 'Sneaky02', abilities: ['offers-see'] }),
       await m.browser.patch(`/v1/team/members/${m.id}`, { abilities: ['offers-see'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
       // (The logout timer of this test's base is retired on hold v3: migration 307.)
@@ -1187,7 +1187,7 @@ describe('notes on traders (S-094, p7-8)', () => {
   it('a member with "view notes" reads, with "add notes" adds (logged, signed with name and time), and no member deletes', async () => {
     const owner = await team();
     const subject = await team();
-    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { tradeTag: string }).tradeTag;
     const m = await member(owner.id, ['trades']);
     // Without the boxes: refused.
     expect(err(await m.browser.get(`/v1/account/notes/${subjectName}`))).toEqual({ status: 403, error: 'forbidden' });
@@ -1222,7 +1222,7 @@ describe('notes on traders (S-094, p7-8)', () => {
   it('review 2026-11-09 m4: an account holds at most NOTES_PER_ACCOUNT notes, the lead\'s and members\' together', async () => {
     const owner = await team();
     const subject = await team();
-    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { tradeTag: string }).tradeTag;
     await deps.db.query(
       `insert into trader_notes (account_id, about_account_id, text, created_at) select $1, $2, 'n' || g, $3 from generate_series(1, $4::int) g`,
       [owner.id, subject.id, deps.clock(), NOTES_PER_ACCOUNT - 1],
@@ -1238,7 +1238,7 @@ describe('notes on traders (S-094, p7-8)', () => {
   it('S-093 review m1: a note refuses control and format characters and the line and paragraph separators; a new line is allowed', async () => {
     const owner = await team();
     const subject = await team();
-    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { tradeTag: string }).tradeTag;
     for (const bad of ['a\u2028b', 'a\u2029b', 'a\u202eb', 'a\u200bb', 'a\u0085b', 'a\tb']) {
       expect(err(await owner.browser.post('/v1/account/notes', { about: subjectName, text: bad })), JSON.stringify(bad)).toEqual({ status: 400, error: 'bad-request' });
     }
@@ -1281,13 +1281,13 @@ describe('invites carry their boxes at once (owner 26 Nov 2026: no holds)', () =
     const owner = await team();
     for (const id of HARD_OWNER_ONLY) {
       await expect(deps.db.query(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Hardrule1', 'hardrule1', $2, $3, $3)`,
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at) values ($1, 'Hardrule1', 'hardrule1', $2, $3, $3)`,
         [owner.id, [id], deps.clock()],
       )).rejects.toThrow();
     }
     // The API never takes an empty set from a request.
     const confirmToken = await confirmed(owner, { kind: 'team-invite-abilities', name: `Empty${++n}x`, abilities: '' });
-    expect(err(await owner.browser.post('/v1/team/invites', { displayName: `Empty${n}x`, abilities: [], confirmToken }))).toEqual({ status: 400, error: 'bad-request' });
+    expect(err(await owner.browser.post('/v1/team/invites', { tradeTag: `Empty${n}x`, abilities: [], confirmToken }))).toEqual({ status: 400, error: 'bad-request' });
   });
 
   it('an invite carries its boxes at once (no staging)', async () => {
@@ -1311,8 +1311,8 @@ describe('invites carry their boxes at once (owner 26 Nov 2026: no holds)', () =
   });
 });
 
-describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> Assistant N", never by their own name', () => {
-  type Listed = { id: string; displayName: string; chatLabel: string };
+describe('S-105 (owner p11-25): a member shows in chats as "<lead Trade Tag> Assistant N", never by their own name', () => {
+  type Listed = { id: string; tradeTag: string; chatLabel: string };
   const listed = async (owner: Who) => ((await owner.browser.get('/v1/team')).json() as { members: Listed[] }).members;
 
   it('members are numbered 1, 2, 3 in the order they were added; the label never carries the member\'s name', async () => {
@@ -1321,10 +1321,10 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
     for (const name of names) expect((await invite(owner, name, ['offers'])).statusCode).toBe(201);
     const ms = await listed(owner);
     // (The test clock stands still, so the list's own order is by id; each name keeps its number.)
-    expect(Object.fromEntries(ms.map((m) => [m.displayName, m.chatLabel]))).toEqual(
-      Object.fromEntries(names.map((name, i) => [name, `${owner.displayName} Assistant ${i + 1}`])),
+    expect(Object.fromEntries(ms.map((m) => [m.tradeTag, m.chatLabel]))).toEqual(
+      Object.fromEntries(names.map((name, i) => [name, `${owner.tradeTag} Assistant ${i + 1}`])),
     );
-    for (const m of ms) expect(m.chatLabel).not.toContain(m.displayName);
+    for (const m of ms) expect(m.chatLabel).not.toContain(m.tradeTag);
   });
 
   it('a freed number is used again by the next member (the lowest free one)', async () => {
@@ -1337,7 +1337,7 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
     });
     expect(del.statusCode, del.body).toBe(204);
     expect((await invite(owner, `SlotName${++n}x`, ['offers'])).statusCode).toBe(201);
-    expect((await listed(owner)).map((m) => m.chatLabel).sort()).toEqual([1, 2, 3].map((k) => `${owner.displayName} Assistant ${k}`));
+    expect((await listed(owner)).map((m) => m.chatLabel).sort()).toEqual([1, 2, 3].map((k) => `${owner.tradeTag} Assistant ${k}`));
   });
 
   it('a member sees their own label on /v1/account/me (a member seeded straight into the table is numbered too)', async () => {
@@ -1346,8 +1346,8 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
     const m2 = await member(owner.id, ['trades']);
     const me1 = (await m1.browser.get('/v1/account/me')).json() as { member: { name: string; chatLabel: string } };
     const me2 = (await m2.browser.get('/v1/account/me')).json() as { member: { name: string; chatLabel: string } };
-    expect(me1.member.chatLabel).toBe(`${owner.displayName} Assistant 1`);
-    expect(me2.member.chatLabel).toBe(`${owner.displayName} Assistant 2`);
+    expect(me1.member.chatLabel).toBe(`${owner.tradeTag} Assistant 1`);
+    expect(me2.member.chatLabel).toBe(`${owner.tradeTag} Assistant 2`);
     expect(me1.member.chatLabel).not.toContain(m1.name);
     // The owner's own overview has no member part.
     expect(((await owner.browser.get('/v1/account/me')).json() as { member: unknown }).member).toBeNull();
@@ -1359,7 +1359,7 @@ describe('S-105 (owner p11-25): a member shows in chats as "<lead display name> 
     const { rows } = await deps.db.query<{ assistant_no: number }>('select assistant_no from team_members where id = $1', [m.id]);
     expect(rows[0]!.assistant_no).toBe(1);
     await expect(deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at, assistant_no)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at, assistant_no)
        values ($1, 'Clashing1', 'clashing1', '{offers-see}', $2, $2, 1)`,
       [owner.id, deps.clock()],
     )).rejects.toThrow();

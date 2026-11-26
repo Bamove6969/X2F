@@ -129,8 +129,8 @@ async function seedAccount(...args: Parameters<typeof seedTagged>): Promise<stri
 
 let nameSeq = 0;
 const uniqueName = (prefix: string) => `${prefix}${String(++nameSeq).padStart(4, '0')}x`;
-/** Sign-up names for a test login name: display name `D.<login name>`. */
-const names = (loginName: string) => ({ displayName: `D.${loginName}`, loginName });
+/** Sign-up names for a test login name: Trade Tag `D.<login name>`. */
+const names = (loginName: string) => ({ tradeTag: `D.${loginName}`, loginName });
 
 async function seedOwner(): Promise<string> {
   const id = await seedAccount(deps, { loginName: uniqueName('boss'), kind: 'owner' });
@@ -255,7 +255,7 @@ describe('passkey sign-up and discoverable login', () => {
     const id = Buffer.from(options.user.id, 'base64url');
     expect(id).toHaveLength(32);
     expect(id.toString('latin1').toLowerCase()).not.toContain(username.toLowerCase());
-    // The authenticator stores and shows the public display name only, never the private login name.
+    // The authenticator stores and shows the public Trade Tag only, never the private login name.
     expect(options.user.name).toBe(`D.${username}`);
     expect(JSON.stringify(options)).not.toContain(`"${username}"`);
     const { rows } = await deps.db.query('select webauthn_user_id from accounts where id = $1', [accountId]);
@@ -266,7 +266,7 @@ describe('passkey sign-up and discoverable login', () => {
     const { username } = await signUp('passkey');
     const res = await new Browser().post('/v1/register/webauthn/start', { ...names(username.toUpperCase()), kind: 'passkey' });
     expect(res.statusCode).toBe(409);
-    expect(errorOf(res)).toBe('display-name-taken');
+    expect(errorOf(res)).toBe('trade-tag-taken');
   });
 
   it('a disabled account with a valid passkey gets account-disabled', async () => {
@@ -527,7 +527,7 @@ describe('login-name tags under key rotation (FU-D)', () => {
       expect((await tagOf(t.accountId)).login_tag_key_id).toBe(1);
       expect((await usernameLogin(t.auth, t.username)).res.json()).toEqual({ status: 'ok' });
       expect(await tagOf(t.accountId)).toEqual({ login_tag: currentLoginTag(deps, t.username, 2), login_tag_key_id: 2 });
-      // No challenge payload holds the plaintext login name (the display name `D.<login name>` contains it, hence the quotes).
+      // No challenge payload holds the plaintext login name (the Trade Tag `D.<login name>` contains it, hence the quotes).
       const { rows } = await deps.db.query<{ p: string }>('select payload::text as p from challenges');
       expect(rows.filter((r) => r.p.toLowerCase().includes(`"${t.username.toLowerCase()}"`))).toEqual([]);
     } finally {

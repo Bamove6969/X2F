@@ -9,7 +9,7 @@
  * those details (security review of wip/lead-note-226, Medium 1). Refused (`walletLabelProblem`):
  * - `length`: empty once trimmed, or over WALLET_LABEL_MAX characters (code points);
  * - `characters`: control or format characters (C0, C1, DEL, bidi overrides such as U+202E,
- *   zero-width characters), and the display name's script checks (`unsafeScripts`: invisible
+ *   zero-width characters), and the Trade Tag's script checks (`unsafeScripts`: invisible
  *   characters, right-to-left letters, stray combining marks, mixed or confusable scripts such as a
  *   Cyrillic `а` among Latin letters);
  * - `separator`: the separators the lists draw between a name and its details ("…", "·", "•" and
@@ -90,7 +90,7 @@ function looksLikeAddressEnd(name: string): boolean {
   return false;
 }
 
-/** Digits drawn like letters (as the new display-name rule folds them): `D3fault`, `R3ady`. */
+/** Digits drawn like letters (as the new trade-tag rule folds them): `D3fault`, `R3ady`. */
 const DIGIT_LETTERS: Readonly<Record<string, string>> = { '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '6': 'b', '7': 't', '8': 'b', '9': 'g' };
 
 function hasStatusWord(name: string): boolean {

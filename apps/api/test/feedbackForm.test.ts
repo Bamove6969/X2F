@@ -233,10 +233,10 @@ describe('POST /v1/feedback/form', () => {
     setNow(new Date('2026-12-03T10:00:00Z'));
     const { b: owner, id: teamId } = await login('teamfb1');
     const member = async (i: number) => {
-      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, displayName: `fb-m-${i}`, kind: 'member' });
+      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, tradeTag: `fb-m-${i}`, kind: 'member' });
       const name = `FbMember${i}`;
       await deps.db.query(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $5, $5)`,
         [teamId, name, name.toLowerCase(), rolesToAbilities(['offers']), deps.clock(), loginId],
       );

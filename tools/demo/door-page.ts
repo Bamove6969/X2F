@@ -11,7 +11,7 @@ import { STAFF_SESSION_COOKIE, withoutCookies } from './staff-gateway-core.js';
 
 /** A seeded trader as the login page shows it (no secrets). */
 export interface DoorPerson {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
 }
 
@@ -31,7 +31,7 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeA
 export function doorPage(people: readonly DoorPerson[], error = ''): string {
   const forms = people.map((p) =>
     `<form method="post" action="/__demo/login"><input type="hidden" name="as" value="${esc(p.loginName)}">` +
-    `<button type="submit">Log in as ${esc(p.displayName)}</button> <code>${esc(p.loginName)}</code></form>`).join('');
+    `<button type="submit">Log in as ${esc(p.tradeTag)}</button> <code>${esc(p.loginName)}</code></form>`).join('');
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',

@@ -185,7 +185,7 @@ describe('marketplace reads are behind the front door', () => {
     for (const url of [`/v1/offers/${id}`, '/v1/offers?side=sell&method=ZELLE&currency=USD', '/v1/methods?side=sell&currency=USD']) {
       const res = await app.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(401);
-      expect(res.body, url).not.toContain(p.displayName);
+      expect(res.body, url).not.toContain(p.tradeTag);
       expect(res.body, url).toBe('{"error":"not-authenticated"}');
     }
   });
@@ -199,10 +199,10 @@ describe('a team member signs the Terms themselves', () => {
   async function memberOn(terms: string | null) {
     const owner = await trader();
     const tag = Math.random().toString(36).slice(2, 10);
-    const loginId = await seedAccount(deps, { loginName: `ml${tag}`, displayName: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
+    const loginId = await seedAccount(deps, { loginName: `ml${tag}`, tradeTag: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [owner.id, `Mem${tag}`, `mem${tag}`, ['offers-see', 'trades-see-active'], now, loginId],
     );

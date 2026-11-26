@@ -40,7 +40,7 @@ let n = 0;
 async function person(): Promise<Who> {
   const name = `rd${++n}${Math.random().toString(36).slice(2, 8)}`;
   const id = await seedAccount(deps, { loginName: name });
-  const { rows } = await deps.db.query<{ name: string }>('select display_name as name from accounts where id = $1', [id]);
+  const { rows } = await deps.db.query<{ name: string }>('select trade_tag as name from accounts where id = $1', [id]);
   return { id, token: (await insertSession(deps, id, 'trader')).token, name: rows[0]!.name };
 }
 const call = (who: Who, method: 'GET' | 'POST', url: string, payload?: unknown) =>

@@ -510,7 +510,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   });
 
   // Plan 4 Task 24 (D-011): who may review this case's appeal (senior moderators and the owner
-  // with no log entry on round 1, R37), by display name, and whether the appeal waits for one.
+  // with no log entry on round 1, R37), by Trade Tag, and whether the appeal waits for one.
   // Review M1 (lead call 12 Nov): the owner's alone (`staff.manage`; the owner acts on D-011 by
   // adding or switching on a reviewer), and refused (403 `forbidden-case`) to a caller involved in
   // the case, so nobody involved learns who will review their ruling even if the perm widens later.
@@ -602,7 +602,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
    */
   async function announce(req: FastifyRequest, code: string, t: CaseTrade): Promise<void> {
     const deps = req.server.deps;
-    const name = req.staff.displayName;
+    const name = req.staff.tradeTag;
     const { rowCount } = await deps.db.query(
       `update disputes set moderator_name = $2, moderator_joined_at = $3
         where code = $1 and seq = (select max(seq) from disputes where code = $1) and moderator_name is distinct from $2`,
@@ -681,9 +681,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     await deps.db.query(
       `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4, proof_request_sent_at = null
         where code = $1 and seq = (select max(seq) from disputes where code = $1)`,
-      [code, side, deps.clock(), req.staff.displayName],
+      [code, side, deps.clock(), req.staff.tradeTag],
     );
-    publish([side === 'buyer' ? t.buyer : t.seller], { type: 'proof-requested', code, username: req.staff.displayName }, { closed: t.closed });
+    publish([side === 'buyer' ? t.buyer : t.seller], { type: 'proof-requested', code, username: req.staff.tradeTag }, { closed: t.closed });
     return reply.code(204).send();
   });
 

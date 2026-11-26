@@ -1,5 +1,5 @@
 // Spec 6.6 "Account actions" (Plan 4 Task 27) in a real browser: the Accounts page (find a trader
-// by display name or trade code; ban with a security-key tap, lift a ban, extend or end an account
+// by Trade Tag or trade code; ban with a security-key tap, lift a ban, extend or end an account
 // hold after a confirm sheet), ModCase's Account actions card, the role gates, and the owner's
 // Reset security in the Staff list's Change sheet. Taps sign with a soft security key (Chromium's
 // virtual authenticator) over the honest `tapChallenge(intent + issuedAt, nonce)` the page checks
@@ -14,9 +14,9 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 const H = 3_600_000;
 const DAY = 24 * H;
 const ends = () => new Date(Date.now() + 8 * H).toISOString();
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'], sessionEndsAt: ends() };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'], sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: ends() };
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const SELLER = '1b2c3d4e-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const CODE = '7RWD3MXEKQ84HN2T';
@@ -41,7 +41,7 @@ interface World {
   bans: Array<Record<string, unknown>>;
 }
 const account = (w: World, o: Record<string, unknown> = {}) => ({
-  accountId: ACCT, displayName: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97, disputes: { won: 1, lost: 0 }, stage: 'graduated',
+  accountId: ACCT, tradeTag: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97, disputes: { won: 1, lost: 0 }, stage: 'graduated',
   status: {
     bans: w.bans.filter((b) => b.active === true).map((b) => ({ id: b.id, kind: b.kind, reasonCode: b.reasonCode, until: b.until, permanent: b.until === null })),
     hold: w.holdUntil === null ? null : { until: w.holdUntil, reason: 'recovery-code' },
@@ -50,7 +50,7 @@ const account = (w: World, o: Record<string, unknown> = {}) => ({
   },
   ...o,
 });
-const trader = (name: string) => ({ displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
+const trader = (name: string) => ({ tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
 const kase = () => ({
   code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: '',
   afterRefund: false, openedAt: new Date(Date.now() - 2 * H).toISOString(), replyDueAt: new Date(Date.now() + 2 * H).toISOString(),
@@ -62,8 +62,8 @@ const kase = () => ({
   freezes: { buyer: false, seller: false },
 });
 const MEMBERS = [
-  { accountId: 'o-1', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: new Date().toISOString(), openCases: 0, expiresAt: null, missingMethods: [] },
-  { accountId: 'm-1', inviteId: null, displayName: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: new Date().toISOString(), openCases: 3, expiresAt: null, missingMethods: [] },
+  { accountId: 'o-1', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: new Date().toISOString(), openCases: 0, expiresAt: null, missingMethods: [] },
+  { accountId: 'm-1', inviteId: null, tradeTag: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: new Date().toISOString(), openCases: 3, expiresAt: null, missingMethods: [] },
 ];
 
 interface Stub {
@@ -86,7 +86,7 @@ async function stub(page: Page, me: typeof SENIOR, credId: string | null, world:
     if (key === 'GET /staff/v1/members') return json({ members: MEMBERS })(route);
     if (key === 'GET /staff/v1/accounts/lookup') {
       const q = url.searchParams.get('q') ?? '';
-      if (q === CODE) return json({ accounts: [account(world, { matchedBy: 'code', side: 'buyer' }), account(world, { accountId: SELLER, displayName: 'quietfox', matchedBy: 'code', side: 'seller' })] })(route);
+      if (q === CODE) return json({ accounts: [account(world, { matchedBy: 'code', side: 'buyer' }), account(world, { accountId: SELLER, tradeTag: 'quietfox', matchedBy: 'code', side: 'seller' })] })(route);
       return json({ accounts: q === 'harbor_lin' ? [account(world)] : [] })(route);
     }
     if (key === `GET /staff/v1/accounts/${ACCT}/bans` || key === `GET /staff/v1/accounts/${SELLER}/bans`) return json({ priorOffences: world.bans.length, bans: world.bans, rules: BAN_RULES })(route);
@@ -143,7 +143,7 @@ function noErrors(page: Page): string[] {
 }
 
 async function lookUp(page: Page, q: string) {
-  await page.getByLabel('Display name or trade code').fill(q);
+  await page.getByLabel('Trade Tag or trade code').fill(q);
   await page.getByRole('button', { name: 'Look up' }).click();
 }
 

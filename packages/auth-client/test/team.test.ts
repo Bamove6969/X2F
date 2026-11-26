@@ -40,7 +40,7 @@ describe('team calls', () => {
     const { sent, fetch } = recorder(() => new Response(null, { status: 204 }));
     const api = createAuthApi({ fetch });
     await api.getTeam();
-    await api.inviteMember({ displayName: 'Aurora', roles: ['trades'], confirmToken: 't1' });
+    await api.inviteMember({ tradeTag: 'Aurora', roles: ['trades'], confirmToken: 't1' });
     await api.setMemberRoles('a b', { roles: ['offers'], confirmToken: 't2' });
     await api.removeMember('id1', { confirmToken: 't3' });
     await api.teamAudit();
@@ -65,7 +65,7 @@ describe('team calls', () => {
       'POST /v1/team/join/second/pgp/finish',
       'POST /v1/team/join/second/webauthn/start',
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ displayName: 'Aurora', roles: ['trades'], confirmToken: 't1' });
+    expect(bodyOf(sent[1]!)).toEqual({ tradeTag: 'Aurora', roles: ['trades'], confirmToken: 't1' });
     expect(bodyOf(sent[2]!)).toEqual({ roles: ['offers'], confirmToken: 't2' });
     // The confirm token goes in the body, never the URL (R17).
     expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 't3' });
@@ -77,7 +77,7 @@ describe('team calls', () => {
 describe('team refusals', () => {
   it('too-many-members carries the limit', async () => {
     const { fetch } = recorder(() => Response.json({ error: 'too-many-members', max: 3 }, { status: 409 }));
-    const e = await createAuthApi({ fetch }).inviteMember({ displayName: 'Aurora', roles: ['offers'] }).catch((x: unknown) => x);
+    const e = await createAuthApi({ fetch }).inviteMember({ tradeTag: 'Aurora', roles: ['offers'] }).catch((x: unknown) => x);
     expect(e).toMatchObject({ status: 409, code: 'too-many-members', max: 3 });
   });
 });

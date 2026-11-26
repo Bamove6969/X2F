@@ -34,14 +34,14 @@ const BROWSER_AUTHENTICATION: AuthenticationCeremony = { startAuthentication };
  */
 export async function registerWithWebAuthn(
   api: AuthApi,
-  names: { displayName: string; loginName: string },
+  names: { tradeTag: string; loginName: string },
   kind: WebAuthnKind,
   deviceLabel: string,
   acceptedTerms: string,
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
   o: { label?: string } = {},
-): Promise<{ displayName: string; credentialId: string }> {
-  const { challengeId, options } = await api.registerWebAuthnStart({ displayName: names.displayName, loginName: names.loginName, kind });
+): Promise<{ tradeTag: string; credentialId: string }> {
+  const { challengeId, options } = await api.registerWebAuthnStart({ tradeTag: names.tradeTag, loginName: names.loginName, kind });
   const response = await ceremony.startRegistration({ optionsJSON: options });
   const done = await api.registerWebAuthnFinish({
     challengeId, response, deviceLabel, acceptedTerms, ...(o.label !== undefined ? { label: o.label } : {}),

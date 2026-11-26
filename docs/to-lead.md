@@ -818,7 +818,7 @@ I audited every owner answer on origin/comms against the canvas: the decisions f
   - Q77: vendor to trader means opening a new account; BecomeVendor still offers "Switch back".
   - G57: removing team members.
   - Clawback: pay goes out at clock-out; StaffSettings holds the bonus.
-  - Q54: owner username vs display name.
+  - Q54: owner username vs Trade Tag.
   - Q51/G3: staff need all three login methods.
 - **Head-designer rulings on ambiguous items:**
   - Q58 cap in USD. Q77: the 60-day idle close applies to every account. Five member types stay (owner-approved).
@@ -850,7 +850,7 @@ I audited every owner answer on origin/comms against the canvas: the decisions f
 
 **Stage 9**
 - OwnerSetup:
-  - Q54: a private username plus a display name.
+  - Q54: a private username plus a Trade Tag.
   - Q59: owner logs in with a security key and the PGP key together.
   - Q55: X2F stays offline until setup is done.
   - G4: big changes need both keys.
@@ -926,7 +926,7 @@ Each board has a "Decided · owner" aside naming the ids. New tweaks are listed 
 - MyTrades(+W): "File appeal" button that ends with the window.
 - DisputeRuling/Appeal-Notice(+W), Q40: feedback rules.
 - Fold-Cover, Q38: 24 h countdown.
-- TeamChat(+W): team display name + "member: <name>".
+- TeamChat(+W): team Trade Tag + "member: <name>".
 - GiftCardBrand: rules synced.
 
 **Pre-existing height mismatches (not new)**

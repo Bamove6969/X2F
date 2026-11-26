@@ -526,14 +526,14 @@ export function staffPayRoutes(app: FastifyInstance): void {
   });
 
   app.get('/staff/v1/pay/staff', earnings, async (req) => {
-    const { rows } = await req.server.deps.db.query<{ staff_id: string; display_name: string; role: string; switched_off: boolean; usd_cents: string; atomic: string }>(
-      `select m.account_id::text as staff_id, a.display_name, m.role, m.switched_off_at is not null as switched_off,
+    const { rows } = await req.server.deps.db.query<{ staff_id: string; trade_tag: string; role: string; switched_off: boolean; usd_cents: string; atomic: string }>(
+      `select m.account_id::text as staff_id, a.trade_tag, m.role, m.switched_off_at is not null as switched_off,
               coalesce(sum(i.usd_cents), 0)::text as usd_cents, coalesce(sum(i.atomic), 0)::text as atomic
          from staff_members m join accounts a on a.id = m.account_id
          left join staff_pay_items i on i.staff_id = m.account_id and i.payout_id is null
         where m.role <> 'owner'
-        group by m.account_id, a.display_name, m.role, m.switched_off_at
-        order by a.display_name`,
+        group by m.account_id, a.trade_tag, m.role, m.switched_off_at
+        order by a.trade_tag`,
     );
     const price = usdPrice(req.server.deps.prices);
     return {
@@ -543,7 +543,7 @@ export function staffPayRoutes(app: FastifyInstance): void {
         // Owed: the net is a debt. With no price, a dollar debt with no XMR to offset it still is.
         const net = price === null ? (usd < 0n && atomic <= 0n ? -1n : usd > 0n || atomic > 0n ? 1n : 0n) : (usd * XMR_ATOMIC) / price + atomic;
         return {
-          staffId: r.staff_id, displayName: r.display_name, role: r.role, switchedOff: r.switched_off,
+          staffId: r.staff_id, tradeTag: r.trade_tag, role: r.role, switchedOff: r.switched_off,
           unpaidUsdCents: r.usd_cents, unpaidAtomic: r.atomic, owed: net < 0n,
         };
       }),

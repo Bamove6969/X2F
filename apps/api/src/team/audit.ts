@@ -250,8 +250,8 @@ export async function listAudit(
   accountId: string,
   f: { from?: Date; to?: Date; memberId?: string } = {},
 ): Promise<AuditEntry[]> {
-  const { rows } = await q.query<{ id: string; at: Date; member_id: string | null; display_name: string | null; action: string; trade_code: string | null; detail: unknown }>(
-    `select l.id::text as id, l.at, l.member_id, m.display_name, l.action, l.trade_code, l.detail
+  const { rows } = await q.query<{ id: string; at: Date; member_id: string | null; trade_tag: string | null; action: string; trade_code: string | null; detail: unknown }>(
+    `select l.id::text as id, l.at, l.member_id, m.trade_tag, l.action, l.trade_code, l.detail
        from team_audit l left join team_members m on m.id = l.member_id
       where l.account_id = $1
         and ($2::timestamptz is null or l.at >= $2) and ($3::timestamptz is null or l.at < $3)
@@ -260,7 +260,7 @@ export async function listAudit(
     [accountId, f.from ?? null, f.to ?? null, f.memberId ?? null],
   );
   return rows.map((r) => ({
-    id: r.id, at: r.at.toISOString(), memberId: r.member_id, memberName: r.display_name, byLead: r.member_id === null,
+    id: r.id, at: r.at.toISOString(), memberId: r.member_id, memberName: r.trade_tag, byLead: r.member_id === null,
     action: r.action, tradeCode: r.trade_code, detail: r.detail,
   }));
 }

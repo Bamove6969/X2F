@@ -76,8 +76,8 @@ export interface StaffPastRepItem {
   keyId: string;
   /** Always true: a claim exists only once its signature verified (Task 10's finish). */
   signatureValid: true;
-  /** The trader's public display name (never the login name or account id). */
-  displayName: string;
+  /** The trader's public Trade Tag (never the login name or account id). */
+  tradeTag: string;
   createdAt: string;
   /**
    * Review M2: the host of the page the archive copied, read from the link (`archivedOriginalHost`),
@@ -92,7 +92,7 @@ export interface StaffPastRepPage {
   next: string | null;
 }
 
-/** The longest display-name filter (spec 6.1 names are far shorter). */
+/** The longest trade-tag filter (spec 6.1 names are far shorter). */
 const NAME_FILTER_MAX = 64;
 /** A cursor's time: UTC to the microsecond, as the column holds it (re-review M1). */
 const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
@@ -145,7 +145,7 @@ function claimIdOf(params: unknown): string {
  *   `signed`) → `StaffPastRepPage`, at most PAST_REP_LIST_MAX a page. The queue (`signed`) is oldest
  *   first by filing; the approved claims, which only grow, newest first by approval (review M1), so
  *   the newest is always on the first page. `cursor` is the previous page's `next`; `name` keeps the
- *   traders whose display name starts with it (case-insensitive, wildcards taken literally). No key,
+ *   traders whose Trade Tag starts with it (case-insensitive, wildcards taken literally). No key,
  *   signature, challenge text or user ID: the grouped fingerprint and the key id are all staff
  *   compare, with the full link and the archived original's host (review M2).
  * - `POST /staff/v1/past-rep/:id/approve { fingerprintSeen: true, profileSeen: true, tradesSeen }`
@@ -189,10 +189,10 @@ function staffPastRepReviewRoutes(app: FastifyInstance): void {
     const after = queue ? `(${sortAt}, pr.id) > ($3::timestamptz, $4::uuid)` : `(${sortAt}, pr.id) < ($3::timestamptz, $4::uuid)`;
     const { rows } = await req.server.deps.db.query<{
       id: string; site: string; evidence_url: string; claimed_trades: number; verified_trades: number | null; cents: string | null;
-      status: 'signed' | 'approved'; fingerprint: string; display_name: string; created_at: Date; sort_text: string;
+      status: 'signed' | 'approved'; fingerprint: string; trade_tag: string; created_at: Date; sort_text: string;
     }>(
       `select pr.id, pr.site, pr.evidence_url, pr.claimed_trades, pr.verified_trades, ${verifiedUsdCentsTextSql('pr')} as cents,
-              pr.status, pr.fingerprint, a.display_name, pr.created_at,
+              pr.status, pr.fingerprint, a.trade_tag, pr.created_at,
               to_char(${sortAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as sort_text
          from past_reputation pr join accounts a on a.id = pr.account_id
         where pr.status = $1 and ($3::timestamptz is null or ${after})
@@ -208,7 +208,7 @@ function staffPastRepReviewRoutes(app: FastifyInstance): void {
         id: r.id, site: r.site, url: r.evidence_url, claimedTrades: r.claimed_trades, verifiedTrades: r.verified_trades,
         verifiedUsdCents: r.cents === null ? null : Number(r.cents), status: r.status,
         fingerprint: groupFingerprint(r.fingerprint), keyId: r.fingerprint.slice(-16).toUpperCase(), signatureValid: true as const,
-        displayName: r.display_name, createdAt: r.created_at.toISOString(), originalHost: archivedOriginalHost(r.evidence_url),
+        tradeTag: r.trade_tag, createdAt: r.created_at.toISOString(), originalHost: archivedOriginalHost(r.evidence_url),
       })),
       next: more && last !== undefined ? `${last.sort_text}~${last.id}` : null,
     };

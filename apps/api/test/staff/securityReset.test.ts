@@ -116,21 +116,21 @@ describe('the owner resets a staff member\'s security (D-032, owner G60)', () =>
 
   it('the link re-enrols the same person: same login name, role and hours; a passkey and a PGP key finish (D-070); used once', async () => {
     const mod = await fullMod();
-    const before = (await t.deps.db.query('select login_tag, display_name from accounts where id = $1', [mod.id])).rows[0];
+    const before = (await t.deps.db.query('select login_tag, trade_tag from accounts where id = $1', [mod.id])).rows[0];
     const r = await reset(mod.id);
     expect(r.res.statusCode, r.res.body).toBe(201);
     const b = new StaffBrowser(t.app);
     const view = await b.get(acceptUrl(r.token));
     expect(view.json()).toEqual({ role: 'mod', hours: 'any', expiresAt: r.expiresAt, resume: { keys: 0, passkeys: 0, pgp: 0, keyCheckCode: null }, reset: true });
     // The names and the Terms are already theirs.
-    expect(errorOf(await b.post(acceptUrl(r.token, '/account'), { displayName: 'Other', loginName: 'other1', acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG }))).toBe('wrong-state');
+    expect(errorOf(await b.post(acceptUrl(r.token, '/account'), { tradeTag: 'Other', loginName: 'other1', acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG }))).toBe('wrong-state');
     expect((await addPgp(b, r.token, await genKey())).statusCode).toBe(201);
     const early = await b.post(acceptUrl(r.token, '/finish'), {});
     expect([early.statusCode, errorOf(early)]).toEqual([409, 'two-factors-required']);
     expect((await addKey(b, r.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
     const fin = await b.post(acceptUrl(r.token, '/finish'), {});
     expect([fin.statusCode, fin.json()]).toEqual([201, { keyCheckCode: null }]);
-    expect((await t.deps.db.query('select login_tag, display_name from accounts where id = $1', [mod.id])).rows[0]).toEqual(before);
+    expect((await t.deps.db.query('select login_tag, trade_tag from accounts where id = $1', [mod.id])).rows[0]).toEqual(before);
     expect((await t.deps.db.query('select role, has_security_key, switched_off_at, removed_at from staff_members where account_id = $1', [mod.id])).rows)
       .toEqual([{ role: 'mod', has_security_key: false, switched_off_at: null, removed_at: null }]);
     const { token } = await insertSession(t.deps, mod.id, 'staff');

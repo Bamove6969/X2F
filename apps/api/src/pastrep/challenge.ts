@@ -51,7 +51,7 @@ const isoSeconds = (d: Date): string => `${d.toISOString().slice(0, 19)}Z`;
 /** The exact text the trader signs (Task 10 interface). */
 export function pastRepChallenge(a: {
   origin: string;
-  displayName: string;
+  tradeTag: string;
   site: string;
   url: string;
   fingerprint: string;
@@ -61,7 +61,7 @@ export function pastRepChallenge(a: {
   return [
     'X2F past reputation proof',
     `Site: ${a.origin}`,
-    `X2F name: ${a.displayName}`,
+    `X2F name: ${a.tradeTag}`,
     `Old site: ${a.site}`,
     `Old profile: ${a.url}`,
     `Key: ${groupFingerprint(a.fingerprint)}`,

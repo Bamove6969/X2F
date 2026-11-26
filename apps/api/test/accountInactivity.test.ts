@@ -72,9 +72,9 @@ describe('the last login is recorded', () => {
 
   it("a team member's login counts as the vendor account's login (stamped on the team account)", async () => {
     const t = await vendor();
-    const loginId = await seedAccount(deps, { loginName: `vimember${++n}x`, displayName: `vi-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `vimember${++n}x`, tradeTag: `vi-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [t.id, `ViMember${n}`, `vimember${n}`, ['trades-see-active'], START, loginId],
     );

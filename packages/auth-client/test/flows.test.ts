@@ -50,8 +50,8 @@ const LABEL = 'Browser on Linux';
  * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
  */
 const NOT_AUTH_CLIENT = [
-  'DELETE /v1/account/blocks/:displayName',
-  'DELETE /v1/account/notes/:displayName|:id',
+  'DELETE /v1/account/blocks/:tradeTag',
+  'DELETE /v1/account/notes/:tradeTag|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /.well-known/x2f-signing-key.asc',
@@ -61,7 +61,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/account/blocks',
   'GET /v1/account/freeze',
   'GET /v1/account/liens/preview',
-  'GET /v1/account/notes/:displayName|:id',
+  'GET /v1/account/notes/:tradeTag|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
   'GET /v1/account/past-rep',
@@ -136,7 +136,7 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
   'PUT /v1/account/badges',
-  'PUT /v1/account/blocks/:displayName/note',
+  'PUT /v1/account/blocks/:tradeTag/note',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
   'PUT /v1/account/record/public',
@@ -171,12 +171,12 @@ async function codeFrom(encryptedMessage: string, key: Pair): Promise<string> {
 async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const key = await genKey();
   const username = uniqueName('pgp');
-  const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
+  const start = await j.api.registerPgpStart({ tradeTag: `D${username}`, loginName: username, publicKey: key.publicKey });
   expect(start.fingerprint).toBe(key.fingerprint);
   const done = await j.api.registerPgpFinish({
     challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(),
   });
-  expect(done).toEqual({ displayName: `D${username}` });
+  expect(done).toEqual({ tradeTag: `D${username}` });
   return { username, key };
 }
 
@@ -239,8 +239,8 @@ describe('onboarding', () => {
   it('passkey sign-up through the ceremony wrapper', async () => {
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const username = uniqueName('key');
-    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
-      displayName: `D${username}`,
+    await expect(registerWithWebAuthn(jar().api, { tradeTag: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
+      tradeTag: `D${username}`,
       credentialId: soft.credentialId,
     });
     const fresh = jar();
@@ -251,7 +251,7 @@ describe('onboarding', () => {
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const username = uniqueName('nam');
     const j = jar();
-    const { credentialId } = await registerWithWebAuthn(j.api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft));
+    const { credentialId } = await registerWithWebAuthn(j.api, { tradeTag: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft));
     await expect(j.api.renameWebAuthnKey({ credentialId, label: ' Phone  passkey ' })).resolves.toEqual({ label: 'Phone passkey' });
     expect((await j.api.listMethods()).filter((m) => m.type === 'passkey').map((m) => m.label)).toEqual(['Phone passkey']);
     await expect(j.api.renameWebAuthnKey({ credentialId, label: 'x'.repeat(33) })).rejects.toMatchObject({ status: 400, code: 'key-name-invalid', reason: 'too-long' });

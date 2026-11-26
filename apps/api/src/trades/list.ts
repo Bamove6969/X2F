@@ -22,7 +22,7 @@ export interface TradeListItem {
   fiatCents: string;
   /** The locked rate's currency (`TradeView.lockedRate.currency`). */
   currency: string;
-  counterparty: { displayName: string };
+  counterparty: { tradeTag: string };
   takenAt: string;
   closedAt: string | null;
   /**
@@ -30,7 +30,7 @@ export interface TradeListItem {
    * (from `team_audit`), visible to the account owner only." Only on an open row, only for the
    * account owner's full session (never a member's, nor a recovery or held one, which may not read
    * the team log either): the newest row of the account's own team log by a
-   * member on this trade (its name as the lead's list shows it, `team_members.display_name`, and
+   * member on this trade (its name as the lead's list shows it, `team_members.trade_tag`, and
    * when), or null when no member has acted on it. The lead's own rows (`auditLead`, member null)
    * are not a member acting, and the other side's team log is never read.
    */
@@ -124,14 +124,14 @@ interface ListRow {
 async function lastMemberActions(req: FastifyRequest, accountId: string, codes: string[]): Promise<Map<string, { memberName: string; at: string }>> {
   const out = new Map<string, { memberName: string; at: string }>();
   if (codes.length === 0) return out;
-  const { rows } = await req.server.deps.db.query<{ trade_code: string; display_name: string; at: Date }>(
-    `select distinct on (l.trade_code) l.trade_code, m.display_name, l.at
+  const { rows } = await req.server.deps.db.query<{ trade_code: string; trade_tag: string; at: Date }>(
+    `select distinct on (l.trade_code) l.trade_code, m.trade_tag, l.at
        from team_audit l join team_members m on m.id = l.member_id and m.account_id = l.account_id
       where l.account_id = $1 and l.member_id is not null and l.trade_code = any($2::text[])
       order by l.trade_code, l.at desc, l.id desc`,
     [accountId, codes],
   );
-  for (const r of rows) out.set(r.trade_code, { memberName: r.display_name, at: r.at.toISOString() });
+  for (const r of rows) out.set(r.trade_code, { memberName: r.trade_tag, at: r.at.toISOString() });
   return out;
 }
 
@@ -194,7 +194,7 @@ export function tradeListRoute(app: FastifyInstance): void {
         amountAtomic: BigInt(r.amount_atomic).toString(),
         fiatCents: BigInt(r.fiat_cents).toString(),
         currency: r.locked_currency,
-        counterparty: { displayName: r.counterparty_name },
+        counterparty: { tradeTag: r.counterparty_name },
         takenAt: r.taken_at.toISOString(),
         closedAt: r.closed_at === null ? null : r.closed_at.toISOString(),
         ...(acted !== null && r.closed_at === null ? { lastActedBy: acted.get(r.code) ?? null } : {}),

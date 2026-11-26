@@ -2,7 +2,7 @@
  * Notes on traders (Job 1c, J-10; owner S-094, p7-8): an account's private notes about other
  * traders, signed with who wrote them (the lead, or a member's name) and when.
  *
- * - `GET /v1/account/notes/:displayName` → the account's notes about that trader, newest first:
+ * - `GET /v1/account/notes/:tradeTag` → the account's notes about that trader, newest first:
  *   `{ id, text, by, byLead, at }[]` (`by` is the member's name, null for the lead). The account
  *   owner, or a member with "View notes on traders" (`notes-view`).
  * - `POST /v1/account/notes { about, text }` → 201 the note (409 `too-many-notes` `{ max }` at
@@ -12,7 +12,7 @@
  * - `DELETE /v1/account/notes/:id` → 204. The account owner only: no member deletes a note (owner
  *   p7-8), whatever their boxes (403 `owner-only`).
  *
- * The trader is named by public display name (as blocks do); an unknown name, a non-trader and
+ * The trader is named by public Trade Tag (as blocks do); an unknown name, a non-trader and
  * the account itself are 404 / 400. A note's text is 1 to `NOTE_MAX` characters with no control
  * characters, and never edited (migration 361).
  */
@@ -87,15 +87,15 @@ export function noteRoutes(app: FastifyInstance): void {
   const addNotes = requireSession({ kinds: ['trader'], member: 'notes-add' });
   const owner = requireSession({ kinds: ['trader'] });
 
-  app.get('/v1/account/notes/:displayName', { preHandler: viewNotes }, async (req): Promise<TraderNote[]> => {
+  app.get('/v1/account/notes/:tradeTag', { preHandler: viewNotes }, async (req): Promise<TraderNote[]> => {
     const db = req.server.deps.db;
-    const about = await traderNamed(db, (req.params as { displayName?: unknown }).displayName, req.auth.accountId);
-    const { rows } = await db.query<{ id: string; text: string; display_name: string | null; member_id: string | null; created_at: Date }>(
-      `select n.id, n.text, m.display_name, n.member_id, n.created_at from trader_notes n left join team_members m on m.id = n.member_id
+    const about = await traderNamed(db, (req.params as { tradeTag?: unknown }).tradeTag, req.auth.accountId);
+    const { rows } = await db.query<{ id: string; text: string; trade_tag: string | null; member_id: string | null; created_at: Date }>(
+      `select n.id, n.text, m.trade_tag, n.member_id, n.created_at from trader_notes n left join team_members m on m.id = n.member_id
         where n.account_id = $1 and n.about_account_id = $2 order by n.created_at desc, n.seq desc limit 200`,
       [req.auth.accountId, about.id],
     );
-    return rows.map((r) => ({ id: r.id, text: r.text, by: r.display_name, byLead: r.member_id === null, at: r.created_at.toISOString() }));
+    return rows.map((r) => ({ id: r.id, text: r.text, by: r.trade_tag, byLead: r.member_id === null, at: r.created_at.toISOString() }));
   });
 
   app.post('/v1/account/notes', { preHandler: addNotes }, async (req, reply) => {

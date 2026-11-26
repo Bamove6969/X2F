@@ -4,46 +4,46 @@ import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
-import { bannedTagSql, displayNameBanned } from './bans.js';
+import { bannedTagSql, tradeTagBanned } from './bans.js';
 import { checkTermsSignature, optionalTermsSignature, sealTermsSignature, type TermsSignature } from './termsSignature.js';
 
 /**
- * The two names of a new account: the display name as typed and as its case-insensitive key, and
+ * The two names of a new account: the Trade Tag as typed and as its case-insensitive key, and
  * the login name's key (the lower-cased name: only the key is ever used, and from FU-D on it is
  * stored only as its tag). Held in memory only; a sign-up waiting in a challenge keeps `sealNames`.
  */
 export interface NewNames {
-  displayName: string;
+  tradeTag: string;
   displayKey: string;
   loginKey: string;
 }
 
 /**
  * Checks the two names of a new account (spec 6.1, owner 2026-10-23): their shapes, reserved
- * display names (with look-alikes), that they differ, and that the display name is not a look-alike
- * of a staff or owner display name (F4: 0/o, 1/l/i, rn/m). 400 `display-name-invalid`,
- * `display-name-reserved`, `login-name-invalid` or `names-same`. A taken display name is checked by
- * `assertDisplayNameFree`; a taken login name only by `createAccount`.
+ * Trade Tags (with look-alikes), that they differ, and that the Trade Tag is not a look-alike
+ * of a staff or owner Trade Tag (F4: 0/o, 1/l/i, rn/m). 400 `trade-tag-invalid`,
+ * `trade-tag-reserved`, `login-name-invalid` or `names-same`. A taken Trade Tag is checked by
+ * `assertTradeTagFree`; a taken login name only by `createAccount`.
  */
-export async function assertNewNames(db: Queryable, displayName: unknown, loginName: unknown): Promise<NewNames> {
-  const r = checkNames(typeof displayName === 'string' ? displayName : '', typeof loginName === 'string' ? loginName : '');
+export async function assertNewNames(db: Queryable, tradeTag: unknown, loginName: unknown): Promise<NewNames> {
+  const r = checkNames(typeof tradeTag === 'string' ? tradeTag : '', typeof loginName === 'string' ? loginName : '');
   if (!r.ok) {
-    if (r.field === 'displayName') throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
+    if (r.field === 'tradeTag') throw new ApiError(400, r.reason === 'reserved' ? 'trade-tag-reserved' : 'trade-tag-invalid');
     throw new ApiError(400, r.reason === 'same' ? 'names-same' : 'login-name-invalid');
   }
   // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.display.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
-  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
-  return { displayName: r.display.name, displayKey: r.display.key, loginKey: r.login.key };
+  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'trade-tag-reserved');
+  return { tradeTag: r.display.name, displayKey: r.display.key, loginKey: r.login.key };
 }
 
 /**
- * The other direction of F4 (review of lead-signup-rules-main, M1): a new staff or owner display
- * name may not look like an existing trader's display name or a live team member's name (or open
+ * The other direction of F4 (review of lead-signup-rules-main, M1): a new staff or owner Trade
+ * Tag may not look like an existing trader's Trade Tag or a live team member's name (or open
  * member invite), compared by `staffNameKey` as `assertNewNames` compares the other way, so a
  * trader who signed up first can never read like staff. A member's own login account is skipped:
- * its display name is a random placeholder nobody sees. 400 `display-name-reserved`, as for a
+ * its Trade Tag is a random placeholder nobody sees. 400 `trade-tag-reserved`, as for a
  * reserved word. Read in full on each call: it runs only at staff invite accept and owner setup.
  */
 export async function assertStaffNameUnlike(db: Queryable, displayKey: string): Promise<void> {
@@ -53,16 +53,16 @@ export async function assertStaffNameUnlike(db: Queryable, displayKey: string): 
      union all
      select display_key from team_members where removed_at is null`,
   );
-  if (rows.some((r) => staffNameKey(r.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  if (rows.some((r) => staffNameKey(r.display_key) === folded)) throw new ApiError(400, 'trade-tag-reserved');
 }
 
 /**
- * `NewNames` as a sign-up challenge's payload keeps them (FU-D, FU-A review note 1): the display
- * name in clear (it is public), the login name sealed with AES-256-GCM under `subkey('login-seal')`,
+ * `NewNames` as a sign-up challenge's payload keeps them (FU-D, FU-A review note 1): the Trade
+ * Tag in clear (it is public), the login name sealed with AES-256-GCM under `subkey('login-seal')`,
  * so a stolen database holds no login name, not even one waiting in a sign-up.
  */
 export interface SealedNames {
-  displayName: string;
+  tradeTag: string;
   displayKey: string;
   /** base64url of nonce (12) || ciphertext || GCM tag (16). */
   login: string;
@@ -75,7 +75,7 @@ export function sealNames(config: Config, n: NewNames): SealedNames {
   const c = createCipheriv('aes-256-gcm', subkey(config, 'login-seal'), nonce, { authTagLength: 16 });
   c.setAAD(SEAL_AAD);
   const body = Buffer.concat([c.update(n.loginKey, 'utf8'), c.final()]);
-  return { displayName: n.displayName, displayKey: n.displayKey, login: Buffer.concat([nonce, body, c.getAuthTag()]).toString('base64url') };
+  return { tradeTag: n.tradeTag, displayKey: n.displayKey, login: Buffer.concat([nonce, body, c.getAuthTag()]).toString('base64url') };
 }
 
 /**
@@ -84,7 +84,7 @@ export function sealNames(config: Config, n: NewNames): SealedNames {
  */
 export function openNames(config: Config, sealed: unknown): NewNames {
   const s = sealed as Partial<SealedNames> | null;
-  if (s === null || typeof s !== 'object' || typeof s.displayName !== 'string' || typeof s.displayKey !== 'string' || typeof s.login !== 'string') {
+  if (s === null || typeof s !== 'object' || typeof s.tradeTag !== 'string' || typeof s.displayKey !== 'string' || typeof s.login !== 'string') {
     throw new ApiError(400, 'challenge-expired');
   }
   const raw = Buffer.from(s.login, 'base64url');
@@ -94,31 +94,31 @@ export function openNames(config: Config, sealed: unknown): NewNames {
     d.setAAD(SEAL_AAD);
     d.setAuthTag(raw.subarray(raw.length - 16));
     const loginKey = Buffer.concat([d.update(raw.subarray(12, raw.length - 16)), d.final()]).toString('utf8');
-    return { displayName: s.displayName, displayKey: s.displayKey, loginKey };
+    return { tradeTag: s.tradeTag, displayKey: s.displayKey, loginKey };
   } catch {
     throw new ApiError(400, 'challenge-expired');
   }
 }
 
 /**
- * Before any expensive work: 409 `display-name-taken` for a taken display name, and 409
- * `names-unavailable` for a login name that is some account's public display name (review I1: the
- * two names share one namespace, or a private login name would be printed on the site). Display
- * names are public, so neither answer tells anybody anything new. Login names are never read here:
- * a taken login name, or a display name that is someone's private login name, is only found by
+ * Before any expensive work: 409 `trade-tag-taken` for a taken Trade Tag, and 409
+ * `names-unavailable` for a login name that is some account's public Trade Tag (review I1: the
+ * two names share one namespace, or a private login name would be printed on the site). Trade
+ * Tags are public, so neither answer tells anybody anything new. Login names are never read here:
+ * a taken login name, or a Trade Tag that is someone's private login name, is only found by
  * `createAccount`, at the very end of a sign-up (after the password is hashed, or after the PGP
  * code or the authenticator has proved the key), and is answered with the generic
  * `names-unavailable`, so there is no cheap way to test whether a private login name exists.
  */
-export async function assertDisplayNameFree(db: Queryable, n: NewNames, config?: Config): Promise<void> {
+export async function assertTradeTagFree(db: Queryable, n: NewNames, config?: Config): Promise<void> {
   const { rows } = await db.query<{ display_key: string }>('select display_key from accounts where display_key in ($1, $2)', [
     n.displayKey, n.loginKey,
   ]);
-  if (rows.some((r) => r.display_key === n.displayKey)) throw new ApiError(409, 'display-name-taken');
+  if (rows.some((r) => r.display_key === n.displayKey)) throw new ApiError(409, 'trade-tag-taken');
   if (rows.length > 0) throw new ApiError(409, 'names-unavailable');
-  // The ban list (owner 2 Nov 2026, bans.ts): a banned display name reads as taken, early. Only
-  // banned display names: a banned private login name is found by `createAccount`, generically.
-  if (config !== undefined && (await displayNameBanned(db, config, n.displayKey))) throw new ApiError(409, 'display-name-taken');
+  // The ban list (owner 2 Nov 2026, bans.ts): a banned Trade Tag reads as taken, early. Only
+  // banned Trade Tags: a banned private login name is found by `createAccount`, generically.
+  if (config !== undefined && (await tradeTagBanned(db, config, n.displayKey))) throw new ApiError(409, 'trade-tag-taken');
 }
 
 /** Domain separation of the login-name tag (FU-D). */
@@ -216,7 +216,7 @@ export async function assertLoginNamesTagged(db: Queryable): Promise<void> {
  * login name gets its tag under the current key, and `login_name` / `login_key` are nulled in the same
  * update (the `name_keys` trigger then drops the row's plaintext `login` entry). A pre-009 account
  * (`legacy_login_name`, login key = display key) is tagged the same way and keeps logging in by its
- * display name until it sets a private one. Idempotent; returns counts only, never a name.
+ * Trade Tag until it sets a private one. Idempotent; returns counts only, never a name.
  */
 export async function tagLoginNames(deps: Pick<Deps, 'db' | 'config'>): Promise<{ tagged: number }> {
   const { rows } = await deps.db.query<{ id: string; login_key: string }>(
@@ -236,7 +236,7 @@ export async function tagLoginNames(deps: Pick<Deps, 'db' | 'config'>): Promise<
 }
 
 /**
- * Every write of a display name or a login tag serialises on this transaction-scoped advisory lock
+ * Every write of a Trade Tag or a login tag serialises on this transaction-scoped advisory lock
  * between its name checks and its write (`createAccount`, `setLoginName`): with the login name only
  * a tag, SQL can no longer enforce FU-A review I1's one namespace, nor one name under two ring keys.
  */
@@ -251,12 +251,12 @@ export async function lockNames(db: Queryable): Promise<void> {
  * Inside the caller's transaction, under `NAMES_LOCK` (taken here): whether `loginKey` is free as a
  * login name for `self` (null for a new account) in both namespaces: no account's display key
  * equals it (review I1 A), and no other account holds its tag under any key of the ring. With
- * `displayKey`, also that no account's login tag is that display name's (review I1 B: a display
- * name may never be someone's private login name). A name on the ban list (owner 2 Nov 2026, bans.ts: a banned
+ * `displayKey`, also that no account's login tag is that Trade Tag's (review I1 B: a Trade
+ * Tag may never be someone's private login name). A name on the ban list (owner 2 Nov 2026, bans.ts: a banned
  * display or login name, in either namespace). One query; the tags are computed by the caller.
  */
 /** Every banned name is out of both namespaces (owner 2 Nov 2026, the ban list; bans.ts). */
-const BANNED_NAMES = ['display-name', 'login-name'] as const;
+const BANNED_NAMES = ['trade-tag', 'login-name'] as const;
 
 async function namesTaken(
   db: Queryable,
@@ -296,7 +296,7 @@ export async function loginNameAvailable(db: Queryable, config: Config, loginKey
  * transaction): checked in both namespaces under `NAMES_LOCK`, then stored as its tag under the
  * current key (FU-D). 409 `names-unavailable` for a taken name, 409 `login-name-set` when the
  * account is no longer legacy. The caller has checked the name's shape and that it differs from
- * the account's own display name.
+ * the account's own Trade Tag.
  */
 export async function setLoginName(db: Queryable, config: Config, accountId: string, loginKey: string): Promise<void> {
   const login = loginTags(config, loginKey);
@@ -368,7 +368,7 @@ const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key
  * sign-up. The login name is stored only as its tag under the current key (FU-D). Under
  * `NAMES_LOCK`, the names are checked in both namespaces and under every key of the ring
  * (`namesTaken`), so one name cannot be held twice under two keys, and a login name can never be
- * anybody's display name nor the other way round (FU-A review I1). A taken name → 409
+ * anybody's Trade Tag nor the other way round (FU-A review I1). A taken name → 409
  * `names-unavailable`, one answer for all, so it never says which one (or that a login name
  * exists). The names-differ check SQL can no longer make is here too (400 `names-same`;
  * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version,
@@ -389,10 +389,10 @@ export async function createAccount(
   const id = randomUUID();
   try {
     await db.query(
-      `insert into accounts (id, display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, terms_signature, created_at)
+      `insert into accounts (id, trade_tag, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, terms_signature, created_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        id, a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
+        id, a.tradeTag, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
         a.termsVersion, a.termsVersion === null ? null : a.now,
         a.kind === 'owner' || a.termsSignature === null ? null : sealTermsSignature(config, a.termsSignature, id), a.now,
       ],

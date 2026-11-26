@@ -24,11 +24,11 @@ import { personAccountId, requireSession, rotateSessionToken, type SessionLevel 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
 export interface AccountOverview {
-  /** The public display name. The private login name is never sent, not even to its owner. */
-  displayName: string;
+  /** The public Trade Tag. The private login name is never sent, not even to its owner. */
+  tradeTag: string;
   /**
    * True for an account made before login names existed (migration 009): it still logs in by its
-   * public display name until `POST /v1/account/login-name` sets a private one (review I3).
+   * public Trade Tag until `POST /v1/account/login-name` sets a private one (review I3).
    */
   needsLoginName: boolean;
   kind: AccountKind;
@@ -140,7 +140,7 @@ function sessionInfo(type: SessionAccountType, row: { length_hours: number | nul
 export interface MemberOverview {
   /** The member's name inside the team (the lead's list, the activity log, notes); never in chats (S-105). */
   name: string;
-  /** Owner p11-25 (S-105): how trade chats show this member, "<the lead's display name> Assistant N" (team/label.ts). */
+  /** Owner p11-25 (S-105): how trade chats show this member, "<the lead's Trade Tag> Assistant N" (team/label.ts). */
   chatLabel: string;
   /** The member's ticked boxes (team/abilities.ts; `GET /v1/team/permissions` names them). */
   abilities: string[];
@@ -257,7 +257,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     memberTerms = m.rows[0].terms_version;
   }
   const { rows } = await deps.db.query<{
-    display_name: string;
+    trade_tag: string;
     legacy_login_name: boolean;
     kind: AccountKind;
     terms_version: string | null;
@@ -267,7 +267,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     expires_at: Date;
     account_type: 'trader' | 'vendor';
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.terms_version, s.level, s.recovery_until, s.length_hours, s.expires_at, a.account_type
+    `select a.trade_tag, a.legacy_login_name, a.kind, a.terms_version, s.level, s.recovery_until, s.length_hours, s.expires_at, a.account_type
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -284,7 +284,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     if (no == null) throw new ApiError(401, 'not-authenticated');
     member = {
       name: req.auth.memberName ?? '',
-      chatLabel: assistantLabel(row.display_name, no),
+      chatLabel: assistantLabel(row.trade_tag, no),
       ...abilitiesView(req.auth.memberAbilities),
     };
     // J-20 review F8 (owner question p11-136; MEMBER_SEES_OWN_LIMITS): the member's own band and hours.
@@ -292,7 +292,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     if (limits !== undefined) member.limits = limits;
   }
   return {
-    displayName: row.display_name,
+    tradeTag: row.trade_tag,
     needsLoginName: row.legacy_login_name,
     kind: row.kind,
     level: row.level,
@@ -630,7 +630,7 @@ export function accountRoutes(app: FastifyInstance): void {
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();
     const { rows } = await d.db.query<{ id: string; device_label: string; level: SessionLevel; created_at: Date; last_seen_at: Date; member: string | null }>(
-      `select s.id, s.device_label, s.level, s.created_at, s.last_seen_at, tm.display_name as member
+      `select s.id, s.device_label, s.level, s.created_at, s.last_seen_at, tm.trade_tag as member
          from sessions s left join team_members tm on tm.id = s.member_id
         where s.account_id = $1 and s.revoked_at is null and s.expires_at > $2
         order by s.last_seen_at desc, s.created_at desc, s.id`,

@@ -416,7 +416,7 @@ describe('review round 1', () => {
     const t0 = new Date('2026-03-12T00:00:00Z');
     const { code, buyer } = await closed(t0);
     const member = (await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at)
        values ($1, 'Desk', 'desk', $3, $2, $2) returning id`,
       [buyer, t0, rolesToAbilities(['trades'])],
     )).rows[0]!.id;

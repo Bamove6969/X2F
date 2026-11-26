@@ -147,7 +147,7 @@ Panel "How strong your login is":
   4. "Harden it with an authenticator app, passkey, security key or PGP key, and your changes take effect at once."
 - **Strong:** "This stops simple username and password guessing." / "You can take decisive actions right away, with no waiting." / next-step hint "Add a password and one more way to reach Armored vault."
 - **Top tier:** eyebrow "Top tier", title "Armored vault!" (the owner's phrase), bar label "Armored vault".
-- Not allowed: "A username alone can't prove it's you, and your display name can't be used to log in." / "Pick at least one way to log in."
+- Not allowed: "A username alone can't prove it's you, and your Trade Tag can't be used to log in." / "Pick at least one way to log in."
 - Recovery note above the footer (every tier): "Next you'll set up recovery. Everyone needs it. It isn't a way to log in: it's for when every other way is lost. Keep your recovery code apart from everything else, somewhere only you'd look, like under a fake rock in the garden."
 - Footer: "Continue". Its disabled reasons: "Pick a way to log in to continue." / "Make your password strong to continue."
 - **New, the owner's "confirms they wish to continue"** for the Weak tier only. "Continue" opens a confirm sheet (ConfirmSheet pattern):

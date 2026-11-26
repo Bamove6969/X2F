@@ -45,7 +45,7 @@ The numbers follow `owner-notes-triage-2026-11-12.md`. **READY** means the copy 
 
 | # | His comment (short) | Design's answer |
 |---|---|---|
-| 1 | Public display name | READY. Terms §2 ¶2 (T1 below). Private *username* and public *display name*, matching the built screens. |
+| 1 | Public Trade Tag | READY. Terms §2 ¶2 (T1 below). Private *username* and public *Trade Tag*, matching the built screens. |
 | 2 | Leave room for team members | READY. T2. |
 | 3 | Are these multisig "methods or features"? | Answer for him: these are **features of the one method we already use**, 2-of-3 Monero multisig escrow. X2F has all three: non-custodial (X2F holds 1 key of 3, and the wallets run in his browser), peer to peer, and Monero's on-chain privacy. The named products are other sites and never appear in our Terms. Terms gain one sentence (T3). READY. |
 | 4 | Buyer pays with the requested method, posts proof … "disrupted" | READY. T4 ("disputed"). |
@@ -67,7 +67,7 @@ The numbers follow `owner-notes-triage-2026-11-12.md`. **READY** means the copy 
 | # | Screen | Design's answer |
 |---|---|---|
 | 17 | /setup | His standing instruction: his comments are recommendations, and questions go to him only when needed. Noted. No change on screen. |
-| 18 | /setup/name | READY. The body becomes `You type this to log in. Only you see it, and nobody can work it out from your display name. X2F never asks for your real name, email or phone number.` This replaces "Nothing else to give us, now or ever", which later screens contradict (a key, a wallet). The new line keeps the true promise: no identity details. |
+| 18 | /setup/name | READY. The body becomes `You type this to log in. Only you see it, and nobody can work it out from your Trade Tag. X2F never asks for your real name, email or phone number.` This replaces "Nothing else to give us, now or ever", which later screens contradict (a key, a wallet). The new line keeps the true promise: no identity details. |
 | 19 | /setup/name | READY. Heading `Pick a unique username`. |
 | 20 | /setup/login | READY. PGP key and Security key each carry two chips: `Recommended` (accent) and `Strong` (green, `--x2f-success` tokens). The chips sit on the row's title line, after the name, with an 8 px gap. Board: SetupLogin. |
 | 21 | /setup/login | READY. Passkey carries the chip `Medium` (caution tone). This label rates how hard a login is to steal. It does not change the hold rules, where a passkey still counts as strong (w10-91). |
@@ -111,7 +111,7 @@ The numbers follow `owner-notes-triage-2026-11-12.md`. **READY** means the copy 
 Design accepts the draft's proposals with the plain-language edits below. Each T-item is final (READY) unless it says OQ. When this ships, `TERMS_TEXT_VERSION` and `X2F_TERMS_VERSION` change together, and everyone signs again at their next login.
 
 **T1 · §2 ¶2:**
-> You pick a private username, which you type to log in and only you see, and a public display name, which is how other traders see you. Keep your login methods and your recovery code safe. X2F has no way to reset them for you, so if you lose them you may lose the account and its reputation. Your coins stay safe in your own wallet either way.
+> You pick a private username, which you type to log in and only you see, and a public Trade Tag, which is how other traders see you. Keep your login methods and your recovery code safe. X2F has no way to reset them for you, so if you lose them you may lose the account and its reputation. Your coins stay safe in your own wallet either way.
 
 ("any backup" becomes "your recovery code", because there is exactly one.)
 
@@ -286,7 +286,7 @@ The line says the user starts the contact and X2F replies. The second sentence k
 | key | final |
 |---|---|
 | `nameLabel` | `Their name on your team` (kept) |
-| `nameHint` | `Only you and your team see it. Trade chats show their messages as "Circa55 Assistant 2".` The lead's live display name and the next free number are filled in. This extends w12-45. |
+| `nameHint` | `Only you and your team see it. Trade chats show their messages as "Circa55 Assistant 2".` The lead's live Trade Tag and the next free number are filled in. This extends w12-45. |
 | `chatLabel` (member row) | `Shown in chats as Circa55 Assistant 1` (no colon) |
 | `noBoxes` (member row chip) | `No roles yet`, plus the line under it: `Their roles start when your waiting changes apply.` |
 | `JOIN_COPY.invited`, no roles | `You are invited to a team as desk_lee. The team lead hasn't set what you can do yet. It starts once their change applies, within 24 hours. You can join now.` |

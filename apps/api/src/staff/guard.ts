@@ -22,7 +22,7 @@ export function isStaffRoutePerm(p: unknown): p is StaffRoutePerm {
 export interface StaffContext {
   accountId: string;
   role: StaffRole;
-  displayName: string;
+  tradeTag: string;
   hours: LoginHours;
   grants: Perm[];
 }
@@ -45,13 +45,13 @@ export interface StaffRow {
   hours: LoginHours | null;
   grants: Perm[];
   switchedOff: boolean;
-  displayName: string;
+  tradeTag: string;
 }
 
 /** Reads the staff member's row on every call: role, hours and grants are never cached (round-2 N2). */
 export async function loadStaff(db: Queryable, accountId: string): Promise<StaffRow | null> {
-  const { rows } = await db.query<{ role: StaffRole; hours: unknown; grants: string[]; switched_off_at: Date | null; display_name: string }>(
-    `select m.role, m.hours, m.grants, m.switched_off_at, a.display_name
+  const { rows } = await db.query<{ role: StaffRole; hours: unknown; grants: string[]; switched_off_at: Date | null; trade_tag: string }>(
+    `select m.role, m.hours, m.grants, m.switched_off_at, a.trade_tag
        from staff_members m join accounts a on a.id = m.account_id
       where m.account_id = $1`,
     [accountId],
@@ -69,7 +69,7 @@ export async function loadStaff(db: Queryable, accountId: string): Promise<Staff
     hours,
     grants: r.grants.filter((g): g is Perm => (PERMS as readonly string[]).includes(g)),
     switchedOff: r.switched_off_at !== null,
-    displayName: r.display_name,
+    tradeTag: r.trade_tag,
   };
 }
 
@@ -105,7 +105,7 @@ export function requireStaff(perm: Perm): preHandlerAsyncHookHandler[] {
       throw new ApiError(401, 'outside-login-hours');
     }
     if (!can(s.role, perm, s.grants)) throw new ApiError(403, 'forbidden');
-    req.staff = { accountId: req.auth.accountId, role: s.role, displayName: s.displayName, hours: s.hours ?? 'any', grants: s.grants };
+    req.staff = { accountId: req.auth.accountId, role: s.role, tradeTag: s.tradeTag, hours: s.hours ?? 'any', grants: s.grants };
   };
   (guard as unknown as Record<symbol, Perm>)[STAFF_GUARD] = perm;
   // Every kind passes `requireSession` so that the guard answers a non-staff session with

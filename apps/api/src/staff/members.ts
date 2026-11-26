@@ -129,7 +129,7 @@ export async function unassignOpenCases(c: pg.PoolClient, accountId: string, req
 export interface MemberRow {
   accountId: string | null;
   inviteId: string | null;
-  displayName: string | null;
+  tradeTag: string | null;
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   hours: unknown;
@@ -167,10 +167,10 @@ export function perPersonGrants(role: StaffRole, grants: readonly string[]): Gra
 
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
   const { rows: staff } = await db.query<{
-    account_id: string; display_name: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
+    account_id: string; trade_tag: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
     open_cases: number; keys: number; pgp: number; passkeys: number; grants: string[];
   }>(
-    `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at, m.grants,
+    `select m.account_id, a.trade_tag, m.role, m.hours, m.switched_off_at, m.joined_at, m.grants,
             (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'security-key' and w.attested) as keys,
             (select count(*)::int from pgp_keys p where p.account_id = m.account_id) as pgp,
             (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'passkey') as passkeys,
@@ -181,8 +181,8 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       order by (m.role = 'owner') desc, m.joined_at, m.account_id`,
     [OPEN_CASE_STATUSES],
   );
-  const { rows: invites } = await db.query<{ id: string; role: StaffRole; hours: unknown; expires_at: Date; display_name: string | null }>(
-    `select i.id, i.role, i.hours, i.expires_at, a.display_name
+  const { rows: invites } = await db.query<{ id: string; role: StaffRole; hours: unknown; expires_at: Date; trade_tag: string | null }>(
+    `select i.id, i.role, i.hours, i.expires_at, a.trade_tag
        from staff_invites i left join accounts a on a.id = i.account_id
       where i.kind = 'invite' and i.used_at is null and i.cancelled_at is null and i.expires_at > $1
       order by i.created_at, i.id`,
@@ -190,7 +190,7 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
   );
   return [
     ...staff.map((r): MemberRow => ({
-      accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
+      accountId: r.account_id, inviteId: null, tradeTag: r.trade_tag, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
       joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: r.open_cases, expiresAt: null,
       missingMethods: THREE_METHOD_ROLES.includes(r.role)
@@ -199,7 +199,7 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       grants: r.role === 'owner' ? [] : perPersonGrants(r.role, r.grants),
     })),
     ...invites.map((r): MemberRow => ({
-      accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
+      accountId: null, inviteId: r.id, tradeTag: r.trade_tag, role: r.role, status: 'waiting', hours: r.hours,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(), missingMethods: [], grants: [],
     })),
   ];

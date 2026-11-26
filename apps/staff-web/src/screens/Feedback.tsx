@@ -21,8 +21,8 @@ interface Pages<T> {
  * The owner's Feedback page (Plan 5 Tasks 4 and 21 on the staff API, perm `feedback.read`): the
  * "How's X2F doing?" answers with their 30-day Great / OK / Needs work counts, and the feedback
  * form's messages (the "can't do that" popups link to it), each newest first, 50 a page with
- * "Show older". D-058 (owner G20; lead 12 Nov): a named message shows its sender's public display
- * name so staff can follow up, an anonymous one says "Anonymous"; the raw account id is never
+ * "Show older". D-058 (owner G20; lead 12 Nov): a named message shows its sender's public Trade
+ * Tag so staff can follow up, an anonymous one says "Anonymous"; the raw account id is never
  * sent or shown, and the API logs the opening of the list (once per session per 5 minutes, review m2).
  */
 export function Feedback() {
@@ -71,7 +71,7 @@ export function Feedback() {
   return (
     <section data-screen="feedback">
       <PageTitle title="Feedback">
-        <p className="x2f-staff-page__lead">What traders tell X2F. A named message shows the sender's display name, so you can follow up. Each time you open this list, it's logged.</p>
+        <p className="x2f-staff-page__lead">What traders tell X2F. A named message shows the sender's Trade Tag, so you can follow up. Each time you open this list, it's logged.</p>
       </PageTitle>
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
       <h2 className="x2f-h2">How's X2F doing?</h2>

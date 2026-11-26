@@ -20,7 +20,7 @@ import { pgpCode, type PgpPair } from '../regtest/e2e/staffClient.js';
 export const TRADERS_FILE = join(SECRETS_DIR, 'traders.json');
 
 export interface TraderSecret {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   pgp: PgpPair;
 }

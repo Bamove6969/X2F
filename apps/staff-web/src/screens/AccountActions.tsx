@@ -96,7 +96,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
   const [tap, setTap] = useState<Tap | null>(null);
   const [banning, setBanning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const name = a.displayName;
+  const name = a.tradeTag;
 
   const loadBans = async () => {
     if (!mayBan) return;

@@ -104,7 +104,7 @@ const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 async function signUp(label = 'Firefox on Linux') {
   const b = new Browser(label);
   const name = unique('dev');
-  const { res, auth } = await signUpWithKey(b, { displayName: `P${name}`, loginName: name, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
+  const { res, auth } = await signUpWithKey(b, { tradeTag: `P${name}`, loginName: name, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode, res.body).toBe(201);
   keys.set(name, auth);
   const id = (await accountIdByLoginName(deps, name))!;
@@ -500,7 +500,7 @@ describe('who it applies to', () => {
     const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const a = new Browser();
     const name = unique('pk');
-    const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' });
+    const start = await a.post('/v1/register/webauthn/start', { tradeTag: `D.${name}`, loginName: name, kind: 'passkey' });
     const { challengeId, options } = start.json();
     expect((await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
     const b = new Browser();
@@ -534,9 +534,9 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
   /** A joined member of `teamId` (its login account seeded directly; the real sign-up is team.test.ts's). */
   async function memberOf(teamId: string): Promise<{ id: string; loginId: string }> {
     const name = unique('mem');
-    const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: name, tradeTag: `m-${name}-placeholder`, kind: 'member' });
     const { rows } = await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $6, $4, $5, $4, $4) returning id`,
       [teamId, `M${name}`, `m${name}`.toLowerCase(), now, loginId, rolesToAbilities(['offers', 'trades'])],
     );

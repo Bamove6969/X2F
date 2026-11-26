@@ -26,7 +26,7 @@ export {
 export {
   dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
 } from './auth/throttle.js';
-export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, assertTraderTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
+export { assertTradeTagFree, assertNewNames, assertTermsAccepted, assertTraderTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
 export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, optionalTermsSignature, type TermsSignature } from './termsSignature.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {

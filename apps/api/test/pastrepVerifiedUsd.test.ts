@@ -24,7 +24,7 @@ let n = 0;
 
 const account = (kind: 'trader' | 'staff' | 'owner' | 'member' = 'trader', disabled = false) => {
   n += 1;
-  return seedAccount(deps, { loginName: `vusd${n}x`, displayName: `Vusd${String(n).padStart(3, '0')}`, kind, disabled });
+  return seedAccount(deps, { loginName: `vusd${n}x`, tradeTag: `Vusd${String(n).padStart(3, '0')}`, kind, disabled });
 };
 
 /** The actor Plan 4's staff route passes (`req.staff`): here a senior moderator. */

@@ -38,7 +38,7 @@ export const APPEAL_MAX = 1000;
 
 export type RulingOutcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
 
-/** What `GET /v1/trades/:code/dispute` returns. Names are public display names; no address is ever whole. */
+/** What `GET /v1/trades/:code/dispute` returns. Names are public Trade Tags; no address is ever whole. */
 export interface DisputeView {
   /** G37 (owner 7 Nov): the dispute's incident ID, shown to both traders at the top of the trade and to the moderator. */
   incidentId: string;
@@ -265,7 +265,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   // AccountFrozen notice. A moderator placed each on this account as the party who ignored a
   // dispute or a ruling (staffRoutes.ts); it has no end time and only a moderator lifts it. Each
   // names when it began and the dispute it came from: the code, the dispute's incident ID (G37), the
-  // account's side, the amount and the partner's public display name. A freeze outlives its trade
+  // account's side, the amount and the partner's public Trade Tag. A freeze outlives its trade
   // (R36 whole-record delete, migration 208): then `dispute` is null. The account owner's sessions
   // only, a backup or held one too (FINISH_OPEN_TRADES), so the notice shows whatever else holds the
   // account. Oldest first. Never the reason, who placed it, or anything about the partner beyond

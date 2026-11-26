@@ -31,7 +31,7 @@ describe('checkKeyName', () => {
 });
 
 describe('confusables (security review of wip/lead-seckey-fix)', () => {
-  test('one script per name (UTS #39 highly restrictive), as display names', () => {
+  test('one script per name (UTS #39 highly restrictive), as Trade Tags', () => {
     // Cyrillic а and о among Latin letters.
     expect(checkKeyName('Yubikey \u0430')).toEqual({ ok: false, problem: 'characters' });
     expect(checkKeyName('Y\u043ebiKey')).toEqual({ ok: false, problem: 'characters' });

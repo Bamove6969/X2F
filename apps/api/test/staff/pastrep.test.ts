@@ -122,9 +122,9 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     (await deps.db.query<{ action: string; detail: string }>("select action, detail from activity_log where action like 'pastrep.%' and action <> 'pastrep.verified-usd-set' order by id")).rows
       .filter((e) => claims.includes((JSON.parse(e.detail) as { claimId?: string }).claimId ?? ''));
 
-  it('lists signed claims oldest first: the grouped fingerprint, the key id, the trader\'s display name; no key text or user ID', async () => {
+  it('lists signed claims oldest first: the grouped fingerprint, the key id, the trader\'s Trade Tag; no key text or user ID', async () => {
     const c = await signedClaim();
-    const name = (await deps.db.query<{ d: string }>('select display_name as d from accounts where id = $1', [c.account])).rows[0]!.d;
+    const name = (await deps.db.query<{ d: string }>('select trade_tag as d from accounts where id = $1', [c.account])).rows[0]!.d;
     const res = await (await as('mod')).get('/staff/v1/past-rep?status=signed');
     expect(res.statusCode).toBe(200);
     const page = res.json() as { items: Array<Record<string, unknown>>; next: string | null };
@@ -134,7 +134,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     expect(item).toEqual({
       id: c.id, site: 'LocalMonero', url: c.url, claimedTrades: 1240, verifiedTrades: null, verifiedUsdCents: null, status: 'signed',
       fingerprint: (fp.toUpperCase().match(/.{4}/g) ?? []).join(' '), keyId: fp.slice(-16).toUpperCase(), signatureValid: true,
-      displayName: name, createdAt: expect.any(String),
+      tradeTag: name, createdAt: expect.any(String),
       // Review M2: the archived original's host, read from the link itself (no lookup).
       originalHost: 'localmonero.co',
     });
@@ -291,7 +291,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
   });
 
   // Review M1: approved claims only grow, so their list is newest first (by approval), paged with a
-  // cursor, and filtered by the trader's display name; the newest approved claim is always reachable.
+  // cursor, and filtered by the trader's Trade Tag; the newest approved claim is always reachable.
   it('M1: more than 100 approved claims page newest first with a cursor; a name filter narrows them; the newest can be revoked', async () => {
     const sites = ['LocalMonero', 'AgoraDesk', 'LocalBitcoins', 'Paxful', 'Hodl Hodl', 'Bisq', 'Other'];
     const tag = randomBytes(3).toString('hex');
@@ -300,7 +300,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     // Approved in 2030 and filed in reverse, so they are the newest approvals in this file's database
     // and the creation order is the opposite of the approval order the list must follow.
     for (let a = 0; a < 16; a++) {
-      const account = await seedAccount(deps, { loginName: `bulk${tag}${a}x`, displayName: `Bulk${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
+      const account = await seedAccount(deps, { loginName: `bulk${tag}${a}x`, tradeTag: `Bulk${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
       for (const [i, site] of sites.entries()) {
         const k = a * sites.length + i;
         const { rows } = await deps.db.query<{ id: string }>(
@@ -332,8 +332,8 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     const ours = seen.filter((x) => ids.includes(x));
     expect(ours).toEqual([...ids].reverse());
     expect(new Set(seen).size).toBe(seen.length);
-    // The name filter: a display-name prefix, case-insensitive.
-    const one = (await mod.get(`/staff/v1/past-rep?status=approved&name=bulk${tag}03`)).json() as { items: Array<{ id: string; displayName: string }>; next: string | null };
+    // The name filter: a trade-tag prefix, case-insensitive.
+    const one = (await mod.get(`/staff/v1/past-rep?status=approved&name=bulk${tag}03`)).json() as { items: Array<{ id: string; tradeTag: string }>; next: string | null };
     expect(one.items.map((x) => x.id)).toEqual(ids.slice(21, 28).reverse());
     expect(one.next).toBeNull();
     const all = (await mod.get(`/staff/v1/past-rep?status=approved&name=BULK${tag}`)).json() as { items: unknown[]; next: string | null };
@@ -359,7 +359,7 @@ describe('Task 11: GET /staff/v1/past-rep and the decisions', () => {
     const want: Record<'signed' | 'approved', string[]> = { signed: [], approved: [] };
     for (const status of ['signed', 'approved'] as const) {
       for (let a = 0; a < 22; a++) {
-        const account = await seedAccount(deps, { loginName: `us${status[0]}${tag}${a}x`, displayName: `Us${status[0]}${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
+        const account = await seedAccount(deps, { loginName: `us${status[0]}${tag}${a}x`, tradeTag: `Us${status[0]}${tag}${String(a).padStart(2, '0')}`, kind: 'trader' });
         for (const [i, site] of sites.entries()) {
           const k = a * sites.length + i;
           if (k >= 150) break;

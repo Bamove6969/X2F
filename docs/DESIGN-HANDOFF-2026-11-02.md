@@ -130,7 +130,7 @@ A ready-to-paste prompt is in `docs/DESIGN-KICKOFF-PROMPT.md`.
   - Trader, the default, takes offers.
   - Vendor posts offers. To become one, the user flips a switch in Settings > Account type, which needs a passkey, security key or PGP key.
   - Team members are for vendors only.
-- **Names:** username (used to log in, private) and display name (public) are both required and separate. The weakest possible login is username + password.
+- **Names:** username (used to log in, private) and Trade Tag (public) are both required and separate. The weakest possible login is username + password.
 - **Two-factor wording:** "Needs a two-factor method you've already set up: a passkey, security key or PGP key." Short form: "Passkey, security key or PGP key needed."
 - **Authenticator apps (TOTP):** count with a password for logging in. They're not enough for sensitive actions:
   - ending a hold early

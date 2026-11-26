@@ -223,7 +223,7 @@ describe('deciding recommended limits (Task 26)', () => {
     const list = (res.json() as { recommendations: Array<Record<string, unknown>> }).recommendations;
     const mine = list.find((r) => r.id === recId);
     expect(mine).toMatchObject({ id: recId, accountId: acct, capUsd: 250, stage: null, reason: REASON, code: null, currentStage: 'graduated', mine: false });
-    expect(typeof mine!.displayName).toBe('string');
+    expect(typeof mine!.tradeTag).toBe('string');
     expect(typeof mine!.recommendedBy).toBe('string');
     expect((await (await staff('mod')).b.get('/staff/v1/limit-recommendations')).statusCode).toBe(403);
     // Decided ones leave the list.

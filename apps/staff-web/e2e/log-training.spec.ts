@@ -9,8 +9,8 @@ import { expectParity } from '../../web/e2e/parity.js';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
 const NAV = ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings'];
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV, sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: OWNER.sessionEndsAt };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV, sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: OWNER.sessionEndsAt };
 
 const A = '3HW8ZD2NRT6KQ9VB';
 const B = 'K7M29QXA4FTR8WPN';

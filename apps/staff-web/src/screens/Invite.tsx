@@ -10,7 +10,7 @@ import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
 import { ROLE_LABELS } from '../ui/RoleChip.js';
 import { TermsStep } from '../ui/TermsStep.js';
-import { DISPLAY_NAME_SPACES, hasSpace } from '../ui/noSpaces.js';
+import { TRADE_TAG_SPACES, hasSpace } from '../ui/noSpaces.js';
 import '../ui/staff.css';
 
 // Every sentence on this screen is draft copy (no board: DESIGNER-REVIEW). COPY-UNSIGNED
@@ -139,7 +139,7 @@ export function Invite() {
       // Owner demo note #108: the line under the field says why; nothing is sent.
       if (hasSpace(username)) return;
       try {
-        await inviteAccount(token, { displayName: username.trim(), loginName: loginName.trim(), acceptedTerms: terms.version, termsSignature: terms.signature });
+        await inviteAccount(token, { tradeTag: username.trim(), loginName: loginName.trim(), acceptedTerms: terms.version, termsSignature: terms.signature });
       } catch (e) {
         if (codeOf(e) === 'terms-not-accepted') {
           // The Terms changed between reading and accepting (the trader's review M3): read and sign
@@ -236,7 +236,7 @@ export function Invite() {
             />
             {hasSpace(username) ? (
               <p className="x2f-error" id={`${userId}-space`} data-part="name-space">
-                {DISPLAY_NAME_SPACES}
+                {TRADE_TAG_SPACES}
               </p>
             ) : null}
             <p className="x2f-staff-hint">Shown to staff, never to traders</p>

@@ -228,8 +228,8 @@ export async function openSession(
     // the team out under it).
     const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
     if (team.rows[0]) await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
-    const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null; hours: unknown }>(
-      `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at, tm.hours
+    const tm = await db.query<{ id: string; account_id: string; trade_tag: string; kind: AccountKind; disabled_at: Date | null; hours: unknown }>(
+      `select tm.id, tm.account_id, tm.trade_tag, t.kind, t.disabled_at, tm.hours
          from team_members tm join accounts t on t.id = tm.account_id
         where tm.member_account_id = $1 and tm.removed_at is null and tm.joined_at is not null
         for share of tm`,
@@ -240,7 +240,7 @@ export async function openSession(
     if (m.disabled_at !== null) throw new ApiError(403, 'account-disabled');
     // J-20 (owner p7-11): outside the working hours the lead set, a member cannot log in.
     if (!insideHours(m.hours, now)) throw new ApiError(403, 'outside-login-hours');
-    member = { id: m.id, teamId: m.account_id, name: m.display_name };
+    member = { id: m.id, teamId: m.account_id, name: m.trade_tag };
     row = { kind: m.kind };
   }
   const policy = sessionPolicy(row.kind, a.level);
@@ -432,7 +432,7 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.recovery_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
+              tm.abilities as member_abilities, tm.trade_tag as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, tm.hours as member_hours, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
               sb.reason_code as site_ban_reason, sb.until as site_ban_until,

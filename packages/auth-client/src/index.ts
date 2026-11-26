@@ -55,7 +55,7 @@ export {
   type RegistrationCeremony,
 } from './webauthn.js';
 export { becomeVendorAction, defaultDeviceLabel, teamAbilitiesAction, teamInviteAbilitiesAction, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
-export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName, COUNTED_KINDS, countedKinds, describeAction, enoughMethods, formatRecoveryInput, inspectPublicKey, LOGIN_KEYS, MIN_METHOD_KINDS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
+export { checkTradeTag, checkLoginName, checkNames, checkNewTradeTag, checkNewLoginName, COUNTED_KINDS, countedKinds, describeAction, enoughMethods, formatRecoveryInput, inspectPublicKey, LOGIN_KEYS, MIN_METHOD_KINDS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
 export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, sameKeyName, type KeyNameCheck, type KeyNameProblem } from '@x2f/accounts';
 export {

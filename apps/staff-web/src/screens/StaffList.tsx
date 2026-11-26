@@ -303,7 +303,7 @@ export function StaffList() {
     }
   };
 
-  const nameOf = (m: Member) => m.displayName ?? '';
+  const nameOf = (m: Member) => m.tradeTag ?? '';
 
   /** D-032: after the typed-name confirm, the tap bound to a fresh re-enrolment link for this member. */
   const askReset = (m: Member) => {
@@ -565,7 +565,7 @@ function MemberEdit({
   const [draft, setDraft] = useState<HoursDraft>(() => draftOf(member.hours));
   const [saved, setSaved] = useState(false);
   const hours = hoursOf(draft);
-  const name = member.displayName ?? '';
+  const name = member.tradeTag ?? '';
   return (
     <Sheet open title={`Change ${name}`} wide="dialog" onClose={onClose}>
       <div className="x2f-stack" data-part="member-edit">
@@ -619,7 +619,7 @@ function MemberEdit({
 function ResetSecuritySheet({ member, onCancel, onConfirm }: { member: Member; onCancel: () => void; onConfirm: () => void }) {
   const id = useId();
   const [typed, setTyped] = useState('');
-  const name = member.displayName ?? '';
+  const name = member.tradeTag ?? '';
   const ok = name !== '' && typed.trim() === name;
   return (
     <Sheet open title={`Reset ${name}'s security`} wide="dialog" onClose={onCancel}>

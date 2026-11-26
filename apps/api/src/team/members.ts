@@ -10,11 +10,11 @@
  * - The member signs up with the code: a login name of their own and two factors by the staff rule
  *   (*lead default*, owner may change): always a PGP key first, then a security key, a passkey or a
  *   second PGP key. Never a password, an authenticator code or recovery codes. Their login is an
- *   `accounts` row of kind `member`; its display name is a random placeholder nobody sees.
+ *   `accounts` row of kind `member`; its Trade Tag is a random placeholder nobody sees.
  * - Removing a member ends their sessions at once and deletes their login (review M6).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { checkNewDisplayName, checkNewLoginName, staffNameKey } from '@x2f/accounts';
+import { checkNewTradeTag, checkNewLoginName, staffNameKey } from '@x2f/accounts';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -46,7 +46,7 @@ export type MemberStatus = 'invited' | 'joining' | 'active';
 
 export interface TeamMemberView {
   id: string;
-  displayName: string;
+  tradeTag: string;
   /** The member's ticked boxes, in catalogue order (team/abilities.ts). */
   abilities: string[];
   /** The preset the boxes match exactly, or null ("Custom"). */
@@ -57,7 +57,7 @@ export interface TeamMemberView {
   custom: boolean;
   status: MemberStatus;
   /**
-   * Owner p11-25 (S-105): how trade chats show this member, "<the lead's display name> Assistant N"
+   * Owner p11-25 (S-105): how trade chats show this member, "<the lead's Trade Tag> Assistant N"
    * (team/label.ts); never the member's own name.
    */
   chatLabel: string;
@@ -82,14 +82,14 @@ export const LIVE_MEMBER = `removed_at is null and (joined_at is not null or inv
 
 interface MemberRow {
   id: string;
-  display_name: string;
+  trade_tag: string;
   abilities: string[];
   member_account_id: string | null;
   joined_at: Date | null;
   invite_expires_at: Date;
   created_at: Date;
   assistant_no: number;
-  /** The team account's display name (read by `MEMBER_COLS`). */
+  /** The team account's Trade Tag (read by `MEMBER_COLS`). */
   lead_name: string;
   band_min_atomic: string | null;
   band_max_atomic: string | null;
@@ -97,15 +97,15 @@ interface MemberRow {
 }
 
 /** The columns a `MemberRow` reads (in a query on `team_members`, unaliased). */
-const MEMBER_COLS = `id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at, assistant_no,
-  (select a.display_name from accounts a where a.id = team_members.account_id) as lead_name,
+const MEMBER_COLS = `id, trade_tag, abilities, member_account_id, joined_at, invite_expires_at, created_at, assistant_no,
+  (select a.trade_tag from accounts a where a.id = team_members.account_id) as lead_name,
   band_min_atomic::text, band_max_atomic::text, hours`;
 
 function toView(r: MemberRow): TeamMemberView {
   const status: MemberStatus = r.joined_at !== null ? 'active' : r.member_account_id !== null ? 'joining' : 'invited';
   return {
     id: r.id,
-    displayName: r.display_name,
+    tradeTag: r.trade_tag,
     ...abilitiesView(r.abilities),
     custom: isCustomSet(r.abilities),
     status,
@@ -129,18 +129,18 @@ export async function listMembers(db: Queryable, accountId: string, now: Date): 
 }
 
 /**
- * A member's name, as chat labels show it: the new-display-name rules (8–20 characters, owner note #127; no
+ * A member's name, as chat labels show it: the new-trade-tag rules (8–20 characters, owner note #127; no
  * spaces; no reserved words, with look-alikes) and no look-alike of a staff or owner name
- * (F4), so a label can never read like X2F staff. 400 `display-name-invalid` / `display-name-reserved`.
- * Unique within the team only (the unique index; 409 `display-name-taken`).
+ * (F4), so a label can never read like X2F staff. 400 `trade-tag-invalid` / `trade-tag-reserved`.
+ * Unique within the team only (the unique index; 409 `trade-tag-taken`).
  */
 export async function checkMemberName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
-  const r = checkNewDisplayName(typeof raw === 'string' ? raw : '');
-  if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
+  const r = checkNewTradeTag(typeof raw === 'string' ? raw : '');
+  if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'trade-tag-reserved' : 'trade-tag-invalid');
   // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
-  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'trade-tag-reserved');
   return { name: r.name, key: r.key };
 }
 
@@ -184,7 +184,7 @@ async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { vend
  * refused members). The account row is locked first (`ownerWriteGate`: 401 when the calling
  * session was revoked meanwhile), so two invites cannot both pass the count.
  * Invites past their time are closed first (they no longer count and free their names). 409
- * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `display-name-taken` for a name already in the team.
+ * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `trade-tag-taken` for a name already in the team.
 
  */
 export async function createInvite(
@@ -207,7 +207,7 @@ export async function createInvite(
       const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
       if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
       const { rows } = await c.query<{ id: string }>(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_hash, invite_expires_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_hash, invite_expires_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $7) returning id`,
         [accountId, a.name.name, a.name.key, a.abilities, inviteHash(code), expiresAt, now],
       );
@@ -216,7 +216,7 @@ export async function createInvite(
     return { id: out, code, expiresAt: expiresAt.toISOString() };
   } catch (e) {
     if ((e as { code?: string; constraint?: string }).code === '23505' && (e as { constraint?: string }).constraint === 'team_members_live_name') {
-      throw new ApiError(409, 'display-name-taken');
+      throw new ApiError(409, 'trade-tag-taken');
     }
     throw e;
   }
@@ -375,7 +375,7 @@ export const purgeTeamLeftovers: RetentionJob = {
  * nothing behind the front door, the vendor's name included, reaches someone not yet inside).
  */
 export interface InviteView {
-  displayName: string;
+  tradeTag: string;
   abilities: string[];
   preset: PresetId | null;
   roles: TeamRole[];
@@ -385,7 +385,7 @@ export interface InviteView {
 interface InviteRow {
   id: string;
   account_id: string;
-  display_name: string;
+  trade_tag: string;
   abilities: string[];
   invite_expires_at: Date;
 }
@@ -403,7 +403,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
     hash = inviteHash(by.code);
   }
   const { rows } = await q.query<InviteRow>(
-    `select tm.id, tm.account_id, tm.display_name, tm.abilities, tm.invite_expires_at
+    `select tm.id, tm.account_id, tm.trade_tag, tm.abilities, tm.invite_expires_at
        from team_members tm join accounts t on t.id = tm.account_id
       where ($1::bytea is null or tm.invite_hash = $1) and ($3::uuid is null or tm.id = $3) and tm.invite_hash is not null
         and tm.removed_at is null and tm.member_account_id is null and tm.invite_expires_at > $2
@@ -417,12 +417,12 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
 }
 
 export function inviteView(r: InviteRow): InviteView {
-  return { displayName: r.display_name, ...abilitiesView(r.abilities), expiresAt: r.invite_expires_at.toISOString() };
+  return { tradeTag: r.trade_tag, ...abilitiesView(r.abilities), expiresAt: r.invite_expires_at.toISOString() };
 }
 
 /**
- * The member's private login name: the login-name rules, and never any account's public display
- * name (one namespace, as at sign-up). 400 `login-name-invalid`, 409 `names-unavailable`. A login
+ * The member's private login name: the login-name rules, and never any account's public Trade
+ * Tag (one namespace, as at sign-up). 400 `login-name-invalid`, 409 `names-unavailable`. A login
  * name already taken is found only by `createAccount` at the end (the same generic answer).
  */
 export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
@@ -445,7 +445,7 @@ export async function startMember(
   a: { inviteId: string; names: NewNames; now: Date; terms: { version: string; signature: TermsSignature }; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
-  // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
+  // FU-D: the login name is stored only as its keyed tag (createAccount); the Trade Tag is the
   // random placeholder `memberNames` made, never shown.
   // The member's own acceptance of the Terms and their signature (review 2026-11-08 F1; owner 9 Nov
   // p11-14, everyone who gets a login signs), checked by `assertTermsAccepted`.
@@ -461,13 +461,13 @@ export async function startMember(
 }
 
 /**
- * A member login account's names: the checked login name's key and a random placeholder display
- * name nobody sees (accounts.display_name is not null and unique). The join challenge keeps them
+ * A member login account's names: the checked login name's key and a random placeholder Trade
+ * Tag nobody sees (accounts.trade_tag is not null and unique). The join challenge keeps them
  * only sealed (`sealNames`, FU-D), as a trader's sign-up does.
  */
 export function memberNames(loginKey: string): NewNames {
   const placeholder = `m-${randomBytes(8).toString('hex')}`;
-  return { displayName: placeholder, displayKey: placeholder, loginKey };
+  return { tradeTag: placeholder, displayKey: placeholder, loginKey };
 }
 
 /**
@@ -475,13 +475,13 @@ export function memberNames(loginKey: string): NewNames {
  * when the member was removed (or had already joined) meanwhile.
  */
 export async function finishMember(c: Queryable, memberAccountId: string, now: Date): Promise<void> {
-  const { rows } = await c.query<{ account_id: string; display_name: string }>(
+  const { rows } = await c.query<{ account_id: string; trade_tag: string }>(
     `update team_members set joined_at = $2
       where member_account_id = $1 and joined_at is null and removed_at is null and invite_expires_at > $2
-      returning account_id, display_name`,
+      returning account_id, trade_tag`,
     [memberAccountId, now],
   );
   const row = rows[0];
   if (!row) throw new ApiError(404, 'not-found');
-  await addAlert(c, row.account_id, 'team-member-joined', { member: row.display_name }, now);
+  await addAlert(c, row.account_id, 'team-member-joined', { member: row.trade_tag }, now);
 }

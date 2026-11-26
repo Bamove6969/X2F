@@ -13,15 +13,15 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
 const ends = () => new Date(Date.now() + H).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
 const CODE = '7RWD3MXEKQ84HN2T';
 const REASON = 'Third dispute this month as a buyer who marks paid and never pays.';
 const REC = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 
 const trader = (name: string) => ({
-  displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
+  tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
 });
 const kase = (o: Record<string, unknown> = {}) => ({
   code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: '',
@@ -35,7 +35,7 @@ const kase = (o: Record<string, unknown> = {}) => ({
   ...o,
 });
 const rec = (o: Record<string, unknown> = {}) => ({
-  id: REC, accountId: ACCT, displayName: 'harbor_lin', capUsd: 300, stage: null, reason: REASON, code: CODE, recommendedBy: 'dmitri_k',
+  id: REC, accountId: ACCT, tradeTag: 'harbor_lin', capUsd: 300, stage: null, reason: REASON, code: CODE, recommendedBy: 'dmitri_k',
   mine: false, createdAt: new Date(Date.now() - H).toISOString(), currentStage: 'graduated', currentCapUsdCents: null, ...o,
 });
 

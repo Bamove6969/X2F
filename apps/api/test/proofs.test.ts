@@ -268,9 +268,9 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
     const { buyer, code } = await tradeIn('secured');
     const id = newProofId();
     expect((await put(buyer, code, id, 'proof')).statusCode).toBe(204);
-    const loginId = await seedAccount(deps, { loginName: `mproof${Date.now()}x`, displayName: 'm-proof-placeholder', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `mproof${Date.now()}x`, tradeTag: 'm-proof-placeholder', kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Proofer', 'proofer', $2, $3, $4, $3, $3)`,
       [buyer.id, ['proof-upload', 'proof-see-partner', 'trades-mark-paid'], deps.clock(), loginId],
     );

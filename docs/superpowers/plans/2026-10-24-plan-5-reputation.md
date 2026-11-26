@@ -35,7 +35,7 @@ Task 13 Step 3 lists the resolved tree (`npm ls --all tesseract.js`) in the comm
 
 **Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md`: 1 (mission: share the bare minimum; principles 2 and 3), 2.2 step 7 (optional proof and its nudge) and step 11 (review), 2.3 (starter limits, New badge until Graduated; trading hold), 4.1 (data rules, retention, no IP logs, no email or phone), 4.2 (proof uploads), 5 (all), 6.2 (PGP key rules, R16), 6.5, 6.6 (unblurred proof request, activity log, training library), 7 screen 3, 9. **Boards:** Claude Design **X2F App**, mirrored in `design/x2f-app/`: `Review`, `Profile`, `BadgeSettings`, `SellOffers` (badges and `+N`), `BuyerPay` (proof slot), `SellerConfirm` (smart proof card), `DisputeOpen` (Add more evidence), `DisputeRoom` (unblurred request), `ModCase` (proof card). **Builds on:** Plans 1–3 (as built and as revised through 2026-10-24) and Plan 4 (interfaces below).
 
-> **Lead note 2026-10-24:** the display-name / login-name split (spec 6.1) is owned by the Plan 2 follow-up FU-A (branch `wip/lead-p2-fua`, migration 009, renaming `username` to `display_name` and adding `login_name`). It merges before Plan 5 starts. Plans 3 and 4 then switch `username` to `display_name`.
+> **Lead note 2026-10-24:** the trade-tag / login-name split (spec 6.1) is owned by the Plan 2 follow-up FU-A (branch `wip/lead-p2-fua`, migration 009, renaming `username` to `trade_tag` and adding `login_name`). It merges before Plan 5 starts. Plans 3 and 4 then switch `username` to `trade_tag`.
 
 ## Revision 2026-11-09 (owner)
 
@@ -45,7 +45,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 
 ## Global Constraints
 
-- **Share the bare minimum (spec 1).** No route returns a login name, email, phone, IP, payout address, trade amount sum, or anything inside a PGP key other than its fingerprint. Profiles are keyed by the **display name** only (spec 6.1, owner 2026-10-23).
+- **Share the bare minimum (spec 1).** No route returns a login name, email, phone, IP, payout address, trade amount sum, or anything inside a PGP key other than its fingerprint. Profiles are keyed by the **Trade Tag** only (spec 6.1, owner 2026-10-23).
 - **No volume badges, no volume stats (spec 5.4).** No badge, stat, record or route exposes how much money a trader has moved. Per-review USD values are used only inside the weight maths and are never returned.
 - **Badges are earned, never set (spec 5.4).** Badges are computed from records on every read. No route, setting or row can grant one; the only badge write is visibility.
 - **New is a warning, not an achievement (spec 2.3, 5.4).** It is shown while the account is not Graduated (`tradeCap(...).stage !== 'graduated'`), always Featured, and cannot be hidden or moved.
@@ -58,11 +58,11 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
   - **The worker's own CSP (review 2026-10-24).** A dedicated worker loaded from a URL takes its CSP from **its own response**, not from the page. `serve.ts` sends the CSP only on HTML, so without a change the OCR worker would run with no CSP at all, and a network fallback (`tesseract.js` has jsdelivr defaults built in) would not be blocked. Task 13 therefore sends `content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'` on every `/ocr/*` response. *Lead call 2026-11-20 (Task 16 review): `connect-src` is narrowed to `https://<site>/ocr/` on each `X2F_ORIGINS` origin (`ocrWorkerCspFor`), so the worker cannot reach `/v1/`; review M-1 (same day): `script-src` is narrowed to `<site>/ocr/` the same way, with `worker-src 'none'`; see docs/security/plan-5-review.md.*
   - **Integrity.** The OCR files are checked against SHA-256 values checked into the repo (Task 13), not only against `node_modules`.
 - **PGP (spec 6.2, R16).** openpgp 6.3.2 with Plan 2's strict config. Anything inside a key other than its fingerprint is never shown, logged, searched or exported. Expired and revoked keys are refused with the reason.
-- **Privacy (spec 4.1).** No IP stored or logged. Logs never contain trade codes, display names, review notes, feedback notes, fingerprints, URLs or proof ids. `disableRequestLogging: true`, `trustProxy` never set. Proofs follow chat retention (90 days after close; disputed: 30 days after the dispute closes, Plan 4 R6). Training copies never include proof images.
+- **Privacy (spec 4.1).** No IP stored or logged. Logs never contain trade codes, Trade Tags, review notes, feedback notes, fingerprints, URLs or proof ids. `disableRequestLogging: true`, `trustProxy` never set. Proofs follow chat retention (90 days after close; disputed: 30 days after the dispute closes, Plan 4 R6). Training copies never include proof images.
 - Every dependency is pinned exactly and was published at least 14 days before it is installed. `npm audit --omit=dev` reports 0 (R31/R33 exceptions apply until their dates). `npm run check` passes at the end of every task (queued through `~/x2f-comms/run-check.sh`, R32). Tests run as `npm test -- --project <workspace>`.
 - Migrations are numbered `3xx`, one per task that needs schema. Every module takes `clock: () => Date`; no `new Date()` in logic.
 - Every new refusal code joins Plan 2's `ApiErrorCode` and is thrown as `ApiError`.
-- **UI.** Copy verbatim from the boards; spec wording where no board exists; anything else is marked `// COPY-UNSIGNED` for the owner. Night theme first, exactly one `data-primary` per screen, teal badge pills (amber for New), no emoji, no exclamation marks, display names rendered exactly as set. `expectParity` at 390×844 (and 1280×800 for trade-room screens). Never run Playwright with `--update-snapshots`.
+- **UI.** Copy verbatim from the boards; spec wording where no board exists; anything else is marked `// COPY-UNSIGNED` for the owner. Night theme first, exactly one `data-primary` per screen, teal badge pills (amber for New), no emoji, no exclamation marks, Trade Tags rendered exactly as set. `expectParity` at 390×844 (and 1280×800 for trade-room screens). Never run Playwright with `--update-snapshots`.
 - Code from agy-delegated agents is merged only after Semgrep, the Security Guidance hook and a code-review plugin have checked it.
 
 ## Assumptions (owner has not decided yet; each is used only through the named constant or setting)
@@ -91,7 +91,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - **P5-A17 PGP line on the profile.** The board's "Account protected with PGP" line shows only when the PGP badge is not Hidden, so hiding the badge hides the fact.
 
 **Portable reputation and feedback**
-- **P5-A18 Record contents and signer.** X2F cannot sign with the user's key, so the record is an OpenPGP cleartext message signed with **X2F's official PGP key** (Plan 2 R7), listing: display name, member-since month, issue date, completed trades, % positive and review count, the account's PGP fingerprints, and one line per completed trade with month, role, stars and phrases (no amounts, methods, counterparties or notes). PGP users are told how to add their own signature in their PGP app. Private by default; "Show on my profile" (`portable_public`) exposes it at `/u/:name/record`.
+- **P5-A18 Record contents and signer.** X2F cannot sign with the user's key, so the record is an OpenPGP cleartext message signed with **X2F's official PGP key** (Plan 2 R7), listing: Trade Tag, member-since month, issue date, completed trades, % positive and review count, the account's PGP fingerprints, and one line per completed trade with month, role, stars and phrases (no amounts, methods, counterparties or notes). PGP users are told how to add their own signature in their PGP app. Private by default; "Show on my profile" (`portable_public`) exposes it at `/u/:name/record`.
 - **P5-A19 Feedback.** Shown after the 1st completed trade and when `completedTrades % FEEDBACK_EVERY === 0` (`FEEDBACK_EVERY = 10`). Stored as `{ mood, note ≤ 500, created_on: date }` with no account id; at most 3 per account per day (in memory only). Only the owner reads it (new perm `feedback.read`). Deleted after `FEEDBACK_RETENTION_DAYS = 365`.
 
 **Past reputation (spec 5.5)**
@@ -124,7 +124,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
   Default: (d), until the owner picks. Each option is a constant in Task 1.
 - **P5-A33 Repeated reviews from one counterparty.** Two colluding accounts (or one person's two accounts) can trade back and forth so that one of them collects many 5-star reviews. Option: only the latest review from each distinct counterparty counts toward % positive and Trusted (`REVIEWS_PER_COUNTERPARTY = 1`). Default: count every review, as spec 5.3 says.
-- **P5-A34 Who sees `online` and `lastSeenAt`.** `GET /v1/traders/:name` needs no session and works for **any** display name, including accounts that have never posted an offer. Anyone can poll it to track when a named person is active. Options:
+- **P5-A34 Who sees `online` and `lastSeenAt`.** `GET /v1/traders/:name` needs no session and works for **any** Trade Tag, including accounts that have never posted an offer. Anyone can poll it to track when a named person is active. Options:
   - (a) profiles only for accounts with at least one live offer or one completed trade;
   - (b) `lastSeenAt` rounded to the hour (or "today" / "this week");
   - (c) both;
@@ -147,7 +147,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - **Review 2026-10-24:** Plan 3 does not define `usdCentsOf`. Its starter-limit revision computes "the USD equivalent at the locked rate" at take, but does not say it is stored.
   - If no stored USD value exists when Task 3 starts, Task 3 adds `trades.usd_cents bigint` and fills it in the take transaction, from the same value the cap check used. Trades taken before the migration get `null` and weight `REVIEW_WEIGHT_FLOOR_USD_CENTS`.
   - Plan 5 never converts using today's rate.
-- `TraderSummary.username` (Plan 3) becomes `displayName` when the spec 6.1 split lands (see "Spec 6.1 display name" below); Plan 5 never adds a login name to it.
+- `TraderSummary.username` (Plan 3) becomes `tradeTag` when the spec 6.1 split lands (see "Spec 6.1 Trade Tag" below); Plan 5 never adds a login name to it.
 - `tradeCap(deps, accountId, now) → { stage: 'starter'|'building'|'graduated'; capUsd; maxOpen }` (Revision 2026-10-24).
 - `POST /v1/offers/:id/take`, `POST /v1/trades/:code/wallet`, `GET /v1/offers` in `apps/api/src/offers/routes.ts`; `traderSummary` in `apps/api/src/traders/summary.ts`, whose `TraderSummary.badges: string[]` **becomes** `{ featured: BadgeView[]; more: BadgeView[] }` and whose `positivePct`, `typicalMinutes` Plan 5 fills.
 - Chat: `chats`, `chat_envelopes`, `POST /v1/chats/:chat/envelopes` (≤ 16 KiB), the chat for a trade (`chatOf(code)`), `seal`/`open` with `to: Role[]`, `ChatPanel` system cards.
@@ -176,9 +176,9 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - **Staff-web CSP.** Plan 4 serves staff-web with Plan 3's CSP minus `'wasm-unsafe-eval'`; see P5-A36 for the ModCase proof check.
 - **`NAV` test.** Plan 4's roles test asserts `NAV.mod` deep-equals `['disputes','training','log']`. Task 11 updates that expectation when it adds `'past-reputation'`, and Task 4 adds `'feedback'` to `NAV.owner`.
 
-**Spec 6.1 display name (owner 2026-10-23):** Plan 5 assumes `accounts.display_name` and its normalised `display_key` exist. **If the split has not landed when Task 5 starts, stop and report**: profiles must never be keyed by the login name.
+**Spec 6.1 Trade Tag (owner 2026-10-23):** Plan 5 assumes `accounts.trade_tag` and its normalised `display_key` exist. **If the split has not landed when Task 5 starts, stop and report**: profiles must never be keyed by the login name.
 - **Review 2026-10-24: no plan owns the split yet.**
-  - Neither Plan 2 as built (`apps/api/migrations/001_accounts.sql`), Plan 3 nor Plan 4 adds `display_name`.
+  - Neither Plan 2 as built (`apps/api/migrations/001_accounts.sql`), Plan 3 nor Plan 4 adds `trade_tag`.
   - Plans 3 and 4 still say `username` in `TraderSummary`, SSE payloads (`accepted {by}`, `proof-requested {username}`, `moderator-joined {username}`) and staff views.
   - **Lead decision needed before Plan 5 starts:** which plan adds the column and renames those fields. This blocks Tasks 3, 5, 6, 11 and 12, not only Task 5.
 
@@ -274,7 +274,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
     - A trade that has **ever** had a dispute is reviewable only once that dispute is closed, whatever its final state.
     - This includes a `refunded` trade disputed within `disputeAfterRefundDays`: it becomes reviewable when the dispute closes.
     - `usd_cents` comes from the stored take-time value (Interfaces, `usdCentsOf`).
-  - `GET /v1/reviews/pending` (`requireTrader`) → `{ trades: { code; counterparty: string /* display name */; reviewableSince: string }[] }`.
+  - `GET /v1/reviews/pending` (`requireTrader`) → `{ trades: { code; counterparty: string /* Trade Tag */; reviewableSince: string }[] }`.
   - `GET /v1/trades/:code/review` (participant) → `{ reviewable: boolean; mine: PublicReview | null; theirs: PublicReview | null /* only once revealed */; revealAt: string | null }`.
   - `POST /v1/trades/:code/review` (participant, `requireTrader`) body `ReviewInput` → 201. Refusals: 409 `not-reviewable`, 409 `review-exists`, 400 with the `ReviewError` code.
   - `assertNoPendingReview(db, accountId)` → 409 `review-pending`; called inside the take transaction for **both** taker and poster, and in `POST /v1/trades/:code/wallet`.
@@ -330,19 +330,19 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - Table `badge_prefs(account_id uuid pk references accounts, chosen boolean not null default false, levels jsonb not null default '{}', featured_order text[] not null default '{}', portable_public boolean not null default false, updated_at)`.
   - `badgeFactsMany(db, accountIds: string[], now): Promise<Map<string, BadgeFacts & { reviewCount: number }>>`: one batched query set for a whole offer list (no per-card queries). Only **revealed** reviews count.
   - `TraderSummary` (Plan 3) now carries `positivePct`, `typicalMinutes` and `badges: { featured: BadgeView[]; more: BadgeView[] }`, `BadgeView = { id: BadgeId; label; meaning; icon; tone; href?: string /* past-rep evidence link */ }`.
-  - `GET /v1/traders/:name` (no session) → `TraderProfile = { displayName; memberSince: 'YYYY-MM'; online; lastSeenAt; stats: { completedTrades; positivePct; reviewCount; typicalMinutes }; badges; pgpProtected: boolean /* P5-A17 */; recordPublic: boolean; reviews: PublicReview[]; offers: number }`. Unknown name → 404 with the same body shape for every unknown name. `:name` is matched on `display_key`; a login name never matches.
+  - `GET /v1/traders/:name` (no session) → `TraderProfile = { tradeTag; memberSince: 'YYYY-MM'; online; lastSeenAt; stats: { completedTrades; positivePct; reviewCount; typicalMinutes }; badges; pgpProtected: boolean /* P5-A17 */; recordPublic: boolean; reviews: PublicReview[]; offers: number }`. Unknown name → 404 with the same body shape for every unknown name. `:name` is matched on `display_key`; a login name never matches.
   - `GET /v1/account/badges` (`requireTrader`) → `{ earned: (BadgeView & { level: Visibility })[]; featured: BadgeId[]; nextMilestones }`; `PUT /v1/account/badges { id: BadgeId; level: Visibility }` → the resolved lists plus `notice`; refusals 400 `new-is-fixed`, `not-earned`.
 
 - [ ] **Step 1: Write the failing tests:**
   - **Review Focus 1:** store a review that is not yet revealed; `GET /v1/traders/:name`, `GET /v1/offers` and `traderSummary` for the subject are byte-identical before and after; after reveal `positivePct` and `reviewCount` change.
   - A Hidden badge is absent from the profile, the offer card summary and the `+N` list; New stays featured for a `building` account whatever `badge_prefs` says (a row forced to `levels: {new:'hidden'}` by SQL still shows New).
   - The profile JSON contains no `username`, login name, email, `usd`, `amount`, fingerprint, `account_id` or exact timestamps other than `lastSeenAt` (grep).
-  - `GET /v1/traders/<login name of an account whose display name differs>` → 404.
+  - `GET /v1/traders/<login name of an account whose Trade Tag differs>` → 404.
   - 50 offers from 50 posters cost a constant number of queries (query counter).
   - `PUT` featuring a third badge returns the board notice; a badge not earned → `not-earned`.
   - `typicalMinutes` uses `release-started` time for sellers and `paidAt − securedAt` (floored at 0) for buyers.
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Implement. If `accounts.display_name` does not exist yet, stop and report (Interfaces).
+- [ ] **Step 3:** Implement. If `accounts.trade_tag` does not exist yet, stop and report (Interfaces).
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): stats, public profiles and badge visibility`.
 
@@ -450,11 +450,11 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Consumes: Plan 2 `inspectPublicKey`, `storableKey`, `sealKey`/`openKey`, openpgp 6.3.2 strict config; Task 2 `pastRepLabel`.
 - Produces:
   - Table `past_reputation(id uuid pk, account_id uuid references accounts, site text not null, evidence_url text not null, claimed_trades int not null check (> 0), fingerprint text not null, key_enc bytea not null, challenge_text text not null, signature text not null, status text check (in ('signed','approved','rejected','removed','revoked')), verified_trades int, reviewer_id uuid, decided_at, reason text, created_at)`; partial unique indexes: one `fingerprint` among `signed|approved` rows (P5-A24); one `(account_id, site)` among `signed|approved` rows (P5-A21).
-  - `pastRepChallenge(a: { origin; displayName; site; url; fingerprint; nonce; issuedAt }): string` — exact text:
+  - `pastRepChallenge(a: { origin; tradeTag; site; url; fingerprint; nonce; issuedAt }): string` — exact text:
     ```
     X2F past reputation proof
     Site: <origin>
-    X2F name: <display name>
+    X2F name: <Trade Tag>
     Old site: <site>
     Old profile: <url>
     Key: <fingerprint, uppercase, groups of 4>
@@ -477,7 +477,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 - [ ] **Step 1: Write the failing tests** (fixtures from `openpgp.generateKey`; RSA keys made once in `beforeAll`):
   - An Ed25519 key signs the issued text (cleartext) → `signed`; a detached signature also works.
-  - The text with a different nonce, display name or site → `wrong-text`; a valid signature by another key → `wrong-key`; a signature by a signing subkey of the claimed key passes.
+  - The text with a different nonce, Trade Tag or site → `wrong-text`; a valid signature by another key → `wrong-key`; a signature by a signing subkey of the claimed key passes.
   - RSA 2048 accepted here, RSA 1024 refused `key-weak`; a signing-only Ed25519 key accepted here; RSA 2048 and a signing-only key still refused by login's `inspectPublicKey` defaults.
   - A revoked key → `key-revoked`; an expired key → `key-expired`; the same key re-signed to a later expiry passes.
   - `http://web.archive.org/…`, `https://evil.example/…`, `https://user@web.archive.org/…`, `https://web.archive.org:8443/…`, `https://web.archive.org./…`, `https://web.archive.org.evil.example/…` and `https://evil.example\@web.archive.org/…` → `bad-url`.
@@ -506,7 +506,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 **Interfaces:**
 - Consumes: Task 10; Plan 4 `buildStaffApi`, `appendLog`, staff-web shell, `ExternalLink`.
 - Produces:
-  - `GET /staff/v1/past-rep?status=signed` → `{ id; site; url; claimedTrades; fingerprint /* grouped */; keyId /* last 16 hex */; signatureValid: true; displayName; createdAt }[]` (fingerprint is the one thing staff need to compare; no user ID or key text).
+  - `GET /staff/v1/past-rep?status=signed` → `{ id; site; url; claimedTrades; fingerprint /* grouped */; keyId /* last 16 hex */; signatureValid: true; tradeTag; createdAt }[]` (fingerprint is the one thing staff need to compare; no user ID or key text).
   - `POST /staff/v1/past-rep/:id/approve { fingerprintSeen: true; tradesSeen: number }`: refused 400 `confirm-fingerprint` unless `fingerprintSeen` (P5-A23); sets `approved`, `verified_trades = tradesSeen`; appends `pastrep.approved` (detail: site and count only). `POST …/reject { reason ≥ 10 }` → `rejected`, `pastrep.rejected`. `POST …/revoke { reason }` (senior or owner only) → `revoked`, `pastrep.revoked`.
   - **PastRep page** (no board, `// COPY-UNSIGNED`): one claim at a time; the evidence link opens in a new tab with `rel="noreferrer noopener"` and the line "Opens the archive in your browser. X2F never fetches it."; the fingerprint in large mono groups of 4; the tick box "The archived page shows this exact full fingerprint"; "Trades shown on the archived page" number field; **Approve** (`data-primary`) and **Reject** with a reason.
 
@@ -535,7 +535,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - **PastRepClaim** (`// COPY-UNSIGNED`): pick the site, paste the archive link, claimed trade count and the old public key; copy the challenge text; paste the signed message; status list (signed / approved / rejected with reason / removed). The screen says "Screenshots don't count. Sign with the key shown on your old profile."
   - `GET /v1/account/record` (`requireTrader`, 1 per minute per account in memory) → `{ text }`: P5-A18 contents, cleartext-signed with X2F's official key. `PUT /v1/account/record/public { on }`; `GET /v1/traders/:name/record` → the same text only when public, else 404.
     - **Review 2026-10-24: keep record signatures apart from other X2F signatures.** The same key signs login challenges (Plan 2), so the record's first line is the fixed header `X2F portable reputation record v1`. VerifyRecord refuses any X2F-signed text that does not start with it; a signed login challenge pasted there gets the "changed or not signed" answer.
-    - The display name is the only trader-chosen field, and it cannot hold a line break (spec 6.1 charset), so a record cannot imitate the header.
+    - The Trade Tag is the only trader-chosen field, and it cannot hold a line break (spec 6.1 charset), so a record cannot imitate the header.
     - An unknown name and a private record give byte-identical 404s.
     - The public copy never includes PGP fingerprints (P5-A35).
   - **RecordExport** (`// COPY-UNSIGNED`): Download (`x2f-reputation-<date>.txt`, a `data:` link), the "Show on my profile" toggle, and for PGP users the hint to add their own signature with their PGP app.
@@ -752,7 +752,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 17. **Profiles show "online" and "last seen" to anyone, for any name.** Limit profiles to people with an offer or a completed trade, round "last seen", or both? (P5-A34)
 18. **PGP fingerprint in the exported record.** It links the X2F name to the PGP key, and through it often to an email address. Make it opt-in at export and never in the public copy? (P5-A35)
 19. **Automatic proof check on the moderator's screen.** It needs WebAssembly allowed on the staff site, which widens that site's attack surface. Allow it, or show moderators the blurred image without the check? (P5-A36)
-20. **(For the lead) Who adds display names?** No plan yet adds the display name / login name split (spec 6.1). Plan 5 cannot start its profile and review screens without it.
+20. **(For the lead) Who adds Trade Tags?** No plan yet adds the Trade Tag / login name split (spec 6.1). Plan 5 cannot start its profile and review screens without it.
 
 ## Revision 2026-10-28 (lead, from the owner's decisions of 2026-10-27)
 

@@ -97,7 +97,7 @@ const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
 // The seeded traders' way in from a fresh browser (door.ts): the real PGP login with their throwaway keys.
 const door = createDoorHandler({
   origins: ORIGINS,
-  people: () => readTraderSecrets().map((t) => ({ displayName: t.displayName, loginName: t.loginName })),
+  people: () => readTraderSecrets().map((t) => ({ tradeTag: t.tradeTag, loginName: t.loginName })),
   login: async (loginName, cookies) => {
     const who = readTraderSecrets().find((t) => t.loginName === loginName);
     if (!who) throw new Error('not a seeded account');

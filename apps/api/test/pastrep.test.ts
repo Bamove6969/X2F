@@ -60,7 +60,7 @@ let n = 0;
 async function login(display?: string): Promise<{ b: Browser; id: string; name: string }> {
   n += 1;
   const name = display ?? `Trader${String(n).padStart(3, '0')}`;
-  const id = await seedAccount(deps, { loginName: `login${n}x`, displayName: name });
+  const id = await seedAccount(deps, { loginName: `login${n}x`, tradeTag: name });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { b, id, name };
@@ -97,7 +97,7 @@ beforeEach(async () => {
 describe('pastRepChallenge', () => {
   it('is the exact eight lines, the fingerprint uppercase in groups of 4', () => {
     const text = pastRepChallenge({
-      origin: 'https://x2f.test', displayName: 'Old.Trader', site: 'LocalMonero', url: URL_OK,
+      origin: 'https://x2f.test', tradeTag: 'Old.Trader', site: 'LocalMonero', url: URL_OK,
       fingerprint: 'abcdef0123456789abcdef0123456789abcdef01', nonce: '0123456789ABCDEF', issuedAt: T0,
     });
     expect(text).toBe(
@@ -176,7 +176,7 @@ describe('start and finish', () => {
     expect(res.statusCode, res.body).toBe(201);
   });
 
-  it('the text with a different nonce, display name or site → wrong-text', async () => {
+  it('the text with a different nonce, Trade Tag or site → wrong-text', async () => {
     const { b } = await login();
     const c = await start(b, ed);
     for (const changed of [
@@ -420,7 +420,7 @@ describe('cleartext tricks', () => {
 
   it('verifyPastRepSignature compares what was verified', async () => {
     const text = pastRepChallenge({
-      origin: 'https://x2f.test', displayName: 'A.Trader', site: 'Bisq', url: URL_OK, fingerprint: ed.fingerprint, nonce: '0123456789ABCDEF', issuedAt: T0,
+      origin: 'https://x2f.test', tradeTag: 'A.Trader', site: 'Bisq', url: URL_OK, fingerprint: ed.fingerprint, nonce: '0123456789ABCDEF', issuedAt: T0,
     });
     expect(await verifyPastRepSignature(await clearsign(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
     expect(await verifyPastRepSignature(await detach(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
@@ -986,9 +986,9 @@ describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
 describe('members and sessions', () => {
   it('a team member gets 403 owner-only on every past-rep route (Task 18: owner-only until decided)', async () => {
     const owner = await login();
-    const loginId = await seedAccount(deps, { loginName: 'pmember1x', displayName: 'pm-placeholder', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: 'pmember1x', tradeTag: 'pm-placeholder', kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'PastMember', 'pastmember', $2, $3, $4, $3, $3)`,
       [owner.id, rolesToAbilities(['offers', 'trades']), T0, loginId],
     );

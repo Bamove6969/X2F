@@ -22,7 +22,7 @@ async function serve(handle: http.RequestListener): Promise<string> {
 describe('the demo trader login (door.ts): the real PGP login, no password', () => {
   it('starts with the key and the login name, answers the decrypted code, and returns the API\'s cookies', async () => {
     const pgp = await newPgp('ana (demo)');
-    const who: TraderSecret = { displayName: 'demo_ana', loginName: 'ana-demo', pgp };
+    const who: TraderSecret = { tradeTag: 'demo_ana', loginName: 'ana-demo', pgp };
     const calls: Array<{ url: string; body: Record<string, unknown>; cookie: string | null }> = [];
     const code = 'ABCD-1234';
     const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
@@ -54,19 +54,19 @@ describe('the demo trader login (door.ts): the real PGP login, no password', () 
       }
       return new Response(JSON.stringify({ status: 'approve-on-device', approvalId: 'a', number: 42, expiresAt: '' }), { status: 200 });
     }) as typeof fetch;
-    await expect(softTraderLogin({ api: 'http://x', origin: 'http://x', fetchImpl: fakeFetch }, { displayName: 'b', loginName: 'ben-demo', pgp }, new Map())).rejects.toThrow(/another device/);
+    await expect(softTraderLogin({ api: 'http://x', origin: 'http://x', fetchImpl: fakeFetch }, { tradeTag: 'b', loginName: 'ben-demo', pgp }, new Map())).rejects.toThrow(/another device/);
   });
 });
 
 describe('/__demo/login (door-page.ts)', () => {
-  const people = [{ displayName: 'demo_ana', loginName: 'ana-demo' }];
+  const people = [{ tradeTag: 'demo_ana', loginName: 'ana-demo' }];
 
   it('lists the seeded accounts, escapes them, and says there are no passwords', () => {
     const page = doorPage(people);
     expect(page).toContain('Log in as demo_ana');
     expect(page).toContain('no passwords');
     expect(page).not.toMatch(/password:/i);
-    expect(doorPage([{ displayName: '<b>', loginName: 'x"y' }], '<i>')).not.toMatch(/as <b>|<i>|x"y/);
+    expect(doorPage([{ tradeTag: '<b>', loginName: 'x"y' }], '<i>')).not.toMatch(/as <b>|<i>|x"y/);
   });
 
   it('logs a seeded account in from a form on this origin only, and passes the API\'s cookies on', async () => {

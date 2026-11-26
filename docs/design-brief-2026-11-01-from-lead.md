@@ -18,7 +18,7 @@ Common rules for all boards:
 
 ## Login strength (owner, 1 Nov)
 
-Every account needs a username, a display name, and at least one real login method. A recovery code is required for everyone.
+Every account needs a username, a Trade Tag, and at least one real login method. A recovery code is required for everyone.
 
 Tiers:
 - **Weak:** username + password.
@@ -30,7 +30,7 @@ Tiers:
 - **Not allowed:**
   - username + authenticator alone. Message: "add at least a password, but we recommend the other options".
   - username only.
-  - display name as a login.
+  - Trade Tag as a login.
 
 Passwords must reach "strong" on a live meter (weak → medium → strong; the levels and wording are ours).
 

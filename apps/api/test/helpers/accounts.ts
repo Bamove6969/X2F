@@ -23,8 +23,8 @@ export async function accountIdByLoginName(deps: Pick<Deps, 'db' | 'config'>, lo
 /**
  * Inserts an account directly (tests only). `loginName` is the private login name, stored only as
  * its tag (FU-D) under the current key or under `loginKeyId` (null: an account from before
- * migration 009, which logs in by its display name until it sets one: `legacy_login_name`, its tag
- * is its display name's); `displayName` defaults to `D` + the login name (or a random one). A
+ * migration 009, which logs in by its Trade Tag until it sets one: `legacy_login_name`, its tag
+ * is its Trade Tag's); `tradeTag` defaults to `D` + the login name (or a random one). A
  * trader, and a team member's login account (who signs the Terms themselves, review 2026-11-08
  * F1), get the current Terms version unless `termsVersion` says otherwise; staff and owner
  * accounts carry none.
@@ -32,7 +32,7 @@ export async function accountIdByLoginName(deps: Pick<Deps, 'db' | 'config'>, lo
 export async function seedAccount(
   deps: Pick<Deps, 'db' | 'clock' | 'config'>,
   a: {
-    loginName: string | null; displayName?: string; kind?: AccountKind; disabled?: boolean; termsVersion?: string | null; loginKeyId?: number;
+    loginName: string | null; tradeTag?: string; kind?: AccountKind; disabled?: boolean; termsVersion?: string | null; loginKeyId?: number;
     /**
      * Owner, 26 Nov 2026: a trader account holds at least two kinds of login method, or its sessions
      * are setup-only. A seeded trader gets an unused passkey and an unused security key unless this
@@ -43,11 +43,11 @@ export async function seedAccount(
 ): Promise<string> {
   const kind = a.kind ?? 'trader';
   const terms = a.termsVersion !== undefined ? a.termsVersion : kind === 'trader' || kind === 'member' ? deps.config.termsVersion : null;
-  const display = a.displayName ?? (a.loginName !== null ? `D${a.loginName}` : `D${randomBytes(6).toString('hex')}`);
+  const display = a.tradeTag ?? (a.loginName !== null ? `D${a.loginName}` : `D${randomBytes(6).toString('hex')}`);
   const keyId = a.loginKeyId ?? deps.config.loginNameKeys.current;
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
+    `insert into accounts (trade_tag, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
     [
       display, displayKeyOf(display), currentLoginTag(deps, a.loginName ?? display, keyId), keyId, a.loginName === null, kind, randomBytes(32),

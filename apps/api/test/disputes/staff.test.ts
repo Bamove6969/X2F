@@ -129,7 +129,7 @@ const errorOf = (res: { body: string }) => (res.body === '' ? undefined : (JSON.
 async function staff(role: 'mod' | 'senior' | 'owner' | 'helper', app = staffApp) {
   const s = await seedStaff(deps, { role });
   const { token } = await insertSession(deps, s.id, 'staff');
-  const name = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [s.id])).rows[0]!.display_name;
+  const name = (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [s.id])).rows[0]!.trade_tag;
   const b = new StaffBrowser(app).withSession(token);
   /** A new session at the current test clock (staff sessions last 2 hours). */
   const fresh = async () => {
@@ -330,7 +330,7 @@ describe('the case view', () => {
       ruling: { draft: null, publishedAt: null, appealEndsAt: null, appeal: null },
       freezes: { buyer: false, seller: false },
     });
-    expect((v.traders as { seller: { displayName: string } }).seller.displayName).toBe(seller.displayName);
+    expect((v.traders as { seller: { tradeTag: string } }).seller.tradeTag).toBe(seller.tradeTag);
     expect(JSON.stringify(v)).not.toMatch(/messages|envelope/);
     await mod.b.get(url(code));
     expect((await logOf(code)).filter((e) => e.action === 'case.opened').map((e) => e.actor_id)).toEqual([mod.id]);
@@ -826,7 +826,7 @@ describe('D-016: the frozen trader reads their freeze (GET /v1/account/freeze)',
     await mod.fresh();
     expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
     const { rows } = await deps.db.query<{ incident_id: string; amount_atomic: string; name: string }>(
-      `select d.incident_id, t.amount_atomic::text as amount_atomic, b.display_name as name
+      `select d.incident_id, t.amount_atomic::text as amount_atomic, b.trade_tag as name
          from disputes d join trades t on t.code = d.code join accounts b on b.id = t.buyer_account_id where d.code = $1`,
       [code],
     );
@@ -877,7 +877,7 @@ describe('D-016: the frozen trader reads their freeze (GET /v1/account/freeze)',
 
     const loginId = await seedAccount(deps, { loginName: `fzmember${randomUUID().slice(0, 8)}`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'FzMember', 'fzmember', $2, $3, $4, $3, $3)`,
       [seller.id, rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
     );

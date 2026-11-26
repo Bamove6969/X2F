@@ -31,7 +31,7 @@ Out of scope: a compromised trader device, the fiat leg of the trade (X2F never 
 
 X2F runs two separate services with separate databases. The **API** (accounts, trades, chat storage) has no access to the **moderation service**'s database.
 
-**The API holds:** accounts (login names only as HMAC tags, or sealed while a sign-up waits in its challenge, section 6; display names); public keys and WebAuthn credentials; PGP public keys, encrypted at rest (v4 keys, which are most keys in use, keep their user IDs, which may contain a name or email); encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
+**The API holds:** accounts (login names only as HMAC tags, or sealed while a sign-up waits in its challenge, section 6; Trade Tags); public keys and WebAuthn credentials; PGP public keys, encrypted at rest (v4 keys, which are most keys in use, keep their user IDs, which may contain a name or email); encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
 
 **The moderation service holds, per trade:** the moderator's trade identity (Ed25519/X25519), its escrow wallet session (its one multisig key share), and that wallet's password. Per chat, it holds the moderator's chat identity. It also holds the long-term **moderation signing key**, whose public half is built into the apps. All of this is sealed with AES-256-GCM under `MOD_KEYSTORE_KEY`, with the trade or chat code as associated data. The wallet password is sealed under a separate HKDF subkey, in a separate table from the wallet session.
 
@@ -212,7 +212,7 @@ Known limits of the design:
 - **Passkeys and security keys.** WebAuthn through SimpleWebAuthn, with origin and RP ID checks. Passkeys require user verification.
 - **No passwords.** X2F has no passwords. An account holds at least two kinds of login method among passkey, security key, PGP key and authenticator app (at most one authenticator app); recovery codes do not count.
 - **TOTP.** Secrets are sealed under separate keys. An authenticator app counts as one kind of login method but never logs in alone. There is no 24-hour hold: a recovery-code login is a full session that may change every login method for 1 hour.
-- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). While a sign-up waits in its login challenge, the challenge keeps the login name sealed with AES-256-GCM under a server subkey (`login-seal`), never as plaintext. A stolen database alone does not reveal them. The display name is separate and public.
+- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). While a sign-up waits in its login challenge, the challenge keeps the login name sealed with AES-256-GCM under a server subkey (`login-seal`), never as plaintext. A stolen database alone does not reveal them. The Trade Tag is separate and public.
 
 ## 7. Retention
 

@@ -2,7 +2,7 @@ import { hasAbility } from '../team/abilities.js';
 import { TRADE_PART_ABILITY } from '../team/perms.js';
 /**
  * Live events (Task 19). The only event shapes `GET /v1/events` ever sends. Names in them (`by`,
- * `from`) are public display names (see publicName.ts), never login names.
+ * `from`) are public Trade Tags (see publicName.ts), never login names.
  */
 export type LiveEvent =
   | { type: 'trade'; code: string; state: string }
@@ -14,7 +14,7 @@ export type LiveEvent =
   /**
    * Plan 4 Task 11: written only by the staff API (never by a trader): a moderator first opened the
    * disputed trade's chat, or asks this trader for the unblurred proof. `username` is the
-   * moderator's public display name.
+   * moderator's public Trade Tag.
    */
   | { type: 'moderator-joined'; code: string; username: string }
   | { type: 'proof-requested'; code: string; username: string };

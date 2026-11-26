@@ -96,7 +96,7 @@ async function addRecoveryCodes(accountId: string, count: number, used = false):
 }
 
 interface Me {
-  displayName: string;
+  tradeTag: string;
   needsLoginName: boolean;
   kind: string;
   level: string;
@@ -117,10 +117,10 @@ async function me(b: Browser): Promise<Me> {
 
 describe('GET /v1/account/me', () => {
   it('an account from before login names reads needsLoginName: true until POST /v1/account/login-name sets a distinct one (review I3)', async () => {
-    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer1' });
+    const id = await seedAccount(deps, { loginName: null, tradeTag: 'Old.Timer1' });
     const { id: other, username: otherLogin } = await account();
     const b = await loggedIn(id);
-    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: true });
+    expect(await me(b)).toMatchObject({ tradeTag: 'Old.Timer1', needsLoginName: true });
     // Re-review 2: a stolen session must not quietly change how the account logs in.
     const bare = await b.post('/v1/account/login-name', { loginName: 'Private.OT1' });
     expect(bare.statusCode).toBe(403);
@@ -132,14 +132,14 @@ describe('GET /v1/account/me', () => {
     expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
     expect(errorOf(await set('bad name'))).toBe('login-name-invalid');
     expect(errorOf(await set(42))).toBe('login-name-invalid');
-    const { rows: taken } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [other]);
+    const { rows: taken } = await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [other]);
     expect(errorOf(await set(otherLogin.toUpperCase()))).toBe('names-unavailable'); // another account's login name
-    expect(errorOf(await set(taken[0]!.display_name))).toBe('names-unavailable'); // another account's display name
+    expect(errorOf(await set(taken[0]!.trade_tag))).toBe('names-unavailable'); // another account's Trade Tag
     expect(await me(b)).toMatchObject({ needsLoginName: true });
     const ok = await set('Private.OT1');
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ ok: true });
-    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: false });
+    expect(await me(b)).toMatchObject({ tradeTag: 'Old.Timer1', needsLoginName: false });
     // FU-D: stored only as its tag under the current key.
     const { rows } = await deps.db.query('select login_name, login_key, login_tag, login_tag_key_id, legacy_login_name from accounts where id = $1', [id]);
     expect(rows).toEqual([{
@@ -163,12 +163,12 @@ describe('GET /v1/account/me', () => {
     expect(errorOf(await ob.post('/v1/account/login-name', { loginName: 'Fresh.OT1', confirmToken: otherToken }))).toBe('login-name-set');
   });
 
-  it('two pre-009 accounts swapping display names as login names at once both get names-unavailable, never a 500 (round-2 Minor 1)', async () => {
+  it('two pre-009 accounts swapping Trade Tags as login names at once both get names-unavailable, never a 500 (round-2 Minor 1)', async () => {
     // Not every round deadlocks (the interleaving is up to the scheduler); the mapping itself has a unit test below.
     for (let round = 0; round < 10; round++) {
       const [na, nb] = [`Swap.A${n}r${round}`, `Swap.B${n}r${round}`];
-      const a = await seedAccount(deps, { loginName: null, displayName: na });
-      const b = await seedAccount(deps, { loginName: null, displayName: nb });
+      const a = await seedAccount(deps, { loginName: null, tradeTag: na });
+      const b = await seedAccount(deps, { loginName: null, tradeTag: nb });
       const ba = await loggedIn(a);
       const bb = await loggedIn(b);
       const ta = await issueConfirmToken(deps, { sessionId: ba.sessionId, accountId: a, action: { kind: 'set-login-name' }, method: 'passkey' });
@@ -177,7 +177,7 @@ describe('GET /v1/account/me', () => {
         ba.post('/v1/account/login-name', { loginName: nb, confirmToken: ta }),
         bb.post('/v1/account/login-name', { loginName: na, confirmToken: tb }),
       ]);
-      // Each one's login name is the other's public display name, so neither may win.
+      // Each one's login name is the other's public Trade Tag, so neither may win.
       expect([ra.statusCode, rb.statusCode]).toEqual([409, 409]);
       expect([errorOf(ra), errorOf(rb)]).toEqual(['names-unavailable', 'names-unavailable']);
     }
@@ -207,7 +207,7 @@ describe('GET /v1/account/me', () => {
     // The private login name is never sent, not even to its owner.
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', recoveryUntil: null, stage: 'starter', completedTrades: 0, methods: ['passkey'], hasBackup: false,
+      tradeTag: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', recoveryUntil: null, stage: 'starter', completedTrades: 0, methods: ['passkey'], hasBackup: false,
       // Owner 26 Nov 2026: one kind of method, outside the sign-up window: the session is setup-only.
       suggestions: ['add-backup'], termsCurrent: true, setupOnly: true, recoveryCodeToShow: false, member: null,
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },

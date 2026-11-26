@@ -15,7 +15,7 @@ import pg from 'pg';
 import { GIFT_CARD_TERMS_VERSION } from '../../packages/trade/src/giftCards.js';
 import { atomicForFiat, fiatCents } from '../../packages/trade/src/money.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
-import { NEW_NAME_MIN, checkDisplayName, checkLoginName } from '../../packages/accounts/src/index.js';
+import { NEW_NAME_MIN, checkTradeTag, checkLoginName } from '../../packages/accounts/src/index.js';
 import { loginTag } from '../../apps/api/src/accounts.js';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { applyEvent } from '../../apps/api/src/trades/store.js';
@@ -62,7 +62,7 @@ export class DemoClient {
 }
 
 interface Person {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   /** Only a vendor posts offers (owner, 2 Nov 2026; apps/api routes/accountType.ts). */
   vendor: boolean;
@@ -86,23 +86,23 @@ const giftCard = (country: string) => ({ country, giftCardTerms: GIFT_CARD_TERMS
 
 // The design's cast (design/x2f-app), each with offers in USD and CAD.
 const CAST: Person[] = [
-  { displayName: 'satoshi_ghost', loginName: 'satoshi-login', vendor: true, offers: [
+  { tradeTag: 'satoshi_ghost', loginName: 'satoshi-login', vendor: true, offers: [
     offer('sell', 'ZELLE', 'USD', 20, 150, 200, 'Zelle only from a bank in your own name. Fast replies 9am-11pm ET.', HOW_TO_PAY),
     offer('sell', 'CASH_APP', 'USD', 20, 120, 250, 'Cash App with the trade code as the note.', HOW_TO_PAY),
   ] },
-  { displayName: 'mira.k', loginName: 'mira-login', vendor: true, offers: [
+  { tradeTag: 'mira.k', loginName: 'mira-login', vendor: true, offers: [
     offer('sell', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, 150, 'Interac e-Transfer, autodeposit please. Usually online evenings.', HOW_TO_PAY),
     offer('buy', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, -100, 'I pay by e-Transfer within 10 minutes of the escrow being secured.', HOW_TO_PAY),
   ] },
-  { displayName: 'nightowl_44', loginName: 'nightowl-login', vendor: true, offers: [
+  { tradeTag: 'nightowl_44', loginName: 'nightowl-login', vendor: true, offers: [
     offer('buy', 'ZELLE', 'USD', 20, 150, -50, 'Night shift trader. I pay by Zelle right after escrow is secured.', HOW_TO_PAY),
     offer('sell', 'VENMO', 'USD', 20, 100, 300, 'Venmo friends and family only.', HOW_TO_PAY),
   ] },
-  { displayName: 'kettle.moss', loginName: 'kettle-login', vendor: true, offers: [
+  { tradeTag: 'kettle.moss', loginName: 'kettle-login', vendor: true, offers: [
     offer('sell', 'AMAZON_GIFT_CARD', 'USD', 25, 100, 600, 'US Amazon gift cards only. Send the claim code in chat.', HOW_TO_PAY, giftCard('US')),
     offer('sell', 'AMAZON_GIFT_CARD', 'CAD', 25, 100, 650, 'Amazon.ca gift cards only.', HOW_TO_PAY, giftCard('CA')),
   ] },
-  { displayName: 'lowtide_rx', loginName: 'lowtide-login', vendor: true, offers: [
+  { tradeTag: 'lowtide_rx', loginName: 'lowtide-login', vendor: true, offers: [
     offer('sell', 'TRANSFERWISE', 'CAD', 30, 200, 120, 'Wise transfer in CAD. Include the trade code as the reference.', HOW_TO_PAY),
     offer('buy', 'PAYPAL', 'USD', 20, 100, -200, 'PayPal friends and family.', HOW_TO_PAY),
     // A currency that is not a dollar (demo r5): euros by SEPA Instant, pounds by Faster Payments.
@@ -113,28 +113,28 @@ const CAST: Person[] = [
 
 // The owner's own accounts, to trade with himself (one per browser profile or device).
 const OWNER: Person[] = [
-  { displayName: 'demo_ana', loginName: 'ana-demo', vendor: true, offers: [] },
-  { displayName: 'demo_ben', loginName: 'ben-demo', vendor: false, offers: [] },
-  { displayName: 'demo_cy', loginName: 'cy-demo', vendor: false, offers: [] },
+  { tradeTag: 'demo_ana', loginName: 'ana-demo', vendor: true, offers: [] },
+  { tradeTag: 'demo_ben', loginName: 'ben-demo', vendor: false, offers: [] },
+  { tradeTag: 'demo_cy', loginName: 'cy-demo', vendor: false, offers: [] },
 ];
 
 /**
- * DEMO ONLY (owner demo notes #126 and #127, 23 Nov 2026): a new login or display name is 8 to 20
+ * DEMO ONLY (owner demo notes #126 and #127, 23 Nov 2026): a new login or Trade Tag is 8 to 20
  * characters, but the demo keeps the names the owner already uses (`cy-demo`, `demo_cy`, `mira.k`),
  * as an account made before the notes keeps its 5-7 character names. Such a name signs up with
  * `.seed` added (`seedName`), and `restoreNames` then writes the real one straight into the demo's
- * own throwaway database, as stored names are (the display name as typed, the login name only as
+ * own throwaway database, as stored names are (the Trade Tag as typed, the login name only as
  * its tag under the API's current key, FU-D). Lookups take 5-20 (`checkLoginName`,
- * `checkDisplayName`), so these accounts log in and show as before.
+ * `checkTradeTag`), so these accounts log in and show as before.
  */
 const seedName = (name: string): string => ([...name].length >= NEW_NAME_MIN ? name : `${name}.seed`);
 
 async function restoreNames(db: pg.Client, p: Person): Promise<void> {
-  if (seedName(p.displayName) !== p.displayName) {
-    const d = checkDisplayName(p.displayName);
-    if (!d.ok) throw new Error(`demo seed: ${p.displayName} is not a valid stored display name`);
-    const r = await db.query('update accounts set display_name = $2, display_key = $3 where display_key = $1', [seedName(p.displayName).toLowerCase(), d.name, d.key]);
-    if (r.rowCount !== 1) throw new Error(`demo seed: could not restore the display name ${p.displayName}`);
+  if (seedName(p.tradeTag) !== p.tradeTag) {
+    const d = checkTradeTag(p.tradeTag);
+    if (!d.ok) throw new Error(`demo seed: ${p.tradeTag} is not a valid stored Trade Tag`);
+    const r = await db.query('update accounts set trade_tag = $2, display_key = $3 where display_key = $1', [seedName(p.tradeTag).toLowerCase(), d.name, d.key]);
+    if (r.rowCount !== 1) throw new Error(`demo seed: could not restore the Trade Tag ${p.tradeTag}`);
   }
   if (seedName(p.loginName) !== p.loginName) {
     const l = checkLoginName(p.loginName);
@@ -158,9 +158,9 @@ async function restoreNames(db: pg.Client, p: Person): Promise<void> {
 async function signUp(p: Person): Promise<DemoClient> {
   const c = new DemoClient(ORIGIN);
   await c.ok('GET', '/v1/site');
-  const key = await newPgp(`${p.displayName} (demo, not real)`);
+  const key = await newPgp(`${p.tradeTag} (demo, not real)`);
   const s = await c.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/register/pgp/start', {
-    displayName: seedName(p.displayName), loginName: seedName(p.loginName), publicKey: key.publicKey,
+    tradeTag: seedName(p.tradeTag), loginName: seedName(p.loginName), publicKey: key.publicKey,
   });
   await c.ok('POST', '/v1/register/pgp/finish', {
     // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
@@ -182,9 +182,9 @@ const pgp: Record<string, PgpPair> = {};
  * accounts as vendors straight in its own throwaway database, as the switch itself would
  * (account_type, vendor_since), and the offers then go through the real API.
  */
-async function makeVendor(db: pg.Client, displayName: string): Promise<void> {
-  const r = await db.query("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader'", [displayName]);
-  if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${displayName} a vendor`);
+async function makeVendor(db: pg.Client, tradeTag: string): Promise<void> {
+  const r = await db.query("update accounts set account_type = 'vendor', vendor_since = now() where trade_tag = $1 and account_type = 'trader'", [tradeTag]);
+  if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${tradeTag} a vendor`);
 }
 
 /** An offer as the log names it: its payment types and currencies (J-16 flex offers carry lists). */
@@ -205,7 +205,7 @@ for (const p of [...CAST, ...OWNER]) {
   const c = await signUp(p);
   clients.set(p.loginName, c);
   await restoreNames(db, p);
-  if (p.vendor) await makeVendor(db, p.displayName);
+  if (p.vendor) await makeVendor(db, p.tradeTag);
   for (const o of p.offers) {
     // The API's exchange rates (CAD and the rest) arrive with its first rate poll, a little after it
     // starts: an offer refused for a missing price is tried again for up to 3 minutes.
@@ -214,10 +214,10 @@ for (const p of [...CAST, ...OWNER]) {
       await new Promise((done) => setTimeout(done, 5_000));
       r = await c.call<{ id?: string }>('POST', '/v1/offers', o);
     }
-    if (r.status >= 300) failures.push(`${p.displayName} ${offerLabel(o)}: ${r.status} ${JSON.stringify(r.body)}`);
+    if (r.status >= 300) failures.push(`${p.tradeTag} ${offerLabel(o)}: ${r.status} ${JSON.stringify(r.body)}`);
     else if (r.body?.id) posted.set(`${p.loginName} ${String(o.side)} ${offerLabel(o)}`, r.body.id);
   }
-  console.log(`demo seed: ${p.displayName}`);
+  console.log(`demo seed: ${p.tradeTag}`);
 }
 
 /**
@@ -295,28 +295,28 @@ await tradePool.end();
  * method); their keys are not kept, the members are there to be seen on the team page.
  */
 const TEAM = [
-  { displayName: 'ana_desk', loginName: 'ana-desk-login', roles: ['trades'] },
-  { displayName: 'ana_nights', loginName: 'ana-nights-login', roles: ['offers'] },
+  { tradeTag: 'ana_desk', loginName: 'ana-desk-login', roles: ['trades'] },
+  { tradeTag: 'ana_nights', loginName: 'ana-nights-login', roles: ['offers'] },
 ];
 const team: Array<{ shown: string; login: string; roles: string[] }> = [];
 try {
   const ana = clients.get('ana-demo')!;
   for (const m of TEAM) {
-    const action = { kind: 'team-invite', name: m.displayName, roles: m.roles.join(',') };
+    const action = { kind: 'team-invite', name: m.tradeTag, roles: m.roles.join(',') };
     const cs = await ana.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/confirm/pgp/start', { action });
     const { confirmToken } = await ana.ok<{ confirmToken: string }>('POST', '/v1/confirm/pgp/finish', { challengeId: cs.challengeId, code: await pgpCode(cs.encryptedMessage, pgp['ana-demo']!) });
-    const inv = await ana.ok<{ invite: string }>('POST', '/v1/team/invites', { displayName: m.displayName, roles: m.roles, confirmToken });
+    const inv = await ana.ok<{ invite: string }>('POST', '/v1/team/invites', { tradeTag: m.tradeTag, roles: m.roles, confirmToken });
     const member = new DemoClient(ORIGIN);
     await member.ok('POST', '/v1/team/invite', { invite: inv.invite });
-    const first = await newPgp(m.displayName);
+    const first = await newPgp(m.tradeTag);
     const s1 = await member.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/team/join/start', { invite: inv.invite, loginName: m.loginName, publicKey: first.publicKey, acceptedTerms: TERMS_TEXT_VERSION });
-    const joined = await member.ok<{ setupId: string }>('POST', '/v1/team/join/finish', { challengeId: s1.challengeId, code: await pgpCode(s1.encryptedMessage, first), termsSignature: { kind: 'typed', name: m.displayName } });
-    const second = await newPgp(`${m.displayName} spare`);
+    const joined = await member.ok<{ setupId: string }>('POST', '/v1/team/join/finish', { challengeId: s1.challengeId, code: await pgpCode(s1.encryptedMessage, first), termsSignature: { kind: 'typed', name: m.tradeTag } });
+    const second = await newPgp(`${m.tradeTag} spare`);
     const s2 = await member.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/team/join/second/pgp/start', { setupId: joined.setupId, publicKey: second.publicKey });
     await member.ok('POST', '/v1/team/join/second/pgp/finish', { setupId: joined.setupId, challengeId: s2.challengeId, code: await pgpCode(s2.encryptedMessage, second), deviceLabel: 'Demo seed' });
     await member.call('POST', '/v1/logout');
-    team.push({ shown: m.displayName, login: m.loginName, roles: m.roles });
-    console.log(`demo seed: team member ${m.displayName} (demo_ana's team, ${m.roles.join(', ')})`);
+    team.push({ shown: m.tradeTag, login: m.loginName, roles: m.roles });
+    console.log(`demo seed: team member ${m.tradeTag} (demo_ana's team, ${m.roles.join(', ')})`);
   }
 } catch (e) {
   failures.push(`team: ${(e as Error).message}`);
@@ -333,10 +333,10 @@ const logins = [
   'Each account also has an authenticator app (its second kind of method): npm run demo:code <login name>, or add the secret below to an authenticator app.',
   '',
   'Your accounts (trade with yourself; use one browser profile or device per account):',
-  ...OWNER.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
+  ...OWNER.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.tradeTag.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
   '',
   'The cast (offers already posted):',
-  ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
+  ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.tradeTag.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
   '',
   ...(team.length > 0 ? [`demo_ana's team (Settings, Team on ana-demo): ${team.map((m) => `${m.shown} (${m.roles.join(', ')})`).join(', ')}`] : []),
   ...(trades.some((t) => t.state === 'disputed') ? [`Open disputes (the staff queue): ${trades.filter((t) => t.state === 'disputed').map((t) => `${t.code} (${t.buyer} buys from ${t.seller})`).join(', ')}`] : []),
@@ -344,14 +344,14 @@ const logins = [
 writeFileSync(TOTP_FILE, JSON.stringify(totp, null, 2), { mode: 0o600 });
 // What the seed made, for the demo guide page (/__demo/guide, guide-page.ts). No secrets in it.
 writeFileSync(SEED_SUMMARY_FILE, JSON.stringify({
-  owner: OWNER.map((p) => ({ login: p.loginName, shown: p.displayName, vendor: p.vendor })),
-  cast: CAST.map((p) => ({ login: p.loginName, shown: p.displayName, offers: p.offers.map(offerLabel) })),
+  owner: OWNER.map((p) => ({ login: p.loginName, shown: p.tradeTag, vendor: p.vendor })),
+  cast: CAST.map((p) => ({ login: p.loginName, shown: p.tradeTag, offers: p.offers.map(offerLabel) })),
   trades,
   team,
   failures,
 }, null, 2));
 // The accounts the gateway's /__demo/login lets in from a fresh browser, with their keys (door.ts).
-const traders: TraderSecret[] = [...OWNER, ...CAST].filter((p) => pgp[p.loginName]).map((p) => ({ displayName: p.displayName, loginName: p.loginName, pgp: pgp[p.loginName]! }));
+const traders: TraderSecret[] = [...OWNER, ...CAST].filter((p) => pgp[p.loginName]).map((p) => ({ tradeTag: p.tradeTag, loginName: p.loginName, pgp: pgp[p.loginName]! }));
 writeFileSync(TRADERS_FILE, JSON.stringify(traders, null, 2), { mode: 0o600 });
 await db.end();
 writeFileSync(join(DEMO_DIR, 'logins.txt'), `${logins.join('\n')}\n`);

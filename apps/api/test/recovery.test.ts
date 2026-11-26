@@ -368,7 +368,7 @@ describe('the authenticator app is no backup login', () => {
 
 describe('S-019: the recovery code is an emergency login only (owner G32; lead job J-09)', () => {
   const accountRow = async (id: string) =>
-    (await deps.db.query('select display_name, display_key, login_tag, login_tag_key_id from accounts where id = $1', [id])).rows[0];
+    (await deps.db.query('select trade_tag, display_key, login_tag, login_tag_key_id from accounts where id = $1', [id])).rows[0];
 
   it('changes neither the username nor the Trade Tag', async () => {
     const { id, username } = await account();

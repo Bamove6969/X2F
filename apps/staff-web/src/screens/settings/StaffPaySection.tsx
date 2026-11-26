@@ -36,7 +36,7 @@ export function centsText(cents: string): string {
 }
 
 const COLUMNS: readonly Column<StaffPayRow>[] = [
-  { title: C.cols.name, cell: (r) => <span data-username="">{r.displayName}</span> },
+  { title: C.cols.name, cell: (r) => <span data-username="">{r.tradeTag}</span> },
   { title: C.cols.role, cell: (r) => ROLE_LABELS[r.role] },
   { title: C.cols.status, cell: (r) => (r.switchedOff ? C.off : C.active) },
   { title: C.cols.usd, cell: (r) => centsText(r.unpaidUsdCents), mono: true },

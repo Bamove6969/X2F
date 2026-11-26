@@ -71,7 +71,7 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeA
 export function staffLoginPage(people: readonly StaffPerson[], error = ''): string {
   const forms = people.map((p) =>
     `<form method="post" action="/__demo/staff/login"><input type="hidden" name="as" value="${esc(p.loginName)}">` +
-    `<button type="submit">Log in as ${esc(p.displayName)}</button> <code>${esc(p.loginName)}</code> (${esc(p.role === 'mod' ? 'moderator' : p.role === 'senior' ? 'senior moderator' : 'owner')})` +
+    `<button type="submit">Log in as ${esc(p.tradeTag)}</button> <code>${esc(p.loginName)}</code> (${esc(p.role === 'mod' ? 'moderator' : p.role === 'senior' ? 'senior moderator' : 'owner')})` +
     `<p class="who">Sees: ${esc(p.sees)}</p></form>`).join('');
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',

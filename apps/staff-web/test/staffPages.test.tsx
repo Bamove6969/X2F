@@ -13,7 +13,7 @@ import { honestTapStart } from './helpers.js';
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
 
 async function open(path: string) {
   render(
@@ -82,11 +82,11 @@ describe('Prices (owner Q13, J-21)', () => {
 });
 
 const MEMBERS = [
-  { accountId: 'o-1', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-01T00:00:00Z', lastActiveAt: null, openCases: 0, expiresAt: null, missingMethods: [] },
-  { accountId: 's-1', inviteId: null, displayName: 'iris.m', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: null, openCases: 1, expiresAt: null, missingMethods: [] },
-  { accountId: 'm-1', inviteId: null, displayName: 'nightowl_44', role: 'mod', status: 'active', grants: ['tickets.handle'], hours: 'any', joinedAt: '2026-10-03T00:00:00Z', lastActiveAt: null, openCases: 2, expiresAt: null, missingMethods: [] },
-  { accountId: 'h-1', inviteId: null, displayName: 'kit.b', role: 'helper', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-04T00:00:00Z', lastActiveAt: null, openCases: 0, expiresAt: null, missingMethods: [] },
-  { accountId: null, inviteId: 'i-1', displayName: null, role: 'mod', status: 'waiting', grants: [], hours: 'any', joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: '2026-11-11T00:00:00Z', missingMethods: [] },
+  { accountId: 'o-1', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-01T00:00:00Z', lastActiveAt: null, openCases: 0, expiresAt: null, missingMethods: [] },
+  { accountId: 's-1', inviteId: null, tradeTag: 'iris.m', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: null, openCases: 1, expiresAt: null, missingMethods: [] },
+  { accountId: 'm-1', inviteId: null, tradeTag: 'nightowl_44', role: 'mod', status: 'active', grants: ['tickets.handle'], hours: 'any', joinedAt: '2026-10-03T00:00:00Z', lastActiveAt: null, openCases: 2, expiresAt: null, missingMethods: [] },
+  { accountId: 'h-1', inviteId: null, tradeTag: 'kit.b', role: 'helper', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-04T00:00:00Z', lastActiveAt: null, openCases: 0, expiresAt: null, missingMethods: [] },
+  { accountId: null, inviteId: 'i-1', tradeTag: null, role: 'mod', status: 'waiting', grants: [], hours: 'any', joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: '2026-11-11T00:00:00Z', missingMethods: [] },
 ];
 
 const box = (member: string, perm: string) =>
@@ -122,7 +122,7 @@ describe('Staff: per-person checkboxes (owner Q60, J-21)', () => {
     // X3: the dialog shows the person's name next to the account id it signs.
     const accountLine = [...document.querySelectorAll('[data-part="key-tap-intent"] div')].find((d) => d.querySelector('dt')?.textContent === 'accountId')?.querySelector('dd')?.textContent ?? '';
     expect(accountLine).toContain('m-1');
-    expect(accountLine).toContain(MEMBERS.find((m) => m.accountId === 'm-1')!.displayName!);
+    expect(accountLine).toContain(MEMBERS.find((m) => m.accountId === 'm-1')!.tradeTag!);
     await click(button('Tap security key'));
     expect(api.calls.find((c) => c.path === '/staff/v1/taps/start')?.body).toEqual({ kind: 'set-grants', accountId: 'm-1', grants: ['feedback.read', 'tickets.handle'] });
 

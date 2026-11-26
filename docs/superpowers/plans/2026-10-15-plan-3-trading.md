@@ -11,7 +11,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 - **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300; measured from the median, as the code does, pending review O1); fourth source off by default.
 - **Disputed trades are kept 90 days from the dispute closing (owner p11-11),** not from the dispute button; the older lines below carry a struck-through note.
 - **Trades erased 30 days after they end (owner p11-17, unchanged); window to file a dispute after a trade closes: 72 h per owner p11-17, pending confirmation of which window (p11-51).** The owner said 72 h in place of 48 h but did not say which window; the only one built is the buyer's dispute within 48 h of a no-show refund (`TIMERS.disputeAfterRefundHours = 48`). The number in code and in the older text stays 48 until the lead confirms.
-- **Team chat label (owner p11-25, changes R44):** a member's chat messages are labelled "<lead's display name> Assistant 1", "Assistant 2" (for example "Circa 55 Assistant 1"); the member's own name is not shown.
+- **Team chat label (owner p11-25, changes R44):** a member's chat messages are labelled "<lead's Trade Tag> Assistant 1", "Assistant 2" (for example "Circa 55 Assistant 1"); the member's own name is not shown.
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
@@ -918,7 +918,7 @@ Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly 
 **Interfaces:**
 - Produces:
   - `POST /v1/nudges { to: username, context: chat | code }`. Sender-own refusals: `no-shared-context`, `too-soon` (one per sender per 10 min). Silent drops (`recipient-busy` 3/hour, blocked, quiet hours, nudges off) all return the same `202` as a delivered nudge (P3-M5).
-  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { displayName }`.
+  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { tradeTag }`.
   - Delivery: SSE `nudge` → "Wake up, <name> wants to trade" and a WebAudio buzz while the tab is open. A hidden tab gets a `Notification` "Someone nudged you on X2F". A closed tab gets Web Push `nudge` (Task 19).
 
 - [ ] **Step 1: Write the failing tests:**
@@ -1180,7 +1180,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - Test: `apps/api/test/blocks.test.ts`, `apps/web/e2e/block.spec.ts`
 
 **Interfaces:**
-- Produces: `POST /v1/account/blocks { displayName }`, `DELETE /v1/account/blocks/:displayName`, `GET /v1/account/blocks`. While A blocks B (either direction counts for B's actions toward A):
+- Produces: `POST /v1/account/blocks { tradeTag }`, `DELETE /v1/account/blocks/:tradeTag`, `GET /v1/account/blocks`. While A blocks B (either direction counts for B's actions toward A):
   - B's `GET /v1/offers` leaves out A's offers; *lead default (2026-10-29), owner may change:* `GET /v1/traders/:name` for A answers 404 to B;
   - B's take of A's offer → 404 `not-found` (as if it does not exist); *lead default (2026-10-29), owner may change:* A's take of B's offer is also refused;
   - B can't open a chat with A or send to an existing one; nudges stay silently dropped (P3-M5);
@@ -1346,7 +1346,7 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R39–R41) > 
 - **Profiles show "Disputes: N won, M lost"** (Plan 5; *lead recommendation, owner leaning yes*); Task 27's footer "It appears on your profile as a lost dispute" stays (*lead recommendation, owner leaning yes*).
 - **Liens** (Plan 4 Task 25, rewritten there): Task 4's offer routes and Task 5's take refuse an account with an active lien (409 `lien`, through `CantDoThat`), from the moment a dispute it lost that requires restitution is ruled, except while its appeal is pending.
 - **The 24-hour hold** (Plan 2 Task 17, decided): Task 41's Login-Backup copy and cooling-off banner follow it; the banner also shows when the hold started from a weak change on another device.
-- **Team members: YES, at launch if possible** (owner, later on 2026-10-29). Up to 3 members per account, roles Offers and Trades. Accounts, roles and the owner's audit log are Plan 2 new Task 18; the trade side is new Task 42. Chat messages from a member are labelled "Message from Team <account display name> member: <member name>" (replaces the design's "replied by a team member", never which member).
+- **Team members: YES, at launch if possible** (owner, later on 2026-10-29). Up to 3 members per account, roles Offers and Trades. Accounts, roles and the owner's audit log are Plan 2 new Task 18; the trade side is new Task 42. Chat messages from a member are labelled "Message from Team <account Trade Tag> member: <member name>" (replaces the design's "replied by a team member", never which member).
 
 ### Task 42: Team members in trades — member actions, chat labels and the escrow-key question (`apps/api`, `apps/web`) — NEW 2026-10-29c (launch scope)
 
@@ -1358,7 +1358,7 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R39–R41) > 
 
 **Interfaces:**
 - Produces:
-  - **Chat label:** every chat message records the sending `memberId` (or none for the account owner) in the server-side envelope metadata; the partner's app shows "~~Message from Team <account display name> member: <member name>~~" `// COPY-UNSIGNED` above it, for example "~~Team Calcium member: Aurora~~". *(replaced 2026-11-09, owner p11-25: "<lead's display name> Assistant 1", "Assistant 2", e.g. "Circa 55 Assistant 1"; the member's own name is not shown)* The account owner's own messages show no label.
+  - **Chat label:** every chat message records the sending `memberId` (or none for the account owner) in the server-side envelope metadata; the partner's app shows "~~Message from Team <account Trade Tag> member: <member name>~~" `// COPY-UNSIGNED` above it, for example "~~Team Calcium member: Aurora~~". *(replaced 2026-11-09, owner p11-25: "<lead's Trade Tag> Assistant 1", "Assistant 2", e.g. "Circa 55 Assistant 1"; the member's own name is not shown)* The account owner's own messages show no label.
   - **Trades role:** `take`, `mark-paid`, proof upload, `open-dispute`, chat send, and the buyer's cancel before "I've paid" pass `requireMember('trades')`; Offers-only members get `forbidden`.
   - **Release and signing:** refused for members (`member-cannot-sign`) until the OPEN key scheme lands; *lead default:* funding as seller is refused the same way (it also needs the party key).
   - The account's Active trades list shows which member last acted on each trade (from `team_audit`), visible to the account owner only.

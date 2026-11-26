@@ -79,7 +79,7 @@ Risk scale used: Severity (S) 1-5 x Likelihood (L) 1-5. 1-4 GREEN, 5-9 YELLOW, 1
 ### 8. Say plainly what X2F does collect (section 6; note #102 and section 7). S3 x L3 = 9 YELLOW
 
 - **Current:** The Terms say what X2F does *not* collect: no email, no phone, no IP addresses, no analytics. They also say "we don't ... ask for your name". They never say what X2F *does* hold.
-- **Proposed:** Add a paragraph to section 6: "What we do keep: your username and display name, your login keys (never your password itself), the Terms version you accepted with your signature, your ads, your trades and their encrypted chats for the times above, your ratings, and a log of what our moderators do. Uploads have location and device details removed."
+- **Proposed:** Add a paragraph to section 6: "What we do keep: your username and Trade Tag, your login keys (never your password itself), the Terms version you accepted with your signature, your ads, your trades and their encrypted chats for the times above, your ratings, and a log of what our moderators do. Uploads have location and device details removed."
 - **Why:** A "we collect very little" promise (#102) is easier to defend when it lists the little. The sign-up asks for a signature, and its fallback is "Type your name to sign" (`apps/web/src/screens/setup/SignaturePad.tsx:163`), stored with the acceptance (`apps/api/src/accounts.ts:369`). That can be a real name, so "we don't ask for your name" needs a lawyer's eye. Most privacy laws expect a list of what is kept, why, and for how long. The lead should confirm the list against the schema before it goes in.
 
 ### 9. "No IP addresses are logged": scope it to what X2F controls. S4 x L2 = 8 YELLOW

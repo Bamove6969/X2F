@@ -12,7 +12,7 @@ export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}, ov
   setNow(d: Date): void;
   logs: string[];
   /** `loginName` is the private login name (stored only as its tag, FU-D), for tests that check it never leaks. */
-  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; displayName: string; loginName: string; browser: Browser }>;
+  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; tradeTag: string; loginName: string; browser: Browser }>;
 }> {
   const t = await testApp(overrides, options);
   addTestLogin(t.app, t.deps);
@@ -20,12 +20,12 @@ export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}, ov
   const trader = async (kind: 'trader' | 'staff' = 'trader') => {
     const loginName = `trader${String(++n).padStart(4, '0')}x`;
     // Not a superstring of the login name, so a test can check that no answer contains the login name.
-    const displayName = `Pub${String(n).padStart(4, '0')}x`;
-    const id = await seedAccount(t.deps, { loginName, displayName, kind });
+    const tradeTag = `Pub${String(n).padStart(4, '0')}x`;
+    const id = await seedAccount(t.deps, { loginName, tradeTag, kind });
     const browser = new Browser(t.app);
     const res = await browser.post('/t/login', { accountId: id });
     expect(res.statusCode).toBe(200);
-    return { id, displayName, loginName, browser };
+    return { id, tradeTag, loginName, browser };
   };
   return { ...t, trader };
 }

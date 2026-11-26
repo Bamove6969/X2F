@@ -54,7 +54,7 @@ export async function hasPendingReview(q: Queryable, accountId: string, now: Dat
 
 export interface PendingReview {
   code: string;
-  /** The other trader's public display name. */
+  /** The other trader's public Trade Tag. */
   counterparty: string;
   reviewableSince: Date;
 }
@@ -62,7 +62,7 @@ export interface PendingReview {
 /** The account's pending reviews (the trades the gate counts, same cutoff), oldest first. */
 export async function pendingReviews(q: Queryable, accountId: string, now: Date): Promise<PendingReview[]> {
   const { rows } = await q.query<{ code: string; counterparty: string; since: Date }>(
-    `select t.code, a.display_name as counterparty, s.since
+    `select t.code, a.trade_tag as counterparty, s.since
        from trades t cross join lateral (select ${reviewableSinceSql('t')} as since) s
        join accounts a on a.id = case when t.buyer_account_id = $1 then t.seller_account_id else t.buyer_account_id end
       where (t.buyer_account_id = $1 or t.seller_account_id = $1)

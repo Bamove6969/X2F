@@ -34,7 +34,7 @@ async function withKey() {
   // Fixed-width parts: 10 and 11 characters whatever the pid (new names are 8–20, owner notes #126/#127).
   const p = String(process.pid % 1000).padStart(3, '0');
   const k = String(++n).padStart(2, '0');
-  const nm = { loginName: `ktap${p}x${k}`, displayName: `Shown${p}k${k}` };
+  const nm = { loginName: `ktap${p}x${k}`, tradeTag: `Shown${p}k${k}` };
   const { res, auth: key } = await signUpWithKey(b, { ...nm, kind: 'security-key', acceptedTerms: deps.config.termsVersion });
   expect(res.statusCode, res.body).toBe(201);
   return { b, key };

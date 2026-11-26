@@ -12,8 +12,8 @@ import { STARTER_DEFAULTS, hasIssuedAt, stampIssuedAt, tapChallenge, type KeyTap
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
 const ends = () => new Date(Date.now() + 8 * H).toISOString();
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: ends() };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends() };
 const COLD = `4${'B'.repeat(94)}`;
 const KEY_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -102,7 +102,7 @@ async function stub(page: Page, me: object, credId: string): Promise<Stub> {
       return json(sweep)(route);
     }
     if (key === 'GET /staff/v1/pay/staff') {
-      return json({ members: [{ staffId: 's-1', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '4500', unpaidAtomic: '0', owed: false }] })(route);
+      return json({ members: [{ staffId: 's-1', tradeTag: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '4500', unpaidAtomic: '0', owed: false }] })(route);
     }
     if (key === 'GET /staff/v1/account/methods') return json(methods)(route);
     if (key === 'GET /staff/v1/account/sessions') return json(sessions)(route);

@@ -14,15 +14,15 @@ import { requireStaff } from './guard.js';
  * The staff Accounts page's lookup (spec 6.6 "Account actions", Plan 4 Task 27: a senior moderator
  * or the owner acts on an account outside a case). Read-only.
  *
- * `GET /staff/v1/accounts/lookup?q=<display name or trade code>` (perm `accounts.ban`: senior
+ * `GET /staff/v1/accounts/lookup?q=<Trade Tag or trade code>` (perm `accounts.ban`: senior
  * moderators and the owner, the roles that may act on what it finds; `accounts.freeze` has the same
  * roles) → `{ accounts }`:
  * - `q` that reads as a trade code (`normalizeTradeCode`: dashes, spaces and look-alikes allowed)
  *   finds that trade's buyer and seller (`matchedBy: 'code'`, `side`); `q` also finds the trader
- *   whose public display name it is (`matchedBy: 'name'`, the stored key's full fold, so case and
+ *   whose public Trade Tag it is (`matchedBy: 'name'`, the stored key's full fold, so case and
  *   compatibility forms do not matter). Exact matches only: no prefix or partial search, so the
  *   route cannot list accounts. Only trader accounts: never staff or the owner.
- * - Each account: its id (the account action routes take it), the PUBLIC display name and the
+ * - Each account: its id (the account action routes take it), the PUBLIC Trade Tag and the
  *   reputation a case's trader card already shows (completed trades, positive %, disputes won and
  *   lost, stage), and its status: the bans in force (kind, general reason, end), a running account
  *   hold (end and reason), whether a dispute freeze stands, and whether a lien binds it. Never the
@@ -41,7 +41,7 @@ type Side = 'buyer' | 'seller';
 
 export interface LookedUpAccount {
   accountId: string;
-  displayName: string;
+  tradeTag: string;
   matchedBy: 'name' | 'code';
   /** The side in the trade `q` named; null for a name match. */
   side: Side | null;
@@ -106,7 +106,7 @@ export function staffAccountLookupRoutes(app: FastifyInstance): void {
         if (!s) continue;
         accounts.push({
           accountId: f.id,
-          displayName: s.displayName,
+          tradeTag: s.tradeTag,
           matchedBy: f.matchedBy,
           side: f.side,
           completedTrades: s.completedTrades,

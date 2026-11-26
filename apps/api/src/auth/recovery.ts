@@ -16,7 +16,7 @@
  *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
  *   plain SHA-256 with `key_id` null; they cannot be converted (only the hash is kept) and keep
  *   working, one use per code, until used up or regenerated.
- * - The backup login starts with the private login name (owner, 2026-10-23), never the display name.
+ * - The backup login starts with the private login name (owner, 2026-10-23), never the Trade Tag.
  * - Owner S-109 (p11-34, 9 Nov 2026): a correct recovery code always gets in, even while wrong codes
  *   are being throttled (`matchRecoveryCode`); only wrong codes wait.
  * - Staff and the owner have no backup login (R2): their login names take the unknown-name path.

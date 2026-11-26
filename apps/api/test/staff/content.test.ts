@@ -79,7 +79,7 @@ describe('News on the staff API (site.control)', () => {
 describe('feedback on the staff API (feedback.read)', () => {
   it('lists platform feedback with the 30-day counts, and the feedback form rows, newest first with a cursor', async () => {
     const loginName = uniqueName('trader');
-    const traderId = await seedAccount(deps, { loginName, displayName: uniqueName('Shown'), kind: 'trader' });
+    const traderId = await seedAccount(deps, { loginName, tradeTag: uniqueName('Shown'), kind: 'trader' });
     await deps.db.query(
       `insert into platform_feedback (mood, note, created_on) values ('great', 'Smooth', '2026-11-02'), ('needs-work', null, '2026-11-01'), ('ok', null, '2026-09-01')`,
     );
@@ -107,9 +107,9 @@ describe('feedback on the staff API (feedback.read)', () => {
     // S-026/D-058 review m1 (lead 12 Nov): the list never carries the raw account id, named or not.
     for (const i of form.items as object[]) expect(Object.keys(i).sort()).toEqual(['accountName', 'createdOn', 'from', 'id', 'kind', 'text']);
     expect(JSON.stringify(form)).not.toContain(traderId);
-    // D-058 (owner G20): a named row shows the sender's account (its public display name, never the
+    // D-058 (owner G20): a named row shows the sender's account (its public Trade Tag, never the
     // login name), so staff can follow up; an anonymous row shows nothing.
-    const shown = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [traderId])).rows[0]!.display_name;
+    const shown = (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [traderId])).rows[0]!.trade_tag;
     expect(form.items.map((i: { accountName: string | null }) => i.accountName)).toEqual([shown, null]);
     expect(shown).not.toBe(loginName);
     expect(JSON.stringify(form)).not.toContain(loginName);
@@ -123,7 +123,7 @@ describe('feedback on the staff API (feedback.read)', () => {
   it('review m2: the list opening is logged at most once per staff session per 5 minutes (the first read of the window)', async () => {
     const t0 = new Date('2026-11-02T12:00:00Z');
     setNow(t0);
-    const named = await seedAccount(deps, { loginName: uniqueName('m2trader'), displayName: uniqueName('M2Shown'), kind: 'trader' });
+    const named = await seedAccount(deps, { loginName: uniqueName('m2trader'), tradeTag: uniqueName('M2Shown'), kind: 'trader' });
     await deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'm2 named', $1, null, '2026-11-02')", [named]);
     const a = new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);
     const b = new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);

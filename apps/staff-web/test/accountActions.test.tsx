@@ -18,16 +18,16 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 const H = 3_600_000;
 const DAY = 24 * H;
 const ends = () => new Date(Date.now() + H).toISOString();
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const SELLER = '1b2c3d4e-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const BAN = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
 const CODE = '7RWD3MXEKQ84HN2T';
 
 const account = (o: Record<string, unknown> = {}) => ({
-  accountId: ACCT, displayName: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97,
+  accountId: ACCT, tradeTag: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97,
   disputes: { won: 1, lost: 2 }, stage: 'graduated', status: { bans: [], frozen: false, lien: false }, ...o,
 });
 const bans = (o: Record<string, unknown> = {}) => ({ priorOffences: 0, bans: [], rules: BAN_RULES, ...o });
@@ -50,7 +50,7 @@ async function open(path: string) {
 }
 
 async function lookUp(q: string) {
-  typeInto(field('Display name or trade code'), q);
+  typeInto(field('Trade Tag or trade code'), q);
   await click(button('Look up'));
   // The lookup, then each card's own bans read.
   await settle();
@@ -94,7 +94,7 @@ describe('the activity log', () => {
   it('words a lookup, by the account found or none', () => {
     const actor = { kind: 'staff', role: 'senior', id: 's-1', name: 'sarah.v' } as const;
     expect(describeLog({ action: 'account.looked-up', detail: { by: 'code', accountId: ACCT }, actor }, { [ACCT]: 'harbor_lin' })).toBe('Looked up harbor_lin by trade code');
-    expect(describeLog({ action: 'account.looked-up', detail: { by: 'name', found: 0 }, actor })).toBe('Looked up an account by display name; none matched');
+    expect(describeLog({ action: 'account.looked-up', detail: { by: 'name', found: 0 }, actor })).toBe('Looked up an account by Trade Tag; none matched');
   });
 });
 
@@ -246,7 +246,7 @@ describe('the Accounts page (spec 6.6)', () => {
 });
 
 describe('ModCase: Account actions', () => {
-  const trader = (name: string) => ({ displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
+  const trader = (name: string) => ({ tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
   const kase = () => ({
     code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: '',
     afterRefund: false, openedAt: new Date(Date.now() - 2 * H).toISOString(), replyDueAt: new Date(Date.now() + 2 * H).toISOString(),
@@ -263,7 +263,7 @@ describe('ModCase: Account actions', () => {
       'GET /staff/v1/me': { body: SENIOR },
       [`GET /staff/v1/disputes/${CODE}`]: { body: kase() },
       'GET /staff/v1/accounts/lookup': {
-        body: { accounts: [account({ matchedBy: 'code', side: 'seller', accountId: SELLER, displayName: 'quietfox' }), account({ matchedBy: 'code', side: 'buyer' })] },
+        body: { accounts: [account({ matchedBy: 'code', side: 'seller', accountId: SELLER, tradeTag: 'quietfox' }), account({ matchedBy: 'code', side: 'buyer' })] },
       },
       'GET /staff/v1/accounts/:id/bans': { body: bans() },
     });
@@ -299,8 +299,8 @@ describe('ModCase: Account actions', () => {
 describe('StaffList: Reset this member\'s security (owner, D-032)', () => {
   const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
   const MEMBERS = () => [
-    { accountId: 'o-1', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
-    { accountId: 'm-1', inviteId: null, displayName: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(H), openCases: 17, expiresAt: null, missingMethods: [] },
+    { accountId: 'o-1', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
+    { accountId: 'm-1', inviteId: null, tradeTag: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(H), openCases: 17, expiresAt: null, missingMethods: [] },
   ];
   const row = (name: string) => [...document.querySelectorAll('table[aria-label="Staff"] tbody tr')].find((tr) => tr.querySelector('td')?.textContent === name)!;
 

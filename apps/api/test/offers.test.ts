@@ -166,7 +166,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       {
         id,
         poster: {
-          displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
+          tradeTag: p.tradeTag, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
           // A starter carries New (spec 5.4; traderTrust.test.ts has the rest of the trust row).
           typicalMinutes: null, positivePct: null, badges: ['new'], featuredBadges: 1, stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 },
         },
@@ -194,7 +194,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       [p.id],
     );
     expect(rows[0]).toEqual({ login_name: null, login_key: null, login_tag: currentLoginTag(deps, p.loginName) });
-    expect(p.loginName.toLowerCase()).not.toBe(p.displayName.toLowerCase());
+    expect(p.loginName.toLowerCase()).not.toBe(p.tradeTag.toLowerCase());
     for (const url of ['/v1/offers?side=sell&method=ZELLE&currency=CAD', `/v1/offers/${id}`]) {
       expect((await viewer.get(url)).body.toLowerCase()).not.toContain(p.loginName.toLowerCase());
     }
@@ -609,7 +609,7 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     await history(s.id, { days: 40, completed: 20 });
     const { code } = await seedTrade(deps, { sellerId: s.id, buyerId: b.id, poster: 'seller' });
     const v = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
-    expect(v.counterparty).toMatchObject({ displayName: s.displayName, stage: 'graduated', completedTrades: 20 });
+    expect(v.counterparty).toMatchObject({ tradeTag: s.tradeTag, stage: 'graduated', completedTrades: 20 });
   });
 
   it('Plan 4 Task 26 (review M1): a poster held by an account limit lists each band up to that limit; a band wholly above it is not listed', async () => {
@@ -1014,7 +1014,7 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     const q = await poster();
     const blocked = await trader();
     const other = await trader();
-    expect((await p.browser.post('/v1/account/blocks', { displayName: blocked.displayName })).statusCode).toBe(204);
+    expect((await p.browser.post('/v1/account/blocks', { tradeTag: blocked.tradeTag })).statusCode).toBe(204);
     // q is cheaper and offline: the online sort puts p first, unless p counts as offline.
     const pOffer = await post(p, { currency: 'THB', pricing: { mode: 'market', marginBps: 1000 } });
     const qOffer = await post(q, { currency: 'THB', pricing: { mode: 'market', marginBps: -1000 } });

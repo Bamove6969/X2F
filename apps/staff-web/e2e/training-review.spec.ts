@@ -8,7 +8,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
 const NAV = ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings'];
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV, sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV, sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 
 const ID = 'a'.repeat(32);
 // A note with a multi-byte character (an emoji, 2 UTF-16 units) and an accented letter before the

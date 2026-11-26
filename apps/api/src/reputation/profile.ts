@@ -14,7 +14,7 @@ import type { ImportedLine } from '../traders/tradedTotal.js';
  * Plan 5 Task 5: a trader's public profile, `GET /v1/traders/:name`.
  *
  * Behind the front door (owner, 8 Nov 2026: no free tours), so only a set-up trader (or a member of
- * one) reads it. `:name` is the PUBLIC display name, matched on `display_key`; a private login name
+ * one) reads it. `:name` is the PUBLIC Trade Tag, matched on `display_key`; a private login name
  * never matches. Only live trader accounts have profiles (never staff, the owner, a member's login,
  * or a disabled, site-banned or closed account: `traderIdByName`).
  * An unknown name, and a trader who blocked the viewer (traders/blocks.ts `hasBlocked`), get the
@@ -30,11 +30,11 @@ import type { ImportedLine } from '../traders/tradedTotal.js';
 /** P5-A10: the newest reviews a profile lists. */
 export const PROFILE_REVIEWS = 20;
 
-/** The longest display name a route looks up (spec 6.1 names are far shorter). */
+/** The longest Trade Tag a route looks up (spec 6.1 names are far shorter). */
 const NAME_MAX = 64;
 
 export interface TraderProfile {
-  displayName: string;
+  tradeTag: string;
   /** True when this is the viewer's own account (the web adds "Choose badges" and the settings links). */
   self: boolean;
   /** The month the account was created, "YYYY-MM" (UTC). */
@@ -72,7 +72,7 @@ export interface TraderProfile {
 }
 
 /**
- * A live trader account by its public display name, or null: unknown, not a trader, or disabled or
+ * A live trader account by its public Trade Tag, or null: unknown, not a trader, or disabled or
  * closed (a ban, a staff switch-off, the inactivity close: lead call 18 Nov on OQ1), or site-banned
  * at `now` (Plan 4 Task 27: a site ban in force, timed or lifetime, read by the clock as the gate
  * reads it; lead, 21 Nov). Each answers exactly as an unknown name; the rows stay for moderators.
@@ -85,7 +85,7 @@ export async function traderIdByName(q: Queryable, name: string, now: Date): Pro
         and not exists (select 1 from account_bans b
                          where b.account_id = a.id and b.kind = 'site' and b.ended_at is null and b.lifted_at is null
                            and (b.until is null or b.until > $2))`,
-    // The stored key as checkDisplayName makes it (NFC, JavaScript lower case; migration 800), not lower().
+    // The stored key as checkTradeTag makes it (NFC, JavaScript lower case; migration 800), not lower().
     [displayKeyOf(name), now],
   );
   return rows[0]?.id ?? null;
@@ -137,7 +137,7 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
   ]);
   const s = f.summary;
   return {
-    displayName: s.displayName,
+    tradeTag: s.tradeTag,
     self: viewerId === accountId,
     memberSince: monthOf(f.createdAt),
     online: s.online,

@@ -156,7 +156,7 @@ const ROWS: readonly Row[] = [
   [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'not-built', false, null, 0, 0, 0],
   [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'not-built', false, 'Q69: shared across team', 0, 0, 0],
   [62, 'feedback-send', 'account', 'Send X2F feedback', 'Use "How\'s X2F doing?" (own limit)', 'low', 'grantable', false, 'Q69: per member', 1, 1, 0],
-  [63, 'profile-edit', 'account', 'Edit profile', 'Change the display name or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
+  [63, 'profile-edit', 'account', 'Edit profile', 'Change the Trade Tag or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
   [64, 'alerts-settings', 'account', 'Change alert settings', "Change the account's push and Jabber alerts", 'medium', 'owner-only', false, 'Lead only (lead default)', 0, 0, 0],
   [65, 'account-type', 'account', 'Account type', 'Become or stop being a vendor', 'high', 'owner-only', false, 'Lead only (design)', 0, 0, 0],
   [66, 'account-delete', 'account', 'Delete the account', 'Close the account for good', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],

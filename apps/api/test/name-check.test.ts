@@ -63,14 +63,14 @@ describe('POST /v1/register/name-check', () => {
 
   it("a name some account logs in with is taken, whatever its case", async () => {
     const login = unique('owl');
-    await seedAccount(deps, { loginName: login, displayName: unique('Shown') });
+    await seedAccount(deps, { loginName: login, tradeTag: unique('Shown') });
     expect((await check({ loginName: login })).json()).toEqual({ available: false });
     expect((await check({ loginName: login.toUpperCase() })).json()).toEqual({ available: false });
   });
 
-  it("a name that is some account's public display name is taken too (one namespace)", async () => {
+  it("a name that is some account's public Trade Tag is taken too (one namespace)", async () => {
     const shown = unique('shown');
-    await seedAccount(deps, { loginName: unique('priv'), displayName: shown });
+    await seedAccount(deps, { loginName: unique('priv'), tradeTag: shown });
     expect((await check({ loginName: shown })).json()).toEqual({ available: false });
   });
 
@@ -84,9 +84,9 @@ describe('POST /v1/register/name-check', () => {
     expect((await check({})).statusCode).toBe(400);
   });
 
-  it('answers only { available }: never the name, an account or a display name', async () => {
+  it('answers only { available }: never the name, an account or a Trade Tag', async () => {
     const login = unique('quiet');
-    await seedAccount(deps, { loginName: login, displayName: unique('Loud') });
+    await seedAccount(deps, { loginName: login, tradeTag: unique('Loud') });
     const res = await check({ loginName: login });
     expect(Object.keys(res.json())).toEqual(['available']);
     expect(res.body).not.toContain(login);

@@ -10,7 +10,7 @@ export interface Poster {
 }
 
 export interface SignUpBody {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   deviceLabel?: string;
   acceptedTerms?: string;
@@ -28,7 +28,7 @@ export async function signUpWithKey(
   auth: SoftAuthenticator = createSoftAuthenticator({ backedUp: (body.kind ?? 'passkey') === 'passkey', userVerified: true }),
 ): Promise<{ res: LightMyRequestResponse; auth: SoftAuthenticator }> {
   const kind = body.kind ?? 'passkey';
-  const start = await b.post('/v1/register/webauthn/start', { displayName: body.displayName, loginName: body.loginName, kind });
+  const start = await b.post('/v1/register/webauthn/start', { tradeTag: body.tradeTag, loginName: body.loginName, kind });
   if (start.statusCode !== 200) return { res: start, auth };
   const { challengeId, options } = start.json() as { challengeId: string; options: Parameters<SoftAuthenticator['register']>[0] };
   const finish: Record<string, unknown> = {
