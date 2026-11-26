@@ -8,7 +8,9 @@
  * screen can show each member's own sessions and end them without the account's whole list.
  *
  * Ending one only ever sets `revoked_at`: migration 855's trigger then writes the team log's
- * `session-ended` row (category `access`). The lock order is the member removal's and the limits'
+ * `session-ended` row (category `access`), as the owner's ('lead', "You ended a session of Ana")
+ * under the transaction-local `x2f.team_actor` mark (migration 859); every other revocation stays
+ * X2F's ('system'). The lock order is the member removal's and the limits'
  * (team/members.ts `applyMemberRemoval`, team/limits.ts `applyLimits`): the account (the calling
  * session's check, `requireLiveSessionInTx`), then the member's live sessions in id order, then the
  * writes whose trigger takes the team log's lock. A logout locks its session row and then waits on
@@ -78,12 +80,16 @@ export async function endMemberSessions(
     }
     // The member removal's order: the member's live sessions, in id order, before any write.
     await c.query('select 1 from sessions where member_id = $1 and revoked_at is null order by id for update', [memberId]);
+    // Migration 859: the team log records these endings as the owner's ('lead'), under the
+    // transaction-local mark; cleared again at once so nothing later in the transaction is.
+    await c.query("select set_config('x2f.team_actor', 'lead', true)");
     const r = await c.query<{ id: string }>(
       `update sessions set revoked_at = $3
         where member_id = $1 and account_id = $2 and revoked_at is null and expires_at > $3 and ($4::uuid is null or id = $4)
         returning id`,
       [memberId, accountId, now, sessionId],
     );
+    await c.query("select set_config('x2f.team_actor', '', true)");
     return r.rows.map((x) => x.id);
   });
   for (const id of ended) deps.events.closeSession(accountId, id);

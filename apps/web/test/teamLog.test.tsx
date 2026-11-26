@@ -86,6 +86,8 @@ describe('helpers', () => {
     expect(logSentence(entry({}))).toBe('Aurora marked the payment sent');
     expect(logSentence(entry({ actorKind: 'lead', memberName: null, action: 'member-removed' }))).toBe('You removed Aurora');
     expect(logSentence(entry({ actorKind: 'system', memberName: null, action: 'session-ended' }))).toBe('X2F ended a session of Aurora');
+    // Migration 859: the owner ending a member's session from the Team screen.
+    expect(logSentence(entry({ actorKind: 'lead', memberName: null, action: 'session-ended' }))).toBe('You ended a session of Aurora');
     expect(logSentence(entry({ action: 'something-new' }))).toBe('Aurora something-new');
   });
 

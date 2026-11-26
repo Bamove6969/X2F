@@ -122,7 +122,7 @@ describe("the owner ends a member's sessions", () => {
     expect((await b.browser.get('/v1/account/me')).statusCode).toBe(200);
     expect((await sessionsOf(owner.browser, m.id)).map((s) => s.id)).toEqual([b.sessionId]);
     expect(await ended(m.id)).toEqual([
-      { actor_kind: 'system', category: 'access', member_id: null, detail: { session: a.sessionId.slice(0, 8), device: 'Test browser' } },
+      { actor_kind: 'lead', category: 'access', member_id: null, detail: { session: a.sessionId.slice(0, 8), device: 'Test browser' } },
     ]);
     // The owner's team log shows it too.
     const log = (await owner.browser.get('/v1/team/log?category=access')).json() as { entries: { action: string; subjectId: string | null }[] };
@@ -146,7 +146,7 @@ describe("the owner ends a member's sessions", () => {
     expect(await revoked(b.sessionId)).not.toBeNull();
     expect(await revoked(keep.sessionId)).toBeNull();
     expect((await owner.browser.get('/v1/account/me')).statusCode).toBe(200);
-    expect(await ended(m.id)).toHaveLength(2);
+    expect((await ended(m.id)).map((e) => e.actor_kind)).toEqual(['lead', 'lead']);
     expect(await ended(other.id)).toHaveLength(0);
     expect(await sessionsOf(owner.browser, m.id)).toEqual([]);
     expect((await owner.browser.delete(`/v1/team/members/${m.id}/sessions`)).json()).toEqual({ ended: 0 });
@@ -195,7 +195,26 @@ describe("the owner ends a member's sessions", () => {
     expect(out.statusCode).toBe(200);
     expect(all.statusCode).toBe(200);
     for (const s of sessions) expect(await revoked(s.sessionId)).not.toBeNull();
-    // One row per ended session, whichever request ended it.
-    expect(await ended(m.id)).toHaveLength(3);
+    // One row per ended session, whichever request ended it: the logout's is X2F's, the rest the owner's.
+    const rows = await ended(m.id);
+    expect(rows).toHaveLength(3);
+    expect(rows.filter((e) => e.actor_kind === 'system').length).toBeLessThanOrEqual(1);
+    expect(rows.filter((e) => e.actor_kind === 'lead').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("other endings stay X2F's: the member's own logout and the account-wide session list (migration 859)", async () => {
+    const owner = await team();
+    const m = await member(owner.id);
+    const a = await login(m.loginId);
+    const b = await login(m.loginId);
+    expect((await a.browser.post('/v1/logout')).statusCode).toBe(200);
+    expect((await owner.browser.delete(`/v1/account/sessions/${b.sessionId}`)).statusCode).toBe(204);
+    expect((await ended(m.id)).map((e) => e.actor_kind)).toEqual(['system', 'system']);
+    // The mark does not outlive the owner's ending: a later revocation on the same connection is X2F's.
+    const c = await login(m.loginId);
+    const d = await login(m.loginId);
+    expect((await owner.browser.delete(`/v1/team/members/${m.id}/sessions/${c.sessionId}`)).statusCode).toBe(204);
+    await deps.db.query('update sessions set revoked_at = now() where id = $1', [d.sessionId]);
+    expect((await ended(m.id)).map((e) => e.actor_kind)).toEqual(['system', 'system', 'lead', 'system']);
   });
 });

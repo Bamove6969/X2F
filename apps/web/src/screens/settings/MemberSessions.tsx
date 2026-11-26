@@ -2,8 +2,8 @@
  * Settings → Team, one member's signed-in sessions (the account owner): each with its device, when
  * the member signed in and when it was last seen, and a way to end it, or all of them (asked
  * first). A row opens the list (Disclosure), so the screen reads nothing until the owner asks.
- * Each session ended shows in the Team log as "X2F ended a session of <member>" (the API's
- * `session-ended` row). From a device that logged in with just a username and password the API
+ * Each session ended shows in the Team log as "You ended a session of <member>" (the API's
+ * `session-ended` row, the owner's since migration 859). From a device that logged in with just a username and password the API
  * refuses (403 `weak-session`), shown through CantDoThat as on Devices.
  *
  * No Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts): kit parts and
