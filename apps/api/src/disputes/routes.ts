@@ -81,6 +81,8 @@ export interface DisputeView {
     appealUntil: string | null;
     /** Where the XMR goes, only for the side the ruling pays: its wallet app and address ending. */
     destination: { walletApp: string | null; addressEnd: string } | null;
+    /** When the escrow payout of the ruling ran (the watcher's settled report), or null: the XMR has not moved yet. */
+    executedAt: string | null;
   } | null;
   appeal: { by: Party; at: string } | null;
   /**
@@ -198,6 +200,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
       ruledAt: r.ruled_at.toISOString(),
       appealUntil: r.appeal_until?.toISOString() ?? null,
       destination,
+      executedAt: d.executedAt?.toISOString() ?? null,
     };
   }
   return {

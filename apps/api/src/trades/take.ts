@@ -444,6 +444,7 @@ export function takeRoutes(app: FastifyInstance): void {
         // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route).
         ownAddresses: [sides.buyerPayout, sides.sellerRefund],
         feeWallet: req.server.deps.config.feeWallet ?? null,
+        payrollWallet: req.server.deps.config.payrollWallet ?? null,
         // Review B1: a buying taker accepted this figure on the quote (none sent: none); the poster
         // buyer accepts it on their own screen before anything is signed (AcceptedSheet).
         accepted: t.buyerId === takerId ? (b.lienRecoveryAtomic ?? 0n) : null,

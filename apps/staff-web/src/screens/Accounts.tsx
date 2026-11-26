@@ -15,7 +15,7 @@ const QUERY_MAX = 64;
  * a senior moderator or the owner finds a trader by public Trade Tag or trade code and acts on
  * the account outside a case, with the same card and actions as ModCase's Account actions
  * (AccountActions.tsx). The menu shows it only to the roles the API serves it to (NAV_PERM
- * `accounts.ban`); the API refuses the lookup to anyone else too. Each lookup is written to the
+ * `accounts.freeze`); the API refuses the lookup to anyone else too. Each lookup is written to the
  * activity log. Every sentence is COPY-UNSIGNED.
  */
 export function Accounts() {
@@ -59,7 +59,7 @@ export function AccountsPage({ role }: { role: StaffRole }) {
       <PageTitle title="Accounts">
         <p className="x2f-staff-page__lead">Find a trader by Trade Tag or trade code, then ban, lift a ban or work an account hold. Each lookup is written to the activity log.</p>
       </PageTitle>
-      {!can(role, 'accounts.ban') ? (
+      {!can(role, 'accounts.freeze') ? (
         // not-a-refusal: the shell never shows this page to such a role; a fallback line only.
         <Notice tone="plain">Account actions are for senior moderators and the owner.</Notice>
       ) : (

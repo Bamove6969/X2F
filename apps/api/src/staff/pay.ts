@@ -11,6 +11,7 @@ import { appendLog } from '../log/append.js';
 import type { MarketPrices } from '../price/market.js';
 import { requireStaff, type StaffContext } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { runPayrollPayouts } from './payrollSend.js';
 
 /**
  * Plan 4 Task 33 / J-12 (D-041..D-045): shifts, clock-out pay, payout addresses and the owner's pay
@@ -25,44 +26,14 @@ import { consumeKeyTap } from './keyTap.js';
  *   price; the large-trade shares and clawbacks are already in XMR. A net debt (clawbacks bigger
  *   than what was earned since) is not paid: it stays, carried to the next clock-out, and is shown
  *   to the owner as owed (clawback option A);
- * - the money itself does not move yet: the payout is recorded `waiting-send` until Plan 6 wires a
- *   payroll wallet (NEEDS_PLAN_6_PAYROLL_WALLET).
+ * - the payout is recorded `waiting-send`; the hot payroll wallet (owner 26 Nov 2026: half of every
+ *   1% goes to it) sends it right after the clock-out commits and on every payroll pass
+ *   (`payrollSend.ts`), to the pre-approved address only, after re-checking that address's tap.
  */
 
 export const XMR_ATOMIC = 1_000_000_000_000n;
 /** Lead default: at most this many live payout addresses per staff member. */
 export const MAX_PAYOUT_ADDRESSES = 5;
-
-// ---------------------------------------------------------------------------------------------
-// The payroll wallet tripwire
-
-export const NEEDS_PLAN_6_PAYROLL_WALLET = 'NEEDS_PLAN_6_PAYROLL_WALLET';
-
-export class PayrollWalletNotWiredError extends Error {
-  readonly code = NEEDS_PLAN_6_PAYROLL_WALLET;
-  constructor() {
-    super(`${NEEDS_PLAN_6_PAYROLL_WALLET}: the payroll wallet's send is Plan 6's (key handling); nothing has moved`);
-    this.name = 'PayrollWalletNotWiredError';
-  }
-}
-
-/**
- * NEEDS_PLAN_6_PAYROLL_WALLET: the Monero send of one recorded payout (`staff_payouts`,
- * `waiting-send`) to its pre-approved address. Plan 4 Task 33 notes the fee wallet's spending key
- * stays offline (spec 6.6 Earnings), so the owner funds a payroll wallet whose key handling is the
- * lead's and Plan 6's. Until then this always throws and moves nothing. When it lands: send exactly
- * `amountAtomic` to the payout's stored address only, record the tx hash (`sent`) or `failed` in a
- * second transaction (the fee sweep's pending/settled pattern), and delete this tripwire with its
- * test (test/staff/pay.test.ts).
- *
- * Security review 12 Nov M2: before sending, the send must also re-check that the payout's address
- * is still the one its tap approved (`staff_payout_addresses.tap_id` -> `key_taps.intent`, whose
- * `address` must equal the stored address exactly) and that the address is still live
- * (`removed_at is null`); otherwise it marks the payout `failed` and sends nothing.
- */
-export async function sendStaffPayout(_a: { address: string; amountAtomic: bigint }): Promise<{ txHash: string }> {
-  throw new PayrollWalletNotWiredError();
-}
 
 // ---------------------------------------------------------------------------------------------
 // The owner's pay settings
@@ -76,15 +47,30 @@ export interface PaySettings {
   seniorLargeTradeBp: number | null;
   /** A trade is large at or above this US dollar value (its value when the dispute opened); null = not set. */
   largeTradeThresholdUsd: number | null;
+  /**
+   * Owner 26 Nov 2026: a moderator's default share of X2F's fee on each trade whose dispute they
+   * rule, basis points of the fee (10000 = 100% of the 1%); null = not set. With a share set, the
+   * per-dispute cents above are the minimum a completed dispute pays.
+   */
+  modFeeBp: number | null;
+  /** The same for a senior moderator. */
+  seniorFeeBp: number | null;
+  /** Owner 26 Nov 2026: US cents per completed dispute paid on top of the share, per role; null = none. */
+  modFlatUsdCents: number | null;
+  seniorFlatUsdCents: number | null;
 }
 
-const PAY_FIELDS = ['modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd'] as const;
+const PAY_FIELDS = ['modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp', 'modFlatUsdCents', 'seniorFlatUsdCents'] as const;
 type PayField = (typeof PAY_FIELDS)[number];
 const PAY_BOUNDS: Readonly<Record<PayField, readonly [number, number]>> = {
   modDisputeUsdCents: [0, 10_000_000],
   seniorDisputeUsdCents: [0, 10_000_000],
   seniorLargeTradeBp: [0, 10_000],
   largeTradeThresholdUsd: [1, 10_000_000],
+  modFeeBp: [0, 10_000],
+  seniorFeeBp: [0, 10_000],
+  modFlatUsdCents: [0, 10_000_000],
+  seniorFlatUsdCents: [0, 10_000_000],
 };
 /** The settings' log names (the column names, camel-cased). */
 const PAY_LOG_FIELD: Readonly<Record<PayField, string>> = {
@@ -92,6 +78,10 @@ const PAY_LOG_FIELD: Readonly<Record<PayField, string>> = {
   seniorDisputeUsdCents: 'paySeniorDisputeUsdCents',
   seniorLargeTradeBp: 'seniorLargeTradeBp',
   largeTradeThresholdUsd: 'largeTradeBonusThresholdUsd',
+  modFeeBp: 'payModFeeBp',
+  seniorFeeBp: 'paySeniorFeeBp',
+  modFlatUsdCents: 'payModFlatUsdCents',
+  seniorFlatUsdCents: 'paySeniorFlatUsdCents',
 };
 
 interface PayRow {
@@ -99,15 +89,24 @@ interface PayRow {
   pay_senior_dispute_usd_cents: string | null;
   senior_large_trade_bp: number | null;
   large_trade_bonus_threshold_usd: number | null;
+  pay_mod_fee_bp: number | null;
+  pay_senior_fee_bp: number | null;
+  pay_mod_flat_usd_cents: string | null;
+  pay_senior_flat_usd_cents: string | null;
 }
 const PAY_SELECT = `select pay_mod_dispute_usd_cents::text, pay_senior_dispute_usd_cents::text, senior_large_trade_bp,
-                           large_trade_bonus_threshold_usd from settings where id = 1`;
+                           large_trade_bonus_threshold_usd, pay_mod_fee_bp, pay_senior_fee_bp,
+                           pay_mod_flat_usd_cents::text, pay_senior_flat_usd_cents::text from settings where id = 1`;
 const num = (v: string | number | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
 const paySettingsOf = (r: PayRow | undefined): PaySettings => ({
   modDisputeUsdCents: num(r?.pay_mod_dispute_usd_cents),
   seniorDisputeUsdCents: num(r?.pay_senior_dispute_usd_cents),
   seniorLargeTradeBp: num(r?.senior_large_trade_bp),
   largeTradeThresholdUsd: num(r?.large_trade_bonus_threshold_usd),
+  modFeeBp: num(r?.pay_mod_fee_bp),
+  seniorFeeBp: num(r?.pay_senior_fee_bp),
+  modFlatUsdCents: num(r?.pay_mod_flat_usd_cents),
+  seniorFlatUsdCents: num(r?.pay_senior_flat_usd_cents),
 });
 
 export async function getPaySettings(q: Queryable): Promise<PaySettings> {
@@ -116,7 +115,7 @@ export async function getPaySettings(q: Queryable): Promise<PaySettings> {
 
 const badRequest = (field?: string): ApiError => new ApiError(400, 'bad-request', field ? { field } : undefined);
 
-/** The PUT body: all four settings (each a whole number in bounds, or null) and the `tapId`. */
+/** The PUT body: all eight settings (each a whole number in bounds, or null) and the `tapId`. */
 export function parsePaySettings(body: unknown): { next: PaySettings; tapId: string } {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw badRequest();
   const r = body as Record<string, unknown>;
@@ -155,8 +154,9 @@ export async function changePaySettings(
   const n = input.next;
   await client.query(
     `update settings set pay_mod_dispute_usd_cents = $1, pay_senior_dispute_usd_cents = $2, senior_large_trade_bp = $3,
-            large_trade_bonus_threshold_usd = $4, pay_tap_id = $5, pay_set_at = $6, updated_at = $6 where id = 1`,
-    [n.modDisputeUsdCents, n.seniorDisputeUsdCents, n.seniorLargeTradeBp, n.largeTradeThresholdUsd, tap.id, now],
+            large_trade_bonus_threshold_usd = $4, pay_tap_id = $5, pay_set_at = $6, updated_at = $6,
+            pay_mod_fee_bp = $7, pay_senior_fee_bp = $8, pay_mod_flat_usd_cents = $9, pay_senior_flat_usd_cents = $10 where id = 1`,
+    [n.modDisputeUsdCents, n.seniorDisputeUsdCents, n.seniorLargeTradeBp, n.largeTradeThresholdUsd, tap.id, now, n.modFeeBp, n.seniorFeeBp, n.modFlatUsdCents, n.seniorFlatUsdCents],
   );
   for (const f of changed) {
     await appendLog(client, {
@@ -165,6 +165,130 @@ export async function changePaySettings(
     });
   }
   return n;
+}
+
+// ---------------------------------------------------------------------------------------------
+// One person's share of the fee (owner 26 Nov 2026)
+
+/** The PUT body of `/staff/v1/pay/staff/:id`: `feeBp` (0-10000, or null for the role's default) and `tapId`. */
+export function parseStaffPay(body: unknown): { feeBp: number | null; tapId: string } {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw badRequest();
+  const r = body as Record<string, unknown>;
+  if (Object.keys(r).sort().join(',') !== 'feeBp,tapId') throw badRequest();
+  const v = r.feeBp;
+  if (v !== null && (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0 || v > 10_000)) throw badRequest('feeBp');
+  if (typeof r.tapId !== 'string') throw badRequest('tapId');
+  return { feeBp: v, tapId: r.tapId };
+}
+
+/**
+ * Sets one moderator's or senior moderator's own share in `client`'s transaction, with a tap bound
+ * to the person and the value (intent `staff-pay`), and logs `staff.pay-set` (from, to). The owner
+ * and helpers earn no dispute pay, so their rows are refused (400, field `staffId`). The same value
+ * again needs no tap and logs nothing. Applies to disputes completed from then on.
+ */
+export async function changeStaffPay(
+  client: pg.PoolClient,
+  actor: Pick<StaffContext, 'accountId' | 'role'>,
+  input: { staffId: string; feeBp: number | null; tapId: string; sessionId?: string },
+  now: Date,
+): Promise<{ feeBp: number | null }> {
+  const id = input.staffId.toLowerCase();
+  const { rows } = await client.query<{ role: string; pay_fee_bp: number | null; removed: boolean }>(
+    'select role, pay_fee_bp, removed_at is not null as removed from staff_members where account_id::text = $1 for update',
+    [id],
+  );
+  const row = rows[0];
+  if (row === undefined || row.removed) throw new ApiError(404, 'not-found');
+  if (row.role !== 'mod' && row.role !== 'senior') throw badRequest('staffId');
+  if (row.pay_fee_bp === input.feeBp) return { feeBp: row.pay_fee_bp };
+  const tap = await consumeKeyTap(client, input.tapId, actor.accountId, { kind: 'staff-pay', accountId: id, feeBp: input.feeBp }, now, input.sessionId !== undefined ? { sessionId: input.sessionId } : {});
+  await client.query('update staff_members set pay_fee_bp = $2, pay_tap_id = $3, pay_set_at = $4 where account_id::text = $1', [id, input.feeBp, tap.id, now]);
+  await appendLog(client, {
+    at: now, actor: { kind: 'staff', id: actor.accountId, role: actor.role }, tradeCode: null, action: 'staff.pay-set',
+    detail: { staffId: id, from: row.pay_fee_bp, to: input.feeBp },
+  });
+  return { feeBp: input.feeBp };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The owner's audit of one person's work and hours (owner 26 Nov 2026)
+
+/** The periods the audit offers, in days. */
+export const AUDIT_DAYS: readonly number[] = [7, 30, 90, 365];
+
+/**
+ * One staff member's work and hours over the last `days`: their shifts with the minutes each lasted
+ * (an open one counts to now; one whose session ran out ends then), every pay item they earned with
+ * where it stands (unpaid, or paid and the payout's status), their payouts and the
+ * totals. Staff names and trade codes only: no trader.
+ */
+export async function staffAudit(q: Queryable, staffId: string, days: number, now: Date) {
+  const m = (await q.query<{ trade_tag: string; role: string; switched_off: boolean; pay_fee_bp: number | null }>(
+    `select a.trade_tag, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp
+       from staff_members m join accounts a on a.id = m.account_id where m.account_id::text = $1`,
+    [staffId],
+  )).rows[0];
+  if (m === undefined) throw new ApiError(404, 'not-found');
+  const since = new Date(now.getTime() - days * 86_400_000);
+  const shifts = (await q.query<{ clocked_in_at: Date; ended_at: Date | null; ended: string | null }>(
+    `select sh.clocked_in_at,
+            coalesce(sh.ended_at, case when s.expires_at <= $3 then s.expires_at end) as ended_at,
+            coalesce(sh.ended, case when s.expires_at <= $3 then 'auto-logout' end) as ended
+       from staff_shifts sh left join sessions s on s.id = sh.session_id
+      where sh.staff_id::text = $1 and coalesce(sh.ended_at, $3) >= $2
+      order by sh.clocked_in_at desc, sh.id limit 500`,
+    [staffId, since, now],
+  )).rows.map((r) => {
+    const start = Math.max(r.clocked_in_at.getTime(), since.getTime());
+    const end = (r.ended_at ?? now).getTime();
+    return { clockedInAt: r.clocked_in_at.toISOString(), endedAt: r.ended_at?.toISOString() ?? null, ended: r.ended, minutes: Math.max(0, Math.floor((end - start) / 60_000)) };
+  });
+  const items = (await q.query<{ kind: string; trade_code: string | null; seq: number | null; round: number; usd_cents: string | null; atomic: string | null; earned_at: Date; payout_status: string | null; paid_at: Date | null }>(
+    `select i.kind, i.trade_code, i.seq, i.round, i.usd_cents::text, i.atomic::text, i.earned_at,
+            p.status as payout_status, p.at as paid_at
+       from staff_pay_items i left join staff_payouts p on p.id = i.payout_id
+      where i.staff_id::text = $1 and i.earned_at >= $2 order by i.earned_at desc, i.id limit 1000`,
+    [staffId, since],
+  )).rows;
+  const payouts = (await q.query<{ at: Date; amount_atomic: string; status: string }>(
+    'select at, amount_atomic::text, status from staff_payouts where staff_id::text = $1 and at >= $2 order by at desc, id limit 200',
+    [staffId, since],
+  )).rows;
+  let usd = 0n;
+  let atomic = 0n;
+  let backUsd = 0n;
+  let backAtomic = 0n;
+  for (const i of items) {
+    const u = i.usd_cents === null ? 0n : BigInt(i.usd_cents);
+    const a = i.atomic === null ? 0n : BigInt(i.atomic);
+    if (i.kind === 'clawback') {
+      backUsd += u;
+      backAtomic += a;
+    } else {
+      usd += u;
+      atomic += a;
+    }
+  }
+  return {
+    staffId, tradeTag: m.trade_tag, role: m.role, switchedOff: m.switched_off, feeBp: m.pay_fee_bp, days,
+    totals: {
+      minutes: shifts.reduce((t, s) => t + s.minutes, 0),
+      shifts: shifts.length,
+      clockOuts: shifts.filter((s) => s.ended === 'clock-out').length,
+      disputes: items.filter((i) => i.kind === 'dispute' && i.round === 1).length,
+      appeals: items.filter((i) => i.kind === 'dispute' && i.round === 2).length,
+      earnedUsdCents: usd.toString(), earnedAtomic: atomic.toString(),
+      clawedBackUsdCents: backUsd.toString(), clawedBackAtomic: backAtomic.toString(),
+    },
+    shifts,
+    items: items.map((i) => ({
+      kind: i.kind, code: i.trade_code, seq: i.seq, round: i.round, usdCents: i.usd_cents, atomic: i.atomic, earnedAt: i.earned_at.toISOString(),
+      status: i.payout_status !== null ? (i.payout_status === 'sent' ? 'paid' : i.payout_status) : 'unpaid',
+      paidAt: i.paid_at?.toISOString() ?? null,
+    })),
+    payouts: payouts.map((p) => ({ at: p.at.toISOString(), amountAtomic: p.amount_atomic, status: p.status })),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -474,6 +598,12 @@ export function staffPayRoutes(app: FastifyInstance): void {
     const quote = openQuote(config, body.quote, req.staff.accountId, req.auth.sessionId, clock());
     const result = await withTx(db, (c) => clockOut(c, req.staff, req.auth.sessionId, body.addressId, quote, clock()));
     req.server.events.closeSession(req.staff.accountId, req.auth.sessionId);
+    // Owner 26 Nov: paid automatically at clock-out, from the payroll wallet (best effort here; the
+    // payroll pass retries a payout the wallet could not pay yet).
+    const wallet = req.server.deps.payrollWallet;
+    if (result.payout !== null && wallet !== undefined) {
+      void runPayrollPayouts({ db, clock, wallet, push: req.server.push }).catch((err: unknown) => req.log.error({ err }, 'payroll send failed'));
+    }
     void reply.clearCookie(realmOf(req).cookie, COOKIE_ATTRS);
     return result;
   });
@@ -524,17 +654,37 @@ export function staffPayRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     return withTx(db, (c) => changePaySettings(c, req.staff, { ...input, sessionId: req.auth.sessionId }, clock()));
   });
+  // Owner 26 Nov 2026: one moderator's or senior moderator's own share of the fee (tap `staff-pay`).
+  app.put('/staff/v1/pay/staff/:id', owner, async (req) => {
+    const raw = (req.params as { id?: unknown }).id;
+    if (typeof raw !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(raw)) throw badRequest('id');
+    const input = parseStaffPay(req.body);
+    const { db, clock } = req.server.deps;
+    return withTx(db, (c) => changeStaffPay(c, req.staff, { staffId: raw, ...input, sessionId: req.auth.sessionId }, clock()));
+  });
+
+  // Owner 26 Nov 2026: one staff member's work and hours, for the owner's audit.
+  app.get('/staff/v1/pay/staff/:id/audit', earnings, async (req) => {
+    const raw = (req.params as { id?: unknown }).id;
+    if (typeof raw !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(raw)) throw badRequest('id');
+    const q = req.query as Record<string, unknown>;
+    if (Object.keys(q).some((k) => k !== 'days')) throw badRequest();
+    const days = q.days === undefined ? 30 : Number(q.days);
+    if (!AUDIT_DAYS.includes(days)) throw badRequest('days');
+    return staffAudit(req.server.deps.db, raw.toLowerCase(), days, req.server.deps.clock());
+  });
 
   app.get('/staff/v1/pay/staff', earnings, async (req) => {
-    const { rows } = await req.server.deps.db.query<{ staff_id: string; trade_tag: string; role: string; switched_off: boolean; usd_cents: string; atomic: string }>(
-      `select m.account_id::text as staff_id, a.trade_tag, m.role, m.switched_off_at is not null as switched_off,
+    const { rows } = await req.server.deps.db.query<{ staff_id: string; trade_tag: string; role: string; switched_off: boolean; usd_cents: string; atomic: string; pay_fee_bp: number | null }>(
+      `select m.account_id::text as staff_id, a.trade_tag, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp,
               coalesce(sum(i.usd_cents), 0)::text as usd_cents, coalesce(sum(i.atomic), 0)::text as atomic
          from staff_members m join accounts a on a.id = m.account_id
          left join staff_pay_items i on i.staff_id = m.account_id and i.payout_id is null
         where m.role <> 'owner'
-        group by m.account_id, a.trade_tag, m.role, m.switched_off_at
+        group by m.account_id, a.trade_tag, m.role, m.switched_off_at, m.pay_fee_bp
         order by a.trade_tag`,
     );
+    const defaults = await getPaySettings(req.server.deps.db);
     const price = usdPrice(req.server.deps.prices);
     return {
       members: rows.map((r) => {
@@ -545,6 +695,9 @@ export function staffPayRoutes(app: FastifyInstance): void {
         return {
           staffId: r.staff_id, tradeTag: r.trade_tag, role: r.role, switchedOff: r.switched_off,
           unpaidUsdCents: r.usd_cents, unpaidAtomic: r.atomic, owed: net < 0n,
+          // The person's own share of the fee (null = their role's), and the share that applies.
+          feeBp: r.pay_fee_bp,
+          effectiveFeeBp: r.pay_fee_bp ?? (r.role === 'senior' ? defaults.seniorFeeBp : r.role === 'mod' ? defaults.modFeeBp : null),
         };
       }),
     };

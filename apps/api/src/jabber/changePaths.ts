@@ -102,6 +102,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       // Lien recovery (migration 820; lead default, owner p11-119 pattern): the share of the debtor's
       // proceeds each trade recovers is a change to their lien, set only by a senior-approved request.
       'recovery_rate_bps',
+      // Owner 26 Nov 2026 (migration 851): the write-off, set with the status change to uncollectible.
+      'written_off_by', 'written_off_tap',
     ],
     bookkeeping: {
       // Q2 (migration 820): where the CREDITOR's recoveries go, set by the creditor's own signed
@@ -248,5 +250,7 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'escrow_blobs.account_id': "an encrypted copy of one of the account's own trade escrow records (ciphertext the API cannot open), written by the holder's own device",
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
+  // Owner 26 Nov 2026 (migration 851): the owner's stamp on a write-off; the debtor is notified by the lien's change.
+  'liens.written_off_by': 'the owner who wrote a lien off as uncollectible (the debtor is notified by the change to their lien)',
   'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",
 };

@@ -34,7 +34,7 @@ const release = (amount: bigint, recovery: bigint) => {
   const plan = escrowPlan({ amountAtomic: amount, poster: 'seller' });
   return payoutsFor({
     kind: 'release', amountAtomic: amount, feeAtomic: plan.feeAtomic, poster: 'seller', sellerFundsAtomic: plan.sellerFundsAtomic,
-    balanceAtomic: plan.sellerFundsAtomic, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE,
+    balanceAtomic: plan.sellerFundsAtomic, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, payrollWallet: '4Payroll',
     lienRecovery: { address: CREDITOR, amountAtomic: recovery },
   });
 };
@@ -82,7 +82,7 @@ describe('Q1/Q5: the provisional limits (one constant each)', () => {
     expect(release(small, small - LIEN_BUYER_KEEPS_ATOMIC)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC, bearsNetworkFee: true });
     expect(() => release(small, small - LIEN_BUYER_KEEPS_ATOMIC + 1n)).toThrow(/bad recovery amount/);
     expect(() => release(XMR, XMR / 100n - 1n)).toThrow(/bad recovery amount/);
-    expect(release(XMR, XMR / 100n)[2]).toEqual({ address: CREDITOR, amountAtomic: XMR / 100n });
+    expect(release(XMR, XMR / 100n)[3]).toEqual({ address: CREDITOR, amountAtomic: XMR / 100n });
   });
 });
 

@@ -107,6 +107,13 @@ export interface EscrowRecord {
    */
   rulingLost?: boolean;
   /**
+   * Owner 26 Nov: the winner named by the signed ruling statement this device verified (for this
+   * trade and its own escrow address). Either side's app co-signs that winner's exact set, and a
+   * ruling close in that winner's direction counts as settled without this device. Absent: never
+   * verified (fail closed).
+   */
+  rulingWinner?: 'buyer' | 'seller';
+  /**
    * Review p4t22 residual (a): the highest round of the moderation service's after-refund statement
    * this device verified for the trade. A statement for a lower round never shows the pay form
    * afterwards (a round 2 that overruled round 1 stays in force, whatever the API serves later).

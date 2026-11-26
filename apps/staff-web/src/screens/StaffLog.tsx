@@ -37,7 +37,14 @@ export function StaffLog() {
   const me = useMe();
   const owner = me?.role === 'owner';
   const [q, setQ] = useState('');
-  const [actor, setActor] = useState('');
+  // Owner 26 Nov 2026: the work-and-hours page links here filtered to one person (`?actor=<id>`).
+  const [actor, setActor] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('actor') ?? '';
+    } catch {
+      return '';
+    }
+  });
   const [kind, setKind] = useState<LogKind | ''>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');

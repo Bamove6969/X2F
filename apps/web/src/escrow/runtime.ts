@@ -225,6 +225,7 @@ export interface EscrowApi {
 export interface RuntimeConfig {
   modSigningPublic: string;
   feeWallet: string;
+  payrollWallet: string;
   relayUrl: string;
   daemonUri: string;
 }
@@ -409,12 +410,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private attested: AttestedTerms | null = null;
     /**
      * Plan 4 rulings (Haveno finding 2): the moderation service's ruling statement as the API served
-     * it, kept only once it verified on this device for this trade, the escrow address this device's
-     * own party derived and this side as the winner (`loadRuling`). cosignPolicy verifies it again,
-     * with the exact payouts, before every hand-over. A verified statement naming the other side the
-     * winner is kept in the record instead (`rulingLost`, review M1), and nothing is asked again.
+     * it, kept only once it verified on this device for this trade and the escrow address this
+     * device's own party derived (`loadRuling`), with the winner it names. cosignPolicy verifies it
+     * again, with the exact payouts and that winner, before every hand-over. Owner 26 Nov: either
+     * side co-signs the winner's set (whichever app opens first); the winner is also kept in the
+     * record (`rulingWinner`, and `rulingLost` for the losing side, review M1).
      */
-    private ruling: { statement: unknown; sig: unknown } | null = null;
+    private ruling: { statement: unknown; sig: unknown; winner: 'buyer' | 'seller' } | null = null;
     /** Review m4: when this run last asked for the ruling statement (device clock, ms). */
     private rulingAskedAt: number | null = null;
     /**
@@ -925,7 +927,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         role: r.role,
         own: r.role === 'buyer' ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) } : { refund: r.ownAddress },
         balance,
-        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
+        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, payrollWallet: deps.config.payrollWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: {
           payout,
@@ -1541,16 +1543,16 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // this device's own daemon (needs a Task 10 signal); until then the API's closed kind decides.
       const tappedOpen = r.intent !== null && !r.intent.auto && r.intent.outcome !== null && !r.intent.done;
       // Plan 4 rulings (Task 21 fix): a ruling's payout closes the disputed trade with `settling` null
-      // (the machine's `settled` for a RulingKind): released pays the buyer, refunded the seller, and
-      // the loser's device takes no part (the moderator builds, the winner co-signs). Review M1: only
-      // for a device that verified the signed statement naming the OTHER side the winner
-      // (`rulingLost`) and has no ruling intent of its own open; a winner, or a loser that never
-      // verified one, is judged as any emptying below (escrow-failed, fail closed: lead call 22 Nov).
-      // The same TODO(lead, pending) as above: an OutProof from the moderator's signed txHash and tx
-      // key would prove this close instead of the API's kind.
-      const ownRulingOpen = r.intent?.kind === 'ruling' && !r.intent.done;
+      // (the machine's `settled` for a RulingKind): released pays the buyer, refunded the seller. Owner
+      // 26 Nov: the moderator builds and either trader co-signs (whichever app opens first), so the
+      // other trader's co-sign may be the one that lands. Review M1: only for a device that verified
+      // the signed statement (`rulingWinner`, or `rulingLost` from before 26 Nov) and only for a close
+      // in that winner's direction; a device that never verified one is judged as any emptying below
+      // (escrow-failed, fail closed: lead call 22 Nov). The same TODO(lead, pending) as above: an
+      // OutProof from the moderator's signed txHash and tx key would prove this close instead of the API's kind.
+      const winner = r.rulingWinner ?? (r.rulingLost === true ? (r.role === 'buyer' ? 'seller' : 'buyer') : null);
       const rulingByOthers =
-        r.rulingLost === true && !ownRulingOpen && v.settling === null && ((r.role === 'seller' && v.state === 'released') || (r.role === 'buyer' && v.state === 'refunded'));
+        winner !== null && v.settling === null && ((winner === 'buyer' && v.state === 'released') || (winner === 'seller' && v.state === 'refunded'));
       const byOthers =
         rulingByOthers ||
         (v.state === 'refunded' &&
@@ -1586,13 +1588,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     /**
      * Plan 4 rulings (Haveno review finding 2; Task 21 found this missing): reads the moderation
      * service's signed ruling statement while the trade is disputed, and keeps it only once it
-     * verifies for this trade, the escrow address this device's own party derived (none before
-     * `ready()`) and this side as the winner. A statement that fails is asked for again next tick
-     * (the API may serve the right one later); one that verifies with the other side the winner
-     * ends the asking for this run (this side co-signs nothing).
+     * verifies for this trade and the escrow address this device's own party derived (none before
+     * `ready()`), with the winner it names (owner 26 Nov: the losing side co-signs that winner's
+     * exact set too). A statement that fails is asked for again next tick (the API may serve the
+     * right one later); one that verifies ends the asking for this run. A verified winner other than
+     * the one this device recorded earlier is refused (no co-sign; a round 2 that overturned round 1
+     * before its payout keeps the device on the first verified winner, fail closed).
      */
     private async loadRuling(): Promise<void> {
-      if (this.ruling !== null || this.rec.rulingLost === true || this.address === null) return;
+      if (this.ruling !== null || this.address === null) return;
       const t = now();
       if (this.rulingAskedAt !== null && t - this.rulingAskedAt < rulingPollMs) return;
       this.rulingAskedAt = t;
@@ -1603,12 +1607,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         return;
       }
       if (got === null || this.stopped) return;
-      const want = { trade: this.code, escrowAddress: this.address, winner: this.rec.role };
+      const want = { trade: this.code, escrowAddress: this.address };
       const check = await verifyRulingStatement(got.statement, got.sig, deps.config.modSigningPublic, want);
-      if (check.ok) this.ruling = { statement: got.statement, sig: got.sig };
-      else if (check.reason === 'not-winner') {
-        // Review M1: only this verdict lets the close of a ruling count as settled without this device.
-        this.rec.rulingLost = true;
+      if (!check.ok || this.stopped) return;
+      const winner = check.statement.winner;
+      const r = this.rec;
+      const recorded = r.rulingWinner ?? (r.rulingLost === true ? (r.role === 'buyer' ? 'seller' : 'buyer') : null);
+      if (recorded !== null && recorded !== winner) return;
+      this.ruling = { statement: got.statement, sig: got.sig, winner };
+      // Review M1: only a verified statement lets the close of a ruling count as settled without this device.
+      if (r.rulingWinner !== winner) {
+        r.rulingWinner = winner;
+        if (winner !== r.role) r.rulingLost = true;
         await this.persist();
       }
     }
@@ -1656,7 +1666,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     /**
-     * The disputed tick's ruling part. With a verified statement for this side and the escrow
+     * The disputed tick's ruling part. With a verified statement (either winner: owner 26 Nov) and the escrow
      * wholly unlocked, the set cosignPolicy passes against it (`rulingOutcomeFor`: worked out on this
      * device, the statement's own list never used) is saved as the `ruling` intent, then handed to
      * the party (the moderator builds, this side co-signs). True when the ruling owns this tick (a
@@ -1683,8 +1693,11 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         return false;
       }
       await this.loadRuling();
-      const ctx = this.ruling !== null && f.balance > 0n && f.balance === f.unlocked ? this.context(f.balance, r.role === 'seller', true) : null;
-      const o = ctx ? rulingOutcomeFor(ctx) : null;
+      // A seller win is refund-shaped (the whole balance to the seller, no fee): this device's own
+      // size, never the amount (I5); a buyer win needs the fixed amount (rulingAmount, fail closed).
+      const ruling = this.ruling;
+      const ctx = ruling !== null && f.balance > 0n && f.balance === f.unlocked ? this.context(f.balance, ruling.winner === 'seller', true) : null;
+      const o = ctx && ruling ? rulingOutcomeFor(ctx, ruling.winner) : null;
       if (o === null) {
         if (saved === null) return false;
         if (changed) await this.persist();

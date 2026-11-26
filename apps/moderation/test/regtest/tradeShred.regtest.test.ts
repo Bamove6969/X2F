@@ -18,7 +18,7 @@ import { escrowStore, loadParty, startModeration, walletPassword, TRADE_SHRED_TA
 import { claimSweep } from '../../src/watcher.js';
 import { loadEscrow } from '../../src/keystore.js';
 import { memoryRelay } from '../chain.js';
-import { API, FEE_WALLET, fakeNetwork, makeCtx, newTrade, RELAY, TERMS, type Ctx, type Trader } from '../harness.js';
+import { API, FEE_WALLET, PAYROLL_WALLET, fakeNetwork, makeCtx, newTrade, RELAY, TERMS, type Ctx, type Trader } from '../harness.js';
 
 const DAY = 86_400_000;
 const FUNDED = 1_000_000_000_000n; // 1 XMR
@@ -186,7 +186,7 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
       transport: ({ code, role }) => relayOf(code).transport(role),
     };
     mod = await startModeration(
-      { apiInternalUrl: API, relayAdminUrl: RELAY, relayUrl: 'ws://relay.test', network: 'regtest', daemonUri: node.rpcUri, db: ctx.db, keystoreKey: ctx.keystoreKey, signingSecret: ctx.modSign.secret, feeWallet: FEE_WALLET },
+      { apiInternalUrl: API, relayAdminUrl: RELAY, relayUrl: 'ws://relay.test', network: 'regtest', daemonUri: node.rpcUri, db: ctx.db, keystoreKey: ctx.keystoreKey, signingSecret: ctx.modSign.secret, feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET },
       { fetch, now: () => ctx.clock.now, intervalMs: 0, watchIntervalMs: 0, partyIO: io, signalsTransport: () => idleTransport(), log: (e) => logs.push(e.reason) },
     );
 
@@ -326,10 +326,11 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
   // closes the escrow and drops it 30 days later; then the shred destroys every key and row, and
   // leaves only the sweep's keyed tag, so no other trade can count that tx (review M2).
   it('a released, swept escrow: shown empty by its own watch, dropped, then every key and row goes and its sweep is tagged spent', async () => {
-    const wallets = await Promise.all([newTestWallet(node.rpcUri), newTestWallet(node.rpcUri), newTestWallet(node.rpcUri)]);
+    const wallets = await Promise.all([newTestWallet(node.rpcUri), newTestWallet(node.rpcUri), newTestWallet(node.rpcUri), newTestWallet(node.rpcUri)]);
     try {
-      const [buyerW, sellerW, feeW] = wallets as [MoneroWalletFull, MoneroWalletFull, MoneroWalletFull];
+      const [buyerW, sellerW, feeW, payrollW] = wallets as [MoneroWalletFull, MoneroWalletFull, MoneroWalletFull, MoneroWalletFull];
       const feeWallet = await feeW.getPrimaryAddress();
+      const payrollWallet = await payrollW.getPrimaryAddress();
       const terms: AttestedTerms = { ...TERMS, buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress() };
       const { net, fetch } = fakeNetwork(ctx);
       const logs: string[] = [];
@@ -341,7 +342,7 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
       };
       ctx.clock.now = new Date();
       mod = await startModeration(
-        { apiInternalUrl: API, relayAdminUrl: RELAY, relayUrl: 'ws://relay.test', network: 'regtest', daemonUri: node.rpcUri, db: ctx.db, keystoreKey: ctx.keystoreKey, signingSecret: ctx.modSign.secret, feeWallet },
+        { apiInternalUrl: API, relayAdminUrl: RELAY, relayUrl: 'ws://relay.test', network: 'regtest', daemonUri: node.rpcUri, db: ctx.db, keystoreKey: ctx.keystoreKey, signingSecret: ctx.modSign.secret, feeWallet, payrollWallet },
         { fetch, now: () => ctx.clock.now, intervalMs: 0, watchIntervalMs: 0, partyIO: io, signalsTransport: () => idleTransport(), log: (e) => logs.push(e.reason) },
       );
       const t = await newTrade(terms);
@@ -374,7 +375,7 @@ describe('the moderation trade shred on regtest (Plan 7 Task 2 follow-up)', () =
         .toBe(true);
       net.states.set(t.code, 'settling');
       net.settleKinds.set(t.code, 'release');
-      const to = sweepMinimums({ kind: 'release', terms, feeWallet, sweptAtomic: funds })!;
+      const to = sweepMinimums({ kind: 'release', terms, feeWallet, payrollWallet, sweptAtomic: funds })!;
       // The co-signer (buyer) submits, so its settle() answers the tx hash (as packages/escrow's spend-info regtest).
       const [sweepTx] = await mining(Promise.all([p.buyer.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }), p.seller.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' })]));
       step('released trade: release mined');

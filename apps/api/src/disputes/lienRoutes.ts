@@ -9,6 +9,7 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, type LienFiguresRow } from './recovery.js';
+import { applyLienUncollectible } from './lien.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
 
@@ -75,6 +76,26 @@ export function lienRoutes(app: FastifyInstance): void {
         status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at?.toISOString() ?? null,
       })),
     };
+  });
+
+  // Owner 26 Nov 2026: the owner writes a lien off as uncollectible, with a tap bound to the lien.
+  const owner = { preHandler: requireStaff('settings.write'), config: { perm: 'settings.write' as const } };
+  app.post('/staff/v1/liens/:id/uncollectible', owner, async (req) => {
+    const id = param(req, 'id');
+    const b = bodyOf(req, ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request', { field: 'tapId' });
+    const me = actorOf(req);
+    const { db, clock } = req.server.deps;
+    return withTx(db, async (c) => {
+      const now = clock();
+      const lien = (await c.query<{ status: string }>('select status from liens where id = $1 for update', [id])).rows[0];
+      if (!lien) throw new ApiError(404, 'not-found');
+      if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      const tap = await consumeKeyTap(c, b.tapId as string, req.staff.accountId, { kind: 'lien-uncollectible', lienId: id }, now, { sessionId: req.auth.sessionId });
+      const code = await applyLienUncollectible(c, id, req.staff.accountId, tap.id, now);
+      await appendLog(c, { at: now, actor: me, tradeCode: code, action: 'lien.uncollectible', detail: { lienId: id } });
+      return { status: 'uncollectible' };
+    });
   });
 
   app.post('/staff/v1/liens/:id/rate', handle, async (req, reply) => {
@@ -213,7 +234,7 @@ export function accountLienRoutes(app: FastifyInstance): void {
     // Only a taker who buys from a seller's ad has proceeds here; anything else reserves nothing.
     if (offer === undefined || offer.side !== 'sell' || offer.account_id === me) return { lienRecoveryAtomic: '0' };
     const w = (await db.query<{ address: string | null }>('select address from wallets where id = $1 and account_id = $2 and removed_at is null', [walletId, me])).rows[0];
-    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, now: clock() }, false);
+    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, payrollWallet: req.server.deps.config.payrollWallet ?? null, now: clock() }, false);
     return { lienRecoveryAtomic: (r?.amountAtomic ?? 0n).toString() };
   });
 
@@ -253,7 +274,7 @@ export function accountLienRoutes(app: FastifyInstance): void {
       // Review B2 with Q2: never an address another account holds as a wallet (the debtor's payout, say).
       // Nor X2F's fee wallet (B2: the completed trade's payout could not be built).
       const taken = await c.query('select 1 from wallets where address = $1 and account_id <> $2 limit 1', [s.address, me]);
-      if ((taken.rowCount ?? 0) > 0 || s.address === req.server.deps.config.feeWallet) throw new ApiError(409, 'recovery-address-refused');
+      if ((taken.rowCount ?? 0) > 0 || s.address === req.server.deps.config.feeWallet || s.address === req.server.deps.config.payrollWallet) throw new ApiError(409, 'recovery-address-refused');
       await c.query('update liens set creditor_address = $2, creditor_address_statement = $3, creditor_address_sig = $4 where id = $1', [id, s.address, s, b.sig]);
       await appendLog(c, { at: now, actor: { kind: 'trader', side: ident.side }, tradeCode: lien.from_code, action: 'lien.recovery-address-set', detail: { lienId: id } });
     });

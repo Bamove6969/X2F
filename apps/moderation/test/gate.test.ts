@@ -29,7 +29,7 @@ import {
   type RecordedTerms,
   type StoredTap,
 } from '../src/gate/index.js';
-import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, tapOnNonce, type World } from './gateWorld.js';
+import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, PAYROLL, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, tapOnNonce, type World } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
 import { lienRateApproved, lienRateTaps, lienRulingVerifier } from '../src/lienRecovery.js';
@@ -208,7 +208,7 @@ describe('authorizeRuling', () => {
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
     expect(r).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic, bearsNetworkFee: true }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorize(w, s, [tapBy(mod, s.intent('propose'))])).toEqual({
@@ -566,11 +566,11 @@ describe('security review 2026-11-12', () => {
     const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
     const trade = { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' as const };
-    expect(() => recordedTerms({ terms, trade: { ...trade, poster: 'buyer' }, feeWallet: FEE })).toThrow(RangeError);
-    expect(() => recordedTerms({ terms, trade: { ...trade, amountAtomic: AMOUNT - 1n }, feeWallet: FEE })).toThrow(RangeError);
+    expect(() => recordedTerms({ terms, trade: { ...trade, poster: 'buyer' }, feeWallet: FEE, payrollWallet: PAYROLL })).toThrow(RangeError);
+    expect(() => recordedTerms({ terms, trade: { ...trade, amountAtomic: AMOUNT - 1n }, feeWallet: FEE, payrollWallet: PAYROLL })).toThrow(RangeError);
     // A trade funded above its amount grows (spec 11.1): more than the take amount is its own.
     const grown = escrowPlan({ amountAtomic: AMOUNT * 2n, poster: 'seller' });
-    expect(recordedTerms({ terms, trade: { amountAtomic: AMOUNT * 2n, feeAtomic: grown.feeAtomic, sellerFundsAtomic: grown.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBe(8_250n);
+    expect(recordedTerms({ terms, trade: { amountAtomic: AMOUNT * 2n, feeAtomic: grown.feeAtomic, sellerFundsAtomic: grown.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE, payrollWallet: PAYROLL }).usdCents).toBe(8_250n);
   });
 
   it('M2: saves are serialised, each through its own temp file; the gate opens after concurrent saves', async () => {
@@ -1141,13 +1141,13 @@ describe('recordedTerms', () => {
   it('takes the addresses this process attested and its own trade, never the API row', () => {
     const terms = { deal: { poster: 'seller' as const, takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16500', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }, payWindowMin: 90, buyerPayout: BUYER, sellerRefund: SELLER };
     const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
-    const r = recordedTerms({ terms, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE });
+    const r = recordedTerms({ terms, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE, payrollWallet: PAYROLL });
     // 0.25 XMR at $165.00: $41.25, rounded up to the cent.
     expect(r).toEqual({ ...recorded(4_125n) });
     // Not US dollars: no value of its own, so every ruling on it needs a second person.
-    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, currency: 'EUR' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBeNull();
+    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, currency: 'EUR' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE, payrollWallet: PAYROLL }).usdCents).toBeNull();
     // A part cent rounds up (toward needing a second approval at the limit).
-    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, centsPerXmr: '16501' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE }).usdCents).toBe(4_126n);
+    expect(recordedTerms({ terms: { ...terms, deal: { ...terms.deal, centsPerXmr: '16501' } }, trade: { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: FEE, payrollWallet: PAYROLL }).usdCents).toBe(4_126n);
   });
 });
 
@@ -1823,7 +1823,7 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     const b = ruling(mod);
     expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({

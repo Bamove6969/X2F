@@ -67,7 +67,7 @@ async function statusOf(q: Queryable, accountId: string, now: Date): Promise<Loo
 }
 
 export function staffAccountLookupRoutes(app: FastifyInstance): void {
-  const perm = 'accounts.ban' as const;
+  const perm = 'accounts.freeze' as const;
   app.get('/staff/v1/accounts/lookup', { config: { perm }, preHandler: requireStaff(perm) }, async (req) => {
     // Every try counts, before anything is read.
     req.server.budgets.accountLookup.take(req.staff.accountId);

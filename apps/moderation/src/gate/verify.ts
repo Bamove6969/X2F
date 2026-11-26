@@ -160,6 +160,8 @@ export interface RecordedTerms {
   buyerPayout: string;
   sellerRefund: string;
   feeWallet: string;
+  /** X2F's payroll wallet: the other half of the 1% (owner 26 Nov). */
+  payrollWallet: string;
   /**
    * The trade's US-dollar value in cents, from the deal this process attested (a US-dollar deal
    * only: amount × locked rate, rounded up). Null when the deal is in another currency: the
@@ -176,6 +178,7 @@ export function recordedTerms(a: {
   terms: AttestedTerms;
   trade: { amountAtomic: bigint; feeAtomic: bigint; sellerFundsAtomic: bigint; poster: 'buyer' | 'seller' };
   feeWallet: string;
+  payrollWallet: string;
 }): RecordedTerms {
   const { deal } = a.terms;
   // Review I3: the trade is the deal this process attested (it may only grow, spec 11.1).
@@ -191,6 +194,7 @@ export function recordedTerms(a: {
     buyerPayout: a.terms.buyerPayout,
     sellerRefund: a.terms.sellerRefund,
     feeWallet: a.feeWallet,
+    payrollWallet: a.payrollWallet,
     usdCents,
     ...(a.terms.lienRecovery !== undefined ? { lienRecovery: attestedRecovery(a.terms)! } : {}),
   };
@@ -469,6 +473,7 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
         buyerPayout: r.recorded.buyerPayout,
         sellerRefund: r.recorded.sellerRefund,
         feeWallet: r.recorded.feeWallet,
+        payrollWallet: r.recorded.payrollWallet,
         // A release to the buyer completes the trade: the signed lien recovery is paid (payoutsFor).
         ...(r.recorded.lienRecovery !== undefined ? { lienRecovery: r.recorded.lienRecovery } : {}),
       });

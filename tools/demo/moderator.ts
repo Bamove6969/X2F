@@ -146,6 +146,7 @@ const handle = await startModeration(
     keystoreKey: new Uint8Array(Buffer.from(need('MOD_KEYSTORE_KEY'), 'base64')),
     signingSecret: new Uint8Array(Buffer.from(need('MOD_SIGNING_SECRET'), 'base64')),
     feeWallet: need('X2F_FEE_WALLET'),
+    payrollWallet: need('X2F_PAYROLL_WALLET'),
     relayUrl: need('DEMO_RELAY_WS'),
     network: 'regtest',
   },

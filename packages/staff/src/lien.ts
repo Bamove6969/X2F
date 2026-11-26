@@ -29,7 +29,7 @@ import { ESCROW_OUTCOMES, type RulingOutcome } from './intent.js';
 
 export type LienSide = 'buyer' | 'seller';
 export type LienCause = 'restitution' | 'overturned';
-export type LienStatus = 'active' | 'suspended' | 'repaid' | 'void';
+export type LienStatus = 'active' | 'suspended' | 'repaid' | 'void' | 'uncollectible';
 
 /** What a lien's amounts come from: the trade as agreed at take. */
 export interface LienFacts {

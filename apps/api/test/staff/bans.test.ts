@@ -27,6 +27,8 @@ beforeAll(async () => {
   t.setNow(NOW);
   owner = await staffWithKeys(t, { role: 'owner' });
   senior = await staffWithKeys(t, { role: 'senior' });
+  // Owner 26 Nov 2026: a senior moderator bans and lifts only with both boxes ticked.
+  await t.deps.db.query("update staff_members set grants = '{accounts.ban,accounts.unban}' where account_id = $1", [senior.id]);
 });
 afterAll(async () => t.close());
 beforeEach(() => {
@@ -90,7 +92,25 @@ describe('placing a ban (Task 27, D-017)', () => {
     expect(notice.body).not.toContain('Threatened');
   });
 
-  it('a moderator or a helper cannot ban (accounts.ban: senior moderators and the owner)', async () => {
+  it('owner 26 Nov 2026: a senior moderator without the boxes cannot ban or lift; each box opens only its own act', async () => {
+    const id = await trader();
+    const plain = await staffWithKeys(t, { role: 'senior' });
+    const err = (r: { statusCode: number; json: () => unknown }) => ({ status: r.statusCode, error: (r.json() as { error?: string }).error });
+    const ban = () => plain.browser.post(`/staff/v1/accounts/${id}/bans`, { banId: randomUUID(), kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK, tapId: 'x' });
+    const lift = () => plain.browser.post(`/staff/v1/accounts/${id}/bans/${randomUUID()}/lift`, { tapId: 'x' });
+    expect(err(await ban())).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await lift())).toEqual({ status: 403, error: 'forbidden' });
+    // The history still reads (accounts.freeze).
+    expect((await plain.browser.get(`/staff/v1/accounts/${id}/bans`)).statusCode).toBe(200);
+    await t.deps.db.query("update staff_members set grants = '{accounts.unban}' where account_id = $1", [plain.id]);
+    expect(err(await ban())).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await lift()).error).not.toBe('forbidden');
+    await t.deps.db.query("update staff_members set grants = '{accounts.ban}' where account_id = $1", [plain.id]);
+    expect(err(await ban()).error).not.toBe('forbidden');
+    expect(err(await lift())).toEqual({ status: 403, error: 'forbidden' });
+  });
+
+  it('a moderator or a helper cannot ban (accounts.ban: the owner, or a senior moderator ticked for it)', async () => {
     const id = await trader();
     for (const role of ['mod', 'helper'] as const) {
       const p = await staffWithKeys(t, { role });

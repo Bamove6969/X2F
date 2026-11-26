@@ -52,6 +52,13 @@ export interface RetentionFacts {
   awaitingAction: boolean;
   /** Until when the moderation service may still watch the escrow (null: nothing to watch). */
   watchEndsAt: Date | null;
+  /**
+   * Owner 26 Nov 2026: a lien from this trade's disputes is unpaid (active or suspended). The trade
+   * then has no delete date until the lien ends (repaid, void, or written off as uncollectible).
+   */
+  lienOpen?: boolean;
+  /** When the last lien from this trade ended, or null; the trade is kept DISPUTE_KEEP_DAYS after it. */
+  lienEndedAt?: Date | null;
 }
 
 const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinite(d.getTime());
@@ -65,12 +72,15 @@ export function refundDisputeWindowEndsAt(state: TradeState | string, closedAt: 
 
 /**
  * When the trade self-destructs (the date the traders are shown), or null while it has none: open,
- * a dispute open, a cancel waiting, a disputed trade with no close time, or any invalid date.
+ * a dispute open, a cancel waiting, an unpaid lien from it (owner 26 Nov 2026), a disputed trade
+ * with no close time, or any invalid date. A lien that ended keeps it DISPUTE_KEEP_DAYS after.
  */
 export function tradeDeleteAt(f: RetentionFacts): Date | null {
   if (
     f.disputeOpen ||
     f.awaitingAction ||
+    f.lienOpen === true ||
+    !nullable(f.lienEndedAt ?? null) ||
     !valid(f.closedAt) ||
     !nullable(f.disputeClosedAt) ||
     !nullable(f.refundDisputeWindowEndsAt) ||
@@ -86,6 +96,7 @@ export function tradeDeleteAt(f: RetentionFacts): Date | null {
     at = Math.max(f.disputeClosedAt.getTime(), f.closedAt.getTime()) + DISPUTE_KEEP_DAYS * DAY_MS;
   }
   if (f.refundDisputeWindowEndsAt !== null) at = Math.max(at, f.refundDisputeWindowEndsAt.getTime());
+  if (f.lienEndedAt) at = Math.max(at, f.lienEndedAt.getTime() + DISPUTE_KEEP_DAYS * DAY_MS);
   return new Date(at);
 }
 

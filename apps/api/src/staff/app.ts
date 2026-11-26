@@ -33,6 +33,7 @@ import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffReviewDisputeRoutes } from './reviewDisputes.js';
 import { staffPayRoutes } from './pay.js';
+import { staffTradeStatusRoutes } from './tradeStatus.js';
 import { staffPerformanceRoutes } from './performance.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
@@ -217,6 +218,8 @@ export async function buildStaffApi(
   lienRoutes(app);
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
+  // Owner 26 Nov 2026: the owner's audit of every trade not deleted yet, by status.
+  staffTradeStatusRoutes(app);
   // Plan 4 Task 19: the Activity log page's reads and the training library (closed cases, scrubbed).
   staffLogRoutes(app);
   staffTrainingRoutes(app);

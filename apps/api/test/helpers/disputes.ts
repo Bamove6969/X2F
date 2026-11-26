@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { applyDispute, type Actor, type Dispute, type RulingOutcome } from '@x2f/staff';
 import type { Deps } from '../../src/app.js';
 import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
-import { withDispute } from '../../src/disputes/store.js';
+import { withDispute, type DisputeDeps } from '../../src/disputes/store.js';
 
 /**
  * A ruling as Plan 4 Task 12's staff routes make one (apps/api/src/disputes/rulings.ts, tested in
@@ -13,7 +13,7 @@ import { withDispute } from '../../src/disputes/store.js';
  * opens. Round 2 (after an appeal): an uninvolved senior moderator rules and it is final.
  */
 export async function publishRuling(
-  deps: Pick<Deps, 'db' | 'clock'>,
+  deps: DisputeDeps,
   code: string,
   o: { outcome: RulingOutcome; evidence?: unknown; staffId?: string; moderatorName?: string },
 ): Promise<Dispute> {

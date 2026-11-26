@@ -217,6 +217,7 @@ async function moderation(fetch: Fetch, logs: string[] = []) {
       keystoreKey,
       signingSecret: modSign.secret,
       feeWallet: '5'.repeat(95),
+      payrollWallet: '6'.repeat(95),
     },
     {
       fetch,
@@ -649,7 +650,8 @@ describe('the chain watcher', () => {
         txKey: KEY,
         minimums: [
           { address: TERMS.buyerPayout, amountAtomic: 250_000_000_000n, bearsNetworkFee: true },
-          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n), bearsNetworkFee: true },
+          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n) - feeFor(250_000_000_000n) / 2n, bearsNetworkFee: true },
+          { address: '6'.repeat(95), amountAtomic: feeFor(250_000_000_000n) / 2n, bearsNetworkFee: true },
         ],
       }]);
       expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);

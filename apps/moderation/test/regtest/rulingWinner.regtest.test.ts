@@ -126,9 +126,9 @@ describe('why a ruling payout waits on its winner, on regtest (ruling-winner-com
     await funder.createTx({ accountIndex: 0, address: addresses[0]!, amount: BALANCE, relay: true });
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
 
-    const [buyerW, sellerW, feeW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
-    wallets.push(buyerW, sellerW, feeW);
-    const terms = { ...recorded(200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
+    const [buyerW, sellerW, feeW, payrollW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    wallets.push(buyerW, sellerW, feeW, payrollW);
+    const terms = { ...recorded(200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress(), payrollWallet: await payrollW.getPrimaryAddress() };
 
     await sodium.ready;
     const modKey = sodium.crypto_sign_keypair();

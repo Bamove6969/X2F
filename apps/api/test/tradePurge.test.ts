@@ -222,23 +222,39 @@ describe('never deleted', () => {
     expect(await exists(code)).toBe(false);
   });
 
-  it('a lien: the trade goes on its own date, the lien and the owed fee stay as they were', async () => {
+  it('a lien (owner 26 Nov 2026): kept with no delete date while unpaid; once written off, 90 days more; the lien and the owed fee stay', async () => {
     const t0 = new Date('2026-02-01T00:00:00Z');
     const { code, seller, buyer } = await closed(t0, 'refunded');
     const closedAt = plus(t0, 3);
     await addDispute(code, 1, 'closed', { openedAt: t0, closedAt });
-    await deps.db.query(
+    const lien = (await deps.db.query<{ id: string }>(
       `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at)
-       values ($1, $2, 1000, $3, 1, 1, 'restitution', 'active', $4, $4)`,
+       values ($1, $2, 1000, $3, 1, 1, 'restitution', 'active', $4, $4) returning id::text`,
       [seller, buyer, code, t0],
-    );
+    )).rows[0]!.id;
     await deps.db.query('insert into fees_owed (account_id, amount_atomic, from_code, dispute_seq, created_at) values ($1, 10, $2, 1, $3)', [seller, code, t0]);
-    const liensBefore = (await deps.db.query('select * from liens where from_code = $1', [code])).rows;
     const owedBefore = (await deps.db.query('select * from fees_owed where from_code = $1', [code])).rows;
-    await purgeTrades(deps.db, plus(closedAt, DISPUTE_KEEP_DAYS + 1));
+    // Unpaid: no delete date, however old.
+    await purgeTrades(deps.db, plus(closedAt, 3 * DISPUTE_KEEP_DAYS));
+    expect(await exists(code)).toBe(true);
+    expect((await tradeSelfDestruct(deps.db, code)).deleteAt).toBeNull();
+    // Suspended (an appeal) holds it too.
+    await deps.db.query("update liens set status = 'suspended' where id = $1", [lien]);
+    await purgeTrades(deps.db, plus(closedAt, 3 * DISPUTE_KEEP_DAYS));
+    expect(await exists(code)).toBe(true);
+    // Written off: DISPUTE_KEEP_DAYS from then.
+    const off = plus(closedAt, 200);
+    await deps.db.query("update liens set status = 'uncollectible', lifted_at = $2, changed_at = $2, written_off_by = $3 where id = $1", [lien, off, buyer]);
+    expect((await tradeSelfDestruct(deps.db, code)).deleteAt).toEqual(plus(off, DISPUTE_KEEP_DAYS));
+    await purgeTrades(deps.db, plus(off, DISPUTE_KEEP_DAYS - 1));
+    expect(await exists(code)).toBe(true);
+    const liensBefore = (await deps.db.query('select * from liens where from_code = $1', [code])).rows;
+    await purgeTrades(deps.db, plus(off, DISPUTE_KEEP_DAYS + 1));
     expect(await exists(code)).toBe(false);
     expect((await deps.db.query('select * from liens where from_code = $1', [code])).rows).toEqual(liensBefore);
     expect((await deps.db.query('select * from fees_owed where from_code = $1', [code])).rows).toEqual(owedBefore);
+    // Over stays over.
+    await expect(deps.db.query("update liens set status = 'active', lifted_at = null where id = $1", [lien])).rejects.toBeTruthy();
   });
 
   it('the revenue ledger: x2f_purge can neither delete nor lower it', async () => {

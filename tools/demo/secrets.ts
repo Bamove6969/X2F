@@ -25,6 +25,8 @@ export interface DemoSecrets {
   /** The API's training-id key (X2F_TRAINING_ID_KEY, base64 of 32 bytes). */
   trainingIdKey: string;
   feeWallet: string;
+  /** X2F_PAYROLL_WALLET / VITE_PAYROLL_WALLET: the other half of the 1% (owner 26 Nov). */
+  payrollWallet: string;
   pgPassword: string;
 }
 
@@ -80,6 +82,7 @@ export async function makeSecrets(): Promise<DemoSecrets> {
     modKeystoreKey: key32(),
     trainingIdKey: key32(),
     feeWallet: await throwawayAddress(),
+    payrollWallet: await throwawayAddress(),
     pgPassword: randomBytes(18).toString('base64url'),
   };
   writeSecret(join(SECRETS_DIR, 'secrets.json'), JSON.stringify(s, null, 2));

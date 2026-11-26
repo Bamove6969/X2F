@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { GRANTABLE_PERMS, NAV, NAV_PERM, PERMS, STAFF_ROLES, can, navFor, type Perm, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, SENIOR_ONLY_GRANTS, grantableTo, NAV, NAV_PERM, PERMS, STAFF_ROLES, can, navFor, type Perm, type StaffRole } from '@x2f/staff';
 
 // Every role × perm pair, written out so a grant change shows up in review (Plan 4 Task 1).
 // Revisions: `stats.read` (owner only, Revision 2026-10-28), `reputation.review` (mods and senior
@@ -18,7 +18,9 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'disputes.handle': { owner: true, senior: true, mod: true, helper: false },
   'rulings.approve': { owner: true, senior: true, mod: false, helper: false },
   'accounts.freeze': { owner: true, senior: true, mod: false, helper: false },
-  'accounts.ban': { owner: true, senior: true, mod: false, helper: false },
+  // Owner 26 Nov 2026: owner by role; a senior moderator only when ticked (below).
+  'accounts.ban': { owner: true, senior: false, mod: false, helper: false },
+  'accounts.unban': { owner: true, senior: false, mod: false, helper: false },
   'reputation.review': { owner: true, senior: true, mod: true, helper: false },
   // Owner 2026-11-02: only senior moderators and the owner enter a verified past-rep figure.
   'reputation.verify': { owner: true, senior: true, mod: false, helper: false },
@@ -59,7 +61,7 @@ describe('can', () => {
   });
 
   test('a per-person grant adds only a grantable perm', () => {
-    expect(GRANTABLE_PERMS).toEqual(['tickets.handle', 'feedback.read']);
+    expect(GRANTABLE_PERMS).toEqual(['tickets.handle', 'feedback.read', 'accounts.ban', 'accounts.unban']);
     // Owner Q60: feedback for a moderator or a helper is a per-person checkbox.
     expect(can('mod', 'feedback.read')).toBe(false);
     expect(can('mod', 'feedback.read', ['feedback.read'])).toBe(true);
@@ -69,6 +71,21 @@ describe('can', () => {
     // A grant list can never widen a role beyond the grantable perms.
     expect(can('helper', 'rulings.approve', ['rulings.approve' as Perm])).toBe(false);
     expect(can('mod', 'staff.manage', ['staff.manage' as Perm, 'tickets.handle'])).toBe(false);
+  });
+
+  test('owner 26 Nov 2026: ban and lift are separate boxes, for a senior moderator only', () => {
+    expect(SENIOR_ONLY_GRANTS).toEqual(['accounts.ban', 'accounts.unban']);
+    expect(can('senior', 'accounts.ban')).toBe(false);
+    expect(can('senior', 'accounts.ban', ['accounts.ban'])).toBe(true);
+    expect(can('senior', 'accounts.unban', ['accounts.ban'])).toBe(false);
+    expect(can('senior', 'accounts.unban', ['accounts.unban'])).toBe(true);
+    for (const role of ['mod', 'helper'] as const) {
+      expect(can(role, 'accounts.ban', ['accounts.ban', 'accounts.unban'])).toBe(false);
+      expect(can(role, 'accounts.unban', ['accounts.ban', 'accounts.unban'])).toBe(false);
+      expect(grantableTo(role, 'accounts.ban')).toBe(false);
+    }
+    expect(grantableTo('senior', 'accounts.unban')).toBe(true);
+    expect(grantableTo('mod', 'tickets.handle')).toBe(true);
   });
 
   test('an unknown role or perm is refused', () => {
@@ -92,7 +109,7 @@ describe('NAV', () => {
     expect(NAV_PERM.feedback).toBe('feedback.read');
     expect(NAV_PERM['past-reputation']).toBe('reputation.review');
     // Spec 6.6: the Accounts page, for the roles that may ban and work holds.
-    expect(NAV_PERM.accounts).toBe('accounts.ban');
+    expect(NAV_PERM.accounts).toBe('accounts.freeze');
     expect(STAFF_ROLES.filter((r) => NAV[r].includes('accounts'))).toEqual(['owner', 'senior']);
   });
   // Plan 5 Task 11: Past reputation, after Disputes (no board places it: a lead default).

@@ -57,7 +57,10 @@ export interface PayoutFacts {
   balanceAtomic: bigint;
   buyerPayout: string;
   sellerRefund: string;
+  /** X2F's watch-only fee wallet (wallet 1; its spend key stays offline): half the 1%, the odd unit included. */
   feeWallet: string;
+  /** X2F's hot payroll wallet (wallet 2; pays staff at clock-out): the other half of the 1% (`feeSplit`). */
+  payrollWallet: string;
   /**
    * Lien recovery from the attested terms (`AttestedTerms.lienRecovery`; docs/lien-recovery.md):
    * paid to the creditor out of the buyer's proceeds on a completed trade only. Absent: none.
@@ -67,6 +70,26 @@ export interface PayoutFacts {
    * and the fee output share the network fee as on any completed trade, so `feeWalletNetworkFee` holds.
    */
   lienRecovery?: { address: string; amountAtomic: bigint };
+}
+
+/**
+ * Owner, 26 Nov 2026: the 1% is paid as two outputs, half to the watch-only fee wallet (wallet 1)
+ * and half to the hot payroll wallet (wallet 2) that pays staff at clock-out. The fee wallet gets the
+ * odd atomic unit. A half of zero (a 1-unit fee) is no output at all (`out` drops it).
+ */
+export function feeSplit(feeAtomic: bigint): { feeWalletAtomic: bigint; payrollAtomic: bigint } {
+  if (typeof feeAtomic !== 'bigint' || feeAtomic < 0n) throw new RangeError('fee must not be negative');
+  const payrollAtomic = feeAtomic / 2n;
+  return { feeWalletAtomic: feeAtomic - payrollAtomic, payrollAtomic };
+}
+
+/** The fee wallet's and the payroll wallet's outputs of a completed trade's 1%, both bearing their share of the network fee. */
+function feeOutputs(feeAtomic: bigint, feeWallet: string, payrollWallet: string): Payout[] {
+  const { feeWalletAtomic, payrollAtomic } = feeSplit(feeAtomic);
+  return [
+    { address: feeWallet, amountAtomic: feeWalletAtomic, bearsNetworkFee: true },
+    { address: payrollWallet, amountAtomic: payrollAtomic, bearsNetworkFee: true },
+  ];
 }
 
 function out(list: Payout[]): Payout[] {
@@ -163,7 +186,7 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
   if (f.feeAtomic !== plan.feeAtomic) throw new RangeError('fee does not match the amount');
   if (f.sellerFundsAtomic !== plan.sellerFundsAtomic) throw new RangeError('seller funds do not match the trade');
   if (f.balanceAtomic < 0n) throw new RangeError('balance must not be negative');
-  const addresses = [f.buyerPayout, f.sellerRefund, f.feeWallet];
+  const addresses = [f.buyerPayout, f.sellerRefund, f.feeWallet, f.payrollWallet];
   for (const a of addresses) {
     if (typeof a !== 'string' || a === '') throw new RangeError('missing address');
   }
@@ -179,7 +202,7 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
       const rec = recoveryOf(f.lienRecovery, toBuyer, addresses);
       return out([
         { address: f.buyerPayout, amountAtomic: toBuyer - rec.amountAtomic, bearsNetworkFee: true },
-        { address: f.feeWallet, amountAtomic: f.feeAtomic, bearsNetworkFee: true },
+        ...feeOutputs(f.feeAtomic, f.feeWallet, f.payrollWallet),
         ...(rec.amountAtomic > 0n ? [rec] : []),
         { address: f.sellerRefund, amountAtomic: surplus },
       ]);
@@ -217,9 +240,9 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
  * The buyer's and the fee wallet's minimums are marked `bearsNetworkFee` as in payoutsFor: the check
  * (PartyHandle.proveSweep) allows each to be short by exactly its wallet2 share of the tx's fee.
  */
-export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWallet: string; sweptAtomic: bigint }): Payout[] | null {
-  const { terms, feeWallet } = a;
-  const addresses = [terms.buyerPayout, terms.sellerRefund, feeWallet];
+export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWallet: string; payrollWallet: string; sweptAtomic: bigint }): Payout[] | null {
+  const { terms, feeWallet, payrollWallet } = a;
+  const addresses = [terms.buyerPayout, terms.sellerRefund, feeWallet, payrollWallet];
   for (const x of addresses) if (typeof x !== 'string' || x === '') throw new RangeError('missing address');
   if (new Set(addresses).size !== addresses.length) throw new RangeError('duplicate address');
   switch (a.kind) {
@@ -230,7 +253,7 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
       const rec = recoveryOf(attestedRecovery(terms), toBuyer, addresses);
       return out([
         { address: terms.buyerPayout, amountAtomic: toBuyer - rec.amountAtomic, bearsNetworkFee: true },
-        { address: feeWallet, amountAtomic: plan.feeAtomic, bearsNetworkFee: true },
+        ...feeOutputs(plan.feeAtomic, feeWallet, payrollWallet),
         ...(rec.amountAtomic > 0n ? [rec] : []),
       ]);
     }
@@ -247,15 +270,20 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
 }
 
 /**
- * Owner 16 Nov 2026: what X2F's fee output paid of a settlement's network fee `txFeeAtomic`, for
+ * Owner 16 Nov 2026: what X2F's fee outputs paid of a settlement's network fee `txFeeAtomic`, for
  * the books (the API's revenue ledger). The payout's network fee is shared by its receiving outputs,
  * one equal share per output: a completed trade (`release`, `dispute-buyer`) marks the buyer's
- * output (index 0) and the fee output (index 1) in payoutsFor, so the fee output pays its wallet2
- * share, floor(fee / 2) (the odd unit is the buyer's). Every other kind has no fee output: none.
- * For a set that has a fee output (a fee of zero has none; book nothing then).
+ * output (index 0) and X2F's outputs in payoutsFor: since 26 Nov the fee wallet's and the payroll
+ * wallet's halves of the 1% (`feeSplit`; a half of zero is no output). X2F pays everything but the
+ * buyer's share (the buyer's output is the first bearer wallet2 pays, so it takes the odd unit).
+ * Every other kind has no fee output: none. `feeAtomic` is the trade's 1% (zero: book nothing).
  */
-export function feeWalletNetworkFee(kind: SettleKind | RulingKind, txFeeAtomic: bigint): bigint {
+export function feeWalletNetworkFee(kind: SettleKind | RulingKind, txFeeAtomic: bigint, feeAtomic: bigint): bigint {
   if (typeof txFeeAtomic !== 'bigint' || txFeeAtomic < 0n) throw new RangeError('network fee must not be negative');
   if (kind !== 'release' && kind !== 'dispute-buyer') return 0n;
-  return networkFeeShares(txFeeAtomic, [true, true])[1]!;
+  const { feeWalletAtomic, payrollAtomic } = feeSplit(feeAtomic);
+  const x2f = (feeWalletAtomic > 0n ? 1 : 0) + (payrollAtomic > 0n ? 1 : 0);
+  if (x2f === 0) return 0n;
+  const shares = networkFeeShares(txFeeAtomic, [true, ...Array<boolean>(x2f).fill(true)]);
+  return txFeeAtomic - shares[0]!;
 }

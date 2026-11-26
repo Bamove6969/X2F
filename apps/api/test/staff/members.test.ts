@@ -654,7 +654,7 @@ describe('per-person grants (owner Q60)', () => {
     expect(asOwner.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
     expect(asOwner.find((i) => i.text === 'named')).not.toHaveProperty('accountId');
     expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
-      actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
+      actor_kind: 'staff', detail: JSON.stringify({ ban: false, feedbackRead: true, liftBan: false, staffId: mod.id, ticketsHandle: false }),
     });
     // Unknown or repeated grants are 400; the owner's own row is protected.
     expect((await put(['staff.manage'])).statusCode).toBe(400);
