@@ -36,6 +36,8 @@ export const OTHER_TERMS: AttestedTerms = { ...TERMS, buyerPayout: '4'.padEnd(95
 export const DEAL = { poster: 'seller' as const, takeAmountAtomic: 250_000_000_000n, currency: 'USD', centsPerXmr: 16_250n, maxFiatCents: 100_000n };
 export const FUNDS = escrowPlan({ amountAtomic: DEAL.takeAmountAtomic, poster: 'seller' }).sellerFundsAtomic;
 export const FEE_WALLET = '5'.repeat(95);
+/** Owner 26 Nov: the payroll wallet, paid the other half of the 1%. */
+export const PAYROLL_WALLET = '6'.repeat(95);
 export const ESCROW = '5'.padEnd(95, 'E');
 export const MIN = 60_000;
 const sha256Hex = (s: string): string => createHash('sha256').update(s).digest('hex');
@@ -267,6 +269,7 @@ export async function moderation(
       keystoreKey: ctx.keystoreKey,
       signingSecret: ctx.modSign.secret,
       feeWallet: FEE_WALLET,
+      payrollWallet: PAYROLL_WALLET,
       ...(opts.lienRecovery === undefined ? {} : { lienRecovery: opts.lienRecovery }),
     },
     {

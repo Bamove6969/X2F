@@ -43,6 +43,8 @@ export interface PolicyTrade {
   amountAtomic: bigint;
   /** X2F's fee wallet, from the app's build config (VITE_FEE_WALLET), never from the API. */
   feeWallet: string;
+  /** X2F's payroll wallet (owner 26 Nov: the other half of the 1%), from the build config (VITE_PAYROLL_WALLET), never from the API. */
+  payrollWallet: string;
   /** When the buyer marked paid (the API's view), null before: no cancel of any kind after it (review round 2, N4). */
   paidAt: string | null;
   /** The settlement in progress (the API's view): the seller's cancel refund only while it is `auto-refund` (owner 8 Nov). */
@@ -153,6 +155,7 @@ function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
     buyerPayout: c.signedTerms.payout,
     sellerRefund: c.signedTerms.refund,
     feeWallet: c.trade.feeWallet,
+    payrollWallet: c.trade.payrollWallet,
     // Lien recovery (docs/lien-recovery.md): a completed trade pays it from the buyer's proceeds.
     ...(c.signedTerms.lienRecovery !== undefined ? { lienRecovery: c.signedTerms.lienRecovery } : {}),
   });

@@ -82,7 +82,7 @@ afterEach(async () => {
 async function moderation(fetch: Fetch): Promise<ModerationHandle> {
   await Promise.all(live.splice(0).map((h) => h.stop()));
   const h = await startModeration(
-    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), payrollWallet: '6'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
     { fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {} },
   );
   live.push(h);
@@ -140,7 +140,7 @@ describe('the work loop (review M3)', () => {
     const onUnhandled = () => void unhandled++;
     process.on('unhandledRejection', onUnhandled);
     const mod = await startModeration(
-      { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+      { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), payrollWallet: '6'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
       {
         fetch: failing,
         now: () => NOW,

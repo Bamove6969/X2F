@@ -5,7 +5,7 @@ import { channelFor, escrowPlan, fiatCents, instructionsSha256, payoutsFor, sign
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, afterRefundFor, ESCROW_ADDRESS, FEE_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, afterRefundFor, ESCROW_ADDRESS, FEE_WALLET, PAYROLL_WALLET, Hub, INSTRUCTIONS, Parties, confirmedFor, device, json, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
 const sumTo = (o: { to: readonly { amountAtomic: bigint }[] }): bigint => o.to.reduce((a, x) => a + x.amountAtomic, 0n);
@@ -793,7 +793,8 @@ describe('settling', () => {
     // Owner 16 Nov: on a release the buyer's output and X2F's fee output each pay their share of the network fee.
     expect(s.o.to).toEqual([
       { address: ADDR.buyer, amountAtomic: AMOUNT, bearsNetworkFee: true },
-      { address: FEE_WALLET, amountAtomic: 12_500_000_000n, bearsNetworkFee: true },
+      { address: FEE_WALLET, amountAtomic: 6_250_000_000n, bearsNetworkFee: true },
+      { address: PAYROLL_WALLET, amountAtomic: 6_250_000_000n, bearsNetworkFee: true },
     ]);
     expect(t.seller.last()?.phase).toBe('signing');
     expect(t.seller.last()?.keepOpen).toBe(true);
@@ -2756,7 +2757,7 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
   const balance = (): bigint => funded().balance;
   const setFor = (winner: 'buyer' | 'seller') =>
     winner === 'buyer'
-      ? payoutsFor({ kind: 'dispute-buyer', amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, poster: 'seller', sellerFundsAtomic: plan.sellerFundsAtomic, balanceAtomic: balance(), buyerPayout: ADDR.buyer, sellerRefund: ADDR.seller, feeWallet: FEE_WALLET })
+      ? payoutsFor({ kind: 'dispute-buyer', amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, poster: 'seller', sellerFundsAtomic: plan.sellerFundsAtomic, balanceAtomic: balance(), buyerPayout: ADDR.buyer, sellerRefund: ADDR.seller, feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET })
       : [{ address: ADDR.seller, amountAtomic: balance() }];
   async function statement(secret: Uint8Array, winner: 'buyer' | 'seller', over: Partial<RulingStatement> = {}, to: { address: string; amountAtomic: bigint }[] = setFor(winner)) {
     const s: RulingStatement = {

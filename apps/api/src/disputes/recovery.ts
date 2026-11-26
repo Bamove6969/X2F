@@ -141,6 +141,8 @@ export interface RecoveryFacts {
    * and the moderation service still refuse it (the latter only by not signing).
    */
   feeWallet?: string | null;
+  /** Owner 26 Nov: X2F's payroll wallet (`X2F_PAYROLL_WALLET`), refused like the fee wallet. */
+  payrollWallet?: string | null;
 }
 
 /**
@@ -167,7 +169,7 @@ export async function pickRecovery(c: Queryable, a: RecoveryFacts, lock: boolean
       ${lock ? 'for update of l' : ''}`,
     [a.buyerId, a.sellerId, closedBefore],
   );
-  const own = [...a.ownAddresses, a.feeWallet ?? null].filter((x): x is string => typeof x === 'string' && x !== '');
+  const own = [...a.ownAddresses, a.feeWallet ?? null, a.payrollWallet ?? null].filter((x): x is string => typeof x === 'string' && x !== '');
   for (const l of rows) {
     const address = l.creditor_address;
     if (address === null || l.creditor_address_sig === null || own.includes(address)) continue;

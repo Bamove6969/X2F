@@ -160,6 +160,7 @@ async function moderation(
       keystoreKey,
       signingSecret: modSign.secret,
       feeWallet: '5'.repeat(95),
+      payrollWallet: '6'.repeat(95),
       relayUrl: 'ws://relay.test',
       network: 'regtest',
       ...(lienRecovery === 'unset' ? {} : { lienRecovery }),

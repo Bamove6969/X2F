@@ -55,7 +55,7 @@ function gate(c: Case): boolean {
     deal: { poster: 'seller' as const, takeAmountAtomic: c.amountAtomic.toString(), currency: c.currency, centsPerXmr: c.centsPerXmr.toString(), maxFiatCents: '10000000', methodId: 'SEPA', instructionsSha256: SHA },
     payWindowMin: 90, buyerPayout: 'b', sellerRefund: 's',
   };
-  const rec = recordedTerms({ terms: terms as never, trade: { amountAtomic: c.amountAtomic, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: 'f' });
+  const rec = recordedTerms({ terms: terms as never, trade: { amountAtomic: c.amountAtomic, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller' }, feeWallet: 'f', payrollWallet: 'p' });
   return gateNeedsSecond({ ...emptyGate(), limitUsdCents: BigInt(c.limitNowUsd) * 100n }, rec, NONE);
 }
 

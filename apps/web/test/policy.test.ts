@@ -7,6 +7,7 @@ import { cosignPolicy, deviceAmount, outcomeFor, rulingOutcomeFor, type Deal, ty
 const BUYER = '4BuyerPayoutAddress';
 const SELLER = '4SellerRefundAddress';
 const FEE = '4FeeWalletAddress';
+const PAYROLL = '4PayrollWalletAddress';
 const ATTACKER = '4SomeoneElse';
 const AMOUNT = 1_250_000_000_000n;
 
@@ -42,7 +43,7 @@ function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance
     role,
     own: role === 'buyer' ? { payout: BUYER } : { refund: SELLER },
     balance: o.balance ?? sellerFundsAtomic,
-    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE, paidAt: o.paidAt ?? null, settling: o.settling ?? null },
+    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE, payrollWallet: PAYROLL, paidAt: o.paidAt ?? null, settling: o.settling ?? null },
     deal: { poster, amountAtomic: AMOUNT },
     signedTerms: { payout: BUYER, refund: SELLER },
   };
@@ -62,6 +63,7 @@ function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
     buyerPayout: BUYER,
     sellerRefund: SELLER,
     feeWallet: FEE,
+    payrollWallet: PAYROLL,
   });
 }
 
@@ -136,8 +138,14 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(to[0]!.address).toBe(BUYER);
     // Owner 16 Nov: a buyer win is marked like a release: the buyer's output and the fee output share the network fee.
     expect(to[0]!.bearsNetworkFee).toBe(true);
-    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic, bearsNetworkFee: true });
+    // Owner 26 Nov: the 1% in two halves, the fee wallet's and the payroll wallet's.
+    const fee = escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic;
+    expect(to[1]).toEqual({ address: FEE, amountAtomic: fee - fee / 2n, bearsNetworkFee: true });
+    expect(to[2]).toEqual({ address: PAYROLL, amountAtomic: fee / 2n, bearsNetworkFee: true });
     expect(cosignPolicy(b, out(to, 'mod', 'buyer'))).toBe(true);
+    // The whole 1% to one wallet is another set.
+    expect(cosignPolicy(b, out([to[0]!, { address: FEE, amountAtomic: fee, bearsNetworkFee: true }, ...to.slice(3)], 'mod', 'buyer'))).toBe(false);
+    expect(cosignPolicy(b, out([to[0]!, { address: PAYROLL, amountAtomic: fee, bearsNetworkFee: true }, ...to.slice(3)], 'mod', 'buyer'))).toBe(false);
   });
 
   // Owner g63 (7 Nov): a full reversal pays no fee, whoever posted.
@@ -343,11 +351,15 @@ describe('cosignPolicy refuses', () => {
   it('a release whose network fee bearers differ from the buyer and fee outputs (owner 16 Nov)', () => {
     const c = ctx('buyer');
     const rel = expected('release', c);
-    expect(rel.map((p) => p.bearsNetworkFee === true)).toEqual([true, true]);
+    expect(rel.map((p) => p.bearsNetworkFee === true)).toEqual([true, true, true]);
     expect(cosignPolicy(c, out(rel, 'seller', 'buyer'))).toBe(true);
     // The whole fee back on the buyer, or the fee output alone, is another set.
     expect(cosignPolicy(c, out(rel.map(({ address, amountAtomic }) => ({ address, amountAtomic })), 'seller', 'buyer'))).toBe(false);
-    expect(cosignPolicy(c, out([{ address: rel[0]!.address, amountAtomic: rel[0]!.amountAtomic }, rel[1]!], 'seller', 'buyer'))).toBe(false);
+    expect(cosignPolicy(c, out([{ address: rel[0]!.address, amountAtomic: rel[0]!.amountAtomic }, rel[1]!, rel[2]!], 'seller', 'buyer'))).toBe(false);
+    // Owner 26 Nov: the payroll wallet's half not bearing its share is another set too.
+    expect(cosignPolicy(c, out([rel[0]!, rel[1]!, { address: rel[2]!.address, amountAtomic: rel[2]!.amountAtomic }], 'seller', 'buyer'))).toBe(false);
+    // Halves swapped between the two wallets (odd fees only differ): never the fee wallet's odd unit moved.
+    expect(cosignPolicy(c, out([rel[0]!, { ...rel[1]!, amountAtomic: rel[1]!.amountAtomic - 1n }, { ...rel[2]!, amountAtomic: rel[2]!.amountAtomic + 1n }], 'seller', 'buyer'))).toBe(false);
   });
 });
 
@@ -467,12 +479,12 @@ describe('lien recovery in the signed terms', () => {
   };
   const recSet = (c: PolicyContext): Payout[] =>
     payoutsFor({ ...(() => { const p = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }); return { feeAtomic: p.feeAtomic, sellerFundsAtomic: p.sellerFundsAtomic }; })(),
-      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, lienRecovery: REC });
+      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, payrollWallet: PAYROLL, lienRecovery: REC });
 
   it('the buyer co-signs the release that pays the signed recovery, and nothing else', () => {
     const c = withRec('buyer');
     const to = recSet(c);
-    expect(to[2]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
+    expect(to[3]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
     expect(cosignPolicy(c, out(to, 'seller', 'buyer'))).toBe(true);
     // The plain release (no recovery) does not match the signed terms.
     expect(cosignPolicy(c, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
@@ -496,7 +508,7 @@ describe('lien recovery: the buyer co-signs only the recovery it accepted (revie
   const REC = { address: CREDITOR, amountAtomic: 100_000_000_000n };
   const set = (c: PolicyContext): Payout[] =>
     payoutsFor({ ...(() => { const p = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }); return { feeAtomic: p.feeAtomic, sellerFundsAtomic: p.sellerFundsAtomic }; })(),
-      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, lienRecovery: REC });
+      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, payrollWallet: PAYROLL, lienRecovery: REC });
   const buyer = (accepted?: bigint): PolicyContext => {
     const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
     return { ...c, own: { ...c.own, ...(accepted !== undefined ? { lienRecoveryAtomic: accepted } : {}) }, signedTerms: { ...c.signedTerms, lienRecovery: REC } };

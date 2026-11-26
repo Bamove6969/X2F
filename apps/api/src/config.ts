@@ -66,6 +66,11 @@ export interface Config {
    * recovery address. Unset: the moderation service still refuses to sign one (docs/lien-recovery.md).
    */
   feeWallet?: string | null;
+  /**
+   * Owner 26 Nov 2026: X2F's hot payroll wallet's address (`X2F_PAYROLL_WALLET`, optional here), paid
+   * the other half of every 1%. Never a recovery address either (as the fee wallet, review B2).
+   */
+  payrollWallet?: string | null;
 }
 
 /**
@@ -311,11 +316,14 @@ export function loadConfig(env: Env): Config {
 
   const feeWallet = env.X2F_FEE_WALLET ? env.X2F_FEE_WALLET.trim() : null;
   if (feeWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(feeWallet)) throw malformed('X2F_FEE_WALLET', 'a Monero address');
+  const payrollWallet = env.X2F_PAYROLL_WALLET ? env.X2F_PAYROLL_WALLET.trim() : null;
+  if (payrollWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(payrollWallet)) throw malformed('X2F_PAYROLL_WALLET', 'a Monero address');
+  if (payrollWallet !== null && payrollWallet === feeWallet) throw malformed('X2F_PAYROLL_WALLET', 'not X2F_FEE_WALLET');
 
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet,
+    loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet, payrollWallet,
   };
 }
 

@@ -225,6 +225,7 @@ export interface EscrowApi {
 export interface RuntimeConfig {
   modSigningPublic: string;
   feeWallet: string;
+  payrollWallet: string;
   relayUrl: string;
   daemonUri: string;
 }
@@ -925,7 +926,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         role: r.role,
         own: r.role === 'buyer' ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) } : { refund: r.ownAddress },
         balance,
-        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
+        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, payrollWallet: deps.config.payrollWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: {
           payout,

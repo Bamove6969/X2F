@@ -201,11 +201,13 @@ export async function world(): Promise<World> {
 export const BUYER = '4'.padEnd(95, 'B');
 export const SELLER = '8'.padEnd(95, 'S');
 export const FEE = '5'.repeat(95);
+/** Owner 26 Nov: the payroll wallet, paid the other half of the 1%. */
+export const PAYROLL = '6'.repeat(95);
 export const AMOUNT = 250_000_000_000n;
 
 export function recorded(usdCents: bigint | null): RecordedTerms {
   const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
-  return { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller', buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, usdCents };
+  return { amountAtomic: AMOUNT, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: 'seller', buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, payrollWallet: PAYROLL, usdCents };
 }
 export const BALANCE = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }).sellerFundsAtomic;
 export const NONE: AccountAction = { kind: 'none' };

@@ -23,6 +23,7 @@ const start: ModPartyArgs = {
   password: 'ab'.repeat(32),
   daemonUri: 'http://127.0.0.1:18081',
   feeWallet: '4fee',
+  payrollWallet: '4payroll',
   terms: {
     deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
     payWindowMin: 90,

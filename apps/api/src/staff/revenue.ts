@@ -178,7 +178,7 @@ export async function bookSettlementNetworkFee(q: Queryable, code: string, txFee
   if (!t || t.closed_at === null || t.state !== 'released') return false;
   const kind = (t.settling ?? 'release') as FeeOutputKind;
   if (feeOutputAtomic(kind, t.poster, BigInt(t.fee_atomic)) <= 0n) return false;
-  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic);
+  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic, BigInt(t.fee_atomic));
   if (share <= 0n) return false;
   const { rows } = await q.query<{ booked: boolean }>(
     `with mark as (

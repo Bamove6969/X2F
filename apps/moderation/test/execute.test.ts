@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rulingExecutor, RULING_WAIT_REPORT_MS, RULING_WINNER_WAIT_MS, type RulingStepInput } from '../src/execute.js';
 import { authorizeRuling, openGateStore, recordedTerms as gateRecordedTerms, syncRegistry, type GateStore } from '../src/gate/index.js';
 import { BALANCE, ctx, newGate, newKey, recorded, resetSecurity, ruling, tapBy, tapOnNonce, world, type Case, type Person, type World } from './gateWorld.js';
-import { DEAL, ESCROW, FEE_WALLET, FUNDS, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
+import { DEAL, ESCROW, FEE_WALLET, FUNDS, PAYROLL_WALLET, fakeNetwork, inFunding, makeCtx, moderation, secured, stopAll, TERMS, type Ctx } from './harness.js';
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -284,6 +284,7 @@ describe('the watcher hands each disputed trade to the executor', () => {
         terms: TERMS,
         trade: { amountAtomic: DEAL.takeAmountAtomic, feeAtomic: escrowPlan({ amountAtomic: DEAL.takeAmountAtomic, poster: 'seller' }).feeAtomic, sellerFundsAtomic: FUNDS, poster: 'seller' },
         feeWallet: FEE_WALLET,
+        payrollWallet: PAYROLL_WALLET,
       }),
     );
   });

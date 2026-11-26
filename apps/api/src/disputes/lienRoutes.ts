@@ -213,7 +213,7 @@ export function accountLienRoutes(app: FastifyInstance): void {
     // Only a taker who buys from a seller's ad has proceeds here; anything else reserves nothing.
     if (offer === undefined || offer.side !== 'sell' || offer.account_id === me) return { lienRecoveryAtomic: '0' };
     const w = (await db.query<{ address: string | null }>('select address from wallets where id = $1 and account_id = $2 and removed_at is null', [walletId, me])).rows[0];
-    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, now: clock() }, false);
+    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, payrollWallet: req.server.deps.config.payrollWallet ?? null, now: clock() }, false);
     return { lienRecoveryAtomic: (r?.amountAtomic ?? 0n).toString() };
   });
 
@@ -253,7 +253,7 @@ export function accountLienRoutes(app: FastifyInstance): void {
       // Review B2 with Q2: never an address another account holds as a wallet (the debtor's payout, say).
       // Nor X2F's fee wallet (B2: the completed trade's payout could not be built).
       const taken = await c.query('select 1 from wallets where address = $1 and account_id <> $2 limit 1', [s.address, me]);
-      if ((taken.rowCount ?? 0) > 0 || s.address === req.server.deps.config.feeWallet) throw new ApiError(409, 'recovery-address-refused');
+      if ((taken.rowCount ?? 0) > 0 || s.address === req.server.deps.config.feeWallet || s.address === req.server.deps.config.payrollWallet) throw new ApiError(409, 'recovery-address-refused');
       await c.query('update liens set creditor_address = $2, creditor_address_statement = $3, creditor_address_sig = $4 where id = $1', [id, s.address, s, b.sig]);
       await appendLog(c, { at: now, actor: { kind: 'trader', side: ident.side }, tradeCode: lien.from_code, action: 'lien.recovery-address-set', detail: { lienId: id } });
     });
