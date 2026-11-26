@@ -192,6 +192,14 @@ export interface ChatRetentionFacts {
   disputeClosedAt: Date | null;
   createdAt: Date;
   lastMessageAt: Date | null;
+  /**
+   * Owner 26 Nov 2026 (as the trade row, retention.ts `lienOpen`): a lien from this trade's
+   * disputes is unpaid (`liens.status` active or suspended). Its chat and payment proofs are then
+   * kept, however old, until the lien ends.
+   */
+  lienOpen?: boolean;
+  /** When the last lien from this trade ended (`liens.lifted_at`), or null; kept CHAT_AFTER_DISPUTE_DAYS after it. */
+  lienEndedAt?: Date | null;
 }
 
 const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinite(d.getTime());
@@ -203,7 +211,9 @@ const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinit
  * - a trade that was never disputed: CHAT_AFTER_CLOSE_DAYS (30) days after it closes;
  * - a trade that had a dispute: CHAT_AFTER_DISPUTE_DAYS (90) days after the dispute closes, so one
  *   opened inside the 30 days stops the 30-day erasure;
- * - a pre-trade chat: CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation).
+ * - a pre-trade chat: CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation);
+ * - never while a lien from the trade is unpaid (owner 26 Nov 2026, as `tradeDeleteAt`); once it
+ *   has ended, no sooner than CHAT_AFTER_DISPUTE_DAYS (90) days after it ended.
  *
  * "A dispute closes" is the machine's `closed` status, the only one with a `disputes.closed_at`. It
  * comes after the appeal: `published` is the 48-hour appeal window (the coins have moved and the
@@ -218,8 +228,11 @@ const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinit
  */
 export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
   const nullable = (d: Date | null): boolean => d === null || valid(d);
+  const lienEndedAt = c.lienEndedAt ?? null;
   if (
     c.disputeOpen ||
+    c.lienOpen === true ||
+    !nullable(lienEndedAt) ||
     !valid(now) ||
     !valid(c.createdAt) ||
     !nullable(c.lastMessageAt) ||
@@ -230,9 +243,16 @@ export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
   }
   if (c.tradeLinked) {
     if (!valid(c.tradeClosedAt)) return false;
-    if (!c.disputed) return now.getTime() > c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
-    if (!valid(c.disputeClosedAt)) return false;
-    return now.getTime() > Math.max(c.disputeClosedAt.getTime(), c.tradeClosedAt.getTime()) + CHAT_AFTER_DISPUTE_DAYS * DAY_MS;
+    let at: number;
+    if (!c.disputed) {
+      at = c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
+    } else {
+      if (!valid(c.disputeClosedAt)) return false;
+      at = Math.max(c.disputeClosedAt.getTime(), c.tradeClosedAt.getTime()) + CHAT_AFTER_DISPUTE_DAYS * DAY_MS;
+    }
+    // Owner 26 Nov 2026: a lien that ended keeps the chat CHAT_AFTER_DISPUTE_DAYS after it ended.
+    if (lienEndedAt !== null) at = Math.max(at, lienEndedAt.getTime() + CHAT_AFTER_DISPUTE_DAYS * DAY_MS);
+    return now.getTime() > at;
   }
   const last = c.lastMessageAt ?? c.createdAt;
   if (!valid(last)) return false;

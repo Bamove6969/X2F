@@ -580,6 +580,8 @@ export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
   'POST /v1/offers',
   'PATCH /v1/offers/:id',
   'POST /v1/account/offers/status',
+  // Owner 26 Nov 2026: the Away switch pauses and turns back on offers (offers/away.ts, through switchOfferStatus).
+  'PUT /v1/account/away',
   'POST /v1/trades/:code/events',
 ];
 

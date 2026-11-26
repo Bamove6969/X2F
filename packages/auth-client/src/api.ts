@@ -292,6 +292,25 @@ export interface AccountOverview {
 /** Owner demo note #6: an account's rating by the login methods it holds. */
 export type SecurityRating = 'weak' | 'medium' | 'high';
 
+/** The Away switch (owner, 26 Nov 2026): on since `since` (ISO), or off with `since` null. */
+export interface AwayState {
+  away: boolean;
+  since: string | null;
+}
+
+/**
+ * Why Away could not turn one offer back on: a relist check of `POST /v1/account/offers/status`
+ * (the API's OfferSwitchRefusal), kept open as a string for codes a newer API adds.
+ */
+export interface AwayOfferResult {
+  id: string;
+  status?: 'live' | 'paused';
+  refused?: string;
+}
+
+/** `PUT /v1/account/away`: on answers the offers it paused, off each offer's relist result. */
+export type AwayResult = AwayState & { paused?: string[]; resumed?: AwayOfferResult[] };
+
 /** Owner 2 Nov 2026: Trader and Vendor accounts. */
 export type AccountType = 'trader' | 'vendor';
 
@@ -348,11 +367,91 @@ export interface TeamInviteView {
 export interface TeamAuditEntry {
   id: string;
   at: string;
-  memberId: string;
-  memberName: string;
+  /** Null on the account owner's own rows and X2F's (team audit v2). */
+  memberId: string | null;
+  memberName: string | null;
+  /** Team audit v2: 'work', 'team' or 'access' (absent from an older API: work). */
+  category?: TeamLogCategory;
   action: string;
   tradeCode: string | null;
   detail: unknown;
+}
+
+/** Team audit v2 (migration 855): what a team log row is about. */
+export type TeamLogCategory = 'work' | 'team' | 'access';
+
+/** One row of the team log (`GET /v1/team/log`). */
+export interface TeamLogEntry {
+  id: string;
+  at: string;
+  /** Who acted: a member, the account owner (`lead`) or X2F itself. */
+  actorKind: 'member' | 'lead' | 'system';
+  memberId: string | null;
+  memberName: string | null;
+  byLead: boolean;
+  /** The member the row is about. */
+  subjectId: string | null;
+  subjectName: string | null;
+  category: TeamLogCategory;
+  action: string;
+  tradeCode: string | null;
+  detail: unknown;
+  /** The chain link (hex SHA-256) and the one before it. */
+  hash: string;
+  prevHash: string | null;
+}
+
+export interface TeamLogFilter {
+  from?: string;
+  to?: string;
+  members?: readonly string[];
+  categories?: readonly TeamLogCategory[];
+  actions?: readonly string[];
+  trade?: string;
+  before?: string;
+  limit?: number;
+}
+
+export interface TeamLogIntegrity {
+  ok: boolean;
+  entries: number;
+  brokenAt: string | null;
+  head: { id: string; hash: string } | null;
+  fingerprint?: { id: string; matches: boolean };
+}
+
+export interface TeamLogMemberSummary {
+  memberId: string;
+  name: string;
+  status: 'invited' | 'active' | 'removed';
+  work: number;
+  logins: number;
+  refused: number;
+  changes: number;
+  lastActionAt: string | null;
+  lastLoginAt: string | null;
+}
+
+/** The query string for a team log filter (shared by `teamLog` and the export link). */
+export function teamLogQuery(q: TeamLogFilter, extra: Record<string, string> = {}): string {
+  const p = new URLSearchParams();
+  if (q.from !== undefined) p.set('from', q.from);
+  if (q.to !== undefined) p.set('to', q.to);
+  if (q.members !== undefined && q.members.length > 0) p.set('member', q.members.join(','));
+  if (q.categories !== undefined && q.categories.length > 0) p.set('category', q.categories.join(','));
+  if (q.actions !== undefined && q.actions.length > 0) p.set('action', q.actions.join(','));
+  if (q.trade !== undefined && q.trade !== '') p.set('trade', q.trade);
+  if (q.before !== undefined) p.set('before', q.before);
+  if (q.limit !== undefined) p.set('limit', String(q.limit));
+  for (const [k, v] of Object.entries(extra)) p.set(k, v);
+  const qs = p.toString();
+  return qs === '' ? '' : `?${qs}`;
+}
+
+/** The same-origin path of a team log download (a plain link: the browser saves the file). */
+export function teamLogExportPath(q: TeamLogFilter, format: 'json' | 'csv'): string {
+  const { before: _b, limit: _l, ...rest } = q;
+  return `/v1/team/log/export${teamLogQuery(rest, { format })}`;
 }
 
 /** Task 11: one signed-in device. */
@@ -724,6 +823,13 @@ export interface AuthApi {
   extendSession(b: Token & { hours?: number }): Promise<SessionInfo>;
   /** The person's idle reminder (owner Q75): one of IDLE_REMINDER_MINUTES, or null for off. */
   setIdleReminder(b: { minutes: number | null }): Promise<{ idleReminderMinutes: number | null }>;
+  /** The Away switch (owner, 26 Nov 2026): whether it is on and since when. The account owner only (403 `owner-only`). */
+  getAway(): Promise<AwayState>;
+  /**
+   * Away on pauses every live offer (`paused`: the ones it paused); off turns back on only those,
+   * each through the relist checks (`resumed`: each offer's result, with `refused` when it stayed paused).
+   */
+  setAway(b: { away: boolean }): Promise<AwayResult>;
 
   /**
    * Owner 2 Nov 2026: switch to a vendor account. Confirm `become-vendor` (`becomeVendorAction`;
@@ -751,6 +857,12 @@ export interface AuthApi {
   setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
+  /** Team audit v2: one page of the team log, newest first (`next` → the following page's `before`). */
+  teamLog(q?: TeamLogFilter): Promise<{ entries: TeamLogEntry[]; next: string | null }>;
+  /** The hash-chain check, and with a kept fingerprint whether it still matches (account owner). */
+  teamLogIntegrity(fp?: { id: string; hash: string }): Promise<TeamLogIntegrity>;
+  /** Per-member counts over the last `days` (account owner). */
+  teamLogSummary(days?: number): Promise<{ since: string; members: TeamLogMemberSummary[] }>;
   // The invited person's side (no session yet).
   readInvite(b: { invite: string }): Promise<TeamInviteView>;
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
@@ -924,6 +1036,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
     setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
+    getAway: () => get('/v1/account/away'),
+    setAway: (b) => call('PUT', '/v1/account/away', b),
 
     becomeVendor: (b) => call('PUT', '/v1/account/type', { type: 'vendor', ...b }),
 
@@ -941,6 +1055,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
       const qs = p.toString();
       return get(`/v1/team/audit${qs === '' ? '' : `?${qs}`}`);
     },
+    teamLog: (q = {}) => get(`/v1/team/log${teamLogQuery(q)}`),
+    teamLogIntegrity: (fp) => get(`/v1/team/log/integrity${fp === undefined ? '' : `?id=${seg(fp.id)}&hash=${seg(fp.hash)}`}`),
+    teamLogSummary: (days) => get(`/v1/team/log/summary${days === undefined ? '' : `?days=${days}`}`),
     readInvite: (b) => post('/v1/team/invite', b),
     joinStart: (b) => post('/v1/team/join/start', b),
     joinFinish: (b) => post('/v1/team/join/finish', b),

@@ -1184,6 +1184,13 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
       );
       expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [offer])).rows[0]!.status).toBe('live');
     },
+    'PUT /v1/account/away': async () => {
+      const who = await person();
+      const offer = await postOffer(who);
+      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.put('/v1/account/away', { away: true }));
+      expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [offer])).rows[0]!.status).toBe('live');
+      expect((await deps.db.query<{ away_since: Date | null }>('select away_since from accounts where id = $1', [who.id])).rows[0]!.away_since).toBeNull();
+    },
     'POST /v1/trades/:code/events': async () => {
       const seller = await person();
       const buyer = await person();
