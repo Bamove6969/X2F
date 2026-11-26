@@ -29,9 +29,12 @@ describe('the good (green) token', () => {
     }
   });
 
-  it("the login step's Strong uses it", () => {
+  it("the login step's Strong and the setup Welcome checklist ticks use it (no local hex greens)", () => {
     const css = readFileSync(new URL('../src/screens/setup/setup.css', import.meta.url), 'utf8');
     const rule = /\.x2f-start__strength\[data-strength='strong'\]\s*\{([^}]*)\}/.exec(css)![1]!;
     expect(rule).toContain('color: var(--x2f-good)');
+    const tick = /\.x2f-welcome__tick\s*\{([^}]*)\}/.exec(css)![1]!;
+    expect(tick).toContain('background: var(--x2f-good)');
+    expect(css).not.toMatch(/#3ccf7a|#1a7f45/i);
   });
 });

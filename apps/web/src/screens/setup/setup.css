@@ -1015,10 +1015,10 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--x2f-space-6);
   min-height: 0;
   overflow-y: auto;
-  padding: 72px var(--x2f-space-6) var(--x2f-space-6);
+  padding: var(--x2f-space-6) var(--x2f-space-6);
 }
 
 .x2f-welcome__badge {
@@ -1092,13 +1092,12 @@
   color: var(--x2f-ink-muted);
 }
 
-/* The owner's checklist (demo notes 12 Nov 2026). DESIGNER-REVIEW: plain until design restyles it.
-   The owner asked for green ticks and the design tokens have no green yet: the ticks use the kit's
-   escrow colour (its "secured, done" tone, as the release hold's done state) until design adds a
-   good/green token (review 12 Nov, C2: no hard-coded colours outside the token set). */
+/* The owner's checklist (demo notes 12 Nov 2026 #34, #37): surface cards with one big green
+   checkmark (`--x2f-good`) beside each completed item. DESIGNER-REVIEW: card style until design restyles it. */
 .x2f-welcome__checks {
   display: flex;
   flex-direction: column;
+  gap: var(--x2f-space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1109,8 +1108,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  padding: var(--x2f-space-4);
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
   font-size: 17px;
 }
 
@@ -1139,7 +1140,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-escrow);
+  background: var(--x2f-good);
   color: var(--x2f-surface);
 }
 
@@ -1157,7 +1158,7 @@
 
 @media (max-width: 370px) {
   .x2f-welcome__main {
-    padding: 48px var(--x2f-space-4) var(--x2f-space-4);
+    padding: var(--x2f-space-4);
   }
 
   .x2f-welcome__h1 {

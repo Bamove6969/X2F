@@ -53,7 +53,9 @@ describe('screenName: the name beside the logo, one per route', () => {
       ['/setup/pgp-code', 'Create account'], ['/setup/password', 'Create account'], ['/setup/authenticator', 'Create account'],
       ['/setup/security-key', 'Create account'], ['/setup/passkey', 'Create account'], ['/setup/backup', 'Create account'],
       ['/setup/wallet', 'Create account'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
+      ['/welcome', 'Welcome'],
       ['/buy', 'Find a trade'], ['/sell', 'Find a trade'], ['/wallets', 'Wallets'], ['/settings/security', 'Security'],
+      ['/settings/idle-reminder', 'Idle reminder'],
       ['/help/faq', 'FAQ'], ['/help/getting-started', 'Getting started'], ['/help/support', 'Support'], ['/help/settings', 'Settings'],
     ] as const) expect([p, screenName(p)]).toEqual([p, name]);
     expect(screenName('/trade/K7M29QXA4FTR8WPN')).toEqual({ label: 'Trade', code: 'K7M2' });
@@ -67,6 +69,17 @@ describe('/setup/pgp-key layout (owner #26)', () => {
     const css = read('screens/setup/setup.css');
     const pgp = /\.x2f-start\[data-screen='setup-pgp-key'\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(pgp).toContain('max-width: 680px;');
+  });
+});
+
+describe('/setup/welcome layout (owner #34, #37)', () => {
+  it('styles the /setup/welcome checklist as surface cards with tighter top padding under ScreenHeader', () => {
+    const css = read('screens/setup/setup.css');
+    const main = /\.x2f-welcome__main\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(main).toContain('padding: var(--x2f-space-6) var(--x2f-space-6);');
+    const check = /\.x2f-welcome__check\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(check).toContain('background: var(--x2f-surface);');
+    expect(check).toContain('border-radius: var(--x2f-radius-md);');
   });
 });
 
@@ -119,7 +132,7 @@ describe('ScreenHeader: logo D top left, the screen name beside it', () => {
 });
 
 describe('help links on /login and /session-length (owner #38, #42)', () => {
-  it('FAQ, Getting started, Support, Settings: each a placeholder page on the front door', () => {
+  it('FAQ, Getting started, Support, Settings: pre-login placeholders', () => {
     expect(HELP_LINKS.map((l) => [l.label, l.to])).toEqual([
       ['FAQ', '/help/faq'], ['Getting started', '/help/getting-started'], ['Support', '/help/support'], ['Settings', '/help/settings'],
     ]);
@@ -196,6 +209,14 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
     expect(s.body).toBe(HELP_TOPICS.settings!.member);
     expect(s.body).toBe('Your alarm and idle reminder are in Settings. The account owner looks after the rest.');
     expect(read1(page('/help/support')).action).toBe('/feedback');
+  });
+});
+
+describe('/buy spacing (owner #48)', () => {
+  it('gives the browse header and method rows a little more breathing room (#48)', () => {
+    const css = read('screens/browse/browse.css');
+    expect(/\.x2f-browse__header\s*\{([^}]*)\}/.exec(css)?.[1] ?? '').toContain('gap: var(--x2f-space-4);');
+    expect(/\.x2f-method__text\s*\{([^}]*)\}/.exec(css)?.[1] ?? '').toContain('gap: var(--x2f-space-1);');
   });
 });
 

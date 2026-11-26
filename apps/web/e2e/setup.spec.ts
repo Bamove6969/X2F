@@ -915,6 +915,19 @@ test.describe('review fix round', () => {
     await page.fill('#pw2', 'Quiet-harbour-58');
   }
 
+  test('at 1280x800 the /setup/pgp-key textarea is wider than 480 px (owner #26)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await stubApi(page);
+    await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-part="method-continue"]');
+    const pub = page.locator('#pub');
+    await expect(pub).toBeVisible();
+    const pubBox = (await pub.boundingBox())!;
+    expect(pubBox.width).toBeGreaterThan(480);
+  });
+
   test('I1: a key already on another account says so, links back to the key and to Log in, and offers no endless new message', async ({ page }) => {
     await stubApi(page);
     await page.unroute('**/v1/register/pgp/finish');
