@@ -1,20 +1,24 @@
 import type { Price } from '@x2f/trade';
-import { CURRENCY_EXPONENTS, currencyExponent } from './currencies.js';
-import { PRICE_FEED_DEFAULTS, type FeedQuote, type PriceFeed, type PriceSourceHealth } from './feed.js';
-import { FX_DEFAULTS, RATE_SCALE, type FxHealth, type FxRate, type FxRates } from './fx.js';
+import { DEFAULT_PRICE_ROUTES, createPriceChain, priceRoutesFor, type PriceRouteName, type RouteQuote } from './chain.js';
+import { PRICE_FEED_DEFAULTS, type PriceFeed, type PriceSourceHealth } from './feed.js';
+import { FX_DEFAULTS, type FxHealth, type FxRates } from './fx.js';
 import { createAlertGrouper, type PriceAlert } from './health.js';
 
 /**
  * The market price of every currency (spec 11.6, owner 2026-10-24): the XMR/USD median times the
  * USD→X exchange rate in use. No XMR/USD price pauses every currency; no fresh rate pauses only
  * that currency. A paused currency has no market price; fixed-price offers do not use this.
+ * Since 2026-11-02 that is the `market` route of a per-currency chain (chain.ts): with more routes
+ * configured (`PRICE_ROUTES`), a currency the market route cannot price falls back to the next.
  */
 
-export interface MarketQuote extends FeedQuote {
-  /** The XMR/USD median the local price was made from (US cents per XMR): its USD value. */
-  usdCentsPerXmr: bigint;
-  /** The exchange rate used; null for USD. */
-  fx: FxRate | null;
+/**
+ * The local price with its USD value and the exchange rate used (null for USD or a route without one).
+ * `route` names the route that priced it; always set by `createMarketPrices`, optional so that
+ * hand-made quotes (test fakes, other branches) keep type-checking.
+ */
+export interface MarketQuote extends RouteQuote {
+  route?: string;
 }
 
 export interface PriceHealthView {
@@ -22,6 +26,8 @@ export interface PriceHealthView {
   fx: FxHealth;
   /** Currencies with no market price right now, sorted. */
   paused: string[];
+  /** Every supported currency (sorted) with the route pricing it right now, or null (paused). */
+  coverage: Array<{ currency: string; route: string | null }>;
 }
 
 export interface MarketPrices {
@@ -45,6 +51,10 @@ export interface MarketOptions {
   clock?: () => Date;
   /** Where price health alerts go (the owner's in-app alerts); a failure here never stops polling. */
   onAlert?: (a: PriceAlert) => void | Promise<void>;
+  /** `PRICE_ROUTES`: the routes tried per currency, in order (default: the market route only). */
+  routes?: readonly PriceRouteName[];
+  /** `PRICE_ROUTE_MAX_GAP_PCT` in basis points: routes further apart leave the currency unpriced. Unset: off. */
+  maxGapBps?: number | null;
   /**
    * Where a lost alert is reported: one fixed line with the error's message only (never the error
    * object, whose pg `detail` can quote row values, and never the alert's detail).
@@ -59,25 +69,17 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
   const timers: Array<ReturnType<typeof setInterval>> = [];
   const inFlight = new Set<Promise<void>>();
 
-  function quote(currency: string): MarketQuote | null {
-    const exponent = currencyExponent(currency);
-    if (exponent === null) return null;
-    const usd = o.xmr.quote('USD');
-    if (!usd) return null;
-    const usdCents = usd.price.centsPerXmr;
-    if (currency === 'USD') return { ...usd, usdCentsPerXmr: usdCents, fx: null };
-    const fx = o.fx.rate(currency);
-    if (!fx) return null;
-    // usdCents / 100 × rate / RATE_SCALE × 10^exponent minor units, half up.
-    const den = 100n * RATE_SCALE;
-    const cents = (usdCents * fx.rate * 10n ** BigInt(exponent) * 2n + den) / (2n * den);
-    if (cents <= 0n) return null;
-    return { price: { currency, centsPerXmr: cents }, at: usd.at, sources: usd.sources, exponent, usdCentsPerXmr: usdCents, fx };
-  }
+  // The chain's own age check runs on the server clock (the real time when none is given; review M6).
+  const chain = createPriceChain(priceRoutesFor(o.routes ?? DEFAULT_PRICE_ROUTES, o.xmr, o.fx), {
+    clock,
+    maxGapBps: o.maxGapBps ?? null,
+  });
+  const quote = (currency: string): MarketQuote | null => chain.quote(currency);
 
   function health(): PriceHealthView {
-    const paused = Object.keys(CURRENCY_EXPONENTS).filter((c) => quote(c) === null).sort();
-    return { xmr: o.xmr.sources(), fx: o.fx.health(), paused };
+    const coverage = chain.coverage();
+    const paused = coverage.filter((c) => c.route === null).map((c) => c.currency);
+    return { xmr: o.xmr.sources(), fx: o.fx.health(), paused, coverage };
   }
 
   /** After a poll: compares health with the last time and queues the alerts, in order (not awaited here). */

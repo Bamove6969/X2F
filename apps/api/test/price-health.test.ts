@@ -248,11 +248,11 @@ describe('createMarketPrices', () => {
     expect(prices.quote('USD')).toBeNull(); // nothing polled yet
     await prices.poll();
     expect(prices.quote('USD')).toEqual({
-      price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n, fx: null,
+      price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n, fx: null, route: 'market',
     });
     expect(prices.quote('EUR')).toEqual({
       price: { currency: 'EUR', centsPerXmr: 29700n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n,
-      fx: { currency: 'EUR', rate: decimalToScaled('0.90')!, source: 'coinbase', at: T0 },
+      fx: { currency: 'EUR', rate: decimalToScaled('0.90')!, source: 'coinbase', at: T0 }, route: 'market',
     });
     expect(prices.current('EUR')).toEqual({ currency: 'EUR', centsPerXmr: 29700n });
     // 330 × 156.87 = 51767.1 JPY (no minor unit); 330 × 0.310706 = 102.53298 KWD (3 places), half up.
@@ -426,7 +426,7 @@ describe('createMarketPrices', () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([xmrStub('a', () => 33000n), xmrStub('b', () => 33000n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const fx = createFxRates([fxStub('coinbase', () => ({ EUR: '0.9' }))], { clock: c.clock });
-    const prices = createMarketPrices({ xmr, fx, onAlert: () => Promise.reject(new Error('db down')) });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock, onAlert: () => Promise.reject(new Error('db down')) });
     await expect(prices.poll()).resolves.toBeUndefined();
     expect(prices.current('EUR')?.centsPerXmr).toBe(29700n);
   });
@@ -469,7 +469,7 @@ describe('with the database', () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([xmrStub('kraken', () => 33000n), xmrStub('bitfinex', () => 33010n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const fx = createFxRates([fxStub('coinbase', () => (fxUp ? { EUR: '0.90' } : new Error('down')))], { clock: c.clock });
-    const prices = createMarketPrices({ xmr, fx });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock });
     ({ app, deps } = await testApp({ prices, clock: c.clock }));
     db = deps.db;
     await prices.poll();
@@ -554,6 +554,11 @@ describe('with the database', () => {
       expect(body.rejected).toEqual([]);
       expect(body.paused).toContain('GBP');
       expect(body.paused).not.toContain('EUR');
+      // 2026-11-02: per currency, the route pricing it (null: no price).
+      expect(body.coverage.EUR).toBe('market');
+      expect(body.coverage.USD).toBe('market');
+      expect(body.coverage.GBP).toBeNull();
+      expect(Object.keys(body.coverage)).toEqual(Object.keys(CURRENCY_EXPONENTS).sort());
       expect(body.settings).toEqual({ staleAfterMinutes: 60, sanityPercent: 10 });
     });
   });
