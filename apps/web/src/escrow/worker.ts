@@ -8,11 +8,11 @@
  * tested without a Worker.
  */
 import { MoneroMultisigEngine, runParty, wsTransport, type EscrowNetwork } from '@x2f/escrow';
-import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
+import { generateBoxKeyPair, generateIdentity, type BoxKeyPair } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
 import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
-import { httpKeySyncApi, withKeySync } from './keySync.js';
+import { httpKeySyncApi, restoreTrades, withKeySync } from './keySync.js';
 import { openEscrowStore } from './store.js';
 import type { RecoveryAddressStatement } from '@x2f/trade';
 import { createAckKeeper } from '../chat/ack.js';
@@ -30,12 +30,17 @@ export type ToWorker =
   | { t: 'retry'; code: string }
   | { t: 'stop'; code: string }
   // Lien recovery (Q2): the creditor's signed recovery address, with this device's identity in `code`.
-  | { t: 'sign-recovery-address'; id: number; code: string; address: string; issuedAt: string };
+  | { t: 'sign-recovery-address'; id: number; code: string; address: string; issuedAt: string }
+  // Escrow-key sync (keySync.ts restoreTrades): the holder's reader key, unlocked on the page (WebAuthn
+  // PRF or the PGP paste happen there); the trade copies are opened and stored here, in this worker's store.
+  | { t: 'restore-trades'; id: number; boxPublic: string; boxSecret: Uint8Array };
 
 export type FromWorker =
   | { t: 'status'; code: string; status: EscrowStatus }
   | { t: 'acted'; id: number; ok: boolean }
-  | { t: 'signed-recovery-address'; id: number; signed: { statement: RecoveryAddressStatement; sig: string } | null };
+  | { t: 'signed-recovery-address'; id: number; signed: { statement: RecoveryAddressStatement; sig: string } | null }
+  /** The codes restored, or null when the restore failed. Only codes cross back, never a secret. */
+  | { t: 'restored-trades'; id: number; codes: string[] | null };
 
 export interface Port {
   postMessage(m: FromWorker): void;
@@ -76,12 +81,28 @@ export const RUNTIME_FAILED: EscrowStatus = {
 };
 
 /** Answers the page's messages with `runtime` (made once `makeRuntime` resolves). */
-export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s: EscrowStatus) => void) => Promise<EscrowRuntime>): void {
+export function serveEscrow(
+  port: Port,
+  makeRuntime: (onStatus: (code: string, s: EscrowStatus) => void) => Promise<EscrowRuntime>,
+  restore?: (reader: BoxKeyPair) => Promise<string[]>,
+): void {
   const runtime = (async () => makeRuntime((code, status) => port.postMessage({ t: 'status', code, status })))();
   runtime.catch(() => undefined);
   port.addEventListener('message', (e) => {
     const m = e.data;
     if (!isRecord(m) || typeof m.t !== 'string') return;
+    if (m.t === 'restore-trades') {
+      // Needs no runtime: the trades restored resume when they are next opened.
+      if (typeof m.id !== 'number') return;
+      const id = m.id;
+      const ok = typeof m.boxPublic === 'string' && /^[0-9a-f]{64}$/.test(m.boxPublic) && m.boxSecret instanceof Uint8Array && m.boxSecret.length === 32;
+      if (!ok || restore === undefined) return port.postMessage({ t: 'restored-trades', id, codes: null });
+      void restore({ boxPublic: m.boxPublic as string, boxSecret: m.boxSecret as Uint8Array }).then(
+        (codes) => port.postMessage({ t: 'restored-trades', id, codes }),
+        () => port.postMessage({ t: 'restored-trades', id, codes: null }),
+      );
+      return;
+    }
     void (async () => {
       let rt: EscrowRuntime;
       try {
@@ -206,5 +227,13 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       prepareChat: tradeChatPreparer({ openTradeChat: httpOpenTradeChat(), engine: sharedChatEngine }),
       onStatus,
     });
+  }, async (reader) => {
+    // Its own connection to the same store; the plain store, so a restored trade is not uploaded again.
+    const store = await openEscrowStore();
+    try {
+      return await restoreTrades(store, httpKeySyncApi(), reader);
+    } finally {
+      store.close();
+    }
   });
 }

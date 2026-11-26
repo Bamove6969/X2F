@@ -41,11 +41,18 @@
  *   `{ version }`). `wraps` must include the holder's own reader (400 `holder-wrap-missing`); any
  *   other reader must be an assigned member's (400 `reader-not-assigned`). Replaces every wrap.
  * - `DELETE /v1/escrow-keys/trades/:code` → 204 (also when there was none). The holder only.
+ * - `GET /v1/escrow-keys/unlock-methods` → `{ keys: [{ kind, label, credentialId }], pgp: [{
+ *   fingerprint, label, publicKey }] }`: the caller's own passkeys and security keys (the credential
+ *   id, base64url, to ask the authenticator for its PRF output) and own PGP public keys (armored, to
+ *   encrypt an unlock envelope to). The person's own login methods (a member's are their own
+ *   login's); never an authenticator app (TOTP), which makes no key. Whether a passkey or security
+ *   key supports PRF is not stored: the browser finds out when it asks (keySync.ts `no-prf`).
  */
 import { normalizeTradeCode } from '@x2f/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withTx } from '../auth/liveSession.js';
-import { requireSession } from '../auth/sessions.js';
+import { openKey } from '../auth/pgp.js';
+import { personAccountId, requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { ESCROW_KEYS_ABILITY } from './store.js';
@@ -58,6 +65,7 @@ export const ESCROW_SYNC_ROUTES = [
   'GET /v1/escrow-keys/trades/:code',
   'PUT /v1/escrow-keys/trades/:code',
   'DELETE /v1/escrow-keys/trades/:code',
+  'GET /v1/escrow-keys/unlock-methods',
 ] as const;
 
 /** The only unlock methods: a passkey or security key's PRF output, or the person's PGP key. Never TOTP. */
@@ -281,6 +289,27 @@ export function escrowSyncRoutes(app: FastifyInstance): void {
       }
       return { version };
     });
+  });
+
+  app.get('/v1/escrow-keys/unlock-methods', { preHandler: reader }, async (req) => {
+    const deps = req.server.deps;
+    const person = await personAccountId(deps.db, req.auth);
+    const creds = await deps.db.query<{ kind: 'passkey' | 'security-key'; label: string; credential_id: Buffer }>(
+      'select kind, label, credential_id from webauthn_credentials where account_id = $1 order by created_at, id',
+      [person],
+    );
+    const pgp = await deps.db.query<{ fingerprint: string; armored_enc: Buffer }>(
+      'select fingerprint, armored_enc from pgp_keys where account_id = $1 order by created_at, id',
+      [person],
+    );
+    return {
+      keys: creds.rows.map((c) => ({ kind: c.kind, label: c.label, credentialId: b64(c.credential_id) })),
+      pgp: pgp.rows.map((k) => ({
+        fingerprint: k.fingerprint.toUpperCase(),
+        label: k.fingerprint.slice(-16),
+        publicKey: openKey(deps.config, k.armored_enc, k.fingerprint),
+      })),
+    };
   });
 
   app.delete('/v1/escrow-keys/trades/:code', { preHandler: holder }, async (req, reply) => {

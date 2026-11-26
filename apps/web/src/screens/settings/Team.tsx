@@ -29,6 +29,9 @@ import { TOO_MANY_MEMBERS_CODE, teamCantDoText, teamCantDoTitle } from '../../ui
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { AbilityPicker } from './AbilityPicker.js';
+import { httpKeySyncApi } from '../../escrow/keySync.js';
+import { ESCROW_KEYS_ABILITY } from './tradeKeys.js';
+import { TEAM_KEYS_COPY } from './tradeKeysCopy.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
 import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import '../screens.css';
@@ -227,6 +230,23 @@ export function Team() {
     void load();
   }, [load]);
 
+  // Escrow-key sync: which members already have a reader key (`GET /v1/escrow-keys/readers` lists
+  // the holder's and each assigned member's). Null until read, or when it cannot be read.
+  const [keyReaders, setKeyReaders] = useState<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (members === null) return;
+    let live = true;
+    httpKeySyncApi()
+      .readers()
+      .then(
+        (rs) => live && setKeyReaders(new Set(rs.map((r) => (r as { memberId?: string | null }).memberId).filter((x): x is string => typeof x === 'string'))),
+        () => live && setKeyReaders(null),
+      );
+    return () => {
+      live = false;
+    };
+  }, [members]);
+
   useEffect(() => {
     const ctl = new AbortController();
     fetchCatalogue(ctl.signal).then(setCatalogue, () => {
@@ -422,6 +442,14 @@ export function Team() {
                     <span className="x2f-list__time" data-part="member-limits">
                       {C.limits(m.band, m.hours)}
                     </span>
+                    {keyReaders !== null && (m.abilities ?? []).includes(ESCROW_KEYS_ABILITY) ? (
+                      <>
+                        <br />
+                        <span className="x2f-list__time" data-part="member-trade-keys" data-ready={keyReaders.has(m.id) ? 'yes' : 'no'}>
+                          {keyReaders.has(m.id) ? TEAM_KEYS_COPY.ready : TEAM_KEYS_COPY.waiting}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                   {editing?.id === m.id && cat !== null ? (
                     <div className="x2f-stack">
