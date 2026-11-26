@@ -1,5 +1,6 @@
-// Getting started (Plan 3 Task 28): Terms first, then names, login method, PGP key and code or a
-// password, the recovery codes (required: shown, ticked and one typed back, owner S-017), an
+// Getting started (Plan 3 Task 28): Terms first, then names, the login methods (two kinds, no
+// passwords since 26 Nov 2026: a PGP key and code, a passkey or security key, an authenticator app),
+// the recovery codes (required: shown, ticked and one typed back, owner S-017), an
 // optional extra backup (or Skip for now), the first payout wallet, and Welcome with Start
 // trading back to `returnTo`. Owner G25 (6 Nov 2026): right after sign-up, Start trading ends the
 // sign-up session and goes to Log in (keeping `returnTo`); the login asks the session length, then
@@ -35,14 +36,14 @@ async function saveRecoveryCodes(page: Page): Promise<void> {
 }
 
 /**
- * Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP ticked first; tick only `id`.
- * Owner decision, 16 Nov 2026: a password does not stand alone, so the password path ticks the
- * authenticator app with it (its step follows the password: `addAuthenticator`).
+ * Owner demo notes (12 Nov 2026): the login methods are checkboxes, PGP and the passkey ticked by
+ * default. No passwords (owner, 26 Nov 2026): two kinds are needed, so the passkey path unticks PGP
+ * and ticks the authenticator app with the passkey (its step follows the passkey: `addAuthenticator`).
  */
-async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void> {
+async function passkeyAndAuthenticator(page: Page): Promise<void> {
   await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
-  await page.check(`[data-method="${id}"] input[type="checkbox"]`);
-  if (id === 'password') await page.check('[data-method="totp"] input[type="checkbox"]');
+  await page.check('[data-method="passkey"] input[type="checkbox"]');
+  await page.check('[data-method="totp"] input[type="checkbox"]');
 }
 
 /**
@@ -62,7 +63,7 @@ async function pgpAndAuthenticator(page: Page): Promise<void> {
   await addAuthenticator(page);
 }
 
-/** The authenticator step after the password (owner, 16 Nov 2026): no "Set up later" when the password is the only login. */
+/** The authenticator step after the key (owner, 26 Nov 2026): no "Set up later" when it is the second of the two kinds. */
 async function addAuthenticator(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/setup\/authenticator\?/);
   await expect(page.locator('[data-part="method-later"]')).toHaveCount(0);
@@ -128,7 +129,6 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
           loginNameSet: true,
           kind: 'trader',
           level: 'full',
-          holdUntil: null,
           methods: s.methods,
           hasBackup: s.methods.length > 1,
           suggestions: [],
@@ -142,8 +142,12 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     s.registered = false;
     return json({ ok: true })(r);
   });
-  await page.route('**/v1/login/password', (r) => {
-    record('login-password', r);
+  await page.route('**/v1/login/pgp/start', (r) => {
+    record('login-pgp-start', r);
+    return json({ challengeId: 'l1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' })(r);
+  });
+  await page.route('**/v1/login/pgp/finish', (r) => {
+    record('login-pgp-finish', r);
     s.registered = true;
     s.loggedIn = true;
     return json({ status: 'ok' })(r);
@@ -170,14 +174,6 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     s.registered = true;
     s.tradeTag = b.tradeTag;
     s.methods = ['pgp'];
-    return json({ tradeTag: b.tradeTag }, 201)(r);
-  });
-  await page.route('**/v1/register/password', (r) => {
-    record('password', r);
-    const b = JSON.parse(r.request().postData() ?? '{}') as { tradeTag: string };
-    s.registered = true;
-    s.tradeTag = b.tradeTag;
-    s.methods = ['password'];
     return json({ tradeTag: b.tradeTag }, 201)(r);
   });
   await page.route('**/v1/account/recovery-codes', (r) => {
@@ -248,6 +244,16 @@ async function pickNames(page: Page, display: string, login: string): Promise<vo
   await expect(page.locator('[data-screen="setup-trade-tag"]')).toBeVisible();
   await page.fill('#trade-tag', display);
   await page.click('[data-part="display-continue"]');
+}
+
+/** A PGP login on /login (login.spec.ts's `pgpLogin`): the login name, the key, the message, the code. */
+async function pgpLogin(page: Page, loginName: string): Promise<void> {
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', loginName);
+  await page.fill('#pgp-key', realKey);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '12345678');
+  await page.click('[data-part="pgp-login"]');
 }
 
 for (const v of PHONES) {
@@ -527,16 +533,15 @@ test('the username and Trade Tag are checked before going on (8-20, owner notes 
 
 test('a taken Trade Tag at register sends the person back to change their names, both kept', async ({ page }) => {
   await stubApi(page);
-  await page.unroute('**/v1/register/password');
-  await page.route('**/v1/register/password', json({ error: 'trade-tag-taken' }, 409));
+  await page.unroute('**/v1/register/pgp/start');
+  await page.route('**/v1/register/pgp/start', json({ error: 'trade-tag-taken' }, 409));
   await page.goto('/setup');
   await acceptTerms(page);
   await pickNames(page, 'lumen.kai', 'lumen-login-7');
-  await chooseOnly(page, 'password');
-  await page.click('[data-part=\"method-continue\"]');
-  await page.fill('#pw', 'Quiet-harbour-58');
-  await page.fill('#pw2', 'Quiet-harbour-58');
-  await page.click('[data-part="password-set"]');
+  await page.click('[data-part="method-continue"]');
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
   await expect(page.locator('[data-part="register-error"]')).toContainText('That Trade Tag is taken.');
   // Review F8: "Change your names" opens the screen of the name that was refused (the Trade Tag).
   await page.click('[data-part="change-names"]');
@@ -596,6 +601,10 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.fill('#trade-tag', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
   await at('setup-login');
+  // Two kinds (owner, 26 Nov 2026): the PGP key and the authenticator app (the passkey ticked by
+  // default is unticked, so its step does not come).
+  await page.uncheck('[data-method="passkey"] input[type="checkbox"]');
+  await page.check('[data-method="totp"] input[type="checkbox"]');
   await page.click('[data-part="method-continue"]');
   await at('setup-pgp-key');
   await page.fill('#pub', realKey);
@@ -605,6 +614,9 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.fill('#phrase', '1234-5678-9ABC');
   await page.click('[data-part="pgp-verify"]');
   await page.click('[data-part="pgp-continue"]');
+  await at('setup-authenticator');
+  // The authenticator step needs its start, the code typed and its finish, then Continue.
+  await addAuthenticator(page);
   await at('setup-backup');
   // Owner S-017 (recovery code required) knowingly overrides this test's "one tap per board" rule
   // for this step: it needs a tap to show the code, a tick, Next, and the code typed back (review
@@ -620,10 +632,7 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await page.click('[data-part="start-trading"]');
   // Owner G25: log in with what was just set up, choose the session length, then on.
   await at('login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'lumen-login-7');
-  await page.fill('#login-password', 'Quiet-harbour-58');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page, 'lumen-login-7');
   await at('session-length');
   await page.selectOption('[data-part="session-length-select"]', '4');
   await page.click('[data-part="session-length-continue"]');
@@ -635,15 +644,15 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
   expect(takes).toEqual([]);
 
-  // No more screens than the Setup boards (SetupPassword is the other branch of the login step),
+  // No more screens than the Setup boards (the authenticator app is the second of the two kinds),
   // plus G25's Log in and session length.
   // The Trade Tag has its own screen after SetupUsername (design real-app review item 6: the
   // board's one private username, then the second name on its own step; its fields are on
   // SignupSecurity's "Your names" card), so it counts as one more board.
-  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'Trade Tag', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
+  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'Trade Tag', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupAuthenticator', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
   const G25 = ['Login', 'SessionLength'];
-  expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1 + G25.length);
-  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-trade-tag', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
+  expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length + G25.length);
+  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-trade-tag', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-authenticator', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
   expect(s.requests).toContain('POST /v1/logout');
   expect(s.bodies['session-length']).toEqual([{ hours: 4 }]);
   expect(s.registered).toBe(true);
@@ -660,14 +669,9 @@ test.describe('on a new device', () => {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.kai', 'lumen-login-7');
-    // Sign-up v2 (owner ruling): a password alone is not enough, so the password goes with an
-    // authenticator app (the setup's own helpers), then the required recovery code and the wallet.
-    await chooseOnly(page, 'password');
-    await page.click('[data-part="method-continue"]');
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-    await page.click('[data-part="password-set"]');
-    await addAuthenticator(page);
+    // Sign-up v2 (owner, 26 Nov 2026: no passwords, two kinds): a PGP key and an authenticator app
+    // (the setup's own helpers), then the required recovery code and the wallet.
+    await pgpAndAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     await saveRecoveryCodes(page);
     await page.fill('#xmr-payout', ADDRESS);
@@ -677,10 +681,7 @@ test.describe('on a new device', () => {
     await page.click('[data-part="wallet-continue"]');
     await page.click('[data-part="start-trading"]');
     await expect(page.locator('[data-screen="login"]')).toBeVisible();
-    await page.click('[data-method="password"]');
-    await page.fill('#login-name', 'lumen-login-7');
-    await page.fill('#login-password', 'Quiet-harbour-58');
-    await page.click('[data-part="password-login"]');
+    await pgpLogin(page, 'lumen-login-7');
     await expect(page.locator('[data-screen="session-length"]')).toBeVisible();
     await page.selectOption('[data-part="session-length-select"]', '4');
     await page.click('[data-part="session-length-continue"]');
@@ -708,7 +709,7 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
   await page.route('**/v1/account/me', (r) =>
     accepted === null
       ? json({ error: 'terms-required', version: TERMS_VERSION }, 403)(r)
-      : json({ tradeTag: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
+      : json({ tradeTag: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
   );
   await page.route('**/v1/account/terms', (r) => {
     accepted = JSON.parse(r.request().postData() ?? 'null');
@@ -735,7 +736,7 @@ test('Start trading with no usable wallet goes to Add a wallet first, then on to
 test('a waiting wallet is not a usable one: Start trading still goes to Add a wallet', async ({ page }) => {
   await stubApi(page, {
     signedIn: true,
-    methods: ['password'],
+    methods: ['pgp', 'passkey'],
     wallets: [{ id: 'w', app: 'edge', label: 'Wallet 1', address: ADDRESS, addressEnd: 'k3Fz', usableFrom: '2099-01-01T00:00:00.000Z', usable: false }],
   });
   await page.goto(`/setup/welcome?returnTo=${encodeURIComponent('/post')}`);
@@ -872,16 +873,6 @@ test.describe('review fix round', () => {
     await expect(page).toHaveURL(/\/setup\/pgp-code\?/);
   }
 
-  async function toPassword(page: Page): Promise<void> {
-    await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
-    await acceptTerms(page);
-    await pickNames(page, 'lumen.kai', 'lumen-login-7');
-    await chooseOnly(page, 'password');
-    await page.click('[data-part=\"method-continue\"]');
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-  }
-
   test('at 1280x800 the /setup/pgp-key textarea is wider than 480 px (owner #26)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await stubApi(page);
@@ -921,10 +912,14 @@ test.describe('review fix round', () => {
     await page.fill('#phrase', '1234-5678-9ABC');
     await page.click('[data-part="pgp-verify"]');
     await page.click('[data-part="pgp-continue"]');
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    // The passkey is ticked with PGP by default, so its step comes next.
+    await expect(page).toHaveURL(/\/setup\/passkey\?/);
+    await expect(page.locator('[data-screen="setup-passkey"]')).toBeVisible();
     await page.goBack();
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
-    await expect(page.locator('[data-part="key-continue"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/setup\/passkey\?/);
+    await expect(page.locator('[data-screen="setup-passkey"]')).toBeVisible();
+    await expect(page.locator('#pub')).toHaveCount(0);
+    await expect(page.locator('#phrase')).toHaveCount(0);
     expect(s.bodies['pgp-start']).toHaveLength(1);
     expect(s.bodies['pgp-finish']).toHaveLength(1);
   });
@@ -966,14 +961,16 @@ test.describe('review fix round', () => {
       labels.push(b);
       return json({ label: b.label })(r);
     });
-    await chooseOnly(page, 'passkey');
-    await page.click('[data-part=\"method-continue\"]');
+    await passkeyAndAuthenticator(page);
+    await page.click('[data-part="method-continue"]');
     // Owner 25 Nov security-key report: the passkey is acknowledged and named before going on.
     await expect(page.locator('[data-screen="setup-key-saved"] [data-part="key-saved"]')).toHaveText('Passkey saved');
     await expect(page.locator('[data-part="key-name-input"]')).toHaveValue('Passkey 1');
     await page.click('[data-part="key-name-save"]');
     await expect(page.locator('[data-part="key-name"]')).toContainText('Passkey 1');
     await page.click('[data-part="key-continue"]');
+    // The authenticator app, the second kind, comes after the passkey.
+    await addAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(labels).toHaveLength(1);
     expect(s.bodies['webauthn-start']).toEqual([{ tradeTag: 'lumen.kai', loginName: 'lumen-login-7', kind: 'passkey' }]);
@@ -991,8 +988,8 @@ test.describe('review fix round', () => {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.kai', 'lumen-login-7');
-    await chooseOnly(page, 'passkey');
-    await page.click('[data-part=\"method-continue\"]');
+    await passkeyAndAuthenticator(page);
+    await page.click('[data-part="method-continue"]');
     await expect(page.locator('[data-part="register-error"]')).toContainText('pick another way to log in');
     await expect(page).toHaveURL(/\/setup\/login\?/);
   });
@@ -1000,17 +997,18 @@ test.describe('review fix round', () => {
   test('M6: Terms that change during setup send the person back to read them; the retry sends the version read', async ({ page }) => {
     const s = await stubApi(page);
     let tries = 0;
-    await page.unroute('**/v1/register/password');
-    await page.route('**/v1/register/password', (r) => {
+    await page.unroute('**/v1/register/pgp/finish');
+    await page.route('**/v1/register/pgp/finish', (r) => {
       tries += 1;
-      (s.bodies.password ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
+      (s.bodies['pgp-finish'] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
       if (tries === 1) return json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r);
       s.registered = true;
-      s.methods = ['password'];
+      s.methods = ['pgp'];
       return json({ tradeTag: 'lumen.kai' }, 201)(r);
     });
-    await toPassword(page);
-    await page.click('[data-part="password-set"]');
+    await toPgpCode(page);
+    await page.fill('#phrase', '1234-5678-9ABC');
+    await page.click('[data-part="pgp-verify"]');
     await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
     await acceptTerms(page);
@@ -1020,15 +1018,10 @@ test.describe('review fix round', () => {
     await page.click('[data-part="names-continue"]');
     await expect(page.locator('#trade-tag')).toHaveValue('lumen.kai');
     await page.click('[data-part="display-continue"]');
-    await chooseOnly(page, 'password');
-    await page.click('[data-part=\"method-continue\"]');
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-    await page.click('[data-part="password-set"]');
-    await addAuthenticator(page);
+    await pgpAndAuthenticator(page);
     await expect(page).toHaveURL(/\/setup\/backup\?/);
-    expect(s.bodies.password).toHaveLength(2);
-    expect(s.bodies.password?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION });
+    expect(s.bodies['pgp-finish']).toHaveLength(2);
+    expect(s.bodies['pgp-finish']?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION });
   });
 
   test('M3: /terms reloads the version when the Terms change before I accept, and the retry posts the new one', async ({ page }) => {
@@ -1162,7 +1155,8 @@ test.describe('review fix round', () => {
     // Owner demo notes (12 Nov 2026): the login methods are checkboxes now, each its own tab stop,
     // ticked with Space, each linked to its description.
     const boxes = page.locator('[role="group"][aria-label="Login methods"] input[type="checkbox"]');
-    await expect(boxes).toHaveCount(5);
+    // Four since passwords went (owner, 26 Nov 2026): PGP key, security key, passkey, authenticator app.
+    await expect(boxes).toHaveCount(4);
     await expect(boxes.nth(0)).toBeChecked();
     await boxes.nth(0).focus();
     await page.keyboard.press('Tab');
@@ -1170,7 +1164,7 @@ test.describe('review fix round', () => {
     await page.keyboard.press('Space');
     await expect(boxes.nth(1)).toBeChecked();
     await expect(boxes.nth(0)).toBeChecked();
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const d = (await boxes.nth(i).getAttribute('aria-describedby'))!;
       await expect(page.locator(`[id="${d}"]`)).toHaveCount(1);
     }
