@@ -313,8 +313,8 @@ async function readable(db: Queryable, key: Uint8Array, r: CaseRow): Promise<Ret
   return fields === null ? null : caseView(r, key, t, fields);
 }
 
-/** The most closed cases the curator's list shows. TODO(re-review m3): page it. */
-const REVIEW_LIST_MAX = 200;
+/** Closed cases a page of the curator's list (re-review m3: paged, newest closed first). */
+export const REVIEW_PAGE = 50;
 
 export function staffTrainingRoutes(app: FastifyInstance): void {
   const guard = requireStaff('training.read');
@@ -348,15 +348,30 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
   });
 
   app.get('/staff/v1/training/review', { preHandler: curate, config: curateCfg }, async (req) => {
-    if (Object.keys((req.query ?? {}) as object).length > 0) throw new ApiError(400, 'bad-request');
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    if (Object.keys(q).some((k) => k !== 'before')) throw new ApiError(400, 'bad-request');
+    const before = q.before;
+    if (before !== undefined && (typeof before !== 'string' || !TRAINING_ID.test(before))) throw new ApiError(400, 'bad-request');
     const { db, config } = req.server.deps;
-    const { rows } = await db.query<CaseRow>(`${CLOSED_SELECT} order by d.closed_at desc, d.code desc, d.seq desc limit $1`, [REVIEW_LIST_MAX]);
+    const args: unknown[] = [REVIEW_PAGE + 1];
+    let after = '';
+    if (typeof before === 'string') {
+      // The cursor is the last case's opaque id (never its trade code), found as review/:id finds it.
+      const found = await findForCurator(db, config.trainingIdKey, before);
+      const cur = found ? await db.query(`select 1 from disputes where code = $1 and seq = $2 and status = 'closed'`, [found.code, found.seq]) : null;
+      if (!found || !cur?.rows[0]) throw new ApiError(404, 'not-found');
+      // The cursor's closing is compared in SQL, never read back into a JS Date (milliseconds only).
+      args.push(found.code, found.seq);
+      after = ` and (d.closed_at, d.code, d.seq) < ((select c.closed_at from disputes c where c.code = $2 and c.seq = $3), $2, $3)`;
+    }
+    const { rows } = await db.query<CaseRow>(`${CLOSED_SELECT}${after} order by d.closed_at desc, d.code desc, d.seq desc limit $1`, args);
+    const page = rows.slice(0, REVIEW_PAGE);
     const items = [];
-    for (const r of rows) {
+    for (const r of page) {
       const status = r.training_id === null ? 'unmarked' : (await readable(db, config.trainingIdKey, r)) === null ? 'stale' : 'marked';
       items.push({ ...listItem(r, config.trainingIdKey), status });
     }
-    return { items };
+    return { items, next: rows.length > REVIEW_PAGE ? items[items.length - 1]!.id : null };
   });
 
   const curatorCase = async (req: { params: unknown; server: FastifyInstance }) => {

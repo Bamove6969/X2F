@@ -53,8 +53,10 @@ async function stub(page: Page, me: unknown): Promise<string[]> {
       return json({ scope: 'all', entries, names: { [DMITRI]: 'dmitri_k' }, next: null })(route);
     }
     if (u.pathname === '/staff/v1/log/filters') return json({ scope: 'all', actors: [{ id: DMITRI, name: 'dmitri_k', role: 'mod' }], kinds: ['trade', 'dispute', 'chat', 'ruling', 'account', 'other'] })(route);
-    if (u.pathname === '/staff/v1/log/active-disputes') return json({ items: ACTIVE })(route);
-    if (u.pathname === '/staff/v1/log/integrity') return json({ checkedAt: new Date().toISOString(), chain: { ok: true, headId: '12' }, entries: 12, alarm: null })(route);
+    if (u.pathname === '/staff/v1/log/active-disputes') return json({ items: ACTIVE, next: null })(route);
+    // Review m7: the page load reads the count and the alarm; the chain check is its own POST.
+    if (u.pathname === '/staff/v1/log/integrity') return json({ entries: 12, headId: '12', alarm: null })(route);
+    if (u.pathname === '/staff/v1/log/integrity/check') return json({ checkedAt: new Date().toISOString(), chain: { ok: true, headId: '12' }, entries: 12, alarm: null })(route);
     if (u.pathname === '/staff/v1/training') return json({ items: [TRAINING_ITEM], next: null })(route);
     if (u.pathname === `/staff/v1/training/${TRAINING_ITEM.id}`) return json(TRAINING_CASE)(route);
     return json({ error: 'not-found' }, 404)(route);

@@ -133,6 +133,9 @@ export const LOG_ACTIONS = {
   'account.ban-lifted': { accountId: 'uuid', banId: 'id', kind: 'id', identifiersRemoved: 'number' },
   // A timed ban ended (Task 27): by the settle job, or by a new ban's place route (review S5).
   'account.reinstated': { accountId: 'uuid', kind: 'id' },
+  // The staff Accounts page's lookup (staff/accountLookup.ts): how it matched ('name' | 'code') and
+  // the account found, or `found: 0`. Never the query text, never a trade code.
+  'account.looked-up': { by: 'id', accountId: 'uuid', found: 'number' },
   // Liens (Task 25, rewritten 2026-10-29c) and owed fees (Revision 2026-10-29c).
   'lien.placed': LIEN,
   'lien.suspended': { lienId: 'id' },

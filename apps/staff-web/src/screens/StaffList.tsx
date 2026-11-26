@@ -5,6 +5,7 @@ import {
   createInvite,
   members as fetchMembers,
   removeMember,
+  resetSecurity,
   serverNow,
   setHours,
   setRole,
@@ -17,7 +18,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Notice, Sheet } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { ROLE_LABELS } from '../ui/RoleChip.js';
-import { PageTitle } from '../ui/StaffShell.js';
+import { PageTitle, useMe } from '../ui/StaffShell.js';
 import { Table, type Column } from '../ui/Table.js';
 import { StaffGrantsSection } from './StaffGrants.js';
 import { WEEK, expiresText, hoursText, lastActiveText, monthYear } from './staffFormat.js';
@@ -35,8 +36,10 @@ import '../ui/staff.css';
  * - Switch on: a `switch-on` tap bound to the person and their role;
  * - Cancel invite: no tap;
  * - Change (board: "You can change these any time from their row"; not drawn, DESIGNER-REVIEW):
- *   the role (a `set-role` tap), the login hours (no tap, as the API takes them) and Remove from
- *   staff (a `remove-staff` tap, owner G4).
+ *   the role (a `set-role` tap), the login hours (no tap, as the API takes them), Remove from
+ *   staff (a `remove-staff` tap, owner G4) and, for the owner only, Reset this member's security
+ *   (D-032, owner G60: a typed-name confirm that says exactly what happens, then a
+ *   `reset-staff-security` tap bound to a re-enrolment link this browser makes, shown once).
  * Below the table, the per-person checkboxes (owner Q60, J-21; StaffGrants.tsx, not drawn).
  *
  * Board copy is verbatim. Copy the board does not have is draft. COPY-UNSIGNED
@@ -222,6 +225,11 @@ export function StaffList() {
   const [tap, setTap] = useState<Tap | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState<Member | null>(null);
+  const [resetLink, setResetLink] = useState<{ link: string; name: string } | null>(null);
+  const [resetCopied, setResetCopied] = useState(false);
+  // D-032: the owner's own power (the API refuses anyone else, whatever a grant may add).
+  const isOwner = useMe()?.role === 'owner';
 
   const load = async () => {
     try {
@@ -296,6 +304,39 @@ export function StaffList() {
   };
 
   const nameOf = (m: Member) => m.displayName ?? '';
+
+  /** D-032: after the typed-name confirm, the tap bound to a fresh re-enrolment link for this member. */
+  const askReset = (m: Member) => {
+    setResetting(null);
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const p = { inviteId: crypto.randomUUID(), token: base64url(bytes), expiresAt: new Date(serverNow().getTime() + INVITE_TTL_MS).toISOString() };
+    setTap({
+      intent: { kind: 'reset-staff-security', accountId: m.accountId!, inviteId: p.inviteId, tokenHash: inviteTokenHash(p.token), expiresAt: p.expiresAt },
+      title: `Reset ${nameOf(m)}'s security`,
+      // not-a-refusal: warns that the reset is final, before the tap.
+      body: `Tap your security key to reset ${nameOf(m)}'s security now. This cannot be undone.`,
+      labels: { accountId: nameOf(m), tokenHash: 'the new set-up link you are about to send', inviteId: 'the new set-up link' },
+      run: async (tapId) => {
+        if (
+          await act(async () => {
+            const r = await resetSecurity(m.accountId!, { ...p, tapId });
+            setResetCopied(false);
+            setResetLink({ link: r.link, name: nameOf(m) });
+          }, 'Their security was not reset. Try again.')
+        ) setEditing(null);
+      },
+    });
+  };
+  const copyReset = async () => {
+    if (resetLink === null) return;
+    try {
+      await navigator.clipboard.writeText(resetLink.link);
+      setResetCopied(true);
+    } catch {
+      setResetCopied(false);
+    }
+  };
 
   const askSwitchOn = (m: Member) =>
     setTap({
@@ -421,6 +462,23 @@ export function StaffList() {
         </section>
       ) : null}
 
+      {resetLink !== null ? (
+        <section className="x2f-stack" aria-label="Security reset" data-part="reset-link">
+          <span className="x2f-staff-hint">{`${resetLink.name}'s security is reset. Send them this set-up link privately: it works once and expires in 24 hours. It is shown only now.`}</span>
+          <div className="x2f-staff-hours-row">
+            <input aria-label="Security reset link" type="text" readOnly className="x2f-input x2f-staff-link" value={resetLink.link} data-mask="" />
+            <Button variant="secondary" onClick={() => void copyReset()}>
+              Copy link
+            </Button>
+          </div>
+          {resetCopied ? (
+            <span className="x2f-staff-hint" role="status">
+              Copied.
+            </span>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="x2f-staff-scroll">
         <Table columns={columns} rows={list ?? []} rowKey={(m) => m.accountId ?? `invite-${m.inviteId}`} label="Staff" />
       </div>
@@ -428,10 +486,11 @@ export function StaffList() {
 
       <StaffGrantsSection members={(list ?? []).filter((m) => m.accountId !== null && m.role !== 'owner')} />
 
-      {editMember !== null && tap === null ? (
+      {editMember !== null && tap === null && resetting === null ? (
         <MemberEdit
           member={editMember}
           busy={busy}
+          {...(isOwner ? { onReset: () => setResetting(editMember) } : {})}
           onClose={() => setEditing(null)}
           onHours={(h) => act(() => setHours(editMember.accountId!, h), 'The login hours were not saved. Try again.')}
           onRole={(r) =>
@@ -457,6 +516,10 @@ export function StaffList() {
             })
           }
         />
+      ) : null}
+
+      {resetting !== null && tap === null ? (
+        <ResetSecuritySheet member={resetting} onCancel={() => setResetting(null)} onConfirm={() => askReset(resetting)} />
       ) : null}
 
       {tap !== null ? (
@@ -486,6 +549,7 @@ function MemberEdit({
   onHours,
   onRole,
   onRemove,
+  onReset,
 }: {
   member: Member;
   busy: boolean;
@@ -493,6 +557,8 @@ function MemberEdit({
   onHours: (h: LoginHours) => Promise<boolean>;
   onRole: (r: InviteRole) => void;
   onRemove: () => void;
+  /** The owner only (D-032); absent, the button is not shown. */
+  onReset?: () => void;
 }) {
   const current = member.role as InviteRole;
   const [role, setRoleDraft] = useState<InviteRole>(current);
@@ -529,11 +595,56 @@ function MemberEdit({
             Saved.
           </Notice>
         ) : null}
+        {onReset !== undefined ? (
+          <Button variant="danger" disabled={busy} data-part="reset-security" onClick={onReset}>
+            Reset this member's security
+          </Button>
+        ) : null}
         <Button variant="danger" disabled={busy} onClick={onRemove}>
           Remove from staff
         </Button>
         <Button variant="quiet" onClick={onClose}>
           Close
+        </Button>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * D-032 (owner G60), the strong confirm before the owner's reset tap: exactly what the API does
+ * (apps/api staff/invites.ts `reset-security`), and the member's username typed to go on.
+ * Not drawn. COPY-UNSIGNED DESIGNER-REVIEW
+ */
+function ResetSecuritySheet({ member, onCancel, onConfirm }: { member: Member; onCancel: () => void; onConfirm: () => void }) {
+  const id = useId();
+  const [typed, setTyped] = useState('');
+  const name = member.displayName ?? '';
+  const ok = name !== '' && typed.trim() === name;
+  return (
+    <Sheet open title={`Reset ${name}'s security`} wide="dialog" onClose={onCancel}>
+      <div className="x2f-stack" data-part="reset-confirm">
+        <p>Only do this after you have vetted that this really is them and they have lost their keys. When you tap your security key:</p>
+        <ul>
+          {/* not-a-refusal: says what the reset does to the member's keys. */}
+          <li>{`Every security key, passkey and PGP key on ${name}'s account, and every device it knows, is deleted. A found or stolen key no longer works.`}</li>
+          <li>{`${name}'s account is switched off until they use the new set-up link, and every session of theirs ends now.`}</li>
+          <li>Their open cases go back to the queue.</li>
+          <li>Any earlier set-up link of theirs stops working.</li>
+          <li>You get a new set-up link, shown once, that works for 24 hours. Their username, role, login hours and signed Terms stay as they are.</li>
+          <li>The reset is written to the activity log.</li>
+        </ul>
+        <div className="x2f-field">
+          <label className="x2f-label" htmlFor={id}>
+            {`Type ${name} to confirm`}
+          </label>
+          <input id={id} className="x2f-input" autoComplete="off" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} data-mask="" />
+        </div>
+        <Button variant="danger-outline" disabled={!ok} onClick={onConfirm}>
+          Reset their security
+        </Button>
+        <Button variant="quiet" onClick={onCancel}>
+          Cancel
         </Button>
       </div>
     </Sheet>

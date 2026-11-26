@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router';
+import { Accounts } from './screens/Accounts.js';
 import { Disputes } from './screens/Disputes.js';
 import { Feedback } from './screens/Feedback.js';
 import { Invite } from './screens/Invite.js';
@@ -21,7 +22,8 @@ import { StaffShell } from './ui/StaffShell.js';
  * The staff app (Plan 4 Task 16): Login, invite acceptance and owner setup outside the shell;
  * every other path is the shell, which shows the signed-in role's pages: the owner's Overview, Staff
  * and Settings (Task 17), Disputes (Task 18), the Training library and the Activity log (Task 19),
- * Performance (Task 20), Prices, Feedback and Past reputation (Plan 5 Task 11); every role's own
+ * Performance (Task 20), Prices, Feedback and Past reputation (Plan 5 Task 11), and Accounts
+ * (spec 6.6: find a trader, then ban, lift a ban or work a hold outside a case); every role's own
  * My security page (login methods, sessions and alerts) is linked under the nav.
  */
 export function App() {
@@ -30,7 +32,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, staff: <StaffList />, performance: <StaffPerformance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, accounts: <Accounts />, staff: <StaffList />, performance: <StaffPerformance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
     </Routes>
   );
 }

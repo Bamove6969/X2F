@@ -1,5 +1,5 @@
 import type { StaffRole } from '@x2f/staff';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { disputeQueue, serverNow, takeCase, takeNext, type Queue, type QueueRow } from '../api.js';
 import { faultText } from '../refusals.js';
@@ -7,7 +7,7 @@ import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import { isLimitDecider } from './LimitRecommendations.js';
-import { approvalText, codeText, deadline, limitText, span, usdText, xmrShort } from './modModel.js';
+import { QUEUE_STATUS_LABELS, ageChoices, approvalText, codeText, deadline, limitText, oldestWaiting, olderThan, span, usdText, xmrShort, type QueueAge } from './modModel.js';
 import '../ui/staff.css';
 
 type Filter = 'all' | 'mine' | 'free' | 'approval';
@@ -42,17 +42,35 @@ export const takeable = (r: Pick<QueueRow, 'assignee' | 'status'>, role: StaffRo
  * tiles are the API's counts over every open case. The board's waiting rows say how long the first
  * reply took ("Replied in 38 min"); the queue answer does not carry that time, so a replied row
  * says "Replied" with no bar. DESIGNER-REVIEW. Sentences the board does not word are COPY-UNSIGNED.
+ *
+ * Mod polish (no board; DESIGNER-REVIEW, COPY-UNSIGNED): two filters beside the chips, by status
+ * and by how long a case has waited (over 1 hour, over the first-reply time, over 24 hours); a
+ * count badge of the rows shown; and the oldest-waiting timer, the case that has waited longest
+ * for its first reply against the first-reply setting (`settings.firstResponseH`), ticking each
+ * 30 seconds from the API's `waitingMs`.
  */
 export function ModQueue({ role }: { role: StaffRole }) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState<Queue | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [status, setStatus] = useState<string>('');
+  const [age, setAge] = useState<QueueAge>('any');
+  // When the queue was read, so a wait keeps counting between reads.
+  const [loadedAt, setLoadedAt] = useState(() => serverNow().getTime());
+  const [, setTick] = useState(0);
+  const ids = { status: useId(), age: useId() };
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
   const [fault, setFault] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     try {
-      setQueue(await disputeQueue());
+      const q = await disputeQueue();
+      setLoadedAt(serverNow().getTime());
+      setQueue(q);
     } catch (e) {
       setFault(faultText(e, 'The disputes could not be loaded just now. Reload to try again.'));
     }
@@ -87,9 +105,14 @@ export function ModQueue({ role }: { role: StaffRole }) {
   };
 
   const h = queue?.settings.firstResponseH ?? null;
-  const rows = queue?.rows ?? [];
-  const shown = rows.filter((r) => passes(filter, r));
   const now = serverNow();
+  const since = Math.max(0, now.getTime() - loadedAt);
+  // Each row's wait as of now: the API's figure at the read, plus the time since.
+  const rows = (queue?.rows ?? []).map((r) => ({ ...r, waitingMs: r.waitingMs + since }));
+  const narrowed = rows.filter((r) => (status === '' || r.status === status) && olderThan(age, r.waitingMs, h ?? 0));
+  const shown = narrowed.filter((r) => passes(filter, r));
+  const statuses = [...new Set([...Object.keys(QUEUE_STATUS_LABELS).filter((k) => k !== 'complying'), ...rows.map((r) => r.status)])];
+  const oldest = oldestWaiting(rows);
 
   return (
     <section data-screen="mod-queue">
@@ -136,12 +159,39 @@ export function ModQueue({ role }: { role: StaffRole }) {
               <span>Need a second approval</span>
             </li>
           </ul>
+          <OldestWaiting row={oldest} hours={queue.settings.firstResponseH} now={now} />
           <div className="x2f-staff-chips" role="group" aria-label="Show" data-part="queue-filters">
             {FILTERS.map(([id, label]) => (
               <button key={id} type="button" className="x2f-staff-filter" aria-pressed={filter === id} onClick={() => setFilter(id)}>
-                {`${label} (${rows.filter((r) => passes(id, r)).length})`}
+                {`${label} (${narrowed.filter((r) => passes(id, r)).length})`}
               </button>
             ))}
+          </div>
+          <div className="x2f-staff-queue-filters" data-part="queue-more-filters">
+            <label htmlFor={ids.status} className="x2f-sr-only">
+              Status
+            </label>
+            <select id={ids.status} className="x2f-input x2f-staff-queue-filters__select" data-part="queue-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Any status</option>
+              {statuses.map((k) => (
+                <option key={k} value={k}>
+                  {QUEUE_STATUS_LABELS[k] ?? k}
+                </option>
+              ))}
+            </select>
+            <label htmlFor={ids.age} className="x2f-sr-only">
+              How long it has waited
+            </label>
+            <select id={ids.age} className="x2f-input x2f-staff-queue-filters__select" data-part="queue-age" value={age} onChange={(e) => setAge(e.target.value as QueueAge)}>
+              {ageChoices(queue.settings.firstResponseH).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="x2f-staff-count-badge" data-part="queue-badge" aria-label={`${shown.length} of ${rows.length} cases shown`}>
+              {`${shown.length} of ${rows.length}`}
+            </span>
           </div>
           <Table
             label="Disputes"
@@ -208,6 +258,27 @@ export function ModQueue({ role }: { role: StaffRole }) {
         </>
       ) : null}
     </section>
+  );
+}
+
+/** The case that has waited longest for its first reply, against the first-reply setting. COPY-UNSIGNED, DESIGNER-REVIEW */
+function OldestWaiting({ row, hours, now }: { row: QueueRow | null; hours: number; now: Date }) {
+  if (row === null) {
+    return (
+      <p className="x2f-staff-hint" data-part="queue-oldest" data-tone="replied">
+        Every open case has had its first reply.
+      </p>
+    );
+  }
+  const d = deadline(row, hours, now);
+  return (
+    <p className="x2f-staff-oldest" data-part="queue-oldest" data-tone={row.deadlineTone === 'overdue' || Date.parse(row.replyDueAt) <= now.getTime() ? 'overdue' : 'due'}>
+      <span>{'Oldest waiting for a first reply: '}</span>
+      <Link className="x2f-link" to={`/disputes/${row.code}`} data-part="queue-oldest-code">
+        {codeText(row.code)}
+      </Link>
+      <span>{`, waiting ${span(row.waitingMs)}. ${d.text}.`}</span>
+    </p>
   );
 }
 

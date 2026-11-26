@@ -28,13 +28,15 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
 // (test/mySecurity.test.tsx) signs the method it removes by its listed id, and a PGP key by the
 // fingerprint it shows before the tap (the owner taps both keys, owner G4).
 const KEY_TAP_CALLERS: string[] = [
-  'screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/MySecurity.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx',
+  'screens/AccountActions.tsx', 'screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/MySecurity.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx',
   'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'screens/settings/FeeSweepSection.tsx', 'screens/settings/StarterLimitsSection.tsx',
   'ui/ClockOut.tsx', 'ui/DeviceCard.tsx',
 ];
 // Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).
 // Plan 4 Task 26: LimitRecommendations taps `account-limit` (approve or decline), every field shown; reviewed in
 // comms review-lead-p4t26-limits-2026-11-20.md (tap binding, rounds 1-3).
+// Spec 6.6 account actions (wip/lead-staff-actions, for its security review): AccountActions taps
+// `ban-account` (account, ban id, kind, rule and end labelled) and `lift-ban` (account, ban id).
 
 describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
   it('startAuthentication only in KeyTapDialog (the checked tap) and Login (the derived login challenge)', () => {

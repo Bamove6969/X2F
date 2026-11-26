@@ -71,7 +71,7 @@ export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): 
   return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
 }
 
-export type NavItem = 'overview' | 'disputes' | 'past-reputation' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'settings';
+export type NavItem = 'overview' | 'disputes' | 'past-reputation' | 'accounts' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'settings';
 
 /**
  * The perm each menu item's page reads with (the API refuses the page's data without it, whatever
@@ -82,6 +82,9 @@ export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
   disputes: 'disputes.handle',
   // Plan 5 Task 11: the past-reputation claims waiting for a moderator (`GET /staff/v1/past-rep`).
   'past-reputation': 'reputation.review',
+  // Spec 6.6 "Account actions": find a trader and ban, lift or work a hold outside a case
+  // (`GET /staff/v1/accounts/lookup`, accounts.ban; the hold routes' accounts.freeze has the same roles).
+  accounts: 'accounts.ban',
   staff: 'staff.manage',
   performance: 'perf.read',
   prices: 'stats.read',
@@ -98,8 +101,9 @@ export const NAV: Readonly<Record<StaffRole, readonly NavItem[]>> = {
   // draws it yet (DESIGN: not drawn); after Performance, the other figures page, is a lead default.
   // 'past-reputation' (Plan 5 Task 11): no board places it (DESIGN: not drawn); after Disputes, the
   // other moderator queue, is a lead default.
-  owner: ['overview', 'disputes', 'past-reputation', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'],
-  senior: ['disputes', 'past-reputation', 'training', 'log', 'feedback'],
+  // 'accounts' (spec 6.6): no board places it (DESIGN: not drawn); after the queues is a lead default.
+  owner: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'],
+  senior: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'],
   mod: ['disputes', 'past-reputation', 'training', 'log'],
   helper: [],
 };

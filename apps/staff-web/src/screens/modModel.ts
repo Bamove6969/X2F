@@ -185,3 +185,48 @@ export function rulingIntent(
     round1Id: a.round === 2 ? a.round1Id : null,
   };
 }
+
+// Mod polish: the queue's status and age filters and its oldest-waiting timer. COPY-UNSIGNED
+
+/** The queue's statuses as the status filter names them (the API lists open, awaiting-approval and appealed; complying for a lapsed comply time). */
+export const QUEUE_STATUS_LABELS: Readonly<Record<string, string>> = {
+  open: 'Open',
+  'awaiting-approval': 'Waiting for approval',
+  appealed: 'Appealed',
+  complying: 'Seller complying',
+};
+
+export type QueueAge = 'any' | '1h' | 'reply' | '24h';
+
+/** The age filter's choices: over 1 hour, over the first-reply time (when it is neither 1 nor 24), over 24 hours. */
+export function ageChoices(firstResponseH: number): ReadonlyArray<readonly [QueueAge, string]> {
+  const out: Array<readonly [QueueAge, string]> = [['any', 'Any wait'], ['1h', 'Waiting over 1 hour']];
+  if (firstResponseH !== 1 && firstResponseH !== 24) out.push(['reply', `Waiting over ${firstResponseH} hours (the first-reply time)`]);
+  out.push(['24h', 'Waiting over 24 hours']);
+  return out;
+}
+
+/** Whether a row has waited longer than the age filter's span (`waitingMs` as the API measured it, plus the time since). */
+export function olderThan(age: QueueAge, waitingMs: number, firstResponseH: number): boolean {
+  if (age === 'any') return true;
+  const hours = age === '1h' ? 1 : age === '24h' ? 24 : firstResponseH;
+  return waitingMs > hours * H;
+}
+
+/**
+ * The row that has waited longest for its first reply (deadline tone `due` or `overdue`), or null
+ * when every row has had one. Ties go to the earlier reply deadline, then the code.
+ */
+export function oldestWaiting<R extends { code: string; deadlineTone: DeadlineTone; waitingMs: number; replyDueAt: string }>(rows: readonly R[]): R | null {
+  let best: R | null = null;
+  for (const r of rows) {
+    if (r.deadlineTone === 'replied') continue;
+    if (
+      best === null ||
+      r.waitingMs > best.waitingMs ||
+      (r.waitingMs === best.waitingMs && (Date.parse(r.replyDueAt) < Date.parse(best.replyDueAt) || (r.replyDueAt === best.replyDueAt && r.code < best.code)))
+    )
+      best = r;
+  }
+  return best;
+}

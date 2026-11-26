@@ -4,10 +4,12 @@
 // disputes.handle for owner, senior and mod; rulings.approve for owner and senior only.
 import { createHash } from 'node:crypto';
 import { NAV } from '@x2f/staff';
+import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { hhmm } from '../src/screens/modModel.js';
+import { decidesProposal } from '../src/screens/ModCase.js';
+import { ageChoices, hhmm, olderThan, oldestWaiting } from '../src/screens/modModel.js';
 import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
 import { honestTapStart } from './helpers.js';
 
@@ -163,6 +165,82 @@ describe('ModQueue (board ModQueue)', () => {
     expect(screen()).toBeUndefined();
     expect(part('nothing-for-role')).not.toBeNull();
     expect(api.calls.some((c) => c.path.startsWith('/staff/v1/disputes'))).toBe(false);
+  });
+});
+
+describe('ModQueue: status and age filters, the count badge and the oldest-waiting timer (mod polish)', () => {
+  const choose = async (el: Element | null, v: string) => {
+    const sel = el as HTMLSelectElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(sel, v);
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await settle();
+  };
+  const codes = () => rows().map((r) => r.querySelector('[data-part="queue-code"]')?.textContent);
+
+  it('names the case that has waited longest for its first reply, against the first-reply setting', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes': { body: QUEUE } });
+    await open('/disputes');
+    // The overdue row (5 h, past the 4-hour setting) is the oldest of those not yet replied to.
+    expect(text('queue-oldest')).toMatch(/^Oldest waiting for a first reply: M3TB-9HQZ-6WCR-1FXA, waiting 5 h( \d+ min)?\. Overdue by /);
+    expect(part('queue-oldest-code')?.getAttribute('href')).toBe('/disputes/M3TB9HQZ6WCR1FXA');
+    expect(text('queue-badge')).toBe('5 of 5');
+  });
+
+  it('the timer says overdue once the reply deadline has passed, and every case replied to says so', async () => {
+    const late = row({ code: 'M3TB9HQZ6WCR1FXA', deadlineTone: 'overdue', waitingMs: 5 * H, replyDueAt: new Date(Date.now() - H).toISOString() });
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes': { body: { ...QUEUE, rows: [late, row({ code: 'K7M29QXA4FTR8WPN', deadlineTone: 'replied' })] } } });
+    await open('/disputes');
+    expect(text('queue-oldest')).toMatch(/Overdue by 1 h/);
+    expect(part('queue-oldest')?.getAttribute('data-tone')).toBe('overdue');
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: MOD }, 'GET /staff/v1/disputes': { body: { ...QUEUE, rows: [row({ deadlineTone: 'replied' })] } } });
+    await open('/disputes');
+    expect(text('queue-oldest')).toBe('Every open case has had its first reply.');
+  });
+
+  it('filters by status and by age, with the chips and the badge counting what the filters leave', async () => {
+    fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/disputes': { body: QUEUE } });
+    await open('/disputes');
+    const status = part('queue-status');
+    expect([...(status as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['Any status', 'Open', 'Waiting for approval', 'Appealed']);
+    await choose(status, 'appealed');
+    expect(codes()).toEqual(['A9PE-4YJW-2PVK-7DSZ']);
+    expect(text('queue-badge')).toBe('1 of 5');
+    await choose(status, 'open');
+    expect(codes()).toEqual(['M3TB-9HQZ-6WCR-1FXA', '7RWD-3MXE-KQ84-HN2T', 'K7M2-9QXA-4FTR-8WPN']);
+    const age = part('queue-age');
+    expect([...(age as HTMLSelectElement).options].map((o) => o.textContent)).toEqual([
+      'Any wait', 'Waiting over 1 hour', 'Waiting over 4 hours (the first-reply time)', 'Waiting over 24 hours',
+    ]);
+    await choose(age, 'reply');
+    expect(codes()).toEqual(['M3TB-9HQZ-6WCR-1FXA']);
+    expect([...document.querySelectorAll('[data-part="queue-filters"] button')].map((b) => b.textContent)).toEqual([
+      'All open (1)', 'Assigned to you (1)', 'Unassigned (0)', 'Needs approval (0)',
+    ]);
+    await choose(age, '24h');
+    expect(codes()).toEqual([undefined]);
+    expect(rows()[0]!.textContent).toBe('Nothing here right now.');
+    expect(text('queue-badge')).toBe('0 of 5');
+    await choose(status, '');
+    await choose(age, 'any');
+    expect(rows()).toHaveLength(5);
+  });
+
+  it('the age choices and the oldest row, as pure rules', () => {
+    expect(ageChoices(1).map(([k]) => k)).toEqual(['any', '1h', '24h']);
+    expect(ageChoices(24).map(([k]) => k)).toEqual(['any', '1h', '24h']);
+    expect(ageChoices(8).map(([k]) => k)).toEqual(['any', '1h', 'reply', '24h']);
+    expect(olderThan('1h', H, 4)).toBe(false);
+    expect(olderThan('1h', H + 1, 4)).toBe(true);
+    expect(olderThan('reply', 4 * H + 1, 4)).toBe(true);
+    expect(olderThan('any', 0, 4)).toBe(true);
+    const due = (code: string, waitingMs: number, dueIn: number, tone: 'due' | 'overdue' | 'replied' = 'due') => ({ code, waitingMs, deadlineTone: tone, replyDueAt: new Date(1e12 + dueIn).toISOString() });
+    expect(oldestWaiting([due('A', 9 * H, 0, 'replied'), due('B', H, 0)])?.code).toBe('B');
+    expect(oldestWaiting([due('B', H, 5), due('A', H, 5)])?.code).toBe('A');
+    expect(oldestWaiting([due('B', H, 5), due('C', H, 1)])?.code).toBe('C');
+    expect(oldestWaiting([due('A', 9 * H, 0, 'replied')])).toBeNull();
   });
 });
 
@@ -380,6 +458,71 @@ describe('ModCase (board ModCase)', () => {
     await settle();
     await click(button('Send ruling', again));
     expect(document.querySelector('[data-part="key-tap-intent"]')).not.toBeNull();
+  });
+
+  it('mod polish, the send-back gate: only a senior moderator or the owner who did not propose it, and in an appeal only one not involved in round 1', () => {
+    const c = (o: Record<string, unknown> = {}) => ({ status: 'awaiting-approval' as const, proposedByYou: false, round: 1 as 1 | 2, mayWork: true, ruling: { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'p', proposedAt: '' } }, ...o });
+    expect(decidesProposal(c(), 'senior')).toBe(true);
+    expect(decidesProposal(c(), 'owner')).toBe(true);
+    expect(decidesProposal(c(), 'mod')).toBe(false);
+    expect(decidesProposal(c(), 'helper')).toBe(false);
+    expect(decidesProposal(c({ proposedByYou: true }), 'senior')).toBe(false);
+    expect(decidesProposal(c({ proposedByYou: true }), 'owner')).toBe(false);
+    expect(decidesProposal(c({ round: 2, mayWork: false }), 'senior')).toBe(false);
+    expect(decidesProposal(c({ round: 2, mayWork: true }), 'senior')).toBe(true);
+    // Round 1: mayWork (the assignee's tools) does not decide it.
+    expect(decidesProposal(c({ mayWork: false }), 'senior')).toBe(true);
+    for (const status of ['open', 'published', 'appealed', 'closed']) expect(decidesProposal(c({ status }), 'owner'), status).toBe(false);
+    expect(decidesProposal(c({ ruling: { proposal: null } }), 'owner')).toBe(false);
+  });
+
+  it('mod polish: a send-back needs a note (not only spaces), can be dropped, sends the note as typed and reloads the case', async () => {
+    const waiting = kase(
+      { status: 'awaiting-approval', assignedToYou: false, assignee: 'dmitri_k' },
+      { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'p', proposedAt: new Date().toISOString() }, draft: { id: 'r1', outcome: 'refund-to-seller' } },
+    );
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: SENIOR },
+      'GET /staff/v1/disputes/:code': { body: waiting },
+      'POST /staff/v1/disputes/:code/rulings/:id/send-back': { body: { code: CODE, ruling: { proposal: null, sentBack: null } } },
+    });
+    await open(`/disputes/${CODE}`);
+    await click(button('Send back', part('approve')!));
+    expect(text('send-back-hint')).toBe('Required. Staff see this note; the traders do not. The case goes back to the moderator who proposed it.');
+    expect(field('Note for the moderator').maxLength).toBe(1000);
+    const send = () => button('Send back to the moderator')!;
+    expect(send().disabled).toBe(true);
+    typeInto(field('Note for the moderator'), '   ');
+    await settle();
+    expect(send().disabled).toBe(true);
+    await click(button('Keep the proposal'));
+    expect(part('send-back-form')).toBeNull();
+    await click(button('Send back', part('approve')!));
+    expect((field('Note for the moderator') as HTMLTextAreaElement).value).toBe('');
+    typeInto(field('Note for the moderator'), '  Ask for the bank reference.');
+    await settle();
+    const loads = api.calls.filter((c) => c.path === `/staff/v1/disputes/${CODE}`).length;
+    await click(send());
+    expect(api.calls.filter((c) => c.path.endsWith('/send-back')).map((c) => c.body)).toEqual([{ note: '  Ask for the bank reference.' }]);
+    expect(api.calls.filter((c) => c.path === `/staff/v1/disputes/${CODE}`).length).toBe(loads + 1);
+  });
+
+  it('mod polish: a send-back the API refuses because the case moved on says so', async () => {
+    const waiting = kase(
+      { status: 'awaiting-approval', assignedToYou: false, assignee: 'dmitri_k' },
+      { proposal: { rulingId: 'r1', reason: REASON, evidence: [], proposer: 'p', proposedAt: new Date().toISOString() }, draft: { id: 'r1', outcome: 'refund-to-seller' } },
+    );
+    fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      'GET /staff/v1/disputes/:code': { body: waiting },
+      'POST /staff/v1/disputes/:code/rulings/:id/send-back': refused(409, 'wrong-state'),
+    });
+    await open(`/disputes/${CODE}`);
+    await click(button('Send back', part('approve')!));
+    typeInto(field('Note for the moderator'), 'Ask for the bank reference.');
+    await settle();
+    await click(button('Send back to the moderator'));
+    expect(part('approve')!.textContent).toContain('The case changed meanwhile. Reload it.');
   });
 
   it('a moderator never sees the approval panel of a waiting ruling (rulings.approve is owner and senior only)', async () => {

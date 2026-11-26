@@ -27,6 +27,7 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
 import { staffBanRoutes } from './bans.js';
+import { staffAccountLookupRoutes } from './accountLookup.js';
 import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffReviewDisputeRoutes } from './reviewDisputes.js';
@@ -195,6 +196,8 @@ export async function buildStaffApi(
   staffLimitRoutes(app);
   // Plan 4 Task 27: ban stages, placed and lifted by a key tap.
   staffBanRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
+  // Spec 6.6 "Account actions": the staff Accounts page finds a trader by display name or trade code.
+  staffAccountLookupRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
