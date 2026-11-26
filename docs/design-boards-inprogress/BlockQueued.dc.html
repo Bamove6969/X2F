@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Block queued change</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="Main.dc.html" aria-label="Close" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a>
+    <h1 style="margin: 0; flex-grow: 1; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Changes on hold</h1>
+    <span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <aside aria-label="Superseded board" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 6px; border: 2px dashed var(--line); font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;">Superseded</span>
+      <span style="font-weight: 600;">Superseded by the owner&#39;s hold model (2 Nov): everyone is logged out during a hold, so there is nothing to block. Kept for reference only.</span>
+    </aside>
+    <section aria-labelledby="bq-alert" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--danger); background: var(--surface);">
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>Security alert</span>
+      <h2 id="bq-alert" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code was used to log in</h2>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">On <span style="font-weight: 600;">Firefox, Linux</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">1 Nov 2026, 13:58 UTC</span>. That device is on a 24-hour hold. Nothing it changes takes effect before <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">2 Nov 2026, 13:58 UTC</span>.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">If you don&#39;t recognise a change below, block it.</p>
+    </section>
+
+    <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; gap: 8px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--escrow); background: var(--surface);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{noteTitle}}</span>
+          <span style="font-size: 15px; line-height: 22px;">{{noteText}}</span>
+          <sc-if value="{{noteOut}}" hint-placeholder-val="{{false}}"><span style="font-size: 15px; line-height: 22px;">Firefox, Linux was logged out.</span></sc-if>
+        </span>
+      </div>
+    </sc-if>
+
+    <section aria-labelledby="bq-list" style="display: flex; flex-direction: column; gap: 8px;">
+      <h2 id="bq-list" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{listHead}}</h2>
+      <ul style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
+        <sc-for list="{{changes}}" as="c" hint-placeholder-count="3">
+          <li style="{{c.rowStyle}}">
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span style="{{c.titleStyle}}">{{c.title}}</span>
+              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{c.detail}}</span>
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.meta}}</span>
+            </span>
+            <sc-if value="{{c.open}}" hint-placeholder-val="{{true}}">
+              <button type="button" aria-label="{{c.blockLabel}}" onClick="{{c.ask}}" style="height: 44px; flex-shrink: 0; padding: 0 16px; border-radius: 12px; border: 2px solid var(--danger); background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Block</button>
+            </sc-if>
+            <sc-if value="{{c.blocked}}" hint-placeholder-val="{{false}}">
+              <span style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Blocked</span>
+            </sc-if>
+          </li>
+        </sc-for>
+      </ul>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Changes you don&#39;t block take effect when the hold ends.</p>
+      <aside aria-label="Open for the owner: blocking and the hold" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">When a change is blocked, what happens to the hold?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Blocking ends the hold</li>
+          <li>Blocking extends the hold</li>
+        </ul>
+      </aside>
+      <aside aria-label="Open for the owner: hold ending early" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">If the hold ends early, do the waiting changes apply right away?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Yes, they apply as soon as the hold ends</li>
+          <li>No, they still wait until 2 Nov 2026, 13:58 UTC</li>
+        </ul>
+      </aside>
+    </section>
+
+    <p style="margin: 0; font-size: 15px; line-height: 22px;">None of this was you? <a href="Compromised.dc.html" style="color: var(--monero-ink); padding: 14px 0;">My account has been compromised</a></p>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 18px; font-weight: 600; text-decoration: none;">Done</a>
+  </footer>
+
+  <sc-if value="{{asking}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="bq-ask-t" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <h2 id="bq-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Block this change?</h2>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: 12px; background: var(--surface-raised);">
+          <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{askTitle}}</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{askDetail}}</span>
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{askMeta}}</span>
+        </div>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
+        <sc-if value="{{ruleChoose}}" hint-placeholder-val="{{false}}">
+          <label for="bq-out" style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer;">
+            <input id="bq-out" type="checkbox" checked="{{logout}}" onChange="{{toggleLogout}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
+            <span style="display: flex; flex-direction: column;">Also log that device out<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Firefox, Linux would need your approval to log in again.</span></span>
+          </label>
+        </sc-if>
+        <sc-if value="{{ruleAlways}}" hint-placeholder-val="{{true}}">
+          <p style="display: flex; gap: 12px; margin: 0; font-size: 16px; line-height: 24px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/></svg><span style="display: flex; flex-direction: column;">That device is logged out too<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Firefox, Linux will need your approval to log in again.</span></span></p>
+        </sc-if>
+        <aside aria-label="Open for the owner: log the device out" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+          <span style="font-weight: 600;">Also log that device out?</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>Always</li>
+            <li>User chooses (checkbox)</li>
+            <li>Never</li>
+          </ul>
+          <span style="color: var(--ink-muted);">Preview with the logoutRule tweak. Showing: {{logoutRuleName}}</span>
+        </aside>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Block change</button>
+          <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1540}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.fromStep(props.step); }
+  fromStep(step) {
+    if (step === 'confirm') return { blocked: [], ask: 'wallet', logout: false, last: null, out: false };
+    if (step === 'blocked') return { blocked: ['wallet'], ask: null, logout: false, last: 'wallet', out: false };
+    return { blocked: [], ask: null, logout: false, last: null, out: false };
+  }
+  componentDidUpdate(prev) { if (prev.step !== this.props.step) this.setState(this.fromStep(this.props.step)); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+    const ALL = [
+      { id: 'passkey', title: 'New login method added', detail: 'Passkey on Firefox, Linux', time: '14:05 UTC', text: "The passkey won't be added, so it can't be used to log in." },
+      { id: 'wallet', title: 'Payout wallet changed', detail: 'New wallet 84Fq…k3Wd', time: '14:11 UTC', text: 'Your payouts keep going to your current wallet.' },
+      { id: 'password', title: 'Password changed', detail: 'Your old password stops working', time: '14:19 UTC', text: 'Your current password keeps working.' }
+    ];
+    const isBlocked = (id) => s.blocked.indexOf(id) >= 0;
+    const waiting = ALL.filter((c) => !isBlocked(c.id)).length;
+    const changes = ALL.map((c, i) => ({
+      title: c.title, detail: c.detail, meta: 'Firefox, Linux · ' + c.time,
+      open: !isBlocked(c.id), blocked: isBlocked(c.id),
+      blockLabel: 'Block: ' + c.title,
+      ask: () => this.setState({ ask: c.id, logout: false }),
+      titleStyle: 'font-size: 16px; line-height: 24px; font-weight: 600;' + (isBlocked(c.id) ? ' text-decoration: line-through; color: var(--ink-muted);' : ''),
+      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 14px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+    }));
+    const target = ALL.find((c) => c.id === s.ask);
+    const last = ALL.find((c) => c.id === s.last);
+    // Logging the device out is OPEN for the owner (logoutRule tweak).
+    const RULES = ['always', 'user-chooses', 'never'];
+    const rule = RULES.indexOf(this.props.logoutRule) >= 0 ? this.props.logoutRule : 'always';
+    const NAMES = { always: 'Always', 'user-chooses': 'User chooses (checkbox)', never: 'Never' };
+    const willOut = rule === 'always' || (rule === 'user-chooses' && s.logout);
+    const wasOut = rule === 'always' ? !!last : (rule === 'never' ? false : s.out);
+    return {
+      rootStyle, changes,
+      ruleAlways: rule === 'always', ruleChoose: rule === 'user-chooses',
+      logoutRuleName: NAMES[rule],
+      listHead: waiting === 1 ? 'Waiting · 1 change' : 'Waiting · ' + waiting + ' changes',
+      hasNote: !!last,
+      noteTitle: last ? 'Blocked: ' + last.title : '',
+      noteText: last ? last.text : '',
+      noteOut: !!last && wasOut,
+      asking: !!target,
+      askTitle: target ? target.title : '',
+      askDetail: target ? target.detail : '',
+      askMeta: target ? 'Firefox, Linux · ' + target.time : '',
+      askText: target ? "It won't take effect. " + target.text : '',
+      logout: s.logout,
+      toggleLogout: () => this.setState({ logout: !s.logout }),
+      confirm: () => { if (target) this.setState({ blocked: s.blocked.concat([target.id]), ask: null, last: target.id, out: s.out || willOut }); },
+      cancel: () => this.setState({ ask: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Waiting for the seller (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+summary::-webkit-details-marker{display:none}
+details[open] .bpw-chev{transform:rotate(180deg)}
+button,a,summary{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+  </nav>
+
+  <div style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+      <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <div style="display: flex; flex-direction: column;">
+        <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Buying from satoshi_ghost</span>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+      </div>
+    </div>
+
+    <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 944px; margin: -8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+          <span style="{{s.labelStyle}}">{{s.label}}</span>
+        </li>
+      </sc-for>
+    </ol>
+
+    <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: stretch;">
+      <main style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section role="status" aria-labelledby="bpw-title" style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>{{chip}}</span>
+            <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <h1 id="bpw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">{{title}}</h1>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{lead}}</p>
+          </div>
+          <div style="height: 1px; background: color-mix(in srgb, var(--caution) 25%, transparent);"></div>
+          <div aria-label="Time for the seller to confirm" style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+              <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time left to confirm</span>
+              <sc-if value="{{inWindow}}" hint-placeholder-val="{{true}}">
+                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerH}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerM}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+              </sc-if>
+              <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
+                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">0</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+              </sc-if>
+              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Zelle gets 2 hours · ends <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">1 Nov 2026, 16:05 UTC</span></span>
+            </div>
+            <svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="{{ringLabel}}" style="flex-shrink: 0;">
+              <circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-opacity="0.2" stroke-width="5"/>
+              <circle style="{{ringArcStyle}}" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{ringDash}}" transform="rotate(-90 32 32)"/>
+            </svg>
+          </div>
+        </section>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <sc-if value="{{canNudge}}" hint-placeholder-val="{{true}}">
+              <button type="button" onClick="{{nudge}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
+                <svg style="color: var(--caution);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
+                Nudge satoshi_ghost
+              </button>
+            </sc-if>
+            <sc-if value="{{nudged}}" hint-placeholder-val="{{false}}">
+              <p role="status" style="margin: 0; display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 15px; line-height: 22px; color: var(--ink-muted);"><svg style="flex-shrink: 0; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg><span>Nudge sent. You can send another in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">10</span> min.</span></p>
+            </sc-if>
+            <span style="flex-grow: 1;"></span>
+            <sc-if value="{{disputeLocked}}" hint-placeholder-val="{{true}}">
+              <button type="button" disabled aria-describedby="bpw-dispute-when" style="height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Open a dispute</button>
+            </sc-if>
+            <sc-if value="{{disputeSoft}}" hint-placeholder-val="{{false}}">
+              <a href="DisputeOpen.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--danger); font-size: 15px; font-weight: 600; text-decoration: none;">Open a dispute<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+            </sc-if>
+            <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
+              <a href="DisputeOpen.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); font-size: 16px; font-weight: 600; text-decoration: none;">Open a dispute</a>
+            </sc-if>
+          </div>
+          <sc-if value="{{disputeLocked}}" hint-placeholder-val="{{true}}">
+            <span id="bpw-dispute-when" style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: right;">Available from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14:35 UTC</span> · in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">28</span> min</span>
+          </sc-if>
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">You can't cancel after marking as paid. Tapped it by mistake? Explain in chat or open a dispute.</p>
+        </div>
+
+        <section aria-labelledby="bpw-next" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <h2 id="bpw-next" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happens next</h2>
+          <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 22px;">
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">1</span><span>satoshi_ghost checks their Zelle for <strong style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</strong> with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span></li>
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>When they release, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR reaches your wallet within seconds. Your app co-signs by itself.</span></li>
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If something goes wrong, you can open a dispute from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:35 UTC</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> minutes after you marked it as paid. A moderator checks the chat and proof, then decides.</span></li>
+          </ol>
+          <a href="#bpw-chat" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; margin: -4px 0 -10px -8px; padding: 0 8px; align-self: flex-start; border-radius: 12px; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message satoshi_ghost in chat</a>
+        </section>
+
+        <details style="border-radius: 16px; background: var(--surface);">
+          <summary style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 0 20px; font-size: 16px; line-height: 22px; font-weight: 600; cursor: pointer; list-style: none;">Your payment<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; color: var(--ink-muted);"><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">$412.50</span> · Zelle</span><svg class="bpw-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+          <dl style="margin: 0 20px 20px; display: grid; grid-template-columns: 1fr 1fr; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;"><dt style="color: var(--ink-muted);">Sent to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">[SELLER ZELLE ID]</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-top: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">For</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-top: 1px solid var(--surface); border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Marked as paid</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">1 Nov 2026, 14:05 UTC</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-top: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Payment proof</dt><dd style="margin: 0; font-size: 15px;">1 screenshot, blurred</dd></div>
+          </dl>
+        </details>
+      </main>
+
+      <aside id="bpw-chat" aria-labelledby="bpw-chat-t" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); min-height: 0;">
+        <div style="display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--surface-raised);">
+          <h2 id="bpw-chat-t" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Chat</h2>
+        </div>
+        <div aria-hidden="true" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; flex-grow: 1;">
+          <span style="align-self: flex-start; width: 75%; height: 44px; border-radius: 12px; background: var(--surface-raised);"></span>
+          <span style="align-self: flex-end; width: 55%; height: 44px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line);"></span>
+          <span style="align-self: flex-end; width: 65%; height: 66px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line);"></span>
+        </div>
+        <div aria-hidden="true" style="display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--surface-raised);">
+          <span style="flex-grow: 1; height: 48px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised);"></span>
+          <span style="width: 48px; height: 48px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line);"></span>
+        </div>
+      </aside>
+    </div>
+
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; max-width: 944px; padding-top: 24px; border-top: 1px solid var(--line);">
+      <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <aside aria-label="Decided by the owner: when the buyer can open a dispute" style="display: flex; flex-direction: column; gap: 6px; max-width: 560px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Dispute opens 30 minutes after I've paid (payments like Interac can take up to 30 min to arrive). Preview before and after with the window tweak.</span>
+    </aside>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"window":{"editor":"enum","options":["in-window","after-30-min","ended"],"default":"in-window"},"$preview":{"width":1280,"height":1234}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { nudged: false }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const ended = this.props.window === 'ended';
+    // Owner, 2 Nov: the buyer can open a dispute 30 min after I've paid (paid 14:05 UTC, so from 14:35 UTC).
+    const after30 = this.props.window === 'after-30-min';
+    const H = ended ? 1200 : (this.props.window === 'after-30-min' ? 1208 : 1234);
+    const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    // Stepper (buyer labels): "Seller checks" is current; its bar fills as the 2-hour window runs.
+    const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];
+    const current = 2;
+    const steps = STEP_LABELS.map((label, i) => ({
+      label,
+      current: i === current ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (ended ? 100 : (after30 ? 27 : 2)) + '%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
+    const C = 2 * Math.PI * 27;
+    const left = ended ? 0 : (after30 ? 88 : 118) / 120;
+    return {
+      rootStyle, steps,
+      inWindow: !ended,
+      ended,
+      chip: ended ? 'Paid · not confirmed in time' : 'Paid',
+      title: ended ? 'satoshi_ghost hasn’t confirmed in time' : 'Paid · waiting for satoshi_ghost to confirm',
+      lead: ended
+        ? 'Their 2 hours to check Zelle ended at 16:05 UTC. The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.'
+        : 'You marked this trade as paid at 14:05 UTC. satoshi_ghost has been told and has up to 2 hours to check Zelle and release.',
+      ringDash: (C * left).toFixed(1) + ' ' + C.toFixed(1),
+      ringArcStyle: 'color: var(--caution);' + (ended ? ' opacity: 0;' : ''),
+      ringLabel: ended ? 'No time left to confirm' : (after30 ? '88' : '118') + ' of 120 minutes left to confirm',
+      timerH: '1', timerM: after30 ? '28' : '58',
+      disputeLocked: !ended && !after30,
+      disputeSoft: after30,
+      canNudge: !this.state.nudged,
+      nudged: this.state.nudged,
+      nudge: () => this.setState({ nudged: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

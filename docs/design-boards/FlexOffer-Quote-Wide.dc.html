@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buy XMR: flexible offers (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Zelle offers</span></div>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+
+  <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">USD · market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">$329.90</span> / XMR</span>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buy XMR</h1>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span>
+    </div>
+
+    <div style="display: flex; align-items: flex-end; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <label for="amt-w" style="display: flex; flex-direction: column; gap: 8px; width: 240px; flex-shrink: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You pay
+        <span style="{{amtStyle}}">
+          <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 400; color: var(--ink-muted);">$</span>
+          <input id="amt-w" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help-w" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500; letter-spacing: 0; outline: none;">
+          <span style="font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted);">USD</span>
+        </span>
+      </label>
+      <label for="pay-with-w" style="display: flex; flex-direction: column; gap: 8px; width: 220px; flex-shrink: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with
+        <select id="pay-with-w" value="{{method}}" onChange="{{onMethod}}" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          <option value="zelle">Zelle</option><option value="paypal">PayPal</option><option value="cashapp">Cash App</option><option value="ach">Bank transfer (ACH)</option>
+        </select>
+      </label>
+      <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
+        <span id="amt-help-w" style="flex: 1; padding-bottom: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{forLine}}. You have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3</span> completed trades; some offers ask for more on bigger trades.</span>
+      </sc-if>
+      <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
+        <span id="amt-help-w" role="alert" style="flex: 1; display: flex; gap: 6px; padding-bottom: 6px; font-size: 14px; line-height: 20px; color: var(--danger);"><svg style="flex-shrink: 0; margin-top: 2px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>Enter an amount to see each offer's price.</span>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
+      <label style="position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer;"><input type="checkbox" checked="{{wm.on}}" onChange="{{wm.toggle}}" style="position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0;"><span aria-hidden="true" style="{{wm.box}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Display amounts including vendor markup</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{wm.hint}}</span></span></label>
+      <div role="table" aria-label="Offers" style="display: flex; flex-direction: column; gap: 8px;">
+        <div role="row" style="display: grid; grid-template-columns: 232px 120px 128px minmax(0, 1fr) 156px; gap: 12px; padding: 0 21px 4px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+          <span role="columnheader">Trader</span><span role="columnheader">Your price</span><span role="columnheader">You get</span><span role="columnheader">Band and methods</span><span role="columnheader"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Action</span></span>
+        </div>
+        <sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
+          <div role="row" style="{{c.cardStyle}}">
+            <div style="display: grid; grid-template-columns: 232px 120px 128px minmax(0, 1fr) 156px; gap: 12px; align-items: center;">
+              <span role="cell" style="display: flex; flex-direction: column; gap: 12px; min-width: 0;"><span style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="{{c.avatarStyle}}">{{c.init}}<sc-if value="{{c.online}}" hint-placeholder-val="{{true}}"><span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></sc-if></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0;"><span style="{{c.nameStyle}}">{{c.name}}</span><sc-if value="{{c.vendor}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><sc-if value="{{c.online}}" hint-placeholder-val="{{true}}"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Online · </span></sc-if><sc-for list="{{c.statParts}}" as="sp" hint-placeholder-count="5"><span style="{{sp.style}}">{{sp.t}}</span></sc-for></span></span></span><sc-if value="{{c.hasChips}}" hint-placeholder-val="{{true}}"><span style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><sc-for list="{{c.featured}}" as="b" hint-placeholder-count="2"><button type="button" aria-haspopup="dialog" aria-label="{{b.label}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></button></sc-for><sc-if value="{{c.hasMore}}" hint-placeholder-val="{{false}}"><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="{{c.moreLabel}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+{{c.moreCount}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></sc-if></span></sc-if></span>
+              <span role="cell" style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="{{c.priceStyle}}">{{c.priceText}}</span>
+                <span style="margin-top: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; flex-shrink: 0;"><span style="{{c.amt.markStyle}}">{{c.amt.mark}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{c.amt.markLabel}}</span></span></span>
+              </span>
+              <span role="cell" style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 500;">{{c.xmrText}}</span> <span style="font-size: 14px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Releases in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rel}}</span> min</span>
+              </span>
+              <span role="cell" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-size: 12px; line-height: 16px;">{{c.bandCap}}</span><span style="display: grid; grid-template-columns: auto auto; justify-content: start; column-gap: 6px; row-gap: 2px; font-size: 13px; line-height: 20px; color: var(--ink); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">{{c.amt.xmr}}</span><span style="font-size: 13px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="{{c.amt.fiatStyle}}">{{c.amt.fiat}}</span><span style="font-size: 13px; font-weight: 600; color: var(--ink-muted);">USD</span></span><span><sc-if value="{{c.tierHas}}" hint-placeholder-val="{{true}}"></sc-if><sc-if value="{{c.tierNone}}" hint-placeholder-val="{{false}}">No band for this amount</sc-if></span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
+              <span role="cell" style="display: flex; justify-content: flex-end;">
+                <sc-if value="{{c.ok}}" hint-placeholder-val="{{true}}">
+                  <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="{{c.btnStyle}}">Request to buy XMR</button>
+                </sc-if>
+                <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
+                  <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink-muted);">Not available</span>
+                </sc-if>
+              </span>
+            </div>
+            <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+                <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+                <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-weight: 600;">Not available to you. </span>{{c.reason}}</p>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{hasHidden}}" hint-placeholder-val="{{false}}">
+          <p style="margin: 0; padding: 12px 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">{{hiddenLine}}</p>
+        </sc-if>
+        <p style="margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">You pay no X2F fee when you take an offer.</p>
+      </div>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+      <section role="dialog" aria-modal="true" aria-labelledby="take-title-w" style="width: 480px; box-sizing: border-box; padding: 28px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <h2 id="take-title-w" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{sheet.title}}</h2>
+          <button type="button" aria-label="Close" onClick="{{closeSheet}}" style="display: flex; width: 44px; height: 44px; margin-right: -12px; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="take-method-w" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with</label>
+          <select id="take-method-w" value="{{takeMethod}}" onChange="{{onTakeMethod}}" aria-describedby="take-adj-w" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+            <sc-for list="{{sheet.options}}" as="o" hint-placeholder-count="2">
+              <option value="{{o.id}}" disabled="{{o.disabled}}">{{o.label}}</option>
+            </sc-for>
+          </select>
+          <span id="take-adj-w" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{sheet.adjLine}}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">You pay</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{sheet.pay}}</span></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 56px; padding: 6px 14px; font-size: 14px; line-height: 20px;"><span style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--ink-muted);">Price</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{sheet.price}}</span></span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: right;">{{sheet.tier}}</span></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px;">
+            <span style="font-size: 16px; font-weight: 600;">You get</span>
+            <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em;">{{sheet.xmr}}</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">{{sheet.instrTitle}}</span>
+          <p style="margin: 0; font-size: 15px; line-height: 22px;">{{sheet.instr}}</p>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
+          <button type="button" onClick="{{closeSheet}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
+          <a href="BuyQuote.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Request to buy XMR</a>
+        </div>
+        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Next you pick which wallet gets paid. Taking an offer is free.</span>
+      </section>
+    </div>
+  </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; margin-left: 240px; padding: 24px 48px 48px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The market price, sellers and prices are examples.</p>
+      <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px;">Tapping a badge or +N opens the badge sheet, see <a href="OfferAd.dc.html">OfferAd</a>.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: band limits on each row set in mono; the OfferAd link takes the link colour. Trader blocks and badges unchanged.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #11 (ad amounts).</strong> Each row: markup bottom-left of the price (the total for your band and method: "+0.6%" mono over "Vendor markup", or "incl. Zelle +0.3%" when the method adds to it) and the band that fits your amount on two rows in mono, figures right-aligned: the range in XMR and the range in USD. The vendor set these bands in USD, so the XMR row is converted ("≈"). "Display amounts including vendor markup" sits above the list (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">withMarkup</span> tweak, showing: {{wm.state}}; default off): off converts at the market rate, on at each offer's price for your band. Caption over the rows: "Your band" (tiered), "Limits" (one band), "Trades only" (no band for your amount, whole range shown).</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-right: 6px; border-radius: 6px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;">Anticipated · design, 8 Nov</span>Follows owner #3: "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC" under the title, where the market price shows (no provider named, Q34).</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "Display amounts including vendor markup" (owner's words), "Converted at the market rate, before markup.", "Converted at each offer's price, markup included.", "Vendor markup", "incl. Zelle +0.3%" (was "… above market · incl. Zelle +0.3%"), "Your band", "Limits", "Trades only", "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC".</p>
+  <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><strong>8 Nov follow-up: one set of facts for satoshi_ghost's offer.</strong> Bands <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500.01 – $1,500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span> (BuyQuote's), market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span>, so his markup is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span> (was <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.1%</span>). His first band was <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$20 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+1.0%</span>; it is now <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span>; band 2 stays <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.6%</span> (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span>). Markups under <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> show two decimals.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
+    <aside aria-label="Decided by the owner: ad button wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov (ad button)</span>
+      <span style="font-weight: 600;">Buttons that start a trade ask rather than promise: "Request to buy XMR", as on OfferAd. Drawn 9 Nov on the list buttons. COPY-UNSIGNED.</span>
+    </aside>
+    <aside aria-label="Decided by design: price wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · design ruling, 9 Nov (lead msg 11)</span>
+      <span style="font-weight: 600;">One price form everywhere: "0.4% above market", "0.5% below market", "at market" (at the start of a line: "At market"). Up to two decimals, trailing zeros trimmed (0.40 → 0.4, 0.03 stays). Replaces "+0.4%" over "Vendor markup" and "+0.40% markup".</span>
+    </aside>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>Card price block, 10 Nov.</strong> Bottom-left of each card: the percent in mono (15/20 500, --escrow; --ink-muted on an unavailable card) over the words "above market" / "below market" (12/16 ink-muted), read together as "0.4% above market". At market: one line, "At market". An XMR-set band shows its XMR range first, then "≈ <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$33 – $330</span>" in whole units, mono, --ink-muted (was ink with cents). COPY-UNSIGNED.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>Payment-method change, 10 Nov.</strong> The "Takes" chips and the request sheet read "Zelle · 0.3% more" / "Bank transfer (ACH) · 0.2% less" (was "Zelle +0.3%"); the sheet line reads "Zelle adds 0.3% to kettle.moss’s price." / "Bank transfer (ACH) takes 0.2% off mira.k’s price." A card no longer says "incl. Zelle +0.3%" under the percent: the chip carries it. Sample XMR-set band: lowtide_rx trades <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.100000 – 1.000000</span> XMR (≈ <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$33 – $330</span> at the market rate); the not-available box reads "lowtide_rx trades 0.100000 – 1.000000 XMR only (≈ $33 – $330)." COPY-UNSIGNED.</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":1280,"height":2343}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { amount: '600', method: 'zelle', takeId: null, takeMethod: 'zelle' };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // App in its own relative block so the sheet scrim covers only the app; design notes sit below it.
+    const appStyle = 'position: relative; flex-shrink: 0; min-height: 800px; display: flex;';
+
+    const MARKET = 329.90, MINE = 3;
+    const OFFERS = [
+      { id: 'sg', name: 'satoshi_ghost', init: 'SG', feat: ['trusted', 'fast'], more: 3, online: true, stats: '1,284 trades · 99.4% positive', rel: 8,
+        tiers: [{ from: 50, to: 500, m: 0.03, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the phone number in the trade room. Put the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
+          { id: 'cashapp', name: 'Cash App', adj: 0.5, instr: 'Cash App to the $cashtag in the trade room. Trade code in the note.' }
+        ] },
+      { id: 'mk', name: 'mira.k', init: 'MK', vendor: false, feat: ['trusted', 'pgp'], more: 3, online: true, stats: '212 trades · 99% positive', rel: 6,
+        tiers: [{ from: 50, to: 300, m: 0.8, min: 0 }, { from: 300.01, to: 2000, m: 0.3, min: 10 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle from a bank account in your own name. Trade code in the memo, nothing else.' },
+          { id: 'ach', name: 'Bank transfer (ACH)', adj: -0.2, instr: 'ACH to the account in the trade room. It can take 1 to 3 business days.' }
+        ] },
+      { id: 'km', name: 'kettle.moss', init: 'KM', feat: ['pgp'], more: 0, online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', rel: 20,
+        tiers: [{ from: 100, to: 3000, m: 0.5, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0.3, instr: 'Zelle only. Put the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 2.5, instr: 'PayPal from your own account. Trade code in the note.' }
+        ] },
+      { id: 'nw', name: 'nightowl_44', init: 'NO', feat: ['hw', 'veteran'], more: 0, online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', rel: 15,
+        tiers: [{ from: 50, to: 250, m: 0.2, min: 0 }, { from: 250.01, to: 5000, m: 0.1, min: 25 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the number in the trade room. Trade code in the memo.' },
+          { id: 'cashapp', name: 'Cash App', adj: 0, instr: 'Cash App to the $cashtag in the trade room.' }
+        ] },
+      { id: 'lt', name: 'lowtide_rx', init: 'LR', feat: ['fresh'], more: 0, online: true, stats: '12 trades · 100% positive', rel: 30,
+        // Lead msg 11 sample: an XMR-set band (0.1 – 1 XMR); its USD edges at market are for matching the typed amount.
+        xmrSet: [0.1, 1], tiers: [{ from: 32.99, to: 329.90, m: 0.9, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle with the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 1.5, instr: 'PayPal from your own account.' }
+        ] }
+    ];
+
+
+    // Badge set, as on the Badges board (7 Nov): family tone, stroke glyph or milestone number, meaning. Draft copy.
+    const BADGES = {
+      trusted: { name: 'Trusted', tone: 'escrow', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4', meaning: '200+ trades and 98%+ positive.' },
+      clean: { name: 'Clean record', tone: 'escrow', d: 'M3 12a9 9 0 1018 0a9 9 0 10-18 0M8 12.5l2.8 2.8L16.5 9', meaning: 'No lost disputes in 100 trades.' },
+      veteran: { name: 'Veteran', tone: 'escrow', d: 'M7 9a5 5 0 1010 0a5 5 0 10-10 0M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5', meaning: 'Trading on X2F for over a year.' },
+      fast: { name: 'Fast', tone: 'caution', d: 'M13 2L4 14h7l-1 8 9-12h-7z', meaning: 'Usually pays or releases within 10 min.' },
+      pgp: { name: 'PGP verified', tone: 'ink', d: 'M4 15a4 4 0 108 0a4 4 0 10-8 0M11 12l9-9M17 6l3 3', meaning: 'Logs in with a verified PGP key.' },
+      hw: { name: 'Security key', tone: 'ink', d: 'M9.5 2.5h5A1.5 1.5 0 0116 4v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 9V4a1.5 1.5 0 011.5-1.5zM6.5 10.5h11V15a5.5 5.5 0 01-11 0zM12 14v2.5', meaning: 'Protects the account with a hardware key.' },
+      m100: { name: '100 trades', tone: 'ink', num: '100', meaning: 'Completed 100 trades.' },
+      m500: { name: '500 trades', tone: 'ink', num: '500', meaning: 'Completed 500 trades.' },
+      fresh: { name: 'New', tone: 'ink-muted', d: 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5z', meaning: 'Joined in the last 30 days.' }
+    };
+    const sealStyle = (tone, size) => 'display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: ' + (size === 40 ? 12 : 999) + 'px; background: color-mix(in srgb, var(--' + tone + ') 16%, var(--surface-raised)); border: ' + (size === 40 ? 1.5 : 1) + 'px solid color-mix(in srgb, var(--' + tone + ') 55%, transparent); color: var(--' + tone + ');';
+    const badge = (key, earned, tap) => {
+      const b = BADGES[key];
+      return {
+        key, name: b.name, meaning: b.meaning, d: b.d || '', num: b.num || '', isIcon: !b.num, isNum: !!b.num,
+        seal22: sealStyle(b.tone, 22), seal40: sealStyle(b.tone, 40),
+        chipStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--' + b.tone + ') 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;',
+        label: b.name + ' badge: ' + b.meaning,
+        earnPre: earned ? earned[0] : '', earnDate: earned ? earned[1] : '',
+        tap: tap || (() => {})
+      };
+    };
+    const avatarStyle = (size, ring) => 'position: relative; display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: " + (size === 48 ? 17 : 15) + 'px; font-weight: 700; letter-spacing: -0.01em;';
+    const moreStyle = (active) => 'display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: ' + (active ? '2px solid var(--ink)' : '1px solid var(--line)') + '; background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;';
+    const s = this.state;
+    const variant = this.props.variant === 'hidden' ? 'hidden' : 'greyed';
+    const amt = parseFloat(String(s.amount).replace(/[^0-9.]/g, ''));
+    const valid = !isNaN(amt) && amt > 0;
+    const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+    const usd2 = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Price wording (lead msg 11, 9 Nov): "0.4% above market" / "0.5% below market" / "at market"; up to 2 decimals, trailing zeros trimmed.
+    const pctN = (m) => String(Math.round(Math.abs(m) * 100) / 100) + '%';
+    const vsMarket = (m) => Math.round(Math.abs(m) * 100) === 0 ? 'At market' : pctN(m) + ' ' + (m > 0 ? 'above' : 'below') + ' market';
+    // A method's own change to the band price: "Zelle · 0.3% more" / "Bank transfer (ACH) · 0.2% less".
+    const methodTag = (x) => x.name + (x.adj ? ' · ' + pctN(x.adj) + (x.adj > 0 ? ' more' : ' less') : '');
+    const inRange = (x) => !x.max || !valid || amt <= x.max;
+    const rangeText = (x) => x.name + ': up to ' + money(x.max);
+    const CHIP = 'padding: 3px 10px; border-radius: 999px; font-size: 13px; line-height: 18px; ';
+    const quote = (o, mid) => {
+      const meth = o.methods.find((x) => x.id === mid) || o.methods[0];
+      const tier = valid ? o.tiers.find((t) => amt >= t.from && amt <= t.to) : null;
+      const total = (tier ? tier.m : o.tiers[0].m) + meth.adj;
+      const price = MARKET * (1 + total / 100);
+      return { meth, tier, total, price, xmr: valid ? amt / price : 0 };
+    };
+
+
+    // Ad amounts (owner #11, 8 Nov). A range is set in one unit by the poster; the other is converted:
+    // at the market rate, or at the offer's own price when "Display amounts including vendor markup" is on.
+    const withMarkup = this.state.wm == null ? this.props.withMarkup === 'on' : this.state.wm;
+    const MKT = MARKET;
+    const amtUsd = (n, cents) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+    const adAmt = (a) => {
+      const [price, pct, unit, lo, hi] = a;
+      const rate = withMarkup ? price : MKT;
+      const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
+      // Lead msg 11 (9 Nov): an XMR-set band shows its XMR range, then "≈ $33 – $330" in whole units, muted.
+      const fiat = unit === 'xmr' ? '≈ ' + amtUsd(Math.round(lo * rate), false) + ' – ' + amtUsd(Math.round(hi * rate), false) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
+      const pctR = Math.round(Math.abs(pct) * 100) / 100; // price wording (lead msg 11): up to 2 decimals, trailing zeros trimmed
+      return { price: amtUsd(price, true), xmr, fiat,
+        fiatStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;" + (unit === 'xmr' ? ' color: var(--ink-muted);' : ''),
+        mark: pctR === 0 ? '' : String(pctR) + '%',
+        markLabel: pctR === 0 ? 'At market' : (pct > 0 ? 'above market' : 'below market'),
+        markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
+    };
+    const wm = {
+      on: withMarkup, state: withMarkup ? 'on' : 'off',
+      box: 'display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 6px; ' + (withMarkup ? 'border: 2px solid var(--ink); background: var(--ink); color: var(--ground);' : 'border: 1px solid var(--line); background: var(--surface-raised); color: transparent;'),
+      hint: withMarkup ? "Converted at each offer's price, markup included." : 'Converted at the market rate, before markup.',
+      toggle: () => this.setState({ wm: !withMarkup })
+    };
+    const cards = OFFERS.filter((o) => o.methods.some((x) => x.id === s.method)).map((o) => {
+      const q = quote(o, s.method);
+      let reason = '';
+      if (!q.tier) {
+        reason = o.xmrSet ? o.name + ' trades ' + o.xmrSet[0].toFixed(6) + ' – ' + o.xmrSet[1].toFixed(6) + ' XMR only (≈ ' + money(Math.round(o.xmrSet[0] * MARKET)) + ' – ' + money(Math.round(o.xmrSet[1] * MARKET)) + ').' : o.name + ' trades ' + money(o.tiers[0].from) + ' – ' + money(o.tiers[o.tiers.length - 1].to) + ' only.';
+      } else if (!inRange(q.meth)) {
+        reason = rangeText(q.meth) + '. Pick another way to pay or a smaller amount.';
+      } else if (q.tier.min > MINE) {
+        const open = o.tiers.filter((t) => t.min <= MINE);
+        reason = 'For ' + money(q.tier.from) + ' – ' + money(q.tier.to) + ', ' + o.name + ' asks for at least ' + q.tier.min + ' completed trades. You have ' + MINE + '.' + (open.length ? ' Up to ' + money(open[open.length - 1].to) + ' is open to you.' : '');
+      }
+      const ok = !reason;
+      return {
+        statParts: o.stats.split(/(\d+%?)/).filter(Boolean).map(t => ({ t, style: /^\d/.test(t) ? "font-family: 'Atkinson Hyperlegible Mono', monospace;" : '' })),
+        id: o.id, name: o.name, stats: o.stats, rel: o.rel, ok, notOk: !ok, reason,
+        init: o.init, online: o.online, vendor: o.vendor !== false, avatarStyle: avatarStyle(40, o.feat.indexOf('trusted') >= 0),
+        featured: o.feat.map((k) => badge(k)), hasChips: o.feat.length > 0 || o.more > 0,
+        hasMore: o.more > 0, moreCount: o.more, moreLabel: o.more + ' more badges',
+        cardStyle: 'display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; ' + (ok ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px solid var(--line);'),
+        nameStyle: 'font-size: 16px; line-height: 22px; font-weight: 600; ' + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
+        priceStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; " + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
+        priceText: usd2(q.price),
+        vsText: vsMarket(q.total) + (q.meth.adj ? ' · incl. ' + methodTag(q.meth) : ''),
+        tierText: q.tier ? 'Band ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No band for this amount',
+        tierHas: !!q.tier, tierNone: !q.tier, tierFrom: q.tier ? money(q.tier.from) : '', tierTo: q.tier ? money(q.tier.to) : '',
+        xmrText: q.xmr.toFixed(6),
+        amt: (() => { const band = q.tier || { from: o.tiers[0].from, to: o.tiers[o.tiers.length - 1].to }; const a = o.xmrSet ? adAmt([q.price, Math.round(q.total * 100) / 100, 'xmr', o.xmrSet[0], o.xmrSet[1]]) : adAmt([q.price, Math.round(q.total * 100) / 100, 'fiat', band.from, band.to]); if (!ok) a.markStyle = a.markStyle.replace('var(--escrow)', 'var(--ink-muted)'); return a; })(),
+        bandCap: q.tier ? (o.tiers.length > 1 ? 'Your band' : 'Limits') : 'Trades only',
+        chips: o.methods.map((x) => ({ label: inRange(x) ? methodTag(x) : rangeText(x), style: CHIP + (inRange(x) ? 'border: 1px solid var(--line); color: var(--ink);' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted);') })),
+        tradeLabel: 'Request to buy XMR from ' + o.name,
+        price: q.price,
+        open: () => { const usable = o.methods.filter(inRange); const pick = usable.some((x) => x.id === this.state.method) ? this.state.method : (usable[0] || o.methods[0]).id; this.setState({ takeId: o.id, takeMethod: pick }); }
+      };
+    });
+    const okCards = cards.filter((c) => c.ok).sort((a, b) => a.price - b.price);
+    // One primary per screen: the first available offer's Trade (best price); the rest stay secondary.
+    const BTN = 'width: 100%; box-sizing: border-box; padding: 0 8px; white-space: nowrap; height: 48px; border-radius: 12px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; ';
+    okCards.forEach((c, i) => { c.btnStyle = BTN + (i === 0 ? 'border: 0; background: var(--monero); color: var(--on-monero);' : 'border: 1px solid var(--line); background: transparent; color: var(--ink);'); });
+    const badCards = cards.filter((c) => !c.ok);
+    const shown = variant === 'hidden' ? okCards : okCards.concat(badCards);
+    const hiddenCount = variant === 'hidden' ? badCards.length : 0;
+
+    const taking = valid ? OFFERS.find((o) => o.id === s.takeId) : null;
+    let sheet = { open: false, title: '', pay: '', options: [], price: '', adjLine: '', xmr: '', instrTitle: '', instr: '', tier: '' };
+    if (taking) {
+      const tq = quote(taking, s.takeMethod);
+      sheet = {
+        open: true,
+        title: 'Trade with ' + taking.name,
+        pay: usd2(amt) + ' USD',
+        options: taking.methods.map((x) => ({ id: x.id, disabled: !inRange(x), label: inRange(x) ? methodTag(x) + ' · ' + usd2(quote(taking, x.id).price) + ' / XMR' : rangeText(x) })),
+        price: usd2(tq.price) + ' / XMR',
+        adjLine: tq.meth.adj ? tq.meth.name + (tq.meth.adj > 0 ? ' adds ' : ' takes ') + pctN(tq.meth.adj) + (tq.meth.adj > 0 ? ' to ' : ' off ') + taking.name + '’s price.' : 'No extra charge for ' + tq.meth.name + '.',
+        xmr: tq.xmr.toFixed(6),
+        instrTitle: taking.name + '’s instructions for ' + tq.meth.name,
+        instr: tq.meth.instr,
+        tier: tq.tier ? vsMarket(tq.total) + ' · band ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
+      };
+    }
+    const methodName = { zelle: 'Zelle', paypal: 'PayPal', cashapp: 'Cash App', ach: 'Bank transfer (ACH)' }[s.method];
+
+    return {
+      rootStyle, appStyle,
+      amount: s.amount, method: s.method, valid, invalid: !valid,
+      amtBorder: valid ? 'var(--line)' : 'var(--danger)',
+      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
+      onAmount: (e) => this.setState({ amount: e.target.value }),
+      onMethod: (e) => this.setState({ method: e.target.value }),
+      forLine: valid ? 'Prices for ' + usd2(amt) + ' via ' + methodName : '',
+      count: shown.length + (shown.length === 1 ? ' offer' : ' offers'),
+      cards: shown, wm,
+      hasHidden: hiddenCount > 0,
+      hiddenLine: hiddenCount + (hiddenCount === 1 ? ' more offer isn’t' : ' more offers aren’t') + ' shown. You don’t meet their rules for ' + (valid ? usd2(amt) : 'this amount') + '.',
+      sheetOpen: sheet.open, sheet,
+      takeMethod: s.takeMethod,
+      onTakeMethod: (e) => this.setState({ takeMethod: e.target.value }),
+      closeSheet: () => this.setState({ takeId: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

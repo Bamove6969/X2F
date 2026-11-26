@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dispute outcome and appeal (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Appeal · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2</span></span></div>
+    <a href="MyTrades-Wide.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+  <main style="flex-grow: 1; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+          <a href="MyTrades-Wide.dc.html" aria-label="Back to completed trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+          <div style="display: flex; flex-direction: column; flex-grow: 1;">
+            <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Buying from satoshi_ghost</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+          </div>
+          <a href="#" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/></svg>Chat</a>
+        </div>
+
+        <section aria-labelledby="anw-ruling" style="display: flex; flex-direction: column; gap: 24px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--mod) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--mod) 35%, transparent);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Dispute decided</span>
+            <svg style="flex-shrink: 0; color: var(--mod);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Refund to the seller</span>
+            <h1 id="anw-ruling" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.250000</span> XMR went back to satoshi_ghost</h1>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">satoshi_ghost's Zelle activity shows no payment for this trade. Your screenshot shows a payment to a different Zelle ID.</p>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">The XMR moved as soon as the decision was made. Coins are never held while an appeal is open.</p>
+          </div>
+          <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);"><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px;"><div style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;"><span style="color: var(--mod);">sarah.v</span></span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--mod) 14%, transparent); color: var(--mod); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>X2F Moderator</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">29 Oct 2026, 14:05 UTC</span></span></span></div></div><sc-if value="{{feeInHero}}" hint-placeholder-val="{{true}}"><div aria-hidden="true" style="height: 1px; margin: 0 20px; background: var(--surface);"></div><div style="display: flex; gap: 10px; align-items: flex-start; min-height: 48px; box-sizing: border-box; padding: 12px 20px; font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg><span><span style="font-weight: 600;">Fee: </span>{{feeRest}}</span></div></sc-if></div>
+          <a href="DisputeRuling.dc.html" style="display: inline-flex; align-items: center; gap: 4px; height: 44px; margin: -14px 0 -12px; align-self: flex-start; color: var(--monero-ink); font-size: 15px; font-weight: 600;">Read the full ruling<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+        </section>
+
+        <sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}">
+          <section aria-labelledby="anw-appeal" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+              <h2 id="anw-appeal" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Appeal</h2>
+              <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">47</span> h <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">40</span> min left</span></span>
+            </div>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">Don't agree with the moderator's decision? You can appeal until <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">31 Oct 2026, 14:05 UTC</span>.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">If your appeal wins, satoshi_ghost gets a lien. They can't trade until they pay you back.</p>
+            <button type="button" onClick="{{startWriting}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; margin-top: 4px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; align-self: flex-start;">File appeal</button>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{writing}}" hint-placeholder-val="{{false}}">
+          <section aria-labelledby="anw-why-label" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+            <label id="anw-why-label" for="anw-why" style="font-size: 18px; line-height: 24px; font-weight: 600;">Why should it be looked at again?</label>
+            <textarea id="anw-why" rows="4" value="{{why}}" onChange="{{onWhy}}" placeholder="What the moderator missed, and any new evidence" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">An independent reviewer, a senior moderator who hasn't seen this case, reads this along with the chat and proofs. Their decision is final.</p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+              <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel</button>
+              <button type="button" disabled="{{noWhy}}" onClick="{{submit}}" style="{{sendStyle}}">Send appeal</button>
+            </div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{tracked}}" hint-placeholder-val="{{false}}">
+          <section aria-labelledby="anw-track" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <h2 id="anw-track" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your appeal</h2>
+              <p role="status" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{statusLine}}</p>
+            </div>
+            <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column;">
+              <sc-for list="{{steps}}" as="s" hint-placeholder-count="3">
+                <li style="display: flex; gap: 12px; align-items: stretch;">
+                  <span aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; width: 24px; flex-shrink: 0;"><span style="{{s.dotStyle}}"><sc-if value="{{s.done}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></sc-if></span><span style="{{s.lineStyle}}"></span></span>
+                  <span style="{{s.textStyle}}">
+                    <span style="{{s.labelStyle}}">{{s.label}}</span>
+                    <span style="{{s.detailStyle}}">{{s.detail}}</span>
+                  </span>
+                </li>
+              </sc-for>
+            </ol>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{decided}}" hint-placeholder-val="{{false}}">
+          <section aria-labelledby="anw-decided" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 40%, transparent);">
+            <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Appeal decided: overturned</span>
+            <h2 id="anw-decided" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">satoshi_ghost must send you <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span> XMR</h2>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);"><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px;"><div style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;"><span style="color: var(--mod);">elena.t</span></span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--mod) 14%, transparent); color: var(--mod); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>X2F Moderator</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">31 Oct 2026, 09:12 UTC</span></span></span></div></div><div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div><div style="display: flex; gap: 10px; align-items: flex-start; min-height: 48px; box-sizing: border-box; padding: 12px 14px; font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg><span><span style="font-weight: 600;">Fee: </span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> paid by satoshi_ghost, as the offer poster.</span></div></div>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">Reviewer elena.t found that your $412.50 did reach satoshi_ghost. They must send you the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR as agreed. They now have a lien and can't trade until they pay it back.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You'll get an alert when it arrives. This decision is final.</p>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+          <section style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+            <p style="margin: 0; font-size: 14px; line-height: 20px;">The appeal window closed on <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">31 Oct 2026, 14:05 UTC</span>. The moderator's decision is final.</p>
+          </section>
+        </sc-if>
+
+        <div role="note" aria-label="Reviews" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><svg style="flex-shrink: 0; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg><span style="flex-grow: 1; font-size: 14px; line-height: 20px; color: var(--ink);">{{reviewText}}</span><sc-if value="{{reviewLink}}" hint-placeholder-val="{{false}}"><a href="Review.dc.html" style="display: inline-flex; align-items: center; flex-shrink: 0; height: 44px; margin: -12px -6px; padding: 0 6px; color: var(--monero-ink); font-size: 15px; font-weight: 600; text-decoration: none; white-space: nowrap;">Leave a review</a></sc-if></div>
+      </div>
+
+      <section aria-labelledby="anw-list" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 16px; background: var(--surface);">
+        <h2 id="anw-list" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Completed trades</h2>
+        <ul aria-label="Completed trades" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{trades}}" as="t" hint-placeholder-count="3">
+            <li style="{{t.rowStyle}}">
+              <button type="button" onClick="{{t.open}}" style="flex-grow: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+                <sc-if value="{{t.dispute}}" hint-placeholder-val="{{false}}"><span style="{{t.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.icon}}"/></svg></span></sc-if><sc-if value="{{t.person}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="{{t.avStyle}}">{{t.init}}</span></sc-if>
+                <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+                  <span style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{t.name}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; color: var(--ink-muted); white-space: nowrap;">{{t.date}}</span></span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{t.verb}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{t.xmr}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.fiat}}</span></span>
+                  <span style="{{t.statusStyle}}">{{t.status}}</span>
+                </span>
+              </button>
+              <sc-if value="{{t.showFile}}" hint-placeholder-val="{{false}}">
+                <button type="button" onClick="{{t.file}}" style="align-self: flex-start; margin-left: 54px; height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">File appeal</button>
+              </sc-if>
+            </li>
+          </sc-for>
+        </ul>
+      </section>
+    </div>
+  </main>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 48px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink);">File appeal shows here and in your completed trades for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span> hours after the decision, then disappears.</p>
+    <aside aria-label="Decided by the owner: who pays the fee after a ruling" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (g63)</span><span style="font-weight: 600;">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee after a dispute</span><span style="color: var(--ink-muted);">A full reversal, where all funds go back to the original parties, carries no <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee: X2F pays the moderator itself. A ruling that moves the trade forward, an appeal that upholds completion, or a lien means the trade completes and the offer poster pays the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span>. While an appeal is open, the fee waits for the outcome. Here the first ruling was a refund, so the fee row says none; once an appeal is filed it waits; the overturned appeal completes the trade, so its card says satoshi_ghost pays.</span></aside>
+    <aside aria-label="Decided by the owner: reviews follow the outcome" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q40)</span>
+      <span style="font-weight: 600;">The Reviews row follows the appeal.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>open / closed: the refund reversed the trade, so &quot;No reviews for this trade. It was reversed.&quot;</li>
+        <li>filed / waiting: &quot;Reviews of this trade are hidden until the appeal is decided.&quot;</li>
+        <li>decided (overturned, the trade now completes): &quot;The trade now counts as completed, so you can both leave a review.&quot; with Leave a review. Had the appeal upheld the refund, the row would stay &quot;No reviews&quot;. New text is COPY-UNSIGNED.</li>
+      </ul>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["open", "filed", "waiting", "decided", "closed"], "default": "open"}, "$preview": {"width": 1280, "height": 1434}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { mode: props.variant || 'open', screen: 'trade', why: '' }; }
+  componentDidUpdate(prev) { if (prev.variant !== this.props.variant) this.setState({ mode: this.props.variant || 'open', why: '' }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const { mode, screen, why } = this.state;
+    const HT = { open: 1019, writing: 1085, filed: 1094, waiting: 1094, decided: 1419, closed: 841 }; // + the Reviews row (Q40)
+    const H = HT[mode] || 902;
+    const NOTES = 415;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + (H + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const appStyle = 'position: relative; flex-shrink: 0; height: ' + H + 'px; display: flex; overflow: hidden;';
+    const ready = why.trim().length >= 10;
+    // Fee row (owner, 7 Nov, g63): the first ruling was a refund (full reversal), so no fee; once an appeal is
+    // filed the fee waits; the overturned appeal completes the trade, so the decided card says the poster pays.
+    const feeRest = (mode === 'filed' || mode === 'waiting') ? 'waits until the appeal is decided.' : 'none. Everything went back, so X2F charges nothing.';
+    const tracked = mode === 'filed' || mode === 'waiting' || mode === 'decided';
+    const at = mode === 'filed' ? 0 : (mode === 'waiting' ? 1 : 3);
+    const isDone = (i) => i < at || (i === 0 && mode !== 'filed');
+    const dot = (i) => {
+      const base = 'display: flex; width: 24px; height: 24px; flex-shrink: 0; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; ';
+      if (isDone(i)) return base + 'background: var(--escrow); color: var(--ground);';
+      if (i === at) return base + 'border: 2px solid var(--caution); background: color-mix(in srgb, var(--caution) 14%, transparent);';
+      return base + 'border: 2px solid var(--line);';
+    };
+    const stepLabel = (i) => 'font-size: 15px; line-height: 22px; font-weight: 600; color: ' + (i <= at ? 'var(--ink)' : 'var(--ink-muted)') + ';';
+    const stepDefs = [
+      { label: 'Appeal filed', detail: '29 Oct 2026, 16:20 UTC', mono: true },
+      { label: 'Waiting for an independent reviewer', detail: "A senior moderator who hasn't seen this case looks at the chat, the proofs and your reasons again.", mono: false },
+      { label: 'Decided', detail: mode === 'decided' ? '31 Oct 2026, 09:12 UTC' : "You'll get an alert as soon as it's decided.", mono: mode === 'decided' }
+    ];
+    const n = stepDefs.length;
+    const steps = stepDefs.map((s, i) => ({
+      label: s.label, detail: s.detail,
+      dotStyle: dot(i), labelStyle: stepLabel(i), done: isDone(i),
+      detailStyle: 'font-size: 14px; line-height: 20px; color: var(--ink-muted);' + (s.mono ? " font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px;" : ''),
+      lineStyle: i === n - 1 ? 'display: none;' : 'display: block; width: 2px; flex-grow: 1; margin: 4px 0; border-radius: 999px; background: ' + (isDone(i) ? 'color-mix(in srgb, var(--escrow) 45%, var(--surface-raised))' : 'var(--surface-raised)') + ';',
+      textStyle: 'display: flex; flex-direction: column; gap: 2px; padding: 1px 0 ' + (i === n - 1 ? '0' : '20px') + ';'
+    }));
+    const statusLine = {
+      filed: "Your appeal is in and satoshi_ghost has been told. We're now finding an independent reviewer.",
+      waiting: "Waiting for an independent reviewer. Nothing more is needed from you, but you can add new evidence in the trade chat.",
+      decided: 'An independent reviewer has decided your appeal.'
+    }[mode] || '';
+    const listStatus = {
+      open: 'Appeal open until 31 Oct 2026, 14:05 UTC',
+      writing: 'Appeal open until 31 Oct 2026, 14:05 UTC',
+      filed: 'Appeal filed',
+      waiting: 'Waiting for an independent reviewer',
+      decided: 'Appeal decided',
+      closed: 'Final'
+    }[mode];
+    const canFile = mode === 'open' || mode === 'writing';
+    const noop = () => {};
+    const TRADE = 'M4 8h13l-3-3M20 16H7l3 3';
+    const SHIELD = 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z';
+    const rowBase = 'display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: 12px; ';
+    const tile = (tone) => 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (tone ? 'background: color-mix(in srgb, ' + tone + ' 16%, transparent); color: ' + tone + ';' : 'background: var(--surface); color: var(--ink);');
+    const av = (ring) => "position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface); border: 2px solid " + (ring ? "color-mix(in srgb, var(--escrow) 70%, transparent)" : "var(--surface)") + "; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;";
+    const trades = [
+      { dispute: true, person: false, init: '', avStyle: '', name: 'satoshi_ghost', verb: 'Bought', xmr: '1.250000', fiat: '$412.50', date: '29 Oct 2026', status: 'Dispute: refunded to seller · ' + listStatus, showFile: canFile, open: () => this.setState({ screen: 'trade' }), file: () => this.setState({ screen: 'trade', mode: 'writing' }), rowStyle: rowBase + 'background: color-mix(in srgb, var(--mod) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);', tileStyle: tile('var(--mod)'), icon: SHIELD, statusStyle: 'font-size: 13px; line-height: 18px; font-weight: 600; color: var(--mod);' },
+      { dispute: false, person: true, init: 'NO', avStyle: av(false), name: 'nightowl_44', verb: 'Bought', xmr: '0.500000', fiat: '$165.00', date: '27 Oct 2026', status: 'Completed', showFile: false, open: noop, file: noop, rowStyle: rowBase + 'background: var(--surface-raised);', tileStyle: tile(''), icon: TRADE, statusStyle: 'font-size: 13px; line-height: 18px; color: var(--ink-muted);' },
+      { dispute: false, person: true, init: 'SG', avStyle: av(true), name: 'satoshi_ghost', verb: 'Sold', xmr: '0.800000', fiat: '$264.00', date: '20 Oct 2026', status: 'Completed', showFile: false, open: noop, file: noop, rowStyle: rowBase + 'background: var(--surface-raised);', tileStyle: tile(''), icon: TRADE, statusStyle: 'font-size: 13px; line-height: 18px; color: var(--ink-muted);' }
+    ];
+    return {
+      rootStyle, appStyle,
+      feeInHero: mode !== 'decided', feeRest,
+      reviewText: (mode === 'filed' || mode === 'waiting') ? 'Reviews of this trade are hidden until the appeal is decided.' : mode === 'decided' ? 'The trade now counts as completed, so you can both leave a review.' : 'No reviews for this trade. It was reversed.',
+      reviewLink: mode === 'decided',
+      onTrade: screen === 'trade',
+      onList: screen === 'list',
+      isOpen: mode === 'open',
+      writing: mode === 'writing',
+      tracked,
+      decided: mode === 'decided',
+      closed: mode === 'closed',
+      steps,
+      statusLine,
+      trades,
+      why,
+      noWhy: !ready,
+      sendStyle: 'height: 48px; min-width: 160px; padding: 0 24px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (ready ? 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      toList: () => this.setState({ screen: 'list' }),
+      startWriting: () => this.setState({ mode: 'writing' }),
+      cancel: () => this.setState({ mode: 'open', why: '' }),
+      submit: () => { if (ready) this.setState({ mode: 'filed' }); },
+      onWhy: (e) => this.setState({ why: e.target.value })
+    };
+  }
+}
+</script>
+</body>
+</html>

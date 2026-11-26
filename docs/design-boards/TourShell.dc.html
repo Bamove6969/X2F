@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TourShell</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+<div style="{{appStyle}}">
+  <sc-if value="{{showBuy}}" hint-placeholder-val="{{true}}">
+  <div aria-hidden="{{screenHidden}}" style="position: absolute; inset: 0;">
+    <div style="position: absolute; top: 8px; left: 16px; right: 16px; height: 44px; display: flex; align-items: center;">
+      <svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg>
+      <span style="margin: 0 8px; font-size: 18px; line-height: 24px; color: var(--ink-muted);">–</span>
+      <span style="flex: 1; font-size: 18px; line-height: 24px; font-weight: 600;">Find a trade</span>
+      <span style="position: relative; display: inline-flex; align-items: center; gap: 6px; height: 44px; font-size: 14px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg><span style="position: absolute; top: 10px; left: 13px; width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>Site news</span>
+    </div>
+    <div style="position: absolute; top: 60px; left: 16px; right: 16px; height: 44px; box-sizing: border-box; padding: 4px; border-radius: 999px; background: var(--surface); display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+      <span style="display: flex; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid var(--ink); background: var(--surface-raised); font-size: 15px; font-weight: 600;">Buy</span>
+      <span style="display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; color: var(--ink-muted);">Sell</span>
+    </div>
+    <h1 style="position: absolute; top: 116px; left: 16px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How do you want to pay?</h1>
+    <div style="position: absolute; top: 164px; left: 16px; right: 16px; height: 24px; display: flex; justify-content: space-between; align-items: baseline;"><span style="font-size: 18px; line-height: 24px; font-weight: 600;">Active trades</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; color: var(--ink-muted);">3</span></div>
+    <div style="position: absolute; top: 196px; left: 16px; right: 16px; height: 64px; box-sizing: border-box; padding: 12px 16px; border-radius: 16px; background: var(--surface); display: flex; align-items: center; gap: 14px;">
+      <span style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);"><svg width="32" height="8" viewBox="0 0 32 8"><circle cx="4" cy="4" r="4" fill="currentColor"/><circle cx="16" cy="4" r="4" fill="currentColor"/><circle cx="28" cy="4" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+      <span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">My trades</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3</span> active</span></span>
+      <span style="display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>need you</span>
+    </div>
+    <div style="position: absolute; top: 276px; left: 16px; right: 16px; height: 224px; box-sizing: border-box; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--ink-muted) 35%, transparent); display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; height: 44px;"><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Market price</span><span style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 15px; font-weight: 600;">USD<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></div>
+      <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500;">$329.90</span><span style="font-size: 18px; color: var(--ink-muted);">/</span><span style="font-size: 18px; font-weight: 600; color: var(--monero-ink);">XMR</span></div>
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;"><span style="padding: 8px 10px; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">17</span><span style="padding: 8px 10px; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">140</span><span style="padding: 8px 10px; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">$330.00</span></div>
+    </div>
+    <div style="position: absolute; top: 516px; left: 16px; right: 16px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); display: flex; align-items: center; gap: 10px; color: var(--ink-muted); font-size: 16px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search 79 payment methods</div>
+    <div style="position: absolute; top: 576px; left: 16px; right: 16px; height: 36px; display: flex; align-items: center; gap: 8px; font-size: 14px;"><span style="color: var(--ink-muted); margin-right: 2px;">Sort</span><span style="display: inline-flex; align-items: center; height: 34px; padding: 0 12px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--ink); background: var(--surface-raised); font-weight: 600;">Most sellers</span><span style="display: inline-flex; align-items: center; height: 34px; padding: 0 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line);">Best rate</span><span style="display: inline-flex; align-items: center; height: 34px; padding: 0 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line);">A–Z</span></div>
+    <div style="position: absolute; top: 628px; left: 16px; right: 16px; height: 24px; display: flex; justify-content: space-between;"><span style="font-size: 18px; line-height: 24px; font-weight: 600;">Sellers taking USD</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; color: var(--ink-muted);">17</span></div>
+    <div style="position: absolute; top: 664px; left: 16px; right: 16px; height: 104px; box-sizing: border-box; padding: 14px 16px; border-radius: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 12px;"><span style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: 18px; line-height: 24px; font-weight: 600;">Zelle</span><span style="font-size: 13px; color: var(--ink-muted);">Transfer time · usually minutes</span></span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 600;"><span>29 sellers taking USD</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">from $330.00</span></div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{showSettings}}" hint-placeholder-val="{{false}}">
+  <div style="position: absolute; inset: 0;">
+    <div style="position: absolute; top: 8px; left: 16px; right: 16px; height: 44px; display: flex; align-items: center;">
+      <svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg>
+      <span style="margin: 0 8px; font-size: 18px; line-height: 24px; color: var(--ink-muted);">–</span>
+      <span style="flex: 1; font-size: 18px; line-height: 24px; font-weight: 600;">Settings</span>
+    </div>
+    <div style="position: absolute; top: 68px; left: 16px; right: 16px; display: flex; flex-direction: column; gap: 10px;">
+      <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Security</span>
+      <div style="border-radius: 16px; background: var(--surface); display: flex; flex-direction: column;">
+        <span style="display: flex; justify-content: space-between; align-items: center; min-height: 56px; padding: 0 16px; font-size: 16px;">Login methods<span style="font-size: 14px; color: var(--ink-muted);">Security key, PGP</span></span>
+        <span style="display: flex; justify-content: space-between; align-items: center; min-height: 56px; padding: 0 16px; border-top: 1px solid var(--surface-raised); font-size: 16px;">Devices<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; color: var(--ink-muted);">2</span></span>
+        <span style="display: flex; justify-content: space-between; align-items: center; min-height: 56px; padding: 0 16px; border-top: 1px solid var(--surface-raised); font-size: 16px;">Recovery code<span style="font-size: 14px; color: var(--ink-muted);">Written down</span></span>
+      </div>
+      <span style="margin-top: 10px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Alerts</span>
+      <div style="border-radius: 16px; background: var(--surface);"><span style="display: flex; justify-content: space-between; align-items: center; min-height: 56px; padding: 0 16px; font-size: 16px;">Alerts and sounds<span style="font-size: 14px; color: var(--ink-muted);">Nudges on</span></span></div>
+      <span style="margin-top: 10px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Help</span>
+      <div style="border-radius: 16px; background: var(--surface); display: flex; flex-direction: column;">
+        <span style="display: flex; flex-direction: column; justify-content: center; min-height: 64px; padding: 8px 16px; box-sizing: border-box;"><span style="font-size: 16px; line-height: 22px;">Help and FAQ</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trades, logins, wallets and privacy</span></span>
+        <a href="#" data-part="tour-replay" style="display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 8px 14px; box-sizing: border-box; border-top: 1px solid var(--surface-raised); border-radius: 0 0 0 0; outline: 2px solid var(--ink); outline-offset: -2px; background: var(--surface-raised);"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/><path d="M10.5 9.5v5l4-2.5z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Take the tour again</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">A quick walk through each screen</span></span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a>
+        <span style="display: flex; flex-direction: column; justify-content: center; min-height: 64px; padding: 8px 16px; box-sizing: border-box; border-top: 1px solid var(--surface-raised);"><span style="font-size: 16px; line-height: 22px;">Support</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Ask a Helper or see your tickets</span></span>
+        <span style="display: flex; align-items: center; min-height: 56px; padding: 0 16px; border-top: 1px solid var(--surface-raised); font-size: 16px;">Terms</span>
+      </div>
+      <p style="margin: 6px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The tour starts on Find a trade and takes about two minutes. It changes nothing in your account.</p>
+    </div>
+  </div>
+  </sc-if>
+
+  <nav aria-label="Main" style="position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <span style="{{tabTrade}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/></svg>Trade</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-muted); font-size: 13px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</span>
+    <span style="{{tabProfile}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</span>
+  </nav>
+
+  <sc-if value="{{showStop}}" hint-placeholder-val="{{true}}">
+  <div data-part="tour-overlay" style="position: absolute; inset: 0;">
+    <svg width="390" height="844" viewBox="0 0 390 844" aria-hidden="true" style="position: absolute; inset: 0;"><path fill-rule="evenodd" d="{{scrimD}}" style="fill: var(--scrim);"/></svg>
+    <div data-part="tour-ring" aria-hidden="true" style="{{ringStyle}}"></div>
+    <svg data-part="tour-arrow" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true" style="{{arrowStyle}}"><path d="{{arrowD}}" style="stroke: var(--ink);" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="{{headD}}" style="stroke: var(--ink);" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <section data-part="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-t" aria-describedby="tour-b" style="{{cardStyle}}">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span role="img" aria-label="{{pagesLabel}}" style="flex: 1; display: flex; gap: 4px;"><sc-for list="{{pageBars}}" as="p" hint-placeholder-count="8"><span style="{{p.style}}"></span></sc-for></span>
+        <span data-part="tour-count" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 16px; color: var(--ink-muted); white-space: nowrap;">{{countText}}</span>
+      </div>
+      <h2 id="tour-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.01em;">{{title}}</h2>
+      <p id="tour-b" style="margin: -4px 0 0; font-size: 17px; line-height: 26px;">{{body}}</p>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+        <button type="button" data-part="tour-skip" onClick="{{skip}}" style="height: 48px; padding: 0 4px; margin-right: auto; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Skip tour</button>
+        <button type="button" data-part="tour-back" onClick="{{back}}" disabled="{{backOff}}" style="{{backStyle}}">Back</button>
+        <button type="button" data-part="tour-next" onClick="{{next}}" style="height: 48px; min-width: 112px; padding: 0 18px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; white-space: nowrap;">{{nextLabel}}</button>
+      </div>
+    </section>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{showAllSet}}" hint-placeholder-val="{{false}}">
+  <div data-part="tour-overlay" style="position: absolute; inset: 0; background: var(--scrim);">
+    <section data-part="tour-done" role="dialog" aria-modal="true" aria-labelledby="tour-done-t" style="position: absolute; left: 16px; right: 16px; top: 168px; box-sizing: border-box; padding: 28px 20px 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;">
+      <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 16%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span>
+      <span role="img" aria-label="All 8 pages seen" style="display: flex; gap: 4px; width: 100%;"><sc-for list="{{doneBars}}" as="p" hint-placeholder-count="8"><span style="{{p.style}}"></span></sc-for></span>
+      <h2 id="tour-done-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">You’re all set</h2>
+      <p style="margin: 0; font-size: 17px; line-height: 26px; color: var(--ink-muted);">That’s the tour. You can take it again any time from Settings, under Help.</p>
+      <button type="button" onClick="{{finish}}" style="width: 100%; height: 56px; margin-top: 6px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Get started</button>
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; font-size: 15px; font-weight: 600; color: var(--monero-ink);"><a href="FAQ.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; color: var(--monero-ink);">FAQ</a><a href="FAQ.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; color: var(--monero-ink);">Getting started</a><a href="Support.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; color: var(--monero-ink);">Support</a></div>
+    </section>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{showClosed}}" hint-placeholder-val="{{false}}">
+  <div role="status" style="position: absolute; left: 16px; right: 16px; bottom: 80px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); display: flex; align-items: center; gap: 10px; font-size: 15px; line-height: 22px;"><span style="flex: 1;">Tour closed. Take it again any time from Settings, under Help.</span><button type="button" onClick="{{restart}}" style="height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Restart</button></div>
+  </sc-if>
+</div>
+
+<section aria-label="Arrow sides" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+  <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Arrow sides · state strip</h2>
+  <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+    <sc-for list="{{sides}}" as="s" hint-placeholder-count="4">
+      <div style="position: relative; height: 148px; border-radius: 12px; background: var(--surface); overflow: hidden;">
+        <span style="{{s.targetStyle}}">Target</span>
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true" style="{{s.arrowStyle}}"><path d="{{s.arrowD}}" style="stroke: var(--ink);" stroke-width="2.5" stroke-linecap="round"/><path d="{{s.headD}}" style="stroke: var(--ink);" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span style="{{s.cardStyle}}"><span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; line-height: 18px; font-weight: 700;">{{s.name}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{s.use}}</span></span>
+      </div>
+    </sc-for>
+  </div>
+</section>
+
+<section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+  <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+  <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px;">
+    <li>Owner, 12 Nov (comment 47 and brief item 2): a page-by-page tour, an arrow and a highlight per feature, a well-written card, Next, then Next screen. Same shell for the staff and team-member tours. Stops for every tour: docs/design-12nov/tour-stops.md.</li>
+    <li>X2F’s own look only (owner, 12 Nov): THEMES tokens, our type, our radii. Nothing copied from the Trust Wallet reference. The 3D scenes and the fades belong to T1’s motion board; this board is the still shell.</li>
+    <li>Behind: the BuyMain look for a trader account (3 tabs, no Post offer). The scrim is var(--scrim) with a cut-out hole, radius 14, 6 px round the element. The ring is 2 px ink, as for any selected thing. No shadow, no glow, no orange ring.</li>
+    <li>Arrow: one curved ink stroke, 2.5 px, round caps, open head, 40 px between the ring and the card. The arrow side is the card edge it leaves from. Orange stays on Next only.</li>
+    <li>Card: surface, 1 px line, radius 16, padding 20. Page bars (one per page, pill, 4 px) and a mono count for this page’s stops. Title Familjen 22/28, body 17/26: one step up from the app’s 16 (owner: fonts a bit bigger).</li>
+    <li>Controls: Skip tour (text), Back (secondary, off on stop 1 of page 1), Next (primary, 48 high). On a page’s last stop Next reads Next screen; on the last stop of the last page it reads Finish, then You’re all set.</li>
+    <li>Replay: Settings, Help group, Take the tour again (data-part tour-replay; ringed here only to point it out). The tour also starts from the landing screen’s Take the tour.</li>
+    <li>COPY-UNSIGNED: every card title and body, Skip tour, Next screen, Finish, You’re all set, Get started, Take the tour again, A quick walk through each screen, the tour note under Help, the Tour closed line, Restart.</li>
+  </ul>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["stop","next-screen","all-set","replay"],"default":"stop"},"step":{"editor":"enum","options":["1","2","3","4","5","6","7"],"default":"5"},"$preview":{"width":390,"height":2220}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.fromProps(props); }
+  fromProps(p) {
+    const v = p.view || 'stop';
+    if (v === 'next-screen') return { mode: 'stop', step: 7 };
+    if (v === 'all-set') return { mode: 'done', step: 7 };
+    if (v === 'replay') return { mode: 'replay', step: 1 };
+    return { mode: 'stop', step: Math.min(7, Math.max(1, parseInt(p.step || '5', 10) || 5)) };
+  }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view || prev.step !== this.props.step) this.setState(this.fromProps(this.props)); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Heights measured (night, fonts loaded): the phone frame, then the arrow strip and the notes.
+    const APP_H = 844;
+    const REST_H = 1376;
+    const H = APP_H + REST_H;
+    const W = 390;
+    const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; min-height: ' + APP_H + 'px; overflow: hidden;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // The 7 stops of page 1 (Find a trade, /buy). rect = the hole (element plus 6 px). side = the card edge the arrow leaves from.
+    const STOPS = [
+      { r: [10, 10, 206, 40], side: 'top', ax: 60, t: 'Where you are', b: 'The X2F logo sits top left on every screen, with the screen’s name beside it. Tap the logo to come back here.' },
+      { r: [276, 10, 104, 40], side: 'top', ax: 328, t: 'Site news', b: 'News from the X2F team lands here. A dot means there’s something you haven’t read yet.' },
+      { r: [10, 54, 370, 56], side: 'top', ax: 105, t: 'Buy or sell', b: 'Buy gets you XMR. Sell turns your XMR into cash. Everything below changes to match.' },
+      { r: [10, 190, 370, 76], side: 'top', ax: 195, t: 'Your trades', b: 'Every trade in progress lives here. The yellow tag tells you when one is waiting on you.' },
+      { r: [10, 270, 370, 236], side: 'top', ax: 195, t: 'Market price', b: 'Today’s XMR price in your currency. Each offer sets its price a little above or below it.' },
+      { r: [10, 510, 370, 108], side: 'bottom', ax: 195, t: 'Find how you pay', b: 'Search every payment method, or sort them by most sellers, best rate or A to Z.' },
+      { r: [10, 658, 370, 116], side: 'bottom', ax: 195, t: 'Pick a payment method', b: 'Each one shows how many sellers take it and their best price. Tap one to see the offers.' }
+    ];
+    const { mode, step } = this.state;
+    const s = STOPS[step - 1];
+    const [x, y, w, h] = s.r;
+    const R = 14;
+    const hole = 'M' + (x + R) + ' ' + y + 'H' + (x + w - R) + 'A' + R + ' ' + R + ' 0 0 1 ' + (x + w) + ' ' + (y + R) + 'V' + (y + h - R) + 'A' + R + ' ' + R + ' 0 0 1 ' + (x + w - R) + ' ' + (y + h) + 'H' + (x + R) + 'A' + R + ' ' + R + ' 0 0 1 ' + x + ' ' + (y + h - R) + 'V' + (y + R) + 'A' + R + ' ' + R + ' 0 0 1 ' + (x + R) + ' ' + y + 'Z';
+    const scrimD = 'M0 0H' + W + 'V' + APP_H + 'H0Z' + hole;
+    const ringStyle = 'position: absolute; left: ' + x + 'px; top: ' + y + 'px; width: ' + w + 'px; height: ' + h + 'px; box-sizing: border-box; border: 2px solid var(--ink); border-radius: ' + R + 'px; pointer-events: none;';
+    const GAP = 40;
+    const up = s.side === 'top';
+    const arrowTop = up ? (y + h) : (y - GAP);
+    const arrowStyle = 'position: absolute; left: ' + (s.ax - 20) + 'px; top: ' + arrowTop + 'px;';
+    const arrowD = up ? 'M20 38C20 26 25 16 20 5' : 'M20 2C20 14 15 24 20 35';
+    const headD = up ? 'M13 12L20 4L27 12' : 'M13 28L20 36L27 28';
+    const cardBase = 'position: absolute; left: 16px; right: 16px; box-sizing: border-box; padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px;';
+    const cardStyle = cardBase + (up ? 'top: ' + (y + h + GAP) + 'px;' : 'bottom: ' + (APP_H - (y - GAP)) + 'px;');
+    const PAGES = 8;
+    const bar = (state) => 'flex: 1; height: 4px; border-radius: 999px; background: ' + (state === 'now' ? 'var(--ink)' : state === 'done' ? 'var(--ink-muted)' : 'var(--surface-raised)') + ';';
+    const pageBars = Array.from({ length: PAGES }, (_, i) => ({ style: bar(i === 0 ? 'now' : 'todo') }));
+    const doneBars = Array.from({ length: PAGES }, () => ({ style: bar('now') }));
+    const tabOn = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: var(--surface-raised); box-shadow: inset 0 2px 0 var(--ink); color: var(--ink); font-size: 13px; font-weight: 600;';
+    const tabOff = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-muted); font-size: 13px;';
+    const backOff = step === 1;
+    const backStyle = 'height: 48px; padding: 0 16px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (backOff ? 'color: var(--ink-muted); opacity: 0.5; cursor: not-allowed;' : 'color: var(--ink); cursor: pointer;');
+    const mini = 'position: absolute; box-sizing: border-box; padding: 8px 10px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px;';
+    const tgt = 'position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box; height: 32px; width: 72px; border-radius: 10px; border: 2px solid var(--ink); font-size: 12px; font-weight: 600;';
+    const sides = [
+      { name: 'Arrow top', use: 'Card below the element (phone default)', targetStyle: tgt + 'left: 40px; top: 12px;', arrowStyle: 'position: absolute; left: 56px; top: 44px;', arrowD: 'M20 38C20 26 25 16 20 5', headD: 'M13 12L20 4L27 12', cardStyle: mini + 'left: 12px; right: 12px; top: 84px;' },
+      { name: 'Arrow bottom', use: 'Card above the element (lower half of the screen)', targetStyle: tgt + 'left: 40px; bottom: 12px;', arrowStyle: 'position: absolute; left: 56px; bottom: 44px;', arrowD: 'M20 2C20 14 15 24 20 35', headD: 'M13 28L20 36L27 28', cardStyle: mini + 'left: 12px; right: 12px; top: 12px;' },
+      { name: 'Arrow left', use: 'Card right of the element (wide)', targetStyle: tgt + 'left: 12px; top: 58px;', arrowStyle: 'position: absolute; left: 84px; top: 54px;', arrowD: 'M38 20C26 20 16 15 5 20', headD: 'M12 13L4 20L12 27', cardStyle: mini + 'left: 124px; right: 12px; top: 48px;' },
+      { name: 'Arrow right', use: 'Card left of the element (wide)', targetStyle: tgt + 'right: 12px; top: 58px;', arrowStyle: 'position: absolute; right: 84px; top: 54px;', arrowD: 'M2 20C14 20 24 25 35 20', headD: 'M28 13L36 20L28 27', cardStyle: mini + 'left: 12px; right: 124px; top: 48px;' }
+    ];
+    const last = step === STOPS.length;
+    return {
+      rootStyle, appStyle, sides,
+      showBuy: mode !== 'replay',
+      showSettings: mode === 'replay',
+      screenHidden: mode === 'stop' || mode === 'done' ? 'true' : 'false',
+      showStop: mode === 'stop',
+      showAllSet: mode === 'done',
+      showClosed: mode === 'closed',
+      tabTrade: mode === 'replay' ? tabOff : tabOn,
+      tabProfile: mode === 'replay' ? tabOn : tabOff,
+      scrimD, ringStyle, arrowStyle, arrowD, headD, cardStyle, pageBars, doneBars,
+      pagesLabel: 'Page 1 of ' + PAGES + ', Find a trade',
+      countText: step + ' of ' + STOPS.length,
+      title: s.t, body: s.b,
+      nextLabel: last ? 'Next screen' : 'Next',
+      backOff, backStyle,
+      next: () => this.setState(last ? { mode: 'done' } : { step: step + 1 }),
+      back: () => { if (step > 1) this.setState({ step: step - 1 }); },
+      skip: () => this.setState({ mode: 'closed' }),
+      restart: () => this.setState({ mode: 'stop', step: 1 }),
+      finish: () => this.setState({ mode: 'plain' })
+    };
+  }
+}
+</script>
+</body>
+</html>

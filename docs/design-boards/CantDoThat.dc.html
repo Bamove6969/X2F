@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Can't do that</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;" aria-hidden="true">
+      <span style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </span>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Post an offer</span>
+    </header>
+    <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;" aria-hidden="true">
+      <span style="height: 120px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="height: 180px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="height: 64px; border-radius: 16px; background: var(--surface);"></span>
+    </main>
+
+    <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="cdt-title" aria-describedby="cdt-msg" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 20px;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <div style="display: flex; flex-direction: column; gap: 12px; padding: 0 4px;">
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+            </span>
+            <h2 id="cdt-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{title}}</h2>
+            <p id="cdt-msg" style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink);"><sc-for list="{{messageParts}}" as="m" hint-placeholder-count="3"><span style="{{m.style}}">{{m.t}}</span></sc-for></p>
+          </div>
+          <sc-if value="{{notBan}}" hint-placeholder-val="{{true}}"><p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></span><span>If you feel this feature can be improved please leave <a href="Feedback.dc.html" style="padding: 12px 0; font-weight: 600;">feedback</a>.</span></p></sc-if><sc-if value="{{isBan}}" hint-placeholder-val="{{false}}"><p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></span><span>Think this is a mistake? See your <a href="Ban-Notice.dc.html" style="padding: 12px 0; font-weight: 600;">ban notice</a> to reach a moderator.</span></p></sc-if>
+          <button type="button" onClick="{{close}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">OK</button>
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{reopen}}" style="position: absolute; left: 16px; right: 16px; bottom: 16px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show the message again</button>
+    </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><aside aria-label="Design, 12 Nov: trade-ban popup" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Design · 12 Nov · D-020, Plan 4 Task 27</span><span style="font-weight: 600;">Trade ban: the same popup on take and on post, with the reason and the end.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Title "You can't trade right now" (D-020's trade-ban headline). Text: "Your account is banned from trading until 14 Nov 2026, 14:05 UTC. Reason: Problems in trades. Trades you already started carry on." Permanent: "Your account is permanently banned from trading. Reason: …". Without the ban's details: "Your account is banned from trading for now. Trades you already started carry on."</li><li>The feedback line is swapped for "Think this is a mistake? See your ban notice to reach a moderator." linking to Ban-Notice (trade ban). A ban isn't a feature to improve.</li><li>Reason is one of the four general texts (w11-102). COPY-UNSIGNED. Preview with the example tweak. Showing: {{exampleName}}</li></ul></aside>
+    <aside aria-label="Reusable popup" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Shared component</span>
+      <span style="font-weight: 600;">One popup for every "not allowed" moment. Builders swap in the explanation; everything else stays the same.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Title: sheet title, Familjen 24/30 700.</li>
+        <li>Explanation: one or two plain sentences, 16/24 ink. Example shown: the offer limit.</li>
+        <li>Feedback line: info callout (surface-raised, radius 12, 18 px chat icon, v2 §12) with the link to Feedback.</li>
+        <li>Craft pass, 7 Nov: digits in the explanation are set in mono (the message is split into parts, so builders can swap any sentence in).</li>
+        <li>OK: the one orange button, 56 high, closes the popup. No close X.</li>
+        <li>Phone: bottom sheet, radius 16 top, grab handle. Wide: centred dialog, 480 wide.</li>
+      </ul>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offer-limit","trade-ban"],"default":"offer-limit"},"$preview":{"width":390,"height":1623}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: true }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Board = 844 px phone screen + the design-notes block under it (measured).
+    const ban = this.props.example === 'trade-ban';
+    const msg = ban ? 'Your account is banned from trading until 14 Nov 2026, 14:05 UTC. Reason: Problems in trades. Trades you already started carry on.' : "Sorry, you're limited to 2 offers per side (buying or selling) for each currency.";
+    const H = 1623; // 844 screen + notes (measured 12 Nov)
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return { title: ban ? "You can't trade right now" : "You can't do that yet", isBan: ban, notBan: !ban, exampleName: ban ? 'trade-ban' : 'offer-limit',
+      rootStyle,
+      open: this.state.open,
+      closed: !this.state.open,
+      message: msg,
+      messageParts: msg.split(/(\d+)/).filter(Boolean).map((t) => ({ t, style: /^\d/.test(t) ? "font-family: 'Atkinson Hyperlegible Mono', monospace;" : '' })),
+      close: () => this.setState({ open: false }),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

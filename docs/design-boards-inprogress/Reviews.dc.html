@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reviews</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@keyframes x2f-sheet-in{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
+
+  <sc-if value="{{isWrite}}" hint-placeholder-val="{{true}}">
+    <header style="display: flex; flex-direction: column; gap: 4px; padding: 20px 16px 8px;">
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You bought <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR ($412.50) from satoshi_ghost · Zelle</span>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Review the trade</h1>
+    </header>
+    <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <section aria-labelledby="rv-q" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 id="rv-q" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How was trading with satoshi_ghost?</h2>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">They see your review once they've reviewed you too, or after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7</span> days.</span>
+        </div>
+        <div role="radiogroup" aria-labelledby="rv-q" style="display: flex; gap: 4px; margin: 0 -6px;">
+          <sc-for list="{{pickStars}}" as="st" hint-placeholder-count="5">
+            <button type="button" role="radio" aria-checked="{{st.checked}}" aria-label="{{st.label}}" onClick="{{st.pick}}" style="display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border: 0; border-radius: 12px; background: transparent; padding: 0; cursor: pointer;">
+              <svg width="42" height="42" viewBox="0 0 24 24" aria-hidden="true" style="{{st.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{st.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            </button>
+          </sc-for>
+        </div>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{ratingLabel}}</span>
+      </section>
+
+      <section aria-labelledby="rv-phr" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 id="rv-phr" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What stood out?</h2>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Tap any that fit.</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <sc-for list="{{phrases}}" as="t" hint-placeholder-count="8">
+            <button type="button" aria-pressed="{{t.on}}" onClick="{{t.toggle}}" style="{{t.style}}">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-labelledby="rv-bdg" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+            <h2 id="rv-bdg" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Describe this trade</h2>
+            <span style="flex-shrink: 0; font-size: 13px; color: var(--ink-muted);">{{badgeCount}}</span>
+          </div>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> badges. They're counted on satoshi_ghost's profile.</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <sc-for list="{{badges}}" as="b" hint-placeholder-count="6">
+            <button type="button" aria-pressed="{{b.on}}" aria-disabled="{{b.disabled}}" onClick="{{b.toggle}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"/></svg>{{b.label}}</button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <label for="rv-note" style="font-size: 18px; line-height: 24px; font-weight: 600;">In your own words <span style="font-size: 14px; font-weight: 400; color: var(--ink-muted);">(optional)</span></label>
+        <textarea id="rv-note" rows="3" maxlength="200" value="{{note}}" onChange="{{onNote}}" placeholder="What should other traders know?" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+        <span style="align-self: flex-end; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; color: var(--ink-muted);">{{noteCount}}</span>
+      </section>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <button type="button" onClick="{{submit}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Submit review</button>
+      <button type="button" onClick="{{submit}}" style="height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Neutral, skip details</button>
+    </footer>
+  </sc-if>
+
+  <sc-if value="{{isThanks}}" hint-placeholder-val="{{false}}">
+    <header style="padding: 20px 16px 8px;">
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Review the trade</h1>
+    </header>
+    <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <section aria-label="Review saved" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 3px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Review saved. satoshi_ghost sees it once they've reviewed you too, or after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7</span> days.</p>
+      </section>
+      <button type="button" onClick="{{again}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show the form again</button>
+    </main>
+  </sc-if>
+
+  <sc-if value="{{isProfile}}" hint-placeholder-val="{{false}}">
+    <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+      <a href="#" aria-label="Back" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Your profile</span>
+    </header>
+    <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <section style="display: flex; align-items: center; gap: 14px;">
+        <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 56px; height: 56px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--escrow); font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700;">M</span>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">mira.k</h1>
+          <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Online · member since <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">Mar 2025</span></span>
+        </div>
+      </section>
+
+      <section aria-label="Totals" style="display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">42</span> completed, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">98%</span> positive</span>
+        <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span style="display: inline-flex; gap: 2px;" aria-hidden="true">
+            <sc-for list="{{averageStars}}" as="a" hint-placeholder-count="5">
+              <svg width="16" height="16" viewBox="0 0 24 24" style="{{a.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{a.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            </sc-for>
+          </span>
+          <span style="font-size: 14px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{average}}</span> {{maxLabel}} average · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">40</span> reviews</span>
+        </span>
+      </section>
+
+      <section aria-labelledby="rvp-ms" style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 id="rvp-ms" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Badges</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>10 trades</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg>Fast</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg>PGP verified</span>
+        </div>
+      </section>
+
+      <section aria-labelledby="rvp-tb" style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 id="rvp-tb" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">How traders describe their trades</h2>
+        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px;">
+          <li style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 14px;">Smooth trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">28</span></li>
+          <li style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 14px;">Great communication <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">19</span></li>
+          <li style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 14px;">Exact amount and memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">12</span></li>
+          <li style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); font-size: 14px;">Patient with a newcomer <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">4</span></li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="rvp-list" style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 id="rvp-list" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Reviews (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">40</span>)</h2>
+        <sc-for list="{{reviews}}" as="r" hint-placeholder-count="3">
+          <article style="display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 6px; border-radius: 16px; background: var(--surface);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+              <span role="img" aria-label="{{r.starsLabel}}" style="display: inline-flex; gap: 1px;">
+                <sc-for list="{{r.stars}}" as="a" hint-placeholder-count="5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="{{a.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{a.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                </sc-for>
+              </span>
+              <span style="font-size: 13px; color: var(--ink-muted);">{{r.meta}}</span>
+            </div>
+            <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">from <span style="font-weight: 600; color: var(--ink);">{{r.from}}</span></span>
+            <span style="{{r.phraseStyle}}">{{r.phrases}}</span>
+            <sc-if value="{{r.hasBadges}}" hint-placeholder-val="{{true}}">
+              <span style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <sc-for list="{{r.badges}}" as="b" hint-placeholder-count="2">
+                  <span style="padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px;">{{b.label}}</span>
+                </sc-for>
+              </span>
+            </sc-if>
+            <sc-if value="{{r.hasNote}}" hint-placeholder-val="{{true}}">
+              <p style="margin: 0; font-size: 15px; line-height: 22px;">{{r.note}}</p>
+            </sc-if>
+            <sc-if value="{{r.canDispute}}" hint-placeholder-val="{{true}}">
+              <button type="button" onClick="{{r.openDispute}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4h11l-1.5 4L16 12H5"/></svg>Dispute this review</button>
+            </sc-if>
+            <sc-if value="{{r.isDisputed}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 8%, var(--surface-raised));">
+                <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mod);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Under review</span>
+                <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">A moderator will check this review against the trade. It stays up unless it breaks the rules.</p>
+              </div>
+            </sc-if>
+          </article>
+        </sc-for>
+      </section>
+    </main>
+  </sc-if>
+
+  <sc-if value="{{disputeOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; z-index: 3; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="rvd-title" style="width: 100%; box-sizing: border-box; padding: 24px 16px 8px; border-radius: 16px 16px 0 0; border-top: 1px solid var(--surface-raised); background: var(--surface); display: flex; flex-direction: column; gap: 16px; animation: x2f-sheet-in 200ms ease-out;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h2 id="rvd-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Dispute this review</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Tell a moderator what's wrong with {{disputeFrom}}'s review. They'll check it against the trade.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="rvd-why" style="font-size: 15px; line-height: 20px; font-weight: 600;">Tell the moderator what's wrong with this review</label>
+          <textarea id="rvd-why" rows="4" required aria-describedby="rvd-why-hint" value="{{why}}" onChange="{{onWhy}}" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+          <span id="rvd-why-hint" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Required. At least <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> characters.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin: 0 -16px; padding: 16px 16px 0; border-top: 1px solid var(--surface-raised);">
+          <button type="button" disabled="{{noWhy}}" onClick="{{sendDispute}}" style="{{sendStyle}}">Send</button>
+          <button type="button" onClick="{{closeDispute}}" style="height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink);">Reviews are examples. Only you see "Dispute this review".</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":390,"height":1528}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      r5: 4,
+      phrases: { 'Fast release': true, 'Clear instructions': true },
+      badges: { 'Smooth trade': true },
+      note: '',
+      submitted: false,
+      disputeFor: null, why: '', disputed: { r3: true }
+    };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const view = this.props.view === 'profile' ? 'profile' : 'write';
+    const max = 5;
+    const s = this.state;
+    // App area height (measured, min 844), plus the design-notes strip below it.
+    const appH = view === 'profile' ? 1211 : (s.submitted ? 844 : 1433);
+    const NOTES = 95;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
+    const NAV_ON = 'display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;';
+    const NAV_OFF = 'display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;';
+
+    // Star picker (write view)
+    const rating = s.r5;
+    const pickStars = [];
+    for (let n = 1; n <= max; n++) {
+      pickStars.push({
+        label: n + ' of ' + max,
+        checked: n === rating ? 'true' : 'false',
+        fill: n <= rating ? 'currentColor' : 'none',
+        style: 'color: ' + (n <= rating ? 'var(--caution)' : 'var(--line)') + ';',
+        pick: () => this.setState({ r5: n })
+      });
+    }
+
+    // Templated comments
+    const good = ['Fast release', 'Friendly', 'Clear instructions', 'Would trade again'];
+    const bad = ['Slow', 'Went quiet', 'Asked for ID', 'Payment didn’t match'];
+    const chipBase = 'min-height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 15px; cursor: pointer; ';
+    const phrases = good.concat(bad).map((label) => {
+      const on = !!s.phrases[label];
+      const isBad = bad.indexOf(label) >= 0;
+      const tone = isBad ? 'var(--danger)' : 'var(--escrow)';
+      return {
+        label, on: on ? 'true' : 'false',
+        style: on
+          ? chipBase + 'border: 2px solid ' + tone + '; background: color-mix(in srgb, ' + tone + ' 14%, var(--surface-raised)); color: ' + tone + '; font-weight: 600;'
+          : chipBase + 'border: 1px solid var(--line); background: transparent; color: var(--ink);',
+        toggle: () => this.setState({ phrases: Object.assign({}, s.phrases, { [label]: !on }) })
+      };
+    });
+
+    // Badges that describe the trade (up to 3)
+    const badgeDefs = [
+      ['Smooth trade', 'M5 12l4 4 10-10'],
+      ['Great communication', 'M4 5h16v11H8l-4 4z'],
+      ['Patient with a newcomer', 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2-5-6-5 0 3 2 5 6 5z'],
+      ['Exact amount and memo', 'M4 7h16M4 12h16M4 17h10'],
+      ['Easy cash handover', 'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4z'],
+      ['Went the extra mile', 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z']
+    ];
+    const pickedCount = badgeDefs.filter((b) => s.badges[b[0]]).length;
+    const badges = badgeDefs.map(([label, icon]) => {
+      const on = !!s.badges[label];
+      const disabled = !on && pickedCount >= 3;
+      return {
+        label, icon, on: on ? 'true' : 'false',
+        disabled,
+        style: chipBase + 'display: inline-flex; align-items: center; gap: 6px; ' + (on
+          ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;'
+          : 'border: 1px solid var(--line); background: transparent; color: ' + (disabled ? 'var(--ink-muted)' : 'var(--ink)') + '; opacity: ' + (disabled ? '0.5' : '1') + ';'),
+        toggle: () => { if (!disabled) this.setState({ badges: Object.assign({}, s.badges, { [label]: !on }) }); }
+      };
+    });
+
+    // Profile (the person reviewed: you)
+    const starRow = (v) => {
+      const out = [];
+      for (let n = 1; n <= max; n++) out.push({ fill: n <= v ? 'currentColor' : 'none', style: 'color: ' + (n <= v ? 'var(--caution)' : 'var(--line)') + ';' });
+      return out;
+    };
+    const reviewData = [
+      { id: 'r1', from: 'satoshi_ghost', when: '2 days ago', method: 'Zelle', v5: 5, phrases: 'Fast release · Clear instructions', bad: false, badges: ['Smooth trade', 'Exact amount and memo'], note: 'Released in five minutes, everything as described.' },
+      { id: 'r2', from: 'nightowl_44', when: '1 week ago', method: 'Cash by mail', v5: 5, phrases: 'Would trade again · Friendly', bad: false, badges: ['Great communication'], note: '' },
+      { id: 'r3', from: 'quickflip_22', when: '3 weeks ago', method: 'Zelle', v5: 2, phrases: 'Went quiet · Slow', bad: true, badges: [], note: 'Took ages to release.' }
+    ];
+    const reviews = reviewData.map((r) => {
+      const v = r.v5;
+      const isDisputed = !!s.disputed[r.id];
+      return {
+        from: r.from, meta: r.when + ' · ' + r.method,
+        starsLabel: v + ' of ' + max + ' stars',
+        stars: starRow(v),
+        phrases: r.phrases,
+        phraseStyle: 'font-size: 14px; line-height: 20px; font-weight: 600; color: ' + (r.bad ? 'var(--danger)' : 'var(--escrow)') + ';',
+        hasBadges: r.badges.length > 0,
+        badges: r.badges.map((b) => ({ label: b })),
+        hasNote: !!r.note, note: r.note,
+        canDispute: !isDisputed,
+        isDisputed,
+        openDispute: () => this.setState({ disputeFor: r.id, why: '' })
+      };
+    });
+    const disputeTarget = reviewData.filter((r) => r.id === s.disputeFor)[0];
+    const whyReady = s.why.trim().length >= 10;
+
+    return {
+      rootStyle, appStyle,
+      isWrite: view === 'write' && !s.submitted,
+      isThanks: view === 'write' && s.submitted,
+      isProfile: view === 'profile',
+      navTrade: view === 'write' ? NAV_ON : NAV_OFF,
+      navProfile: view === 'profile' ? NAV_ON : NAV_OFF,
+      pickStars, ratingLabel: rating + ' of ' + max,
+      phrases, badges,
+      badgeCount: pickedCount + ' of 3 picked',
+      note: s.note, noteCount: s.note.length + ' / 200',
+      onNote: (e) => this.setState({ note: e.target.value.slice(0, 200) }),
+      submit: () => this.setState({ submitted: true }),
+      again: () => this.setState({ submitted: false }),
+      average: '4.8', maxLabel: 'of ' + max,
+      averageStars: starRow(5),
+      reviews,
+      why: s.why,
+      noWhy: !whyReady,
+      sendStyle: 'height: 56px; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (whyReady ? 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      onWhy: (e) => this.setState({ why: e.target.value }),
+      disputeOpen: view === 'profile' && !!disputeTarget,
+      disputeFrom: disputeTarget ? disputeTarget.from : '',
+      closeDispute: () => this.setState({ disputeFor: null }),
+      sendDispute: () => { if (whyReady) this.setState({ disputed: Object.assign({}, s.disputed, { [s.disputeFor]: true }), disputeFor: null, why: '' }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

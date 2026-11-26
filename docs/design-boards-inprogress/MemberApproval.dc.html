@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Member approval</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <sc-if value="{{isLead}}" hint-placeholder-val="{{true}}">
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 12px;">
+      <span aria-hidden="true" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+      <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </header>
+    <main style="flex-grow: 1; padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 16px;" aria-hidden="true">
+      <span style="height: 48px; border-radius: 12px; background: var(--surface);"></span>
+      <span style="height: 120px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="height: 120px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="height: 120px; border-radius: 16px; background: var(--surface);"></span>
+    </main>
+
+    <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="ma-title" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+            <span style="display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.8-3.5 3.2-5.5 6-5.5s5.2 2 6 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7"/><path d="M18 14.8c1.6.8 2.6 2.6 3 5.2"/></svg>New team member</span>
+            <h2 id="ma-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">desk_ana wants to join your team</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">They used your invite link and are logging in for the first time. They can&#39;t get in until you approve them.</p>
+            <dl style="margin: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">DA</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">desk_ana</span><span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team); font-size: 12px; line-height: 16px; font-weight: 600;">Team member</span></span></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px; border-top: 1px solid var(--surface);"><dt style="flex-shrink: 0; color: var(--ink-muted);">Starts with</dt><dd style="margin: 0; text-align: right; font-size: 15px; font-weight: 600;">Trade handler <span style="white-space: nowrap;">(<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">9</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed)</span></dd></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px; border-top: 1px solid var(--surface);"><dt style="flex-shrink: 0; color: var(--ink-muted);">Device</dt><dd style="margin: 0; text-align: right; font-size: 15px; font-weight: 600;">Firefox, Linux</dd></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px; border-top: 1px solid var(--surface);"><dt style="flex-shrink: 0; color: var(--ink-muted);">Time</dt><dd style="margin: 0; text-align: right; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">2 Nov 2026, 09:12 UTC</dd></div>
+            </dl>
+            <a href="MemberPermissions.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 48px; margin: -4px 0; color: var(--ink); text-decoration: none;"><span style="flex-grow: 1; font-size: 16px; line-height: 22px; font-weight: 600; text-decoration: underline;">Review what they can do</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a>
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Team members can never change payout wallets or start a hold.</p></div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button type="button" onClick="{{approve}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Approve</button>
+              <button type="button" onClick="{{refuse}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Refuse</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isApproved}}" hint-placeholder-val="{{false}}">
+            <span aria-hidden="true" style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
+            <h2 id="ma-title" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">desk_ana is on your team</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">They&#39;re logged in now, starting as Trade handler <span style="white-space: nowrap;">(<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">9</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed)</span>.</p>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">You can change what they can do or switch them off any time in <a href="Team.dc.html" style="color: var(--monero-ink); padding: 14px 0;">Team</a>.</p>
+            <button type="button" onClick="{{close}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Done</button>
+          </sc-if>
+
+          <sc-if value="{{isRefused}}" hint-placeholder-val="{{false}}">
+            <span aria-hidden="true" style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg></span>
+            <h2 id="ma-title" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Refused</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">desk_ana was removed from your team. Nobody else is affected.</p>
+            <button type="button" onClick="{{close}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">OK</button>
+          </sc-if>
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{reopen}}" style="position: absolute; left: 16px; right: 16px; bottom: 16px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show the request again</button>
+    </sc-if>
+  </sc-if>
+
+  <sc-if value="{{isMember}}" hint-placeholder-val="{{false}}">
+    <header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 16px;">
+      <span style="display: flex; margin-left: -10px;"><a href="Login.dc.html" aria-label="Back to log in" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a></span>
+      <h1 style="flex-grow: 1; margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Log in</h1>
+      <span style="align-self: flex-start; padding-top: 6px;"><span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span></span>
+    </header>
+    <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+        <section aria-labelledby="ma-m-t" style="display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <span style="display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Waiting for approval</span>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="ma-m-t" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Waiting for satoshi_ghost to approve you</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">This is your first login on satoshi_ghost&#39;s team. They&#39;ve been sent a request to let you in.</p>
+          </div>
+          <dl style="margin: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px;"><dt style="flex-shrink: 0; color: var(--ink-muted);">Your username</dt><dd style="margin: 0; text-align: right; font-size: 15px; font-weight: 600;">desk_ana</dd></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px; border-top: 1px solid var(--surface);"><dt style="flex-shrink: 0; color: var(--ink-muted);">You start with</dt><dd style="margin: 0; text-align: right; font-size: 15px; font-weight: 600;">Trade handler <span style="white-space: nowrap;">(<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">9</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed)</span></dd></div>
+          </dl>
+        </section>
+        <p style="display: flex; gap: 10px; margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M11 18h2"/></svg><span>Keep this screen open. You&#39;ll be let in as soon as they approve.</span></p>
+      </sc-if>
+      <sc-if value="{{isApproved}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="ma-m-t" style="display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
+          <span style="display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>Approved</span>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="ma-m-t" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">You&#39;re in</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">satoshi_ghost approved you. You start as Trade handler <span style="white-space: nowrap;">(<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">9</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed)</span>.</p>
+          </div>
+        </section>
+      </sc-if>
+      <sc-if value="{{isRefused}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="ma-m-t" style="display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);">
+          <span style="display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Refused</span>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="ma-m-t" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Not approved</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">satoshi_ghost didn&#39;t approve this login. Ask them for a new invite.</p>
+          </div>
+        </section>
+      </sc-if>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+        <a href="Login.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-size: 18px; font-weight: 600; text-decoration: none;">Cancel</a>
+      </sc-if>
+      <sc-if value="{{isApproved}}" hint-placeholder-val="{{false}}">
+        <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
+      </sc-if>
+      <sc-if value="{{isRefused}}" hint-placeholder-val="{{false}}">
+        <a href="Login.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-size: 18px; font-weight: 600; text-decoration: none;">Back to log in</a>
+      </sc-if>
+    </footer>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["lead","member"],"default":"lead"},"state":{"editor":"enum","options":["waiting","approved","refused"],"default":"waiting"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { stage: null, open: true }; }
+  componentDidUpdate(prev) { if (prev.side !== this.props.side || prev.state !== this.props.state) this.setState({ stage: null, open: true }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+    const lead = this.props.side !== 'member';
+    const stage = s.stage || this.props.state || 'waiting';
+    return {
+      rootStyle,
+      isLead: lead, isMember: !lead,
+      isAsk: stage === 'waiting', isApproved: stage === 'approved', isRefused: stage === 'refused',
+      open: s.open, closed: !s.open,
+      approve: () => this.setState({ stage: 'approved' }),
+      refuse: () => this.setState({ stage: 'refused' }),
+      close: () => this.setState({ open: false }),
+      reopen: () => this.setState({ open: true, stage: 'waiting' })
+    };
+  }
+}
+</script>
+</body>
+</html>

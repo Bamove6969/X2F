@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Review account changes (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button:disabled{opacity:.5;cursor:not-allowed}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+[aria-label="Design notes"]>*{max-width:720px;box-sizing:border-box}
+.mono{font-family:'Atkinson Hyperlegible Mono',monospace}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{frameStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Waiting changes</span></div>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+      <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 005 12a7 7 0 00.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6A7 7 0 0019 12z"/></svg>Settings</a>
+      <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 015 .5c0 1.5-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+    </nav>
+    <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+        <sc-if value="{{showBanner}}" hint-placeholder-val="{{false}}">
+          <div role="status" style="display: flex; align-items: center; gap: 12px; max-width: 944px; padding: 8px 8px 8px 16px; box-sizing: border-box; border-radius: 12px; background: color-mix(in srgb, var(--caution) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+            <svg style="flex-shrink: 0; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span style="flex-grow: 1; font-size: 15px; line-height: 22px;"><span class="mono">{{countN}}</span> {{bannerWord}} effect on <span class="mono" style="white-space: nowrap;">7 Nov 2026, 15:00 UTC</span></span>
+            <a href="#" onClick="{{toReviewLink}}" style="display: inline-flex; flex-shrink: 0; align-items: center; height: 44px; padding: 0 8px; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: underline;">Review changes</a>
+            <button type="button" onClick="{{openCancel}}" style="flex-shrink: 0; height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel these changes</button>
+          </div>
+        </sc-if>
+        <div style="{{headStyle}}">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <sc-if value="{{showBack}}" hint-placeholder-val="{{false}}">
+              <button type="button" onClick="{{back}}" aria-label="{{backLabel}}" style="display: flex; width: 44px; height: 44px; margin-left: -12px; flex-shrink: 0; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+            </sc-if>
+            <h1 style="margin: 0; flex-grow: 1; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">{{headTitle}}</h1>
+            <span class="mono" style="align-self: flex-start; flex-shrink: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+          </div>
+          <sc-if value="{{isReview}}" hint-placeholder-val="{{false}}">
+            <p style="margin: 4px 0 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);"><span class="mono" style="color: var(--ink);">{{countN}}</span> {{countWord}} · up to <span class="mono" style="color: var(--ink);">20</span></p>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{isEditLike}}" hint-placeholder-val="{{true}}">
+          <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
+            <div style="{{whoStyle}}">
+              <svg style="{{whoIconStyle}}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+              <p style="margin: 0; font-size: 14px; line-height: 20px;">{{whoText}}</p>
+            </div>
+
+            <section aria-labelledby="hc-login" style="display: flex; flex-direction: column; gap: 12px;">
+              <h2 id="hc-login" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Login methods</h2>
+              <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 16px; background: var(--surface);">
+                <sc-for list="{{loginRows}}" as="r" hint-placeholder-count="2">
+                  <sc-if value="{{r.divider}}" hint-placeholder-val="{{false}}"><div style="height: 1px; margin: 0 16px; background: var(--surface-raised);"></div></sc-if>
+                  <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box;">
+                    <span style="{{r.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></span>
+                    <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                      <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
+                      <span style="{{r.subStyle}}">{{r.pre}}<span class="mono">{{r.m}}</span>{{r.post}}</span>
+                    </span>
+                    <button type="button" onClick="{{r.act}}" style="flex-shrink: 0; min-width: 80px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{r.actLabel}}</button>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{canAdd}}" hint-placeholder-val="{{true}}">
+                <button type="button" aria-expanded="{{addOn}}" onClick="{{toggleAdd}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; text-align: left; cursor: pointer;">
+                  <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+                  Add a passkey, security key or PGP key
+                </button>
+              </sc-if>
+              <sc-if value="{{addOpen}}" hint-placeholder-val="{{false}}">
+                <div role="group" aria-label="Stronger login methods" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface);">
+                  <sc-for list="{{addOpts}}" as="o" hint-placeholder-count="3">
+                    <button type="button" onClick="{{o.pick}}" style="display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 56px; padding: 10px 14px; box-sizing: border-box; border: 2px solid transparent; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+                      <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{o.name}}</span>
+                      <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{o.desc}}</span>
+                    </button>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </section>
+
+            <section aria-labelledby="hc-wallet" style="display: flex; flex-direction: column; gap: 12px;">
+              <h2 id="hc-wallet" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Wallets</h2>
+              <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 16px; background: var(--surface);">
+                <sc-for list="{{walletRows}}" as="r" hint-placeholder-count="1">
+                  <sc-if value="{{r.divider}}" hint-placeholder-val="{{false}}"><div style="height: 1px; margin: 0 16px; background: var(--surface-raised);"></div></sc-if>
+                  <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box;">
+                    <span style="{{r.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg></span>
+                    <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                      <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}} ·<span class="mono" style="font-weight: 500;">{{r.addr}}</span></span>
+                      <span style="{{r.subStyle}}">{{r.pre}}<span class="mono">{{r.m}}</span>{{r.post}}</span>
+                    </span>
+                    <button type="button" onClick="{{r.act}}" style="flex-shrink: 0; min-width: 80px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{r.actLabel}}</button>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{canAddWallet}}" hint-placeholder-val="{{true}}">
+                <button type="button" onClick="{{addWallet}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; text-align: left; cursor: pointer;">
+                  <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+                  Add a wallet
+                </button>
+              </sc-if>
+            </section>
+
+            <section aria-labelledby="hc-team" style="display: flex; flex-direction: column; gap: 12px;">
+              <h2 id="hc-team" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team</h2>
+              <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 16px; background: var(--surface);">
+                <sc-for list="{{teamRows}}" as="r" hint-placeholder-count="1">
+                  <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box;">
+                    <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--team); border: 2px solid var(--team); color: var(--ground);">DA</span>
+                    <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                      <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
+                      <span style="{{r.subStyle}}">{{r.pre}}<span class="mono">{{r.m}}</span>{{r.post}}</span>
+                    </span>
+                    <button type="button" onClick="{{r.act}}" style="flex-shrink: 0; min-width: 80px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{r.actLabel}}</button>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+              <sc-if value="{{isUp}}" hint-placeholder-val="{{true}}"><p style="margin: 0; font-size: 14px; line-height: 20px;">Nothing changes until you submit. Submitting starts a <span class="mono">24</span>-hour hold.</p></sc-if>
+              <sc-if value="{{isStrong}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 14px; line-height: 20px;">Nothing changes until you confirm.</p></sc-if>
+            </div>
+            <div style="display: flex; align-items: center; gap: 16px; padding: 16px 16px 16px 20px; border-radius: 16px; background: var(--surface);">
+              <span role="status" style="flex-grow: 1; font-size: 15px; line-height: 22px; font-weight: 600;">{{waitPre}}<span class="mono">{{waitN}}</span>{{waitPost}}</span>
+              <button type="button" disabled="{{noChanges}}" onClick="{{toReview}}" style="{{reviewBtnStyle}}">Review</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{showGroups}}" hint-placeholder-val="{{false}}">
+          <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
+            <sc-if value="{{isApprove}}" hint-placeholder-val="{{false}}">
+              <section role="status" aria-labelledby="hc-wait" style="{{heroStyle}}">
+                <span style="{{chipStyle}}"><sc-if value="{{isHold}}" hint-placeholder-val="{{true}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><span class="mono">24</span>-hour hold</span></sc-if><sc-if value="{{isInstant}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span>Strong login</span></sc-if></span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <h2 id="hc-wait" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Changes waiting for you</h2>
+                  <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{heroSub}}</p>
+                </div>
+                <sc-if value="{{isHold}}" hint-placeholder-val="{{true}}">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <span class="lbl" style="color: var(--caution);">Time left</span>
+                  <p style="margin: 0; display: flex; align-items: baseline; gap: 6px; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);"><span class="mono" style="font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em; color: var(--ink);">23</span><span>h</span><span class="mono" style="margin-left: 6px; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em; color: var(--ink);">12</span><span>min</span></p>
+                  <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">They apply on their own when the time is up.</p>
+                </div>
+                </sc-if>
+                <sc-if value="{{isInstant}}" hint-placeholder-val="{{false}}">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <span class="lbl" style="color: var(--escrow);">When</span>
+                  <p style="margin: 0; display: flex; align-items: center; gap: 10px; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em;"><svg style="flex-shrink: 0; color: var(--escrow);" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>Applies now</p>
+                </div>
+                </sc-if>
+                <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Submitted by</dt><dd style="margin: 0; font-size: 15px; font-weight: 500;">{{submittedBy}}</dd></div>
+                  <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Ticked to apply</dt><dd style="margin: 0; font-size: 15px; font-weight: 500;"><span class="mono">{{tickedN}}</span> of <span class="mono">{{countN}}</span></dd></div>
+                  <sc-if value="{{isHold}}" hint-placeholder-val="{{true}}">
+                  <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Apply on their own</dt><dd class="mono" style="margin: 0; font-size: 15px; font-weight: 500; white-space: nowrap;">7 Nov 2026, 15:00 UTC</dd></div>
+                  </sc-if>
+                </dl>
+              </section>
+            </sc-if>
+            <sc-for list="{{groups}}" as="g" hint-placeholder-count="3">
+              <section aria-label="{{g.title}}" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+                <h2 style="margin: 0 0 4px; font-size: 18px; line-height: 24px; font-weight: 600;">{{g.title}}</h2>
+                <div aria-hidden="true" style="{{hdrStyle}}">
+                  <sc-if value="{{isApprove}}" hint-placeholder-val="{{false}}"><span></span></sc-if><span class="lbl">Before</span><span></span><span class="lbl">After</span>
+                </div>
+                <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px;">
+                  <sc-for list="{{g.items}}" as="c" hint-placeholder-count="1">
+                    <li aria-label="{{c.aria}}" style="{{liStyle}}">
+                      <sc-if value="{{c.canTick}}" hint-placeholder-val="{{false}}"><label style="display: flex; align-self: center; align-items: center; justify-content: center; width: 44px; height: 44px; cursor: pointer;"><input type="checkbox" aria-label="{{c.tickLabel}}" checked="{{c.ticked}}" onChange="{{c.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); cursor: pointer;"></label></sc-if>
+                      <div style="display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 64px; padding: 10px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised);{{c.dim}}">
+                        <span class="sr">Before:</span>
+                        <span style="{{c.b.titleStyle}}">{{c.b.title}}<sc-if value="{{c.b.addr}}" hint-placeholder-val="{{false}}"> ·<span class="mono" style="font-weight: 500;">{{c.b.addr}}</span></sc-if></span>
+                        <sc-if value="{{c.b.hasMeta}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.b.pre}}<span class="mono">{{c.b.m}}</span></span></sc-if>
+                      </div>
+                      <svg style="align-self: center; justify-self: center; color: var(--ink-muted);{{c.dim}}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                      <div style="{{afterStyle}}{{c.dim}}">
+                        <span class="sr">After:</span>
+                        <span style="{{c.a.titleStyle}}">{{c.a.title}}<sc-if value="{{c.a.addr}}" hint-placeholder-val="{{false}}"> ·<span class="mono" style="font-weight: 500;">{{c.a.addr}}</span></sc-if></span>
+                        <sc-if value="{{c.a.hasMeta}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.a.pre}}<span class="mono">{{c.a.m}}</span></span></sc-if>
+                        <span style="{{c.effStyle}}">
+                          <sc-if value="{{c.isClock}}" hint-placeholder-val="{{true}}"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></sc-if>
+                          <sc-if value="{{c.isCheck}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></sc-if><sc-if value="{{c.isOff}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg></sc-if>
+                          <span><sc-for list="{{c.parts}}" as="p" hint-placeholder-count="1"><span style="{{p.style}}">{{p.t}}</span></sc-for></span>
+                        </span>
+                      </div>
+                    </li>
+                  </sc-for>
+                </ol>
+              </section>
+            </sc-for>
+
+            <sc-if value="{{isReview}}" hint-placeholder-val="{{false}}">
+            <sc-if value="{{isUp}}" hint-placeholder-val="{{true}}">
+              <div role="note" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+                <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17h.01"/></svg>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <p style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Applies after a <span class="mono">24</span> h wait</p>
+                  <p style="margin: 0; font-size: 14px; line-height: 20px;">You logged in with just a username and password. Every change, removals included, applies after <span class="mono">24</span> h. Anyone logged in can cancel during the wait.</p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 12px 12px 16px; box-sizing: border-box; border-radius: 16px; background: var(--surface);">
+                <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></span>
+                <span style="flex-grow: 1; min-width: 0; font-size: 15px; line-height: 22px;">Add a passkey, security key or PGP key and changes like these go through at once.</span>
+                <a href="#" onClick="{{addStronger}}" style="display: inline-flex; flex-shrink: 0; align-items: center; height: 44px; padding: 0 8px; font-size: 15px; font-weight: 600;">Add one</a>
+              </div>
+              <section aria-labelledby="hc-facts" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+                <h2 id="hc-facts" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Before you submit</h2>
+                <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px;">
+                  <li style="display: flex; gap: 14px; align-items: flex-start; font-size: 15px; line-height: 22px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span style="padding-top: 9px;">If you log in with a passkey, security key or PGP key you had before the hold, you see these changes waiting and can approve them now, make changes or cancel all changes.</span></li>
+                  <li style="display: flex; gap: 14px; align-items: flex-start; font-size: 15px; line-height: 22px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span><span style="padding-top: 9px;">We tell the account owner straight away on every channel you set up, like push and secure Jabber, with a list of these changes.</span></li>
+                </ul>
+              </section>
+            </sc-if>
+            <sc-if value="{{isStrong}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+                <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+                <p style="margin: 0; font-size: 14px; line-height: 20px;">Your login is strong, so these apply as soon as you confirm.</p>
+              </div>
+            </sc-if>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <button type="button" onClick="{{submit}}" style="height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{submitLabel}}</button>
+              <button type="button" onClick="{{toEdit}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Back to editing</button>
+            </div>
+            </sc-if>
+            <sc-if value="{{isApprove}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <button type="button" disabled="{{noneTicked}}" onClick="{{approveNow}}" style="height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{approveLabel}}</button>
+                <button type="button" onClick="{{makeChanges}}" style="height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Make changes</button>
+                <button type="button" onClick="{{openCancel}}" style="display: inline-flex; align-items: center; gap: 4px; height: 44px; margin-left: auto; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel all changes<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isSubmitted}}" hint-placeholder-val="{{false}}">
+          <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+            <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+              <section role="status" aria-labelledby="hc-done" style="{{heroStyle}}">
+                <span style="{{chipStyle}}">
+                  <sc-if value="{{isUp}}" hint-placeholder-val="{{true}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><span class="mono">24</span>-hour hold</span></sc-if>
+                  <sc-if value="{{isStrong}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>Applied</span></sc-if>
+                </span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <h2 id="hc-done" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">{{doneTitle}}</h2>
+                  <sc-if value="{{isUp}}" hint-placeholder-val="{{true}}"><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Nothing has changed yet. Everything applies after <span class="mono">24</span> h.</p></sc-if>
+                  <sc-if value="{{isStrong}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your login is strong, so there was no wait.</p></sc-if>
+                </div>
+                <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Changes</dt><dd class="mono" style="margin: 0; font-size: 15px; font-weight: 500;">{{countN}}</dd></div>
+                  <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{doneDateLabel}}</dt><dd class="mono" style="margin: 0; font-size: 15px; font-weight: 500;">{{doneDate}}</dd></div>
+                </dl>
+              </section>
+              <div style="display: flex;">
+                <button type="button" onClick="{{toEdit}}" style="height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Back to Security</button>
+              </div>
+            </div>
+            <sc-if value="{{isUp}}" hint-placeholder-val="{{true}}">
+              <section aria-labelledby="hc-ends" style="display: flex; flex-direction: column; gap: 12px;">
+                <h2 id="hc-ends" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How the hold ends</h2>
+                <ol style="margin: 0; padding: 4px 0; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
+                  <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+                    <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                    <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">It ends on its own after <span class="mono">24</span> h</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your changes then become final.</span></span>
+                  </li>
+                  <li style="height: 1px; margin: 0 16px; background: var(--surface-raised);" aria-hidden="true"></li>
+                  <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+                    <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></span>
+                    <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">You log in with a passkey, security key or PGP key you had before</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">You see the changes waiting for you and choose: Approve now, Make changes or Cancel all changes.</span></span>
+                  </li>
+                  <li style="height: 1px; margin: 0 16px; background: var(--surface-raised);" aria-hidden="true"></li>
+                  <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+                    <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+                    <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">A moderator steps in</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">If you or a team member contacts a moderator, they can make the hold longer, or verify you so your changes apply sooner.</span></span>
+                  </li>
+                </ol>
+              </section>
+            </sc-if>
+          </div>
+        </sc-if>
+    </main>
+
+    <sc-if value="{{isWarn}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+        <section role="dialog" aria-modal="true" aria-labelledby="hc-warn-t" style="width: 520px; box-sizing: border-box; padding: 32px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>
+            Weak login
+          </span>
+          <h2 id="hc-warn-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Changes here will start a <span class="mono">24</span>-hour hold</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password, so changing your login methods, wallets or team starts a <span class="mono">24</span>-hour hold.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Every change, removals included, applies after <span class="mono">24</span> h.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">We strongly recommend adding a passkey, security key or PGP key now, so this doesn&#39;t happen again.</p>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+            <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+            <p style="margin: 0; font-size: 14px; line-height: 20px;">Want them sooner? A passkey, security key or PGP key you already had can approve them now, or message a moderator.</p>
+          </div>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Adding one is a change too, so it&#39;s part of this hold. Next time, log in with it and your changes won&#39;t start a hold.</p>
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+            <button type="button" onClick="{{continueAnyway}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Continue anyway</button>
+            <button type="button" onClick="{{addStronger}}" style="height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Add stronger security</button>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{cancelOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+        <section role="dialog" aria-modal="true" aria-labelledby="hc-cancel-t" style="width: 440px; box-sizing: border-box; padding: 32px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+          <h2 id="hc-cancel-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Cancel these <span class="mono" style="font-weight: 500;">{{countN}}</span> {{countWord}}?</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">None of these changes will apply.</p>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+            <button type="button" onClick="{{confirmCancel}}" style="order: 2; height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel changes</button>
+            <button type="button" onClick="{{closeCancel}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep them</button>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; margin-left: 240px; padding: 24px 48px 48px; border-top: 1px solid var(--line);">
+    <h2 class="mono" style="margin: 0; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}} · {{loginName}}</p>
+    <aside aria-label="Decided by the owner: one review of all changes, before and after" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G29, G5, G36)</span>
+      <span style="font-weight: 600;">All pending changes are submitted together from one review, showing each one before and after.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Grouped by Login methods, Wallets and Team. Up to <span class="mono">20</span> changes can wait at once (G36).</li>
+        <li>Username-and-password login: every change applies after <span class="mono">24</span> h (G5), removals included (p5-7).</li>
+        <li>Passkey, security key or PGP key login: no wait, but the same before-and-after review (G29).</li>
+        <li>Team members can&#39;t see the owner&#39;s waiting changes (G31).</li>
+      </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: no logout during the hold" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Submitting changes from a username-and-password session no longer logs anyone out. The account keeps working as normal; only the submitted changes wait <span style="white-space: nowrap;"><span class="mono">24</span> h</span> before they take effect.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>No logout for you or team members, and trades are not cancelled or put on hold.</li>
+        <li>While changes wait, a banner stays at the top of the app with the count, the date they take effect and Review changes.</li>
+        <li>Removals are no exception (p5-7, 7 Nov): a wallet, login method or team member marked for removal stays in place until the wait is over.</li>
+      </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: anyone logged in can cancel" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Anyone logged in to the account, even with just a username and password, can cancel the waiting changes.</span>
+      <span style="color: var(--ink-muted);">Cancel these changes sits next to Review changes in the banner, with a short confirm. Try it on the submitted step.</span>
+    </aside>
+    <aside aria-label="Decided by the owner: owner is told at once" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">The account owner is told at once on every channel they set up (push, secure Jabber and others), listing each change.</span>
+    </aside>
+    <aside aria-label="Decided by the owner: password plus authenticator is strong for traders" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G34, G13)</span>
+      <span style="font-weight: 600;">On a trader account, a password with an authenticator code counts as a strong login: no 24 h wait, and it can approve waiting changes. Vendors still need a passkey, security key or PGP key.</span>
+      <span style="color: var(--ink-muted);">The sample is a vendor with a team, so the screen copy stays. A trader version would add &quot;an authenticator app&quot; to each &quot;Add a passkey, security key or PGP key&quot; line (COPY-UNSIGNED).</span>
+    </aside>
+    <aside aria-label="Open for the owner: moderator contact" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to supply</span>
+      <span style="font-weight: 600;">Moderator contact: the Matrix or Telegram address the warning should show.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Matrix address</li>
+        <li>Telegram address</li>
+        <li>Both</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Until then the warning says only "or message a moderator".</span>
+    </aside>
+    <aside aria-label="Decided by the owner: a strong lead approves, changes or cancels waiting changes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G57, G58)</span>
+      <span style="font-weight: 600;">A lead who logs in with a passkey, security key or PGP key while changes wait sees them and decides: Approve now, Make changes or Cancel all changes.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>The approve step: a "Changes waiting for you" hero with the countdown (<span class="mono">23</span> h <span class="mono">12</span> min) and "They apply on their own when the time is up", then the same before-and-after list as the review, then the three actions. Approve now is the one primary; Cancel all changes is the danger tertiary and uses the cancel confirm.</li>
+        <li>The waiting changes may be the lead's own (made with a username and password) or a team member's with limited rights. A strong login no longer throws them away on its own (this replaces the earlier "thrown away" rule).</li>
+        <li>Team rows (G57; wording updated by p5-7): removing a member reads "Removed after <span class="mono">24</span> h"; every other team change reads "Applies after <span class="mono">24</span> h". Only the lead can remove team members.</li>
+      </ul>
+    </aside>
+        <aside aria-label="Decided by the owner: one view of waiting changes, a tick per change, Cancel all changes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (g65)</span>
+      <span style="font-weight: 600;">One view lists every waiting change and its effect. Each change has a tick; cancelling is Cancel all changes or unticking single changes.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Each row reads change → effect: before, after, then the effect line. Held changes carry the countdown (<span class="mono">23</span> h <span class="mono">12</span> min); the hero shows how many are ticked. Removals read "Removed in <span class="mono">23</span> h <span class="mono">12</span> min" like everything else (p5-7): nothing applies early.</li>
+        <li>Every change starts ticked. An unticked change never applies, so nothing needs restoring; the row dims and reads "Won&#39;t apply". Approve now puts through only the ticked ones.</li>
+        <li>Cancel all changes (renamed from Cancel all) drops every change after the short confirm; the confirm no longer talks about restoring anything.</li>
+        <li>Strong login (tweak <span class="mono">instant</span>): the same view, but every effect reads "Applies now", the countdown is replaced by "Applies now" and the primary is Apply changes.</li>
+      </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: removals during a hold wait 24 h like every other change" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span class="mono">Decided · owner, 7 Nov (p5-7)</span><span>Removals during a hold wait <span class="mono">24</span> h like every other change.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Nothing applies early: a wallet, login method or team member marked for removal keeps working until the time is up. Effect lines read "Removed in <span class="mono">23</span> h <span class="mono">12</span> min"; review badges read "Removed after <span class="mono">24</span> h".</li><li>During the hold the lead can log back in with a passkey, security key or PGP key and untick some or all of the changes.</li><li>This replaces the G5 exception for removals. Team carries the same wording.</li></ul></aside>
+    <aside aria-label="Decided by the owner: Changes apply on their own after the 24 h wait" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q14)</span><span style="font-weight: 600;">Changes apply on their own after the <span class="mono">24</span> h wait</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Anyone logged in can cancel them during the wait; the owner is alerted on every channel.</li><li>Never say "password only": the weakest login is a username and password.</li></ul></aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","approve","submitted"],"default":"review"},"login":{"editor":"enum","options":["username-password","strong"],"default":"username-password"},"instant":{"editor":"enum","options":["no","yes"],"default":"no"},"$preview":{"width":1280,"height":3047}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.preset(props.step); }
+  preset(step) {
+    const full = !!step && step !== 'warn';
+    return { stage: null, approved: false, password: full, passkey: false, added: null, walletRemove: full, walletAdd: full, member: full, addOpen: false, cancelOpen: false, off: {} };
+  }
+  componentDidUpdate(prev) { if (prev.step !== this.props.step || prev.login !== this.props.login || prev.instant !== this.props.instant) this.setState(this.preset(this.props.step)); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const s = this.state;
+    let stage = s.stage || this.props.step || 'review';
+    // Approve step (G57/G58): a strong-login lead looks at changes a username-and-password login submitted, so the hold badges apply.
+    const isApprove = stage === 'approve';
+    // g65 (owner, 7 Nov): with a strong login (tweak instant) the same view applies at once.
+    const instant = isApprove && this.props.instant === 'yes';
+    const up = isApprove ? !instant : (s.approved ? false : this.props.login !== 'strong');
+    if (!up && stage === 'warn') stage = 'edit';
+    // Root and app area grow to fit the content (min 800). Measured heights are in the report and $preview.
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const frameStyle = 'position: relative; flex-shrink: 0; min-height: 800px; display: flex; overflow: hidden;';
+    const TONE = up ? 'var(--caution)' : 'var(--escrow)';
+    const word = up ? 'submit' : 'confirm';
+    const tile = (pending) => 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (pending ? 'background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);' : 'background: var(--surface-raised); color: var(--ink);');
+    const sub = (pending) => 'font-size: 13px; line-height: 18px; color: ' + (pending ? 'var(--caution)' : 'var(--ink-muted)') + ';';
+    const waiting = ' · waiting to ' + word;
+    const row = (o, i) => Object.assign({ pre: '', m: '', post: '', divider: i > 0, tileStyle: tile(o.pending), subStyle: sub(o.pending) }, o);
+    const ADD = [
+      { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.', label: 'Security key added', pre: 'YubiKey 5C', m: '' },
+      { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.', label: 'Passkey added', pre: 'This phone', m: '' },
+      { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', label: 'PGP key added', pre: 'Ends ', m: '7F3A 91C2' }
+    ];
+    const added = ADD.find((a) => a.id === s.added);
+    const login = [
+      s.password ? { name: 'Password', pending: true, pre: 'New password set' + waiting, act: () => this.setState({ password: false }), actLabel: 'Undo' }
+                 : { name: 'Password', pre: 'Set ', m: '12 Jan 2026', act: () => this.setState({ password: true }), actLabel: 'Change' },
+      s.passkey ? { name: 'Passkey on Pixel 8', pending: true, pre: 'Will be removed' + waiting, act: () => this.setState({ passkey: false }), actLabel: 'Undo' }
+                : { name: 'Passkey on Pixel 8', pre: 'Added ', m: '3 Mar 2026', act: () => this.setState({ passkey: true }), actLabel: 'Remove' }
+    ];
+    if (added) login.push({ name: added.name + ' (new)', pending: true, pre: added.pre, m: added.m, post: waiting, act: () => this.setState({ added: null }), actLabel: 'Undo' });
+    const wallets = [
+      s.walletRemove ? { name: 'Cake Wallet', addr: '…k3Fz', pending: true, pre: 'Will be removed' + waiting, act: () => this.setState({ walletRemove: false }), actLabel: 'Undo' }
+                     : { name: 'Cake Wallet', addr: '…k3Fz', pre: 'Added ', m: '14 Feb 2026', act: () => this.setState({ walletRemove: true }), actLabel: 'Remove' }
+    ];
+    if (s.walletAdd) wallets.push({ name: 'Feather', addr: '…9QpL', pending: true, pre: 'New' + waiting, act: () => this.setState({ walletAdd: false }), actLabel: 'Undo' });
+    const team = [
+      s.member ? { name: 'desk_ana', pending: true, pre: 'Will be removed' + waiting, act: () => this.setState({ member: false }), actLabel: 'Undo' }
+               : { name: 'desk_ana', pre: 'Trades, Chat', act: () => this.setState({ member: true }), actLabel: 'Remove' }
+    ];
+
+    // Review tally: each change has a before and an after.
+    const BADGE = up ? {
+      remove: ['Removed after ', '24', ' h'],
+      member: ['Removed after ', '24', ' h'],
+      later: ['Applies after ', '24', ' h'],
+      usable: ['Usable after ', '7 Nov 2026, 15:00 UTC', '']
+    } : null;
+    const blk = (title, addr, pre, m, empty) => ({ title, addr: addr || '', pre: pre || '', m: m || '', hasMeta: !!(pre || m),
+      titleStyle: 'font-size: 15px; line-height: 22px; ' + (empty ? 'font-weight: 400; color: var(--ink-muted);' : 'font-weight: 600;') });
+    // g65: each change reads change -> effect. Held changes carry the countdown; instant ones read "Applies now"; an unticked change never applies.
+    const COUNT = [['23', 1], [' h '], ['12', 1], [' min']];
+    const MONO = "font-family: 'Atkinson Hyperlegible Mono', monospace;";
+    const eff = (kind) => {
+      if (instant) return { parts: [['Applies now']], icon: 'check' };
+      if (!up) return { parts: [['Applies when you confirm']], icon: 'check' };
+      if (isApprove) {
+        const lead = (kind === 'remove' || kind === 'member') ? 'Removed in ' : (kind === 'usable' ? 'Usable in ' : 'Applies in ');
+        return { parts: [[lead]].concat(COUNT), icon: 'clock' };
+      }
+      const t = BADGE[kind]; return { parts: [[t[0]], [t[1], 1], [t[2]]], icon: 'clock' };
+    };
+    const ch = (key, aria, b, a, kind) => {
+      const ticked = !s.off[key];
+      const e = ticked ? eff(kind) : { parts: [['Won’t apply']], icon: 'off' };
+      return { key, aria, b, a, ticked, canTick: isApprove, tickLabel: aria + ' · ticked changes apply',
+        parts: e.parts.filter((p) => p[0] !== '').map((p) => ({ t: p[0], style: p[1] ? MONO : '' })),
+        isClock: e.icon === 'clock', isCheck: e.icon === 'check', isOff: e.icon === 'off',
+        toggle: () => this.setState({ off: Object.assign({}, this.state.off, { [key]: ticked }) }),
+        dim: ticked ? '' : ' opacity: 0.55;',
+        effStyle: 'display: flex; align-items: flex-start; gap: 6px; margin-top: 4px; font-size: 13px; line-height: 18px; font-weight: 600; color: ' + (ticked ? TONE : 'var(--ink-muted)') + ';' };
+    };
+    const gLogin = [], gWallet = [], gTeam = [];
+    if (s.password) gLogin.push(ch('password', 'Password changed', blk('Password', '', 'Set ', '12 Jan 2026'), blk('New password'), 'later'));
+    if (s.passkey) gLogin.push(ch('passkey', 'Passkey removed', blk('Passkey on Pixel 8', '', 'Added ', '3 Mar 2026'), blk('Removed'), 'remove'));
+    if (added) gLogin.push(ch('added', added.label, blk('None', '', '', '', true), blk(added.name, '', added.pre, added.m), 'later'));
+    if (s.walletRemove) gWallet.push(ch('walletRemove', 'Wallet removed', blk('Cake Wallet', '…k3Fz'), blk('Removed'), 'remove'));
+    if (s.walletAdd) gWallet.push(ch('walletAdd', 'Wallet added', blk('None', '', '', '', true), blk('Feather', '…9QpL'), 'usable'));
+    if (s.member) gTeam.push(ch('member', 'Team member removed', blk('desk_ana', '', 'Trades, Chat'), blk('Removed'), 'member'));
+    [gLogin, gWallet, gTeam].forEach((g, k) => g.forEach((c) => { c.isLogin = k === 0; c.isWallet = k === 1; c.isTeam = k === 2; }));
+    const groups = [
+      { title: 'Login methods', items: gLogin },
+      { title: 'Wallets', items: gWallet },
+      { title: 'Team', items: gTeam }
+    ].filter((g) => g.items.length > 0);
+    const n = gLogin.length + gWallet.length + gTeam.length;
+    const allItems = gLogin.concat(gWallet, gTeam);
+    const tickedN = allItems.filter((c) => c.ticked).length;
+    // Approving applies only the ticked changes; unticked ones are dropped (nothing to restore).
+    const dropUnticked = () => { const p = {}; allItems.forEach((c) => { if (!c.ticked) p[c.key] = c.key === 'added' ? null : false; }); return p; };
+    const isEditLike = stage === 'warn' || stage === 'edit';
+    const reviewBtnStyle = 'flex-shrink: 0; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (n === 0 ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;');
+    const STEP_NAMES = { warn: 'warning before editing', edit: 'editing', review: 'review before submitting', approve: instant ? 'apply, change or cancel waiting changes (strong login, applies now)' : 'approve, change or cancel waiting changes (strong login)', submitted: 'changes submitted' };
+    return {
+      rootStyle, frameStyle,
+      stepName: STEP_NAMES[stage] || stage,
+      loginName: isApprove ? (instant ? 'strong login, changes apply at once' : 'strong login, changes submitted with a username and password') : (up ? 'username and password' : 'strong login'),
+      isUp: up, isStrong: !up,
+      headTitle: stage === 'review' ? 'Review your changes' : (stage === 'submitted' ? (up ? 'Hold started' : 'Security') : 'Security'),
+      showBack: stage === 'review',
+      backLabel: 'Back to editing',
+      back: () => this.setState({ stage: 'edit' }),
+      isWarn: stage === 'warn' && up, isEditLike, isReview: stage === 'review', isSubmitted: stage === 'submitted',
+      isApprove, showGroups: stage === 'review' || isApprove,
+      approveNow: () => { if (tickedN > 0) this.setState(Object.assign({ stage: 'submitted', approved: true, off: {} }, dropUnticked())); },
+      approveLabel: instant ? 'Apply changes' : 'Approve now', noneTicked: tickedN === 0,
+      isInstant: instant, isHold: isApprove && !instant,
+      heroSub: instant ? 'Your login is strong, so these apply as soon as you confirm.' : 'Submitted with just a username and password. Your login is strong, so you can decide now.',
+      submittedBy: instant ? 'You · passkey' : 'You · username and password',
+      tickedN: String(tickedN),
+      liStyle: 'display: grid; grid-template-columns: ' + (isApprove ? '44px ' : '') + '1fr 32px 1fr; gap: 8px; align-items: stretch;',
+      hdrStyle: 'display: grid; grid-template-columns: ' + (isApprove ? '44px ' : '') + '1fr 32px 1fr; gap: 8px;',
+      makeChanges: () => this.setState({ stage: 'edit', approved: true, off: {} }),
+      showBanner: stage === 'submitted' && up,
+      whoStyle: 'display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, ' + TONE + ' 10%, var(--surface)); border: 1px solid color-mix(in srgb, ' + TONE + ' 30%, transparent);',
+      whoIconStyle: 'flex-shrink: 0; margin-top: 1px; color: ' + TONE + ';',
+      whoText: up ? 'Owner · logged in with just a username and password' : 'Owner · logged in with a passkey',
+      loginRows: login.map(row), walletRows: wallets.map(row), teamRows: team.map(row),
+      canAdd: !added, addOpen: s.addOpen && !added, addOn: s.addOpen ? 'true' : 'false',
+      toggleAdd: () => this.setState({ addOpen: !s.addOpen }),
+      addOpts: ADD.map((a) => ({ name: a.name, desc: a.desc, pick: () => this.setState({ added: a.id, addOpen: false }) })),
+      canAddWallet: !s.walletAdd,
+      addWallet: () => this.setState({ walletAdd: true }),
+      waitPre: n === 0 ? 'No changes yet' : '', waitN: n === 0 ? '' : String(n),
+      waitPost: n === 0 ? '' : (n === 1 ? ' change' : ' changes') + ' waiting to ' + word,
+      noChanges: n === 0, reviewBtnStyle,
+      toReview: () => { if (n > 0) this.setState({ stage: 'review' }); },
+      toReviewLink: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ stage: 'review' }); },
+      toEdit: () => this.setState({ stage: 'edit', approved: false }),
+      submit: () => this.setState({ stage: 'submitted' }),
+      submitLabel: up ? 'Submit changes' : 'Confirm changes',
+      groups,
+      headStyle: 'display: flex; flex-direction: column; max-width: ' + (stage === 'submitted' ? 944 : 720) + 'px;',
+      afterStyle: 'display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 64px; box-sizing: border-box; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, ' + TONE + ' 8%, var(--surface-raised)); border: 1px solid color-mix(in srgb, ' + TONE + ' 35%, transparent);',
+      heroStyle: 'display: flex; flex-direction: column; gap: 24px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + TONE + ' 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, ' + TONE + ' 35%, transparent);',
+      chipStyle: 'display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + TONE + ' 14%, transparent); color: ' + TONE + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;',
+      doneTitle: up ? 'Changes submitted' : 'Changes applied',
+      doneDateLabel: up ? 'Final on' : 'Applied',
+      doneDate: up ? '7 Nov 2026, 15:00 UTC' : '6 Nov 2026, 15:00 UTC',
+      countN: String(n),
+      countWord: n === 1 ? 'change' : 'changes',
+      bannerWord: n === 1 ? 'change takes' : 'changes take',
+      addStronger: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ stage: 'edit', addOpen: true }); },
+      continueAnyway: () => this.setState({ stage: 'edit' }),
+      cancelOpen: !!s.cancelOpen && ((stage === 'submitted' && up) || isApprove),
+      openCancel: () => this.setState({ cancelOpen: true }),
+      closeCancel: () => this.setState({ cancelOpen: false }),
+      confirmCancel: () => this.setState({ cancelOpen: false, stage: 'edit', off: {}, password: false, passkey: false, added: null, walletRemove: false, walletAdd: false, member: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

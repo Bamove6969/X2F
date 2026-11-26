@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fold: Flip cover screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">X2F · +<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> more trades</span>
+
+  <section aria-label="Active trade" style="{{heroStyle}}">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+      <span style="{{statusStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{chipIcon}}"/></svg>{{statusLabel}}</span>
+      <svg style="{{markStyle}}" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 10px; min-width: 0;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">SG<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Buying from satoshi_ghost</h1></div>
+      <span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">$412.50</span><span style="font-size: 14px; font-weight: 600; color: var(--ink-muted);">USD</span></span><span style="font-size: 14px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span></span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+      <span aria-hidden="true" style="{{tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{tileIcon}}"/></svg></span>
+      <div style="display: flex; flex-direction: column; min-width: 0;">
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{t.a}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n1}}</span>{{t.b}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n2}}</span>{{t.c}}</span>
+        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{n.a}}<span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n1}}</span>{{n.b}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n2}}</span>{{n.c}}</span>
+      </div>
+    </div>
+  </section>
+
+  <div style="display: flex; flex-direction: column; gap: 6px; margin-top: auto;">
+    <button type="button" onClick="{{open}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>
+      Open on main screen
+    </button>
+    <sc-if value="{{asked}}" hint-placeholder-val="{{false}}">
+      <span role="status" style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">Open your phone to keep going.</span>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["waiting-payment","paid","dispute"],"default":"waiting-payment"},"$preview":{"width":360,"height":392}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { asked: false }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 360px; height: 392px; box-sizing: border-box; overflow: hidden; border-radius: 40px; padding: 24px 20px 20px; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column; gap: 12px;";
+    const V = {
+      'waiting-payment': { label: 'Pay now', icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', tone: 'var(--caution)', timer: '62 min left', note: "Send by Zelle, then tap I've paid" },
+      paid: { label: 'You paid', icon: 'M5 12l4 4 10-10', tone: 'var(--escrow)', timer: '1 h 58 min', note: 'Left for satoshi_ghost to check and release' },
+      dispute: { label: 'Dispute open', icon: 'M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7zM12 8v5M12 16h.01', tone: 'var(--danger)', timer: '23 h 48 min left', note: 'for a moderator to step in. Usually much sooner.', tile: 'M6 3h12M6 21h12M7 3c0 5 10 7 10 18M17 3c0 5-10 7-10 18' } // Q38 (owner, 6 Nov): hourglass counting down from 24 h; replaces 'usually replies within 4 h'. COPY-UNSIGNED.
+    };
+    const v = V[this.props.variant] || V['waiting-payment'];
+    // Digits in mono, words in body: '1 h 58 min' -> parts (also used for the note line).
+    const parts = (str) => { const m = str.match(/^(\D*)(\d+)?(\D*)(\d+)?(.*)$/); return { a: m[1], n1: m[2] || '', b: m[3], n2: m[4] || '', c: m[5] }; };
+    return {
+      rootStyle,
+      statusLabel: v.label,
+      chipIcon: v.icon,
+      statusStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + v.tone + ' 14%, transparent); color: ' + v.tone + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;',
+      heroStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + v.tone + ' 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, ' + v.tone + ' 35%, transparent);',
+      markStyle: 'flex-shrink: 0; color: ' + v.tone + ';',
+      // Toned icon tile (craft kit): tone at 14% behind the tone glyph.
+      tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, ' + v.tone + ' 14%, transparent); color: ' + v.tone + ';',
+      tileIcon: v.tile || 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2',
+      t: parts(v.timer),
+      n: parts(v.note),
+      asked: this.state.asked,
+      open: () => this.setState({ asked: true })
+    };
+  }
+}
+</script>
+</body>
+</html>
