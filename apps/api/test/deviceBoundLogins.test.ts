@@ -105,7 +105,7 @@ class Browser {
 
 const errorOf = (res: LightMyRequestResponse) => (res.body === '' ? undefined : (res.json() as { error?: string }).error);
 let seq = 0;
-const unique = (p: string) => `${p}${++seq}x${step}`;
+const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 
 /** The session `b` holds is bound to `b`'s key: a bound cookie, the key on the row, and its session cookie alone is refused. */
 async function expectBound(b: Browser): Promise<void> {
