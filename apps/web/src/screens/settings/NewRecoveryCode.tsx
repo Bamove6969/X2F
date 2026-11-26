@@ -12,7 +12,7 @@ import { Button } from '../../ui/Button.js';
 import { Checkbox } from '../../ui/Checkbox.js';
 import { Notice } from '../../ui/Notice.js';
 import { authApi } from '../auth/authApi.js';
-import { NEW_CODE_COPY as C, codeGroups } from './holdCopy.js';
+import { NEW_CODE_COPY as C, codeGroups } from './recoveryCopy.js';
 
 type Step = { kind: 'ask' } | { kind: 'shown'; code: string } | { kind: 'gone' };
 

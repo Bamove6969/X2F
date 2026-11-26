@@ -6,9 +6,9 @@
  *   tick)  2 the public display name (`display-name`; its own step since owner demo note #199)
  *   3 login methods (`login`: every one wanted is ticked, owner demo notes 12 Nov 2026), then each
  *   ticked method in turn, still step 3 (kit.ts SIGNUP_ORDER): PGP key and code (`pgp-key`,
- *   `pgp-code`), a security key (`security-key`), a passkey (`passkey`), a password (`password`),
- *   an authenticator app (`authenticator`); the first one makes the account (a passkey or security
- *   key ticked first straight from the `login` screen)  4 backup login (`backup`: the
+ *   `pgp-code`), a security key (`security-key`), a passkey (`passkey`), an authenticator app
+ *   (`authenticator`); at least two kinds (owner, 26 Nov 2026: no passwords); the first one makes
+ *   the account (a passkey or security key ticked first straight from the `login` screen)  4 backup login (`backup`: the
  *   recovery code, required (owner S-017), after all the ticked methods, then an optional security
  *   key or second PGP key, "Skip for now")  5 first payout wallet (`wallet`)  then Welcome
  *   (`welcome`) with Start trading back to `returnTo`.
@@ -36,7 +36,6 @@ import { INITIAL, SetupContext, nextStep, stepOf, stepPath, useSetup, type Setup
 import { Login } from './Login.js';
 import { errorCode } from './register.js';
 import { AuthenticatorStep, FirstKeySaved, KeyStep } from './MoreMethods.js';
-import { Password } from './Password.js';
 import { PgpChallenge } from './PgpChallenge.js';
 import { PgpKey } from './PgpKey.js';
 import { clearPendingSignup, readPendingSignup, writePendingSignup } from './signupPending.js';
@@ -100,7 +99,6 @@ export function SetupFlow() {
         <Route path="login" element={state.keySaved !== null ? <FirstKeySaved /> : before(named, <Login />)} />
         <Route path="pgp-key" element={before(named, <PgpKey />)} />
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />
-        <Route path="password" element={state.registered ? more('password', <Password />) : before(named, <Password />)} />
         <Route path="security-key" element={more('security-key', <KeyStep key="security-key" kind="security-key" />)} />
         <Route path="passkey" element={more('passkey', <KeyStep key="passkey" kind="passkey" />)} />
         <Route path="authenticator" element={more('totp', <AuthenticatorStep />)} />

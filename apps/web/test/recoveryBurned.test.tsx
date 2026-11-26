@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackupLogin } from '../src/screens/auth/BackupLogin.js';
 import { AddPassword } from '../src/screens/settings/Methods.js';
-import { BURNED_CODE_COPY } from '../src/screens/settings/holdCopy.js';
+import { BURNED_CODE_COPY } from '../src/screens/settings/recoveryCopy.js';
 import { fire, render } from './render.js';
 
 let calls: { url: string; method: string; body: unknown }[];

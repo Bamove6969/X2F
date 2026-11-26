@@ -49,7 +49,6 @@ import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
 import { AlarmListener } from './alerts/alarm.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
-import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { HelpSettings, Security } from './screens/settings/Security.js';
 import { AccountSettings, AlertsSettings } from './screens/settings/SettingsTabs.js';
 import { ACCOUNT_PATH, ALERTS_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
@@ -128,12 +127,10 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
-        <ChangesBanner />
         {/* C-021: on the screens whose actions change a trade or an offer, "Updating…" while the tab syncs after becoming active again. */}
         <SyncGate />
         <Outlet />
       </div>
-      <ChangesCapPopup />
       {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} wallets={mayViewWallets(session)} trades={mayReadTrades(session)} /> : null}
     </div>
   );
@@ -325,7 +322,6 @@ export function App() {
             <Route path={ALERTS_PATH} element={<AlertsSettings />} />
             <Route path={ACCOUNT_PATH} element={<AccountSettings />} />
             <Route path={SETTINGS_HELP_PATH} element={<HelpSettings />} />
-            <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
             <Route path={LIENS_PATH} element={<Liens />} />

@@ -14,11 +14,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { isStaged, isVendor, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
+import { isVendor, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
 import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { Button } from '../../ui/Button.js';
-import { CantDoThat } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { FlowScreen } from '../../ui/FlowScreen.js';
 import { Icon } from '../../ui/icons.js';
 import { lastActive } from '../../ui/lastActive.js';
@@ -30,8 +28,7 @@ import { authApi } from '../auth/authApi.js';
 import { SessionLengthField } from '../auth/SessionLength.js';
 import { SESSION_COPY } from '../auth/sessionCopy.js';
 import { shareSessionInfo } from '../../session/sessionWatch.js';
-import { refusalText, weakSessionCantDo } from '../auth/refusals.js';
-import { StagedNote, reportChangesCap } from './HoldChanges.js';
+import { refusalText } from '../auth/refusals.js';
 import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { TEAM_PATH } from './teamCopy.js';
@@ -80,7 +77,6 @@ const C = {
   // not-a-refusal: explains how approval works
   howApprove: 'Your other devices ask "Is this you?". Tap the 2-digit number the new device shows. Say no and the login is blocked.',
   noIp: "X2F doesn't log IP addresses, so devices are named only by browser and system.",
-  recovery: 'Recovery login',
   ask: {
     oneTitle: (name: string) => `Log out ${name}?`,
     oneText: "It's logged out right away. To use it again, approve it from a device you're still logged in on.",
@@ -134,10 +130,6 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [note, setNote] = useState<string | null>(null);
   const [optNote, setOptNote] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
-  // Hold model v3: a change from a username-and-password login is staged as a draft (202).
-  const [staged, setStaged] = useState(false);
-  // Plan 2 Task 17 review round 2: a device whose login waits may not log stronger ones out (CantDoThat).
-  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   // Session length (owner, 2 Nov 2026): this session's own length, as after the login.
   const [length, setLength] = useState<SessionInfo | null>(null);
   const [lengthNote, setLengthNote] = useState<string | null>(null);
@@ -177,9 +169,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
       setNote(done);
       await refresh();
     } catch (e) {
-      const refused = weakSessionCantDo(e);
-      if (refused !== null) setCantDo(refused);
-      else setError('Could not log that device out. Try again.');
+      setError(refusalText(e, 'Could not log that device out. Try again.'));
       await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
@@ -202,7 +192,6 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     const on = !settings.oneDevice;
     setBusy(true);
     setError(null);
-    setStaged(false);
     setOptNote(null);
     try {
       const next = await withConfirm(
@@ -210,13 +199,10 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
         (t) => authApi.setOneDevice({ on, ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      if (isStaged(next)) setStaged(true);
-      else {
-        setSettings(next);
-        setOptNote(next.oneDevice ? C.oneDeviceOn : C.oneDeviceOff);
-      }
+      setSettings(next);
+      setOptNote(next.oneDevice ? C.oneDeviceOn : C.oneDeviceOff);
     } catch (e) {
-      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -332,7 +318,6 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                       ) : null}
                       <span className="x2f-item__note">
                         {s.current ? 'Active now' : lastActive(s.lastSeenAt)}
-                        {s.level === 'recovery' ? ` · ${C.recovery}` : ''}
                       </span>
                     </span>
                     {s.current ? null : (
@@ -452,7 +437,6 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     data-part="one-device-toggle"
                   />
                 </div>
-                {staged ? <StagedNote /> : null}
                 {optNote !== null ? (
                   <p className="x2f-icon-line" role="status" data-part="one-device-note">
                     <Icon name="check" size={18} />
@@ -502,7 +486,6 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
           </Button>
         </div>
       </Sheet>
-      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.devices} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
     </FlowScreen>
   );
 }

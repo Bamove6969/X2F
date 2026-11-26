@@ -28,7 +28,7 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } fr
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
-import { HOLD_COPY, codeGroups } from '../settings/holdCopy.js';
+import { HOLD_COPY, codeGroups } from '../settings/recoveryCopy.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 
 type Prove = ReturnType<typeof useConfirm>['prove'];

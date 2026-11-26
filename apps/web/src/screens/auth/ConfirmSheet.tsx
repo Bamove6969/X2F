@@ -4,21 +4,20 @@
  * `action`. `useConfirm` wires it to `withConfirm` from `@x2f/auth-client` — `prove` opens the
  * sheet and resolves once the person proves it's them.
  *
- * A wrong password or code stays in the sheet as an error (the person tries again or picks another
- * method); only closing the sheet rejects. One confirm is open at a time: a second `prove` while one
+ * A failed key or wrong code stays in the sheet as an error (the person tries again or picks another
+ * method); only closing the sheet rejects. Owner, 26 Nov 2026: no passwords, and an authenticator
+ * code never confirms, so the sheet offers the account's passkeys, security keys and PGP key. One confirm is open at a time: a second `prove` while one
  * is open is refused with `confirm busy`, so the one on screen is never orphaned.
  *
  * For new payout wallets the sheet explains what will happen, from `GET /v1/wallets/rule` (owner,
- * 2026-10-23/24): the first wallet never waits; a strong method used now (PGP key, passkey,
- * security key) works at once; a password or authenticator code means the wait, shared by a batch.
+ * 2026-10-23/24, 26 Nov 2026): every confirm uses a key, so new wallets always work at once.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { confirmWithWebAuthn, describeAction, needsStrongConfirm, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
+import { confirmWithWebAuthn, describeAction, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
 import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
 import { refusalText } from './refusals.js';
-import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 
 type Resolver = { resolve: (token: string) => void; reject: (reason: unknown) => void };
@@ -54,13 +53,9 @@ const orList = (xs: string[]): string => (xs.length <= 1 ? (xs[0] ?? '') : `${xs
 export function walletWaitNote(rule: WalletRule, batch: boolean): string {
   const it = batch ? 'these wallets' : 'this wallet';
   if (rule.firstWallet) return 'This is your first payout wallet, so it works at once however you confirm.';
-  const wait = `${rule.waitHours}-hour wait`;
-  if (rule.strongMethods.length > 0) {
-    const strong = `Confirm with your ${orList(rule.strongMethods.map((m) => STRONG_WORDS[m]))} and ${it} ${batch ? 'work' : 'works'} at once.`;
-    return rule.password === 'waits' ? `${strong} Confirming with your password instead means a ${wait}${batch ? ', shared by all of them' : ''}.` : strong;
-  }
-  // DESIGN: wording (owner 6 Nov 2026, Q14: never "password only")
-  return `You have no passkey, security key or PGP key yet, so ${it} will work ${rule.waitHours} hours after you add ${batch ? 'them, all on one shared wait' : 'it'}. Add one first to skip the wait.`;
+  const works = `${it} ${batch ? 'work' : 'works'} at once`;
+  if (rule.strongMethods.length > 0) return `Confirm with your ${orList(rule.strongMethods.map((m) => STRONG_WORDS[m]))} and ${works}.`;
+  return `Confirm it's you and ${works}.`;
 }
 
 function WalletWaitNote({ batch }: { batch: boolean }) {
@@ -111,28 +106,20 @@ export function ConfirmSheet({
 
 /**
  * The account's own login methods for one action-bound confirm, with their errors: the body of
- * `ConfirmSheet`, and of "Stay logged in?" (`SessionPrompt`, owner 2 Nov 2026), which names the
- * password's button `submitLabel`. `onToken` gets the single-use token.
+ * `ConfirmSheet`, and of "Stay logged in?" (`SessionPrompt`, owner 2 Nov 2026). `onToken` gets the
+ * single-use token.
  */
 export function ConfirmMethods({
   action,
   methods,
   onToken,
-  submitLabel = 'Confirm',
 }: {
   action: ConfirmAction;
   methods: MethodType[];
   onToken: (token: string) => void | Promise<void>;
-  submitLabel?: string;
 }) {
-  // Owner 2 Nov 2026: some actions (switching to vendor) only a passkey, security key or PGP key confirms.
-  const hasPassword = methods.includes('password') && !needsStrongConfirm(action);
-  // Owner G10 (7 Nov 2026): the password alone keeps you logged in, authenticator app or not.
-  const hasTotp = methods.includes('totp') && action.kind !== 'extend-session';
   const [busy, setBusy] = useState<MethodType | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [totp, setTotp] = useState('');
   // PGP confirm is two steps: ask for a challenge, then take the decrypted code.
   const [pgp, setPgp] = useState<PgpChallenge | null>(null);
   const [pgpCode, setPgpCode] = useState('');
@@ -152,7 +139,7 @@ export function ConfirmMethods({
       try {
         await onToken(await fn());
       } catch (e) {
-        // A held backup session or too many tries says so; a plain miss reads `wrong`.
+        // Too many tries says so; a plain miss reads `wrong`.
         setError(refusalText(e, wrong));
         setBusy(null);
       }
@@ -183,20 +170,6 @@ export function ConfirmMethods({
       async () => (await authApi.confirmPgpFinish({ challengeId: pgp!.challengeId, code: pgpCode.trim() })).confirmToken,
       'That code did not work. It may have expired: get a new message and try again.',
     );
-
-  // With an authenticator app the server needs its code with the password (the password without it is a
-  // miss and counts as one), so Confirm waits for both and always sends the code.
-  const passwordReady = password !== '' && (!hasTotp || totp.trim() !== '');
-
-  const finishPassword = () =>
-    void run(
-      'password',
-      async () => (await authApi.confirmPassword({ password, action, ...(hasTotp ? { totp: totp.trim() } : {}) })).confirmToken,
-      hasTotp ? 'That password or authenticator code did not work. Try again.' : 'That password did not work. Try again.',
-    );
-
-  // Exactly one primary in the sheet: the PGP Confirm while a PGP challenge is up, else the password Confirm.
-  const pgpPrimary = pgp !== null;
 
   return (
     <>
@@ -246,41 +219,6 @@ export function ConfirmMethods({
           )
         ) : null}
 
-        {hasPassword ? (
-          <div className="x2f-field" data-method="password">
-            <label className="x2f-label" htmlFor="confirm-password">
-              Your password
-            </label>
-            <PasswordInput id="confirm-password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            {hasTotp ? (
-              <>
-                <label className="x2f-label" htmlFor="confirm-totp">
-                  Authenticator code
-                </label>
-                <input
-                  className="x2f-input"
-                  id="confirm-totp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={totp}
-                  onChange={(e) => setTotp(e.target.value)}
-                />
-              </>
-            ) : null}
-            <Button
-              variant={pgpPrimary ? 'secondary' : 'primary'}
-              disabled={busy !== null || !passwordReady}
-              onClick={finishPassword}
-              data-part="confirm-password"
-            >
-              {submitLabel}
-            </Button>
-          </div>
-        ) : null}
       </div>
     </>
   );

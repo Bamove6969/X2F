@@ -1,30 +1,28 @@
 import { useEffect, useId, useState } from 'react';
-import { AuthApiError, WALLET_LABEL_MAX, isStaged, walletAction, withConfirm, type Staged, type Wallet, type WalletRule } from '@x2f/auth-client';
+import { AuthApiError, WALLET_LABEL_MAX, walletAction, withConfirm, type Wallet, type WalletRule } from '@x2f/auth-client';
 import { ApiCallError, api } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { ChoiceGroup } from '../../ui/Choice.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
-import { StagedNote } from '../settings/HoldChanges.js';
 import { addError } from '../Wallets.js';
 import { ruleNote } from '../wallets-model.js';
 import { walletNameHelp } from '../walletsCopy.js';
-import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
+import { recordTypedAddress } from '../walletRecord.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
 // Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a highly secure account (owner 17 Nov) adds a payout address
 // right on the quote, named, for this trade only or for future trades too. It is the same add as
 // Settings → Your wallets (`POST /v1/wallets`, one confirm-it's-you bound to the exact address, R17),
-// so the API alone decides what happens: usable at once (picked for this trade), waiting 24 hours
-// (confirmed with a password), or staged as a waiting change (a username-and-password login, hold
-// model v3). The quote offers this sheet to a highly secure account alone; the API never trusts that.
+// so the API alone decides what happens (owner, 26 Nov 2026: every confirm uses a key, so it is usable
+// at once and picked for this trade; a wait the API reports is still shown). The quote offers this sheet to a highly secure account alone; the API never trusts that.
 // The device never trusts the API's echo either: the wallet handed back must carry the exact address
 // typed here, else nothing is picked (lead, 17 Nov: the API never swaps an address the device did not show).
 
 const LABEL_MAX = WALLET_LABEL_MAX;
 
-export type NewAddressResult = { kind: 'usable'; wallet: Wallet } | { kind: 'waits'; wallet: Wallet } | { kind: 'staged' };
+export type NewAddressResult = { kind: 'usable'; wallet: Wallet } | { kind: 'waits'; wallet: Wallet };
 
 export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDone: (r: NewAddressResult) => void }) {
   const [label, setLabel] = useState('');
@@ -33,7 +31,7 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
   const [rule, setRule] = useState<WalletRule | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [after, setAfter] = useState<{ kind: 'waits'; when: string } | { kind: 'staged' } | null>(null);
+  const [after, setAfter] = useState<{ kind: 'waits'; when: string } | null>(null);
   const { prove, confirmUi } = useConfirm();
   const keepId = useId();
 
@@ -50,9 +48,9 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
     setSaving(true);
     setError(null);
     const draft = { app: 'other' as const, label: label.trim() || DEFAULT_NEW_NAME, address: trimmed, oneTime: oneTime === 'one-time' };
-    const post = async (confirmToken?: string): Promise<Wallet | Staged> => {
+    const post = async (confirmToken?: string): Promise<Wallet> => {
       try {
-        return await api<Wallet | Staged>('/v1/wallets', { method: 'POST', body: confirmToken === undefined ? draft : { ...draft, confirmToken } });
+        return await api<Wallet>('/v1/wallets', { method: 'POST', body: confirmToken === undefined ? draft : { ...draft, confirmToken } });
       } catch (e) {
         // withConfirm reads auth-client's error; api() throws the shell's.
         if (e instanceof ApiCallError && e.code === 'confirm-required') throw new AuthApiError(e.status, 'confirm-required', e.extra);
@@ -61,14 +59,6 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
     };
     try {
       const result = await withConfirm(await walletAction(trimmed), post, prove);
-      if (isStaged(result)) {
-        // Re-verify O3: no id yet, so the address typed is recorded by itself; a look-alike listed
-        // once the change is applied is then refused like any other (walletRecord.ts).
-        recordStagedAddress(trimmed);
-        setAfter({ kind: 'staged' });
-        onDone({ kind: 'staged' });
-        return;
-      }
       // Review 17 Nov M4: this device keeps the address typed here for the id the API gave it, so the
       // quote, the accepted sheet and Your wallets refuse any later list naming another (walletRecord.ts).
       recordTypedAddress(result.id, trimmed);
@@ -153,8 +143,6 @@ export function NewAddressSheet({ onClose, onDone }: { onClose: () => void; onDo
               {C.save}
             </Button>
           </div>
-        ) : after.kind === 'staged' ? (
-          <StagedNote part="new-address-staged" />
         ) : (
           <p className="x2f-sheet__body" role="status" data-part="new-address-waits">
             {C.waits(after.when)}

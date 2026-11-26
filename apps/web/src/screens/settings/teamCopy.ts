@@ -8,19 +8,17 @@ import type { TeamRole, TradeBand, WorkingHours } from '@x2f/auth-client';
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
 
-// Owner p4-8: the "Holds and waiting changes" rights (MemberPermissions board, COPY-UNSIGNED).
 export const ROLE_WORDS: Record<TeamRole, string> = {
   offers: 'Offers',
   trades: 'Trades',
-  'hold-see': 'See waiting changes',
-  'hold-cancel': 'Untick or cancel waiting changes',
-  'hold-end': 'End a hold',
 };
 
 /** "Offers", "Trades" or "Offers and Trades". */
 export function rolesText(roles: readonly TeamRole[]): string {
-  const words = (['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]);
-  return words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+  return (['offers', 'trades'] as const)
+    .filter((r) => roles.includes(r))
+    .map((r) => ROLE_WORDS[r])
+    .join(' and ');
 }
 
 /** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */

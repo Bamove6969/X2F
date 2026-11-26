@@ -13,7 +13,6 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AuthApiError,
-  isStaged,
   teamAbilitiesAction,
   teamInviteAbilitiesAction,
   teamLimitsAction,
@@ -26,11 +25,9 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_CHANGES_CODE, TOO_MANY_MEMBERS_CODE, holdChangesCantDoText, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
+import { TOO_MANY_MEMBERS_CODE, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence } from '../auth/refusals.js';
-import { StagedNote } from './HoldChanges.js';
 import { AbilityPicker } from './AbilityPicker.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
 import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
@@ -165,11 +162,11 @@ function boxesLine(m: TeamMember, cat: Catalogue | null): string {
   return m.roles.length === 0 ? C.noBoxes : C.roles(m.roles);
 }
 
-type CantDo = { code: CantDoCode; max?: number; holdUntil?: string };
+type CantDo = { code: CantDoCode; max?: number };
 
 function cantDoOf(e: unknown): CantDo | null {
   if (e instanceof AuthApiError && isCantDoCode(e.code)) {
-    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}), ...(e.holdUntil !== undefined ? { holdUntil: e.holdUntil } : {}) };
+    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}) };
   }
   return null;
 }
@@ -183,8 +180,6 @@ export function Team() {
   const [cantDo, setCantDo] = useState<CantDo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [said, setSaid] = useState('');
-  // Hold model v3: a role change from a username-and-password login is staged as a draft (202).
-  const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const nameSpaced = hasSpace(name.trim());
@@ -254,7 +249,6 @@ export function Team() {
     setBusy(true);
     setError(null);
     setSaid('');
-    setStaged(false);
     try {
       await f();
     } catch (e) {
@@ -279,8 +273,6 @@ export function Team() {
         prove,
       );
       setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
-      // Owner p11-21 (S-104): from a username-and-password login the boxes wait as a draft.
-      if (isStaged(r)) setStaged(true);
       setCopied(false);
       setName('');
       await load();
@@ -294,10 +286,9 @@ export function Team() {
         setError(P.pickBox);
         return;
       }
-      const r = await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
+      await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
       setEditing(null);
-      if (isStaged(r)) setStaged(true);
-      else setSaid(P.boxesSaved(m.displayName));
+      setSaid(P.boxesSaved(m.displayName));
       await load();
     });
 
@@ -308,19 +299,16 @@ export function Team() {
         setError(C[l]);
         return;
       }
-      const r = await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
+      await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
       setLimits(null);
-      if (isStaged(r)) setStaged(true);
-      else setSaid(C.limitsSaved(m.displayName));
+      setSaid(C.limitsSaved(m.displayName));
       await load();
     });
 
   const remove = (m: TeamMember) =>
     run(async () => {
-      const r = await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
-      // Owner p5-7: from a username-and-password login the removal waits 24 h like every change.
-      if (isStaged(r)) setStaged(true);
-      else setSaid(C.removed(m.displayName));
+      await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
+      setSaid(C.removed(m.displayName));
       await load();
     });
 
@@ -398,7 +386,6 @@ export function Team() {
         <p className="x2f-note" role="status" data-part="team-said">
           {said}
         </p>
-        {staged ? <StagedNote /> : null}
 
         {members !== null ? (
           <section className="x2f-card" data-part="team-members" aria-labelledby="team-members-h">
@@ -590,15 +577,8 @@ export function Team() {
 
         {cantDo !== null ? (
           <CantDoThat
-            title={cantDo.code === TOO_MANY_CHANGES_CODE ? CANT_DO_TITLE.changes : teamCantDoTitle(cantDo.code)}
-            body={
-              // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
-              cantDo.code === HOLD_CODE
-                ? holdSentence(cantDo.holdUntil)
-                : cantDo.code === TOO_MANY_CHANGES_CODE
-                  ? holdChangesCantDoText(cantDo.max)
-                  : teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})
-            }
+            title={teamCantDoTitle(cantDo.code)}
+            body={teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})}
             from={cantDo.code}
             onClose={() => setCantDo(null)}
           />

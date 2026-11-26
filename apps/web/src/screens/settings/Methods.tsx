@@ -39,7 +39,7 @@ import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
 import { StagedNote, reportChangesCap } from './HoldChanges.js';
-import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
+import { BURNED_CODE_COPY as BURNED } from './recoveryCopy.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 import { PasswordInput } from '../../ui/PasswordInput.js';

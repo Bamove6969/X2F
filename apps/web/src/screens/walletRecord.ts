@@ -43,19 +43,6 @@ export function recordTypedAddress(id: string, address: string): void {
   }
 }
 
-/**
- * Records that `address` (trimmed, as sent) was typed on this device for an add that has no id yet: a
- * wallet staged for review (202) and applied later under Account changes (re-verify O3).
- */
-export function recordStagedAddress(address: string): void {
-  memoryStaged.add(address);
-  try {
-    store()?.setItem(STAGED_PREFIX + address, '1');
-  } catch {
-    // Memory above still remembers it for this page.
-  }
-}
-
 /** Every address typed on this device, with or without an id. */
 export function recordedAddresses(): Set<string> {
   const all = new Set<string>([...memory.values(), ...memoryStaged]);

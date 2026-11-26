@@ -2,8 +2,7 @@
  * Settings → Security (Task 30, P3-C4), the first of the Settings tabs since owner demo note #101
  * (SettingsTabs.tsx; the alerts moved to the Alerts tab, the account links to Account, the tour to
  * Help). One screen that gathers: the login methods (list, add,
- * remove, with the last-method guard and TOTP / recovery codes), the payout-wallet wait
- * explanation, a link to Devices and sessions (its own screen since C2-D1; it holds the session length, which
+ * remove, with the last-method guard and TOTP / recovery codes), a link to Devices and sessions (its own screen since C2-D1; it holds the session length, which
  * replaced the inactivity logout timer, owner 2 Nov 2026) and the idle reminder. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
@@ -11,14 +10,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence } from '../auth/refusals.js';
+import { formatDateTime } from '../../ui/dates.js';
 import { IDLE_COPY, IDLE_REMINDER_PATH } from '../auth/sessionCopy.js';
 import { Icon } from '../../ui/icons.js';
-import { AccountChanges } from './HoldChanges.js';
 import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
-import { PayoutWait } from './PayoutWait.js';
 import { MovedSectionRedirect, SettingsPage, SettingsRow, useKnownMember } from './SettingsTabs.js';
 import { SETTINGS_COPY } from './settingsCopy.js';
 import { useSession } from '../../session/useSession.js';
@@ -65,27 +62,23 @@ function HelpCard({ member = false }: { member?: boolean }) {
   );
 }
 
-/** The latest of these hold end times (the first on a tie), or null for none. */
-export function latestHoldEnd(ends: readonly string[]): string | null {
-  return ends.reduce<string | null>((a, b) => (a !== null && Date.parse(a) >= Date.parse(b) ? a : b), null);
-}
+/** COPY-UNSIGNED (owner, 26 Nov 2026): what a recovery-code login may do, and until when. */
+export const recoveryWindowSentence = (until: string): string =>
+  `You logged in with your recovery code. Until ${formatDateTime(new Date(until))} you can add or remove any login method without confirming it's you. Set up the ways you will log in from now on.`;
 
 /**
- * A backup login's recovery session is held, or the account is on its 24-hour hold (Plan 2 Tasks 9
- * and 17): changes on this screen are refused until then, so the screen says so up front, from `me()`.
+ * Owner, 26 Nov 2026: a recovery-code login may change every login method without confirming for
+ * an hour (`me().recoveryUntil`), so the screen says so up front.
  */
-function HoldBanner() {
-  const [held, setHeld] = useState<string | null | undefined>(undefined);
+function RecoveryWindowBanner() {
+  const [until, setUntil] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     authApi.me().then(
       (me) => {
         if (!live) return;
-        // A held backup session (Task 9), or the account's 24-hour hold (Task 17): the later end.
-        const ends = [me.level === 'recovery' ? me.holdUntil : null, me.accountHoldUntil ?? null].filter(
-          (t): t is string => typeof t === 'string' && Date.parse(t) > Date.now(),
-        );
-        setHeld(latestHoldEnd(ends));
+        const t = me.recoveryUntil ?? null;
+        setUntil(t !== null && Date.parse(t) > Date.now() ? t : null);
       },
       () => undefined,
     );
@@ -93,10 +86,10 @@ function HoldBanner() {
       live = false;
     };
   }, []);
-  if (typeof held !== 'string') return null;
+  if (until === null) return null;
   return (
-    <p className="x2f-note" role="status" data-part="hold-banner">
-      {holdSentence(held)}
+    <p className="x2f-note" role="status" data-part="recovery-window">
+      {recoveryWindowSentence(until)}
     </p>
   );
 }
@@ -110,7 +103,7 @@ function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
   const { ready, member } = useKnownMember();
   const session = useSession();
-  // Review M2: a password alone, its sign-up over: this session may only add a second way to log in.
+  // Fewer than two kinds of login method, its sign-up over: this session may only add a way to log in.
   const setupOnly = session.status === 'signed-in' && (session.me as { setupOnly?: unknown }).setupOnly === true;
 
   return (
@@ -129,12 +122,10 @@ function SecurityScreen() {
             ) : null}
             {!member ? (
               <>
-                <HoldBanner />
-                {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+                <RecoveryWindowBanner />
+                {/* A new recovery code to write down (after a recovery-code login). */}
                 <NewRecoveryCode />
-                <AccountChanges />
                 <Methods prove={prove} />
-                <PayoutWait />
               </>
             ) : null}
             {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it, and to

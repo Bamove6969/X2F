@@ -32,30 +32,20 @@ export const CANT_DO_CODES = [
   // Plan 3 Task 4 (post an offer).
   'trading-hold',
   'too-many-offers',
-  // Plan 2: a backup login and the account's login methods.
-  'recovery-session',
-  'recovery-hold',
+  // Plan 2: the account's login methods.
   'security-key-limit',
   'login-name-set',
   'last-login-method',
-  // Owner, 16 Nov 2026: the authenticator app goes only with a password (no TOTP without one, no
-  // password removal while TOTP is on), and a password never stands alone. totp-needs-password is
-  // API only, no words here: the web offers the authenticator app only with a password.
-  'totp-needs-password',
-  'password-has-totp',
-  'password-alone',
-  // Security review of wip/lead-notes-all, M2: a password-only account's session is setup-only.
-  'second-method-required',
+  // Owner, 26 Nov 2026 (no passwords): at least two kinds of login method (removing one below that,
+  // ending sign-up without two, and a setup-only session's other routes).
+  'two-methods-required',
   'method-not-allowed',
   'account-disabled',
-  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
-  // (API only so far, no words here); the 20-change cap (owner G36, `holdChangesCantDoText`); a
-  // trade event refused because the partner's account has a temporary problem (no words yet).
+  // A new device with nothing to approve it and no passkey, security key or PGP key (API only so
+  // far, no words here).
   'approval-unavailable',
-  'too-many-changes',
   // Notes on traders (review 2026-11-09 m4): the account's note cap (notesCantDoText).
   'too-many-notes',
-  'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
   'too-soon',
   'no-extensions-left',
@@ -69,9 +59,6 @@ export const CANT_DO_CODES = [
   // feedback link (a throttle on tries stays a `slow-down` fault).
   'too-many-devices',
   'too-many-approvals',
-  // Plan 2 Task 17 review round 2 (N-I3, N-M3): a session whose login waits may not log a stronger
-  // one out, answer a strong login, or hide the hold's warnings.
-  'weak-session',
   // Plan 2 Task 18: team members (owner-only actions, a role a member lacks, the member limit,
   // and escrow signing, which stays on the account owner's device until Plan 3 Task 42).
   'owner-only',
@@ -169,8 +156,6 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'login-name-invalid': 'an input check on a typed name',
   'names-unavailable': 'an input check on a typed name',
   'names-same': 'an input check on a typed name',
-  'password-weak': 'an input check on a typed password',
-  'password-leaked': 'an input check on a typed password',
   'key-unreadable': 'an input check on a pasted key',
   'key-too-large': 'an input check on a pasted key',
   'key-private': 'an input check on a pasted key',
@@ -210,7 +195,6 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'lifetime-not-allowed': 'a staff ban action: D-017 term rules (staff app only)',
   // mod-rules: D-070 moderator methods and D-064's channel check (staff app only).
   'moderator-methods-required': 'a moderator keeps a PGP key and a passkey (staff app only)',
-  'no-secure-jabber': 'ending a recovery hold via secure Jabber (staff app only)',
   // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
   'signature-required': 'an input check on the Terms signature',
   'signature-invalid': 'an input check on the Terms signature',
@@ -361,7 +345,6 @@ export const CANT_DO_TITLE = {
   myOffersHold: "You can't turn offers on during a trading hold",
   login: "You can't log in here yet",
   approve: "This login can't be let in",
-  devices: "That device can't be logged out from here",
   chat: "This chat can't open",
   team: "This can't be done on the team",
   accountType: "You can't switch to a vendor account",
@@ -369,11 +352,8 @@ export const CANT_DO_TITLE = {
   teamOwnerOnly: 'Only the owner can do this',
   // COPY-UNSIGNED: 'forbidden' is a role issue, not an owner-only one (lead's review, 7 Nov).
   teamRole: "Your role doesn't include this",
-  teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
-  // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
-  changes: "This change can't be saved yet",
   // Job 1c (owner S-094, p7-8): notes on traders. COPY-UNSIGNED
   notes: "This note can't be saved",
 } as const;
@@ -548,61 +528,25 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null, 
   }
 }
 
-/** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2). */
-export const RECOVERY_SESSION_WALLETS =
-  "You logged in with a backup, so you can't add wallets in this session. Log in with your usual method to add one.";
-
-/**
- * Owner demo note #226, security review of wip/lead-note-226 (Medium 2): 403 `weak-session` on a
- * wallet rename: a login that waits (just a username and password) renames no wallet. COPY-UNSIGNED (note #226)
- */
-export const WALLET_RENAME_WEAK =
-  "This device logged in with just a username and password, so it can't rename wallets. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
-
-/** What a refused wallet rename says (owner demo note #226), for the codes with words of their own (else null). */
-export function walletRenameCantDoText(code: CantDoCode): string | null {
-  return code === 'weak-session' ? WALLET_RENAME_WEAK : null;
-}
-
-/** What a refused wallet add says, for the codes that have Wallets-specific words (else null). */
-export function walletsCantDoText(code: CantDoCode): string | null {
-  return code === 'recovery-session' ? RECOVERY_SESSION_WALLETS : null;
-}
-
 /** The code for the account's only login method. */
 export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;
 
 /** 409 `last-login-method` (and the client's own check before asking): the account's only way to log in. */
 export const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
 
-/** The code for removing the password while the authenticator app is on (owner, 16 Nov 2026). */
-export const PASSWORD_HAS_TOTP_CODE = 'password-has-totp' satisfies CantDoCode;
+/** Owner, 26 Nov 2026: the code for an account short of two kinds of login method. */
+export const SECOND_METHOD_CODE = 'two-methods-required' satisfies CantDoCode;
 
-/** 409 `password-has-totp` (and the client's own check before asking). COPY-UNSIGNED */
-export const PASSWORD_HAS_TOTP_MESSAGE = 'Your authenticator app works with your password. Remove the authenticator app first.';
-
-/** The code for a change that would leave a password alone (owner, 16 Nov 2026). */
-export const PASSWORD_ALONE_CODE = 'password-alone' satisfies CantDoCode;
-
-/** 409 `password-alone` (and the client's own check before asking). COPY-UNSIGNED */
-export const PASSWORD_ALONE_MESSAGE = 'A password needs the authenticator app or another way to log in. Add one before removing this.';
-
-/** The code a backup (recovery) session gets on a route it may not use. */
-export const RECOVERY_SESSION_CODE = 'recovery-session' satisfies CantDoCode;
-
-/** Review L1: a key test from a backup (recovery) session, which confirms nothing (403 `recovery-session`). COPY-UNSIGNED */
-export const KEY_TEST_RECOVERY = "You're logged in with a backup login, which can't test a key. Log in with your security key or another way, then test it from Settings.";
-
-/** Review M2: the code a setup-only session (a password alone) gets on every other route. */
-export const SECOND_METHOD_CODE = 'second-method-required' satisfies CantDoCode;
-
-/** Review M2: what a setup-only session is told, above Login methods. COPY-UNSIGNED */
+/** What a setup-only session is told, above Login methods. COPY-UNSIGNED */
 export const SECOND_METHOD_TITLE = 'Add a second way to log in';
 export const SECOND_METHOD_MESSAGE =
-  "A password alone can't finish setting up your account. Add the authenticator app, a security key, a passkey or a PGP key below. Until then you can only add one, write down your recovery code, or log out.";
+  'Your account needs at least two ways to log in. Add a security key, a passkey, a PGP key or the authenticator app below. Until then you can only add one, write down your recovery code, or log out.';
 
-/** Review M2: sign-up reached its end with a password alone (409 `password-alone` from onboarding/end). COPY-UNSIGNED */
-export const SECOND_METHOD_SIGNUP = "A password alone can't finish your sign-up. Choose a second way to log in: the authenticator app, a security key, a passkey or a PGP key.";
+/** Sign-up reached its end with fewer than two kinds (409 `two-methods-required` from onboarding/end). COPY-UNSIGNED */
+export const SECOND_METHOD_SIGNUP = 'Your sign-up needs at least two ways to log in. Add a second one: a security key, a passkey, a PGP key or the authenticator app.';
+
+/** 409 `two-methods-required` when removing a method (and the client's own check before asking). COPY-UNSIGNED */
+export const SECOND_METHOD_REMOVE = 'Your account needs at least two kinds of login method. Add another one before removing this.';
 
 /** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
 export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';
@@ -720,69 +664,15 @@ export const MY_OFFERS_HIDDEN = {
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 
 // ---------------------------------------------------------------------------------------------
-// Plan 2 Tasks 16-17: new-device approval and the 24-hour hold. COPY-UNSIGNED (Plan 3 Task 41).
+// Plan 2 Task 16: new-device approval. COPY-UNSIGNED (Plan 3 Task 41).
 
 /** The device limit's code. */
 export const TOO_MANY_DEVICES_CODE = 'too-many-devices' satisfies CantDoCode;
 /** The hourly cap on login approvals (the web's code for 429 `slow-down` `{ reason: 'approvals' }`). */
 export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode;
-/** The 24-hour hold's code (a held backup session, or the account's hold). */
-export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
-
-/**
- * S-026 (owner 30 Oct; lead window N50, N55): during a recovery hold X2F reaches the person only on
- * Matrix, Telegram or a secure Jabber account set up before the hold (D-064: staff end a hold by
- * Jabber only on an address proven before it began). Every hold message carries it, so a message
- * that arrives any other way during the hold can be recognised as not from X2F. COPY-UNSIGNED
- */
-export const HOLD_CONTACT_TEXT =
-  'While the hold is on, X2F will contact you only on Matrix, Telegram or the secure Jabber account you set up before the hold.';
-
-/**
- * 403 `recovery-hold`: the account's 24-hour hold (hold model v3: only a recovery-code login starts
- * one; a passkey, security key or PGP key the account held before it ends it, an authenticator
- * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
- */
-export function holdText(when: string): string {
-  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: held trades
-  // are paused for the account's own sessions too, owner G7; the old "can still be finished" was wrong).
-  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it. ${HOLD_CONTACT_TEXT}`;
-}
-
-/**
- * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
- * because it waits, and the hold is still running. `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
- * It says what this login cannot do and what the reader can do, whatever methods the account has
- * (the login screen does not know them). It offers no backup login (lead review 8 Nov: the used
- * code is spent and its replacement sealed until the owner's next login). COPY-UNSIGNED
- */
-export function holdLoginText(when: string): string {
-  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: no backup
-  // login meanwhile, as the used code is spent and its replacement sealed; held trades are paused).
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides. ${HOLD_CONTACT_TEXT}`;
-}
-
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
 export const TOO_MANY_APPROVALS =
   'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
-
-/** The code of a session whose login waits (Plan 2 Task 17 review round 2). */
-export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
-
-/**
- * 403 `weak-session`: this device logged in with a username and password and nothing stronger, so
- * it cannot log out a device that logged in more strongly or earlier than itself (owner g64, lead
- * review 8 Nov: it may log out the owner's newer username-and-password devices), nor answer a
- * strong login (a passkey, security key, PGP key since Q81, or password and code).
- */
-// DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
-export const WEAK_SESSION_TEXT =
-  "This device logged in with just a username and password, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
-
-/** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
-export function holdApproveText(when: string): string {
-  return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
-}
 
 /** Plan 4 Task 30: TICKET_OPEN_AT_ONCE tickets not closed (409 `too-many-tickets`). */
 export const TOO_MANY_TICKETS_CODE = 'too-many-tickets' satisfies CantDoCode;
@@ -804,7 +694,6 @@ export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
 export function teamCantDoTitle(code: CantDoCode | string): string {
   if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
   if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
-  if (code === 'weak-session') return CANT_DO_TITLE.teamWeak;
   if (code === TOO_MANY_MEMBERS_CODE) return CANT_DO_TITLE.teamFull;
   return CANT_DO_TITLE.team;
 }
@@ -827,11 +716,6 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
     // J-20 (owner p7-11, review S-m4). COPY-UNSIGNED // DESIGN: wording
     case 'past-working-hours':
       return 'Your working hours end before then, so your session cannot run that long.';
-    // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
-    // role changes and removals from such a device are not refused; they wait 24 hours.
-    case 'weak-session':
-      // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: role changes are staged now)
-      return "This device logged in with just a username and password, so it can't invite team members. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
   }
@@ -872,7 +756,7 @@ export const VENDOR_NEEDS_KEY_CODE = 'vendor-needs-key' satisfies CantDoCode;
 export const NOT_VENDOR_POST_TEXT = 'Only vendor accounts can post offers. Traders take offers that vendors post. Switch to a vendor account in Settings, Account type.';
 
 /** 403 `vendor-needs-key` on the switch. */
-export const VENDOR_NEEDS_KEY_TEXT = "You can't switch to a vendor account yet. The account holder needs a passkey, security key or PGP key. A username and password alone isn't enough.";
+export const VENDOR_NEEDS_KEY_TEXT = "You can't switch to a vendor account yet. The account holder needs a passkey, security key or PGP key.";
 
 /** What a refused switch to vendor says (CantDoThat on Settings, Account type). */
 export function accountTypeCantDoText(code: CantDoCode): string {
@@ -880,7 +764,7 @@ export function accountTypeCantDoText(code: CantDoCode): string {
     case 'vendor-needs-key':
       return VENDOR_NEEDS_KEY_TEXT;
     case 'method-not-allowed':
-      return 'Switching to a vendor account needs your passkey, security key or PGP key to confirm. A password is not enough for this.';
+      return 'Switching to a vendor account needs your passkey, security key or PGP key to confirm.';
     case 'owner-only':
       return teamCantDoText(code);
     default:
@@ -896,13 +780,3 @@ export const KEY_MODEL_REFUSED_CODE = 'method-not-allowed' satisfies CantDoCode;
 /** What setup, Backup and Settings say for it (screens/auth/keyErrors.ts). COPY-UNSIGNED */
 export const KEY_MODEL_REFUSED_TEXT = "This key model isn't accepted yet. Use a different security key.";
 
-// ---------------------------------------------------------------------------------------------
-// Hold model v3 (owner G36, 7 Nov 2026): at most 20 changes (drafts and waiting ones) per account.
-
-/** The change cap's code (409 `too-many-changes` `{ max }`). */
-export const TOO_MANY_CHANGES_CODE = 'too-many-changes' satisfies CantDoCode;
-
-/** 409 `too-many-changes`: the account already holds the most changes it can. COPY-UNSIGNED */
-export function holdChangesCantDoText(max: number | undefined): string {
-  return `Your account already has ${max ?? 20} changes waiting or in drafts, the most it can hold at once. Submit or cancel some of them under Account changes, then make this change again.`;
-}

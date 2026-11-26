@@ -1,10 +1,9 @@
 /**
  * The backup way in (Task 30; design build gaps Job 1, board Login-Backup: "Your recovery code is
- * your only backup"): a printed recovery code with the login name. Nothing else is a backup: not a
- * password (spec §6.2) and, since 8 Nov 2026, not an authenticator (TOTP) code, which stays a
- * normal login step after a password. A backup login opens a recovery session that is held for a
- * day before it can make changes (Plan 2): this screen says until when before it goes on. Then it
- * follows the usual Terms-then-`returnTo` path.
+ * your only backup"): a printed recovery code with the login name. Nothing else is a backup, not an
+ * authenticator (TOTP) code. Owner, 26 Nov 2026: a backup login is a full session that may change
+ * every login method for an hour, with no hold. This screen says the code is burned and the hour
+ * has started, then follows the usual Terms-then-`returnTo` path.
  */
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -12,11 +11,15 @@ import { AuthApiError } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { Notice } from '../../ui/Notice.js';
-import { BURNED_CODE_COPY as BURNED } from '../settings/holdCopy.js';
+import { BURNED_CODE_COPY as BURNED } from '../settings/recoveryCopy.js';
 import { afterLogin, authApi, deviceLabel } from './authApi.js';
 import { LOGIN_RETRY_LATER } from './loginRules.js';
-import { holdSentence, refusalText } from './refusals.js';
+import { refusalText } from './refusals.js';
 import '../screens.css';
+
+/** Owner, 26 Nov 2026: what a recovery-code login allows. COPY-UNSIGNED */
+export const RECOVERY_WINDOW_NOTE =
+  'For the next hour you can add or remove any login method without confirming it\'s you. Set up the ways you will log in from now on in Security settings.';
 
 export function BackupLogin() {
   const navigate = useNavigate();
@@ -26,16 +29,15 @@ export function BackupLogin() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Set after a backup login whose changes are held: the screen says until when, then goes on.
-  const [heldUntil, setHeldUntil] = useState<string | null>(null);
+  // Set after a backup login: the screen says the code is burned, then goes on.
+  const [inNow, setInNow] = useState(false);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await authApi.loginBackup({ loginName: loginName.trim(), kind: 'recovery-code', code: code.trim(), deviceLabel: deviceLabel() });
-      if (result.holdUntil !== null) setHeldUntil(result.holdUntil);
-      else await afterLogin((to) => navigate(to), returnTo);
+      await authApi.loginBackup({ loginName: loginName.trim(), kind: 'recovery-code', code: code.trim(), deviceLabel: deviceLabel() });
+      setInNow(true);
     } catch (e) {
       // A wrong name or code reads the same; an outage or a rate limit is not a mismatch.
       setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? "That login name and backup code don't match." : refusalText(e, LOGIN_RETRY_LATER));
@@ -44,18 +46,18 @@ export function BackupLogin() {
     }
   };
 
-  if (heldUntil !== null) {
+  if (inNow) {
     return (
       <main className="x2f-screen" data-screen="backup-login">
         <h1 className="x2f-screen__title">You're in</h1>
-        <p className="x2f-note" data-part="hold-note">
-          {holdSentence(heldUntil)}
+        <p className="x2f-note" data-part="recovery-window-note">
+          {RECOVERY_WINDOW_NOTE}
         </p>
         {/* Owner S-111 (p11-36): the code just used is burned. COPY-UNSIGNED (BURNED_CODE_COPY). */}
         <Notice tone="caution" title={BURNED.title} data-part="code-burned">
           {BURNED.body}
         </Notice>
-        <Button variant="primary" onClick={() => void afterLogin((to) => navigate(to), returnTo)} data-part="hold-continue">
+        <Button variant="primary" onClick={() => void afterLogin((to) => navigate(to), returnTo)} data-part="recovery-continue">
           Continue
         </Button>
       </main>

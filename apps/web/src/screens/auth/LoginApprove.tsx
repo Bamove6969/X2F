@@ -85,7 +85,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
       // At the device limit the chooser comes next (LoginApprove board: no refusal popup).
       if (e instanceof AuthApiError && e.code === TOO_MANY_DEVICES_CODE) void choose(e.sessions ?? []);
       else {
-        const refused = loginCantDo(e, 'approve');
+        const refused = loginCantDo(e);
         if (refused !== null) setCantDo(refused);
         else if (e instanceof AuthApiError && e.code === 'approval-ended') setStage({ kind: 'ended' });
         else setError('Could not send your answer. Try again.');

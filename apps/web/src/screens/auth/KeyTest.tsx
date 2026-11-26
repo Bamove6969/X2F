@@ -8,8 +8,7 @@
  * changed by a test, passed or not. DESIGN: wording and look. COPY-UNSIGNED
  */
 import { useState } from 'react';
-import { AuthApiError, KeyTestError, testWebAuthnKey, type AuthenticationCeremony } from '@x2f/auth-client';
-import { KEY_TEST_RECOVERY, RECOVERY_SESSION_CODE } from '../../ui/cantDoCodes.js';
+import { KeyTestError, testWebAuthnKey, type AuthenticationCeremony } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { authApi } from './authApi.js';
 import { keyErrorText } from './keyErrors.js';
@@ -28,8 +27,6 @@ export const KEY_TEST_COPY = {
 /** The sentence for a test that did not pass. */
 export function keyTestErrorText(e: unknown): string {
   if (e instanceof KeyTestError) return e.code === 'other-key' ? KEY_TEST_COPY.otherKey : KEY_TEST_COPY.notListed;
-  // Review L1: a backup (recovery) session confirms nothing, so it cannot run the test.
-  if (e instanceof AuthApiError && e.code === RECOVERY_SESSION_CODE) return KEY_TEST_RECOVERY;
   return keyErrorText(e, 'security-key', KEY_TEST_COPY.failed);
 }
 
