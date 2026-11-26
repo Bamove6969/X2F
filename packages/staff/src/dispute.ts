@@ -5,7 +5,7 @@ import {
   type AccountAction,
   type RulingOutcome,
 } from './intent.js';
-import { can, type StaffRole } from './roles.js';
+import { can, type Perm, type StaffRole } from './roles.js';
 
 /**
  * Disputes are settled within 48 hours (the hard deadline traders see as "ruling due by …"),
@@ -25,7 +25,7 @@ export const COMPLY_H = 24;
  * demotion takes effect on the next request only if the caller loads it fresh.
  */
 export type Actor =
-  | { kind: 'staff'; id: string; role: StaffRole }
+  | { kind: 'staff'; id: string; role: StaffRole; grants?: readonly Perm[] }
   | { kind: 'trader'; side: 'buyer' | 'seller' }
   | { kind: 'system' };
 
@@ -366,9 +366,9 @@ const outcomeFits = (d: Dispute, o: RulingOutcome) =>
 const NO_ACTION: AccountAction = { kind: 'none' };
 const isSeniorOrOwner = (role: StaffRole) => role === 'senior' || role === 'owner';
 /** A second approver: a senior or the owner holding `rulings.approve` and the action's own perm. */
-const canApprove = (role: StaffRole, a: AccountAction) => {
+const canApprove = (role: StaffRole, a: AccountAction, grants: readonly Perm[] = []) => {
   const perm = actionPerm(a);
-  return isSeniorOrOwner(role) && can(role, 'rulings.approve') && (perm === null || can(role, perm));
+  return isSeniorOrOwner(role) && can(role, 'rulings.approve') && (perm === null || can(role, perm, grants));
 };
 
 /** Round 2 (R37): only a senior moderator or the owner with no log entry on round 1. */
@@ -549,7 +549,7 @@ export function applyDispute(
     const open1 = d.round === 1 ? d.status === 'published' || d.status === 'final' || d.status === 'complying' : d.status !== 'closed';
     if (!open1 || r1 === null || d.publishedAt === null || d.executedAt !== null || r1.approver !== null) return fail('wrong-state');
     if (!validAction(r1.accountAction, now)) return fail('invalid-action');
-    if (!canApprove(by.role, r1.accountAction)) return fail('wrong-party');
+    if (!canApprove(by.role, r1.accountAction, by.grants)) return fail('wrong-party');
     if (r1.proposer === by.id) return fail('same-person');
     const approved = { ...r1, approver: by.id, needsSecond: true };
     if (d.round === 1) return seenBy({ ...d, ruling: approved }, by.id);
@@ -622,7 +622,7 @@ export function applyDispute(
       // before a rule changed (D-015: no freeze) or a ban whose end has passed is never approved.
       // Sending it back stays possible.
       if (e.type === 'approve' && !validAction(d.ruling.accountAction, now)) return fail('invalid-action');
-      if (!canApprove(by.role, d.ruling.accountAction)) return fail('wrong-party');
+      if (!canApprove(by.role, d.ruling.accountAction, by.grants)) return fail('wrong-party');
       if (d.ruling.proposer === by.id) return fail('same-person');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');
       if (e.type === 'send-back') {

@@ -128,7 +128,7 @@ async function caseTrade(q: Queryable, code: string): Promise<CaseTrade> {
   return rows[0];
 }
 
-export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role });
+export const actorOf = (req: FastifyRequest): Extract<Actor, { kind: 'staff' }> => ({ kind: 'staff', id: req.staff.accountId, role: req.staff.role, grants: req.staff.grants });
 
 /** Whether this person may work the case's chat, messages, proof and freeze. */
 export function mayWork(d: Dispute, req: FastifyRequest): boolean {

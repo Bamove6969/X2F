@@ -37,6 +37,8 @@ import { PURGE_ROLE } from '../trades/purge.js';
  * - a trade still on the moderation watch list (attested and closed within WATCH_LIST_CLOSED_DAYS,
  *   internal/routes.ts): the moderation service watches its escrow for late coins that long, and a
  *   late-funds report needs the trade to escalate;
+ * - a trade with an unpaid lien (owner 26 Nov 2026: no delete date until the lien is repaid, voided
+ *   or written off as uncollectible, then DISPUTE_KEEP_DAYS more), through `tradeDeleteDue`;
  * - liens and owed fees (400), freezes (208), the revenue ledger (430) and the activity log (201):
  *   account or aggregate records with no foreign key to the trade, which x2f_purge may not delete;
  * - anything during site maintenance (no pass runs; the first pass after it catches up).
@@ -70,12 +72,16 @@ interface FactRow {
   still_open: number;
   last_closed: Date | null;
   attested: boolean;
+  lien_open: boolean;
+  lien_ended: Date | null;
 }
 
 const factsSql = (where: string, tail = ''): string => `
   select t.code, t.state, t.settling, t.paid_at, t.cancel_confirmed_at, t.closed_at, t.dispute_by,
          d.total, d.still_open, d.last_closed,
-         exists (select 1 from trade_attestations a where a.code = t.code) as attested
+         exists (select 1 from trade_attestations a where a.code = t.code) as attested,
+         exists (select 1 from liens l where l.from_code = t.code and l.status in ('active', 'suspended')) as lien_open,
+         (select max(l.lifted_at) from liens l where l.from_code = t.code) as lien_ended
     from trades t
     cross join lateral ${DISPUTE_FACTS_SQL('t')} d
    where ${where}
@@ -97,6 +103,9 @@ function toFacts(r: FactRow): RetentionFacts {
     }),
     // The watch list serves an attested trade until WATCH_LIST_CLOSED_DAYS after it closed.
     watchEndsAt: r.attested && r.closed_at !== null ? new Date(r.closed_at.getTime() + WATCH_LIST_CLOSED_DAYS * DAY_MS) : null,
+    // Owner 26 Nov 2026: an unpaid lien keeps the trade with no delete date; an ended one, 90 days more.
+    lienOpen: r.lien_open,
+    lienEndedAt: r.lien_ended,
   };
 }
 

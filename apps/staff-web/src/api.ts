@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
+import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, Perm, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -100,6 +100,8 @@ export interface Me {
   displayName: string;
   role: StaffRole;
   nav: NavItem[];
+  /** The per-person boxes the owner ticked (older answers may lack it: none). */
+  grants?: Perm[];
   /** The earliest of the idle limit, the absolute limit and the end of the login window. */
   sessionEndsAt: string;
 }
@@ -535,6 +537,34 @@ export interface StaffPayRow {
   effectiveFeeBp: number | null;
 }
 export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pay/staff');
+/** Owner 26 Nov 2026: every trade not deleted yet, by status (`GET /staff/v1/trades/status`, the owner). */
+export type TradeAuditStatus = 'lien' | 'uncollectible' | 'disputed' | 'open' | 'completed' | 'closed';
+export interface TradeAuditRow {
+  code: string;
+  state: string;
+  status: TradeAuditStatus;
+  takenAt: string;
+  closedAt: string | null;
+  amountAtomic: string;
+  deleteAt: string | null;
+  liens: Array<{ id: string; status: string; amountAtomic: string; recoveredAtomic: string; endedAt: string | null }>;
+}
+export interface TradeStatusPage {
+  counts: Record<TradeAuditStatus, number>;
+  trades: TradeAuditRow[];
+  next: string | null;
+}
+export const tradeStatus = (status: TradeAuditStatus | null, before: string | null) => {
+  const q = new URLSearchParams();
+  if (status !== null) q.set('status', status);
+  if (before !== null) q.set('before', before);
+  const s = q.toString();
+  return staffApi<TradeStatusPage>(`/staff/v1/trades/status${s ? `?${s}` : ''}`);
+};
+/** Owner 26 Nov 2026: write a lien off as uncollectible (tap `lien-uncollectible` bound to the lien). */
+export const writeOffLien = (lienId: string, tapId: string) =>
+  staffApi<{ status: 'uncollectible' }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/uncollectible`, { method: 'POST', body: { tapId } });
+
 /** Owner 26 Nov 2026: one staff member's work and hours (`GET /staff/v1/pay/staff/:id/audit`, the owner). */
 export interface StaffAuditItem {
   kind: string;

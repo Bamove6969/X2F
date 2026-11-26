@@ -93,7 +93,7 @@ export function pgpPairRule(deps: Pick<Deps, 'db'>): (accountId: string) => Prom
  *   PGP keys for a moderator); a security key whose AAGUID is no
  *   longer on the current allowlist is not offered and is refused (`recheckAllowlist`, Plan 4 M1);
  * - `POST /staff/v1/logout` (never 401, clears the staff cookie);
- * - `GET /staff/v1/me` → `{ displayName, role, nav, sessionEndsAt }`, where `sessionEndsAt` is the
+ * - `GET /staff/v1/me` → `{ displayName, role, nav, grants, sessionEndsAt }`, where `sessionEndsAt` is the
  *   earliest of the idle limit, the absolute limit and the end of the login window.
  */
 export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
@@ -123,6 +123,8 @@ export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
       displayName: req.staff.displayName,
       role: req.staff.role,
       nav: navFor(req.staff.role, req.staff.grants),
+      // Owner 26 Nov 2026: the per-person boxes, so the pages show only what the API allows (ban, lift).
+      grants: req.staff.grants,
       sessionEndsAt: new Date(Math.min(...ends)).toISOString(),
     };
   });
