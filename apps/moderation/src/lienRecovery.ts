@@ -37,8 +37,8 @@ import { fromJson } from './shadow.js';
  *    this service attested it; never one of this trade's own addresses or the fee wallet (B2);
  * 4. the lien's debtor is this trade's buyer, and the lien's source, side, parties and amount are
  *    the ones this service pinned the first time it saw the lien (`mod_liens`);
- * 5. Q1: the rate is the one this service last applied to the lien (the 50% default until then),
- *    or a rate up to 90% that a senior moderator's (or the owner's) `lien-rate` key tap approved for
+ * 5. Q1: the rate is the one this service last applied to the lien (the 100% default until then;
+ *    owner 26 Nov 2026), or another rate (1..100%, in practice lower) that a senior moderator's (or the owner's) `lien-rate` key tap approved for
  *    this lien, verified by its gate (`LienRates`), that it has not applied before. A tap it has
  *    applied is spent for the lien: an API cannot replay an old approval, nor go back to the default
  *    once another rate was applied, without a new tap (the replaced rate stays good for
@@ -209,7 +209,7 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   const creditorAccount = s.creditorAccount as string;
   // Rule 4: the lien's debtor is this trade's buyer.
   if (debtor !== s.buyerAccount) throw new LienRefused('not-debtor');
-  // Rule 5 (Q1): a rate outside 1..90% is never signed.
+  // Rule 5 (Q1): a rate outside 1..100% (LIEN_RECOVERY_MAX_BPS) is never signed.
   const rateBps = s.rateBps;
   if (typeof rateBps !== 'number' || !Number.isSafeInteger(rateBps) || rateBps < 1 || rateBps > LIEN_RECOVERY_MAX_BPS) throw new LienRefused('over-rate');
   const amount = BigInt(rec.amountAtomic);

@@ -90,7 +90,7 @@ describe('helpers', () => {
       'Site ban, Permanent: Abuse of other traders',
       'Account hold until 2026-11-27 12:00 UTC, after a login with a recovery code',
       'Frozen in a dispute',
-      'A lien blocks all trading until the repayment trade completes',
+      'Lien: until it is repaid, what they receive in their trades goes to the person owed',
     ]);
   });
 });

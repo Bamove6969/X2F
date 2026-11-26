@@ -99,23 +99,40 @@ function out(list: Payout[]): Payout[] {
 }
 
 /**
- * Lien recovery limits (review B1, B3; provisional owner answers of 17 Nov 2026, docs/lien-recovery.md
- * "Provisional owner answers"). Each is one constant, so an owner answer changes one line.
+ * Lien recovery limits (review B1, B3; docs/lien-recovery.md). Each is one constant, so an owner
+ * answer changes one line.
  *
- * Q1: the largest share of the buyer's proceeds any recovery may take, in basis points, whatever
- * rate a lien carries: 90%. Every co-signer and the moderation gate refuse more from the signed terms
- * alone. A rate above the 50% default needs a senior moderator's key tap that the moderation service
- * itself verifies (apps/moderation lienRecovery.ts).
+ * Q1 (owner, 26 Nov 2026, answering OQ1: "100% of their earnings are pulled until they pay back in
+ * full"): the largest share of the buyer's proceeds any recovery may take, in basis points, whatever
+ * rate a lien carries: 100%, less only what the buyer's output must keep for the payout to work
+ * (LIEN_BUYER_KEEPS_ATOMIC). Every co-signer and the moderation gate refuse more from the signed
+ * terms alone. A rate other than the 100% default (only ever lower) needs a senior moderator's key
+ * tap that the moderation service itself verifies (apps/moderation lienRecovery.ts).
  */
-export const LIEN_RECOVERY_MAX_BPS = 9000;
-/** The owner's default rate (rule 3): 50% of the debtor's proceeds. */
-export const LIEN_DEFAULT_RATE_BPS = 5000;
-/** Q1 margin: what the buyer keeps above the largest network fee, 0.01 XMR. */
-export const LIEN_BUYER_MARGIN_ATOMIC = 10_000_000_000n;
+export const LIEN_RECOVERY_MAX_BPS = 10_000;
+/** The owner's default rate (rule 3; owner 26 Nov 2026): 100% of the debtor's proceeds. */
+export const LIEN_DEFAULT_RATE_BPS = 10_000;
+/**
+ * Q1 margin: what the buyer's output keeps above the largest network fee: 1 atomic unit.
+ *
+ * Why not 0, and why no longer 0.01 XMR (owner 26 Nov 2026: 100%). The 17 Nov provisional answer
+ * kept 0.01 XMR so the buyer kept 0.01 XMR net; that was a policy choice, not a technical one, and
+ * the owner's 100% replaces it. What stays is what the payout set needs to work:
+ * - the buyer's output must stay in the set: it is index 0 (the party receiving the trade's XMR,
+ *   which every co-signer, sweepMinimums and the landed/key proofs rely on) and the first network-fee
+ *   bearer, so `feeWalletNetworkFee` (X2F pays everything but the buyer's share) holds only while it
+ *   exists; an output of 0 would be dropped by `out`, and X2F's outputs would bear the whole fee;
+ * - it bears its wallet2 share of the network fee, at most MAX_NETWORK_FEE, and wallet2 cannot take a
+ *   fee share off an output that is not larger than it; and the key proofs (party.ts keyProof, review
+ *   N-m1) require every payout to receive more than 0 after its share.
+ * So the buyer's output keeps MAX_NETWORK_FEE + 1: whatever the fee, it pays its share and receives
+ * at least 1 atomic unit, and every remaining atomic unit of the proceeds can go to the creditor.
+ */
+export const LIEN_BUYER_MARGIN_ATOMIC = 1n;
 /**
  * Review B3 and Q1: what the buyer's output always keeps after a recovery: the largest network fee a
- * release may take from it (index 0 bears it, `MAX_NETWORK_FEE`) plus the margin, so the buyer keeps
- * at least 0.01 XMR net. wallet2 cannot subtract a fee from an output that is not larger than it.
+ * release may take from it (index 0 bears it, `MAX_NETWORK_FEE`) plus the 1-unit margin, so its
+ * output stays in the set and is always larger than its share of the fee.
  */
 export const LIEN_BUYER_KEEPS_ATOMIC = MAX_NETWORK_FEE + LIEN_BUYER_MARGIN_ATOMIC;
 /**
@@ -127,8 +144,9 @@ export const LIEN_RECOVERY_MIN_ATOMIC = 10_000_000_000n;
 const isRateBps = (bps: unknown): bps is number => typeof bps === 'number' && Number.isSafeInteger(bps) && bps >= 1 && bps <= LIEN_RECOVERY_MAX_BPS;
 
 /**
- * The most one trade may recover from `proceedsAtomic` (the buyer's share of a release): 90%, rounded
- * down, reduced so the buyer keeps LIEN_BUYER_KEEPS_ATOMIC; 0 when nothing fits.
+ * The most one trade may recover from `proceedsAtomic` (the buyer's share of a release):
+ * LIEN_RECOVERY_MAX_BPS of it (100%), rounded down, reduced so the buyer keeps
+ * LIEN_BUYER_KEEPS_ATOMIC; 0 when nothing fits.
  */
 export function lienRecoveryCap(proceedsAtomic: bigint): bigint {
   if (typeof proceedsAtomic !== 'bigint' || proceedsAtomic <= LIEN_BUYER_KEEPS_ATOMIC) return 0n;

@@ -567,7 +567,7 @@ export interface JabberEvents {
 /**
  * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md; `apps/api` disputes/lienRoutes.ts): one
  * of the account's own liens. Amounts are atomic XMR as decimal strings; `rateBps` is the share of
- * each completed trade's proceeds that goes to the creditor (default `defaultRateBps`, 50%). No
+ * each completed trade's proceeds that goes to the creditor (default `defaultRateBps`, 100%). No
  * account ids, no addresses.
  */
 export interface LienView {

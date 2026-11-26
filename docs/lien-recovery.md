@@ -4,7 +4,8 @@ Status: built on `wip/third-lien-recovery` (on the lead's dispute stack), merged
 `merge/lien` (26 Nov 2026; see "Merged onto main" at the end), except where marked NEEDS_*. Lead security review needed before liens are switched on. Recovery needs two switches, and
 both are off by default: the API's `site_flags.liens_enabled` (a database row, so a compromised API
 holds it) and the moderation service's own `MOD_LIEN_RECOVERY=on` (re-review N1, below). Keep the
-moderation switch off until the owner has confirmed Q1-Q6, the copy and the design.
+moderation switch off until the owner has confirmed Q2-Q6, the copy and the design (Q1 answered
+26 Nov 2026).
 
 Built: `@x2f/staff` lienRecovery.ts (rate request rules); `@x2f/trade` optional `lienRecovery` in
 the attested terms, `expectedRecovery`, the limits, `payoutsFor`/`sweepMinimums`, the signed
@@ -12,16 +13,20 @@ the attested terms, `expectedRecovery`, the limits, `payoutsFor`/`sweepMinimums`
 buyer's accepted figure), record on settle, staff rate routes (`lien-rate` key tap),
 `GET /v1/account/liens`, its preview and the creditor's recovery address route; the moderation
 service checks, signs and pays it; the web quote shows it before the take, the devices verify it, and
-Settings → What you owe. Provisional owner answers of 17 Nov below.
+Settings → What you owe. Provisional owner answers of 17 Nov below; Q1/OQ1 (the rate) answered by
+the owner on 26 Nov 2026: 100%, default and ceiling (migration 890).
 
 ## The owner's rules
 
 1. Partial recovery: a trade recovers what its proceeds allow and the rest carries forward.
 2. No double compensation: every amount recovered is tracked against the lien; the creditor never
    receives more than the moderator determined they were owed.
-3. Option b: an active lien no longer blocks trading. The debtor is told their proceeds are deducted
-   at a rate (default 50%) until the lien is paid. A moderator may propose another rate with a
-   required reason; a senior moderator approves or rejects it; until approved the default applies.
+3. Option b: an active lien no longer blocks trading (owner 26 Nov 2026: a vendor at fault may still
+   accept new trades). The debtor is told their proceeds are deducted at a rate until the lien is
+   paid: by default 100% (owner 26 Nov 2026: "100% of their earnings are pulled until they pay back
+   in full"), less only what the buyer's payout must keep to work (Q1 below). A moderator may propose
+   a lower rate with a required reason; a senior moderator approves or rejects it; until approved
+   the current rate applies.
 4. Evidence before enforcement: a payment marked as sent is not proof money arrived.
 
 ## What a lien owes the creditor
@@ -49,7 +54,7 @@ A lien carries `amount_atomic` (owed to the creditor, the trade's XMR) and `fee_
 - `liens.creditor_address` with `creditor_address_statement` and `_sig` (Q2): the address the
   creditor's own device signed for its recoveries (null until it does; SQL keeps the three together).
 - `lien_statements` (review B1): the moderation service's latest signed LienStatement per lien.
-- `liens.recovery_rate_bps` (default 5000, 1..9000 in SQL, Q1) and `lien_rate_requests`: `proposed_bps`,
+- `liens.recovery_rate_bps` (default 10000, 1..10000 in SQL since migration 890, Q1) and `lien_rate_requests`: `proposed_bps`,
   `reason` (required, 1..500 chars), `proposed_by`, `status` (`pending` → `approved` | `rejected`),
   `decided_by` (never the proposer), timestamps. Approving sets the lien's rate in the same transaction.
   One pending request per lien.
@@ -64,10 +69,11 @@ wallet (`X2F_FEE_WALLET`) and no other account's wallet (review B2), the API res
              = min(floor(proceeds × rate / 10000), left, lienRecoveryCap(proceeds)), or 0 when under 0.01 XMR
 
 (@x2f/trade `expectedRecovery`), where `proceeds` is what the release pays the buyer (amount, or
-amount − fee on a buyer's ad), `rate` the lien's (default 50%, at most 90%: Q1), `left` the lien's
+amount − fee on a buyer's ad), `rate` the lien's (default 100%, at most 100%: Q1), `left` the lien's
 amount less what is recovered and less the holds of other trades that still count, and
-`lienRecoveryCap` 90% of the proceeds reduced so the buyer keeps `MAX_NETWORK_FEE + 0.01 XMR` (Q1,
-review B3). A figure under 0.01 XMR is not reserved: the remainder carries forward (Q5).
+`lienRecoveryCap` all of the proceeds except `LIEN_BUYER_KEEPS_ATOMIC` = `MAX_NETWORK_FEE` + 1 atomic
+unit, which the buyer's output keeps so the payout works (Q1, review B3). A figure under 0.01 XMR is
+not reserved: the remainder carries forward (Q5).
 
 **The buyer sees and accepts it before the take (review B1).** The quote reads
 `GET /v1/account/liens/preview` for the amount and wallet and shows "Paid to the person you owe" and
@@ -102,7 +108,8 @@ a system event only (tested), and its future route (NEEDS_TASK_12_TX_PROOF) must
 the tx proof is checked on chain: the seller's "sent" claim and uploaded evidence are not receipt.
 
 **Network fee (review M5, merge with `wip/second-netfee-fixes`).** Not built here: the network fee
-stays on payout 0 (the buyer), and the buyer always keeps at least `MAX_NETWORK_FEE + 0.01 XMR`. Under
+stays on payout 0 (the buyer) and X2F's fee outputs, and the buyer's output always keeps at least
+`MAX_NETWORK_FEE` + 1 atomic unit (`LIEN_BUYER_KEEPS_ATOMIC`, Q1). Under
 the owner's rule "each receiver pays its own payout network-fee share", the creditor's output is a
 receiving output and pays its own share at that merge: mark it `bearsNetworkFee: true` in both
 release lists (`payoutsFor`, `sweepMinimums`; insert the recovery output after the fee output). It is
@@ -126,15 +133,17 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
 ## Staff flow
 
 - `GET /v1/staff/liens/:id` (`disputes.handle`): the lien, recoveries, remaining, rate, requests.
-- `POST /v1/staff/liens/:id/rate` (`disputes.handle`): `{ rateBps, reason }`; a rate other than 5000
-  needs a reason; creates a pending request (logged `lien.rate-proposed`).
+- `POST /v1/staff/liens/:id/rate` (`disputes.handle`): `{ rateBps, reason }` (1..10000); every
+  request needs a reason, so any rate other than the 10000 default does, and so does going back to
+  it; creates a pending request (logged `lien.rate-proposed`).
 - `POST /v1/staff/liens/:id/rate/:req/approve|reject` (`rulings.approve`, a senior or the owner, never
   the proposer): logged `lien.rate-approved` / `lien.rate-rejected`. Changing a money rate is a
   money-affecting staff action, so approve takes a `lien-rate` key tap bound to the lien, the
-  request and the rate (at most 90%, Q1). The moderation service verifies that tap itself with its
+  request and the rate (at most 100%, Q1). The moderation service verifies that tap itself with its
   gate (`lienRateTaps`: the key it trusts for a senior or the owner, the WebAuthn assertion, a
   nonce never used for anything else) before it signs any recovery at a rate other than the one it
-  last applied to the lien (the 50% default until then). Applying a tap spends it for the lien
+  last applied to the lien (the 100% default until then; a lien it pinned before migration 890 keeps
+  the 50% it applied, see Q1). Applying a tap spends it for the lien
   (`mod_lien_rate_taps`): a compromised API can neither replay an old approval nor go back to the
   default without a new tap. The rate just replaced stays good for `LIEN_RATE_GRACE_HOURS` (24), for a
   trade whose buyer accepted the figure before the change. NEEDS_STAFF_WEB_LIEN_RATE: the staff site's screen and its KeyTapDialog caller are not built.
@@ -160,30 +169,49 @@ design draws it; a link to the screen from Settings is still missing).
 1. Seller-debtor case (above).
 2. A lien that carries X2F's 1%: once the creditor is paid, move the 1% into `fees_owed` and end the
    lien?
-3. Q1 to Q6 of the review: answered provisionally below, not yet confirmed.
+3. Q2 to Q6 of the review: answered provisionally below, not yet confirmed. Q1 answered by the owner
+   (26 Nov 2026).
 4. Debtor binding: a compromised API can still name a real lien against a buyer who does not owe it
    (account ids are its word). See Security.
-5. OQ1 (re-review 17 Nov): the highest rate, 90% (provisional, Q1 below) or the 50% default. One
-   constant, `LIEN_RECOVERY_MAX_BPS`, plus the SQL checks.
+5. ~~OQ1 (re-review 17 Nov): the highest rate.~~ Answered by the owner, 26 Nov 2026: 100%, as the
+   default and the ceiling (Q1 below; migration 890).
 6. Moderation switch (re-review OQ3): keep `MOD_LIEN_RECOVERY` off until the owner signs the copy,
-   the design and Q1-Q6.
+   the design and Q2-Q6 (Q1 answered 26 Nov 2026).
 
-## Provisional owner answers (17 Nov), not yet confirmed
+## Owner answers
 
-The review's owner questions, answered with the strict choices until the owner rules. Each is one
-constant or one rule, so a different answer changes one place (plus its tests).
+The review's owner questions. Q1 is the owner's answer (26 Nov 2026); Q2 to Q6 are still the
+provisional answers of 17 Nov (the strict choices until the owner rules), not yet confirmed. Each is
+one constant or one rule, so a different answer changes one place (plus its tests).
 
-- **Q1, the highest rate:** 90% (`LIEN_RECOVERY_MAX_BPS` = 9000 in @x2f/trade, the one constant for
-  the cap: the API passes it to @x2f/staff `rateRequestRefusal` and the `lien-rate` tap check, the
-  devices, the gate and the moderation service read it; migration 820's checks and moderation 009's
-  hold the same number in SQL). **Owner question OQ1 (open, re-review 17 Nov):** should the ceiling
-  be 90%, or should no rate go above the 50% default (allow lowering with a senior's tap, raising
-  only if the owner explicitly wants it)? 90% leaves a buyer 10% of a purchase. Changing it is that
-  constant, the SQL checks (`between 1 and 9000`) and their tests. The
-  buyer's own output after a recovery is at least `LIEN_BUYER_KEEPS_ATOMIC` = `MAX_NETWORK_FEE` +
-  `LIEN_BUYER_MARGIN_ATOMIC` (0.01 + 0.01 XMR), so the buyer keeps at least 0.01 XMR net; a recovery is
-  reduced to fit, or skipped when nothing fits (`lienRecoveryCap`). A rate other than the 50% default
-  (`LIEN_DEFAULT_RATE_BPS`) needs the senior's `lien-rate` key tap, verified by the moderation service.
+- **Q1, the rate (owner, 26 Nov 2026, answering OQ1):** "When a lien is decided as the outcome of the
+  dispute that status gets applied to the trader that it was decided at fault. If they are a vendor
+  they are allowed to accept new trades. 100% of their earnings are pulled until they pay back in
+  full." So the default and the ceiling are both 100%: `LIEN_DEFAULT_RATE_BPS` =
+  `LIEN_RECOVERY_MAX_BPS` = 10000 in @x2f/trade (the one constant for the cap: the API passes it to
+  @x2f/staff `rateRequestRefusal` and the `lien-rate` tap check, the devices, the gate and the
+  moderation service read it), @x2f/staff `DEFAULT_RECOVERY_RATE_BPS` = 10000, and the SQL checks
+  `between 1 and 10000` (API and moderation migrations 890, replacing 820's and 023's 1..9000;
+  apps/moderation lienCap.test.ts keeps them equal to the constant). A moderator may still propose a
+  lower rate, with a reason, for a senior's `lien-rate` key tap (verified by the moderation service).
+  - **What the buyer keeps:** `lienRecoveryCap` takes all of the buyer's proceeds except
+    `LIEN_BUYER_KEEPS_ATOMIC` = `MAX_NETWORK_FEE` (0.01 XMR) + `LIEN_BUYER_MARGIN_ATOMIC` (now 1 atomic
+    unit; it was 0.01 XMR). The old 0.01 XMR margin only kept the buyer 0.01 XMR net, a policy the
+    owner's 100% replaces, so it is gone. `MAX_NETWORK_FEE` itself stays because the payout set needs
+    it: the buyer's output is index 0 and the first network-fee bearer, so it must stay in the set
+    (an output of 0 is dropped, and then X2F's outputs would bear the whole fee and
+    `feeWalletNetworkFee` would book the wrong share); wallet2 cannot take a fee share off an output
+    not larger than it (a share is at most `MAX_NETWORK_FEE`); and the key proofs need every payout
+    to receive more than 0. The buyer therefore receives at most 0.01 XMR + 1 atomic unit less its
+    share of the network fee. A recovery is reduced to fit, or skipped when nothing fits.
+  - **Existing liens (migration 890):** an active or suspended lien whose rate is the old 5000 default
+    moves to 10000, unless a senior approved a rate request for it (its rate was chosen) or the
+    moderation service already signed a lien statement for it (it pinned 5000 in `mod_liens`, and
+    would refuse 10000 without a tap: `lien-refused-rate-unverified`). Those keep their stored rate and
+    reach 100% only through a rate request and a senior's tap. Open holds keep the rate their buyer
+    accepted. Over liens never change. Known edge, theoretical while `MOD_LIEN_RECOVERY` has never
+    been on: a hold reserved at 5000 for a lien the moderation service never pinned is now refused
+    (`rate-unverified`) once the switch is on; the trade waits unsigned, as any refusal.
 - **Q2, where recoveries go:** only to an address the CREDITOR's device signed for this purpose
   (@x2f/trade `RecoveryAddressStatement`, signed with its trade identity from the disputed trade),
   verified by the API and again by the moderation service against that identity as it attested it;
@@ -233,7 +261,7 @@ honest staff keys not. What now holds:
   identity in its own attestation of `fromCode`) and none of this trade's or the fee wallet; the lien's
   debtor is this trade's buyer, and the lien's source, side, parties and amount are those it pinned
   the first time (`mod_liens`); the rate is the one it last applied to the lien (the default until
-  then), or one a senior's tap approved (gate-verified, at most 90%) that it has not applied before
+  then), or one a senior's tap approved (gate-verified, at most 100%) that it has not applied before
   (applying spends every new tap for the lien, `mod_lien_rate_taps`; the rate just replaced stays
   good for 24 hours); and the amount is exactly `expectedRecovery` on what is left after every recovery it
   signed for the lien and has not seen end without paying, never more in total than the source

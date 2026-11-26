@@ -283,7 +283,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How long does the seller have to fund the escrow?',
     a: '30 minutes from when the escrow is ready. If it is not fully funded in time, the trade ends and anything already sent goes back to the seller.',
-    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:186-190 lapse-refund`],
+    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:228-232 lapse-refund`],
     facts: ['fundMinutes'],
   },
   {
@@ -331,7 +331,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'Can I cancel a trade as the buyer?',
     a: 'Yes, at any time until you tap "I\'ve paid". If the escrow was already funded, the XMR goes back to the seller.',
-    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:188 case 'buyer-cancel':`],
+    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:229 case 'buyer-cancel':`],
   },
   {
     id: 'seller-cancel',
@@ -523,8 +523,8 @@ const ENTRIES: readonly Entry[] = [
     a: 'Yes. Every Monero payment pays a small fee to the Monero network, and it is separate from X2F\'s 1% fee. When the escrow pays out, each payout pays the network fee for itself, taken from it: on a completed trade the buyer\'s payout and X2F\'s 1% fee payout each pay their own share, and on a refund or cancel the seller\'s payout pays it.',
     sources: [
       `${T}/payouts.ts:7-13 Who pays the payout's network fee`,
-      `${T}/payouts.ts:181-182 bearsNetworkFee: true`,
-      `${T}/payouts.ts:194 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
+      `${T}/payouts.ts:222-223 bearsNetworkFee: true`,
+      `${T}/payouts.ts:235 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
       'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares',
     ],
     facts: ['feePercent'],
@@ -900,7 +900,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor sells?',
     a: 'The vendor puts the trade amount plus 1% into the escrow. The buyer receives the trade amount less the Monero network fee for their own payout, and X2F\'s 1% pays the network fee for its own payout.',
-    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:178 const toBuyer`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:219 const toBuyer`, `${T}/payouts.ts:222-223 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {
@@ -908,7 +908,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor buys?',
     a: 'The seller puts the trade amount into the escrow. The vendor receives the trade amount minus 1%, and less the Monero network fee for their own payout.',
-    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:178 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:219 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:222-223 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {

@@ -22,8 +22,9 @@ import { LIENS_ON_SQL } from './lien.js';
  * - Rule 2: the SQL guard (migration 820) and `lienRemaining` both refuse more than the amount.
  * - Review B1 (security, 2026-11-16) with the provisional owner answers of 17 Nov (Q1, Q2, Q5;
  *   docs/lien-recovery.md): the API is not trusted with the money. The recovery is exactly
- *   @x2f/trade `expectedRecovery` (rate × proceeds, at most what is left, at most 90% and never
- *   leaving the buyer under MAX_NETWORK_FEE + 0.01 XMR, nothing under 0.01 XMR), paid only to the
+ *   @x2f/trade `expectedRecovery` (rate × proceeds, at most what is left, at most 100% (owner
+ *   26 Nov 2026) less the buyer's LIEN_BUYER_KEEPS_ATOMIC (MAX_NETWORK_FEE + 1 atomic unit, what the
+ *   payout needs to work), nothing under 0.01 XMR), paid only to the
  *   address the creditor's own device signed for it (`liens.creditor_address`, set by
  *   `POST /v1/account/liens/:id/recovery-address`); the buyer accepts the figure before the take
  *   (`previewRecovery`, take's `lienRecoveryAtomic`); and the moderation service signs it only when
