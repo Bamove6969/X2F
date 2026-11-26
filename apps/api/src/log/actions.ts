@@ -202,6 +202,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // Owner 26 Nov: the payroll wallet's send of a clock-out payout (its id, amount and tx id; never the address).
+  'pay.sent': { ref: 'id', atomic: 'amount', txHash: 'hex64' },
+  'pay.send-failed': { ref: 'id', reason: 'id' },
   // Owner 26 Nov 2026: a dispute's pay as earned, for the audit: the share of the fee used (basis
   // points), the XMR it came to, and whether the role's minimum paid instead.
   'pay.earned': { staffId: 'uuid', feeBp: 'setting', atomic: 'amount', usdCents: 'amount', minimum: 'bool', round: 'number' },

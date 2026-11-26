@@ -263,8 +263,8 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   await expect(send).toBeDisabled();
   await page.getByLabel('Why should it be looked at again?').fill('My bank shows no payment.');
   await send.click();
-  // Review fix 2: an overturn means a lien on the XMR's receiver. C11 review I1: nothing has moved the
-  // XMR yet (NEEDS_PLAN_4_RULING_PAYOUT), so the line does not say it has.
+  // Review fix 2: an overturn means a lien on the XMR's receiver. C11 review I1: the view does not
+  // report the payout executed here, so the line does not say the XMR has moved.
   await expect(
     page.getByText('Appeal sent. A second moderator will look at it. If they overturn the ruling, the other trader gets a lien until they pay the trade\'s XMR back.'),
   ).toBeVisible();

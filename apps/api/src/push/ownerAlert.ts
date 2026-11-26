@@ -17,6 +17,8 @@ import type { PushKind } from './send.js';
 export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed', 'staff-security-reset', 'staff-security-reset-finished',
   'appeal-no-reviewer',
+  // Owner 26 Nov: the payroll wallet could not pay a staff member (or may have), so the owner hears at once.
+  'payroll-send-refused', 'payroll-send-unknown', 'payroll-send-blocked',
   // Re-review 2 m3: a staff device certified to read disputed chats (the countermeasure to a planted key).
   'staff-device-certified',
   // Plan 4 Task 12 (A6, lead call 18 Nov): a seller let the comply time pass; a senior or the owner decides.

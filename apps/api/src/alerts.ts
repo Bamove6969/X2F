@@ -57,6 +57,12 @@ export type AlertKind =
   // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
   | 'fee-sweep-due'
   | 'fee-sweep-failed'
+  // Owner only (owner 26 Nov): the payroll wallet's automatic staff payouts at clock-out. Refused:
+  // nothing went out and it tries again (told once per payout); unknown: no answer, never resent by
+  // itself; blocked: the payout's address no longer matches its key tap, so nothing was sent.
+  | 'payroll-send-refused'
+  | 'payroll-send-unknown'
+  | 'payroll-send-blocked'
   // Owner only (D-032 review S2): a staff member's security was reset, and the reset link was used.
   | 'staff-security-reset'
   | 'staff-security-reset-finished'

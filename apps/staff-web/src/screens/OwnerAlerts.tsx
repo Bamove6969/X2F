@@ -26,6 +26,10 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'tx-proof-check-stopped': 'The payment proof checker has stopped: no seller can prove a payment until the API is restarted',
   'fee-sweep-due': 'Fee wallet sweep',
   'fee-sweep-failed': 'Fee wallet sweep did not go through',
+  // COPY-UNSIGNED (owner 26 Nov): the payroll wallet's automatic staff pay.
+  'payroll-send-refused': 'The payroll wallet could not pay a staff member yet',
+  'payroll-send-unknown': 'A staff payout may not have gone through: check the payroll wallet',
+  'payroll-send-blocked': 'A staff payout was stopped: its address does not match its key tap',
   'new-login': 'New login to the owner account',
   'login-method-added': 'Login method added',
   'login-method-removed': 'Login method removed',

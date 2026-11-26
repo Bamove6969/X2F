@@ -1,15 +1,12 @@
-// B-006 / Plan 4 Task 9 (owner, 2026-10-29 lead calls q7): the fee wallet stays hot; when its
-// balance reaches the owner's threshold, the excess moves to his cold wallet, leaving one day plus
-// one night of staff pay, and the owner is notified. Ships unset (sweep off). The send itself is
-// Plan 6's (tripwire NEEDS_PLAN_6_FEE_WALLET): until then a due sweep alerts the owner and moves
-// nothing. Settings are owner-only and tapped. Real Postgres.
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+// B-006 / Plan 4 Task 9, reworked by the owner 26 Nov 2026: the payroll wallet (wallet 2) stays hot;
+// when its balance reaches the owner's cap, the excess moves to X2F's fee wallet (X2F_FEE_WALLET,
+// wallet 1), leaving the float for staff pay, and the owner is notified. Ships unset (sweep off).
+// Settings are owner-only and tapped, and the destination is the fee wallet only. Real Postgres.
 import type { KeyTapIntent } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { FeeWalletNotWiredError, NEEDS_PLAN_6_FEE_WALLET, planFeeSweep, runFeeSweep, sendFeeSweepToColdWallet, type FeeSweepConfig } from '../../src/staff/feeSweep.js';
+import { planFeeSweep, runFeeSweep, type FeeSweepConfig } from '../../src/staff/feeSweep.js';
 import { StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap, staffApps } from '../helpers/staffApp.js';
 import { fakeAddress, XMR } from '../helpers/trades.js';
 
@@ -26,7 +23,8 @@ let owner: StaffBrowser;
 let ownerId: string;
 
 beforeAll(async () => {
-  ({ app, deps, setNow, close } = await staffApps({ addresses: { check: async (a) => (a === BAD ? 'invalid' : 'ok') } }));
+  ({ app, deps, setNow, close } = await staffApps({ addresses: { check: async (a) => (a === BAD ? 'invalid' : 'ok') } }, {}, { config: { feeWallet: COLD } }));
+  // COLD stands in for X2F's fee wallet: the only address the sweep may send to.
   setNow(T0);
   ownerId = (await seedStaff(deps, { role: 'owner' })).id;
   owner = new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);
@@ -67,18 +65,6 @@ describe('the threshold maths (planFeeSweep)', () => {
     expect(() => planFeeSweep(on(3n, 3n), 10n)).toThrow(RangeError);
     expect(() => planFeeSweep(on(3n, 4n), 10n)).toThrow(RangeError);
     expect(() => planFeeSweep(on(5n, 1n), -1n)).toThrow(RangeError);
-  });
-});
-
-describe('TRIPWIRE NEEDS_PLAN_6_FEE_WALLET', () => {
-  it('the send moves nothing until Plan 6 wires the fee wallet, and nothing starts the sweep', async () => {
-    // When Plan 6 lands: wire sendFeeSweepToColdWallet to the fee wallet (see its comment), start
-    // runFeeSweep from main.ts with the wallet's balance, and delete this test.
-    const err = await sendFeeSweepToColdWallet({ coldAddress: COLD, amountAtomic: XMR }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(FeeWalletNotWiredError);
-    expect((err as FeeWalletNotWiredError).code).toBe(NEEDS_PLAN_6_FEE_WALLET);
-    const main = readFileSync(fileURLToPath(new URL('../../src/main.ts', import.meta.url)), 'utf8');
-    expect(main.includes('runFeeSweep') || main.includes('feeSweep'), 'main.ts starts the fee sweep: Plan 6 landed? see this test').toBe(false);
   });
 });
 
@@ -150,6 +136,13 @@ describe('GET and PUT /staff/v1/fee-sweep (owner, tapped)', () => {
     expect({ status: bad.statusCode, error: errorOf(bad) }).toEqual({ status: 400, error: 'address-invalid' });
   });
 
+  it('refuses any destination but X2F\'s fee wallet, even with a tap for it', async () => {
+    const values = { thresholdAtomic: (10n * XMR).toString(), floatAtomic: (2n * XMR).toString(), coldAddress: OTHER };
+    const res = await put({ ...values, tapId: await sweepTap(values) });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 400, error: 'not-fee-wallet' });
+    expect((await owner.get('/staff/v1/fee-sweep')).json()).toMatchObject({ on: false, coldAddress: null });
+  });
+
   it('a senior moderator gets forbidden', async () => {
     const id = (await seedStaff(deps, { role: 'senior' })).id;
     const res = await new StaffBrowser(app).withSession((await insertSession(deps, id, 'staff')).token).get('/staff/v1/fee-sweep');
@@ -160,7 +153,7 @@ describe('GET and PUT /staff/v1/fee-sweep (owner, tapped)', () => {
 describe('the sweep pass (runFeeSweep)', () => {
   let balance = 0n;
   const pushed: string[] = [];
-  const base = () => ({ db: deps.db, clock: deps.clock, wallet: { unlockedAtomic: async () => balance }, push: { send: async (id: string) => (pushed.push(id), true) } });
+  const base = () => ({ db: deps.db, clock: deps.clock, feeWallet: COLD as string | null, wallet: { unlockedAtomic: async () => balance }, push: { send: async (id: string) => (pushed.push(id), true) } });
   const ownerAlerts = async (kind: string) =>
     (await deps.db.query<{ detail: Record<string, unknown> }>('select detail from alerts where account_id = $1 and kind = $2 order by created_at', [ownerId, kind])).rows.map((r) => r.detail);
   const sweeps = async () => (await deps.db.query('select outcome, amount_atomic::text, keep_atomic::text, tx_hash from fee_sweeps order by id')).rows;
@@ -278,7 +271,7 @@ describe('the sweep pass (runFeeSweep)', () => {
   });
 
   // Review F2: the send uses the settings as they are just before it, not as step 1 read them.
-  it('the owner changes the cold address mid-pass: nothing is sent, the attempt is failed (settings-changed), the next pass uses the new address', async () => {
+  it('the owner changes the cold address mid-pass: nothing is sent, the attempt is failed (settings-changed); an address that is not the fee wallet is never sent to', async () => {
     const now = new Date(T0.getTime() + 700_000);
     setNow(now);
     await setSweep(10n * XMR, 3n * XMR, now);
@@ -299,10 +292,11 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed', tx_hash: null });
     expect((await ownerAlerts('fee-sweep-failed')).at(-1)).toMatchObject({ reason: 'settings-changed' });
     expect((await logEntries(deps, 'treasury.sweep-failed')).map((r) => JSON.parse(r.detail) as unknown).at(-1)).toEqual({ amountAtomic: (10n * XMR).toString(), reason: 'settings-changed' });
-    // The owner's change came after the attempt, so it lifts the hold: the next pass sends to the new address.
+    // The change came after the attempt, so it lifts the hold, but the new address is not the fee
+    // wallet: the next pass sends nothing (not-fee-wallet).
     setNow(new Date(now.getTime() + 60_000));
-    expect(await runFeeSweep({ ...base(), send: async (a) => (sent.push(a), { txHash: '12'.repeat(32) }) })).toMatchObject({ outcome: 'sent' });
-    expect(sent).toEqual([{ coldAddress: OTHER, amountAtomic: 10n * XMR }]);
+    expect(await runFeeSweep({ ...base(), send: async (a) => (sent.push(a), { txHash: '12'.repeat(32) }) })).toMatchObject({ outcome: 'failed', reason: 'not-fee-wallet' });
+    expect(sent).toEqual([]);
     await setSweep(10n * XMR, 3n * XMR, new Date(now.getTime() + 61_000));
   });
 
@@ -467,6 +461,29 @@ describe('the sweep pass (runFeeSweep)', () => {
       await new Promise((r) => setTimeout(r, 100));
     }
     expect(next).toEqual({ outcome: 'below-threshold' });
+  });
+
+  it('the default send is the payroll wallet\'s transfer to the fee wallet, the network fee off the amount; the fee is recorded', async () => {
+    const now = new Date(T0.getTime() + 1_200_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    const transfers: unknown[] = [];
+    const txHash = '9a'.repeat(32);
+    const wallet = { unlockedAtomic: async () => balance, transfer: async (a: { address: string; amountAtomic: bigint; feeFromAmount: boolean }) => (transfers.push(a), { txHash, feeAtomic: 30_000_000n }) };
+    expect(await runFeeSweep({ ...base(), wallet })).toMatchObject({ outcome: 'sent', txHash, amountAtomic: 10n * XMR });
+    expect(transfers).toEqual([{ address: COLD, amountAtomic: 10n * XMR, feeFromAmount: true }]);
+    expect((await deps.db.query('select network_fee_atomic::text as fee from fee_sweeps order by id desc limit 1')).rows).toEqual([{ fee: '30000000' }]);
+  });
+
+  it('no fee wallet configured: a due sweep sends nothing (not-fee-wallet)', async () => {
+    const now = new Date(T0.getTime() + 1_300_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    const sent: unknown[] = [];
+    expect(await runFeeSweep({ ...base(), feeWallet: null, send: async (a) => (sent.push(a), { txHash: 'bc'.repeat(32) }) })).toMatchObject({ outcome: 'failed', reason: 'not-fee-wallet' });
+    expect(sent).toEqual([]);
   });
 
   it('the attempts table refuses a sent row without a tx hash and a pending row with a settled time', async () => {

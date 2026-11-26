@@ -272,6 +272,8 @@ export interface RulingCopy {
   title: string;
   /** Only for the side the ruling pays, when the API sent the destination. */
   destination: { app: string | null; end: string } | null;
+  /** The API reports the ruling's escrow payout executed: "Sent to …" rather than "Goes to …". */
+  sent: boolean;
   footer: string;
 }
 
@@ -288,16 +290,13 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
 /**
  * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
  * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
- * you" and the footer. The board's "Sent to Cake Wallet, address ending …k3Fz." is not true yet: the
- * page says "Goes to …" (DisputeRuling.tsx) until the API reports the payout executed.
+ * you" and the footer. The board's "Sent to Cake Wallet, address ending …k3Fz." once the API
+ * reports the payout executed (`ruling.executedAt`); "Goes to …" before it (C11 review I1).
  *
- * NEEDS_PLAN_4_RULING_PAYOUT (C11 review I1): the spec, Plan 4 ("A1 dropped", Revision 2026-10-29c)
- * and the owner (Q37, 6 Nov: "at once, with a lien covering a reversal") move the coins at the
- * ruling, and the escrow worker co-signs it from the ruling on, appeal or not (escrow/runtime.ts,
- * against the signed ruling statement). The dispute view does not say the payout executed yet, so the page still says "Goes to …". When the API reports
- * the payout executed (DisputeView has no such flag today), the destination line flips to the
- * board's "Sent to …" and the appeal line may say the XMR has moved.
- * Tripwire NEEDS_PLAN_4_RULING_PAYOUT in test/dispute-tripwires.test.ts.
+ * The spec, Plan 4 ("A1 dropped", Revision 2026-10-29c) and the owner (Q37, 6 Nov: "at once, with
+ * a lien covering a reversal") move the coins at the ruling: the moderator builds and either
+ * trader's app co-signs (owner 26 Nov, whichever opens first), appeal or not (escrow/runtime.ts,
+ * against the signed ruling statement).
  */
 export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
@@ -349,7 +348,7 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   // (owner 2026-10-29), and it stays on the profile after the purge (701 purged_lost). COPY-UNSIGNED
   let footer = 'This ruling and its evidence are kept with the trade.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
-  return { label, title, destination, footer };
+  return { label, title, destination, sent: (r.executedAt ?? null) !== null, footer };
 }
 
 /**
@@ -369,9 +368,9 @@ export function overturnLien(outcome: RulingView['outcome'], me: Party, other: s
 /**
  * The line once an appeal is in. Board DisputeRuling: "Appeal sent. A second moderator will look at
  * it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they
- * pay it back." Review I1 (NEEDS_PLAN_4_RULING_PAYOUT, above rulingCopy): nothing has moved the XMR
- * yet, so the page keeps the lien and drops "The XMR has already moved" (COPY-UNSIGNED). The other
- * side's appeal and the receiver's lien are worded to match (COPY-UNSIGNED).
+ * pay it back." Review I1: until the API reports the payout executed (`ruling.executedAt`) the page
+ * keeps the lien and drops "The XMR has already moved" (COPY-UNSIGNED); once it is, the board's
+ * sentence. The other side's appeal and the receiver's lien are worded to match (COPY-UNSIGNED).
  */
 export function appealSentText(d: DisputeView, me: Party, other: string): string {
   const a = d.appeal;
@@ -380,6 +379,12 @@ export function appealSentText(d: DisputeView, me: Party, other: string): string
   const who = a.by === me ? 'Appeal sent.' : `${other} appealed.`;
   if (d.afterRefund) return `${who} A second moderator will decide.`; // COPY-UNSIGNED
   const receiver = paidSide(r.outcome);
+  if (receiver !== null && (r.executedAt ?? null) !== null) {
+    // The board's words once the payout ran.
+    return receiver === me
+      ? `${who} A second moderator will look at it. The XMR has already moved; if they overturn the ruling, you get a lien until you pay it back.` // COPY-UNSIGNED (the receiver's side)
+      : `${who} A second moderator will look at it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.`;
+  }
   const lien =
     receiver === null
       ? ''

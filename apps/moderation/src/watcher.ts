@@ -204,6 +204,7 @@ export interface SweepContext {
   /** The terms this service signed (signed_terms), never an API read. */
   terms: AttestedTerms;
   feeWallet: string;
+  payrollWallet: string;
   /** PartyHandle.proveSweep (absent: nothing shown only through an import is ever proven). */
   prove?: PartyHandle['proveSweep'];
   /**
@@ -279,7 +280,7 @@ async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean
   if (ctx.settleKind === null || !ctx.prove || o.spentAtomic <= 0n) return false;
   let minimums;
   try {
-    minimums = sweepMinimums({ kind: ctx.settleKind, terms: ctx.terms, feeWallet: ctx.feeWallet, sweptAtomic: o.spentAtomic });
+    minimums = sweepMinimums({ kind: ctx.settleKind, terms: ctx.terms, feeWallet: ctx.feeWallet, payrollWallet: ctx.payrollWallet, sweptAtomic: o.spentAtomic });
   } catch {
     return false;
   }
@@ -460,6 +461,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       settleKind,
       terms: args.terms,
       feeWallet: args.feeWallet,
+      payrollWallet: args.payrollWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
       claim: (txHash) => claimSweep(o.db, row.trade, txHash, o.keystoreKey),
       log: o.log,

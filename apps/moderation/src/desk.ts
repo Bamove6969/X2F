@@ -172,6 +172,8 @@ export interface DeskOptions {
   db: pg.Pool;
   args: ModPartyArgs;
   feeWallet: string;
+  /** X2F's payroll wallet: the other half of the 1% (owner 26 Nov). */
+  payrollWallet: string;
   transport: Transport;
   link: Link;
   now: () => Date;
@@ -399,6 +401,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       buyerPayout: terms.buyerPayout,
       sellerRefund: r.sellerRefund,
       feeWallet: o.feeWallet,
+      payrollWallet: o.payrollWallet,
     });
   };
 

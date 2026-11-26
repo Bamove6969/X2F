@@ -186,6 +186,12 @@ export interface PartyHandle {
    */
   peerRelease?(from: Role): { current: boolean; elsewhere: { tag: string; txSet: boolean; at: number } | null };
   /**
+   * Owner 26 Nov (either trader co-signs a ruling): the outcome this party is settling now, as saved
+   * (so after a restart too): its tag (releaseTag), the counterpart, and whether it is committed (a
+   * tx set was built or received, so it can no longer switch); null with no release. Read only.
+   */
+  currentRelease?(): { tag: string; counterpart: Role; committed: boolean } | null;
+  /**
    * This party's own part of the settle of `o` is finished, as far as this party knows: the
    * co-signer has submitted the signed tx itself, or (for the builder) the co-signer REPORTED that it
    * did, in a signed DONE for this release that is not yet checked on the chain (the builder checks
@@ -1475,6 +1481,10 @@ export function runParty(a: PartyArgs): PartyHandle {
       const current = tag !== null && Object.entries((state as PartyState | undefined)?.received ?? {}).some(([k, slot]) => RELEASE_KEY.test(k) && k.includes(tag) && slot?.[from] !== undefined);
       const e = heardElsewhere.get(from);
       return { current, elsewhere: e === undefined ? null : { ...e } };
+    },
+    currentRelease() {
+      const rel = (state as PartyState | undefined)?.release ?? null;
+      return rel === null ? null : { tag: tagOf(rel.outcome), counterpart: rel.counterpart, committed: rel.committed === true };
     },
     committedBuilder() {
       const rel = state.release;

@@ -221,6 +221,7 @@ async function main(): Promise<void> {
     MOD_KEYSTORE_KEY: s.modKeystoreKey,
     MOD_SIGNING_SECRET: s.modSigningSecret,
     X2F_FEE_WALLET: s.feeWallet,
+    X2F_PAYROLL_WALLET: s.payrollWallet,
     DEMO_STATE_DIR: STATE_DIR,
   });
   startTs('gateway', 'tools/demo/gateway.ts', {

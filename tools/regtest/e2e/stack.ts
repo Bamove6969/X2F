@@ -40,6 +40,8 @@ export interface StackInfo {
   monerod: string;
   /** The fee wallet: its address is X2F's fee address; its keys let a spec read what it received. */
   feeWallet: { address: string; seed: string };
+  /** Owner 26 Nov: the payroll wallet, paid the other half of the 1%. */
+  payrollWallet: { address: string; seed: string };
   apiDatabaseUrl: string;
   modDatabaseUrl: string;
   logDir: string;
@@ -287,6 +289,9 @@ async function makeSecrets(dir: string) {
   const fee = await MoneroWalletKeys.createWallet({ networkType: MoneroNetworkType.MAINNET });
   const feeWallet = { address: await fee.getPrimaryAddress(), seed: await fee.getSeed() };
   await fee.close();
+  const payroll = await MoneroWalletKeys.createWallet({ networkType: MoneroNetworkType.MAINNET });
+  const payrollWallet = { address: await payroll.getPrimaryAddress(), seed: await payroll.getSeed() };
+  await payroll.close();
   return {
     serverKey: key32(),
     trainingIdKey: key32(),
@@ -304,6 +309,7 @@ async function makeSecrets(dir: string) {
     modSigningSecret: Buffer.from(mod.privateKey).toString('base64'),
     modKeystoreKey: key32(),
     feeWallet,
+    payrollWallet,
     pgPassword: randomBytes(18).toString('base64url'),
   };
 }
@@ -383,6 +389,7 @@ export async function startStack(o: { logDir: string; staff?: boolean }): Promis
         VITE_MONERO_NETWORK: 'regtest',
         VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
         VITE_FEE_WALLET: s.feeWallet.address,
+        VITE_PAYROLL_WALLET: s.payrollWallet.address,
         VITE_RELAY_URL: relayUrl,
         VITE_NODE_PROXY_URL: proxyUrl,
         // The payment proof screens (Plan 5 Task 15), which Plan 5 Task 17's specs use. Off in a
@@ -473,6 +480,7 @@ export async function startStack(o: { logDir: string; staff?: boolean }): Promis
       MONERO_DAEMON_URI: chain.rpcUri,
       MONERO_NETWORK: 'regtest',
       X2F_FEE_WALLET: s.feeWallet.address,
+      X2F_PAYROLL_WALLET: s.payrollWallet.address,
       ...staffUp?.modEnv,
     }));
     // The moderation process migrates its database, takes its instance lock, then pulls
@@ -489,6 +497,7 @@ export async function startStack(o: { logDir: string; staff?: boolean }): Promis
       origin,
       monerod: chain.rpcUri,
       feeWallet: s.feeWallet,
+      payrollWallet: s.payrollWallet,
       apiDatabaseUrl: pgUrl('x2f'),
       modDatabaseUrl: pgUrl('x2f_moderation'),
       logDir,

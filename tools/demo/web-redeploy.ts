@@ -50,13 +50,15 @@ async function apiUp(timeoutMs: number): Promise<boolean> {
 async function main(): Promise<void> {
   const pid = readPids().api;
   if (pid === undefined || !existsSync(ENV_FILE) || !existsSync(WEB_DIST)) throw new Error('no running demo here (npm run demo first)');
-  const secrets = JSON.parse(readFileSync(join(SECRETS_DIR, 'secrets.json'), 'utf8')) as { modSigningPublic: string; feeWallet: string };
+  const secrets = JSON.parse(readFileSync(join(SECRETS_DIR, 'secrets.json'), 'utf8')) as { modSigningPublic: string; feeWallet: string; payrollWallet?: string };
+  // A demo made before the fee split (owner 26 Nov) has no payroll wallet: run `npm run demo` again.
+  if (typeof secrets.payrollWallet !== 'string') throw new Error('this demo predates the payroll wallet (npm run demo first)');
   const apiEnv = JSON.parse(readFileSync(ENV_FILE, 'utf8')) as Record<string, string>;
 
   const swaps = redeployFolders(apiEnv, WEB_DIST, STAFF_WEB_DIST);
   const [web, staff] = swaps as [Swap, Swap | undefined];
   step('building apps/web');
-  buildWeb(web.next, secrets);
+  buildWeb(web.next, { ...secrets, payrollWallet: secrets.payrollWallet });
   const oldAssets = join(WEB_DIST, 'assets');
   const newAssets = join(web.next, 'assets');
   const carried = existsSync(oldAssets) ? carriedAssets(readdirSync(oldAssets), readdirSync(newAssets)) : [];
