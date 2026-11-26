@@ -158,6 +158,10 @@ export type KeyTapIntent =
   | { kind: 'maintenance-planned'; startsAt: string; endsAt: string; messageSha256: string | null }
   | { kind: 'news-publish'; newsId: string | null; titleSha256: string; bodySha256: string }
   | { kind: 'banner-publish'; bannerKind: 'info' | 'warning'; textSha256: string }
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a senior moderator (or the owner)
+  // approves a moderator's request to change how much of a debtor's proceeds each trade recovers
+  // (basis points). It changes who gets money, so it is tapped and bound to exactly that request.
+  | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -207,6 +211,7 @@ export const KEY_TAP_KINDS = [
   'maintenance-planned',
   'news-publish',
   'banner-publish',
+  'lien-rate',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

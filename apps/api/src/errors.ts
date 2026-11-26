@@ -82,8 +82,16 @@ export type ApiErrorCode =
   | 'method-unavailable'
   | 'no-wallet'
   | 'trading-hold'
-  // Plan 4 Task 25 (J-06): an active lien from a dispute; the debtor cannot trade until it is repaid.
+  // Plan 4 Task 25 (J-06): a lien's block on trading; owner option b (16 Nov 2026): no lien blocks now.
   | 'lien'
+  // Lien recovery (owner 16 Nov 2026): a lien already has a rate change request waiting.
+  | 'request-pending'
+  // Review M2: complied (a lien repaid directly) while a trade still carries a signed recovery for it.
+  | 'lien-recovery-in-flight'
+  // Review B1: the take would reserve a lien recovery other than the one the buyer's quote showed.
+  | 'lien-recovery-changed'
+  // Q2/B2: a creditor's recovery address another account holds as a wallet.
+  | 'recovery-address-refused'
   | 'trading-paused'
   | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.

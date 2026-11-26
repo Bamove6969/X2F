@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { escrowPlan } from '@x2f/trade';
+import { LIEN_RECOVERY_MIN_ATOMIC, escrowPlan } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type TestCa } from '../../api/test/helpers/softAuthenticator.js';
@@ -32,6 +32,7 @@ import {
 import { ORIGIN, RP_ID, AAGUID, OTHER_AAGUID, NOW, b64url, sha256Hex, ctx, newKey, type Person, FakeApi, tapBy, world, BUYER, SELLER, FEE, AMOUNT, recorded, BALANCE, EVIDENCE, ruling, authorize, registration, resetSecurity, tapOnNonce, type World } from './gateWorld.js';
 import { apiSchemaDb, type ApiSchema } from './apiSchema.js';
 import { LINK_MAX_LIFETIME_MS } from '../src/gate/store.js';
+import { lienRateApproved, lienRateTaps, lienRulingVerifier } from '../src/lienRecovery.js';
 
 /** A new gate the way an operator makes one: init-gate with "yes", then open it. */
 async function freshGate(dir: string, key: Uint8Array) {
@@ -1704,5 +1705,195 @@ describe('review p4t22 F1: a ruling the gate authorised stays authorised when a 
     expect(w.gate.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true, signers: [mod.id] });
     // Round 1 itself still never pays.
     expect(await authorize(w, r1, r1Taps)).toEqual({ ok: false, reason: 'stale-round' });
+  });
+});
+
+// Review B1 (lien recovery, 2026-11-16): the creditor sides the moderation service accepts for a
+// recovery come only from rulings its gate verified (staff key taps), never from the API's rows.
+describe('lienRulingVerifier (review B1)', () => {
+  async function withStore<T>(w: Awaited<ReturnType<typeof world>>, fn: (store: Awaited<ReturnType<typeof freshGate>>) => Promise<T>): Promise<T> {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-'));
+    try {
+      const store = await freshGate(dir, new Uint8Array(32).fill(9));
+      store.state = w.gate;
+      await store.save();
+      return await fn(store);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('a round-1 seller-sends-xmr ruling the gate verifies makes the buyer the creditor', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const c = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.taps.push(tapBy(mod, c.intent('propose')));
+    w.api.rulings.set(c.ruling.code, { current: c.ruling, round1: null, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(c.ruling.code, recorded(41_250n))).toEqual(['buyer']);
+    });
+  });
+
+  it('a ruling the API wrote with no staff tap, or taps that do not agree, verifies nothing', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const c = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.rulings.set(c.ruling.code, { current: c.ruling, round1: null, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(c.ruling.code, recorded(41_250n))).toBeNull();
+      // A tap for another outcome.
+      w.api.taps.push(tapBy(mod, c.intent('propose', { outcome: 'no-action' })));
+      expect(await v.creditors(c.ruling.code, recorded(41_250n))).toBeNull();
+      // No ruling at all.
+      expect(await v.creditors('AAAA-BBBB-CCCC-DDDD', recorded(41_250n))).toBeNull();
+    });
+  });
+
+  it('an escrow ruling overturned on appeal makes the side that lost the coins the creditor; checking pays nothing', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const r1 = ruling(mod, { outcome: 'release-to-buyer' });
+    w.api.taps.push(tapBy(mod, r1.intent('propose')));
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'refund-to-seller' });
+    w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    w.api.rulings.set(r1.ruling.code, { current: r2.ruling, round1: r1.ruling, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(store.state.executions[r1.ruling.code]).toBeUndefined();
+    });
+  });
+
+  it('re-review N2, compromised API: once the gate has seen a round-2 ruling for the trade, serving round 1 alone verifies nothing', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const r1 = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.taps.push(tapBy(mod, r1.intent('propose')));
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'no-action' });
+    w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    w.api.rulings.set(r1.ruling.code, { current: r2.ruling, round1: r1.ruling, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      // The honest view: the appeal overruled the order to pay, so the buyer is no creditor (the gate now has round 2 in rulingsSeen).
+      const honest = await v.creditors(r1.ruling.code, recorded(41_250n));
+      expect(honest).not.toBeNull();
+      expect(honest).not.toContain('buyer');
+      // The API hides the appeal: round 1 alone would name the buyer.
+      w.api.rulings.set(r1.ruling.code, { current: r1.ruling, round1: null, involved: [] });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+      w.api.rulings.set(r1.ruling.code, { current: null, round1: r1.ruling, involved: [] });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+    });
+  });
+
+  it('re-review N2: a round-2 ruling the gate saw for another trade does not stop this one', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const o1 = ruling(mod, { outcome: 'release-to-buyer' });
+    w.api.taps.push(tapBy(mod, o1.intent('propose')));
+    const o2 = ruling(senior, { round: 2, round1Id: o1.ruling.id, code: o1.ruling.code, outcome: 'refund-to-seller' });
+    w.api.taps.push(tapBy(senior, o2.intent('propose')));
+    w.api.rulings.set(o1.ruling.code, { current: o2.ruling, round1: o1.ruling, involved: [] });
+    const c = ruling(mod, { outcome: 'seller-sends-xmr' });
+    w.api.taps.push(tapBy(mod, c.intent('propose')));
+    w.api.rulings.set(c.ruling.code, { current: c.ruling, round1: null, involved: [] });
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(o1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(await v.creditors(c.ruling.code, recorded(41_250n))).toEqual(['buyer']);
+    });
+  });
+});
+
+// Review M6: the gate pays the attested recovery on a ruling for the buyer, never on one for the seller.
+describe('authorizeRuling with a lien recovery (review M6)', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  const R = 100_000_000_000n;
+  it('release-to-buyer pays proceeds − recovery to the buyer and the recovery to the creditor; refund-to-seller pays none', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const rec = { ...recorded(41_250n), lienRecovery: { address: CREDITOR, amountAtomic: R } };
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    const b = ruling(mod);
+    expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R }, { address: FEE, amountAtomic: plan.feeAtomic }, { address: CREDITOR, amountAtomic: R }] },
+    });
+    const s = ruling(mod, { outcome: 'refund-to-seller' });
+    expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'seller', payouts: [{ address: SELLER, amountAtomic: BALANCE }] },
+    });
+  });
+
+  it('a recovery the terms could not pay (over 90% of the proceeds, under 0.01 XMR, or to a party) makes the buyer\'s ruling bad-terms', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    for (const lienRecovery of [
+      { address: CREDITOR, amountAtomic: (AMOUNT * 9n) / 10n + 1n },
+      { address: CREDITOR, amountAtomic: LIEN_RECOVERY_MIN_ATOMIC - 1n },
+      { address: SELLER, amountAtomic: R },
+    ]) {
+      const b = ruling(mod);
+      expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: { ...recorded(41_250n), lienRecovery }, balanceAtomic: BALANCE }, ctx()))
+        .toEqual({ ok: false, reason: 'bad-terms' });
+    }
+  });
+});
+
+// Q1 (provisional owner answer, 17 Nov 2026): a lien's rate other than the 50% default is signed
+// only once the gate verified a senior moderator's (or the owner's) `lien-rate` key tap for it.
+describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => {
+  const LIEN = '6f1c1f9e-0b1a-4a51-9a1b-0c2d3e4f5a6b';
+  const REQ = '7a2d2a0f-1c2b-4b62-8b2c-1d3e4f5a6b7c';
+  const intent = (rateBps: number, lienId = LIEN): KeyTapIntent => ({ kind: 'lien-rate', lienId, requestId: REQ, rateBps });
+
+  it('a senior\'s or the owner\'s tap for exactly that lien and rate approves it; its nonce is then bound to it', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    await syncRegistry(w.api, w.gate, ctx());
+    const t = tapBy(senior, intent(9000));
+    expect(await lienRateApproved(w.gate, [t], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(true);
+    expect(w.gate.usedNonces[t.nonceHex]).toBe(`lien-rate:${LIEN}:9000`);
+    expect(await lienRateApproved(w.gate, [tapBy(w.owner, intent(7000))], { lienId: LIEN, rateBps: 7000 }, ctx())).toBe(true);
+  });
+
+  it('refused: a moderator\'s tap, another lien or rate, a forged tap, a rate above 90%, a nonce used for anything else, no tap at all', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    expect(await lienRateApproved(w.gate, [tapBy(mod, intent(9000))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(8000))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(9000, REQ))], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    // A tap an API made up: the intent changed after the key signed it.
+    const forged = { ...tapBy(senior, intent(5000)), intent: canonicalJson(intent(9000)) };
+    expect(await lienRateApproved(w.gate, [forged], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(9500))], { lienId: LIEN, rateBps: 9500 }, ctx())).toBe(false);
+    const used = tapBy(senior, intent(9000));
+    w.gate.usedNonces[used.nonceHex] = 'ruling:x:propose';
+    expect(await lienRateApproved(w.gate, [used], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
+  });
+
+  it('lienRateTaps lists every verified approval for the lien with its nonce (the moderation service spends each one it applies)', async () => {
+    const w = await world();
+    const senior = w.hire('senior');
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const a = tapBy(senior, intent(6000));
+    const b = tapBy(w.owner, intent(2500));
+    const other = tapBy(senior, intent(7000, REQ));
+    expect(await lienRateTaps(w.gate, [a, tapBy(mod, intent(8000)), b, other], LIEN, ctx())).toEqual([
+      { rateBps: 6000, nonce: a.nonceHex },
+      { rateBps: 2500, nonce: b.nonceHex },
+    ]);
   });
 });

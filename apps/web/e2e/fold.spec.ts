@@ -498,6 +498,7 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
     await page.route('**/v1/offers?*', (r) => r.fulfill({ json: [B.offer] }));
     await page.route('**/v1/wallets', (r) => r.fulfill({ json: [...B.wallets] }));
     await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+    await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${ORIGIN}/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}`);
     const amount = page.locator('#quote-amount');
@@ -515,6 +516,7 @@ test.describe('screens with two panes: nothing across the hinge (design review 5
     await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
     await page.route('**/v1/wallets', (r) => r.fulfill({ json: [...B.wallets] }));
     await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+    await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   }
 
   for (const hingeReported of [false, true]) {

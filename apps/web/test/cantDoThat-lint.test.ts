@@ -188,7 +188,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // "we do not collect") each carry their own pragma; they explain how X2F works, nothing was tried and refused.
     // 81 -> 83 (wip/lead-team-ui, Job 1c): settings/teamApi.ts's Availability type and its parse set
     // name the catalogue's 'owner-only' box kind (a kind of permission box), not a refusal code.
-    expect(notARefusal).toBeLessThanOrEqual(83);
+    // 83 -> 84 (wip/third-lien-recovery merged onto main, 26 Nov): liensCopy.ts's `addressTaken` (lien recovery,
+    // provisional owner answer Q2, 17 Nov 2026), a wallet choice to redo on the same screen, not a rule refusal.
+    expect(notARefusal).toBeLessThanOrEqual(84);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

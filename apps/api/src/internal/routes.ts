@@ -12,6 +12,7 @@ import {
   afterRefundStatementBytes,
   isAfterRefundStatement,
   isRulingStatement,
+  lienStatementValid,
   rulingStatementBytes,
   SETTLE_KINDS,
   settleKindFor,
@@ -97,6 +98,18 @@ interface RegisteredRow {
   method_instructions: string;
   buyer_payout: string | null;
   seller_refund: string | null;
+  /** Lien recovery reserved at take (docs/lien-recovery.md), while the trade's hold is open. */
+  recovery_address: string | null;
+  recovery_atomic: string | null;
+  /** Review B1: the open hold's source, the disputed trade, and the creditor's side in it. */
+  recovery_from: string | null;
+  recovery_creditor: 'buyer' | 'seller' | null;
+  /**
+   * Review B1: the open hold's lien and its parties; the rate and the creditor's signed address (Q2)
+   * as the hold kept them at take (what the buyer accepted); this trade's buyer.
+   */
+  recovery_lien: { lienId: string; debtor: string; creditor: string; rateBps: number; statement: unknown; sig: string | null } | null;
+  buyer_account: string;
 }
 
 /**
@@ -108,7 +121,19 @@ interface RegisteredRow {
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund`;
+                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund,
+                (select h.address from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_address,
+                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_atomic,
+                (select l.from_code from lien_recovery_holds h join liens l on l.id = h.lien_id
+                  where h.trade_code = t.code and h.status = 'open') as recovery_from,
+                (select case when l.creditor_account_id = s.buyer_account_id then 'buyer' when l.creditor_account_id = s.seller_account_id then 'seller' end
+                   from lien_recovery_holds h join liens l on l.id = h.lien_id left join trades s on s.code = l.from_code
+                  where h.trade_code = t.code and h.status = 'open') as recovery_creditor,
+                (select json_build_object('lienId', l.id::text, 'debtor', l.debtor_account_id::text, 'creditor', l.creditor_account_id::text,
+                                          'rateBps', h.rate_bps, 'statement', h.address_statement, 'sig', h.address_sig)
+                   from lien_recovery_holds h join liens l on l.id = h.lien_id
+                  where h.trade_code = t.code and h.status = 'open') as recovery_lien,
+                t.buyer_account_id::text as buyer_account`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -128,6 +153,11 @@ function termsOf(r: RegisteredRow): AttestedTerms {
     payWindowMin: r.pay_window_min,
     buyerPayout: r.buyer_payout ?? '',
     sellerRefund: r.seller_refund ?? '',
+    // Lien recovery (owner 16 Nov 2026): signed only when the trade reserved one, so terms without
+    // it keep their exact shape and bytes.
+    ...(r.recovery_address !== null && r.recovery_atomic !== null
+      ? { lienRecovery: { address: r.recovery_address, amountAtomic: r.recovery_atomic } }
+      : {}),
   };
 }
 
@@ -136,7 +166,8 @@ function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
     a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund && a.payWindowMin === b.payWindowMin &&
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
     a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents &&
-    a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256
+    a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256 &&
+    a.lienRecovery?.address === b.lienRecovery?.address && a.lienRecovery?.amountAtomic === b.lienRecovery?.amountAtomic
   );
 }
 
@@ -469,13 +500,32 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
        select * from picked`,
       [o.workLimit ?? WORK_LIMIT, new Date(now())],
     );
-    const work = rows.map((r) => ({
+    // Review B2, checked again before any signature: a recovery to one of the trade's own addresses
+    // would make the completed trade's payout unbuildable (the reserve and the poster's wallet route
+    // already refuse it); such a trade is not served until that is mended.
+    const clash = (r: RegisteredRow) => r.recovery_address !== null && (r.recovery_address === r.buyer_payout || r.recovery_address === r.seller_refund);
+    for (const r of rows) if (clash(r)) log({ reason: 'internal-recovery-address-clash' });
+    const work = rows.filter((r) => !clash(r)).map((r) => ({
       trade: r.code,
       participants: {
         buyer: { signPublic: r.buyer_sign, boxPublic: r.buyer_box, proof: r.buyer_proof },
         seller: { signPublic: r.seller_sign, boxPublic: r.seller_box, proof: r.seller_proof },
       },
       terms: termsOf(r),
+      // Review B1: the moderation service checks the recovery against its own records of this source.
+      // Provisional owner answers (17 Nov): the lien and its parties as the API names them (pinned by
+      // moderation on first sight), this trade's buyer, the rate (one other than the default needs a
+      // senior's key tap moderation verifies itself) and the creditor's signed address (Q2).
+      ...(r.recovery_address !== null && r.recovery_from !== null && r.recovery_creditor !== null && r.recovery_lien !== null
+        ? {
+            lienSource: {
+              fromCode: r.recovery_from, creditor: r.recovery_creditor,
+              lienId: r.recovery_lien.lienId, debtorAccount: r.recovery_lien.debtor, creditorAccount: r.recovery_lien.creditor,
+              buyerAccount: r.buyer_account, rateBps: r.recovery_lien.rateBps,
+              address: { statement: r.recovery_lien.statement, sig: r.recovery_lien.sig },
+            },
+          }
+        : {}),
     }));
     return reply.send({ work });
   }));
@@ -786,6 +836,47 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
+  /**
+   * Review B1 (lien recovery): `{ kind: 'lien-statement', statement, sig }`, the moderation service's
+   * signed statement of a lien it checked (@x2f/trade LienStatement). Kept only when signed by
+   * MOD_SIGNING_PUBLIC (`bad-statement`) and naming this lien's own source trade, parties and amount
+   * (`lien-mismatch`); the latest one replaces the one before (a rate change is signed again).
+   */
+  const lienStatement = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'statement', 'sig'])) throw new Refused(400, 'bad-body');
+    const s = body.statement;
+    if (!lienStatementValid(s, body.sig, o.modSigningPublic) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s.lienId)) {
+      throw new Refused(400, 'bad-statement');
+    }
+    const at = o.clock?.() ?? new Date(now());
+    const c = await o.db.connect();
+    try {
+      await c.query('begin');
+      const { rows } = await c.query<{ from_code: string; debtor: string; creditor: string; amount_atomic: string }>(
+        'select from_code, debtor_account_id::text as debtor, creditor_account_id::text as creditor, amount_atomic::text from liens where id = $1 for update',
+        [s.lienId],
+      );
+      const l = rows[0];
+      if (l === undefined || l.from_code !== s.fromCode || l.debtor !== s.debtor || l.creditor !== s.creditor || l.amount_atomic !== s.amountAtomic) {
+        throw new Refused(409, 'lien-mismatch');
+      }
+      await c.query(
+        `insert into lien_statements (lien_id, statement, sig, updated_at) values ($1, $2, $3, $4)
+         on conflict (lien_id) do update set statement = excluded.statement, sig = excluded.sig, updated_at = excluded.updated_at`,
+        [s.lienId, s, body.sig, at],
+      );
+      await appendLog(c, { at, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.statement', detail: { lienId: s.lienId, rateBps: s.rateBps } });
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+    log({ reason: 'internal-lien-statement' });
+    return reply.code(201).send({ ok: true });
+  };
+
   /** Plan 4 Task 14: the moderation process's daily verification failed: `site_flags.log_alarm` (the first time stays). */
   const logAlarm = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
     if (!keysAre(body, ['kind'])) throw new Refused(400, 'bad-body');
@@ -992,6 +1083,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'ruling-wait') return rulingWait(body, reply);
     if (isPlainObject(body) && body.kind === 'ruling-refused') return rulingRefused(body, reply);
     if (isPlainObject(body) && body.kind === 'after-refund-statement') return afterRefundStatement(body, reply);
+    if (isPlainObject(body) && body.kind === 'lien-statement') return lienStatement(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

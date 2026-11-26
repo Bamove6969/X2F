@@ -47,7 +47,9 @@ const LABEL = 'Browser on Linux';
  * engine through apps/web/src/chat/http.ts like the other /v1/chats routes; D-005: My trades' list, read by
  * apps/web/src/screens/trades/api.ts; Plan 4 Task 27: the ban notice, read by
  * apps/web/src/screens/account/AccountBanned.tsx; sign-up v2, 12 Nov 2026: X2F's signing key as a file to import, a
- * plain download link on the PGP code step). Any other new route still needs a client method.
+ * plain download link on the PGP code step; lien recovery review B1/Q2: the quote's lien preview,
+ * apps/web/src/screens/quote/api.ts, and the creditor's signed recovery address, apps/web/src/screens/liens/liensApi.ts).
+ * Any other new route still needs a client method.
  * Param names are spelled as the route tree reports them (srv.serverRoutes): the proof stack's
  * proofs/:id and the blur check's proofs/:proofId share one node, so all three of those routes read
  * proofs/:id|:proofId; blur-checks/:proofId has no other name at its node and keeps :proofId.
@@ -63,6 +65,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/account/ban',
   'GET /v1/account/blocks',
   'GET /v1/account/freeze',
+  'GET /v1/account/liens/preview',
   'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
@@ -99,6 +102,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/ruling-statement',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
+  'POST /v1/account/liens/:id/recovery-address',
   'POST /v1/account/notes',
   'POST /v1/account/offers/status',
   'POST /v1/account/past-rep/finish',

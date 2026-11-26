@@ -6,7 +6,8 @@ import type { PartyHandle, Transport } from '@x2f/escrow';
 import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, TRADE_KEEP_DAYS, WATCH_INTERVAL_MS, watchShowsEmpty, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
-import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
+import { AttestRefused, attestChat, attestTrade, BadTerms, checkWork } from './attest.js';
+import { checkLienRecovery, LienRefused, markLienStatementPosted, recordLienRecovery, unpostedLienStatements, type LienRates, type LienRulings } from './lienRecovery.js';
 import { loadChatIdentity, loadEscrow, loadParty, saveChatIdentity, saveParty, sweepTag, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
@@ -62,10 +63,14 @@ export const TRADE_SHRED_TABLES = [
  * - used_log_entries (007): an API activity-log entry authorises exactly one internal call, so its id
  *   stays used for good (a deleted row would let the same entry be used again). Only the id is read;
  *   the shred blanks the trade code (lead call on review Q-B, 22 Nov).
+ * - mod_lien_recoveries (023): a recovery this service signed keeps counting against its lien and
+ *   source (rule 2: never more than is owed), so the row stays; the shred blanks the trade code.
+ * - mod_lien_rate_taps (023): a spent `lien-rate` tap stays spent (no replay); the shred blanks the
+ *   trade code.
  * Also kept, holding no trade code: mod_sweeps_spent (022), the keyed tags of the trade's counted
  * sweeps (review M2), and the gate's used nonces.
  */
-export const TRADE_SHRED_KEPT = ['used_log_entries'] as const;
+export const TRADE_SHRED_KEPT = ['used_log_entries', 'mod_lien_recoveries', 'mod_lien_rate_taps'] as const;
 /** Why the trade shred keeps a purged trade's records this pass (logged `trade-shred-held-<why>`). */
 type TradeShredHold = 'unknown' | 'listed' | 'running' | 'young' | 'dispute' | 'chat' | 'watching' | 'escrow' | 'ruling';
 /** The reports by which this service itself puts a trade in dispute (the API applies them as `escalate`). */
@@ -145,6 +150,13 @@ export interface ModerationOptions {
   relayUrl: string;
   /** MONERO_NETWORK: the escrow wallets' network. */
   network: 'regtest' | 'stagenet' | 'mainnet';
+  /**
+   * Re-review N1 (17 Nov 2026): `MOD_LIEN_RECOVERY=on` (`lienRecoveryFromEnv`), this service's own
+   * switch for lien recovery, apart from the API's `site_flags.liens_enabled`. Absent or false (the
+   * default): every work item whose terms carry a `lienRecovery` is refused (`lien-refused-off`) and
+   * no lien statement is ever signed.
+   */
+  lienRecovery?: boolean;
 }
 
 export interface ModerationDeps {
@@ -191,6 +203,13 @@ export interface ModerationDeps {
    * `stop` runs before the lock is released. A factory that throws refuses the start.
    */
   gate?: () => Promise<GateRun>;
+  /**
+   * Review B1 (lien recovery): the creditor sides of a source trade's rulings as the gate verified
+   * them (`lienRulingVerifier`). Absent (no gate configured): no lien recovery is ever signed.
+   */
+  lienRulings?: LienRulings;
+  /** Q1 (provisional, 17 Nov): rates other than the default, verified by the gate (`lienRateVerifier`). Absent: the default only. */
+  lienRates?: LienRates;
 }
 
 /** What `ModerationDeps.gate` starts (security review 2026-11-12 M1). */
@@ -208,6 +227,8 @@ export interface GateRun {
    * source: the current after-refund disputes, their stored rulings, and the signer.
    */
   afterRefund?: { codes(): Promise<string[]>; stored(code: string): Promise<StoredRulings>; signer: AfterRefundSigner };
+  lienRulings?: LienRulings;
+  lienRates?: LienRates;
   stop(): Promise<void>;
 }
 
@@ -319,6 +340,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   const onLockError = (): void => loseLock();
   lock.on('error', onLockError);
+  // Re-review 17 Nov (b) info: the switch's state is in the log at every start, so an operator can
+  // see whether lien recovery is live without reading the environment.
+  log({ reason: o.lienRecovery === true ? 'lien-recovery-on' : 'lien-recovery-off' });
   // The lock is Postgres's until the session that took it has ended on the server. A lost lock's
   // client hears of it first (a terminated backend sends its FATAL before it exits and frees its
   // locks; a destroyed client only starts closing), so `stop` waits for the connection's end
@@ -346,6 +370,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     }
   }
   const rulingsDep = gate?.rulings ?? deps.rulings;
+  const lienRulingsDep = gate?.lienRulings ?? deps.lienRulings ?? null;
+  const lienRatesDep = gate?.lienRates ?? deps.lienRates ?? null;
   const checkpointsDep = gate?.checkpoints ?? deps.checkpoints;
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const rawLink: Link = createLink({
@@ -436,6 +462,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     const party = await loadParty<SealedParty>(o.db, o.keystoreKey, code);
     if (existing && party) return { attestation: existing.attestation, sig: existing.sig, party };
 
+    // Review B1: a lien recovery is signed only when this service's own records back it.
+    await checkWork({ ...w, trade: code });
+    const recovery = await checkLienRecovery({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep, rates: lienRatesDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
@@ -443,6 +472,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await client.query('begin');
       // Stamped with this service's clock (review lead-mod-purge m3): the trade shred's `young` compares it with the same clock.
       await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, a.attestation, a.sig, now()]);
+      if (recovery !== null) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');
@@ -453,6 +483,18 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       client.release();
     }
     return { attestation: a.attestation, sig: a.sig, party: sealed };
+  };
+
+  /**
+   * Review B1: the lien statements this service signed and the API has not taken yet, posted over
+   * the signed link (`lien-statement`); one the API refuses stays unposted and is logged.
+   */
+  const postLienStatements = async (): Promise<void> => {
+    for (const l of await unpostedLienStatements(o.db)) {
+      const res = await link.report({ kind: 'lien-statement', statement: l.statement, sig: l.sig }).catch(() => ({ status: 0, error: null }));
+      if (res.status === 201) await markLienStatementPosted(o.db, l.lienId, l.sig);
+      else log({ reason: `lien-statement-refused-${res.status}` });
+    }
   };
 
   const tick = async (): Promise<string[]> => {
@@ -490,6 +532,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           continue;
         }
         await o.db.query('update signed_terms set posted_at = now() where trade = $1', [code]);
+        await postLienStatements();
         const terms = attestation.terms;
         if (terms === undefined) {
           // Unreachable: the API stores no attestation without terms (400). A pre-terms record.
@@ -515,6 +558,10 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       } catch (e) {
         if (e instanceof BadTerms) {
           log({ reason: 'bad-terms' });
+          continue;
+        }
+        if (e instanceof LienRefused) {
+          log({ reason: e.message });
           continue;
         }
         if (!(e instanceof AttestRefused) || code === null) {
@@ -752,6 +799,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
             for (const t of TRADE_SHRED_TABLES) await client.query(`delete from ${t} where trade = $1`, [trade]);
             // Q-B (lead 22 Nov): the used API log entries keep their ids (one use each) and lose the code.
             await client.query(`update used_log_entries set trade = '' where trade = $1`, [trade]);
+            // Lien recovery (TRADE_SHRED_KEPT): what was signed keeps counting, the code goes.
+            await client.query(`update mod_lien_recoveries set trade = '' where trade = $1`, [trade]);
+            await client.query(`update mod_lien_rate_taps set trade = '' where trade = $1`, [trade]);
             await client.query('commit');
           } catch (e) {
             await client.query('rollback');
@@ -1187,6 +1237,19 @@ export function internalFromEnv(
   };
 }
 
+/**
+ * Re-review N1 (17 Nov 2026): `MOD_LIEN_RECOVERY`, this service's switch for lien recovery
+ * (docs/lien-recovery.md). Unset, empty or `off`: off, and no terms carrying a `lienRecovery` are
+ * ever signed. `on`: recoveries are checked and signed as lienRecovery.ts describes. Anything else
+ * refuses the start, so a typo never turns it on.
+ */
+export function lienRecoveryFromEnv(env: Record<string, string | undefined>): boolean {
+  const v = env.MOD_LIEN_RECOVERY ?? '';
+  if (v === '' || v === 'off') return false;
+  if (v === 'on') return true;
+  throw new Error('moderation: MOD_LIEN_RECOVERY is malformed (on, off or unset)');
+}
+
 function envNetwork(env: Record<string, string | undefined>): ModerationOptions['network'] {
   const v = envString(env, 'MONERO_NETWORK');
   if (v !== 'regtest' && v !== 'stagenet' && v !== 'mainnet') throw new Error('moderation: MONERO_NETWORK must be regtest, stagenet or mainnet');
@@ -1245,6 +1308,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
+      lienRecovery: lienRecoveryFromEnv(env),
     },
     {
       log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`),
@@ -1276,12 +1340,15 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
               const { afterRefundSigner } = await import('./afterRefund.js');
               const signer = afterRefundSigner({ store, source, ctx: gateCtx, signingSecret, log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) });
               const { forgetTrade, tradeRulingPending } = await import('./gate/store.js');
+              const { lienRateVerifier, lienRulingVerifier } = await import('./lienRecovery.js');
               // A save that failed is made again on the next forget, so a forgotten trade never stays in gate.bin.
               let unsaved = false;
               return {
                 rulings,
                 // Review p4t22 M2: the after-refund statements.
                 afterRefund: { codes: () => source.afterRefundCodes(), stored: (code: string) => source.storedRulings(code), signer },
+                lienRulings: lienRulingVerifier({ store, source, ctx: gateCtx }),
+                lienRates: lienRateVerifier({ store, source, ctx: gateCtx }),
                 checkpoints: { store, reader },
                 tradeRecords: {
                   pending: (code: string) => tradeRulingPending(store.state, code),

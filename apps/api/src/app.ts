@@ -1,4 +1,5 @@
 import fastifyCookie from '@fastify/cookie';
+import { accountLienRoutes } from './disputes/lienRoutes.js';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
@@ -353,6 +354,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   complyRoutes(app);
   // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.
   takeRoutes(app);
+  // Lien recovery (owner 16 Nov 2026): what this account owes and is owed.
+  accountLienRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   chatRoutes(app);

@@ -181,6 +181,24 @@ export interface TakeRequest {
   methodId: string;
   /** J-16: the currency taken in (one of the offer's); every figure above is in it. */
   currency: string;
+  /**
+   * Lien recovery (review B1, docs/lien-recovery.md): the figure the quote showed the buyer, which
+   * the buyer accepted by tapping Trade (0: none). The API refuses 409 `lien-recovery-changed` when
+   * the trade would reserve any other figure. Sent by a buying taker only.
+   */
+  lienRecoveryAtomic?: bigint;
+}
+
+/**
+ * `GET /v1/account/liens/preview` (review B1): what taking `offerId` for `amountAtomic` to
+ * `walletId` would pay to the person this account owes after a dispute, now; 0 when nothing.
+ */
+export async function previewLienRecovery(offerId: string, amountAtomic: bigint, walletId: string, signal?: AbortSignal): Promise<bigint> {
+  const q = new URLSearchParams({ offerId, amountAtomic: amountAtomic.toString(), walletId });
+  const o = obj(await api(`/v1/account/liens/preview?${q.toString()}`, signal ? { signal } : {}), 'lien preview');
+  const v = o.lienRecoveryAtomic;
+  if (typeof v !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(v)) throw new TypeError('lien preview');
+  return BigInt(v);
 }
 
 /** What the take locked: the trade's code, and the server's rate and total (lead decision 2026-10-29). */
@@ -193,6 +211,8 @@ export interface Taken {
    * trade past the launch cap (launch-rules review F1). It is the deal's `maxFiatCents`.
    */
   maxFiatCents: bigint;
+  /** Lien recovery (owner 16 Nov 2026): what this buyer's proceeds pay to the person they owe; absent = none. */
+  lienRecoveryAtomic?: bigint;
 }
 
 /** `POST /v1/offers/:id/take` (Task 5) → the new trade's code, the rate and total that locked, and its growth ceiling. */
@@ -201,5 +221,6 @@ export async function takeOffer(offerId: string, body: TakeRequest): Promise<Tak
   return {
     code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take'),
     maxFiatCents: big(o, 'maxFiatCents', 'take'),
+    ...(o.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: big(o, 'lienRecoveryAtomic', 'take') } : {}),
   };
 }

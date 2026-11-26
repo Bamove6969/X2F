@@ -3,6 +3,7 @@ import { canonicalJson, type Participants, type PublicKeys } from '@x2f/protocol
 import sodium from 'libsodium-wrappers';
 import { channelFor, CHANNEL_KINDS, type ChannelKind } from './channels.js';
 import { MAX_PAY_WINDOW_MIN } from './machine.js';
+import { LIEN_RECOVERY_MIN_ATOMIC, buyerProceeds, lienRecoveryCap } from './payouts.js';
 
 /**
  * The moderation service's signed statement of who the three parties to a trade are and which
@@ -58,6 +59,13 @@ export interface AttestedTerms {
   buyerPayout: string;
   /** The seller's refund address. */
   sellerRefund: string;
+  /**
+   * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): present only when the buyer owes an
+   * active lien and this trade recovers part of it. A completed trade (`release`, `dispute-buyer`)
+   * pays `amountAtomic` to the creditor's `address` out of the buyer's proceeds (`payoutsFor`).
+   * Absent otherwise, so terms without a recovery keep their exact bytes.
+   */
+  lienRecovery?: { address: string; amountAtomic: string };
 }
 
 /** The deal as the user confirmed it on the device (bigints): the amount at take, the poster, and the locked rate and offer maximum fixed at take (OD-5). */
@@ -67,6 +75,11 @@ export interface ConfirmedDeal {
   currency: string;
   centsPerXmr: bigint;
   maxFiatCents: bigint;
+  /**
+   * Lien recovery the buyer confirmed at take (the buyer's device only; absent = none). The buyer's
+   * check requires the attested `lienRecovery` amount to equal it; the seller's device ignores it.
+   */
+  lienRecoveryAtomic?: bigint;
 }
 
 const DECIMAL = /^[1-9]\d{0,30}$/;
@@ -108,8 +121,15 @@ function isPayWindowMin(x: unknown): x is number {
 
 /** Exactly the `AttestedTerms` shape: exact key sets, positive decimal strings, a valid time to pay, non-empty bounded strings. */
 export function isAttestedTerms(t: unknown): t is AttestedTerms {
-  if (!isRecord(t) || !exactKeys(t, ['deal', 'payWindowMin', 'buyerPayout', 'sellerRefund'])) return false;
+  const base = ['deal', 'payWindowMin', 'buyerPayout', 'sellerRefund'];
+  if (!isRecord(t) || !(exactKeys(t, base) || exactKeys(t, [...base, 'lienRecovery']))) return false;
   if (!isPayWindowMin(t.payWindowMin)) return false;
+  if (Object.hasOwn(t, 'lienRecovery')) {
+    const r = t.lienRecovery;
+    if (!isRecord(r) || !exactKeys(r, ['address', 'amountAtomic'])) return false;
+    if (typeof r.address !== 'string' || r.address.length === 0 || r.address.length > MAX_ADDRESS) return false;
+    if (typeof r.amountAtomic !== 'string' || !DECIMAL.test(r.amountAtomic)) return false;
+  }
   for (const a of [t.buyerPayout, t.sellerRefund]) if (typeof a !== 'string' || a.length === 0 || a.length > MAX_ADDRESS) return false;
   const d = t.deal;
   if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents', 'methodId', 'instructionsSha256'])) return false;
@@ -429,6 +449,23 @@ export async function verifyAttestation(
     if ((me.role === 'buyer' ? t.buyerPayout : t.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
     if (me.payWindowMin !== undefined && t.payWindowMin !== me.payWindowMin) throw new AttestationError('wrong-terms');
     if (me.methodId !== undefined && t.deal.methodId !== me.methodId) throw new AttestationError('wrong-terms');
+    // Review B1, B3, Q1/Q5: neither device accepts a recovery an honest release could not pay: above
+    // `lienRecoveryCap` of the buyer's proceeds, under LIEN_RECOVERY_MIN_ATOMIC, or to one of the
+    // trade's own addresses.
+    if (t.lienRecovery !== undefined) {
+      const r = t.lienRecovery;
+      const amount = BigInt(r.amountAtomic);
+      if (amount < LIEN_RECOVERY_MIN_ATOMIC || amount > lienRecoveryCap(buyerProceeds(t.deal))) throw new AttestationError('wrong-terms');
+      if (r.address === t.buyerPayout || r.address === t.sellerRefund) throw new AttestationError('wrong-terms');
+    }
+    // Lien recovery: the buyer (the debtor) accepts exactly the recovery it confirmed at take, and none
+    // when it confirmed none (fail closed). The seller loses nothing by it and is not asked.
+    if (me.role === 'buyer') {
+      const confirmed = me.deal.lienRecoveryAtomic ?? 0n;
+      if (typeof confirmed !== 'bigint') throw new AttestationError('wrong-terms');
+      const attested = t.lienRecovery === undefined ? 0n : BigInt(t.lienRecovery.amountAtomic);
+      if (attested !== confirmed) throw new AttestationError('wrong-terms');
+    }
   }
 
   const now = me.now ?? Date.now();

@@ -145,6 +145,34 @@ describe('the trade shred: what goes', () => {
 });
 
 describe('the trade shred: what is kept', () => {
+  it('lien recovery (TRADE_SHRED_KEPT): a signed recovery keeps counting and a spent rate tap stays spent; only the trade code goes', async () => {
+    const { ctx, net, m } = await setup();
+    const code = await attestedOnly(ctx);
+    const other = await attestedOnly(ctx);
+    const lien = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
+    await ctx.db.query(
+      `insert into mod_liens (lien_id, source_code, creditor_side, debtor, creditor, amount_atomic, rate_bps, statement, sig)
+       values ($1, 'SRCE-0000-0000-0000', 'buyer', 'debtor', 'creditor', 1000000, 5000, '{}', $2)`,
+      [lien, 'ab'.repeat(64)],
+    );
+    for (const [t, amount] of [[code, 400], [other, 100]] as const) {
+      await ctx.db.query(`insert into mod_lien_recoveries (trade, lien_id, source_code, creditor, amount_atomic) values ($1, $2, 'SRCE-0000-0000-0000', 'buyer', $3)`, [t, lien, amount]);
+    }
+    await ctx.db.query(`insert into mod_lien_rate_taps (nonce, lien_id, rate_bps, from_rate_bps, trade) values ('n1', $1, 6000, 5000, $2)`, [lien, code]);
+    ctx.clock.now = new Date(ctx.clock.now.getTime() + 31 * DAY);
+    net.tradeShred = [order(ctx, code)];
+    expect(await m.handle.tradeShredTick()).toEqual([code]);
+    expect(await dumpAll(ctx)).not.toContain(code);
+    // Still counted against the lien (rule 2), and the other trade's row untouched.
+    const { rows } = await ctx.db.query<{ trade: string; amount_atomic: string }>('select trade, amount_atomic::text from mod_lien_recoveries order by amount_atomic');
+    expect(rows).toEqual([{ trade: other, amount_atomic: '100' }, { trade: '', amount_atomic: '400' }]);
+    expect((await ctx.db.query('select nonce, trade from mod_lien_rate_taps')).rows).toEqual([{ nonce: 'n1', trade: '' }]);
+    // A second shredded trade's recovery is kept too (the unique index covers kept codes only).
+    net.tradeShred = [order(ctx, other)];
+    expect(await m.handle.tradeShredTick()).toEqual([other]);
+    expect((await ctx.db.query<{ n: string }>(`select count(*)::text as n from mod_lien_recoveries where trade = ''`)).rows[0]!.n).toBe('2');
+  });
+
   it('an open trade is never touched, whatever the API orders: listed (open), or hidden from the list by a lying API (its party runs, or its watch still watches)', async () => {
     const { ctx, net, m, fetch } = await setup();
     const l = await inFunding(ctx, m, net);
