@@ -33,6 +33,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
+      // Away (856, owner 26 Nov 2026): the person's own switch, shown on their public profile; a change.
+      'away_since',
     ],
     bookkeeping: {
       had_wallet: 'set with the first wallet, which notifies through wallets',

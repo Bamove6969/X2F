@@ -31,6 +31,7 @@ import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
+import { awayRoutes } from './offers/away.js';
 import { reviewRoutes } from './reviews/routes.js';
 import { blurCheckRoutes } from './proof/blurCheck.js';
 import { tradedTotalRoutes } from './traders/tradedTotal.js';
@@ -345,6 +346,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // the offers and the price) is behind the front door: requireInside (owner, 8 Nov 2026).
   methodListRoutes(app);
   offerRoutes(app);
+  // Owner 26 Nov 2026: the Away switch (pauses my live offers, then turns back on the ones it paused).
+  awayRoutes(app);
   priceRoutes(app);
   // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
   eventRoutes(app, events, options.events);

@@ -292,6 +292,25 @@ export interface AccountOverview {
 /** Owner demo note #6: an account's rating by the login methods it holds. */
 export type SecurityRating = 'weak' | 'medium' | 'high';
 
+/** The Away switch (owner, 26 Nov 2026): on since `since` (ISO), or off with `since` null. */
+export interface AwayState {
+  away: boolean;
+  since: string | null;
+}
+
+/**
+ * Why Away could not turn one offer back on: a relist check of `POST /v1/account/offers/status`
+ * (the API's OfferSwitchRefusal), kept open as a string for codes a newer API adds.
+ */
+export interface AwayOfferResult {
+  id: string;
+  status?: 'live' | 'paused';
+  refused?: string;
+}
+
+/** `PUT /v1/account/away`: on answers the offers it paused, off each offer's relist result. */
+export type AwayResult = AwayState & { paused?: string[]; resumed?: AwayOfferResult[] };
+
 /** Owner 2 Nov 2026: Trader and Vendor accounts. */
 export type AccountType = 'trader' | 'vendor';
 
@@ -804,6 +823,13 @@ export interface AuthApi {
   extendSession(b: Token & { hours?: number }): Promise<SessionInfo>;
   /** The person's idle reminder (owner Q75): one of IDLE_REMINDER_MINUTES, or null for off. */
   setIdleReminder(b: { minutes: number | null }): Promise<{ idleReminderMinutes: number | null }>;
+  /** The Away switch (owner, 26 Nov 2026): whether it is on and since when. The account owner only (403 `owner-only`). */
+  getAway(): Promise<AwayState>;
+  /**
+   * Away on pauses every live offer (`paused`: the ones it paused); off turns back on only those,
+   * each through the relist checks (`resumed`: each offer's result, with `refused` when it stayed paused).
+   */
+  setAway(b: { away: boolean }): Promise<AwayResult>;
 
   /**
    * Owner 2 Nov 2026: switch to a vendor account. Confirm `become-vendor` (`becomeVendorAction`;
@@ -1010,6 +1036,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
     setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
+    getAway: () => get('/v1/account/away'),
+    setAway: (b) => call('PUT', '/v1/account/away', b),
 
     becomeVendor: (b) => call('PUT', '/v1/account/type', { type: 'vendor', ...b }),
 
