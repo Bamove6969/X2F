@@ -36,6 +36,8 @@ describe('one\'s own PGP keys on the staff site', () => {
     const add = async (tapId: string) => {
       const start = await mod.browser.post('/staff/v1/account/pgp/start', { publicKey: fresh.publicKey });
       expect(start.statusCode, start.body).toBe(200);
+      // The staff site builds its tap from the fingerprint the start names (and shows it first).
+      expect(start.json().fingerprint).toBe(fresh.fingerprint.toLowerCase());
       const code = codeOf(await decrypt(start.json().encryptedMessage, fresh.privateKey, undefined, t.deps.clock()));
       return mod.browser.post('/staff/v1/account/pgp/finish', { challengeId: start.json().challengeId, code, tapId });
     };

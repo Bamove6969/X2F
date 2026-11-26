@@ -23,7 +23,15 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
 // carry no id; StaffSettings signs the numbers the fields show.
 // Review p4t22 m2: NewsEditor taps the owner's key to publish (news-publish).
 // Review p4t22 N2: PlannedMaintenance taps `maintenance-planned`, its start, end and message built from the fields (ownerPages.test.tsx).
-const KEY_TAP_CALLERS: string[] = ['screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx', 'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
+// Spec 6.6 "Settings" (test/settingsSections.test.tsx): StarterLimitsSection signs the seven numbers the
+// fields show, FeeSweepSection the threshold, float and cold address as typed (each labelled); MySecurity
+// (test/mySecurity.test.tsx) signs the method it removes by its listed id, and a PGP key by the
+// fingerprint it shows before the tap (the owner taps both keys, owner G4).
+const KEY_TAP_CALLERS: string[] = [
+  'screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/MySecurity.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx',
+  'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'screens/settings/FeeSweepSection.tsx', 'screens/settings/StarterLimitsSection.tsx',
+  'ui/ClockOut.tsx', 'ui/DeviceCard.tsx',
+];
 // Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).
 // Plan 4 Task 26: LimitRecommendations taps `account-limit` (approve or decline), every field shown; reviewed in
 // comms review-lead-p4t26-limits-2026-11-20.md (tap binding, rounds 1-3).

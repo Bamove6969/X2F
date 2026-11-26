@@ -125,6 +125,19 @@ export type KeyTapIntent =
       seniorLargeTradeBp: number | null;
       largeTradeThresholdUsd: number | null;
     }
+  // Spec 6.6 "Settings" / 2.3 (owner 2026-10-24: "The owner can change every number in Settings"):
+  // the starter limits as they will be after the change (whole numbers; `@x2f/staff`'s
+  // STARTER_FIELDS). They decide how big a trade a new account can be part of, so they are tapped.
+  | {
+      kind: 'starter-limits';
+      starterCapUsd: number;
+      starterMaxOpenTrades: number;
+      buildingCapUsd: number;
+      buildingMinTrades: number;
+      buildingMinDays: number;
+      graduatedMinTrades: number;
+      graduatedMinDays: number;
+    }
   // Plan 4 Task 26: a senior moderator's or the owner's decision on a moderator's recommended
   // account limits, bound to the recommendation and to what it would set (a cap in whole US dollars
   // or a stage; exactly one is non-null).
@@ -186,6 +199,7 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'payout-address',
   'pay-settings',
+  'starter-limits',
   'certify-device',
   'revoke-device',
   'account-limit',

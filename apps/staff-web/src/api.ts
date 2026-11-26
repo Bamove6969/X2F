@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole } from '@x2f/staff';
+import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole, StarterSettings } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -440,6 +440,88 @@ export interface PaySettings {
 }
 export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
 export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
+
+/** The links of `GET /staff/v1/settings` (Task 8 Revision 2026-10-29, Task 29; null = not set). */
+export interface LinkSettings {
+  moderatorContactUrl: string | null;
+  communityMatrixUrl: string | null;
+  communityTelegramUrl: string | null;
+}
+/** The links need no tap (apps/api/src/staff/settings.ts TAPPED). */
+export const putLinks = (change: Partial<LinkSettings>) => staffApi<RulingSettings & LinkSettings>('/staff/v1/settings', { method: 'PUT', body: change });
+
+/** Spec 6.6 "Settings" / 2.3: the starter limits (`apps/api/src/staff/starterLimits.ts`; tap `starter-limits`). */
+export type StarterLimitsView = StarterSettings & { updatedAt: string | null };
+export const starterLimits = () => staffApi<StarterLimitsView>('/staff/v1/starter-limits');
+export const putStarterLimits = (next: StarterSettings, tapId: string) => staffApi<StarterLimitsView>('/staff/v1/starter-limits', { method: 'PUT', body: { ...next, tapId } });
+
+/** B-006 / Task 9: the fee wallet's sweep (`apps/api/src/staff/feeSweep.ts` FeeSweepView; tap `fee-sweep`). */
+export interface FeeSweepView {
+  thresholdAtomic: string | null;
+  floatAtomic: string | null;
+  coldAddress: string | null;
+  on: boolean;
+  walletWired: boolean;
+  lastSweep: { at: string; amountAtomic: string; keepAtomic: string; outcome: 'pending' | 'sent' | 'failed'; txHash: string | null } | null;
+}
+export interface FeeSweepChange {
+  thresholdAtomic: string | null;
+  floatAtomic: string | null;
+  coldAddress: string | null;
+}
+export const feeSweep = () => staffApi<FeeSweepView>('/staff/v1/fee-sweep');
+export const putFeeSweep = (next: FeeSweepChange, tapId: string) => staffApi<FeeSweepView>('/staff/v1/fee-sweep', { method: 'PUT', body: { ...next, tapId } });
+
+/** Task 33: each member's unpaid net (`GET /staff/v1/pay/staff`, earnings.read: the owner). */
+export interface StaffPayRow {
+  staffId: string;
+  displayName: string;
+  role: StaffRole;
+  switchedOff: boolean;
+  unpaidUsdCents: string;
+  unpaidAtomic: string;
+  owed: boolean;
+}
+export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pay/staff');
+
+// ---------------------------------------------------------------------------------------------
+// One's own security (apps/api/src/staff/account.ts; perm self, every role, one's own account)
+
+export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'password' | 'totp' | 'recovery-codes';
+export interface MethodEntry {
+  type: MethodType;
+  id: string;
+  label: string;
+  createdAt: string | null;
+  lastUsedAt: string | null;
+}
+export interface MySession {
+  id: string;
+  deviceLabel: string;
+  /** Which site the session is on (`sessions.app`). */
+  site: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+}
+export interface MyAlert {
+  id: string;
+  kind: string;
+  detail: unknown;
+  createdAt: string;
+  seenAt: string | null;
+}
+export const myMethods = () => staffApi<MethodEntry[]>('/staff/v1/account/methods');
+/** The owner sends `secondTapId` too: a tap for the same intent by his other key (owner G4). */
+export type Taps = { tapId: string; secondTapId?: string };
+export const addPgpStart = (publicKey: string) => staffApi<PgpChallenge & { fingerprint: string }>('/staff/v1/account/pgp/start', { method: 'POST', body: { publicKey } });
+export const addPgpFinish = (b: { challengeId: string; code: string } & Taps) => staffApi<{ fingerprint: string }>('/staff/v1/account/pgp/finish', { method: 'POST', body: b });
+export const removeMethod = (type: 'pgp' | 'security-key' | 'passkey', id: string, taps: Taps) =>
+  staffApi<unknown>(`/staff/v1/account/methods/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', body: taps });
+export const mySessions = () => staffApi<MySession[]>('/staff/v1/account/sessions');
+export const endMySession = (id: string) => staffApi<unknown>(`/staff/v1/account/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const myAlerts = () => staffApi<MyAlert[]>('/staff/v1/account/alerts');
+export const markMyAlertSeen = (id: string) => staffApi<unknown>(`/staff/v1/account/alerts/${encodeURIComponent(id)}/seen`, { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // Site controls (Plan 4 Task 8; perm site.control) and the owner's revenue (Task 32; earnings.read)

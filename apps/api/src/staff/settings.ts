@@ -1,4 +1,4 @@
-import type { KeyTapIntent } from '@x2f/staff';
+import { communityLink, moderatorContactLink, type KeyTapIntent } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { withTx } from '../auth/hold.js';
@@ -43,27 +43,13 @@ const COLUMN: Readonly<Record<Field, string>> = {
   communityTelegramUrl: 'community_telegram_url',
 };
 
-/** An https link of at most 198 characters with no spaces (migration 206's check). */
-const LINK = /^https:\/\/[^\s]{1,190}$/;
-
 /**
- * D-067 (lead call 2026-10-29, owner confirmed 28 Oct notes): the moderator contact link takes a
- * Matrix or a Telegram link (Matrix preferred: no phone number) and nothing else. Read as a
- * matrix.to link to a Matrix identifier (`https://matrix.to/#/<sigil><localpart>:<server>`, sigil
- * @ ! # or +) or a t.me link (`https://t.me/<name>`, no query or fragment): exact host, no user info,
- * no port. Answers the normalised link (`URL.href`), which is what is stored (review F2), or null.
+ * D-067: the moderator contact link is a matrix.to or t.me link; the community links any https
+ * link of at most 198 characters with no spaces (migration 206's check). Both checks are
+ * `@x2f/staff`'s (ownerSettings.ts), so the owner's Settings page reads a link the same way;
+ * `moderatorContactLink` answers the normalised link, which is what is stored (review F2).
  */
-const MATRIX_ID = /^#\/[@!#+][A-Za-z0-9._=\-/]+:[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/;
-export function moderatorContactLink(v: string): string | null {
-  if (!URL.canParse(v)) return null;
-  const u = new URL(v);
-  if (u.protocol !== 'https:' || u.username !== '' || u.password !== '' || u.port !== '') return null;
-  // A bare "?" leaves `search` empty; the typed string must not carry one either.
-  if (u.search !== '' || u.href.includes('?')) return null;
-  if (u.hostname === 'matrix.to') return u.pathname === '/' && MATRIX_ID.test(u.hash) ? u.href : null;
-  if (u.hostname === 't.me') return /^\/[A-Za-z0-9_+/-]+$/.test(u.pathname) && u.hash === '' && !u.href.includes('#') ? u.href : null;
-  return null;
-}
+export { moderatorContactLink };
 
 interface Row {
   large_trade_limit_usd: number;
@@ -108,14 +94,13 @@ export function parseSettingsChange(body: unknown): { change: Partial<Settings>;
       if (typeof v !== 'number' || !Number.isInteger(v) || v < lo || v > hi) throw badRequest(k);
       change[k as NumberField] = v;
     } else if ((LINK_FIELDS as string[]).includes(k)) {
-      if (v !== null && (typeof v !== 'string' || !LINK.test(v) || !URL.canParse(v))) throw badRequest(k);
-      if (k === 'moderatorContactUrl' && v !== null) {
-        const link = moderatorContactLink(v);
-        if (link === null) throw badRequest(k);
-        change[k] = link;
+      if (v === null) {
+        change[k as LinkField] = null;
         continue;
       }
-      change[k as LinkField] = v;
+      const link = typeof v === 'string' ? (k === 'moderatorContactUrl' ? moderatorContactLink(v) : communityLink(v)) : null;
+      if (link === null) throw badRequest(k);
+      change[k as LinkField] = link;
     } else {
       throw badRequest();
     }

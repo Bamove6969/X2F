@@ -37,6 +37,7 @@ import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
 import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
+import { staffStarterLimitRoutes } from './starterLimits.js';
 import { staffSiteRoutes } from './site.js';
 import { staffLogRoutes } from './activityLog.js';
 import { staffTrainingRoutes } from './training.js';
@@ -179,6 +180,8 @@ export async function buildStaffApi(
   ownerSetupRoutes(app);
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
   staffSettingsRoutes(app);
+  // Spec 6.6 "Settings": the starter limits (spec 2.3), owner_settings rows (settings.write, tapped).
+  staffStarterLimitRoutes(app);
   staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
