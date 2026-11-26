@@ -6,11 +6,11 @@ import { Button, Notice, Sheet } from './kit.js';
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;
 
-/** XMR with 6 places, truncated (never shows more than exists); a debt keeps its minus sign. */
-export function xmrText(atomic: string): string {
+/** XMR with 6 places (or `places`, up to 12: exact), truncated (never shows more than exists); a debt keeps its minus sign. */
+export function xmrText(atomic: string, places = 6): string {
   const v = BigInt(atomic);
   const abs = v < 0n ? -v : v;
-  const frac = (abs % ATOMIC_PER_XMR).toString().padStart(12, '0').slice(0, 6);
+  const frac = (abs % ATOMIC_PER_XMR).toString().padStart(12, '0').slice(0, places);
   return `${v < 0n ? '-' : ''}${abs / ATOMIC_PER_XMR}.${frac} XMR`;
 }
 

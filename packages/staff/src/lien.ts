@@ -102,6 +102,34 @@ function checkFacts(f: LienFacts): void {
 }
 
 /**
+ * Review B1 (lien recovery, 2026-11-16): the sides a trade's dispute rulings can make a lien's
+ * creditor, from the outcomes alone, so the moderation service can check a recovery against the
+ * rulings its gate verified (staff key taps) without the API's lien rows. `round2`: the appeal's
+ * decision, or null. It covers every lien `lienSteps` places (tested against it), and may name a
+ * side whose lien a state the gate cannot see (the switch, the seller's compliance) left unplaced:
+ * the recovery then still only ever pays that side's own address from the trade.
+ */
+export function lienCreditorsOf(round1: RulingOutcome, round2: RulingOutcome | null): LienSide[] {
+  const out = new Set<LienSide>();
+  const restitution = (o: RulingOutcome) => {
+    const d = restitutionDebtor(o);
+    if (d !== null) out.add(other(d));
+  };
+  if (round2 === null || round2 === round1) {
+    restitution(round1);
+  } else if (isEscrow(round1)) {
+    // Overturned: whoever received the coins under round 1 owes them back.
+    out.add(round1 === 'release-to-buyer' ? 'seller' : 'buyer');
+  } else {
+    // An overruled order to pay that was paid: the receiver (the creditor of round 1) owes it back.
+    const paid = restitutionDebtor(round1);
+    if (paid !== null) out.add(paid);
+    restitution(round2);
+  }
+  return [...out].sort();
+}
+
+/**
  * The steps that `prev` → `next` (one accepted `applyDispute` change of the same dispute) brings,
  * given the liens already stored for it. Pure; never changes its inputs.
  */

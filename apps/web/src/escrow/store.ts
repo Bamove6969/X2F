@@ -33,6 +33,8 @@ export interface StoredIdentity {
 export interface StoredPayout {
   address: string;
   amountAtomic: bigint;
+  /** Owner 16 Nov: this output pays its share of the network fee (the engine builds and checks by it). */
+  bearsNetworkFee?: boolean;
 }
 
 /** What this side asked to settle, kept so a reload settles the same outcome again (Review Focus 1). */
@@ -118,6 +120,8 @@ export interface EscrowRecord {
    * accepted for a release (refunds pay the whole balance and do not depend on it).
    */
   acceptedAtomic?: bigint | null;
+  /** Lien recovery the buyer confirmed (ConfirmedTrade.lienRecoveryAtomic); absent = none. */
+  lienRecoveryAtomic?: bigint;
   /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
   closedSeenAt?: number | null;
   /** Device clock (ms) when this device saw its OWN settle done and the escrow empty with nothing in the pool. */

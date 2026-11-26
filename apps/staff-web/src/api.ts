@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole } from '@x2f/staff';
+import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -233,6 +233,41 @@ export const moodFeedback = (before?: string) =>
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
 
 // ---------------------------------------------------------------------------------------------
+// Support tickets (Plan 4 Tasks 30-31 on the staff API; perm tickets.handle: the owner, and anyone
+// the owner granted it). The queue carries no text and no trader; a case opens only to its taker.
+
+export interface TicketQueueItem {
+  id: string;
+  category: TicketCategory;
+  status: 'open' | 'answered';
+  createdAt: string;
+  updatedAt: string;
+  /** Whose turn it is. */
+  waiting: 'staff' | 'trader';
+  /** Who holds it: the reader, someone else, or nobody. */
+  taken: 'me' | 'other' | null;
+}
+
+export interface TicketCase {
+  id: string;
+  category: TicketCategory;
+  status: TicketStatus;
+  tradeCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: Array<{ from: 'trader' | 'staff'; body: string; at: string; mine: boolean }>;
+}
+
+const ticketUrl = (id: string, tail = '') => `/staff/v1/tickets/${encodeURIComponent(id)}${tail}`;
+export const ticketQueue = (category?: TicketCategory) =>
+  staffApi<{ items: TicketQueueItem[] }>(category === undefined ? '/staff/v1/tickets' : `/staff/v1/tickets?category=${encodeURIComponent(category)}`);
+export const ticketCase = (id: string) => staffApi<TicketCase>(ticketUrl(id));
+export const takeTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/take'), { method: 'POST', body: {} });
+export const replyToTicket = (id: string, body: string) => staffApi<TicketCase>(ticketUrl(id, '/messages'), { method: 'POST', body: { body } });
+export const closeStaffTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/close'), { method: 'POST', body: {} });
+export const releaseTicket = (id: string) => staffApi<{ released: true }>(ticketUrl(id, '/release'), { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
 // Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)
 
 export type ReviewDisputeOutcome = 'stands' | 'comments-removed' | 'removed';
@@ -417,6 +452,13 @@ export const removeMember = (accountId: string, tapId: string) => staffApi<unkno
  */
 export const createInvite = (b: { role: InviteRole; hours: LoginHours; inviteId: string; token: string; expiresAt: string; tapId: string }) =>
   staffApi<{ inviteId: string; link: string; expiresAt: string }>('/staff/v1/invites', { method: 'POST', body: b });
+/**
+ * D-032 (owner G60): the owner resets a staff member's security. As for an invite, this browser
+ * makes the link's id, token and expiry, bound by the owner's `reset-staff-security` tap; the link
+ * is shown once.
+ */
+export const resetSecurity = (accountId: string, b: { inviteId: string; token: string; expiresAt: string; tapId: string }) =>
+  staffApi<{ inviteId: string; link: string; expiresAt: string }>(memberPath(accountId, '/reset-security'), { method: 'POST', body: b });
 export const cancelInvite = (inviteId: string) => staffApi<unknown>(`/staff/v1/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 
 // ---------------------------------------------------------------------------------------------
@@ -440,6 +482,88 @@ export interface PaySettings {
 }
 export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
 export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
+
+/** The links of `GET /staff/v1/settings` (Task 8 Revision 2026-10-29, Task 29; null = not set). */
+export interface LinkSettings {
+  moderatorContactUrl: string | null;
+  communityMatrixUrl: string | null;
+  communityTelegramUrl: string | null;
+}
+/** The links need no tap (apps/api/src/staff/settings.ts TAPPED). */
+export const putLinks = (change: Partial<LinkSettings>) => staffApi<RulingSettings & LinkSettings>('/staff/v1/settings', { method: 'PUT', body: change });
+
+/** Spec 6.6 "Settings" / 2.3: the starter limits (`apps/api/src/staff/starterLimits.ts`; tap `starter-limits`). */
+export type StarterLimitsView = StarterSettings & { updatedAt: string | null };
+export const starterLimits = () => staffApi<StarterLimitsView>('/staff/v1/starter-limits');
+export const putStarterLimits = (next: StarterSettings, tapId: string) => staffApi<StarterLimitsView>('/staff/v1/starter-limits', { method: 'PUT', body: { ...next, tapId } });
+
+/** B-006 / Task 9: the fee wallet's sweep (`apps/api/src/staff/feeSweep.ts` FeeSweepView; tap `fee-sweep`). */
+export interface FeeSweepView {
+  thresholdAtomic: string | null;
+  floatAtomic: string | null;
+  coldAddress: string | null;
+  on: boolean;
+  walletWired: boolean;
+  lastSweep: { at: string; amountAtomic: string; keepAtomic: string; outcome: 'pending' | 'sent' | 'failed'; txHash: string | null } | null;
+}
+export interface FeeSweepChange {
+  thresholdAtomic: string | null;
+  floatAtomic: string | null;
+  coldAddress: string | null;
+}
+export const feeSweep = () => staffApi<FeeSweepView>('/staff/v1/fee-sweep');
+export const putFeeSweep = (next: FeeSweepChange, tapId: string) => staffApi<FeeSweepView>('/staff/v1/fee-sweep', { method: 'PUT', body: { ...next, tapId } });
+
+/** Task 33: each member's unpaid net (`GET /staff/v1/pay/staff`, earnings.read: the owner). */
+export interface StaffPayRow {
+  staffId: string;
+  displayName: string;
+  role: StaffRole;
+  switchedOff: boolean;
+  unpaidUsdCents: string;
+  unpaidAtomic: string;
+  owed: boolean;
+}
+export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pay/staff');
+
+// ---------------------------------------------------------------------------------------------
+// One's own security (apps/api/src/staff/account.ts; perm self, every role, one's own account)
+
+export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'password' | 'totp' | 'recovery-codes';
+export interface MethodEntry {
+  type: MethodType;
+  id: string;
+  label: string;
+  createdAt: string | null;
+  lastUsedAt: string | null;
+}
+export interface MySession {
+  id: string;
+  deviceLabel: string;
+  /** Which site the session is on (`sessions.app`). */
+  site: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+}
+export interface MyAlert {
+  id: string;
+  kind: string;
+  detail: unknown;
+  createdAt: string;
+  seenAt: string | null;
+}
+export const myMethods = () => staffApi<MethodEntry[]>('/staff/v1/account/methods');
+/** The owner sends `secondTapId` too: a tap for the same intent by his other key (owner G4). */
+export type Taps = { tapId: string; secondTapId?: string };
+export const addPgpStart = (publicKey: string) => staffApi<PgpChallenge & { fingerprint: string }>('/staff/v1/account/pgp/start', { method: 'POST', body: { publicKey } });
+export const addPgpFinish = (b: { challengeId: string; code: string } & Taps) => staffApi<{ fingerprint: string }>('/staff/v1/account/pgp/finish', { method: 'POST', body: b });
+export const removeMethod = (type: 'pgp' | 'security-key' | 'passkey', id: string, taps: Taps) =>
+  staffApi<unknown>(`/staff/v1/account/methods/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', body: taps });
+export const mySessions = () => staffApi<MySession[]>('/staff/v1/account/sessions');
+export const endMySession = (id: string) => staffApi<unknown>(`/staff/v1/account/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const myAlerts = () => staffApi<MyAlert[]>('/staff/v1/account/alerts');
+export const markMyAlertSeen = (id: string) => staffApi<unknown>(`/staff/v1/account/alerts/${encodeURIComponent(id)}/seen`, { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // Site controls (Plan 4 Task 8; perm site.control) and the owner's revenue (Task 32; earnings.read)
@@ -468,14 +592,36 @@ export const announcePlannedMaintenance = (b: { startsAt: string; endsAt: string
   staffApi<StaffSite>('/staff/v1/site/maintenance/planned', { method: 'PUT', body: b });
 export const removePlannedMaintenance = () => staffApi<unknown>('/staff/v1/site/maintenance/planned', { method: 'DELETE' });
 
+/**
+ * Mirrors apps/api `RevenueBucket` / `RevenueReport`. Owner 16 Nov: every bucket has the network
+ * fees X2F's fee outputs paid and the total after them. Amounts are atomic units (decimal strings).
+ */
 export interface RevenueBucket {
   period: string;
   trades: number;
+  feeAtomic: string;
+  owedCollectedAtomic: string;
+  owedCollections: number;
   totalAtomic: string;
   usdEstimateCents: string;
+  networkFeeAtomic: string;
+  netAtomic: string;
 }
-export const revenue = (q: { by: 'day' | 'month'; from: string; to: string }) =>
-  staffApi<{ buckets: RevenueBucket[]; total: RevenueBucket }>(`/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
+export interface RevenueReport {
+  by: 'day' | 'month';
+  from: string;
+  to: string;
+  buckets: RevenueBucket[];
+  total: RevenueBucket;
+  byCurrency: RevenueBucket[];
+  /** Every day ever booked, whatever the range (`period` is `to-date`). */
+  toDate: RevenueBucket;
+  treasuryNetworkFeesRecorded: boolean;
+  owedOutstandingAtomic: string | null;
+}
+/** Without a range, by month over the API's default range (the twelve months to today). */
+export const revenue = (q?: { by: 'day' | 'month'; from: string; to: string }) =>
+  staffApi<RevenueReport>(q === undefined ? '/staff/v1/revenue?by=month' : `/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
 
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
@@ -630,6 +776,59 @@ export const decideLimits = (accountId: string, recId: string, b: { approve: boo
     `/staff/v1/accounts/${encodeURIComponent(accountId)}/limit-recommendations/${encodeURIComponent(recId)}/decide`,
     { method: 'POST', body: b },
   );
+// ---------------------------------------------------------------------------------------------
+// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts, holds.ts):
+// senior moderators and the owner (`accounts.ban`, `accounts.freeze`; the API checks every call).
+
+export type BanKind = 'trade' | 'site';
+export interface AccountStatus {
+  bans: Array<{ id: string; kind: BanKind; reasonCode: import('@x2f/staff').BanReasonCode; until: string | null; permanent: boolean }>;
+  hold: { until: string; reason: string } | null;
+  frozen: boolean;
+  lien: boolean;
+}
+export interface LookedUpAccount {
+  accountId: string;
+  displayName: string;
+  matchedBy: 'name' | 'code';
+  side: Side | null;
+  completedTrades: number;
+  positivePct: number | null;
+  disputes: { won: number; lost: number };
+  stage: string;
+  status: AccountStatus;
+}
+export interface StaffBan {
+  id: string;
+  kind: BanKind;
+  ruleId: string;
+  reasonCode: import('@x2f/staff').BanReasonCode;
+  until: string | null;
+  permanent: boolean;
+  note: string | null;
+  createdAt: string;
+  endedAt: string | null;
+  liftedAt: string | null;
+  active: boolean;
+}
+export interface AccountBans {
+  priorOffences: number;
+  bans: StaffBan[];
+  rules: readonly import('@x2f/staff').BanRule[];
+}
+
+const accountPath = (id: string, rest: string) => `/staff/v1/accounts/${encodeURIComponent(id)}${rest}`;
+/** A trader by public display name or trade code (exact matches only; each lookup is logged). */
+export const lookupAccounts = (q: string) => staffApi<{ accounts: LookedUpAccount[] }>(`/staff/v1/accounts/lookup?q=${encodeURIComponent(q)}`);
+export const accountBans = (id: string) => staffApi<AccountBans>(accountPath(id, '/bans'));
+export const placeBan = (id: string, b: { banId: string; kind: BanKind; ruleId: string; until: string | null; note?: string; tapId: string }) =>
+  staffApi<StaffBan>(accountPath(id, '/bans'), { method: 'POST', body: b });
+export const liftBan = (id: string, banId: string, tapId: string) =>
+  staffApi<StaffBan>(accountPath(id, `/bans/${encodeURIComponent(banId)}/lift`), { method: 'POST', body: { tapId } });
+export const extendHold = (id: string, until: string) => staffApi<{ holdUntil: string }>(accountPath(id, '/hold/extend'), { method: 'POST', body: { until } });
+export const endHold = (id: string, via: 'secure-jabber' | null) =>
+  staffApi<unknown>(accountPath(id, '/hold/end'), { method: 'POST', body: via === null ? {} : { via } });
+
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (
@@ -766,15 +965,24 @@ export interface ActiveDispute {
   xmr: string;
   status: string;
 }
-export const activeDisputes = () => staffApi<{ items: ActiveDispute[] }>('/staff/v1/log/active-disputes');
+/** Review m7: newest opened first, 100 a page; `before` is the last code of the page before. */
+export const activeDisputes = (before?: string) => staffApi<{ items: ActiveDispute[]; next: string | null }>(page('/staff/v1/log/active-disputes', before));
+/** Review m7: what the owner's page reads on load. No chain check (nothing is re-hashed). */
+export interface LogStatus {
+  entries: number;
+  headId: string | null;
+  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
+  alarm: string | null;
+}
 export interface LogIntegrity {
   checkedAt: string;
   chain: { ok: true; headId: string | null } | { ok: false; brokenAt: string };
   entries: number;
-  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
   alarm: string | null;
 }
-export const logIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity');
+export const logStatus = () => staffApi<LogStatus>('/staff/v1/log/integrity');
+/** Review m7: the whole chain re-hashed from its first entry, on the owner's "Check integrity" only. */
+export const checkLogIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity/check', { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // The training library (Plan 4 Task 19; perm training.read): closed cases, read through the anonymizer
@@ -827,7 +1035,8 @@ export interface TrainingReviewCase extends TrainingCase {
   /** Re-review 3 m1: the tag of the texts as loaded; the save sends it back (409 `case-changed` if they changed). */
   reviewTag: string;
 }
-export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
+/** Re-review m3: newest closed first, 50 a page; `before` is the last case's opaque id. */
+export const trainingReviewList = (before?: string) => staffApi<{ items: TrainingReviewItem[]; next: string | null }>(page('/staff/v1/training/review', before));
 export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
 export const markTrainingCase = (id: string, masks: ManualMask[], reviewTag: string) =>
   staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks, reviewTag } });

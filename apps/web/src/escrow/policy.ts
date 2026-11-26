@@ -85,14 +85,18 @@ export function deviceAmount(d: Deal, currentAtomic: bigint, balance: bigint, un
 
 export interface PolicyContext {
   role: 'buyer' | 'seller';
-  /** This device's own address: the buyer's payout, the seller's refund. */
-  own: { payout?: string; refund?: string };
+  /**
+   * This device's own address: the buyer's payout, the seller's refund. `lienRecoveryAtomic`
+   * (review B1, buyer only): the recovery the buyer accepted on the quote before the take (absent:
+   * none); a buyer co-signs nothing whose signed terms carry any other figure.
+   */
+  own: { payout?: string; refund?: string; lienRecoveryAtomic?: bigint };
   /** From this device's own funds(), only when balance == unlocked. */
   balance: bigint;
   trade: PolicyTrade;
   deal: PolicyDeal;
   /** The addresses each side signed in its trade.terms signal. */
-  signedTerms: { payout: string; refund: string };
+  signedTerms: { payout: string; refund: string; lienRecovery?: { address: string; amountAtomic: bigint } };
   /**
    * Haveno review finding 2: the moderation service's ruling statement as the API served it
    * (`statement`, `sig`: untrusted, verified here), with what this device knows itself: the trade
@@ -129,7 +133,10 @@ function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
     a.length === b.length &&
     a.every((p, i) => {
       const q = b[i]!;
-      return typeof p === 'object' && p !== null && p.address === q.address && typeof p.amountAtomic === 'bigint' && p.amountAtomic === q.amountAtomic;
+      // Owner 16 Nov: who bears the network fee is part of what the tx pays (the engine builds and
+      // checks by it), so a set that moves it to another output is not the same set.
+      return typeof p === 'object' && p !== null && p.address === q.address && typeof p.amountAtomic === 'bigint' && p.amountAtomic === q.amountAtomic
+        && (p.bearsNetworkFee === true) === (q.bearsNetworkFee === true);
     })
   );
 }
@@ -146,6 +153,8 @@ function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
     buyerPayout: c.signedTerms.payout,
     sellerRefund: c.signedTerms.refund,
     feeWallet: c.trade.feeWallet,
+    // Lien recovery (docs/lien-recovery.md): a completed trade pays it from the buyer's proceeds.
+    ...(c.signedTerms.lienRecovery !== undefined ? { lienRecovery: c.signedTerms.lienRecovery } : {}),
   });
 }
 
@@ -158,6 +167,9 @@ function check(c: PolicyContext, o: Outcome): boolean {
   const mine = c.role === 'buyer' ? c.own.payout : c.own.refund;
   const signedMine = c.role === 'buyer' ? c.signedTerms.payout : c.signedTerms.refund;
   if (typeof mine !== 'string' || mine === '' || mine !== signedMine) return false;
+  // Review B1: the buyer (the debtor) co-signs only signed terms whose recovery is exactly the one it
+  // accepted before the take (none accepted: none), whatever the API or the signed terms say.
+  if (c.role === 'buyer' && (c.signedTerms.lienRecovery?.amountAtomic ?? 0n) !== (c.own.lienRecoveryAtomic ?? 0n)) return false;
 
   const state = c.trade.state;
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });

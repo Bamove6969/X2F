@@ -22,6 +22,7 @@ import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './des
 import type { DeskArmed } from './execute.js';
 import { sweepTag } from './keystore.js';
 import type { Link, WatchItem } from './link.js';
+import { freeLienRecoveries, unfreeLienRecoveries } from './lienRecovery.js';
 
 /**
  * The moderation service's chain watcher (Plan 3 Task 9), the I/O around `@x2f/trade`'s pure
@@ -96,6 +97,14 @@ interface Row {
   watching: boolean;
   /** Bumped by every state save; a save over another version is dropped (security review 7 Nov, finding 2). */
   version: string;
+}
+
+/** The settle kinds whose payout pays a signed lien recovery (`payoutsFor`): a completed trade. */
+const PAYS_RECOVERY: ReadonlySet<string> = new Set(['release', 'dispute-buyer']);
+
+/** No coin ever reached the escrow, as this watcher saw it (and no sweep was counted). */
+function neverFunded(s: WatchState): boolean {
+  return (s.lastChain === null || s.lastChain.receivedAtomic === 0n) && s.sweepTxs.length === 0;
 }
 
 /** WatchState as JSON: bigints as decimal strings, closedAt as an ISO string. */
@@ -237,7 +246,7 @@ export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepConte
     .filter((o) => !state.sweepTxs.includes(o.txHash))
     .sort((a, b) => (a.height ?? Number.MAX_SAFE_INTEGER) - (b.height ?? Number.MAX_SAFE_INTEGER));
   for (const o of fresh) {
-    const evidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic };
+    const evidence: SpendEvidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic, ...(typeof o.feeAtomic === 'bigint' && o.feeAtomic >= 0n ? { networkFeeAtomic: o.feeAtomic } : {}) };
     const own = (f.ownTxs ?? []).includes(o.txHash);
     if (!own && !(o.height !== null && (await proven(o, f, ctx)))) {
       ctx.log({ reason: 'sweep-unproven' });
@@ -308,7 +317,10 @@ const reportBody = (trade: string, r: WatchReport, settledKind: SettleKind | Rul
   if (r.kind === 'chain') {
     return { kind: 'chain', trade, receivedAtomic: r.receivedAtomic.toString(), unlockedAtomic: r.unlockedAtomic.toString(), confirmations: r.confirmations };
   }
-  if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash, settleKind: settledKind };
+  if (r.kind === 'settled') {
+    // Owner 16 Nov: the sweep's network fee, when known, so the books record X2F's share of it.
+    return { kind: 'settled', trade, txHash: r.txHash, settleKind: settledKind, ...(r.networkFeeAtomic !== undefined ? { networkFeeAtomic: r.networkFeeAtomic.toString() } : {}) };
+  }
   if (r.kind === 'spend-unshown') return { kind: 'spend-unshown', trade };
   if (r.kind === 'release-claimed') return { kind: 'release-claimed', trade };
   return { kind: 'late-funds', trade };
@@ -484,6 +496,15 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // refuses settle-kind-unknown and the watcher backs off), never by the desk or the API.
     const settledKind = own ? (builder === 'mod' ? signedKind : (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind)) : settleKind;
     if (!(await post(row.trade, step.reports, settledKind))) return true;
+    // Review B1, M2: a lien recovery signed for this trade stops counting once it can no longer be
+    // paid: a sweep counted here for a kind that never pays it (a refund), or a watch that ends with
+    // no coin ever received. A release, a ruling for the buyer, or a kind nothing names keeps it.
+    if (step.reports.some((r) => r.kind === 'settled') && settledKind !== null) {
+      if (!PAYS_RECOVERY.has(settledKind)) await freeLienRecoveries(o.db, row.trade);
+      // M2: late coins on a refunded trade, then paid out for the buyer: the recovery was paid after all.
+      else await unfreeLienRecoveries(o.db, row.trade);
+    }
+    if (!step.watching && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade);
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
     const desk = desks.get(row.trade);
@@ -588,6 +609,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
           watching,
         });
         if (plan.stop) {
+          let coinless = true;
+          try {
+            coinless = neverFunded(reviveWatchState(row.state));
+          } catch {
+            coinless = false;
+          }
+          if (coinless) await freeLienRecoveries(o.db, row.trade);
           await stopParty(row.trade);
           await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
           o.log({ reason: 'party-stopped' });

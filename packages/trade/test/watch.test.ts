@@ -115,6 +115,13 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     expect(r3.reports).toEqual([]);
   });
 
+  test('settled carries the sweep\'s network fee when the wallet knows it (owner 16 Nov: the books show X2F\'s share)', () => {
+    const r1 = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
+    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { ...sweep(1000n, 1), networkFeeAtomic: 30n } });
+    expect(r2.reports).toEqual([{ kind: 'settled', txHash: SETTLE, networkFeeAtomic: 30n }]);
+    expect(() => step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { ...sweep(1000n, 1), networkFeeAtomic: -1n } })).toThrow(RangeError);
+  });
+
   test('a known spend still in the pool holds chain reports even before the wallet sees it', () => {
     const r1 = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
     const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)]), spend: sweep(1000n, 0) });

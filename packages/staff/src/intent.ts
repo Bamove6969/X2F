@@ -125,6 +125,19 @@ export type KeyTapIntent =
       seniorLargeTradeBp: number | null;
       largeTradeThresholdUsd: number | null;
     }
+  // Spec 6.6 "Settings" / 2.3 (owner 2026-10-24: "The owner can change every number in Settings"):
+  // the starter limits as they will be after the change (whole numbers; `@x2f/staff`'s
+  // STARTER_FIELDS). They decide how big a trade a new account can be part of, so they are tapped.
+  | {
+      kind: 'starter-limits';
+      starterCapUsd: number;
+      starterMaxOpenTrades: number;
+      buildingCapUsd: number;
+      buildingMinTrades: number;
+      buildingMinDays: number;
+      graduatedMinTrades: number;
+      graduatedMinDays: number;
+    }
   // Plan 4 Task 26: a senior moderator's or the owner's decision on a moderator's recommended
   // account limits, bound to the recommendation and to what it would set (a cap in whole US dollars
   // or a stage; exactly one is non-null).
@@ -145,6 +158,10 @@ export type KeyTapIntent =
   | { kind: 'maintenance-planned'; startsAt: string; endsAt: string; messageSha256: string | null }
   | { kind: 'news-publish'; newsId: string | null; titleSha256: string; bodySha256: string }
   | { kind: 'banner-publish'; bannerKind: 'info' | 'warning'; textSha256: string }
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a senior moderator (or the owner)
+  // approves a moderator's request to change how much of a debtor's proceeds each trade recovers
+  // (basis points). It changes who gets money, so it is tapped and bound to exactly that request.
+  | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -186,6 +203,7 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'payout-address',
   'pay-settings',
+  'starter-limits',
   'certify-device',
   'revoke-device',
   'account-limit',
@@ -193,6 +211,7 @@ export const KEY_TAP_KINDS = [
   'maintenance-planned',
   'news-publish',
   'banner-publish',
+  'lien-rate',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

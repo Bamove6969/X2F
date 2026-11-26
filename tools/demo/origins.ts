@@ -7,6 +7,12 @@
  * e.g. Cloudflare quick tunnels to 127.0.0.1:4400 and 127.0.0.1:4401), the public ones: the web
  * build, the relay wss URL, the node proxy URL, the allowed origins and the CSP use them. The
  * local origins stay allowed. Every demo process still binds 127.0.0.1 only; a tunnel reaches out.
+ *
+ * The staff origin (staff-web and the staff API, the staff gateway on 4402) is always its own
+ * origin, never the trader one's: http://localhost:4402, or DEMO_PUBLIC_STAFF_ORIGIN (an https
+ * origin that differs from the trader and node ones, e.g. a Tailscale Funnel's 443 on the same
+ * host). The staff API accepts exactly that one origin (X2F_STAFF_ORIGIN) and its WebAuthn RP ID is
+ * that origin's host (WebAuthn RP IDs carry no port, so on one Funnel host it is the trader one's).
  */
 import { PORTS } from './config.js';
 
@@ -25,6 +31,12 @@ export interface DemoOrigins {
   allowed: string[];
   /** The WebAuthn RP ID: the public host name, else localhost (as before). */
   rpId: string;
+  /** The staff origin the staff API accepts (X2F_STAFF_ORIGIN): the public staff one, else http://localhost:4402. */
+  staff: string;
+  /** Every origin the staff app may be opened from (the staff gateway passes these on as `staff`). */
+  staffAllowed: string[];
+  /** The staff WebAuthn RP ID (X2F_STAFF_RP_ID): the staff origin's host. */
+  staffRpId: string;
 }
 
 export class DemoOriginError extends Error {
@@ -34,7 +46,10 @@ export class DemoOriginError extends Error {
   }
 }
 
-/** A bare https origin (no path, query, credentials or port other than 443), returned normalized. */
+/**
+ * A bare https origin (no path, query or credentials), returned normalized. An explicit port is
+ * kept (demo r5: a Tailscale Funnel serves only 443, 8443 and 10000, and 443 may already be taken).
+ */
 export function publicOrigin(name: string, raw: string): string {
   let u: URL;
   try {
@@ -46,7 +61,6 @@ export function publicOrigin(name: string, raw: string): string {
   if (u.username !== '' || u.password !== '' || (u.pathname !== '/' && u.pathname !== '') || u.search !== '' || u.hash !== '') {
     throw new DemoOriginError(`${name} must be a bare origin (no path, query or credentials)`);
   }
-  if (u.port !== '') throw new DemoOriginError(`${name} must use the default https port`);
   return u.origin;
 }
 
@@ -64,6 +78,14 @@ export function demoOrigins(env: Record<string, string | undefined>, tsIp = ''):
   const primary = pub || ts || local;
   const node = pubNode || tsNode || localNode;
   const allowed = [...new Set([local, `http://127.0.0.1:${PORTS.gateway}`, ...(ts ? [ts] : []), ...(pub ? [pub] : [])])];
+  const staffLocal = `http://localhost:${PORTS.staffGateway}`;
+  const pubStaffRaw = env.DEMO_PUBLIC_STAFF_ORIGIN ?? '';
+  const pubStaff = pubStaffRaw === '' ? '' : publicOrigin('DEMO_PUBLIC_STAFF_ORIGIN', pubStaffRaw);
+  // Never mixed: the staff origin is never one the trader app or the node proxy is opened from.
+  if (pubStaff !== '' && (pubStaff === pub || pubStaff === pubNode || pubStaff === ts || pubStaff === tsNode)) {
+    throw new DemoOriginError('DEMO_PUBLIC_STAFF_ORIGIN must be its own origin, not the trader or node one (another port is enough)');
+  }
+  const staff = pubStaff || staffLocal;
   return {
     local,
     primary,
@@ -72,6 +94,9 @@ export function demoOrigins(env: Record<string, string | undefined>, tsIp = ''):
     public: pub,
     allowed,
     rpId: pub ? new URL(pub).hostname : 'localhost',
+    staff,
+    staffAllowed: [...new Set([staffLocal, `http://127.0.0.1:${PORTS.staffGateway}`, ...(pubStaff ? [pubStaff] : [])])],
+    staffRpId: new URL(staff).hostname,
   };
 }
 

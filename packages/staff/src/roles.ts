@@ -71,7 +71,7 @@ export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): 
   return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
 }
 
-export type NavItem = 'overview' | 'disputes' | 'past-reputation' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'settings';
+export type NavItem = 'overview' | 'disputes' | 'past-reputation' | 'accounts' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'tickets' | 'settings';
 
 /**
  * The perm each menu item's page reads with (the API refuses the page's data without it, whatever
@@ -82,12 +82,17 @@ export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
   disputes: 'disputes.handle',
   // Plan 5 Task 11: the past-reputation claims waiting for a moderator (`GET /staff/v1/past-rep`).
   'past-reputation': 'reputation.review',
+  // Spec 6.6 "Account actions": find a trader and ban, lift or work a hold outside a case
+  // (`GET /staff/v1/accounts/lookup`, accounts.ban; the hold routes' accounts.freeze has the same roles).
+  accounts: 'accounts.ban',
   staff: 'staff.manage',
   performance: 'perf.read',
   prices: 'stats.read',
   training: 'training.read',
   log: 'log.read.cases',
   feedback: 'feedback.read',
+  // Plan 4 Task 31: the support-ticket queue and its cases (`GET /staff/v1/tickets`).
+  tickets: 'tickets.handle',
   settings: 'settings.write',
 };
 
@@ -98,15 +103,22 @@ export const NAV: Readonly<Record<StaffRole, readonly NavItem[]>> = {
   // draws it yet (DESIGN: not drawn); after Performance, the other figures page, is a lead default.
   // 'past-reputation' (Plan 5 Task 11): no board places it (DESIGN: not drawn); after Disputes, the
   // other moderator queue, is a lead default.
-  owner: ['overview', 'disputes', 'past-reputation', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'],
-  senior: ['disputes', 'past-reputation', 'training', 'log', 'feedback'],
+  // 'accounts' (spec 6.6): no board places it (DESIGN: not drawn); after the queues is a lead default.
+  // 'tickets' (Plan 4 Task 31): no board places it (DESIGN: not drawn); after Feedback, the other
+  // page of what traders write, is a lead default.
+  owner: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'tickets', 'settings'],
+  senior: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'],
   mod: ['disputes', 'past-reputation', 'training', 'log'],
+  // A helper's pages come from grants only (Task 30: ticket access is granted per person).
   helper: [],
 };
 
-/** The menu for one person: their role's, plus Feedback when the owner granted it (owner Q60). */
+/**
+ * The menu for one person: their role's, plus Feedback (owner Q60) and Tickets (Plan 4 Tasks 30-31)
+ * when the owner granted them, in that order at the end.
+ */
 export function navFor(role: StaffRole, grants: readonly Perm[] = []): readonly NavItem[] {
   const base = NAV[role] ?? [];
-  if (base.includes('feedback') || !can(role, 'feedback.read', grants)) return base;
-  return [...base, 'feedback'];
+  const extra = (['feedback', 'tickets'] as const).filter((item) => !base.includes(item) && can(role, NAV_PERM[item], grants));
+  return extra.length === 0 ? base : [...base, ...extra];
 }

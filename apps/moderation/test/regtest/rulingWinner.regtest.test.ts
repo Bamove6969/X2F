@@ -183,7 +183,8 @@ describe('why a ruling payout waits on its winner, on regtest (ruling-winner-com
     expect(x.reports).toEqual(['winner-offline']);
     // The buyer's app opens and co-signs the mod-built set (Task 15's cosignPolicy would check the statement first).
     const ex = x.store.state.executions[x.code]!;
-    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic) }));
+    // The buyer won: a completed trade's outputs (buyer, fee) each bear their share of the network fee (netfee split).
+    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic), bearsNetworkFee: true }));
     const paid = x.parties.buyer.settle({ kind: 'release', to, builder: 'mod', cosigner: 'buyer' });
     await expect.poll(() => x.parties.mod.peerRelease!('buyer').current, { timeout: 120_000, interval: 1000 }).toBe(true);
     await x.pass();

@@ -511,12 +511,16 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   BuyQuote: [
     {
       text: 'Paid by satoshi_ghost',
-      why: 'OD-4 (spec 11.1): the release network fee comes off the payout, so the row reads "about 0.0001 XMR, taken from the payout".',
+      why: 'OD-4 (spec 11.1), owner 16 Nov: the payout\'s network fee is shared by its receiving outputs, so the row reads "about 0.00005 XMR for your payout, taken from it" (COPY-UNSIGNED).',
     },
     { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
     { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
   ],
   Wallet: [
+    {
+      text: 'X2F never holds your coins. Link the Monero wallets you already use: you get paid to them and fund trades from them.',
+      why: 'Owner, 2026-11-26 (open-items walkthrough): "X2F never takes custody of your coins." in place of "never holds", the Terms\' own word (X2F holds one escrow key). COPY-UNSIGNED.',
+    },
     {
       text: "Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works at once; with a password or authenticator code it waits 24 hours before it can be paid.",
       why: 'Superseded by spec 6.3 "Wallet rules refined" (owner 2026-10-24): the first wallet never waits and a batch shares one wait, so the note under the form follows the account\'s own GET /v1/wallets/rule (ruleNote in screens/wallets-model.ts) instead of one fixed sentence (Task 29).',

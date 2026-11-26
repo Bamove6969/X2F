@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Self-destruct</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <sc-if value="{{isTrade}}" hint-placeholder-val="{{true}}">
+  <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+    <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+      <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Bought from satoshi_ghost</h1>
+      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle</span>
+    </div>
+  </header>
+  <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <section role="note" aria-labelledby="sd-title" style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px 6px; border-radius: 12px; background: var(--surface-raised);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 10 5 10 9s-10 4-10 9"/><path d="M17 3c0 5-10 5-10 9s10 4 10 9"/></svg>
+        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+          <h2 id="sd-title" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">This trade self-destructs on <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">{{date}}</span></h2>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{why}}</p>
+          <button type="button" onClick="{{showPrivacy}}" style="display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; align-self: flex-start;">How deletion works<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+      </section>
+      <section aria-label="Trade summary" style="{{heroStyle}}">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span style="{{chipStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>{{status}}</span>
+          <svg style="{{markStyle}}" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">1.250000</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">$412.50</span> USD at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> / XMR</span>
+        </div>
+        <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px;"><dt style="color: var(--ink-muted);">Paid with</dt><dd style="margin: 0; font-size: 15px; font-weight: 600;">Zelle</dd></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px;"><dt style="color: var(--ink-muted); white-space: nowrap;">{{endLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500; white-space: nowrap;">{{endDate}}</dd></div>
+        </dl>
+      </section>
+      <section aria-labelledby="sd-chat" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <h2 id="sd-chat" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Chat</h2>
+        <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
+          <li style="align-self: flex-start; max-width: 85%; padding: 10px 14px; border-radius: 16px 16px 16px 4px; background: var(--surface-raised);">Escrow is funded. Send the Zelle payment whenever you&#39;re ready.</li>
+          <li style="align-self: flex-end; max-width: 85%; padding: 10px 14px; border-radius: 16px 16px 4px 16px; background: color-mix(in srgb, var(--ink-muted) 22%, var(--surface));">Sent. Memo is the trade code.</li>
+          <li style="align-self: center; margin-top: 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">{{lastEvent}}</li>
+        </ol>
+      </section>
+  </main>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <a href="#" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">Leave a review</a>
+  </footer>
+  </sc-if>
+  <sc-if value="{{isPrivacy}}" hint-placeholder-val="{{false}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+      <button type="button" onClick="{{back}}" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+    </div>
+    <h1 style="margin: 12px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Privacy</h1>
+  </header>
+  <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+      <section aria-labelledby="pv-sd" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <h2 id="pv-sd" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Every trade self-destructs</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">A trade self-destructs 30 days after it ends. Its chat, payment proofs and details are deleted for good, for both traders and for X2F.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">If someone presses the dispute button, the trade self-destructs 90 days after that moment instead. That leaves time for the moderator&#39;s decision and any appeal.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You don&#39;t need to do anything, and there&#39;s nothing to choose. The date is shown at the top of every trade.</p>
+        <div aria-hidden="true" style="border-radius: 12px; background: var(--surface-raised); padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>Trade ends</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">30</span> days</span><span>Deleted</span></div>
+            <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; border-radius: 999px; background: var(--ink);"></span><span style="flex-grow: 1; height: 2px; background: var(--line);"></span><span style="width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--ink);"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>Dispute button</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> days</span><span>Deleted</span></div>
+            <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; border-radius: 999px; background: var(--caution);"></span><span style="flex-grow: 1; height: 2px; background: var(--line);"></span><span style="width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--ink);"></span></div>
+          </div>
+        </div>
+      </section>
+      <section aria-labelledby="pv-train" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <h2 id="pv-train" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Moderator training</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Moderators learn from past disputes. A dispute record is kept for 90 days and used to train moderators. Private details like names, bank details and wallet addresses are blurred automatically. After 90 days it&#39;s deleted. No other copy is kept.</p>
+      </section>
+      <section aria-labelledby="pv-never" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <h2 id="pv-never" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What we never keep</h2>
+        <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 22px;">
+          <li style="display: flex; gap: 12px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg><span>IP addresses. We don&#39;t log them, not even during a dispute.</span></li>
+          <li style="display: flex; gap: 12px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg><span>Who you are. No names, phone numbers or ID checks.</span></li>
+          <li style="display: flex; gap: 12px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg><span>Hidden photo data. Your phone removes location and device details from proofs before they&#39;re sent.</span></li>
+        </ul>
+      </section>
+  </main>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["trade", "privacy"], "default": "trade"}, "trade": {"editor": "enum", "options": ["completed", "disputed"], "default": "completed"}, "$preview": {"width": 390, "height": 876}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { stage: null }; }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const stage = this.state.stage || (this.props.view === 'privacy' ? 'privacy' : 'trade');
+    const disputed = this.props.trade === 'disputed';
+    // Tone: a completed trade is --escrow; a dispute decided by a moderator is --mod.
+    const tone = disputed ? 'var(--mod)' : 'var(--escrow)';
+    return {
+      rootStyle,
+      heroStyle: 'display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + tone + ' 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, ' + tone + ' 35%, transparent);',
+      chipStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + ' ' + (disputed ? '16' : '14') + '%, transparent); color: ' + tone + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;',
+      markStyle: 'flex-shrink: 0; color: ' + tone + ';',
+      isTrade: stage === 'trade',
+      isPrivacy: stage === 'privacy',
+      showPrivacy: () => this.setState({ stage: 'privacy' }),
+      back: () => this.setState({ stage: 'trade' }),
+      date: disputed ? '26 Jan 2027' : '28 Nov 2026',
+      why: disputed
+        ? "That's 90 days after the dispute button was pressed on 28 Oct 2026. Then the chat, proofs and dispute evidence are deleted for everyone, moderators included."
+        : "That's 30 days after it ended. Then the chat, payment proofs and trade details are deleted for both of you and for X2F.",
+      status: disputed ? 'Dispute decided' : 'Completed',
+      endLabel: disputed ? 'Dispute opened' : 'Finished',
+      endDate: disputed ? '28 Oct 2026, 09:40 UTC' : '29 Oct 2026, 14:05 UTC',
+      lastEvent: disputed ? 'The moderator decided the dispute. XMR released to you.' : 'satoshi_ghost released 1.250000 XMR to you.'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -40,6 +40,12 @@ export interface Config {
    */
   legacySecrets: boolean;
   /**
+   * S-085: `X2F_DEVICE_BOUND_SESSIONS` (`off` by default, or `on`): device-bound sessions
+   * (auth/deviceBound.ts). Off, nothing is bound and nothing new is checked (the kill switch).
+   * Optional so a config built without it reads as off.
+   */
+  deviceBoundSessions?: boolean;
+  /**
    * Owner rule p5-7 (Jabber account-change notices): the key ring that seals each Jabber address at
    * rest (`X2F_JABBER_KEYS`, env or file, like the other rings). Optional: without it, or without
    * `xmpp`, the Jabber set-up answers 503 `jabber-unavailable`.
@@ -54,6 +60,12 @@ export interface Config {
    * (`DEV_TRAINING_ID_KEY`) on stagenet and testnet; required on mainnet.
    */
   trainingIdKey: Uint8Array;
+  /**
+   * Lien recovery, review B2: X2F's fee wallet address (`X2F_FEE_WALLET`, optional; the same address
+   * every app and the moderation service have built in). Never accepted or reserved as a creditor's
+   * recovery address. Unset: the moderation service still refuses to sign one (docs/lien-recovery.md).
+   */
+  feeWallet?: string | null;
 }
 
 /**
@@ -271,6 +283,9 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
+  const bound = env.X2F_DEVICE_BOUND_SESSIONS || 'off';
+  if (bound !== 'on' && bound !== 'off') throw malformed('X2F_DEVICE_BOUND_SESSIONS', 'on or off');
+  const deviceBoundSessions = bound === 'on';
   const hasRing = (name: string) => Boolean(env[name] || env[`${name}_FILE`]);
   const jabberKeys = hasRing('X2F_JABBER_KEYS') ? parseKeyring('X2F_JABBER_KEYS', ringSource(env, 'X2F_JABBER_KEYS')) : null;
   const xmpp = parseXmpp(env);
@@ -294,10 +309,13 @@ export function loadConfig(env: Env): Config {
   }
   if (!vapidPairMatches(vapidPublic, vapidPrivate)) throw malformed('X2F_VAPID_PUBLIC', 'not the public half of X2F_VAPID_PRIVATE');
 
+  const feeWallet = env.X2F_FEE_WALLET ? env.X2F_FEE_WALLET.trim() : null;
+  if (feeWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(feeWallet)) throw malformed('X2F_FEE_WALLET', 'a Monero address');
+
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey,
+    loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet,
   };
 }
 
@@ -352,10 +370,11 @@ function parseXmpp(env: Env): XmppConfig | null {
  * `login-seal` seals the login name of a sign-up waiting in its challenge (FU-D, `sealNames`).
  * `terms-signature` seals the signature kept with an account (`sealTermsSignature`).
  * `pay-quote` signs a staff clock-out sheet's quote (Plan 4 Task 33, security review S2).
+ * `ticket-body` seals each support-ticket message at rest (Plan 4 Task 30, tickets/store.ts).
  */
 export function subkey(
   config: Config,
-  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature' | 'pay-quote',
+  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature' | 'pay-quote' | 'ticket-body' | 'session-proof',
 ): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }

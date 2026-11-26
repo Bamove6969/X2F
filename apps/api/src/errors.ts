@@ -30,6 +30,11 @@ export type ApiErrorCode =
   | 'confirm-invalid'
   | 'recovery-session'
   | 'recovery-hold'
+  // S-085 device-bound sessions (auth/deviceBound.ts): the bound cookie is missing or stale, the
+  // signature over the challenge failed, the session has no key to prove.
+  | 'session-proof-required'
+  | 'session-proof-invalid'
+  | 'not-bound'
   // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key,
   // the staged changes are not the ones reviewed, too many changes, the trade partner's account has
   // a temporary problem (never "hold" to the partner). No semicolon inside this type: the web's
@@ -77,8 +82,16 @@ export type ApiErrorCode =
   | 'method-unavailable'
   | 'no-wallet'
   | 'trading-hold'
-  // Plan 4 Task 25 (J-06): an active lien from a dispute; the debtor cannot trade until it is repaid.
+  // Plan 4 Task 25 (J-06): a lien's block on trading; owner option b (16 Nov 2026): no lien blocks now.
   | 'lien'
+  // Lien recovery (owner 16 Nov 2026): a lien already has a rate change request waiting.
+  | 'request-pending'
+  // Review M2: complied (a lien repaid directly) while a trade still carries a signed recovery for it.
+  | 'lien-recovery-in-flight'
+  // Review B1: the take would reserve a lien recovery other than the one the buyer's quote showed.
+  | 'lien-recovery-changed'
+  // Q2/B2: a creditor's recovery address another account holds as a wallet.
+  | 'recovery-address-refused'
   | 'trading-paused'
   | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
@@ -281,7 +294,12 @@ export type ApiErrorCode =
   | 'quote-expired'
   | 'quote-changed'
   // Plan 4 Task 19, re-review 3 m1: a training case changed after the curator opened it.
-  | 'case-changed';
+  | 'case-changed'
+  // Plan 4 Task 30 (support tickets): a closed ticket takes no message (409); the account already has
+  // TICKET_OPEN_AT_ONCE tickets not closed (409); another staff member has taken the ticket (409).
+  | 'ticket-closed'
+  | 'too-many-tickets'
+  | 'ticket-taken';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

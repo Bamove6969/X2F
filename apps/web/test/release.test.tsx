@@ -652,8 +652,10 @@ describe('Released', () => {
     await flush();
     expect(r.host.querySelector('h1')!.textContent).toBe('1.250000 XMR is yours');
     expect(r.host.querySelector('dl')).toBeNull();
-    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's.
-    expect(r.text()).not.toMatch(/X2F fee|1%/i);
+    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's, but the
+    // sentence about X2F's own 1% is the poster buyer's only (review B1, 16 Nov).
+    expect(r.text()).not.toMatch(/X2F fee|1%|X2F pays/i);
+    expect(r.text()).toContain('Before the network fee for your payout.');
     expect(r.text()).toContain('0 of 10');
   });
 
@@ -810,7 +812,7 @@ describe('Released, more', () => {
     answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
     const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: who('satoshi_ghost') }));
     await flush();
-    expect(r.text()).toContain('Before the Monero network fee, which comes off your payout.');
+    expect(r.text()).toContain('Before the network fee for your payout. X2F pays the network fee for its own 1%.');
   });
 
   it('links the explorer only for a well-formed tx hash (Minor 6)', async () => {
@@ -871,6 +873,32 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     const done = room(trade({ role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost'), ...RELEASED }));
     await flush();
     expect(done.host.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with satoshi_ghost?');
+  });
+
+  it('the released screen keeps the trade header with its way back (Review board: "Back to trades"), never a dead end', async () => {
+    answer = (c) =>
+      c.url.endsWith('/review') ? { status: 200, body: { reviewable: false, mine: null, theirs: null, skipped: false, held: false } } : { status: 200, body: { confirmations: 1, target: 10 } };
+    const room = (view: ReleaseTrade) =>
+      render(
+        <MemoryRouter>
+          <ReleaseRoomScreen code={view.code} view={view} escrow={escrowStub([], { phase: 'done' })} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
+        </MemoryRouter>,
+      );
+    const buyer = room(trade({ ...RELEASED, role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost') }));
+    await flush();
+    const header = buyer.host.querySelector('header.x2f-trade-header')!;
+    expect(header).not.toBeNull();
+    expect(header.textContent).toContain('Buying from satoshi_ghost');
+    expect(header.textContent).toContain('Trade K7M2-9QXA-4FTR-8WPN');
+    expect(header.querySelector('a[aria-label="Back to trades"]')!.getAttribute('href')).toBe('/trades');
+    // The header comes first, above the released hero.
+    expect(buyer.host.querySelector('[data-screen="released"]')!.firstElementChild!.contains(header)).toBe(true);
+    buyer.unmount();
+    const seller = room(trade({ ...RELEASED, counterparty: who('mira.k') }));
+    await flush();
+    const sh = seller.host.querySelector('header.x2f-trade-header')!;
+    expect(sh.textContent).toContain('Selling to mira.k');
+    expect(sh.querySelector('a[aria-label="Back to trades"]')!.getAttribute('href')).toBe('/trades');
   });
 
   it('the room picks ReleaseRoomScreen for each Task 24 slot, and nothing else of Task 24\'s', () => {

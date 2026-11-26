@@ -29,6 +29,8 @@ import type { JabberSender } from '../src/jabber/sender.js';
 import { Browser, codeAt } from './helpers/totp.js';
 import { SIG } from './helpers/signature.js';
 import { flexBody, insertOffer } from './helpers/offers.js';
+import { signRecoveryAddress } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
 
 const ORIGIN = 'https://x2f.test';
 const TERMS = '2026-10-17';
@@ -1382,6 +1384,7 @@ describe('review round 2', () => {
         )).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
         out.account = (await deps.db.query<{ j: unknown }>(`${agg('accounts t')} where id = $1`, [accountId])).rows[0]!.j;
+        out.liens = (await deps.db.query<{ j: unknown }>(`${agg('liens t')} where creditor_account_id = $1`, [accountId])).rows[0]!.j;
         return out;
       }
 
@@ -1662,6 +1665,27 @@ describe('review round 2', () => {
           expect(r.statusCode, r.body).toBe(201);
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/account/chat-keys/${(r.json() as { id: string }).id}`) };
         },
+      };
+
+      // Lien recovery (review B1/Q2): the creditor's signed recovery address, signed with its trade
+      // identity from the disputed trade (here the creditor was that trade's seller).
+      ROWS['POST /v1/account/liens/:id/recovery-address'] = async () => {
+        const o = await passkeyWithPassword();
+        const debtor = await seedAccount(deps, { loginName: null });
+        const { code } = await seedTrade(deps, { sellerId: o.id, buyerId: debtor, poster: 'seller' });
+        await sodium.ready;
+        const kp = sodium.crypto_sign_keypair();
+        await deps.db.query(`insert into trade_identities (code, role, sign_public, box_public, proof) values ($1, 'seller', $2, $3, 'x')`, [
+          code, sodium.to_hex(kp.publicKey), sodium.to_hex(sodium.crypto_box_keypair().publicKey),
+        ]);
+        const lien = (await deps.db.query<{ id: string }>(
+          `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+           values ($1, $2, 1000000000000, 0, $3, 1, 1, 'restitution', $4, $4) returning id::text`,
+          [debtor, o.id, code, deps.clock()],
+        )).rows[0]!.id;
+        const statement = { v: 1 as const, fromCode: code, creditorSide: 'seller' as const, address: '4'.padEnd(95, 'L'), issuedAt: deps.clock().toISOString() };
+        const sig = await signRecoveryAddress(statement, kp.privateKey);
+        return { b: o.b, accountId: o.id, fire: () => o.b.post(`/v1/account/liens/${lien}/recovery-address`, { statement, sig }) };
       };
 
       // Owner 2 Nov 2026: switching to a vendor account (a passkey on the account; confirmed with it).

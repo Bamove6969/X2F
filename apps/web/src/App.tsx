@@ -20,6 +20,8 @@ import { PublicRecord, RecordExport } from './screens/profile/Record.js';
 import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { TicketNew, Tickets } from './screens/support/Tickets.js';
+import { TicketThread } from './screens/support/TicketThread.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
 import { AccountBannedRoute, BANNED_PATH } from './screens/account/AccountBanned.js';
 import { PostOffer } from './screens/PostOffer.js';
@@ -42,6 +44,7 @@ import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
 import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { LIENS_PATH, Liens } from './screens/liens/Liens.js';
 import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
 import { AlarmListener } from './alerts/alarm.js';
@@ -325,6 +328,7 @@ export function App() {
             <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path={LIENS_PATH} element={<Liens />} />
             <Route path="/settings/jabber" element={<JabberSetup />} />
             {/* W-021: which events send a Jabber notice. */}
             <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />
@@ -339,6 +343,10 @@ export function App() {
             <Route path="/u/:name/record" element={<PublicRecord />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
+            {/* Plan 4 Task 31: support tickets, from Help, Support (the account owner's). */}
+            <Route path="/support/tickets" element={<Tickets />} />
+            <Route path="/support/tickets/new" element={<TicketNew />} />
+            <Route path="/support/tickets/:id" element={<TicketThread />} />
             {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
             {/* Plan 4 Task 27, D-020: the ban notice (api/client.ts sends a 403 banned here). */}

@@ -251,3 +251,24 @@ test('logged out, the first page is the front door: the Landing board, with no l
   await expect(page).toHaveURL('/login?returnTo=%2Fsell%2FZELLE');
   expect(market).toEqual([]);
 });
+
+test('layout checks: /login help links grid on phone (owner #38, #42)', async ({ page }) => {
+  await signedOut(page);
+  // At 360x800, /login help links are a 2x2 grid with each link >= 44px tall and no sideways scroll (#38, #42)
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/login');
+  const helpNav = page.locator('[data-part="help-links"]');
+  await expect(helpNav).toBeVisible();
+  const links = helpNav.locator('a');
+  await expect(links).toHaveCount(4);
+  const boxes = await Promise.all([links.nth(0).boundingBox(), links.nth(1).boundingBox(), links.nth(2).boundingBox(), links.nth(3).boundingBox()]);
+  for (const b of boxes) {
+    expect(b).not.toBeNull();
+    expect(b!.height).toBeGreaterThanOrEqual(44);
+  }
+  // 2x2 grid
+  expect(Math.abs(boxes[0]!.y - boxes[1]!.y)).toBeLessThan(2);
+  expect(Math.abs(boxes[2]!.y - boxes[3]!.y)).toBeLessThan(2);
+  expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

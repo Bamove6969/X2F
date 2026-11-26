@@ -1,3 +1,4 @@
+import { normalizeTradeCode } from '@x2f/core';
 import { can, type Perm } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Queryable } from '../db/pool.js';
@@ -16,9 +17,17 @@ import { requireStaff } from './guard.js';
  *   of `queryLog`, disputed trades only and never staff, settings, owner, site, pay or news
  *   entries); a member who also holds `log.read.all` (the owner) reads everything.
  * - `GET /staff/v1/log/filters`: the actors and kinds the filters offer, in the reader's scope.
- * - `GET /staff/v1/log/active-disputes`: the board's "Active disputes" list.
- * - `GET /staff/v1/log/integrity` (`log.read.all`, the owner): the chain check (`verifyLogChain`,
- *   the whole chain re-hashed) and the moderation process's log alarm (`site_flags.log_alarm`).
+ * - `GET /staff/v1/log/active-disputes`: the board's "Active disputes" list, newest opened first,
+ *   100 a page (`before`: the last code of the page before; review m7).
+ * - `GET /staff/v1/log/integrity` (`log.read.all`, the owner): what the page shows on load, the
+ *   entry count, the newest entry's id and the moderation process's log alarm
+ *   (`site_flags.log_alarm`). It re-hashes nothing (review m7).
+ * - `POST /staff/v1/log/integrity/check` (`log.read.all`): the chain check, on the owner's
+ *   "Check integrity" only. It is the whole check every time (`verifyLogChain` from the first row,
+ *   never from a checkpoint), so it is exactly as strong as the old check on every load: a check
+ *   from a checkpoint trusts every row before it, and someone who rewrites old rows and re-chains
+ *   them up to the checkpoint would pass it. The continuous watch stays the moderation process's
+ *   own checkpointed check (Task 14), which raises `log_alarm`.
  *
  * What an entry shows (Global Constraints: never chat text, ruling reasons, addresses or IPs): the
  * stored `detail` is re-checked against its action's schema on the way out (`assertDetail`), so a
@@ -32,6 +41,8 @@ import { requireStaff } from './guard.js';
 export const LOG_PAGE = 50;
 /** The largest page a caller may ask for (one more row is read to know whether an older page exists). */
 export const LOG_LIMIT_MAX = 100;
+/** Active disputes a page (review m7: paged, newest opened first). */
+export const ACTIVE_PAGE = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** An entry id: a plain decimal that is a safe integer (review m2: a larger one is a 400, never Postgres's bigint error). */
@@ -195,31 +206,69 @@ export function staffLogRoutes(app: FastifyInstance): void {
     return { scope: all ? 'all' : 'cases', actors: rows.map((r) => ({ id: r.id, name: r.name, role: r.role })), kinds };
   });
 
-  // TODO(review m7): capped at 500 with no paging; page it once more disputes can be open at once.
+  // Review m7: paged, newest opened first. The cursor is the last code of the page before; its
+  // dispute's opening is compared in SQL (never read back into a JS Date, which keeps only
+  // milliseconds of Postgres's microseconds), so the cursor needs no time of its own.
   app.get('/staff/v1/log/active-disputes', { preHandler: cases, config: cfg }, async (req) => {
-    const { rows } = await req.server.deps.db.query<{ code: string; method_id: string; amount_atomic: string; status: string }>(
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    if (Object.keys(q).some((k) => k !== 'before' && k !== 'limit')) throw new ApiError(400, 'bad-request');
+    for (const v of Object.values(q)) if (typeof v !== 'string') throw new ApiError(400, 'bad-request');
+    const s = q as { before?: string; limit?: string };
+    if (s.limit !== undefined && !LIMIT.test(s.limit)) throw new ApiError(400, 'bad-request');
+    const limit = s.limit === undefined ? ACTIVE_PAGE : Number(s.limit);
+    if (limit > ACTIVE_PAGE) throw new ApiError(400, 'bad-request');
+    const db = req.server.deps.db;
+    const latest = 'd.seq = (select max(x.seq) from disputes x where x.code = d.code)';
+    const args: unknown[] = [limit + 1];
+    let after = '';
+    if (s.before !== undefined) {
+      const code = normalizeTradeCode(s.before);
+      if (code === null) throw new ApiError(400, 'bad-request');
+      // The cursor's dispute may have closed since its page was read: it still marks the place.
+      const cur = await db.query(`select 1 from disputes d where d.code = $1 and ${latest}`, [code]);
+      if (!cur.rows[0]) throw new ApiError(404, 'not-found');
+      args.push(code);
+      const at = `(select c.opened_at from disputes c where c.code = $2 and c.seq = (select max(y.seq) from disputes y where y.code = $2))`;
+      after = ` and (d.opened_at < ${at} or (d.opened_at = ${at} and d.code > $2))`;
+    }
+    const { rows } = await db.query<{ code: string; method_id: string; amount_atomic: string; status: string }>(
       `select d.code, t.method_id, t.amount_atomic::text as amount_atomic, d.status
          from disputes d join trades t on t.code = d.code
-        where d.seq = (select max(x.seq) from disputes x where x.code = d.code) and d.status <> 'closed'
+        where ${latest} and d.status <> 'closed'${after}
         order by d.opened_at desc, d.code
-        limit 500`,
+        limit $1`,
+      args,
     );
-    return { items: rows.map((r) => ({ code: r.code, method: r.method_id, methodName: methodName(r.method_id), xmr: r.amount_atomic, status: r.status })) };
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((r) => ({ code: r.code, method: r.method_id, methodName: methodName(r.method_id), xmr: r.amount_atomic, status: r.status })),
+      next: rows.length > limit ? page[page.length - 1]!.code : null,
+    };
   });
 
-  app.get('/staff/v1/log/integrity', { preHandler: requireStaff('log.read.all'), config: { perm: 'log.read.all' } }, async (req) => {
+  const owner = { preHandler: requireStaff('log.read.all'), config: { perm: 'log.read.all' as const } };
+  /** The count, the newest entry and the alarm: cheap reads, no hashing. */
+  const status = async (db: Queryable) => {
+    const flags = await db.query<{ log_alarm: Date | null }>('select log_alarm from site_flags limit 1');
+    const count = await db.query<{ n: string }>('select count(*)::text as n from activity_log');
+    const head = await db.query<{ id: string }>('select l.id::text as id from activity_log l order by l.id desc limit 1');
+    return { entries: Number(count.rows[0]?.n ?? 0), headId: head.rows[0]?.id ?? null, alarm: flags.rows[0]?.log_alarm?.toISOString() ?? null };
+  };
+
+  app.get('/staff/v1/log/integrity', owner, async (req) => status(req.server.deps.db));
+
+  app.post('/staff/v1/log/integrity/check', owner, async (req) => {
+    if (req.body !== undefined && req.body !== null && (typeof req.body !== 'object' || Object.keys(req.body).length > 0)) throw new ApiError(400, 'bad-request');
     const deps = req.server.deps;
     const checkedAt = deps.clock();
-    // TODO(review m7): re-hashes the whole chain on every GET (owner-only); a cached result or a
-    // check from the last verified checkpoint once the log grows.
+    // The whole chain from its first row, every time (see the header): never from a checkpoint.
     const chain = await verifyLogChain(deps.db);
-    const flags = await deps.db.query<{ log_alarm: Date | null }>('select log_alarm from site_flags limit 1');
-    const count = await deps.db.query<{ n: string }>('select count(*)::text as n from activity_log');
+    const s = await status(deps.db);
     return {
       checkedAt: checkedAt.toISOString(),
       chain: chain.ok ? { ok: true, headId: chain.head?.id ?? null } : { ok: false, brokenAt: chain.brokenAt },
-      entries: Number(count.rows[0]?.n ?? 0),
-      alarm: flags.rows[0]?.log_alarm?.toISOString() ?? null,
+      entries: s.entries,
+      alarm: s.alarm,
     };
   });
 }

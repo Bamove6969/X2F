@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buy XMR: flexible offers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+      <a href="BuyMain.dc.html" aria-label="Back to payment methods" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+    </div>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">USD · market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span> / XMR · Example</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buy XMR</h1>
+  </header>
+
+  <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <section aria-label="Amount and payment method" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; align-items: end;">
+        <label for="amt" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You pay
+          <span style="{{amtStyle}}">
+            <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 400; color: var(--ink-muted);">$</span>
+            <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 52px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 500; letter-spacing: 0; outline: none;">
+          </span>
+        </label>
+        <label for="pay-with" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with
+          <select id="pay-with" value="{{method}}" onChange="{{onMethod}}" style="height: 56px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+            <option value="zelle">Zelle</option><option value="paypal">PayPal</option><option value="cashapp">Cash App</option><option value="ach">Bank transfer (ACH)</option>
+          </select>
+        </label>
+      </div>
+      <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
+        <span id="amt-help" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{forLine}}. You have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3</span> completed trades; some offers ask for more on bigger trades.</span>
+      </sc-if>
+      <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
+        <span id="amt-help" role="alert" style="display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>Enter an amount to see each offer's price.</span>
+      </sc-if>
+    </section>
+
+    <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
+      <h2 style="margin: 8px 0 -4px; font-size: 18px; line-height: 24px; font-weight: 600;">{{count}} · best price first</h2>
+      <sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
+        <article aria-label="{{c.name}}" style="{{c.cardStyle}}">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="{{c.nameStyle}}"><span aria-hidden="true" style="{{c.dotStyle}}"></span>{{c.name}}</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.stats}}</span>
+          </div>
+          <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="{{c.priceStyle}}">{{c.priceText}}</span><span style="font-size: 14px; color: var(--ink-muted);">/ XMR</span></span>
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.vsText}}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right;">
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You get</span>
+              <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{c.xmrText}}</span> <span style="font-size: 14px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+            </div>
+          </div>
+          <span style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{c.tierText}} · {{c.speed}}</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
+          <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+              <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-weight: 600;">Not available to you. </span>{{c.reason}}</p>
+            </div>
+          </sc-if>
+          <sc-if value="{{c.ok}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Trade</button>
+          </sc-if>
+        </article>
+      </sc-for>
+      <sc-if value="{{hasHidden}}" hint-placeholder-val="{{false}}">
+        <p style="margin: 0; padding: 12px 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">{{hiddenLine}}</p>
+      </sc-if>
+      <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Sellers and prices are examples. You pay no X2F fee when you take an offer.</p>
+    </sc-if>
+  </main>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="take-title" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -4px;">
+          <h2 id="take-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{sheet.title}}</h2>
+          <button type="button" aria-label="Close" onClick="{{closeSheet}}" style="display: flex; width: 44px; height: 44px; margin-right: -10px; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="take-method" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with</label>
+          <select id="take-method" value="{{takeMethod}}" onChange="{{onTakeMethod}}" aria-describedby="take-adj" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+            <sc-for list="{{sheet.options}}" as="o" hint-placeholder-count="2">
+              <option value="{{o.id}}" disabled="{{o.disabled}}">{{o.label}}</option>
+            </sc-for>
+          </select>
+          <span id="take-adj" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{sheet.adjLine}}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">You pay</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{sheet.pay}}</span></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 56px; padding: 6px 14px; font-size: 14px; line-height: 20px;"><span style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--ink-muted);">Price</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{sheet.price}}</span></span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: right;">{{sheet.tier}}</span></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px;">
+            <span style="font-size: 16px; font-weight: 600;">You get</span>
+            <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">{{sheet.xmr}}</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">{{sheet.instrTitle}}</span>
+          <p style="margin: 0; font-size: 15px; line-height: 22px;">{{sheet.instr}}</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <a href="BuyQuote.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Trade</a>
+          <span style="display: flex; align-items: center; justify-content: center; min-height: 32px; font-size: 13px; line-height: 16px; color: var(--ink-muted); text-align: center;">Next you pick which wallet gets paid. Taking an offer is free.</span>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":390,"height":2084}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { amount: '600', method: 'zelle', takeId: null, takeMethod: 'zelle' };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+
+    const MARKET = 329.90, MINE = 3;
+    const OFFERS = [
+      { id: 'sg', name: 'satoshi_ghost', online: true, stats: 'Online · 340 trades · 99% positive', speed: 'Releases in ~8 min',
+        tiers: [{ from: 20, to: 500, m: 1.0, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the phone number in the trade room. Put the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
+          { id: 'cashapp', name: 'Cash App', adj: 0.5, instr: 'Cash App to the $cashtag in the trade room. Trade code in the note.' }
+        ] },
+      { id: 'mk', name: 'mira.k', online: true, stats: 'Online · 212 trades · 99% positive', speed: 'Releases in ~6 min',
+        tiers: [{ from: 50, to: 300, m: 0.8, min: 0 }, { from: 300.01, to: 2000, m: 0.3, min: 10 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle from a bank account in your own name. Trade code in the memo, nothing else.' },
+          { id: 'ach', name: 'Bank transfer (ACH)', adj: -0.2, instr: 'ACH to the account in the trade room. It can take 1 to 3 business days.' }
+        ] },
+      { id: 'km', name: 'kettle.moss', online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', speed: 'Releases in ~20 min',
+        tiers: [{ from: 100, to: 3000, m: 0.5, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0.3, instr: 'Zelle only. Put the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 2.5, instr: 'PayPal from your own account. Trade code in the note.' }
+        ] },
+      { id: 'nw', name: 'nightowl_44', online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', speed: 'Releases in ~15 min',
+        tiers: [{ from: 50, to: 250, m: 0.2, min: 0 }, { from: 250.01, to: 5000, m: 0.1, min: 25 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the number in the trade room. Trade code in the memo.' },
+          { id: 'cashapp', name: 'Cash App', adj: 0, instr: 'Cash App to the $cashtag in the trade room.' }
+        ] },
+      { id: 'lt', name: 'lowtide_rx', online: true, stats: 'Online · 12 trades · 100% positive', speed: 'Releases in ~30 min',
+        tiers: [{ from: 20, to: 400, m: 0.9, min: 0 }],
+        methods: [
+          { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle with the trade code in the memo.' },
+          { id: 'paypal', name: 'PayPal', adj: 1.5, instr: 'PayPal from your own account.' }
+        ] }
+    ];
+
+    const s = this.state;
+    const variant = this.props.variant === 'hidden' ? 'hidden' : 'greyed';
+    const amt = parseFloat(String(s.amount).replace(/[^0-9.]/g, ''));
+    const valid = !isNaN(amt) && amt > 0;
+    const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+    const usd2 = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = (m) => (m > 0 ? '+' : (m < 0 ? '−' : '')) + Math.abs(m).toFixed(1) + '%';
+    const vsMarket = (m) => Math.abs(m) < 0.001 ? 'At market' : Math.abs(m).toFixed(1) + '% ' + (m > 0 ? 'above' : 'below') + ' market';
+    const methodTag = (x) => x.name + (x.adj ? ' ' + pct(x.adj) : '');
+    const inRange = (x) => !x.max || !valid || amt <= x.max;
+    const rangeText = (x) => x.name + ': up to ' + money(x.max);
+    const CHIP = 'padding: 3px 10px; border-radius: 999px; font-size: 13px; line-height: 18px; ';
+    const quote = (o, mid) => {
+      const meth = o.methods.find((x) => x.id === mid) || o.methods[0];
+      const tier = valid ? o.tiers.find((t) => amt >= t.from && amt <= t.to) : null;
+      const total = (tier ? tier.m : o.tiers[0].m) + meth.adj;
+      const price = MARKET * (1 + total / 100);
+      return { meth, tier, total, price, xmr: valid ? amt / price : 0 };
+    };
+
+    const cards = OFFERS.filter((o) => o.methods.some((x) => x.id === s.method)).map((o) => {
+      const q = quote(o, s.method);
+      let reason = '';
+      if (!q.tier) {
+        reason = o.name + ' trades ' + money(o.tiers[0].from) + ' – ' + money(o.tiers[o.tiers.length - 1].to) + ' only.';
+      } else if (!inRange(q.meth)) {
+        reason = rangeText(q.meth) + '. Pick another way to pay or a smaller amount.';
+      } else if (q.tier.min > MINE) {
+        const open = o.tiers.filter((t) => t.min <= MINE);
+        reason = 'For ' + money(q.tier.from) + ' – ' + money(q.tier.to) + ', ' + o.name + ' asks for at least ' + q.tier.min + ' completed trades. You have ' + MINE + '.' + (open.length ? ' Up to ' + money(open[open.length - 1].to) + ' is open to you.' : '');
+      }
+      const ok = !reason;
+      return {
+        id: o.id, name: o.name, stats: o.stats, speed: o.speed, ok, notOk: !ok, reason,
+        dotStyle: 'width: 8px; height: 8px; border-radius: 999px; box-sizing: border-box; flex-shrink: 0; ' + (o.online ? 'background: var(--escrow);' : 'border: 1.5px solid var(--line);'),
+        cardStyle: 'display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; ' + (ok ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);'),
+        nameStyle: 'display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 22px; font-weight: 600; ' + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
+        priceStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; " + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
+        priceText: usd2(q.price),
+        vsText: vsMarket(q.total) + (q.meth.adj ? ' · incl. ' + methodTag(q.meth) : ''),
+        tierText: q.tier ? 'Tier ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No tier for this amount',
+        xmrText: q.xmr.toFixed(6),
+        chips: o.methods.map((x) => ({ label: inRange(x) ? methodTag(x) : rangeText(x), style: CHIP + (inRange(x) ? 'border: 1px solid var(--line); color: var(--ink);' : 'border: 1px dashed var(--line); color: var(--ink-muted);') })),
+        tradeLabel: 'Trade with ' + o.name,
+        price: q.price,
+        open: () => { const usable = o.methods.filter(inRange); const pick = usable.some((x) => x.id === this.state.method) ? this.state.method : (usable[0] || o.methods[0]).id; this.setState({ takeId: o.id, takeMethod: pick }); }
+      };
+    });
+    const okCards = cards.filter((c) => c.ok).sort((a, b) => a.price - b.price);
+    const badCards = cards.filter((c) => !c.ok);
+    const shown = variant === 'hidden' ? okCards : okCards.concat(badCards);
+    const hiddenCount = variant === 'hidden' ? badCards.length : 0;
+
+    const taking = valid ? OFFERS.find((o) => o.id === s.takeId) : null;
+    let sheet = { open: false, title: '', pay: '', options: [], price: '', adjLine: '', xmr: '', instrTitle: '', instr: '', tier: '' };
+    if (taking) {
+      const tq = quote(taking, s.takeMethod);
+      sheet = {
+        open: true,
+        title: 'Trade with ' + taking.name,
+        pay: usd2(amt) + ' USD',
+        options: taking.methods.map((x) => ({ id: x.id, disabled: !inRange(x), label: inRange(x) ? methodTag(x) + ' · ' + usd2(quote(taking, x.id).price) + ' / XMR' : rangeText(x) })),
+        price: usd2(tq.price) + ' / XMR',
+        adjLine: tq.meth.adj ? tq.meth.name + ' adds ' + pct(tq.meth.adj).replace('+', '') + ' to ' + taking.name + '’s price.' : 'No extra charge for ' + tq.meth.name + '.',
+        xmr: tq.xmr.toFixed(6),
+        instrTitle: taking.name + '’s instructions for ' + tq.meth.name,
+        instr: tq.meth.instr,
+        tier: tq.tier ? vsMarket(tq.total) + ' · tier ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
+      };
+    }
+    const methodName = { zelle: 'Zelle', paypal: 'PayPal', cashapp: 'Cash App', ach: 'Bank transfer (ACH)' }[s.method];
+
+    return {
+      rootStyle,
+      amount: s.amount, method: s.method, valid, invalid: !valid,
+      amtBorder: valid ? 'var(--line)' : 'var(--danger)',
+      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
+      onAmount: (e) => this.setState({ amount: e.target.value }),
+      onMethod: (e) => this.setState({ method: e.target.value }),
+      forLine: valid ? 'Prices for ' + usd2(amt) + ' via ' + methodName : '',
+      count: shown.length + (shown.length === 1 ? ' offer' : ' offers'),
+      cards: shown,
+      hasHidden: hiddenCount > 0,
+      hiddenLine: hiddenCount + (hiddenCount === 1 ? ' more offer isn’t' : ' more offers aren’t') + ' shown. You don’t meet their rules for ' + (valid ? usd2(amt) : 'this amount') + '.',
+      sheetOpen: sheet.open, sheet,
+      takeMethod: s.takeMethod,
+      onTakeMethod: (e) => this.setState({ takeMethod: e.target.value }),
+      closeSheet: () => this.setState({ takeId: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

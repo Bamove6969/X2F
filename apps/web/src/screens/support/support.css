@@ -1,0 +1,34 @@
+/* Support tickets (Plan 4 Task 31): the thread's messages. DESIGN: not drawn (no board yet); kit
+   tokens only, for design to restyle. */
+.x2f-ticket-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-ticket-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-3);
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-ticket-msg[data-from='staff'] {
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-ticket-msg__who,
+.x2f-ticket-msg__body {
+  margin: 0;
+}
+
+.x2f-ticket-msg__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

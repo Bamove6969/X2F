@@ -1,5 +1,5 @@
 import { addressEnd } from '@x2f/accounts';
-import { apply, isRulingKind, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
+import { CLOSED_STATES, apply, isRulingKind, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -7,6 +7,7 @@ import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
+import { settleRecovery } from '../disputes/recovery.js';
 import { eraseReversedReviews } from '../reviews/store.js';
 import { countActionTimes, countFastPayment } from '../traders/actionTimes.js';
 import { countCancel, countTradeTotals } from '../traders/tradedTotal.js';
@@ -438,12 +439,28 @@ export async function applyEvent(
         // R-042: a payment sent in under half the time to pay counts toward the buyer's Fast badge (once).
         await countFastPayment(client, code);
       }
+      // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a trade's reserved recovery is
+      // recorded only once the completed-trade payout was seen on chain (`settled` into
+      // `released`: rule 4, evidence before enforcement); any other end releases it.
+      // Review M2: a refund seen on chain releases it; a cancel with an escrow keeps it while late
+      // coins could still be ruled for the buyer.
+      const recoveryLogs =
+        next.state !== prev.state && CLOSED_STATES.includes(next.state)
+          ? await settleRecovery(
+              client,
+              code,
+              e.type === 'settled' ? (next.state === 'released' && (e.kind === 'release' || e.kind === 'dispute-buyer') ? 'completed' : 'refunded') : 'closed',
+              next.escrowAddress !== null,
+              now,
+            )
+          : [];
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,
       // so it is held only for the commit, never while `within` or anything else is awaited.
       const action = `trade.${e.type}` as const;
       await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: code, action, detail: tradeLogDetail(record, action) });
+      for (const l of recoveryLogs) await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: code, action: l.action, detail: l.detail });
       await client.query('commit');
     } catch (err) {
       await client.query('rollback');

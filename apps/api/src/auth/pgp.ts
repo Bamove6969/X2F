@@ -1036,9 +1036,21 @@ export function pgpAddKeyRoutesAt(
     preHandler: preHandlerAsyncHookHandler[];
     config: Record<string, unknown>;
     inTx(c: Queryable, req: FastifyRequest, fingerprint: string): Promise<void>;
+    /**
+     * The start's answer also names the pasted key's `fingerprint` (lower-case hex): the staff site
+     * builds its `add-pgp-key` tap from it and shows it to compare with the PGP app before the tap.
+     * It is the caller's own pasted key, so it tells them nothing new.
+     */
+    startNamesFingerprint?: boolean;
   },
 ): void {
-  app.post(`${base}/start`, { bodyLimit: PGP_BODY_LIMIT, config: o.config, preHandler: [...o.preHandler, inspectNewKey] }, addKeyStart);
+  app.post(`${base}/start`, { bodyLimit: PGP_BODY_LIMIT, config: o.config, preHandler: [...o.preHandler, inspectNewKey] }, async (req) => {
+    const challenge = await addKeyStart(req);
+    if (o.startNamesFingerprint !== true) return challenge;
+    const key = inspected.get(req);
+    if (!key) throw new ApiError(400, 'bad-request');
+    return { ...challenge, fingerprint: key.fingerprint.toLowerCase() };
+  });
   app.post(`${base}/finish`, { config: o.config, preHandler: o.preHandler }, async (req) => {
     const deps = req.server.deps;
     const b = body(req);

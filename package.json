@@ -10,6 +10,7 @@
     "node": ">=24.22.1 <25"
   },
   "scripts": {
+    "copy-inventory": "tsx tools/copy-inventory.ts",
     "test": "vitest run",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "tokens": "tsx tools/tokens-to-css.ts",
@@ -20,6 +21,7 @@
     "check": "bash tools/check.sh",
     "demo": "X2F_DEMO=1 tsx tools/demo/demo.ts",
     "demo:stop": "tsx tools/demo/stop.ts",
+    "demo:web": "X2F_DEMO=1 tsx tools/demo/web-redeploy.ts",
     "demo:code": "tsx tools/demo/codes.ts",
     "demo:reply": "tsx tools/demo/reply.ts"
   },

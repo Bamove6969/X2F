@@ -24,6 +24,8 @@ export interface DemoSecrets {
   modSigningPublic: string;
   modSigningSecret: string;
   modKeystoreKey: string;
+  /** The API's training-id key (X2F_TRAINING_ID_KEY, base64 of 32 bytes). */
+  trainingIdKey: string;
   feeWallet: string;
   pgPassword: string;
 }
@@ -84,6 +86,7 @@ export async function makeSecrets(): Promise<DemoSecrets> {
     modSigningPublic: sodium.to_hex(mod.publicKey),
     modSigningSecret: Buffer.from(mod.privateKey).toString('base64'),
     modKeystoreKey: key32(),
+    trainingIdKey: key32(),
     feeWallet: await throwawayAddress(),
     pgPassword: randomBytes(18).toString('base64url'),
   };

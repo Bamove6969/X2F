@@ -53,8 +53,7 @@ export const CANT_DO_CODES = [
   // trade event refused because the partner's account has a temporary problem (no words yet).
   'approval-unavailable',
   'too-many-changes',
-  // Notes on traders (review 2026-11-09 m4): the account's note cap. API only so far, no words here
-  // (no notes screen yet).
+  // Notes on traders (review 2026-11-09 m4): the account's note cap (notesCantDoText).
   'too-many-notes',
   'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
@@ -105,11 +104,16 @@ export const CANT_DO_CODES = [
   // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
   'site-claimed',
   'fingerprint-claimed',
+  // Plan 4 Task 30: the account already has TICKET_OPEN_AT_ONCE support tickets not closed (Tickets.tsx).
+  'too-many-tickets',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Lien recovery (review B1, provisional owner answers 17 Nov 2026).
+  'lien-recovery-changed': 'the lien recovery the quote showed moved before the take; the quote reads it again and asks for a fresh tap (inline, like price-changed)',
+  'recovery-address-refused': "a creditor's recovery wallet that another account holds; they pick another wallet (inline on the liens screen)",
   // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
   // app, Plan 4 Task 16).
   'tap-invalid': 'a staff security-key tap (staff app only)',
@@ -145,6 +149,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'confirm-profile': "an input check: the moderator must tick that the archive is the trader's profile on the site (staff app only)",
   'reviewer-own-key': "a moderator's approval of a claim backed by their own login key (staff app only; the staff app shows it with CantDoThat)",
   'bad-request': 'a malformed request (a fault)',
+  // S-085 device-bound sessions: handled by the API client (renew the bound cookie and retry, or end the session), never shown.
+  'session-proof-required': "a bound session's short-lived cookie ran out: the client renews it with the device key",
+  'session-proof-invalid': 'this browser could not prove the session key: the session ends',
+  'not-bound': 'the session has no device key: nothing to renew',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
@@ -321,6 +329,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'settled-elsewhere': 'the escrow already settled',
   stopped: 'the escrow stopped (a fault)',
   'wrong-terms': 'an escrow safety check on this device',
+  // Plan 4 Task 30: support tickets. A closed ticket is its own state (the trader opens a new one);
+  // another staff member holding a ticket is a staff answer.
+  'ticket-closed': 'the ticket was closed (its own state; TicketThread.tsx offers a new ticket)',
+  'ticket-taken': 'a staff answer: another staff member has taken the ticket (staff app only)',
 };
 
 export function isCantDoCode(code: unknown): code is CantDoCode {
@@ -362,6 +374,8 @@ export const CANT_DO_TITLE = {
   teamFull: 'Your team is full',
   // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
   changes: "This change can't be saved yet",
+  // Job 1c (owner S-094, p7-8): notes on traders. COPY-UNSIGNED
+  notes: "This note can't be saved",
 } as const;
 
 /**
@@ -770,6 +784,14 @@ export function holdApproveText(when: string): string {
   return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
 }
 
+/** Plan 4 Task 30: TICKET_OPEN_AT_ONCE tickets not closed (409 `too-many-tickets`). */
+export const TOO_MANY_TICKETS_CODE = 'too-many-tickets' satisfies CantDoCode;
+/** COPY-UNSIGNED */
+export const TOO_MANY_TICKETS = {
+  title: "You can't open another ticket yet",
+  body: (n: number) => `You can have ${n} tickets open at a time. Close one you no longer need, or wait for X2F to answer.`,
+} as const;
+
 /** The member limit's code (Plan 2 Task 18). */
 export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
 
@@ -812,6 +834,29 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return "This device logged in with just a username and password, so it can't invite team members. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
+  }
+}
+
+/**
+ * Job 1c (owner S-094, p7-8): what a refused note says. `max` is the account's note cap the API
+ * sent with `too-many-notes`. COPY-UNSIGNED // DESIGN: wording
+ */
+export function notesCantDoTitle(code: CantDoCode): string {
+  if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
+  return CANT_DO_TITLE.notes;
+}
+
+export function notesCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
+  switch (code) {
+    case 'too-many-notes':
+      return `Your account has ${o.max ?? 500} notes, the most it can keep. The account owner can delete old notes to add more.`;
+    case 'owner-only':
+      return 'Only the account owner can delete a note. Team members can add notes, as their boxes allow.';
+    case 'forbidden':
+      return "Your boxes don't include notes on traders. The account owner can tick them for you.";
+    default:
+      return teamCantDoText(code);
   }
 }
 

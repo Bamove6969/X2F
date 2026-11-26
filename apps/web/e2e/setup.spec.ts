@@ -52,7 +52,7 @@ async function addAuthenticator(page: Page): Promise<void> {
   await page.click('[data-part="totp-continue"]');
 }
 
-const TERMS_VERSION = '2026-11-25c';
+const TERMS_VERSION = '2026-11-26';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -175,6 +175,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     return r.fulfill({ status: 204 });
   });
   await page.route('**/v1/wallets/rule', json({ firstWallet: s.wallets.length === 0, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
+  await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   await page.route('**/v1/wallets', (r) => {
     if (r.request().method() === 'GET') return json(s.wallets)(r);
     record('wallets', r);
@@ -882,7 +883,7 @@ for (const v of PHONES) {
     await expect(page.locator('.x2f-sign__pad')).toHaveCount(0);
     // Design 9 Nov (p11-15): the intro and the button's words.
     await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
-      "Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll highlight what changed to make it easy to spot, and prompt you to review and agree before continuing.",
+      "Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll show you a short summary of what changed, and prompt you to review and agree before continuing.",
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toHaveCount(0);
@@ -914,6 +915,19 @@ test.describe('review fix round', () => {
     await page.fill('#pw', 'Quiet-harbour-58');
     await page.fill('#pw2', 'Quiet-harbour-58');
   }
+
+  test('at 1280x800 the /setup/pgp-key textarea is wider than 480 px (owner #26)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await stubApi(page);
+    await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
+    await page.click('[data-part="method-continue"]');
+    const pub = page.locator('#pub');
+    await expect(pub).toBeVisible();
+    const pubBox = (await pub.boundingBox())!;
+    expect(pubBox.width).toBeGreaterThan(480);
+  });
 
   test('I1: a key already on another account says so, links back to the key and to Log in, and offers no endless new message', async ({ page }) => {
     await stubApi(page);

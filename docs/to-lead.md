@@ -1,0 +1,1075 @@
+# Design → lead
+
+Messages from the design session to the lead. Newest at the bottom, each entry dated. The lead reads this file on `wip/design-brief`.
+
+## 2 Nov 2026, ~15:10 UTC
+
+Received your four decisions. Logged in `docs/design-hold-model-2026-11-02.md` (last section) and applied to the boards; canvas v112, this commit.
+
+**Boards changed**
+- MyOffers, MyOffers-Wide: hold notice now "Nobody can see or take them until the hold ends. A moderator wrote in your dispute what to do to get trading back. Trades already started carry on." No date. Sample "Cash by mail · Fixed price" offer now follows the market (no fixed-price offers exist).
+- Fold-MyOffers: same sample fix.
+- ModCase: account action "Freeze trading on the losing side · only if they ignore the dispute or the ruling · no end time · write what they must do to get it back". Full freeze tooling is Plan 4; this is a placeholder for the rule.
+- No other board shows a hold "during a dispute". Lien-Notice and Appeal-Notice describe liens and appeals, not trading freezes; unchanged.
+
+**OPEN list (§5 of the handoff): what blocks design**
+Nothing blocks. Boards exist for every item with an OPEN box. The ones whose answer changes a board, in priority order:
+1. §5 #1 member-permission presets (MemberPermissions shows a draft mapping).
+2. §5 #9 and #10 ProofBlur: can the buyer remove an automatic blur; warn when amount or memo is blurred; blank code, amount and time on templates.
+3. §5 #12 SetupTerms: step "of 5" or "of 6".
+4. §5 #2 "Stay logged in?" wait (draft 2 min).
+5. §5 #7 incident-ID format.
+The rest (#3, #4, #5, #6, #8, #11, #13) change copy only or are moot.
+
+**New question for the owner, from today's rule**
+- ModCase: should the freeze be a ruling-time option at all, or only a separate action taken later when someone ignores the dispute or ruling? Design drew it as an option on the ruling card for now, with the note above.
+
+**Nothing else waiting.** Send the screenshot pack when ready; I'll review against v2 and reply here.
+
+## 2 Nov 2026, ~19:40 UTC
+
+Applied the three answers (freeze as a separate later action, add-only blur with amount/memo warning, 2 min prompt). Canvas v113. Boards: ModCase, ProofBlur (+Wide), SessionExtend (+Wide). Logged in the decisions file.
+
+Also in this commit: `--mod`/`--team` tokens added to the THEMES of 10 boards that lacked them (no visual change).
+
+**Cohesion pass under way.** All 126 boards rendered night and day and reviewed against v2: 41 P1, 168 P2, 65 P3 findings. Fixes are being applied now; expect a larger board commit and a new canvas version by 3 Nov. Two new owner questions came out of it (bans with an end date or not; "On hover" vs "On tap" for badge visibility). A progress page for the owner is published separately.
+
+## 6 Nov 2026, ~01:30 UTC
+
+**Cohesion pass pushed.** Canvas v117. 124 boards changed, 4 new (Settings, Settings-Wide, FAQ, FAQ-Wide; new canvas row at the bottom, draft copy). Findings and per-board fix logs in `docs/design-cohesion-findings-2026-11-05/`; the shared standards in `docs/design-fix-standards-2026-11-05.md`. Handoff: `docs/DESIGN-HANDOFF-2026-11-06.md` (state, P1/P2/P3 table, the big board changes to re-read before copying, OPEN list, what waits on you).
+
+**Build review** of the four packs on main: `docs/design-review-build-2026-11-05.md` (pushed earlier today).
+
+**Boards the build team should re-read before copying** (changed shape, not just copy): Review, BuyerPaidWaiting (+Wide), SellerConfirm, DisputeRuling, DisputeRoom, Lien-Notice (+Wide), Team (+Wide), TeamRefusal, MemberPermissions (+Wide), OfferAd (+Wide), FlexOffer-Quote (+Wide), TradeFund, SessionLength (+Wide), Devices (+Wide), StaffSettings, StaffOverview, ModCase, Fold-Tabletop, Fold-Trade.
+
+**COPY-UNSIGNED:** every sentence listed under "COPY-UNSIGNED" in the five `fixed-*.md` files, plus all of Settings and FAQ.
+
+**Not reviewed by design yet:** the proof pop-ups (your items 63/64/65). Send them in the next pack.
+
+**Owner questions still open:** presets; template blanking; SetupTerms step count; incident ID; bans with an end date; "On hover" vs "On tap". Also: Matrix/Telegram addresses, password-only changes applying on their own after 24 h, PostOffer vs FlexOffer-Post, SessionLength tiles vs drop-down.
+
+Nothing in the design window needs the owner.
+
+READY TO CLEAR
+
+## 6 Nov 2026, final
+
+Handoff section 6 added: two jobs (three last board redesigns; design system artifact to v2) were started and stopped for the clear before touching any file. Branch and canvas v117 match. Next design session starts there.
+
+READY TO CLEAR
+
+## 6 Nov 2026, ~evening UTC
+
+**Handoff §6 job 1 pushed: the last three board redesigns.** Canvas v118.
+- **Ban-Notice (+Wide):** now a full-screen account notice built like Lien-Notice: close + "Account notice", danger hero (chip, headline, lead) with the Ends / Reason block inside it, "What this means" card, "Think this is a mistake?" with Matrix / Telegram rows (neutral icons, no moderator purple), pinned OK (site ban with open business adds "Log out" under it). `ends` tweak: dated "14 Nov 2026, 14:05 UTC" vs "Permanent · until a moderator lifts it". Both OPEN boxes kept (timed bans; Matrix/Telegram addresses). No more bottom sheet / centred dialog. Wide site ban keeps the logged-out header (no rail).
+- **SignupSecurity (+Wide):** setup context line "Set up your account · Takes about 2 minutes." and the five-bar stepper (done = ink) as on SetupUsername. This one screen covers steps 1 to 3 (username, login, password), so it reads "Steps 1–3 of 5" with three bars ink.
+- **FlexOffer-Quote (+Wide):** app in its own `position: relative` block (the CancelRequest-Wide wrapper) so the sheet / dialog scrim covers only the app; "Sellers and prices are examples." and the market line's "· Example" moved to Design notes below the app; the in-app line is now "You pay no X2F fee when you take an offer."; digits in every trader stats line are mono ("340 trades", "Seen 40 min ago").
+
+**COPY-UNSIGNED (Ban-Notice):** "Your account can't start or join new trades." · "You can use your account again when the ban ends." · "There is no end date." · "Account banned" (chip, permanent site ban) · "You can appeal. Message a moderator if you don't agree with this decision or feel it was made in error." · "Message a moderator on Matrix" · "Permanent · until a moderator lifts it".
+
+Next: job 2, the X2F design system artifact to v2.
+
+## Owner questions 6 Nov
+
+Every open owner question design holds, as of canvas v118. Nothing on this list has been answered yet. Each has an OPEN box on its board. BLOCKING means a board can't be final, or the build can't copy it, until the owner answers.
+
+**1. Member-permission presets: BLOCKING**
+- Question: what does each of the four team presets switch on?
+- Options: the draft mapping on MemberPermissions (Chat only = chat; Offers manager = chat + offers; Trade handler = chat + accept trades + mark paid; Everything allowed = all, including Release XMR), or the owner's own mapping.
+- Recommendation: the draft mapping. Keep Release XMR only in Everything allowed, with its warning.
+- Blocks: MemberPermissions (+Wide) and building team permissions.
+
+**2. Blur templates: also blank the trade code, amount and time? LATER**
+- Question: should the stored blur templates also blank the trade code, amount and time, as well as names and account numbers?
+- Options: yes, blank all three; or blank names and account numbers only.
+- Recommendation: yes. A template should hold no detail from any real trade.
+- Blocks: the ProofBlur template note and the template database. Nothing on screen changes.
+
+**3. SetupTerms step count: BLOCKING**
+- Question: does agreeing to the Terms count as an onboarding step?
+- Options: "of 5" (Terms is a gate before step 1) or "of 6" (Terms is step 1).
+- Recommendation: "of 5". Terms is a yes/no gate, not setup work.
+- Blocks: the step label on every Setup* board, SignupSecurity and SetupPgpChallenge ("3 of 5 · part 2").
+
+**4. Incident ID: LATER**
+- Question: what does an incident ID look like, and does the held account also see the incident pop-up?
+- Options: format, a short code like `INC-7Q4K` (drawn) or a date-based one like `2026-11-06-014`. Pop-up, partners only (drawn) or partners and the held account.
+- Recommendation: the short code; partners only. The held account already gets the hold notice.
+- Blocks: TradeTechIssue copy only.
+
+**5. Bans with an end date: BLOCKING**
+- Question: does a ban end on a date, or last until a moderator lifts it?
+- Options: timed ("Ends 14 Nov 2026, 14:05 UTC", the current default); or not timed ("Permanent · until a moderator lifts it"); or both, chosen per ban by the moderator.
+- Recommendation: both, per ban. A moderator picks timed or permanent when banning. Ban-Notice already draws both (`ends` tweak).
+- Blocks: Ban-Notice (+Wide) and the moderator ban tool.
+
+**6. Badge visibility middle option: LATER**
+- Question: what is the middle choice between always showing and hiding a badge?
+- Options: "On hover" (the spec's word), "On tap" (phones can't hover), or drop the middle option.
+- Recommendation: drop it. Hover and tap behave differently, and two choices are clearer.
+- Blocks: BadgeSettings only.
+
+**7. Matrix and Telegram addresses: LATER**
+- Question: what are X2F's real Matrix and Telegram addresses?
+- Options: none. The owner supplies them. `#x2f-help:example.org` and `@x2f_help` are examples.
+- Recommendation: none. We need the real ones before launch.
+- Blocks: Ban-Notice, HoldChange, TradeTechIssue and Maintenance copy, at launch.
+
+**8. Password-only changes after 24 h: BLOCKING**
+- Question: after the 24 h wait, do password-only changes to login methods, wallets or team apply on their own?
+- Options: apply on their own; or need a moderator or the recovery code to confirm.
+- Recommendation: apply on their own, as HoldChange shows. Anyone logged in can cancel during the 24 h, and the owner is alerted on every channel.
+- Blocks: HoldChange (+Wide) and the hold logic in the build.
+
+**9. Which "Post an offer" ships: BLOCKING**
+- Question: which offer form do we build?
+- Options: PostOffer (one price ± % per currency, simpler) or FlexOffer-Post (bands per currency, each with its own ± %).
+- Recommendation: FlexOffer-Post. The owner's band rules (whole units, next band +1, up to 5 currencies) only fit there.
+- Blocks: building offer posting; question 11 depends on it.
+
+**10. Session length: tiles or drop-down: LATER**
+- Question: the owner said "drop-down, nothing pre-selected". Design drew four tiles instead. Which one?
+- Options: tiles (one tap, choices visible), or a drop-down (the owner's word).
+- Recommendation: tiles, still with nothing pre-selected. This is a visual call, but it changes the owner's word, so we're asking.
+- Blocks: SessionLength (+Wide), SignupSecurity, Devices. The build can start with either one.
+
+**11. New: pairing payment methods with currencies: BLOCKING (with 9)**
+- Question: when a vendor posts an offer, do they pick payment methods first and then the currencies each one takes, or currencies first and then the methods for each?
+- Options: method-first (a card per method, the currencies it takes ticked inside, instructions per currency only where they differ); or currency-first (a USD | EUR switch, with methods and instructions under each currency, as FlexOffer-Post draws now).
+- Recommendation: method-first, the same as claude2. Instructions belong to the method and differ by currency only sometimes (bank transfer: USD routing vs EUR IBAN). Bands stay per currency in their own section with the USD | EUR switch.
+- Blocks: FlexOffer-Post (+Wide) redraw (design, about 1 day after the answer) and the offer form build.
+
+**12. New: the glance says "Pay now" while the trade room says wait for escrow: BLOCKING (build fix, rule check)**
+- Question: may a trade glance (Desktop list, Fold cover, notifications) ever say "Pay now" before escrow is secured?
+- Options: no, the glance always shows the trade room's own state ("Securing escrow" first, "Pay now" only once escrow is secured); or keep a separate, earlier glance.
+- Recommendation: no. The glance must mirror the trade room. Telling a buyer to pay before the coins are locked is the one mistake that loses them money. The boards already draw it this way: "Pay now" is the escrow-secured state on Desktop and the Fold boards. This is a build bug to fix, and the owner only needs to confirm the rule.
+- Blocks: the glance in the build. No board change is needed.
+
+**Still COPY-UNSIGNED** (unchanged until signed): every COPY-UNSIGNED line in the five `fixed-*.md` files, all of Settings and FAQ, and the Ban-Notice lines listed above (6 Nov evening).
+
+## 6 Nov 2026, late
+
+**Handoff §6 job 2 done: X2F design system is at v2** (https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM, version 6).
+- `tokens.json` v2: added colours `mod`, `team`, `scrim`; type styles `screen-title`, `result-headline`, `sheet-title`, `hero-number`, `meta`; spacing `space-3`, `space-5`, `space-8`; `radius-lg`. Usage notes were rewritten to match v2 (selection in ink, orange only for the primary, the XMR unit and links).
+- `README.md` rewritten to v2: no shadows and surface steps, one hero, ink selection, state shown three ways, key-mark placements, the wide rail and grid, dates and durations, the terms table, no email, Draft copy and OPEN, design notes below the app.
+- 15 live components, each with a guideline and a night + day preview whose styles are copied from the boards: KeyMark, StatusChip, HeroBlock, Button, Switch, Callout, OpenBox, Stepper, Timer, Amount, ListRow, FormField, Card, EmptyState, NavRail. The Cover is unchanged.
+- Not done: no React bundle. The cards are static HTML and boards copy their inline styles, as before. The cover still draws the v1 palette, which is unchanged in v2.
+
+Section 6 of the handoff is complete. Next: the proof pop-ups (63/64/65) when you send them.
+
+## 6 Nov 2026: design review, proof pop-ups 63/64/65
+
+Reviewed from code: `origin/wip/third-p5-proof-popups` @ `e5780990`. Files: `apps/web/src/screens/proof/ProofPrompts.tsx` (PP below), `apps/web/src/proof/uploaderChecks.ts`, and the kit pieces they use (`ui/Sheet.tsx`, `ui/Notice.tsx`, `ui/Button.tsx`, `ui/ui.css`, `screens/screens.css`). The boards are ProofBlur (+Wide), SellerConfirm, Warn-Release and CantDoThat.
+
+**Verdict:** the structure is right. Each pop-up is the CantDoThat sheet pattern (a phone sheet, a centred dialog on Desktop, no X, closing it goes back), each has one primary, the own-blur warning is a caution callout announced as a status, and nothing blocks a send that the owner said to allow. One P1 (the warning must not depend on the text box styling being wrong), five P2, three P3. Nothing here is a wording or rule call by design; those are listed separately as owner questions.
+
+**P1**
+- **P1-1 · the text box on 64 is invisible against the sheet.** File and line: PP:91 uses `.x2f-input` (screens.css:56): `background: var(--x2f-surface)`, the same colour as the sheet (ui.css:305). So the box is only a 1px line on an identical ground, and its focus ring is orange (`monero-ink`, offset 1). Fix (v2 §11, also build-review X4): `.x2f-input { background: var(--x2f-surface-raised); padding: 0 14px; min-height: 48px; border-radius: var(--x2f-radius-sm); }` and `textarea.x2f-input { padding: 12px 14px; min-height: 96px; }`. `.x2f-input:focus-visible { outline: 2px solid var(--x2f-ink); outline-offset: 2px; }`. This is kit-wide, so every form gets it.
+
+**P2**
+- **P2-1 · the tile doesn't say anything is wrong.** PP:33-39 InfoTile is the neutral raised tile with an info icon, which on CantDoThat means "X2F rule, nothing wrong with you". Here the app found a problem with the screenshot. Fix: a toned tile for both 63 and 64: `.x2f-icon-tile[data-tone='caution'] { background: color-mix(in srgb, var(--x2f-caution) 14%, transparent); color: var(--x2f-caution); }`. Use `<Icon name="clock">` for 63 (wrong date) and `<Icon name="alert">` for 64 (no amount). Pass `data-tone="caution"` from PP:35.
+- **P2-2 · backdrop colour.** ui.css:298-303 uses `ground` at 0.8 opacity. v2 uses `--scrim` (night `rgba(0,0,0,0.6)`, day `rgba(18,22,28,0.45)`). Fix: `.x2f-sheet-backdrop { background: var(--x2f-scrim); opacity: 1; }`, with `--x2f-scrim` added to the theme tokens. Kit-wide.
+- **P2-3 · 64 has no way back except a gesture.** PP:82 `closeButton={false}`. The handle is hidden on Desktop (ui.css:697), so leaving without sending takes Escape or a backdrop click, and "Choose another screenshot" leaves the editor. Fix: a third button under the two, `<Button variant="tertiary" onClick={onClose}>Back</Button>`. Its word is COPY-UNSIGNED.
+- **P2-4 · 64's buttons on Desktop.** PP:93-98 stacks both full width inside the 520 dialog. v2 §18: wide actions sit inline. Fix: on `[data-wide='dialog']` at ≥1000px, wrap the buttons in `.x2f-sheet__actions { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 12px; }`, primary 48h min-width 160. Phone stays stacked, primary first. The same applies to 63's single button (right-aligned, 48h).
+- **P2-5 · the item 65 disclaimer is a loose muted line.** PP:116-121 uses `.x2f-note` (13px muted, screens.css:106). v2: warnings go in a callout. Fix: on the seller's proof card (Task 16), put it in the existing caution callout under "Screenshots can be faked." (SellerConfirm), as its second sentence. Don't add a separate `<p>`. Placement only; the sentence itself is COPY-UNSIGNED.
+
+**P3**
+- **P3-1 · dialog width.** ui.css:697 sets 520px. CantDoThat-Wide and the v2 design system use 480. Fix: `width: 480px` (it also affects LoginApprove-Wide).
+- **P3-2 · no character count on 64.** PP:91 caps at 500 silently. Fix: a helper under the box, `<span class="x2f-help"><mono>{n}</mono> of <mono>500</mono></span>` (13/18 muted, digits mono).
+- **P3-3 · the disabled Send proof gives no reason.** PP:93 is disabled until text is typed. Fix: `aria-describedby` from the button to the helper in P3-2, so a screen reader hears why it is disabled.
+
+**For the owner (wording and rules; design's recommendation beside each, nothing changed in code)**
+- 63, block or allow? `uploaderChecks.ts:6` OWNER-Q. Recommendation: block, as the owner's "redo proof and resubmit" reads. Blocks: Task 15 wiring.
+- 63, show the dates? Recommendation: add one line under the owner's sentence, "Your screenshot shows <date>; this trade started <date>." (dates in mono). It tells people what to fix. It's new wording, so it's the owner's call.
+- 64, required, and who reads it? PP:61-62 OWNER-Q. Recommendation: required (the owner's "leave an explanation"). It goes to the seller with the proof, and to a moderator if there's a dispute. Not to detector feedback.
+- Hidden-by-you text, PP:107: when both are hidden, two sentences each ending "the seller may not be able to…". The ProofBlur board's draft is one sentence: "The amount or memo is hidden, so satoshi_ghost may not be able to check your payment." Recommendation: one sentence that names the seller, using "memo" (the board's word, not "the note with this trade's code"). This is wording, so it's the owner's call.
+- All five strings (PP:18-28), the titles "Screenshot not current" and "Amount not found", the label "Your explanation", and the buttons "Redo proof", "Send proof" and "Choose another screenshot" are COPY-UNSIGNED.
+
+## 7 Nov 2026: owner answers 6-7 Nov applied (canvas v119)
+
+All COPY-UNSIGNED. Each line is for the owner to sign or change, and design's recommendation is the wording shown.
+
+**Boards updated in v119:** DisputeRoom, DisputeOpen, OfferAd (+Wide), FlexOffer-Post (+Wide), PostOffer, Profile, ProfileVisibility, Settings (+Wide), SellerConfirm, Warn-Release (+Wide), ProofBlur (+Wide), Feedback (+Wide), BuyerPaidWaiting (+Wide), Refunded (+Wide), BuyerPay, Desktop, Ban-Notice (+Wide), HoldChange (+Wide), MemberPermissions (+Wide), Devices (+Wide), SessionExtend (+Wide). Answered OPEN boxes are now DECIDED asides that name the Q number.
+
+### Final wording, for the owner to sign
+- **Q38, dispute hourglass** (DisputeRoom; also DisputeOpen before filing): label "Until a moderator steps in". Countdown "23 h 12 min" with an hourglass icon. Line: "A moderator steps in within 24 h at the most. Usually it's much sooner." The 48 h deadline is no longer shown. The old "A moderator usually replies within 4 h" on DisputeOpen is replaced by the same line.
+- **Q63, offer card and profile:** "275.4 XMR traded to date". Design call: rounded down to one decimal, because it's a reputation figure and rounding down never overstates. Under 0.1 XMR, no line shows. Q64: imported volume shows as one line per site, "Imported from LocalMonero: 120.0 XMR". **New OPEN for the owner (ProfileVisibility):** does the "traded to date" total also include imported volume? Recommendation: no. X2F trades only, with each site on its own line.
+- **Q24/Q25, a currency with no rate** (design's pick: show it, don't hide it): in the currency dropdown it stays in the list, greyed, can't be picked, with the tag "No rate right now". It comes back the moment a rate returns. Why: people see their currency exists and come back for it; hiding it looks like X2F dropped it.
+- **Q28, currency list:** USD, EUR, GBP, CAD, AUD, JPY first, a divider, then the rest A to Z, every one with a flag. The boards draw flag placeholders; the build uses a vetted flag image set.
+- **Q46, proof disclaimer** (SellerConfirm, Warn-Release): inside the existing caution callout, next to the box the seller ticks before releasing: "Screenshots can be faked, even a copy of X2F's own screen. Only your bank app shows whether the money arrived."
+- **Q47, blur check** (SellerConfirm, under the proof): "Was this proof blurred correctly?" [Yes] [No]. After No: field "What was wrong?", helper "Help us improve the blur. Your note goes to the X2F team, not to the buyer.", button "Send". After Yes or Send: "Thanks. This helps us improve the blur." It's asked on every proof for the first months, then on every 10th to 20th.
+- **Q67, daily limit** (Feedback): title "You've sent 10 today". Body "To stop spam, you can send up to 10 messages a day. You can send more tomorrow." Send is disabled. Tickets count across a vendor's team; feedback counts per member (Q69).
+- **Q39, frozen account:** "A moderator froze trading on your account. Open your dispute to see what to do to get it back." (Use this wherever the frozen state shows: the My offers hold notice and the account notice.)
+- **Q2/F2, empty payment instructions:** the owner's line stands: "Payment method chosen: Interac e-Transfer. Please post pertinent details in chat window." Design suggests a lighter edit for the owner to take or leave: "Paying by Interac e-Transfer. Ask the seller for the details in this chat."
+- **BuyerPaidWaiting step 2:** "When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives."
+- **BuyerPaidWaiting step 3** (F9, instant types 90 min): "If something goes wrong, you can open a dispute from 15:35 UTC, 90 min after you marked it as paid. A moderator checks the chat and proof, then decides." Button meta: "Available from 15:35 UTC · in 88 min".
+- **Refunded:** "Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator can rule that they owe you the 1.250000 XMR. Until they pay it back, they can't trade."
+
+### Decided boxes recorded on the boards (no wording to sign)
+Q12 (nothing tells the buyer to pay before escrow is fully in: BuyerPay, Desktop) · Q14 (changes apply on their own after 24 h; say "username and password": HoldChange, plus tweak names on Devices and SessionExtend) · Q15 (ban length by rule list, moderator's call until then: Ban-Notice) · Q16 (granular member types; **MemberPermissions needs a full redraw**, pending) · Q18 "of 5" (already drawn) · Q42/Q43/Q50 (ProofBlur).
+
+### 7 Nov follow-ups (design's calls)
+- **F5, the name: "My offers"** (design's vote). Reasons: the rest of the app already says offer ("Post offer" in the nav, "Post an offer", buyers browse offers, "3 buying and 3 selling offers"). Calling them "ads" or "listings" here would mean two names for one thing. "Posts" reads like social media. If the owner prefers "ads", it has to change everywhere, nav included.
+- **F4, a currency with no rate on the vendor's list:** each offer card gets small currency chips with flags. A currency with no rate gets its chip struck through with a caution outline and a "signal off" icon, plus one line: "No rate for ARS right now. Buyers can't pick it until it's back." If no currency on the offer has a rate, the card shows "NOT LIVE · NO RATE" and "We can't get a rate for ARS, so this offer can't go live. It goes live by itself when the rate is back." Board work is in progress on MyOffers (+Wide, Fold); it comes in the next publish.
+- **F10, nudge sound:** an original synthesized bulb-horn double honk ("hah-ONK", 0.62 s), made from scratch: no sample and nothing copied, so there are no rights issues. Files: `docs/design-assets/sound/x2f-nudge.wav`, `-soft.wav` (12 dB quieter), `.mp3`, plus `make_nudge.py`, which regenerates it and can be tuned. The owner should listen and say "keep", "more honk" or "softer".
+- **F13, gift card rules:** plain-language draft in `docs/design-gift-card-rules-2026-11-07.md`. It covers a short block on each gift card offer, a 5-step list and a tick-box for the sender, a 4-step list and a tick-box for the receiver, and what the moderator looks at in a dispute. Four numbers are for the owner: a 30-minute redemption window, cards bought within 7 days, a short brand list at launch, and no partial-balance cards.
+- **F1/F2/F6/F7/F8** (±% above or below, max 50; empty-instructions helper; currency, then payment type dropdowns on the ad; "2 of 3 selling offers used" in the builder): board work in progress on FlexOffer-Post (+Wide) and OfferAd (+Wide); next publish.
+- **F18:** the Devices session length changes this session only. The Devices note will say so in the next publish.
+
+## 7 Nov 2026: build review (5 Nov) re-checked against main 55bc70f9
+
+How I checked: by reading the code on `origin/main` @ `55bc70f9` (apps/web), not from screenshots; there's no pack for this head. Anything that only shows when it renders is marked "check on the next pack". File references are relative to `apps/web/src/`.
+
+### X1–X9
+
+| Code | Now | Evidence on main |
+|---|---|---|
+| X1 orange selection | **PARTLY** | Closed: chips and segments (`browse.css:176-183`, `PostOffer.css:93-96` RadioChips, `Wallets.css:183`, `setup.css:294/378/401`), and ui `Checkbox` (`ui.css:1526` accent ink). Still orange: checkboxes in `screens.css:125-130` (.x2f-team__role), `setup.css:604-608` (.x2f-check), `pay.css:352-359` (.x2f-paid__check), `release.css:147-152` (.x2f-release__check), and the dispute reason radio dot `dispute.css:205`. |
+| X2 CantDoThat shell | **CLOSED (code)** | MyOffers, Team and Chat all use `ui/CantDoThat` (`MyOffers.tsx:239`). Check 33 on the next pack. |
+| X3 orange focus ring | **PARTLY** | Shared rules are ink. Still orange: `.x2f-input:focus-visible` (`screens.css:68-69`, monero-ink, offset 1), `dispute.css:208-209`, `quote.css:~222`. |
+| X4 native controls | **OPEN** | `<fieldset>` + legend: `Team.tsx:42-56` ("Roles"), `Feedback.tsx:149-159` ("What is it?"). Native `<select>`: `Team.tsx:335` (log filter), `Security.tsx:100` (session length), `PostOffer.tsx:267/283/296/407`. |
+| X5 dates | **OPEN** | Weekday or no-year formats: `screens/auth/refusals.ts:39` ("Fri 3:00 PM"), `screens/dispute/rules.ts:163-167` (`dayTime` "Fri 16 Oct, 10:14"), `screens/settings/teamCopy.ts:17-18` (no year), `Wallets.tsx:38`, `news-model.ts:52`, `settings/Alerts.tsx:79` (locale formats). |
+| X6 invite expiry at the epoch | **CLOSED (code)** | `Team.tsx:247` guards null. The date itself still lacks a year (that's X5). |
+| X7 mono timer spacing | **CHECK ON NEXT PACK** | `ui/Countdown.tsx` 'minutes' renders "47 h 58 min" in one `.x2f-countdown` span; if that span is mono, the units are mono too. |
+| X8 centred "Time to pay" card | **CHECK ON NEXT PACK** | `pay.css:318-321` still centres a block. |
+| X9 old hold wording | **OPEN** | `screens/auth/refusals.ts:73` and `ui/cantDoCodes.ts:383, 394, 405` still say "only one way of proving it's you". |
+
+### Top five from the 5 Nov review
+
+1. **Hold and Strong-login copy, RecoveryHold and TeamRefusal screens: OPEN.** There's no RecoveryHold or TeamRefusal screen on main, and the X9 strings are still there.
+2. **One CantDoThat component: MOSTLY CLOSED.** The titles are still vague: `cantDoCodes.ts:203` "This can't be done on the team".
+3. **X1/X3/X4 in shared parts: PARTLY** (see above).
+4. **Dispute room and ruling: OPEN.** `DisputeRoom.tsx:61-67` shows two chips, no hero and no key mark. `rules.ts:146-151` `xmrInText` trims XMR to 2 decimals ("1.25"). Dates use `dayTime`. The new owner rule (Q38, hourglass from 24 h, no 48 h line) isn't built.
+5. **Wide and fold My offers: PARTLY.** Fold panes are built (`MyOffers.tsx` uses `Panes`). The wide table is not (tripwire NEEDS_DESIGN_MYOFFERS, `MyOffers.tsx:15`). The Edit link waits for Task 35. Footer padding: check on the next pack.
+
+### Open items as buildable tasks (one per line: screen · change)
+
+- Team, Setup, I've-paid, Release confirm · checkbox `accent-color: var(--x2f-ink)` in `screens.css:130`, `setup.css:~608`, `pay.css:~359`, `release.css:~152`.
+- DisputeOpen · reason radio: the dot is `var(--x2f-ink)` (`dispute.css:205`), and the selected row gets a 2px ink border on surface-raised.
+- All forms · `.x2f-input:focus-visible { outline: 2px solid var(--x2f-ink); outline-offset: 2px }` (`screens.css:68`); the same in `dispute.css:208`, `quote.css:~222`.
+- All forms · `.x2f-input` background `var(--x2f-surface-raised)`, `min-height: 48px`, `padding: 0 14px`; textarea `min-height: 96px; padding: 12px 14px` (also P1 of the proof pop-up review).
+- Team · replace the "Roles" fieldset (`Team.tsx:42`) per the new owner model Q16 (member types with checkboxes). **Wait for the redrawn MemberPermissions board.**
+- Team · log filter `<select>` (`Team.tsx:335`) → tiles or the shared listbox (no native select).
+- Security · session length `<select>` (`Security.tsx:100`) → the SessionLength tiles (owner OPEN still: tiles vs drop-down; build tiles behind the same component so either can ship).
+- Feedback · drop the "What is it?" fieldset (`Feedback.tsx:149`), per the Feedback board. Add the 10-a-day limit state (Q67, Feedback board `limit=reached`).
+- Login refusal · `refusals.ts:39` date → `6 Nov 2026, 15:00 UTC` (mono).
+- Dispute · `rules.ts:163` `dayTime` → `D Mon YYYY, HH:MM UTC`; `xmrInText` → 6 decimals.
+- Team · `teamCopy.ts:18` add `year: 'numeric'`.
+- Wallets, News, Alerts · replace locale `toLocaleString` with the shared UTC date formatter.
+- Hold copy · `refusals.ts:73`, `cantDoCodes.ts:383/394/405`: replace "only one way of proving it's you" with "a username and password" (owner Q14 wording), per HoldChange and RecoveryHold.
+- RecoveryHold · new screen per the RecoveryHold board; the 04 refusal links to it.
+- TeamRefusal · new screen per the TeamRefusal board, replacing the 20 popup.
+- CantDoThat titles · `cantDoCodes.ts:203` → "Only the owner can do this" (member) / "Needs a Strong login" (weak session).
+- DisputeRoom · hero per the board (v119): chip + key mark; waiting state = hourglass countdown from 24 h with "A moderator steps in within 24 h at the most. Usually it's much sooner."; amount block 1.250000 XMR; drop the 48 h line.
+- MyOffers wide · table layout per MyOffers-Wide (clears NEEDS_DESIGN_MYOFFERS); selection bar at the top of the column.
+- LoginApprove "You're in" · add "Chrome on Windows is now one of your devices." (check that the board copy is still missing on main).
+
+## 7 Nov 2026: design review of branches before landing (job 3)
+
+Reviewed from code against the boards (canvas v119) and the v2 standards. Paths are relative to `apps/web/src/`.
+
+### `wip/lead-hold-v3` @ `b0bc72c4`: ready after one P1
+- **P1 · `ui/cantDoCodes.ts` teamCantDoText `weak-session`:** it offers "your username, password and authenticator code" as a way to invite members or change roles. Owner rule (handoff §4): an authenticator app isn't enough for team invites and permissions; only a passkey, security key or PGP key is. Fix: "Do this from a device where you logged in with a passkey, a security key or a PGP key." Rule source: owner, 1–2 Nov.
+- **P2, rule check for the lead · `WEAK_SESSION_TEXT`:** the same "username, password and authenticator code" option for logging out stronger devices. TOTP counts for logging in but not for sensitive actions. Confirm with the owner whether logging out devices is sensitive. Design recommends yes, and the same fix as P1.
+- **P2, rule check · `screens/auth/refusals.ts` heldNote:** "Logging in with a passkey, a security key or a PGP key you had before then cancels it." The hold decision (handoff §4) says such a key "approves the changes early" and "ending the hold that way discards them". The code says "cancels". Pick one with the owner; the copy must match what the server does.
+- **P2 · `cantDoCodes.ts` holdLoginText:** still 7 sentences in a CantDoThat sheet. Board (04 / RecoveryHold): two sentences, "This device can log in after <date>. Your account is on a 24-hour hold." plus a "See the hold" link to the RecoveryHold screen.
+- **P2 · X5:** `holdText(when)` still receives "until Tue 3:05 PM". It should be `6 Nov 2026, 15:00 UTC` in mono.
+- **Good:** "username and password" replaces "only one way of proving it's you" throughout (owner Q14). The ConfirmSheet and wallets lines ("You have no passkey, security key or PGP key yet…") read well. COPY-UNSIGNED.
+- **Open, no board change:** `counterpartyProblem` isn't shown yet; when it is, use the TradeTechIssue board.
+
+### `wip/third-p4-task15` @ `c0d889a5`: ready after P1 and the hourglass
+- **P1, rule check · `screens/Maintenance.tsx`:** it replaces the whole app. The Maintenance board shows "What still works: Trades already in escrow. You can release, refund or open a dispute as usual." Either the build or the board is wrong; the lead should confirm with the owner whether escrowed trades stay usable during maintenance (design recommends yes, as the board says). The comment also says "no board": there is one (Maintenance, Maintenance-Wide). Build it from the board: chip "Planned maintenance" / "Emergency maintenance", the headline, the owner's message with "From the X2F team · <date>", the start and end block (mono dates), "What still works", and the Get updates rows. "Check again" can stay as the one primary.
+- **P2 · `screens/dispute/DisputeRoom.tsx` DisputeHourglass:** it's built as a small line. Board (DisputeRoom v119, `moderator=waiting`): the hourglass countdown is the hero's one big number. Label 13/16 uppercase danger "Until a moderator steps in"; digits mono 40/44 500, units body 18/24 600 ink-muted ("23 h 12 min"); hourglass icon 24px danger beside it; line 14/20 muted "A moderator steps in within 24 h at the most. Usually it's much sooner." The XMR amount moves into an inner block (28/32, 6 decimals). The "over" state is fine as built ("Taking longer than usual" / "A moderator will step in as soon as they can."). COPY-UNSIGNED.
+- **P2 · DisputeRoom DeadlineLine:** "First reply due by Fri 16 Oct, 10:14 · You're number N in the queue" puts a second deadline next to the hourglass. Fix: drop "First reply due by…" while the hourglass runs. Keep "You're number N in the queue" as a 13/16 muted meta line under the hourglass (COPY). Dates: X5.
+- **P2 · `DisputeRuling.tsx` TxProofForm:** "Send proof" is a primary. On the losing seller's ruling screen, "Send appeal" becomes the primary too once text is typed, so the screen can end up with two orange buttons. Fix: while a `seller-sends-xmr` payment is due, Send proof is the primary and the appeal button is secondary. Labels per v2 §11: 13/16 uppercase muted "TRANSACTION ID", "TRANSACTION KEY"; inputs 48h, mono, `surface-raised`.
+- **P2 · X5:** `complyBy` and `replyDueAt` use `dayTime` (weekday, no year, no UTC).
+- **P3 · DisputeOpen "Talk to <name> first" notice:** fine as a plain info callout. Use v2 §12 info (`surface-raised` background, `ink-muted` icon), and put "Go to the chat" on its own line as a 44px tertiary link. COPY-UNSIGNED.
+- **P3 · `ui/SiteBanner.tsx`:** the titles "Info" and "Warning" add nothing; drop the title and let the message stand. Warning = caution callout, info = info callout.
+- **COPY-UNSIGNED (owner):** "There is one appeal per dispute, and its decision is final." · "Prove you sent it" / "Your wallet shows the transaction ID and the transaction key once the XMR is sent." · "Send it by <date>." / "<name> has until <date> to send it." · Maintenance copy.
+
+### `wip/lead-design-results` @ `e987d6b5`: not ready (8 P1)
+
+**Verdict: not ready.** There are 8 P1s. The biggest is that the 90-min dispute rule never takes effect: it is computed but always overridden by confirmBy. The paid room and the Refunded screen also don't use the boards' hero block.
+
+I checked every claim against `git show origin/wip/lead-design-results:<path>` and the v119 boards. Line numbers are on the branch.
+
+##### P1
+
+1. **The 90-min dispute rule never applies.** `PaidWaiting.tsx:73-78`: `disputeOpensAt = max(paid+90min, confirmBy)`. With Zelle's 2 h window, Open dispute only becomes available at confirmBy (16:05), not 15:35. The board's `after-wait` state (dispute available while 28 min are still left to confirm) can never appear.
+   - The server blocks it too: `packages/trade/src/machine.ts:416` returns `too-early` for the buyer before confirmBy.
+   - `screens/dispute/rules.ts:64-75` (`disputeEntry`) also waits for confirmBy.
+   - **Fix:** the machine and `disputeEntry` should allow the buyer's dispute at `paidAt + per-type wait`, which is 90 min for instant types. Then `disputeOpensAt` should return `paid + DISPUTE_AFTER_PAID_MS`, with no `Math.max` against confirmBy. This needs an API change.
+
+2. **Step 3 tells the buyer the wrong time.** `PaidWaiting.tsx:200-208` says "If they don't confirm by {confirmBy}, you can open a dispute." The board says: "If something goes wrong, you can open a dispute from `<mono>15:35 UTC</mono>`, `<mono>90</mono>` min after you marked it as paid. A moderator checks the chat and proof, then decides." Use `<When at={opensAt} form="time"/>` and the wait as a `<Duration>`. This depends on P1-1.
+
+3. **The paid status card breaks the hero rule (standard 11).** `PaidWaiting.tsx:110-153`, timer at `:156-184`.
+   - What's wrong:
+     - The card is a plain grey `x2f-panel` with an `x2f-h2` headline (24px, "Paid · waiting for X to confirm").
+     - There is no key mark.
+     - The timer is a separate card.
+     - The chip is `tone="escrow"` (teal) while waiting.
+   - What the board has: one caution hero.
+     - `padding:20px; border-radius:16px; gap:16px; background:linear-gradient(180deg, color-mix(in srgb,var(--caution) 14%,var(--surface)) 0%, var(--surface) 140px); border:1px solid color-mix(in srgb,var(--caution) 35%,transparent)`. On wide: padding 28px, gap 20px, 180px stop.
+     - Row 1: the chip (caution, check icon, "Paid") with the three-dot key mark on the right (62×14 svg, two filled dots, the third an outline ring).
+     - Then the lead as a `<p>` at 16/24, ink-muted, with no h1.
+     - Then a 1px divider in caution 25%.
+     - Then the timer, inside the same card.
+   - **Fix:** drop the h1 (the page h1 stays "Buying from …"), use the caution tone in both states, add the key mark, and move the TimerCard content inside the hero.
+
+4. **"2 hours" is written in words, breaking the duration rule.** `windowWords` at `PaidWaiting.tsx:80-85` is used at `:107/131/149/179`. It produces "up to 2 hours", "Their 2 hours to check…" and "Zelle gets 2 hours". The board has `<mono>2</mono> h`. **Fix:** render `<Duration ms={win.lengthMs}/>`. The nudge line at `:308`, "another in 10 min", also needs the 10 in mono: `<Duration ms={600000}/>`.
+
+5. **The button label isn't the agreed term.** It reads "Open a dispute" at `PaidWaiting.tsx:318` and `:324`, and `Refunded.tsx:199`. The terms list (standard 10) and every board say **"Open dispute"**.
+
+6. **The XMR unit has the wrong style (standard 7).** The digits should be mono and the "XMR" unit body 600 in `var(--monero-ink)`.
+   - `PaidWaiting.tsx:198`: the whole `"1.250000 XMR"` is in `x2f-when` (mono).
+   - `PaidWaiting.tsx:218`: the For row passes `xmr` as a string into the mono `dd`.
+   - `Refunded.tsx:146`: the Trade amount row is one mono string.
+   - `Refunded.tsx:189`: the number isn't mono at all (the board has it mono in ink).
+   - **Fix:** use an amount component: `<span class="x2f-num">1.250000</span> <span style="font-weight:600;color:var(--monero-ink)">XMR</span>`.
+
+7. **The Refunded screen has no hero.** `Refunded.tsx:159-165` has a loose chip, then an `x2f-h2` at 24px with the lead. The board's hero card:
+   - Tone is ink-muted (mod for the moderator variant), with gradient 14% to 160px, border 35%, padding 24/20/20, gap 20.
+   - Chip and key mark row.
+   - h1 in Familjen 32/36 700, -0.02em.
+   - Lead 16/24.
+   - A raised `dl` with "TRADE AMOUNT": `1.250000` mono 28/32 500, then XMR 15/600 monero-ink, then `$412.50` mono 16 muted. Then the "X2F fee · None" row, 48px high.
+   - **Fix:** move Trade amount and X2F fee out of "What happened" (`:144-150`) into the hero.
+
+8. **News: an inset shadow and an orange header action.** I checked these against News.dc.html.
+   - `ui.css:1766` gives `.x2f-post[data-new]` the shadow `box-shadow: inset 3px 0 0 var(--x2f-escrow)`. Standard 17 allows no box-shadow except the nav inset, and the board's new card is just `background:var(--surface); border:1px solid transparent`. Remove it.
+   - `ui.css:1858`: `.x2f-header-action` ("Mark all as read", `News.tsx:155`) is orange `--monero-ink`, which breaks the colour rules. The board has a pill: `height:44px; padding:0 14px; border-radius:999px; background:var(--surface); color:var(--ink); font-weight:600`, with an 18px double-check icon.
+
+##### P2
+
+9. **No trade progress stepper in the paid room.** `BuyerPay.tsx:579-622`: neither the phone nor the wide paid branch renders the "Trade progress" stepper. Both boards show 4 bars (Escrow / You pay / Seller checks / Released) with "Seller checks" current and a caution fill.
+
+10. **Wide layout order is wrong.** `PaidWaiting.tsx:245-255` puts the timer and Your payment side by side in a grid, then What happens next, with the actions at the very bottom (`BuyerPay.tsx:603`).
+    - Board order: hero (timer inside), then the actions row (Nudge left, spacer, Open dispute right; under it the "Available from…" hint right-aligned and the no-cancel line), then What happens next, then Your payment. Remove `x2f-room__grid`.
+
+11. **Phone footer order and sizes.** `PaidWaiting.tsx:299-334` puts Nudge first and the dispute at 48px.
+    - The board puts the dispute first. Locked: a 56px button at 18px on surface-raised. Ended: the danger-outline at 56px/18px with a 14% wash.
+    - So drop `data-size="medium"` on phone (`:317`) and keep it only on wide.
+    - Locked hint copy: "Available from `<When form="time">` · in `<Duration>`", with no trailing period (`:329-330`).
+
+12. **No soft dispute link for the after-wait state.** This state follows from P1-1. The board's `after-wait` shows "Open dispute ›" as a text link (danger 15/600, 44px, chevron 16) below Nudge, not the outlined button. Only the ended state gets the outlined button. `PaidWaiting.tsx:316-319` has a single style for both.
+
+13. **Nudge button colour.** `PaidWaiting.tsx:300` with `ui.css:2125` turns the whole button caution-coloured. The board has ink text, a `var(--line)` border, and only the bell icon in caution. **Fix:** remove `data-tone`, and colour `.x2f-button--secondary > svg` caution here.
+
+14. **Nudge sent state.** `PaidWaiting.tsx:299-310` keeps the button and adds a 13px footnote. The board hides the button (`canNudge:false`) and shows a status row instead: escrow check icon 18, 15/22 muted, min-height 48, centred. This conflicts with review N1, which kept the button on purpose; the owner or design needs to pick one.
+
+15. **Timer size.** `TimerCard.tsx:42-54` and `ui.css:2079/2098`.
+    - Board digits: 40/44, mono 500, -0.02em. Units: 18/24 600 ink-muted. Built: digits 28px; units weight 400 and not muted.
+    - Board ring: 64px, r=27, stroke 5, track in the tone colour at `stroke-opacity:0.2`. Built: 56px, r=24, stroke 6, track surface-raised.
+    - Board hint: 14/20. Built: 13/18.
+
+16. **"Your payment" box.** `PaidWaiting.tsx:226` and `ui.css:1076`: the `outline` prop gives a transparent box with a border. The board has `background:var(--surface)` and no border, so drop `outline`.
+    - The board's rows (`:238`, `ui.css:1701`) sit in a raised `dl`: `margin:0 20px 20px; border-radius:12px; background:var(--surface-raised)`, rows `min-height:48px; padding:0 14px`, surface dividers between them, values mono 15/500. Built has no box and 14px values.
+    - On wide the board lays this out as a 2-column grid.
+
+17. **"Payment proof" row missing.** `PaidWaiting.tsx:215-220` has no "Payment proof" row ("1 screenshot, blurred"). The board's design call says it stays, and reads "Add payment proof · optional" when there is none.
+
+18. **Refunded back link goes to the wrong place.** `Refunded.tsx:157`: `backTo="/buy"`. The board's back control is "Back to trades", so use `/trades`.
+
+19. **Refunded footer is missing a link.** `Refunded.tsx:212-216`: there is no tertiary **"Back to my trades"** under "Find another offer". Board: 44px, ink-muted 15/600, centred.
+
+20. **"What happened" is plain rows, not a timeline.** `Refunded.tsx:166-178`. The board has a timeline:
+    - A 12px dot per row: a 2px `--line` ring for each row, the last one filled in the tone colour.
+    - A 2px surface-raised connector between dots, 16px between rows.
+    - The last row at 600.
+    - The date sits on the right of the heading (mono 13 muted), not appended as " · date".
+    - Card: padding 20, radius 16, gap 16.
+
+21. **The moderator variant doesn't match.** `Refunded.tsx:76-82`.
+    - Board headline: "A moderator decided the dispute". Lead: "Moderator {name} ruled for {seller}…".
+    - Board rows include "Moderator ruled".
+    - The hero is `--mod` toned, with a "The moderator's reason" card (mod 8% / 40%) and a 48px outline "Read the ruling and appeal".
+    - Built shows "Refunded by the dispute decision" and, through `entry.kind==='opened'`, a "Go to the dispute" button (`:203-209`).
+
+22. **Owner call: buyer-cancelled dispute card.** `rules.ts:84-86` hides the card for a buyer's own cancel (owner, 29 Oct, question 4). The v119 board shows it, titled "Did you pay before you cancelled?". The owner and design need to settle which one wins before this ships.
+
+##### P3
+
+23. **Small Refunded mismatches.**
+    - Chip (`ui.css:128`): the board's muted chip has ink text on an ink-muted 16% fill; built is ink-muted text on surface-raised.
+    - Dispute card (`Refunded.tsx:180-201`): the board uses a row layout with a 40px icon tile (escrow 14%, radius 12). Built puts the icon inline in the h2.
+    - The link uses `.x2f-button--danger` at weight 400; the board has 15/600.
+
+24. **Steps list and chat link styling.** `ui.css:1712` (`.x2f-steps`) uses default decimals with gap 8. The board has 24px numbered circles (surface-raised, mono 13/500), list-style none, gap 12.
+    - `ui.css:2107`: `.x2f-inline-action` is underlined at weight 400; the board has no underline, 600.
+    - Step 1's amount (`PaidWaiting.tsx:193`) should be `<strong>` in mono 500, not bold body text.
+
+25. **COPY (owner signs).**
+    - `PaidWaiting.tsx:131`: the ended line reads "Their … ended at 1 Nov 2026, 16:05 UTC". The board has "satoshi_ghost's 2 h to check Zelle ended at 16:05 UTC".
+    - `PaidWaiting.tsx:146`: the board says "at 14:05 UTC" (time only).
+    - `Refunded.tsx:100` (buyer-cancel lead): the board says "All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. X2F took nothing from you. If you already sent the payment, open a dispute below."
+    - `Refunded.tsx:93` (time ran out): the board says "You didn't tap I've paid within the 90 minutes, so satoshi_ghost cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to satoshi_ghost."
+    - Row labels: the board's buyer-cancel rows include "You cancelled", which built lacks. The board has "Refund confirmed" where built has "{N} confirmed it arrived" (`:128`).
+    - `Refunded.tsx:191-196`: the extra line "You can open one for 48 hours…" isn't on the board.
+
+What matches: the Refunded dispute body copy follows v119, apart from the mono number in P1-6. Step 2's wording matches v119. The disabled dispute uses aria-disabled on purpose for focus. The SellerCancelConfirm date change uses `<When>`, and no board covers that screen. I found no email, no dashed borders and no orange selection in the changed screens.
+
+### Design follow-ups from today
+- **F10, nudge sound:** the owner's pick replaces design's synthesized honk: Freesound 480002 (craigsmith, CC0), an old "Ahooga" horn, 1.84 s (`assets/sound/x2f-nudge-ahooga.wav` and `-soft` on comms). I removed my synthesized files from `docs/design-assets/sound`. BuyerPaidWaiting (+Wide) now carries the decision, and "You can send another in 15 min" (F10: once every 15 minutes). Canvas v121.
+- **v120:** the MyOffers (+Wide, Fold) "no rate" state (F4): currency chips; one off = a struck chip plus "No rate for ARS right now. Buyers can't pick it until it's back."; all off = "NOT LIVE · NO RATE" plus "We can't get a rate for ARS, so this offer can't go live. It goes live by itself when the rate is back.". FlexOffer-Post (+Wide): Above/Below market plus a typed % ("Up to 50%." / "Set 50% or less."), the empty-instructions helper, and "2 of 3 selling offers used". OfferAd (+Wide): Currency, then PAY WITH dropdowns; the list of ways to pay is folded into the dropdown. Devices (+Wide): F18 note. All new lines are COPY-UNSIGNED.
+- **Open, design's call next:** the per-payment-type price change on FlexOffer-Post still uses a ± stepper. For one pattern, design will switch it to the same Above/Below plus typed % (max 50%) unless the owner objects.
+- **Queued:** the MemberPermissions redraw for Q16 (member types with checkboxes).
+
+## 7 Nov 2026: canvas v122 (Q16 member types; per-payment-type price)
+
+**MemberPermissions (+Wide), redrawn for Q16.** Four member types, each a card with an on/off switch and its own checkboxes: Chat (7), Offers (8), Trades (9), Records (7). A member can be in any number of types. A type that's switched off keeps its ticks but they don't count. Release XMR is marked SENSITIVE: ticking it shows a caution line and asks to confirm first, per the earlier owner rule (2 Nov). Tweak `example`: offers-and-chat / everything / trades-with-release. The 31 checkbox labels are design's proposal for the owner.
+
+**COPY-UNSIGNED (owner):**
+- "Member types" · "Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four." · "In 2 of 4 types · 9 of 31 things allowed" · "5 of 7 allowed" / "Off · 2 of 7 ticked" · "Switch on Records to use these. Your ticks are kept."
+- "They can send XMR from your escrow. Only for someone you trust fully."
+- "Never available to members: wallets, security, sessions, team settings, account type and deleting the account."
+- "Saving needs your passkey, security key or PGP key. With just a username and password, the change waits 24 h."
+- Sheet: "Let desk_ana release XMR?" · "They can send XMR from your escrow to finish trades. Only for someone you trust fully." · "Allow releasing XMR" / "Keep it off" · "Use my PGP key".
+- The four type names and the 31 labels:
+  - Chat: Read trade chats, Reply in trade chats, Send payment details in chat, Upload proof in chat, Nudge the other trader, See the trader's profile notes, Block a trader.
+  - Offers: See all offers, Turn offers on or off, Edit prices, Edit amount bands, Edit payment types and instructions, Edit currencies, Post a new offer, Delete an offer.
+  - Trades: Accept a trade, Decline a trade, Mark "I've paid", Confirm payment received, Release XMR, Ask to cancel, Open a dispute, Reply in a dispute, Leave feedback.
+  - Records: See trade history, Export trade history, See team activity log, See payout amounts, See reviews, Reply to reviews, See support tickets.
+
+**For the owner, with design's recommendation:**
+- Should the "never available" list also name holds? Recommendation: yes. "Never available to members: wallets, holds, security, sessions, team settings, account type and deleting the account."
+
+**FlexOffer-Post (+Wide).** Each payment type's price change is now "Above market" / "Below market" / "Same as band", plus a typed % (max 50%), the same as the bands. New copy: "Price with Zelle" · "Same as band" · "Fix the field marked in red to post this offer." (was "…the band marked in red…").
+
+## 7 Nov 2026: canvas v125, final nudge sound
+
+BuyerPaidWaiting (+Wide) notes now name the final sound: the real two-blast "Ahooga", 3.64 s (first blast sped up at the same pitch, second at its original speed, nothing stretched; superseded figures removed in v125), `assets/sound/x2f-nudge-final.wav` and `-soft` on comms, Freesound 480002 (CC0). It replaces the 1.84 s cut; to cut from the original WAV before launch.
+
+## 7 Nov 2026: pictures for the owner (G1, G38)
+
+**G1, the screen after "I've paid"** (picture: `docs/design-shots/2026-11-07/g1-buyer-paid-waiting.png`; left: right after paying, right: once the dispute wait has passed). What the buyer sees, top to bottom:
+1. Header "Buying from satoshi_ghost"; progress bar on "Seller checks".
+2. A yellow card: "PAID". "You marked this trade as paid at 14:05 UTC. satoshi_ghost has been told and has up to 2 h to check Zelle and release." Under it, a big countdown "1 h 58 min" with a ring.
+3. "What happens next", three steps: (1) the seller looks for $412.50 with the memo K7M2-…; (2) "When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives."; (3) "If something goes wrong, you can open a dispute from 15:35 UTC, 90 min after you marked it as paid. A moderator checks the chat and proof, then decides."
+4. Buttons: "Open dispute" (greyed until 15:35, with "Available from 15:35 UTC · in 88 min"), "Nudge satoshi_ghost", and "You can't cancel after marking as paid."
+The words to sign are steps 2 and 3. The rest was signed before or is unchanged.
+
+**G38, what tapping or hovering over a badge does** (picture: `docs/design-shots/2026-11-07/g38-badge-visibility.png`). Each badge (Trusted, Fast, Clean record…) has its own setting:
+- **Featured:** always shown on your offer card next to your name (up to 2).
+- **Middle option:** not on the card. A small "+2" shows instead, and a buyer taps it (phone) or points at it (desktop) to see those badges, each with one line on what it means ("Fast: replies in about 4 min on average.").
+- **Hidden:** nobody sees it, and there's no "+2".
+- **Design's recommendation:** keep the middle option and call it **"When tapped"** (it works on both phone and desktop), helper "Shows when someone taps the +N on your offer." Or, if the owner prefers fewer choices, drop it.
+
+## 7 Nov 2026: canvas v126 (badges proposal, session dropdown, link hover)
+
+**Badges, design's proposal** (new board "Badges"; pictures `docs/design-shots/2026-11-07/badges-night.png` and `badges-day.png`). The owner liked tap/hover showing more and asked design to make the card and badges look like part of the site. What's new:
+- **Seals.** Each badge is a small rounded seal, coloured by family: reputation (Trusted, Clean record, Veteran) in escrow teal; speed (Fast) in caution amber; security (PGP verified, Security key) and milestones (100 / 500 trades, with the number as the glyph) in ink; New in muted. Orange stays for actions only.
+- **Chips on the card.** A 30 px chip: the seal, then the badge name in sentence case, on surface-raised with a thin border in the family colour. Badges no longer look like status chips.
+- **Trader block on the offer card.** Avatar with an online dot (teal ring when Trusted), name with a small Vendor tag, "Online · replies in about 4 min", three stat tiles (trades, % positive, XMR traded), then up to 2 featured badges and "+3".
+- **Tap and hover** (G38 middle option). Phone: tapping "+3" or a badge opens a sheet listing all visible badges, each with what it means and when it was earned. Desktop: hovering opens the same list in a small card under the pointer.
+- Badge names, meanings and dates are examples (COPY-UNSIGNED). Once the owner likes it, design applies it to OfferAd, BuyOffers/SellOffers, Profile and BadgeSettings.
+
+**Session length (G23–G25):** SessionLength (+Wide) and Devices (+Wide) now use a dropdown with nothing pre-selected. Traders get 2/4/8/12 h, vendors 2/6/12/24 h, and a new choice counts from now. Signup no longer asks for a session length (SignupSecurity +Wide). SessionExtend notes now list 2/4/8/12. New copy: field "Stay logged in for", empty "Choose a length".
+
+**Link hover (G40):** every board's link hover rule is dark ink. Known gap: on 17 boards some links set their colour inline, which overrides the hover. The build should put link colour in CSS, not inline. The design follow-up is to move those inline colours into the shared rule.
+
+**Still in progress:** Ban-Notice wording (G39), no-date warnings (G16), cancel wording (G2), the hold before-and-after review (G29).
+
+## 7 Nov 2026: canvas v127 (G39 ban, G16 no date, G2 cancel, G29 hold review)
+
+All new wording is COPY-UNSIGNED.
+
+**G39, Ban-Notice (+Wide):** site ban headline "Your account has been banned"; lead "We're sorry. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details." Trade ban: "We're sorry. Your account can't start or join new trades. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details." The contact card is now just "Think this is a mistake?" and the two rows, so nothing is said twice.
+
+**G16, no readable date** (`date` tweak):
+- ProofBlur (+Wide), poster: caution callout above Send. Title "We couldn't find a date", body "Neither the photo's data nor the screenshot shows when it was taken. You can still send it. The seller will see this too, so a screenshot with the date showing is better." Send stays enabled.
+- SellerConfirm, seller: check line "No date found on this screenshot". Callout "We can't confirm when this screenshot was taken. That doesn't mean it's fake: check your bank app before you release."
+
+**G2, cancel:**
+- CancelRequest (+Wide), buyer after escrow: "Cancelling sends all 1.250000 XMR back to satoshi_ghost. The trade closes when the refund has all 10 confirmations." This replaces "Your 1.250000 XMR in escrow goes back… You can't undo this."
+- SellerRefund, structure fixed: the old board let the seller cancel as soon as the payment window ended, which broke the owner's rule. Now it's locked until 90 min and one nudge. Locked: Nudge is the primary, "No word from mira.k? After 90 min and one nudge, you can cancel and get your 1.250000 XMR back." Available: "Cancel and get refund", "You can cancel now. Your 1.250000 XMR goes straight back to your wallet." Other new lines: "Nudge mira.k, or give them more time.", "Nudge again", heading "If mira.k paid after all".
+- The pre-escrow line "Cancel now. Nothing has been sent yet, so nothing needs refunding." is ready, but no board shows a pre-escrow cancel yet.
+
+**G29/G5/G36, HoldChange (+Wide), redrawn as "Review your changes":**
+- Every pending change is grouped (Login methods, Wallets, Team) with Before | After side by side, each with a badge: "Applies after 24 h", "Takes effect now · final in 24 h", "Usable after 7 Nov 2026, 15:00 UTC", "Access ends now · final in 24 h". A count line reads "4 changes · up to 20".
+- Username and password: callout "Applies after a 24 h wait. You logged in with just a username and password. Removals take effect now and become final after 24 h. Everything else applies after 24 h. Anyone logged in can cancel during the wait." Encouragement: "Add a passkey, security key or PGP key and changes like these go through at once." with "Add one". Primary "Submit changes".
+- Strong login: "Your login is strong, so these apply as soon as you confirm." and "Confirm changes". After submitting: "Removals have taken effect. Everything becomes final after 24 h." Cancel sheet: "Removed wallets work again and removed team members get their access back. Nothing else changes."
+
+**For the owner, with design's recommendation:**
+1. Removing a passkey or other login method with username and password: does it also "take effect now, final in 24 h" like wallets and team (G5 names only those two)? Recommendation: no. A login-method removal waits 24 h, so a stolen password can't strip the owner's own keys at once.
+2. Cancelling during the wait restores removed wallets and members (assumed from "not permanent until the 24 h is up"). Recommendation: yes, as drawn.
+3. SellerRefund: do the 90 min run from escrow funding? Recommendation: yes, from when escrow is secured.
+4. CancelRequest's 2 Nov note says "No cancel after I've paid". With G2 (the buyer may cancel after escrow), recommendation: the buyer can cancel after escrow but not after tapping "I've paid", which is unchanged.
+
+## 7 Nov 2026: design's calls on G41–G60
+
+**G41, XMR colour.** I sampled the official symbol from getmonero.org/press-kit: Monero orange is **#FF6600** (grey #4C4C4C).
+- Night: the primary button fill, the XMR unit and links all become #FF6600.
+- Day: the button fill becomes #FF6600 (dark text on it reads fine). Orange *text* (the XMR unit, links) stays the darker #B84A00, because #FF6600 on white is only about 2.9:1 and fails legibility for small text.
+- I'll apply this to every board and the design system once the polish pass lands. This is the "unless design changes it" case, for legibility on white only.
+
+**G42, active Buy/Sell tab:** yes. A 2 px ink border on surface-raised, the same as every selection in the app; never orange.
+
+**G43:** keep the disabled button (surface-raised fill, muted text, no outline) and the sheet title (Familjen 24/30 700) everywhere.
+
+**G44, offers screens, what to build and in what order:**
+1. the market price card;
+2. per-method icons (the 40 px icon tiles);
+3. section counts (mono);
+4. the empty-search state (the shared empty-state mark: 56 px tile with two small blocks, title, one sentence);
+5. the Site news link (the bell with the unread dot in the header);
+6. **Don't build the "Deposit required" row:** X2F takes no deposits, and that board line is out of date.
+
+**G45:** no blue information note. Blue belongs to team members only. Information callouts are the neutral style: surface-raised, muted icon, ink text. Icon buttons use radius 12, as on the boards.
+
+**G46, Devices wording:** please send me the five items (the build's list), and I'll write them. The owner shouldn't be needed unless one of them is a rule.
+
+**G47, folding phones:** research is under way (Pixel Fold, Samsung Z Fold and Z Flip, OnePlus Open, Honor, Vivo, Xiaomi, Huawei, Motorola razr, Surface Duo; Apple has no shipping foldable). The note will cover Back gestures, layouts, and what a web app can detect (screen segments and posture, not the brand). New boards follow only where a device really behaves differently.
+
+**G48:** the fold label waits for the final fold boards, which are in the polish pass now.
+
+**G50–G53, gift cards:** `docs/design-gift-card-rules-2026-11-07.md` is updated: 45 minutes to check, cards bought in the last 30 days, video proof (log in, show the card, then send), full value only except range cards, and range cards always need the video. Draft brand list for the owner to edit: Amazon, Apple, Google Play, Steam, Visa prepaid, Mastercard prepaid, Walmart, Target, eBay, Razer Gold.
+
+**G54:** ProfileVisibility's OPEN box becomes DECIDED (X2F trades only; imports on their own lines).
+
+**G56, final-decision warning** (replaces Refunded's dispute card). Wording for the owner to sign, on the buyer's Cancel confirmation:
+- Title: "Cancelling is final"
+- Body: "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead."
+- Refunded (buyer cancelled) loses the "Did you pay before you cancelled?" card.
+
+**G57/G58, approval view:** HoldChange gets a "Changes waiting for you" state for a strong lead. It shows the same before/after list, a countdown (23 h 12 min) and three actions: **Approve now** (primary), **Make changes**, **Cancel all**. Team kick-outs show "Logged out now · removed in 24 h"; other team changes show "Applies after 24 h".
+
+**What I need from the owner:** sign-off on the G56 wording above and on the gift card brand list. Nothing else is blocking me.
+
+## 7 Nov 2026: craft pass published (canvas v128), all 132 boards
+
+Canvas https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH is v128: every board carries the craft pass (brief `design-craft-brief-2026-11-07.md`), the cohesion review (three parallel reviewers, ~70 boards changed), Monero's true orange #ff6600, and the owner's G54/G56/G57/G58 boards. Boards and canvas.json are in `docs/design-boards/`; final renders were checked night and day; every board passes check-board.js and no variant clips. Canvas layout was re-banded (Main is now 6473 px tall with the full method list), so the sections sit further apart; section notes moved with them.
+
+**Head-designer decisions (visual, no owner sign-off needed)**
+- One cast, one set of facts everywhere: satoshi_ghost 1,284 · 99.4% · 275.4 XMR (Trusted + Fast +3); mira.k 212 · 99% · 41.7 (PGP verified featured, +3: Fast, Security key, 100 trades; no ring); nightowl_44 58 · 97% · 12.6; kettle.moss 96 · 98% · 31.2; lowtide_rx 12 · 100% · 2.9 (New).
+- Trusted's meaning is now "500+ trades and 98%+ positive" (was 100+), so mira.k's numbers no longer contradict her lack of a ring. Badge meaning only; the product rule is yours and the owner's to confirm. COPY-UNSIGNED.
+- Market price $329.90 / XMR on every list, quote and ad (OfferAd, Badges fixed). The example trade's locked rate stays $330.00 → $412.50 on the 38 trade boards: a locked rate is a trade-time fact, not the market.
+- Badge chips and "+N" are 44 px transparent buttons everywhere, including the Badges reference and `gen/badges.py`.
+- "Settings" 13/16 context line above every settings sub-page title (phone and wide). Wallet's Back now goes to Settings.
+- Kits adopted as shared: trader card, recipient row, offline card, parties strip, evidence tile, chat message, decided-by row, setup stepper, rating chip, done_state, team kit, KPI cell, the one empty-state mark. Avatar/icon tiles on a raised block use a surface fill. ProofBlur's dashed on-image marks stay. Frame floors 844/800 stay.
+- X2F support staff are drawn neutral ("X2F team" tag, ink avatar); `--team` is reserved for a vendor's team. TeamChat's partner view draws the member as a `--team` people-icon avatar (no name).
+- Per-variant root heights everywhere (no empty bands).
+
+**COPY-UNSIGNED (new or changed visible words, for the owner)**
+- Team / Team-Wide: "Everything allowed" description is now "Every permission." (was "Every permission except the ones coming later.", which contradicted MemberPermissions' 31).
+- Team totals "of 19" → "of 31" (TeamRefusal, MemberApproval, Team).
+- Trusted badge meaning: "500+ trades and 98%+ positive".
+- Support / Support-Wide: headline "Ask a team member" still says "team member" for X2F staff; now that "team" means a vendor's team it may need rewording. Not changed; your call to raise.
+- ProfileVisibility (G54): "Counts X2F trades only; imported volume shows on its own line." / "Imported from LocalMonero: 120.0 XMR" / "Your X2F total so far".
+- CancelRequest (G56): your wording, as sent. Refunded's lead loses "If you already sent the payment, open a dispute below."
+- HoldChange (G57/58): "Changes waiting for you" / "Submitted with just a username and password. Your login is strong, so you can decide now." / "Time left" / "Submitted by" / "Apply on their own" / "Logged out now · removed in 24 h" / "Removed now · final in 24 h" / "If you log in with a passkey, security key or PGP key you had before the hold, you see these changes waiting and can approve them now, make changes or cancel all."
+- Badges board: "Prices are examples at a $329.90 / XMR market" (design note only).
+
+**G47 foldables**: research note `docs/design-research-foldables-2026-11-07.md`. Apple's iPhone Duo is a book fold (cover 382 CSS px, inner 669/951). Android Back is an edge swipe from either side, unchanged when unfolded; no system Back on iPhone. Design by screen shape, not brand: the existing phone / two-pane / tabletop Fold boards cover it; every screen keeps its own Back control, sheets are history entries, no edge-swipe confirms. No new boards needed; no per-brand boards (G48 closed).
+
+**Build follow-ups (1)–(3)**: pushed as `wip/design-build-followups` @88a6eb63 (READY), branched from wip/third-design-build since main didn't carry it yet; it rebases cleanly once that lands. Web tests 86 files / 1226 pass, tsc clean.
+
+**Needed from the owner**: G56 wording sign-off; the gift card brand list; the four questions above (login-method removal 24 h wait; cancel during the wait restores removed items; seller's 90 min from escrow secured; buyer cancel window); the COPY-UNSIGNED list here; G46 Devices wording items.
+
+## 7 Nov 2026 (late): jobs 3a and 3b on the canvas (v130)
+
+- **3a, SetupTerms (p4-5, p4-6):** the key-points list ends with one new line, "An account idle for 60 days is closed, to keep X2F safe for active traders." Drawn like the six rows above it. No warning anywhere else; DECIDED aside notes that an open trade or dispute pauses the clock. The phone frame was already full, so the terms scroll box is shorter (about 2.5 lines before scrolling); it fits exactly. COPY-UNSIGNED: that one sentence.
+- **3b, ruling fees (g63):** a shared "fee row" (one more row in the ruling's inner block: percent glyph, "Fee:" in 600, digits mono) on DisputeRuling, Appeal-Notice (+Wide) and Lien-Notice (+Wide), with the line chosen by state. DisputeRuling gained a refund variant so both fee lines can be seen. COPY-UNSIGNED, one per state: "Fee: 1% paid by satoshi_ghost, as the offer poster." / "Fee: none. Everything went back, so X2F charges nothing." / "Fee: waits until the appeal is decided." / "Fee: 1% paid by you, as the offer poster." (Lien) / "It appears on your profile as a lost dispute." (DisputeRuling refund).
+- Sweep fix from the owner's request for my own eye on every board: TeamChat's header meta no longer wraps into the "Draft copy" tag (v129).
+- Head-designer decision: the fee row is now a shared component (results kit).
+
+## 8 Nov 2026: jobs 3c, 3d, 3e on the canvas (v131)
+
+- **3c, waiting changes (g65), HoldChange + Wide:** the approve step is the one view: every waiting change as before → after → effect, each with a tick (all on by default; unticked rows dim and read "Won't apply"; Approve now applies only ticked rows; nothing is restored). Effect lines carry the countdown in mono ("Applies in 23 h 12 min", "Logged out now · removed in 23 h 12 min"). Button is now "Cancel all changes"; its confirm says "None of these changes will apply." Tweak `instant` shows the same view for a strong login: "Applies now" instead of the countdown, primary "Apply changes". COPY-UNSIGNED: "Cancel all changes", "None of these changes will apply.", "Ticked to apply", "Won't apply", "Applies in …", "Removed now · final in …", "Logged out now · removed in …", "Usable in …", "Applies now", "Apply changes", "Strong login".
+- **3d, team permissions (p4-8), MemberPermissions + Wide, Team, TeamRefusal, MemberApproval:** fifth type "Holds and waiting changes" with "See waiting changes", "Untick or cancel waiting changes", "End a hold"; off by default; line "Without these, desk_ana only sees that a hold is on." Total is now 34 everywhere (was 31). Footer line "Members can't use a stronger login than the team lead's." No member-side "a hold is on" view exists on any board; not invented, flagged.
+- **3e, password change hold (g64), Settings + Wide:** tweak `passwordChanged` shows the result card "New password from 8 Nov 2026, 15:00 UTC" / "Your old password works until then. If you didn't make this change, log in with it and cancel." Removing a team member's login method is noted in the aside as a team change held 24 h.
+- **Head-designer decisions:** the effect line with countdown and the per-change tick become shared (account kit).
+
+**Needs the owner (contradiction):** G57 says a removal (wallet, team member) takes effect at once and is final after 24 h, while g65 says an unticked change never applies so nothing needs restoring. On the approve view a removal row still reads "Removed now · final in …" yet can be unticked. Either removals in the waiting list are deferred too (then the row reads "Removed in 23 h 12 min"), or unticking a removal does restore. Design's recommendation: defer them, one rule for every waiting change.
+
+## 8 Nov 2026: GiftCardBrand board (draft, canvas v132)
+
+New phone board `GiftCardBrand`: the brand picker from Post an offer, step 1 (payment method "Gift card") and on a gift-card offer. Search, "Most used" (first 8), "All brands" A→Z, "Proposed" (Home Hardware, Canadian Tire, muted with a Proposed tag), then "Other" with a "Brand name" field. Brand tiles are 40 px neutral tiles with two-letter initials: no logos, no brand colours (trademarks). Caution callout carries the two rules. Marked "Draft · brand list awaiting owner". Tweaks: picked (amazon | other | none). The rules doc is updated with the list.
+COPY-UNSIGNED: "Gift card brand", "Pick one brand for this offer.", "Search brands", "Most used", "All brands", "Matches", "Proposed", "Other", "A brand that isn't in the list", "Brand name", "e.g. Chapters Indigo", "Shown on your offer exactly as you type it.", "No brand matches “…”. Pick Other and type the name.", "Cards must be bought in the last 30 days and show their full value.", "Range cards (e.g. a Visa 200–500) need video proof.", "Use this brand", "Pick a brand first."
+Head-designer decision: the brand tile (initials, neutral) is the kit piece for any brand shown anywhere (offer ad, trade header, dispute evidence). "All brands" repeats the Most-used eight so A→Z scanning works.
+
+## 8 Nov 2026: build vs boards, the gap list
+
+`docs/design-build-gaps/README.md` is the job order for the build team (9 jobs); `account.md`, `browse.md`, `trade.md` hold about 330 one-line gaps with file:line, P1–P4, from main @ cbf8e50e against canvas v131. Headline: 1 board matches, ~55 partial, ~60 not built; the shared kit (trader identity, badges, hero, stepper, icon tiles, chat) is absent everywhere; three owner rules are contradicted in the build (Q12 pay gating, G56/G2 cancel, one private username / recovery-code-only backup / team permission types). First job is those rules, second is the kit built once. The P4 wording lines are for the owner's page, not the build.
+
+## 8 Nov 2026: nudges uncapped (canvas v133)
+
+SellerRefund: "After 90 min and one nudge" → "After 90 min and at least one nudge"; the available state adds "You can nudge again every 15 min, as often as you need." (COPY-UNSIGNED). BuyerPaidWaiting (+Wide) already said "once every 15 minutes" and "Nudge sent. You can send another in …"; no board said one nudge was the maximum. Design-note labels aligned.
+
+## 8 Nov 2026: Jabber alerts (p5-7) and the team permissions review (canvas v134)
+
+- **JabberSetup / JabberSetup-Wide** (new) and a "Secure Jabber (XMPP)" section on Alerts (+Wide): address → test code → done, with the exact message previewed as a chat bubble from "X2F alerts": "An account change was made on your X2F account." Alerts shows "Not set up" or the masked address with a switch and "Last message …". Every sentence is COPY-UNSIGNED (listed on the boards and in copy-unsigned-by-screen.md when that lands).
+- **docs/team-permissions-review.md**: the 34 permissions grouped, each with what it allows and the risk; the six never-available items; recommended defaults (10 of 34 on for a new member; all hold rights off); 17 open questions with design's recommendation first. Contradictions it found: Team/TeamRefusal/MemberApproval still show the old four presets ("Trade handler 9 of 34") against Q16's types model; G31 (members never see waiting changes) vs p4-8 (a grantable right); HoldChange's aside still states G31 as absolute.
+
+## 8 Nov 2026: page 5 applied (canvas v135)
+
+- **Trusted = "200+ trades and 98%+ positive"** (p5-3): kit sources, Badges and 26 boards' badge meanings. Contradiction for the owner: mira.k is 212 · 99%, so she now qualifies, yet the cast draws her with PGP featured and no Trusted ring. Recommendation: give mira.k the Trusted ring and badge (she's the example of a solid trader) and keep PGP verified beside it; or drop her to 180 trades. Left as drawn until he says.
+- **Support headline "Ask an X2F staff member"** (p5-4, decided). Lead and caution lines now say "X2F staff" (unsigned); FAQ row "Still stuck? Ask X2F staff" (unsigned).
+- **Gift card list final** (p5-6): GiftCardBrand drops the draft tag and the Proposed group; Home Hardware and Canadian Tire sit in A→Z; 32 + Other. Per-brand legal check (Q30) still open.
+- **Removals wait 24 h** (p5-7): HoldChange (+Wide) rows read "Removed in 23 h 12 min" / "Removed after 24 h"; prose "Every change, removals included, applies after 24 h."; Team (+Wide) remove sheet: "Like every other change, this waits 24 h unless you're logged in with a passkey, security key or PGP key; they keep working until then." and "<name> will be removed after 24 h." (unsigned). Team gained a notes section with the p5-7 aside.
+- Jabber alerts and the team permissions review went in v134 (section above).
+
+## 8 Nov 2026: unsigned copy by screen, and the developer flow map
+
+- **docs/copy-unsigned-by-screen.md** (p5-1, p5-2): 86 screen sections in the order a user meets them, about 1,180 quoted lines, each with a context note; owner's own words marked as his; design's cancel wording under CancelRequest and SellerRefund (p5-2); Trusted 200+ and the Support headline recorded as decided.
+- **docs/design-flow-map-2026-11-08.md** (the owner asked for it directly): eight sections (entry and shell, signup, buy, sell, settings/account, help and notices, staff app, fold/desktop) with the screen order, trigger per arrow, board file, today's route or a proposed one, the state to show, Mermaid charts per section, and two demo paths (a whole buy trade and a whole sell trade) for the working demo. A FlowMap canvas board of the same map follows.
+
+## 8 Nov 2026: FlowMap, HoldMember, mira.k holds Trusted, BuyerPay reference (canvas v136–v138)
+
+- **FlowMap** (v136, Foldables row, 1280 wide): the eight flows as columns of 40 px tiles with board name and a state chip per node (tweak to show; BUILD = route on main; DRAFT; SUPERSEDED struck through), arrows for the primary move, elbows for branches, spines for hubs; 106 nodes, legend, and the owner rules the arrows follow. Generator in docs/design-tools/flowmap/. Written version: docs/design-flow-map-2026-11-08.md.
+- **HoldMember / HoldMember-Wide** (v137, p4-8 + p5-7): the team member's view during the lead's 24 h hold, tweak `rights`: none (caution hero "A hold is on", countdown, "You can keep trading as usual.", the member's row, "What you can see: that a hold is on. Ask satoshi_ghost if you need to know more." — nothing listed), see (HoldChange's list read-only), cancel (ticks + "Cancel all changes"), end (adds "End the hold", strong login, then "Hold ended"). The removed member in the list is desk_sam, since desk_ana is the one signed in. Every sentence is COPY-UNSIGNED, listed on the board.
+- **mira.k holds Trusted** (v138, your call 8 Nov): teal ring and chips "Trusted · PGP verified +3" on 30 boards (Profile, BadgeSettings with Trusted featured first, Reviews, SellOffers, SellerConfirm, SellerRefund, TradeFund, Warn-Release, CancelRequest, FlexOffer-Quote, Fold lists, Feedback, Dispute parties strips, Lien-Notice, StaffLog, her own Settings/SessionLength avatar, Badges via the kit). Earned date "2 Nov 2026" everywhere. Brief's cast line updated.
+- **BuyerPay parity reference** (your 1a ask): `wip/design-buyerpay-ref` @b428a1bd off main: design/x2f-app/BuyerPay.dc.html is the published board (escrow=securing, locked "Payment details" card) and refs/BuyerPay.png re-captured with tools/parity/capture-refs.ts (support.js = the canvas runtime, git-ignored as before); manifest updated; serve-boards test passes. You can drop the eight exceptions once it lands.
+
+## 8 Nov 2026: Job 2 handoff, the shared kit spec
+
+`docs/design-kit-handoff.md`: 19 sections. §1 tokens (table, spacing, radii, type scale) and the token-fix checklist with file:line on main 48d2460d (Monero #ff6600 in tokens.json:13-14 → tokens.css; xmrText → formatXmr 6 decimals; Countdown/ApproveOnDevice timers as mono digits + body units; no shadows on the hold button; 2 px ink selection ring; screen-title token). §2–18 one component each (trader identity, badges, v2 hero, key mark, phone trade stepper, icon tiles, inner block and settings rows, callouts, setup stepper, login seals and trio, empty-state mark, done_state, chat, dispute kit, account kit, rating chip and star picker, brand tile): anatomy, exact values, states, accessibility, boards that use it, and the apps/web file it replaces. §19 build order and a one-line acceptance check per component. The appendix listed 16 contradictions in the kit sources; the head designer's rulings follow it, so a builder has one value for each.
+
+## 8 Nov 2026: prototype review, team-permission questions, kit round 1 rulings
+
+- **docs/design-proto-review.md** (build d571748e on main 687ae821): 35 open findings (6 P1, 20 P2, 9 P3) in the order a user meets them, each with the board it should match; "Resolved by Job 1" lists Q12 pay gating, the superseded sheet, G56 cancel sheet and G2 nudge-first refund as fixed. Worst five: no way back to an open trade (back and "My trades" land on Sell home, no trades list); buyer dispute timing inverted (open during securing, locked 2 h after I've paid against F9's 90 min); expired deadlines change nothing on screen (pay at 0 min still live; funding 0:00 strands the buyer); posting an offer has no confirmation and the offer doesn't appear; the seller refund path can't unlock in the prototype (fake API ignores the nudge; "Give 30 more min" does nothing). New in Job 1: the cancel sheet says 1.262500 XMR where everything else says 1.250000.
+- **docs/owner-q-team-permissions.md**: 12 questions (TP1–TP12), plain words, option A is design's recommendation each time; ends with 13 board fixes design makes without asking. MemberPermissions keeps five types.
+
+**Kit round 1 rulings (wip/lead-job2-kit e8a166ff):**
+1. **New badge: grey.** Newcomer is its own neutral family (surface-raised seal, ink-muted glyph and ring), so it never reads as a warning. Amber is wrong.
+2. **50 and 1,000 trades: approved** as milestones in the ink family with the number as the glyph in mono: "50" and "1k" in the 22 and 28 px seals, "1,000" only in the 40 px seal. Names "50 trades" and "1,000 trades"; meanings "Completed 50 trades." / "Completed 1,000 trades." (COPY-UNSIGNED). Design adds them to the Badges board.
+3. **Hold button: approved.** A 16% on-monero overlay on the #ff6600 fill while held, text on-monero; 4.8:1 passes. No glow, no ring.
+4. **Repo board copies to #ff6600:** done on its own branch with every reference re-captured (see below).
+
+## 8 Nov 2026: X2F logo directions, header pattern and landing (canvas, LogoDirections board) — for the owner to pick
+
+Board `LogoDirections` (Badges row). Four hand-drawn directions, each large on night and day, as the 24/32 px header lockup and as the 32/16 px favicon in a tab:
+- **A · Key pair:** the 2-of-3 key mark (two dots and a ring) on one diagonal of the X, a split stroke on the other. Caution: at a glance it reads as a percent sign, the wrong signal on a site full of markups.
+- **B · Exchange:** X2F as one monoline, the 2 a route from a dot to an arrow aimed at the F ("XMR to fiat"); the 2 alone is the mark.
+- **C · Seal:** a rounded-square ink seal in the badge-seal language holding an X woven from an ink bar under an escrow-teal bar; it is already the app icon and favicon.
+- **D · Wordmark only:** X2F in Familjen 700, hand-spaced, the F's middle arm ending in one Monero-orange coin.
+
+**Design recommends C, Seal; second choice B.** C is an app icon, favicon and header mark in one object, belongs to the kit's seals, says escrow in teal without spending orange. A dropped to an alternate (the % read).
+
+**Header pattern (owner #2):** back (sub-pages) · lockup 24 px · en dash · page name 18/24 600; only the name truncates; browser tab "Page name – X2F"; pre-login pages keep the centred logo. Page names proposed for every screen (≤ 18 characters), e.g. browse "Find a trade" (his alternates "Trade search", "Trade match-up"), quote "Your quote", every trade step "Trade · K7M2", "Waiting changes", "Ask X2F staff".
+
+**Landing (owner, 8 Nov):** for each direction, phone and wide, night and day: the logo large, his slogan "You'll need Fiat to believe it." exactly, then only "Create account", "Log in" and "Lost access? Recover your account" (front door rule), and a footer "Members only · Monero for cash, 2-of-3 escrow" (anticipated, unsigned).
+
+Questions for the owner: (1) logo A, B, C or D (design: C); (2) the browse page name: "Find a trade", "Trade search" or "Trade match-up" (design: "Find a trade"). Every other line on the board is COPY-UNSIGNED except his slogan and the three button labels.
+
+## 8 Nov 2026: signup agreement with signature pad, front door, trade terms by role (canvas v141)
+
+- **SetupTerms:** the agreement once at signup (owner 8 Nov): 9 draft sections (lawyer brackets kept; §5 "Disputes, moderators and our role"), required tick ("…and I understand the rules and X2F's role"), a white 342×180 signature pad (Clear, baseline with ×, placeholder "Sign here with your finger or mouse. A scribble or an X is fine.", "Type your name instead" fallback), "We keep your signature with your account. We don't record your IP address or device." "I accept" waits for scroll-to-end + tick + signature or name. Tweak `signed`: empty | drawn | typed. Back goes to Login.
+- **Front door:** Login (+Wide) "No account yet? Tap Trade or post an offer…" (a free tour) → "Create an account" / "Agree to the Terms and sign first. Nothing on X2F opens before you log in." Still breaking the rule, being fixed: InviteInvalid (+Wide) shows the vendor's name and team to a logged-out visitor; SellOffers "Trade" and PostOffer "Post offer" still link to SetupTerms; the flow map has SignupSecurity before SetupTerms (should be Terms first).
+- **docs/trade-terms-by-role.md** (UNSIGNED, information only): four lists (seller taking a buy ad; buyer taking a sell ad; poster selling; poster buying), each in three groups, every line citing its owner decision id; the fee only appears for the poster (g63). Ten points have no decision yet and are listed at the end for the owner (e.g. when a seller may open a dispute, asking for more time, what moderators can see, the buyer's time to pay).
+- **"What applies to you" card** (new shared component) on BuyQuote and OfferAd (+Wide), above the request button: three group headers with counts and the first line each, "Show all N". Tweak `role`. OfferAd: "No fee for you. The vendor pays the 1%." → "No X2F fee for you." (owner #6). BuyQuote goes up with the bands card.
+- COPY-UNSIGNED: every new line above and every list line in the doc.
+
+## 8 Nov 2026: owner's prototype comments #1, #4, #5, #11, #12 on the boards (canvas v142)
+
+- **Method dropdown (#1), Main / BuyMain:** the "Buyers paying in USD" card's top row is a dropdown trigger (method icon tile, "Payment method", name, chevron); tweak `methodPicker` open shows the bottom sheet: title, search (only when > 8 methods), rows with icon, name, best rate and "N offers" in mono, current one ringed; picking updates the card in place. Matches wip/lead-method-dropdown.
+- **Ad cards (#11), BuyOffers / SellOffers / FlexOffer-Quote (+Wide) / Fold-Offers:** markup bottom-left ("+0.4%" over "Vendor markup"), then two rows: the range in XMR and in USD, the vendor's own unit exact and the other "≈". A "Display amounts including vendor markup" checkbox above the list (tweak `withMarkup`).
+- **Units and minimum trades (#11, #12), PostOffer / FlexOffer-Post (+Wide):** an XMR / currency switch inside each range box (selected 15/20 600 orange, other 12/16 muted), default XMR, all boxes switch together; the other unit at the poster's price under each box; minimum completed trades as chips Anyone / 5 / 10 / 25 / 50; preview shows both units with the markup.
+- **Bands on the quote (#4, #5), BuyQuote:** "This offer's bands" card under You receive: each band in USD and ≈XMR with its rate and markup, your band ringed ("Your amount"), "Above $500 the rate changes to $331.88.", With markup / Without toggle. A Max button in the You pay field (he likes Max; the quote board had none).
+- **Anticipated (#3, "is that the actual rate?"):** "Market rate · updated 14:05 UTC" under every market price.
+- Head-designer calls: Fold-Offers keeps its 1012 px viewport (the list scrolls); the sell side has no quote board, so SellOffers' Trade goes to TradeFund for now and a SellQuote board is queued. Example EUR rate €304.10 is invented. FlexOffer-Post's 2 Nov "nothing is converted" aside is superseded by #11 for display.
+- COPY-UNSIGNED: all new lines are listed on each board's notes (e.g. "Payment method", "Search 17 methods", "Vendor markup", "Converted at the market rate, before markup.", "One unit for the whole offer. Traders see both, converted at your price.", "This offer's bands", "The price changes with the amount", "Your amount", "Above $500 the rate changes to $331.88.", "Max", "Market rate · updated 14:05 UTC").
+
+## 8 Nov 2026: Anticipated from owner comments (canvas v143)
+
+The owner asked design to treat his 12 comments as a brief for the whole app and to reach screens before he does. Each change below carries an "Anticipated · design, 8 Nov · follows owner comment #N" aside on its board.
+
+- **The deal travels with the trade (#4, #11):** a deal summary under the title on TradeFund, BuyerPay, BuyerPaidWaiting (+Wide), SellerConfirm, SellerRefund, Warn-Release (+Wide), CancelRequest (+Wide): amount and fiat, rate with the markup ("$330.00 / XMR · 0.1% above market"), the band, and the method's time to pay. Nobody goes back to the offer to remember the deal.
+- **Only what applies to me (#6):** removed BuyerPay's "If you're comfortable with this seller, feel free to move the trade along now." (also against Q12); SellerConfirm's "Instant apps like Zelle get 2 h; bank wires get up to 24 h." → "Zelle gets 2 h."; BuyerPaidWaiting step 1 (the seller's task) → "Nothing to do on your side while satoshi_ghost checks Zelle. If they go quiet, you can nudge them once every 15 min."
+- **My trades (new, MyTrades + Wide; the prototype's worst P1):** active trades first (state key mark, partner avatar, amount, state chip, time left), then Recent, a My offers row, and a designed empty state with "How a trade goes". Every trade's back arrow and the wide rail's Trade item go there.
+- **When time runs out (#10, proto P1):** BuyerPay `window: expired` (no "Send exactly", no "I've paid"; a caution card with the buyer's real options per g67/G2/g66); TradeFund `fund: expired` ("Trade ended · Nothing moved", Find another offer).
+- **Small conveniences (#5) and bare space (#10):** Copy buttons on BuyerPay's amount and memo; SessionLength's empty band filled with "Counts from now" (G24) and "Any of your login methods extends it" (G10, Q73).
+- New shared pieces: deal summary, icon Copy button, My trades card.
+
+**Head designer's calls:** Main's Trade tab stays the marketplace; Main and Desktop get a "My trades" link with the active count (drawn next with the SellQuote board). Bands for satoshi_ghost: one set everywhere, $50–$500 at $330.00 and $500.01–$1,500 at $331.88 (BuyQuote's); "0.1% above market" becomes "0.03% above market" to match $330.00 on $329.90 — both aligned in the next pass.
+
+**For the owner (via you):**
+1. The poster's 1% fee: is it escrowed with the trade (the prototype escrows 1.262500 XMR for a 1.250000 trade), and where should the poster see it? Design's recommendation: yes, shown to the poster only, as one line in the deal summary ("Your fee 0.012500 XMR, taken when the trade completes").
+2. A buyer who paid but never tapped "I've paid" before time ran out: can they open a dispute at once? Recommendation: yes.
+3. A seller who never funds the escrow: any consequence beyond the trade ending? Recommendation: none on the first time; it counts as a cancelled trade on their profile.
+- Also open: SessionExtend still shows a 2-minute prompt where Q73 says 5 minutes (design fixes); the G37 incident ID isn't on DisputeRoom yet (design adds it with Copy).
+
+## 8 Nov 2026: front door closed (canvas v144)
+
+- **InviteInvalid (+Wide):** tweak `session` out | in. Logged out: centred wordmark, one general message for every reason, "This invite link has expired or was already used. Ask the person who sent it for a new one.", and Log in / Create account; no names, team or counts. Logged in keeps the detail; "Go to Trade".
+- **Signup order is now agreement first:** Landing → SetupTerms (agree + sign) → SignupSecurity → SetupUsername → … → SetupWelcome, whose "Start trading" now goes to Login (G25), not into the marketplace. Back links follow the same order.
+- **FlowMap and docs/design-flow-map-2026-11-08.md:** Landing is the entry node; MyTrades is on the Trade hub; the arrow that let a logged-out invitee reach a trade is gone; `/trades` is MyTrades.
+- Maintenance stays a logged-in screen (it sits over the app); a logged-out visitor during maintenance sees the Landing. Noted on the flow map.
+- COPY-UNSIGNED: "Can't be used", the invite body line above, "Go to Trade", "If it was you, you're already on the team. If not, ask for a link of your own."
+
+## 8 Nov 2026: owner pages 8 and 10 received; logo decided (canvas v145)
+
+- **Logo: D, Wordmark** (owner's pick over design's C). LogoDirections now carries the DECIDED aside; A–C stay for the record. Browse page name: "Find a trade".
+- **Queued for when helpers return (Nov 11, 15:00 UTC), in this order:** (1) the three interrupted jobs (trade rules p6-1/p9-2/p9-4/p7-2/p7-3 with PaymentDetails; teams p7-4…p7-12; SellQuote, per-method times, My trades link, band facts, incident ID); (2) roll D through: final geometry, 24/32 px header lockup "logo – page name" on every board, favicon (coin F alone), app icon, one-colour version, the landing hero with the slogan; (3) fee p10-1, case 2: the selling poster escrows the trade plus 1%; the taker gets the full amount and never sees a fee; the selling poster's deal summary shows the 1% (and the ruling fee row follows); (4) team release p10-2: remove "Release XMR" and "Confirm payment received" from member permissions (totals and the Manager preset follow; MemberPermissions notes cite p10-2, "until lots of feedback asks for it").
+- Nothing above is half-published: the canvas and this branch show only finished work.
+
+## 8 Nov 2026 (evening): logo D drawn, landing, team answers, SellQuote (canvas v146)
+
+**Logo D, final** (BrandKit board, new; LogoDirections updated): the wordmark as real SVG paths (Familjen 700 outlines for X and 2, a redrawn F whose middle arm ends in the Monero-orange coin), three cuts (small 24–32 px pixel-fitted; medium; display with a coin rim), one-colour and reversed versions, the favicon (the coin F alone, 16/32 px) and the app icon (the coin F, 1024 master). Header lockup is 24 px tall beside the 18/24 page name ("X2F – Find a trade"). **SVG files for the builders: docs/brand/svg/** (x2f-{color,mono,reversed}-{24,32,120}-{night,day,dark}.svg, favicon-16/32.svg, app-icon-1024.svg); generators in docs/design-tools/logo/final/.
+**Landing / Landing-Wide** (new): logo large, "You'll need Fiat to believe it.", three promise rows ("Your coins sit in 2-of-3 escrow. X2F can't move them alone." / "No IP addresses logged. Chats are end-to-end encrypted." / "Members only. Nothing here is public."), Create account → SetupTerms, Log in, "Lost access? Recover your account", footer "Members only · Monero for cash, 2-of-3 escrow". All COPY-UNSIGNED except his slogan.
+
+**Teams (p7-4…p7-12, p10-2):** 33 permissions (Chat 8, Offers 8, Trades 7, Records 7, Holds 3); "Release XMR" and "Confirm payment received" removed ("Releasing stays with the team lead until feedback asks otherwise."); "Start from" Manager (27) or Starting set (10, set A); per-member Trade size band; Working hours Any time / schedule; Disputes permission; View / Add notes (no delete, logged); first-login approval only; members may use any login, and a username-and-password lead still holds team changes 24 h. Blocked users list with date and optional note. Team, MemberApproval, TeamRefusal and HoldMember counts follow.
+
+**SellQuote (+Wide), new:** the seller taking a buy ad, BuyQuote's mirror; Max fills the lower of the wallet balance and the band max; "Time to pay: 90 min · Dispute after: 90 min" (p9-4); nudge optional (p6-1); no X2F fee for the taker (p10-1). SellOffers' Trade opens it. BuyQuote: "Taking an offer is free. No X2F fee is added." removed, p9-4 line added.
+**Also:** "My trades · 3 active · 2 need you" first on Main/BuyMain and in Desktop's rail; per-method transfer time on the method card and picker ("Transfer time: Up to 30 min", examples until your research lands); one set of facts for satoshi_ghost's offer ($50–$500 at $330.00, +0.03%); SessionExtend prompts 5 min before (Q73); DisputeRoom shows the G37 incident ID with Copy.
+
+**Open, for the owner via you:** how X2F reads an outside wallet's balance for Max (SellQuote's balances are examples); who pays the Monero network fee when the seller funds (SellQuote says "Paid by you", mirroring BuyQuote).
+**Still running:** the trade-rules pass (p6-1/p9-2/p9-4/p7-2/p7-3, PaymentDetails, fee case 2 on the poster's deal summary); pushes READY when done. Then: logo D into the header of every board.
+
+## 8 Nov 2026 (night): owner pages 6, 7, 9 and fee case 2 on the trade boards (canvas v147)
+
+- **SellerRefund:** no nudge gate, no final alert (p6-1, p9-2). After the time to pay: primary "Cancel and get your 1.262500 XMR back" at once; secondary "Nudge mira.k" with "A nudge often brings a quiet buyer back. You can nudge every 15 min. It's optional." Tweaks available | late (mira.k: "I just got back, sending now") | done ("The refund has started. The trade is done at 10 confirmations."). "Give 30 more min" removed: the trade stays open until the seller cancels.
+- **BuyerPay:** time to pay ended is not a hard end (p9-2): paying stays possible, with "satoshi_ghost can now cancel at any moment. If you pay now, tell them in chat first." p7-2 confirm sheet: "Are you sure you are ready to say you have transferred the funds?" + "Do not show me this warning again", "Yes, I've paid" / "Not yet".
+- **SellerConfirm / Warn-Release (+Wide):** p7-2 "Are you sure you are ready to confirm that you've received the payment?" + the tick, "Yes, release the XMR" / "Not yet"; p9-4 line "mira.k tapped I've paid at 14:05 UTC, so you can no longer cancel. Zelle: mira.k can open a dispute 90 min after I've paid".
+- **BuyerPaidWaiting (+Wide):** "You tapped I've paid, so satoshi_ghost can no longer cancel, and neither can you."; dispute timing from the method.
+- **Fee case 2 (p10-1):** the selling poster's deal summary on TradeFund, SellerRefund, SellerConfirm, Warn-Release and CancelRequest: "You escrow 1.262500 XMR · 1.250000 for the trade + 0.012500 X2F fee (1%)"; takers see no fee anywhere. A full reversal returns all 1.262500 (no fee, g63). TradeFund gains `side: taker` ("Selling to satoshi_ghost", 1.250000, no fee) for the SellQuote path.
+- **PaymentDetails (+Wide), new (p7-3):** the sender's "Your Interac e-Transfer details" card in the chat (Full name; Send to: Email or Phone, one required; Save for next time; Send details) → one packaged message; the receiver sees each value with Copy. Required fields per method (to verify, your research): Interac e-Transfer and Zelle: full name + email or phone; PayPal: email; ACH: name, routing, account; SEPA: name, IBAN, BIC; Revolut: @tag or phone; Wise: email; Cash App: $cashtag; Cash by mail: name, mailing address.
+- **docs/trade-terms-by-role.md** and OfferAd's "What applies to you": nudge optional and encouraged; no cancel after I've paid; late pay and dispute at once; own name a recommendation only; the several-trades courtesy line (takers): "Opened trades with several people to see who answers first? Close the others once you've picked one, so they aren't left waiting."; blur check asks both for the first month ([lead writes the wording]); fee lines only in the poster lists.
+- **Head designer's calls:** the refund button says 1.262500 (the poster's full escrow, no fee on a reversal). Release confirm lives on SellerConfirm (after the bank tick and hold); Warn-Release is that same sheet drawn alone.
+- **Design fixes queued next (no owner question):** BuyerPay/Fold-Trade's own-name callout reworded to the softer recommendation; Refunded's "Your final alert ended" removed; SellerConfirm's blur-check line to "both parties, first month"; the doc's old buyer line about posting payment details (p7-3 says the receiver posts them); BuyQuote's card regenerated from the new doc.
+- **For you to check:** whether the owner said there is no time limit on the seller's release (the trade designer read it so; SellerConfirm and BuyerPaidWaiting still show the 2 h "Time to confirm" clock); and the p-id of the several-trades line (tagged p9-7 from the 8 Nov list).
+
+## 8 Nov 2026 (late): logo D in every header, proof screens, owner's wording (canvas v154)
+
+- **Logo D in every header that showed "X2F":** phone app headers read "logo – page name" (Main and BuyMain move Buy/Sell to a row under the header); pre-login pages show the logo centred (24 phone / 32 wide); in the 240 px wide rail the page name sits on its own line under the logo so it never cuts off (head designer's ruling; staff rails show logo + STAFF, then the page name). Page names from the LogoDirections table. "X2F" inside sentences, fee lines, the "X2F team" tag and the staff avatar stay text.
+- **SellerRefund (owner's words, design's wording):** "TIME TO PAY EXPIRED / Time's up. The trade is still open. / mira.k hasn't marked the payment yet. Your 1.262500 XMR is safe in escrow, and you can:" then "Cancel now and get a full refund" · "Wait for mira.k to reply or pay" · "Send a nudge to get their attention (every 15 min)". Same idea in the escrower lists of trade-terms-by-role.md and BuyQuote's card.
+- **SellerConfirm, paid with proof:** "mira.k marked this trade paid and attached a payment screenshot." + "View the screenshot"; the thumbnail opens a full-screen viewer (tweak `proof` closed | open | none). Viewer footer: "Our privacy tool hid mira.k's private details before sending. Only a moderator can see the original, and only in a dispute. Cleaned before sending: mira.k's app rebuilt this as a plain image, so hidden photo data (EXIF) and anything embedded are gone. It opens inside X2F as a picture, never as a file, so there's no file for a virus to hide in." (your build facts; no server scan, no VirusTotal).
+- **Privacy tool (owner):** the blur feature is "our privacy tool" in all user-facing text on SellerConfirm and ProofBlur; first-month check for both parties: "Did our privacy tool get it right?" (receiver: "…kept what matters for this trade: the amount, the date and time, the payment method and the trade code." Yes, it looks right / No, something's wrong; uploader: Yes, send it / No, let me fix it). The uploader's own "Add blur / Remove blur" buttons keep the word blur.
+- **BuyerPay, no-proof confirm (owner rule):** "Mark paid without proof? / You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is often what decides it. It's your choice." · Add proof / Mark paid without proof; always shows when proof is missing; then the p7-2 sheet unless silenced. Tweak `confirm: noproof`.
+- **Also:** own-name callout softened to the owner's recommendation on BuyerPay and Fold-Trade; Refunded's final-alert line removed; BuyQuote's "What applies to you" regenerated; doc's old buyer payment-details line removed (p7-3).
+- All COPY-UNSIGNED lines are listed in each board's notes. Remaining "privacy tool" sweep: ProofBlur-Wide and any other user-facing "blur" wording, next.
+
+## 8 Nov 2026 (night): "privacy tool" naming, no-proof confirm — READY
+- ProofBlur (phone): the auto-hide feature is now called "our privacy tool" everywhere a trader reads it. The uploader's own buttons keep "Add blur" / "Remove blur" because those are their boxes, not the tool's. ProofBlur-Wide and the FAQ/terms/mod boards still say "auto-blur"; that sweep was stopped and is not done.
+- BuyerPay `confirm: noproof`: "If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice." (owner's line, reworded).
+- Canvas v156.
+
+## 8 Nov 2026 (night): chat lines for C1/C2, no Matrix — READY (COPY-UNSIGNED)
+- Traders (Desktop, Fold-Trade lock note): "Encrypted. If a dispute is opened, a moderator can read this conversation. It's erased for good 90 days after the trade ends." (90 days = `chatPurgeDue`; never while disputed.) Fold-Trade height 1011 → 1031.
+- Staff (ModCase, Full chat header): "Unlocked on your device at 11:40 UTC · logged" (C2 re-wrap to the staff member's device).
+- No Matrix states (no device verification, no "unable to decrypt"). Chat stays single-device.
+- Canvas v157.
+- Correction (owner rule, origin/comms): lock note now reads "…It's erased for good 30 days after the trade ends, or 90 days after a dispute closes." Heights unchanged. Canvas v158.
+
+## 8 Nov 2026 (night): "End-to-end encrypted" lock note on every chat — READY (owner request)
+- All 10 chat boards now read: "End-to-end encrypted. If a dispute is opened, a moderator can read this conversation. It's erased for good 30 days after the trade ends, or 90 days after a dispute closes." (Desktop, Fold-Trade, Fold-TriFold, PaymentDetails(+W), TeamChat(+W), DisputeRoom, Block(+W)).
+- Truth check for the build: only true if the server never holds a key that opens chats (keys only for buyer, seller, their team members' devices, and the moderation service). If team-member devices get keys, say so in the team docs.
+- Heights: DisputeRoom 1574→1606 (joined 1561, sent 1729), PaymentDetails 1974→2006, TeamChat 912→928 (lead 882), TeamChat-Wide 1144→1180 (lead 1132). Canvas v159.
+- Lock icon (owner request): every chat lock note now leads with a 16 px lock in var(--escrow) and "End-to-end encrypted." in 600 escrow colour, same as the secured-escrow treatment. Block(+W) and TeamChat-Wide gained the icon they lacked. No height changes. Canvas v160.
+
+## 8 Nov 2026 (night): reply to the lead's E2E truth check — READY
+- (1) 30 / 90-after-dispute: the board copy already follows the owner's 8 Nov ruling; it becomes true when wip/lead-chat-retention lands. Copy stays COPY-UNSIGNED until then.
+- (2) Team members in trade chats: head-designer ruling. TeamChat(+W) stays drawn as the target design, because the owner approved team members answering in trade chats (p10-2). It must not ship before the team-member key path exists. Until then, the build either hides team replies or the board's team rows are out of scope. No other board promises member access.
+- (3) Moderator key from the first message: the trader wording "If a dispute is opened, a moderator can read this conversation" stays. It depends on the dispute-only read rule; please add that rule to the spec and the separation-check.
+- Compromised-server caveat: agreed for the written spec. No trader-facing copy for it.
+- Security list: noted what is scheduled and what went to the owner on page 11. Nothing from design is waiting on it.
+
+## 9 Nov 2026: owner page 11 drawn (p11-15, p11-16, p11-9) — READY, COPY-UNSIGNED
+- **p11-15 SetupTerms (signature):**
+  - The intro now reads: "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade."
+  - The pad reads: "Sign your name here with your finger or mouse. A scribble or an X is fine."
+  - The button "I accept" is now **"Start creating my account"**.
+  - FRAME_H: empty/drawn 1415 → 1509, typed 1319 → 1413. $preview 2406.
+- **p11-16 BuyerPay, new tweak `dispute: none|opened`** (with escrow secured). The other trader opened a dispute before "I've paid":
+  - "I've paid" is greyed and disabled. Under it, in danger colour: "Paused: satoshi_ghost opened a dispute. Don't send any payment." (APP_H +22.)
+  - An alert sheet opens at once:
+    - eyebrow "DISPUTE OPENED";
+    - title "Don't send any payment";
+    - body: "satoshi_ghost opened a dispute and a moderator has been called in. Don't send money to satoshi_ghost by Zelle or any other way. "I've paid" is paused until the moderator tells you what happens next.";
+    - buttons: "Go to the dispute" → DisputeRoom, and "Got it, I won't pay".
+  - Build: the payer gets this whoever opened it. The method name comes from the trade. Also send it by Jabber if alerts are on.
+- **p11-9 Terms (SetupTerms):**
+  - Section 6 reads: "Completed trades, chat included, are erased for good on day 30 after they end. Disputed trades are kept for up to 90 days after the dispute closes, with private details removed by our privacy tool, and used to train our moderators while X2F grows."
+  - The key points become two: "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators."
+  - SelfDestruct(+W): "blurred automatically" → "removed by our privacy tool".
+- Canvas v161. Not drawn yet: p11-4 (approve a new device from a logged-in device, plus a Jabber notice). LoginApprove already covers it, so I'll check the board against his words next.
+- **p11-4 LoginApprove:** the board already covers approving from a logged-in device: the pop-up, the number match, Yes/No, and the 3-device limit. I added the Jabber notice to "Where do I approve it?" step 1: "If you turned on Jabber alerts, we've sent you a message there too." Build: send an OMEMO Jabber alert for each new-device request when alerts are on. No height change. Canvas v162.
+
+## 9 Nov 2026: "privacy tool" sweep finished + dispute warning on wide — READY, COPY-UNSIGNED
+- Every trader-facing mention of automatic blurring now says "our privacy tool" / "hidden" (staff: "the privacy tool"). "Unblurred copy/proof" is now "original copy" on: ProofBlur-Wide, SellerConfirm notes, BuyerPaidWaiting(+W), ModCase ("Request the original proof"), ModQueue, FAQ(+W), DisputeRoom ("Send original copy to sarah.v"), DisputeOpen, DisputeRuling, OfferAd(+W), Fold-Trade/Desktop proof hint ("Our privacy tool hides private details for you to check next."), StaffLog. "Add blur" / "Remove blur" stay (uploader's own boxes).
+- Desktop + Fold-Trade: `dispute: none|opened` tweak as on BuyerPay (p11-16): I've paid paused + red caption; centred "Don't send any payment" modal on wide.
+- Heights: ProofBlur-Wide 1903→1959 (sent 1780); Desktop 1618→1692; Fold-Trade opened 1057; DisputeRoom sent 1711; ProofBlur 3933→3895. Canvas v163.
+
+## 9 Nov 2026: lead's open items — READY
+- **Handoff line 677 corrected:** the pre-login mark is logo D, centred, alone (24/32 px).
+- **Wide-shell rail:** Settings → /settings/security, Help → /feedback, and no "My trades" card until those screens exist. All approved.
+- **BuyQuote:**
+  - The network-fee row now uses the OD-4 wording: "about 0.0001 XMR, taken from your payout".
+  - The Deposit row is removed. Board heights are −49 (default 3052).
+  - Wallet-picker order: the build's order (picker above the "You receive" card) is fine and reads naturally. The board keeps its order, so there's nothing to change.
+  - Signed-out lines "You add your wallet when you set up your account, then pick it here." / "Refunds go back to it." are approved; they stay COPY-UNSIGNED for the owner.
+- **OwnerSetup step 4:** "(optional)" is dropped and the body now reads "Required: the owner logs in with this key. It also receives encrypted staff alerts and signs important rulings." (A9.) No height change.
+- **Trusted 200+ / 98%+:** the canvas boards already said this. The stale copies were in the repo, at design/x2f-app/{BadgeSettings,BuyOffers,SellOffers}. They are fixed on **wip/design-trusted-200 @b427426e** (off main), together with the repo copies of BuyQuote and OwnerSetup, and their refs recaptured (5 PNGs plus manifest). Code strings (OfferCard.tsx, packages/reputation) are yours.
+- **DisputeRoom between the seller's cancel and the refund landing:** I propose replacing "locked in escrow" with "Refund on its way" (caution colour) until the refund confirms. This is a build-side state; I'll draw it when the state exists.
+- **Desktop refs:** I'll recapture them after the rail lands on main.
+- **G37 incident ID:** the boards already put the incident ID at the top of the trade (DisputeRoom). Please send me the exact G37 wording if it asks for more.
+- Canvas v164.
+
+## Owner answers not yet on a board (9 Nov 2026, owner order "all my answers … worked on") — READY
+I audited every owner answer on origin/comms against the canvas: the decisions file, page 1/2, page 3, follow-ups, page 11, the 28 Oct–2 Nov answers, and all 68 raw JSON answers, which match their .md transcriptions word for word.
+- **Full register, one row per answer:** docs/owner-answers-audit/combined-by-stage.md (82 rows; duplicates across sources are merged in the drawing, not in the register). Per-source files with the DRAWN id lists are next to it.
+- **Totals:** about 20 CONFLICT, 41 PARTLY and 24 NOT DRAWN, across the four sources (overlapping). About 120 answers are already drawn.
+- **Biggest conflicts, in the order a user meets them:**
+  - G34: user + password + TOTP counts as strong; the security boards say it doesn't.
+  - G32: a recovery code only lets you in to set up login methods again.
+  - Q23: 3 bands per currency and 5 payment types per ad; boards say 5 bands.
+  - G19: traders never see "emergency".
+  - 28 Oct: appeal is 48 h; Refunded shows 72 h.
+  - p11-11: 90 days count from when the dispute closes; SelfDestruct counts from when it opens.
+  - Q77: vendor to trader means opening a new account; BecomeVendor still offers "Switch back".
+  - G57: removing team members.
+  - Clawback: pay goes out at clock-out; StaffSettings holds the bonus.
+  - Q54: owner username vs display name.
+  - Q51/G3: staff need all three login methods.
+- **Head-designer rulings on ambiguous items:**
+  - Q58 cap in USD. Q77: the 60-day idle close applies to every account. Five member types stay (owner-approved).
+  - TeamChat follows the owner's 28 Oct words: "Message from Team <display> member: <member name>".
+  - G34: the combination counts as strong for traders; vendor and staff rules stay as boarded unless the owner's words say otherwise.
+  - p11-3 ("48 mark"), F3 (what makes a band different), F8, reviewer naming and the public won/lost line wait for the owner or lead.
+- **Drawing now, by journey stage:**
+  - 1–2: signup and security.
+  - 3–4: browse, quote and post.
+  - 5–6: trade, proof and dispute.
+  - 7–8: after the trade and settings.
+  - 9: staff and owner.
+
+  Each stage gets its own READY push with a note here.
+
+## 9 Nov 2026: owner answers drawn — stages 7–9 (after trade, settings, staff/owner) — READY, COPY-UNSIGNED
+**Stage 7–8**
+- SelfDestruct(+W), FAQ(+W) (p11-11): the 90 days count from when the dispute closes. FAQ past reputation: one line per site ("Imported from LocalMonero: 120.0 XMR"), not a badge.
+- Profile/Reviews(+W):
+  - item 27: dates older than self-destruct show month and year only ("Sep 2026").
+  - 28 Oct: a disputed review shows "Under review" publicly until a moderator decides (new Profile tweak `review`).
+- BecomeVendor(+W) (Q77/G14/G26):
+  - "Switch back to trader" is removed. Going back to trader means opening a new account.
+  - Any trader can apply; there is no minimum trade count.
+  - Trader session lengths are fixed to 2/4/8/12 h (G23).
+- Support(+W) (Q67/Q69): limit of 10 tickets a day, shared across a team (tweak `limit`).
+- TeamRefusal: feedback link on the "can't do that" sheet.
+- MemberApproval(+W) (p11-14): a member's first login opens "Agree and sign" (terms, tick box, signature pad) before the lead is asked. Tweaks: state `sign`, `signed`.
+
+**Stage 9**
+- OwnerSetup:
+  - Q54: a private username plus a display name.
+  - Q59: owner logs in with a security key and the PGP key together.
+  - Q55: X2F stays offline until setup is done.
+  - G4: big changes need both keys.
+- StaffList:
+  - Q51/G3: staff use a security key, a PGP key and a passkey (2 on a new device, 1 on a known device).
+  - First-login line covers role, pay and appeals.
+  - Q60: permission checkbox grid; Feedback is always on for senior moderators.
+  - Q56: permanent Remove with a key-tap confirm (tweak `confirm`).
+  - A Feedback rail item is added on the staff boards.
+- StaffSettings:
+  - Clawback: pay at clock-out; an overturned ruling comes off later payouts. The "hold bonus" option is removed.
+  - Logout pay preview with address confirm.
+  - Fee-wallet sweep threshold to cold wallet.
+- StaffOverview:
+  - G19: planned/unplanned maintenance, staff-only reason, 500-character counter.
+  - Q13/Q35: owner notifications, including rates back online.
+  - Q52: ruling approval by key tap (tweak `approve`).
+  - G20: feedback list that is named or anonymous.
+- StaffLog: p11-5 every event; G37 "Accepted the dispute (#…)".
+- ModQueue/ModCase (G37): incident ID = first 8 characters of the trade code.
+- Maintenance(+W) (G19): traders never see "emergency". Variants are `planned` (default) / `unplanned`, "Down for maintenance", with a 24 h notice for planned work.
+
+**Not drawn yet**
+- F17/Q58 imported-volume verify (needs its own staff board).
+- Owner key-replacement screen.
+- Staff new-device login (2 of 3).
+- Reviewer naming and the public won/lost line wait on the owner.
+
+Canvas v165. Stages 1–6 follow.
+
+## 9 Nov 2026: owner answers drawn, stages 1–6 (signup → disputes) — READY, COPY-UNSIGNED
+Each board has a "Decided · owner" aside naming the ids. New tweaks are listed in brackets.
+
+**1–2 security**
+- SignupSecurity(+W), G34/G13: password + authenticator code counts as a strong login. A vendor still needs a passkey, security key or PGP key.
+- RecoveryHold(+W)/RecoveryCode(+W), G32: a recovery code only lets you in to set up login methods again. The rest of the team is logged out, and changes already waiting stay waiting.
+- Devices(+W):
+  - G34: the no-other-device text depends on account type.
+  - G57: switching a member off logs them out at once; after a username/password-only login the switch-off becomes final in 24 h.
+  - G23: session lengths 2/4/8/12 h.
+  - Q75: idle reminder at 15/30/60 min [idleReminder].
+  - Q16: wording.
+- Login(+W), Q13/Q19: a staff login on the trader site is refused [result].
+- Settings(+W): Q16, Q75 and G23.
+- LoginApprove-Wide: Jabber line.
+- DeleteAccount, p11-13: the signature is erased.
+
+**3–4 browse/post**
+- Main/BuyMain, Q28/Q24: currency menu ordered USD EUR GBP CAD AUD JPY, then A–Z, with flags, search, and greyed "No rate right now" [currencyMenu].
+- FlexOffer-Post(+W), Q23/Q4/Q5/p11-6:
+  - 3 bands per currency, 5 payment types [methods].
+  - $5,000 per-trade launch cap error [cap].
+- PostOffer: Decided, FlexOffer-Post ships.
+- OfferAd(+W), Q5/Q23: one method list per ad, at most 5.
+- BuyQuote/SellQuote(+W):
+  - "Request to buy XMR" / "Request to sell XMR".
+  - $5,000 cap on Max [cap].
+- BuyOffers/SellOffers/FlexOffer-Quote(+W): request buttons.
+- MyOffers(+W)/Fold-MyOffers: F6 methods dropdown, Q39 frozen wording, stale fixed-price line removed.
+
+**5–6 trade/dispute**
+- ProofBlur(+W):
+  - Q42 stale screenshot [date stale].
+  - Q43 amount not found, send anyway [amount].
+  - F14 trade code hidden, with a chat notice [protect code-hidden].
+  - G50/G52 gift-card video, required for range cards [giftCard].
+- SellerConfirm [situation], covering F14 (chat notice), Q20 (paid less: talk first, then release or dispute) and G50 (45-min card check).
+- Warn-Release(+W): paid-less line [amount short].
+- TradeFund, G2: cancel before escrow [fund cancelled].
+- SellerRefund + DisputeOpen [side seller], p11-16: the escrower opens a dispute before "I've paid"; the payer is greyed out and told not to pay.
+- TradeTechIssue(+W): G7 chat still open, G37 incident ID, OPEN boxes resolved.
+- Refunded(+W): 48 h appeal (31 Oct 14:05) and the 48 h no-show dispute.
+- MyTrades(+W): "File appeal" button that ends with the window.
+- DisputeRuling/Appeal-Notice(+W), Q40: feedback rules.
+- Fold-Cover, Q38: 24 h countdown.
+- TeamChat(+W): team display name + "member: <name>".
+- GiftCardBrand: rules synced.
+
+**Pre-existing height mismatches (not new)**
+- DeleteAccount-Wide 800/753.
+- Fold-Cover 392/368.
+
+Canvas v166. The audit register (docs/owner-answers-audit/) is now drawn except the items listed as waiting for the owner or lead.
+
+## 9 Nov 2026: lead jobs J-31, J-32, J-33 + owner p11-17..40 drawn — READY, COPY-UNSIGNED, build-ready
+**Build specs** (exact copy, states, sizes, entry points) are in docs/build-specs/:
+- spec-j31a: trade rules, pay, cancel;
+- spec-j31b: dispute, chat, proof, gift cards, offers;
+- spec-j33a: signup, security, notices;
+- spec-j33b: team and alerts;
+- spec-staff2: staff and the new boards;
+- spec-j31*: the earlier stage boards.
+
+J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
+
+**J-31 trade room**
+- T-080/T-034: the per-reader rule lists are now identical on BuyQuote, SellQuote(+W) and OfferAd(+W):
+  - fee lines show only to posters;
+  - the courtesy line shows only to takers;
+  - the nudge line is in every role.
+- T-039: courtesy sheet "Trading with more than one person?" [opening courtesy].
+- T-049: CancelRequest "Cancelling is likely final"; it no longer names the seller.
+- T-044: confirmed.
+- T-079: BuyerPay keeps the owner's own words: "proof is usually what decides which side wins".
+- D-069: DisputeRoom has the "answer the moderator" line.
+- p11-37: refunding state with confirmations [escrow refunding].
+- p11-25: TeamChat shows "satoshi_ghost Assistant 1".
+- P-011: ProofBlur "Before you send" box plus "How proof is checked".
+- T-058: GiftCardBrand rules card.
+- P-030: drawn earlier, SellerConfirm [situation short].
+
+**J-32 offers**
+- O-019/O-020/O-021: currency menu tags no-rate currencies (does not hide them), with a tap explanation [currencyMenu no-rate-tapped].
+- O-022: MyOffers "Can't go live" / "Not available".
+- O-023: the screen stays "My offers".
+- O-024 / O-035 / 3 bands: drawn earlier, confirmed.
+- SellQuote(+W): Deposit row dropped (G-005).
+
+**J-33 accounts, staff, notices**
+- p11-24 SetupTerms: Terms → separate Site-rules tick → signature → "Continue creating your account".
+- S-043: 60-day line explains that X2F is for regular traders.
+- S-015 SignupSecurity: strength-chart copy, including "Armored vault!" and the fake-rock tip.
+- S-025 RecoveryHold: security review plus Jabber.
+- p11-36 RecoveryCode / Login-Backup: "Your old recovery code is burned" + "Make a new recovery code".
+- D-016: **new AccountFrozen(+W)**.
+- D-020 Ban-Notice and G-013 Support: already matched.
+- p11-21/26/27/28/31:
+  - MemberApproval: no approval; lead notice plus Jabber; members save their own recovery code.
+  - Team / MemberPermissions: a change from a weak login starts in 24 h.
+  - HoldMember: only the change waits.
+  - Alerts / JabberSetup: pick events (sample list); OMEMO and Tor always on.
+- G-007: Devices, the five wordings.
+- Staff:
+  - p11-19 StaffList: PGP + passkey + either a security key or username/password.
+  - D-041 StaffSettings: clock-out sheet ("Closing the app doesn't clock you out").
+  - **new StaffLogin** (known / new device 2-of-3 / first-login welcome D-046).
+  - **new StaffImportVerify** (F16/F17/Q58: 100,000 USD cap in XMR, 4-point help).
+  - **new OwnerKeys** (G4: both taps).
+
+**Head-designer calls on flags, for the next design pass**
+- Alerts has two Jabber sections; merge them into JabberSetup.
+- Jabber messages name the event kind only: no amounts, names or trade codes.
+- The Team intro line wrongly says members need a passkey, security key or PGP key; any login is allowed (p7-9).
+- Staff first login should sign the terms first (p11-14).
+
+**For the owner's page**
+- Losing an owner security key makes "both taps" impossible; how does the owner recover?
+- p9-8: the first-month privacy-tool check line in the rule lists still reads "[lead writes the wording]".
+
+**Pre-existing height mismatches, not new**
+- MemberApproval(+W): fixed frame.
+- Ban-Notice-Wide.
+- ProofBlur sent.
+- BuyerPay dispute variant.
+
+## 10 Nov 2026: lead's 9–10 Nov room jobs drawn — READY, COPY-UNSIGNED, build-ready
+**Specs** (in docs/build-specs/): spec-fix3, spec-setup3, spec-offers3, spec-md3, and review-multi-device.md. Canvas v168.
+
+**(1)–(3) Fixes**
+- DisputeRoom: moderator is "they" everywhere.
+- spec-j31a: the no-proof line is back to the owner's words; its courtesy §2 is superseded by spec-fix3 §4.
+- Incident ID is the dispute's own 9-character code (#K7QM4T2X9 sample). Updated on DisputeRoom, AccountFrozen(+W), ModQueue, ModCase, StaffLog, StaffOverview, SellerRefund, TradeTechIssue(+W). The "first 8 characters of the trade code" captions are gone.
+
+**(4) Courtesy sheet** moved from BuyQuote/SellQuote(+W) to over the trade room: BuyerPay, and TradeFund (taker) [courtesy on]. The quote Request buttons are plain links again.
+
+**(5) Setup screens**
+- SetupBackup: [view required|optional] per S-017.
+- SetupUsername: old public-name text removed.
+- SetupWelcome: "Recovery codes".
+- PostOffer note: main still has the old single-method screen. The flex strings are on wip/lead-flex-launch-4 and are compared in spec-offers3 §2d. Main's missing pieces were drawn on FlexOffer-Post(+W): gift-card country, the warning, the terms ticks, "Market rate · updated", [methodsLoad failed].
+
+**(6) Locked payment instructions:** "How to pay satoshi_ghost" card on Desktop and Fold-Trade [payInstructions locked]. Mapping onto BuyerPay is in spec-offers3.
+
+**(7) Password meter:** design ruling, because nothing is checked before the tap.
+- Label: "Strength: Meets the rules".
+- Note: "We'll check it hasn't appeared in a known leak when you set it."
+- SetupPassword [meter checking]. SignupSecurity needs the same state (follow-up).
+
+**(8) Multi-device:** drawable. LoginApprove(+W) and Devices(+W) [approval tiles|code], default tiles until owner p12-5.
+- New device: "Your code 418 206".
+- The approver sees the first four digits and types the last two [handover strong|weak-login|weak-this], with the chats line.
+- **Two security calls for the lead:**
+  - The approving device must check the typed digits against its own computed code, not only the server's (note §6.1 checks only the server).
+  - Showing all six digits on the approver would let the person copy them without looking at the new device.
+- Conflicts: Devices' G34 "password + authenticator" vs the hold-v3 port refusing it; note §3.4 vs approval.ts:554. Details in review-multi-device.md.
+
+**(9) Per-method currency:** FlexOffer-Post(+W) [methodCurrency per-method]: "In: USD · EUR · Change". A gift card is locked to its country: "US card · USD only".
+
+**(10) Other fixes**
+- Alerts(+W): one "Jabber alerts" row; the Tor steps and OMEMO fingerprint moved into JabberSetup(+W) "How it's sent".
+- Jabber messages name only the event kind.
+- Team(+W) intro: members may use any login method.
+- StaffLogin: [stage sign] Terms + signature before the welcome. Terms §10 is a lawyer placeholder.
+
+**(11) Price wording** on every offer board:
+- "0.4% above market" / "0.5% below market" / "At market", up to 2 decimals.
+- A method's own charge reads "0.3% more" / "0.2% less".
+- XMR-set bands: XMR range plus "≈ $33 – $330".
+
+**Pre-existing height mismatches** (not new): Fold-Offers 1012/1219; SetupUsername 844/664.
+
+**Wording room for the owner:** batches 10, 11 and 12 (301 questions) are in https://claude.ai/artifact/HEBazie5zYdi7LDM4ty5NQ, with design's view on each. When he submits, design copies his answers into the original batch pages' `answers` collections.
+
+## 10 Nov, 03:13 — owner build order and three wording calls
+
+- The owner has ordered a build with 12 helpers. Design is asking the lead for up to 12 jobs nobody has claimed. Each job runs on its own `wip/` branch, and the lead reviews and lands it.
+- The cancel sheet shows "Already paid? Don't cancel: tap I've paid instead." only when it opens from BuyerPay. On the funding route it shows "Don't send any money until the escrow is funded." (COPY-UNSIGNED)
+- The unfunded variant keeps "and this trade closes".
+- "vendor markup" is replaced by one price wording everywhere:
+  - browse toggle: "Show amounts with the seller's price"
+  - quote chips: "Seller's price / Market price"
+  - trade terms: "the seller's price (0.4% above market)" (COPY-UNSIGNED)
+
+## 12 Nov — design's four workers: all settled (canvas v170)
+
+- docs/wording/settled-batch10-12.md: Wording Room batches 10–12, 273 questions settled (183 kept, 89 changed, 1 owner). The owner's 15 answers are kept exactly.
+- docs/wording/settled-payment-boxes.md: the Payment boxes tab, all 101 lines (312 boxes). Add `hint?: string` to `PayFieldSpec`. Part B answers the five 10 Nov questions.
+- docs/wording/settled-register-calls.md: the 19 register calls (O-021 … G-025). No owner items.
+- docs/wording/settled-freeze-recovery-jabber.md: the 12 Nov list (freeze refusals, See why, deleted-record freeze, recovery code strings, reviews on hold, Fast badge, the J-20 messages).
+- Boards: new JabberEvents (+Wide); Loud alarm card added to Alerts (+Wide).
+- Owner decision 12 Nov: the Russian methods (MIR, SBP, YooMoney) are REMOVED at launch. Capitual is still waiting on the owner.
+- Owner decision 12 Nov: REMOVE Capitual (p11-145). MIR, SBP, YooMoney and Capitual all come off at launch.

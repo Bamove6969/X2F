@@ -23,10 +23,13 @@ import {
   identityProofBytes,
   instructionsMatch,
   verifyAfterRefundStatement,
+  isRecoveryAddressStatement,
+  signRecoveryAddress,
   verifyAttestation,
   verifyRulingStatement,
   type Attestation,
   type AttestedTerms,
+  type RecoveryAddressStatement,
   type SettleKind,
   type TradeState,
 } from '@x2f/trade';
@@ -59,6 +62,12 @@ export interface ConfirmedTrade {
   role: 'buyer' | 'seller';
   ownAddress: string;
   deal: Deal;
+  /**
+   * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): the part of the buyer's proceeds this
+   * trade pays to the person they owe, as the take (or the poster's own trade view) told the buyer.
+   * Buyer only; absent = none. Kept out of `deal`, which both sides sign and compare.
+   */
+  lienRecoveryAtomic?: bigint;
 }
 
 /**
@@ -267,6 +276,13 @@ export interface EscrowRuntime {
   retry(code: string): Promise<void>;
   stop(code: string): Promise<void>;
   stopAll(): Promise<void>;
+  /**
+   * Lien recovery, provisional owner answer Q2 (docs/lien-recovery.md): the creditor's "pay my
+   * recoveries from the dispute of trade `code` to `address`", signed with this device's own trade
+   * identity from that trade (the side it had there). Null when this device has no record of it
+   * (another device, or past the 30-day keep). Nothing else is signed with it.
+   */
+  signRecoveryAddress?(code: string, address: string, issuedAt: string): Promise<{ statement: RecoveryAddressStatement; sig: string } | null>;
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
@@ -316,8 +332,10 @@ const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).pad
 const apiCode = (e: unknown): string | null =>
   typeof e === 'object' && e !== null && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : null;
 const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
+// The fee marks are part of what the tx pays (policy.ts samePayouts), so a marked set and an
+// unmarked one are never the same key in the refused / exhausted / in-flight sets (review B3).
 const key = (o: { to: readonly Payout[]; builder: string; cosigner: string } | null): string =>
-  o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
+  o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString(), p.bearsNetworkFee === true])]);
 
 function validConfirmed(c: ConfirmedTrade): boolean {
   const d = c.deal;
@@ -657,6 +675,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           ownAddress: c.ownAddress,
           theirAddress: null,
           deal: { ...c.deal },
+          ...(c.role === 'buyer' && typeof c.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: c.lienRecoveryAtomic } : {}),
           theirDeal: null,
           sizeAtomic: c.deal.takeAmountAtomic,
           paidSeen: false,
@@ -742,7 +761,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           att.sig,
           attestationKeys(deps.config.modSigningPublic),
           {
-            trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
+            trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic,
+            // The buyer accepts only the lien recovery it confirmed (none: none), @x2f/trade verifyAttestation.
+            deal: this.rec.lienRecoveryAtomic !== undefined ? { ...this.rec.deal, lienRecoveryAtomic: this.rec.lienRecoveryAtomic } : this.rec.deal,
+            ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
             methodId: view0.methodId,
             now: now(),
@@ -858,7 +880,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     private fromStored(o: NonNullable<StoredIntent['outcome']>): Outcome {
-      return { kind: 'release', to: o.to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic })), builder: o.builder, cosigner: o.cosigner };
+      // The fee marks come back too (review B3, 16 Nov): cosignPolicy compares them, so an unmarked
+      // copy of a marked release was refused and a party resumed after the tx left the unlocked
+      // balance never got its outcome again.
+      return {
+        kind: 'release',
+        to: o.to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic, ...(p.bearsNetworkFee === true ? { bearsNetworkFee: true } : {}) })),
+        builder: o.builder,
+        cosigner: o.cosigner,
+      };
     }
 
     tickOnce(): Promise<void> {
@@ -893,11 +923,16 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
       return {
         role: r.role,
-        own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
+        own: r.role === 'buyer' ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) } : { refund: r.ownAddress },
         balance,
         trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
-        signedTerms: { payout, refund },
+        signedTerms: {
+          payout,
+          refund,
+          // The lien recovery the moderation service signed (verified attestation only; never the API's view).
+          ...(this.attested?.lienRecovery !== undefined ? { lienRecovery: { address: this.attested.lienRecovery.address, amountAtomic: BigInt(this.attested.lienRecovery.amountAtomic) } } : {}),
+        },
         ruling: statement === null ? null : { code: this.code, escrowAddress: this.address!, modSigningPublic: deps.config.modSigningPublic, statement: statement.statement, sig: statement.sig },
       };
     }
@@ -1925,6 +1960,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     async stopAll() {
       await Promise.all([...runs.values()].map((r) => r.halt()));
       runs.clear();
+    },
+    async signRecoveryAddress(raw, address, issuedAt) {
+      const code = normalizeTradeCode(raw);
+      if (code === null || typeof address !== 'string' || address === '' || address.length > 256) return null;
+      const rec = await deps.store.load(code);
+      if (!rec) return null;
+      const statement: RecoveryAddressStatement = { v: 1, fromCode: code, creditorSide: rec.role, address, issuedAt };
+      if (!isRecoveryAddressStatement(statement)) return null;
+      return { statement, sig: await signRecoveryAddress(statement, rec.identity.signSecret) };
     },
   };
 }

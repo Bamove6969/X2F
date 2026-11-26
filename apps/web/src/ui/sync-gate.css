@@ -35,4 +35,5 @@
   background: var(--x2f-surface);
   color: var(--x2f-ink);
   font: inherit;
+  cursor: pointer;
 }

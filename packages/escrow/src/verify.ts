@@ -1,10 +1,12 @@
+import { MAX_NETWORK_FEE, feeSplitLayout, networkFeeShares } from '@x2f/core';
 import { EscrowError, type Payout } from './engine.js';
 
 /**
- * The highest network fee a co-signer accepts whatever the daemon says: 0.01 XMR. A backstop under
- * the bound relative to the network (feeCeiling), never above it.
+ * The highest network fee a co-signer accepts whatever the daemon says: 0.01 XMR (defined in
+ * @x2f/core, one value for every check). A backstop under the bound relative to the network
+ * (feeCeiling), never above it.
  */
-export const MAX_NETWORK_FEE = 10_000_000_000n;
+export { MAX_NETWORK_FEE, feeSplitLayout, networkFeeShares };
 
 /**
  * How many times the network's normal-priority fee for the tx's estimated weight a co-signer accepts
@@ -16,7 +18,7 @@ export const MAX_NETWORK_FEE = 10_000_000_000n;
  * - The elevated rate (priority 3, 16 x low) still passes at about the bound; the highest (priority
  *   4, about 200 x low) does not.
  * - On mainnet a normal 1-input sweep is about 0.0001 XMR, so the most a builder can make the
- *   payout-0 party pay is about 0.0005 XMR instead of 0.01 XMR.
+ *   fee bearers (`feeBearers`) pay is about 0.0005 XMR in all instead of 0.01 XMR.
  */
 export const FEE_ESTIMATE_MULTIPLIER = 4n;
 
@@ -24,8 +26,8 @@ export const FEE_ESTIMATE_MULTIPLIER = 4n;
  * The least the fee bound ever is, whatever the daemon says: 0.0002 XMR (review lead-escrow-harden
  * M2). A node that reports a near-zero fee would otherwise push the bound under any real fee and
  * make every honest release refused. An honest mainnet sweep at priority 2 is about 0.00013 XMR, so
- * the floor never refuses one; it is the most a builder can make the payout-0 party pay when the
- * co-signer's node lies low.
+ * the floor never refuses one; it is the most a builder can make the fee bearers (`feeBearers`) pay in
+ * all when the co-signer's node lies low.
  */
 // OWNER: value
 export const FEE_BOUND_FLOOR = 200_000_000n;
@@ -142,14 +144,24 @@ export function checkPayouts(payouts: readonly Payout[]): void {
   }
 }
 
+/**
+ * Which outputs a release's network fee comes off: every payout marked `bearsNetworkFee`, or payout
+ * 0 alone when none is (the original rule, kept for refunds).
+ */
+export function feeBearers(payouts: readonly Payout[]): boolean[] {
+  const marked = payouts.map((p) => p.bearsNetworkFee === true);
+  return marked.some((m) => m) ? marked : payouts.map((_, i) => i === 0);
+}
+
 export function sumPayouts(payouts: readonly Payout[]): bigint {
   return payouts.reduce((s, p) => s + p.amountAtomic, 0n);
 }
 
 /**
  * Fail closed unless the decoded set is exactly one transaction that sweeps the whole
- * escrow to `expected`: same addresses, every amount exact except payouts[0], which is
- * short by exactly the network fee; no change output at all; no unlock time; fee within
+ * escrow to `expected`: same addresses, every amount exact except the fee bearers
+ * (`feeBearers`: the marked payouts, else payouts[0]), each short by exactly its wallet2 share of
+ * the network fee (`networkFeeShares`); no change output at all; no unlock time; fee within
  * `maxFee` (the co-signer passes feeCeiling) and always within MAX_NETWORK_FEE.
  * A change output is refused because a builder can hide a payment to itself as "change".
  */
@@ -170,11 +182,12 @@ export function checkTxSet(txs: readonly DescribedTx[], expected: readonly Payou
 
   const byAddress = new Map(tx.destinations.map((d) => [d.address, d.amountAtomic]));
   if (byAddress.size !== tx.destinations.length) fail('duplicate output address');
+  const shares = networkFeeShares(fee, feeBearers(expected));
   let total = 0n;
   expected.forEach((p, i) => {
     const got = byAddress.get(p.address);
     if (got === undefined) fail('missing payout address');
-    const want = i === 0 ? p.amountAtomic - fee : p.amountAtomic;
+    const want = p.amountAtomic - shares[i]!;
     if (got !== want) fail('payout amount differs');
     total += got;
   });

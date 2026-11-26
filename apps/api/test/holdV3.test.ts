@@ -851,7 +851,7 @@ describe('a recovery-code login', () => {
     }
   });
 
-  it('owner G7, lead review item 5: on a paused held trade the partner opens a dispute; the held account cannot', async () => {
+  it('owner G7, lead review item 5: on a paused held trade past the confirm time the partner opens a dispute; the held account cannot', async () => {
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
@@ -872,6 +872,59 @@ describe('a recovery-code login', () => {
     // Still paused: no money moves until a moderator decides.
     expect(row.rows[0]!.state).toBe('disputed');
     expect(row.rows[0]!.p).not.toBeNull();
+  });
+
+  it('owner G7, lead review item 5 (the C2 case): on a secured held trade the partner seller disputes at once; the held buyer cannot', async () => {
+    // Restored by the lead re-verify 9 Nov (m2): the seller may dispute on secured (batch 3 P1 refuses
+    // only the buyer before "I've paid"), and with the hold checked before the machine (m3) the held
+    // buyer's recovery session hears recovery-hold, not too-early.
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
+    const body = { reason: 'silent', note: 'The buyer went quiet.' };
+    expect(errorOf(await rec.post(`/v1/trades/${s.code}/dispute`, body))).toBe('recovery-hold');
+    const opened = await partner.browser.post(`/v1/trades/${s.code}/dispute`, body);
+    expect(opened.statusCode).toBe(200);
+    const row = await deps.db.query<{ state: string; p: Date | null }>('select state, paused_at as p from trades where code = $1', [s.code]);
+    // Still paused: no money moves until a moderator decides.
+    expect(row.rows[0]!.state).toBe('disputed');
+    expect(row.rows[0]!.p).not.toBeNull();
+  });
+
+  it('lead re-verify 9 Nov m3: on a dispute the hold is checked before the machine; the held party hears recovery-hold, never too-early, and the partner is unchanged', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    // Two secured trades of the account to be held: in `asBuyer` the held account is the buyer, whom
+    // the machine refuses before "I've paid" (too-early, batch 3 P1); in `asSeller` the partner is.
+    const asBuyer = await driveTo(deps, (await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' })).trade, 'secured');
+    const asSeller = await driveTo(deps, (await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' })).trade, 'secured');
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    const body = { reason: 'silent', note: 'Nothing is moving.' };
+    // The held buyer's recovery session: the hold answers, not the machine (403, not 409 too-early).
+    const heldBuyer = await rec.post(`/v1/trades/${asBuyer.code}/dispute`, body);
+    expect(heldBuyer.statusCode).toBe(403);
+    expect(errorOf(heldBuyer)).toBe('recovery-hold');
+    // The partner buyer on the other trade still gets the machine's answer: a non-held party's
+    // dispute is unchanged by the ordering (whether that buyer should be able to reach a moderator
+    // during the hold is the owner's open question p11-97).
+    const partnerBuyer = await partner.browser.post(`/v1/trades/${asSeller.code}/dispute`, body);
+    expect(partnerBuyer.statusCode).toBe(409);
+    expect(errorOf(partnerBuyer)).toBe('too-early');
+    // Neither refusal wrote anything: both trades are still secured, paused and without a dispute.
+    const rows = await deps.db.query<{ code: string; state: string; p: Date | null; d: string | null }>(
+      'select code, state, paused_at as p, dispute_by as d from trades where code = any($1) order by code',
+      [[asBuyer.code, asSeller.code]],
+    );
+    expect(rows.rows.map((r) => [r.state, r.p !== null, r.d])).toEqual([
+      ['secured', true, null],
+      ['secured', true, null],
+    ]);
+    expect((await deps.db.query('select 1 from disputes where code = any($1)', [[asBuyer.code, asSeller.code]])).rowCount).toBe(0);
   });
 
   it("the held account's own recovery session cannot move its held trades either", async () => {
@@ -967,7 +1020,8 @@ describe('a recovery-code login', () => {
   it('lead review 8 Nov I5 with batch 3\'s dispute rules: a buyer whose cancel is recorded cannot dispute before "I\'ve paid"; the cancel is carried out at the hold\'s end', async () => {
     // Batch 3 (design review P1, 8 Nov): the buyer disputes only after "I've paid", and buyer-cancel
     // only comes before it, so a trader can no longer open a dispute over a recorded cancel (the
-    // held seller is refused by the hold). held.ts still lets a dispute take the cancel's place.
+    // held seller is refused by the hold). held.ts would let a dispute take the cancel's place (its
+    // catch still handles a moderator's decision and the crash rerun); no trader route can now.
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });

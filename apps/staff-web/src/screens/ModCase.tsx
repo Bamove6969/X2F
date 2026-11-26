@@ -1,4 +1,4 @@
-import type { KeyTapIntent, RulingOutcome, StaffRole } from '@x2f/staff';
+import { can, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
@@ -7,6 +7,7 @@ import {
   secondApproveRuling,
   codeOf,
   disputeCase,
+  lookupAccounts,
   messageTraders,
   proposeRuling,
   readCaseChat,
@@ -19,8 +20,10 @@ import {
   takeCase,
   type CaseTrader,
   type DisputeCase,
+  type LookedUpAccount,
   type Side,
 } from '../api.js';
+import { AccountCard } from './AccountActions.js';
 import { browserChatKeys, type ChatKeys } from '../chat/client.js';
 import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic } from '../chat/types.js';
 import { DeviceCard } from '../ui/DeviceCard.js';
@@ -53,6 +56,18 @@ import '../ui/staff.css';
 import { ProofLookFor } from '../ui/ProofCard.js';
 
 const isApprover = (role: StaffRole) => role === 'senior' || role === 'owner';
+
+/**
+ * Whether this person decides the waiting proposal ("Approve ruling" or "Send back"), the API's own
+ * gate (apps/api disputes/rulings.ts `approver`, packages/staff dispute.ts `canApprove`): a senior
+ * moderator or the owner holding `rulings.approve`, never its proposer, and in an appeal never
+ * someone involved in round 1 (review M2: `mayWork` is false for them, R37).
+ */
+export function decidesProposal(c: Pick<DisputeCase, 'status' | 'proposedByYou' | 'round' | 'mayWork'> & { ruling: Pick<DisputeCase['ruling'], 'proposal'> }, role: StaffRole): boolean {
+  return c.status === 'awaiting-approval' && isApprover(role) && can(role, 'rulings.approve') && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+}
+/** The API's send-back note limit (disputes/rulings.ts SEND_BACK_NOTE_MAX). */
+export const SEND_BACK_NOTE_MAX = 1000;
 const nameOf = (t: CaseTrader | null, side: Side) => t?.displayName ?? (side === 'buyer' ? 'the buyer' : 'the seller');
 
 /** A pending key tap: the dialog's intent and words, and what to do with the tap. */
@@ -103,8 +118,10 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * the worker too. The key is wiped in the worker when this screen goes away.
  * NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is not readable here yet.
  *
- * The board's account actions are not offered: a freeze is its own act (D-015, the Freeze card) and
- * the bans are Task 27's (the API refuses any account action on the ruling). The board's extra
+ * The board's account actions are not part of the ruling (the API refuses any account action on
+ * it): a freeze is its own act (D-015, the Freeze card), and a senior moderator or the owner bans,
+ * lifts a ban or works an account hold in the Account actions card (spec 6.6, Task 27; the same
+ * card as the Accounts page, AccountActions.tsx). The board's extra
  * trader lines (disputes, cancel rate, last ratings) are not in the case answer. DESIGNER-REVIEW.
  * Sentences the board does not word are COPY-UNSIGNED.
  */
@@ -152,7 +169,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
   const work = c.mayWork && live;
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
   // Review M2: in an appeal, someone involved in round 1 (mayWork false) never decides it (R37).
-  const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+  const approving = decidesProposal(c, role);
   // Review p4t22 M1 (e): a senior or the owner who did not propose it adds the second approval the gate asks for.
   const second = c.ruling.gateRefusal?.secondApproval ?? null;
   const rescuing = live && second !== null && isApprover(role) && !second.proposedByYou;
@@ -199,6 +216,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
+          {can(role, 'accounts.ban') || can(role, 'accounts.freeze') ? <AccountActionsCard code={c.code} role={role} /> : null}
           <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} reProposing={reProposing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>
@@ -538,6 +556,46 @@ function FreezeCard({ c, buyer, seller, onChange }: { c: DisputeCase; buyer: str
   );
 }
 
+/**
+ * Account actions (spec 6.6, Plan 4 Task 27; no board): both traders' accounts, looked up by this
+ * case's trade code only when asked (each lookup is logged), each with its status and the actions
+ * the role may take (AccountActions.tsx). Shown to senior moderators and the owner only, the
+ * roles the API serves; open or closed case alike. COPY-UNSIGNED, DESIGNER-REVIEW
+ */
+function AccountActionsCard({ code, role }: { code: string; role: StaffRole }) {
+  const [found, setFound] = useState<LookedUpAccount[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const load = async () => {
+    setBusy(true);
+    setFault(null);
+    try {
+      const r = await lookupAccounts(code);
+      setFound(r.accounts.filter((a) => a.matchedBy === 'code').sort((a, b) => (a.side === b.side ? 0 : a.side === 'buyer' ? -1 : 1)));
+    } catch (e) {
+      setFault(faultText(e, "The traders' accounts could not be loaded just now. Try again."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="x2f-card x2f-stack" data-part="account-actions">
+      <h2 className="x2f-h2">Account actions</h2>
+      {found === null ? (
+        <>
+          <p className="x2f-staff-hint">Ban either trader, lift a ban, or extend or end an account hold. Opening their accounts is written to the activity log.</p>
+          <Button variant="secondary" disabled={busy} onClick={() => void load()}>
+            Show both accounts
+          </Button>
+        </>
+      ) : (
+        found.map((a) => <AccountCard key={a.accountId} account={a} role={role} onChanged={load} />)
+      )}
+      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
+    </section>
+  );
+}
+
 /** Plan 4 Task 26: the API's bounds on a recommendation (apps/api staff/limits.ts). */
 const LIMIT_REASON_MIN = 40;
 const LIMIT_REASON_MAX = 2000;
@@ -785,7 +843,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
       ) : null}
       <ChoiceGroup look="card" labelledBy={headId} options={outcomeChoices(c.afterRefund, { xmr, buyer, seller })} value={outcome} onChange={setOutcome} part="ruling-outcome" />
       <h3 className="x2f-staff-eyebrow">Account action</h3>
-      <p className="x2f-staff-hint">None. A freeze is its own action (Freeze, above); bans come later.</p>
+      <p className="x2f-staff-hint">None. A freeze is its own action (Freeze, above); a senior moderator or the owner bans in Account actions.</p>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={reasonId}>
           Reason (required, both traders see it)
@@ -882,6 +940,7 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
   const outcome = c.ruling.draft?.outcome ?? null;
   const [back, setBack] = useState(false);
   const [note, setNote] = useState('');
+  const [sending, setSending] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
 
   const approve = () => {
@@ -903,12 +962,16 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
     });
   };
   const sendBack = async () => {
+    if (note.trim() === '') return;
     setFault(null);
+    setSending(true);
     try {
       await sendBackRuling(c.code, p.rulingId, note);
       await reload();
     } catch (e) {
       setFault(rulingFault(e, 'The ruling could not be sent back just now. Try again.'));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -932,14 +995,29 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
         Send back
       </Button>
       {back ? (
-        <div className="x2f-field">
+        <div className="x2f-field" data-part="send-back-form">
           <label className="x2f-label" htmlFor={noteId}>
             Note for the moderator
           </label>
-          <textarea id={noteId} className="x2f-textarea" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
-          <Button variant="secondary" disabled={note.trim() === ''} onClick={() => void sendBack()}>
-            Send back to the moderator
-          </Button>
+          <textarea id={noteId} className="x2f-textarea" rows={3} maxLength={SEND_BACK_NOTE_MAX} value={note} onChange={(e) => setNote(e.target.value)} />
+          {/* Mod polish: the note is required, and the traders never see it. COPY-UNSIGNED */}
+          <p className="x2f-staff-hint" data-part="send-back-hint">
+            Required. Staff see this note; the traders do not. The case goes back to the moderator who proposed it.
+          </p>
+          <span className="x2f-row">
+            <Button variant="secondary" disabled={note.trim() === '' || sending} onClick={() => void sendBack()}>
+              Send back to the moderator
+            </Button>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setBack(false);
+                setNote('');
+              }}
+            >
+              Keep the proposal
+            </Button>
+          </span>
         </div>
       ) : null}
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}

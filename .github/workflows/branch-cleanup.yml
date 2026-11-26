@@ -1,0 +1,39 @@
+name: Branch cleanup (one-time)
+
+# One-time cleanup of 26 Nov 2026 (owner asked for every finished or superseded branch to be removed).
+# Run by hand from the Actions tab. It deletes only the branches listed in .github/branch-cleanup.txt,
+# and only when the branch still points at the commit recorded there, so a branch someone pushed to
+# since the list was made is left alone. Every listed branch is also kept in the backup bundle
+# x2f-branches-2026-11-26.bundle in the project files. This workflow and its list are removed afterwards.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/branch-cleanup.txt
+          sparse-checkout-cone-mode: false
+      - name: Delete listed branches whose tip is unchanged
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          deleted=0; skipped=0; missing=0
+          while read -r sha branch; do
+            case "$sha" in ''|'#'*) continue ;; esac
+            case "$branch" in main|comms) echo "never deleting $branch"; continue ;; esac
+            enc=$(printf '%s' "$branch" | jq -sRr @uri)
+            tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
+            if [ -z "$tip" ]; then missing=$((missing+1)); continue; fi
+            if [ "$tip" != "$sha" ]; then echo "SKIP $branch: moved to $tip"; skipped=$((skipped+1)); continue; fi
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null; then deleted=$((deleted+1)); else echo "FAILED $branch"; fi
+          done < .github/branch-cleanup.txt
+          echo "deleted=$deleted skipped=$skipped already-gone=$missing"

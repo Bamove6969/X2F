@@ -52,8 +52,9 @@ function logApi(me: unknown, over: Record<string, unknown> = {}) {
       return { body: { scope: 'all', entries: ENTRIES, names: { [MOD_ID]: 'dmitri_k' }, next: '6' } };
     },
     'GET /staff/v1/log/filters': { body: { scope: 'all', actors: [{ id: MOD_ID, name: 'dmitri_k', role: 'mod' }], kinds: ['trade', 'dispute', 'chat', 'ruling', 'account', 'staff', 'owner', 'site', 'other'] } },
-    'GET /staff/v1/log/active-disputes': { body: { items: [{ code: A, method: 'ZELLE', methodName: 'Zelle', xmr: '1800000000000', status: 'awaiting-approval' }] } },
-    'GET /staff/v1/log/integrity': { body: { checkedAt: new Date().toISOString(), chain: { ok: true, headId: '9' }, entries: 9, alarm: null } },
+    'GET /staff/v1/log/active-disputes': { body: { items: [{ code: A, method: 'ZELLE', methodName: 'Zelle', xmr: '1800000000000', status: 'awaiting-approval' }], next: null } },
+    'GET /staff/v1/log/integrity': { body: { entries: 9, headId: '9', alarm: null } },
+    'POST /staff/v1/log/integrity/check': { body: { checkedAt: new Date().toISOString(), chain: { ok: true, headId: '9' }, entries: 9, alarm: null } },
     ...over,
   } as Parameters<typeof fakeApi>[0]);
 }
@@ -119,18 +120,53 @@ describe('StaffLog', () => {
     expect(button('Show older entries')).toBeUndefined();
   });
 
-  it('the owner sees the chain check, a broken chain and the log alarm', async () => {
-    logApi(OWNER);
+  it('the owner\'s page load re-hashes nothing; "Check integrity" runs the chain check (review m7)', async () => {
+    const api = logApi(OWNER);
     await open('/log');
-    expect(document.querySelector('[data-part="integrity"]')?.textContent).toMatch(/^Chain check passed at \d\d:\d\d: all 9 entries link up and none has been changed\./);
-    document.body.innerHTML = '';
+    const integrity = () => document.querySelector('[data-part="integrity"]')?.textContent ?? '';
+    expect(integrity()).toContain('Not checked on this visit. A check re-reads all 9 entries and confirms each links to the one before it.');
+    expect(api.calls.filter((c) => c.path.startsWith('/staff/v1/log/integrity')).map((c) => `${c.method} ${c.path}`)).toEqual(['GET /staff/v1/log/integrity']);
+    await click(button('Check integrity'));
+    expect(api.calls.filter((c) => c.path === '/staff/v1/log/integrity/check')).toEqual([expect.objectContaining({ method: 'POST', body: {} })]);
+    expect(integrity()).toMatch(/^Chain check passed at \d\d:\d\d: all 9 entries link up and none has been changed\./);
+    await click(button('Check again'));
+    expect(api.calls.filter((c) => c.path === '/staff/v1/log/integrity/check')).toHaveLength(2);
+  });
+
+  it('the owner sees the alarm on load, and a broken chain once checked', async () => {
     logApi(OWNER, {
-      'GET /staff/v1/log/integrity': { body: { checkedAt: new Date().toISOString(), chain: { ok: false, brokenAt: '42' }, entries: 50, alarm: '2026-11-10T08:00:00.000Z' } },
+      'GET /staff/v1/log/integrity': { body: { entries: 50, headId: '50', alarm: '2026-11-10T08:00:00.000Z' } },
+      'POST /staff/v1/log/integrity/check': { body: { checkedAt: new Date().toISOString(), chain: { ok: false, brokenAt: '42' }, entries: 50, alarm: '2026-11-10T08:00:00.000Z' } },
     });
     await open('/log');
-    const text = document.querySelector('[data-part="integrity"]')?.textContent ?? '';
-    expect(text).toMatch(/The activity log failed its integrity check at \d\d:\d\d\. Contact your security reviewer\./);
-    expect(text).toContain('Chain check failed at entry 42: an entry was changed or removed.');
+    const text = () => document.querySelector('[data-part="integrity"]')?.textContent ?? '';
+    expect(text()).toMatch(/The activity log failed its integrity check at \d\d:\d\d\. Contact your security reviewer\./);
+    expect(text()).not.toContain('Chain check failed');
+    await click(button('Check integrity'));
+    expect(text()).toContain('Chain check failed at entry 42: an entry was changed or removed.');
+  });
+
+  it('pages the Active disputes list: "Show more active disputes" asks for the next page (review m7)', async () => {
+    const B = 'RVGF4PMGR9CMEZA9';
+    const api = logApi(OWNER, {
+      'GET /staff/v1/log/active-disputes': (_b: unknown, path: string) =>
+        new URL(path, 'https://x').searchParams.get('before') === A
+          ? { body: { items: [{ code: B, method: 'REVOLUT', methodName: 'Revolut', xmr: '400000000000', status: 'open' }], next: null } }
+          : { body: { items: [{ code: A, method: 'ZELLE', methodName: 'Zelle', xmr: '1800000000000', status: 'awaiting-approval' }], next: A } },
+    });
+    await open('/log');
+    const select = () => document.querySelector<HTMLSelectElement>('select')!;
+    expect([...select().options].map((o) => o.textContent)).toEqual(['Active disputes (1+)', 'K7M2-9QXA-4FTR-8WPN · Zelle · 1.80 XMR · waiting for approval', 'Show more active disputes']);
+    const more = [...select().options].find((o) => o.textContent === 'Show more active disputes')!.value;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select(), more);
+    select().dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(api.calls.map((c) => c.path)).toContain(`/staff/v1/log/active-disputes?before=${A}`);
+    expect([...select().options].map((o) => o.textContent)).toEqual([
+      'Active disputes (2)', 'K7M2-9QXA-4FTR-8WPN · Zelle · 1.80 XMR · waiting for approval', 'RVGF-4PMG-R9CM-EZA9 · Revolut · 0.40 XMR · open',
+    ]);
+    // Choosing "Show more" never searched for it as a trade code.
+    expect((document.querySelector('input[type="search"]') as HTMLInputElement).value).toBe('');
   });
 
   it('a moderator gets the staff scope\'s words, no chain check, and "Clear filters"', async () => {
@@ -270,6 +306,23 @@ describe('Training review (curator)', () => {
       ['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Not in the library', 'Review the case'],
       ['2026-11', 'Revolut', 'about 1.30 XMR', 'Release to buyer', 'Hidden: review the masks again', 'Review the case'],
     ]);
+  });
+
+  it('pages the closed cases: "Show older cases" asks for the page after the last case (re-review m3)', async () => {
+    const C = 'c'.repeat(32);
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      'GET /staff/v1/training/review': (_b: unknown, path: string) =>
+        new URL(path, 'https://x').searchParams.get('before') === ITEM.id
+          ? { body: { items: [{ ...ITEM, id: C, status: 'marked' }], next: null } }
+          : { body: { items: [{ ...ITEM, status: 'unmarked' }], next: ITEM.id } },
+    });
+    await open('/training/review');
+    expect(rows('Closed cases')).toHaveLength(1);
+    await click(button('Show older cases'));
+    expect(api.calls.map((c) => c.path)).toContain(`/staff/v1/training/review?before=${ITEM.id}`);
+    expect(rows('Closed cases').map((r) => r[4])).toEqual(['Not in the library', 'In the library']);
+    expect(button('Show older cases')).toBeUndefined();
   });
 
   it('hides a selected stretch and a whole text, then marks the case with exactly those masks', async () => {

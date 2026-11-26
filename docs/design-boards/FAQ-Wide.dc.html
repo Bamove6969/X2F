@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Help (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+.mono{font-family:'Atkinson Hyperlegible Mono',monospace}
+.lbl{margin:0;padding:0 4px;font-size:13px;line-height:16px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-muted)}
+.card{margin:0;padding:0;list-style:none;border-radius:16px;background:var(--surface)}
+.card>li+li{border-top:1px solid var(--surface-raised)}
+.q{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;min-height:56px;box-sizing:border-box;padding:14px 16px;border:0;background:transparent;color:var(--ink);font-family:inherit;font-size:16px;line-height:22px;font-weight:600;text-align:left;cursor:pointer}
+.q:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surface))}
+.card>li:first-child>h3>.q{border-radius:16px 16px 0 0}
+.card>li:last-child>h3>.q{border-radius:0 0 16px 16px}
+.card>li:last-child>h3>.q[aria-expanded="true"]{border-radius:0}
+.ans{display:flex;flex-direction:column;gap:10px;margin:0 16px 16px;padding:14px;border-radius:12px;background:var(--surface-raised);font-size:15px;line-height:22px;color:var(--ink)}
+.q svg{flex-shrink:0;color:var(--ink-muted);transition:transform 150ms ease-out}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Help</span></div>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="Settings-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="FAQ-Wide.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+  <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 6px; margin-left: -12px;">
+      <a href="Settings-Wide.dc.html" aria-label="Back" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Help</h1>
+        <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Short answers. Nothing here is legal advice.</span>
+      </div>
+      <span class="mono" style="flex-shrink: 0; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label for="faq-search" class="lbl" style="padding: 0;">Search</label>
+      <div style="position: relative;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; left: 14px; top: 14px; color: var(--ink-muted);"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="faq-search" type="search" autocomplete="off" placeholder="Search the help" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 14px 0 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px;">
+      </div>
+    </div>
+    <section aria-labelledby="faq-s-trading" style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 0 0 4px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg></span><h2 id="faq-s-trading" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Trading</h2></div>
+      <ul class="card">
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-escrow-b" aria-expanded="{{q.escrow.on}}" aria-controls="faq-escrow" onClick="{{q.escrow.toggle}}"><span>How does escrow work?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.escrow.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.escrow.open}}" hint-placeholder-val="{{true}}">
+        <div id="faq-escrow" role="region" aria-labelledby="faq-escrow-b" class="ans">
+          <p style="margin: 0;">Each trade gets a fresh <span class="mono">2</span>-of-<span class="mono">3</span> escrow. You, the other trader and X2F each hold one key, and any two keys can move the coins.</p>
+          <p style="margin: 0;">X2F holds only its one key, so it can never move the coins on its own.</p>
+          <p style="margin: 0;">In the app you see three steps: Fund, I&#39;ve paid, Release.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-trade-b" aria-expanded="{{q.trade.on}}" aria-controls="faq-trade" onClick="{{q.trade.toggle}}"><span>What does Trade do?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.trade.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.trade.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-trade" role="region" aria-labelledby="faq-trade-b" class="ans">
+          <p style="margin: 0;">Trade takes an offer. The offer&#39;s poster is told you accepted, and if you&#39;re the buyer you pick which of your saved wallets gets paid.</p>
+          <p style="margin: 0;">The seller then has <span class="mono">30</span> min to fund the escrow from their own wallet. The price locks at that moment.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-fee-b" aria-expanded="{{q.fee.on}}" aria-controls="faq-fee" onClick="{{q.fee.toggle}}"><span>Who pays the fee?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.fee.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.fee.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-fee" role="region" aria-labelledby="faq-fee-b" class="ans">
+          <p style="margin: 0;">Only the person who posted the offer pays a fee: <span class="mono">1</span>% of the trade, taken when the trade completes.</p>
+          <p style="margin: 0;">Taking an offer costs nothing. Cancelled and refunded trades pay no fee.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-noshow-b" aria-expanded="{{q.noshow.on}}" aria-controls="faq-noshow" onClick="{{q.noshow.toggle}}"><span>What if the buyer never pays?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.noshow.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.noshow.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-noshow" role="region" aria-labelledby="faq-noshow-b" class="ans">
+          <p style="margin: 0;">The buyer has <span class="mono">90</span> min to pay once the escrow is secured. If they never tap I&#39;ve paid, the seller can tap Cancel &amp; get refund after that window.</p>
+          <p style="margin: 0;">The buyer gets a final <span class="mono">15</span> min alert. If they stay silent, the coins go back to the seller&#39;s saved wallet. No moderator is involved.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-cancel-b" aria-expanded="{{q.cancel.on}}" aria-controls="faq-cancel" onClick="{{q.cancel.toggle}}"><span>Can I cancel?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.cancel.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.cancel.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-cancel" role="region" aria-labelledby="faq-cancel-b" class="ans">
+          <p style="margin: 0;">A buyer can cancel alone at any time before tapping I&#39;ve paid. The coins go back to the seller&#39;s saved wallet.</p>
+          <p style="margin: 0;">Once the escrow is funded, the seller can&#39;t cancel alone. Once you&#39;ve tapped I&#39;ve paid, neither can you.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-dispute-b" aria-expanded="{{q.dispute.on}}" aria-controls="faq-dispute" onClick="{{q.dispute.toggle}}"><span>What is a dispute?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.dispute.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.dispute.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-dispute" role="region" aria-labelledby="faq-dispute-b" class="ans">
+          <p style="margin: 0;">If the two of you can&#39;t agree, either side can open one. A moderator reads the chat and the proofs, then signs with the side that is right.</p>
+          <p style="margin: 0;">Each dispute has a published deadline. If you disagree with the ruling, you can appeal to a senior moderator within <span class="mono">48</span> h.</p>
+        </div>
+        </sc-if>
+      </li>
+      </ul>
+    </section>
+    <section aria-labelledby="faq-s-login" style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 0 0 4px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg></span><h2 id="faq-s-login" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Logging in</h2></div>
+      <ul class="card">
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-pgp-b" aria-expanded="{{q.pgp.on}}" aria-controls="faq-pgp" onClick="{{q.pgp.toggle}}"><span>Why PGP?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.pgp.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.pgp.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-pgp" role="region" aria-labelledby="faq-pgp-b" class="ans">
+          <p style="margin: 0;">There is no password to remember and nothing to steal: X2F holds only your public key.</p>
+          <p style="margin: 0;">Every login is the same three steps: copy the message, decrypt it in your PGP app, paste the code. Each code works once and expires in <span class="mono">5</span> min.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-pgpapps-b" aria-expanded="{{q.pgpapps.on}}" aria-controls="faq-pgpapps" onClick="{{q.pgpapps.toggle}}"><span>Which PGP apps?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.pgpapps.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.pgpapps.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-pgpapps" role="region" aria-labelledby="faq-pgpapps-b" class="ans">
+          <p style="margin: 0;">Kleopatra on Windows and Linux, GPG Suite on Mac, OpenKeychain on Android.</p>
+          <p style="margin: 0;">X2F never creates keys for you, because that would expose your private key. You need your PGP app at every login.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-sign-b" aria-expanded="{{q.sign.on}}" aria-controls="faq-sign" onClick="{{q.sign.toggle}}"><span>How do I check a login message is really from X2F?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.sign.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.sign.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-sign" role="region" aria-labelledby="faq-sign-b" class="ans">
+          <p style="margin: 0;">Every login message is signed with the X2F key, so your PGP app shows who sent it. The message also names the site and the time.</p>
+          <p class="mono" style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink);" aria-label="X2F signing key fingerprint, placeholder">[X2F SIGNING KEY FINGERPRINT]</p>
+          <p style="margin: 0;">If the signature is missing or the fingerprint doesn&#39;t match, stop.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-passkey-b" aria-expanded="{{q.passkey.on}}" aria-controls="faq-passkey" onClick="{{q.passkey.toggle}}"><span>What is a passkey?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.passkey.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.passkey.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-passkey" role="region" aria-labelledby="faq-passkey-b" class="ans">
+          <p style="margin: 0;">A passkey is a login stored on your phone or computer and unlocked with your face, fingerprint or device code. There is nothing to type and nothing to phish.</p>
+          <p style="margin: 0;">Apple or Google may sync it between your devices. X2F learns nothing from that.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-lost-b" aria-expanded="{{q.lost.on}}" aria-controls="faq-lost" onClick="{{q.lost.toggle}}"><span>What if I lose everything?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.lost.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.lost.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-lost" role="region" aria-labelledby="faq-lost-b" class="ans">
+          <p style="margin: 0;">Use your recovery code. It starts a <span class="mono">24</span> h hold, and everyone on your account is logged out until it ends.</p>
+          <p style="margin: 0;">X2F has no way to reach you, since it holds no email or phone number, so keep the code somewhere safe.</p>
+          <p style="margin: 0;">Your coins are never at risk. They stay in your own wallet.</p>
+        </div>
+        </sc-if>
+      </li>
+      </ul>
+    </section>
+    <section aria-labelledby="faq-s-wallets" style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 0 0 4px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 14.5h.01"/></svg></span><h2 id="faq-s-wallets" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Wallets and privacy</h2></div>
+      <ul class="card">
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-hold-b" aria-expanded="{{q.hold.on}}" aria-controls="faq-hold" onClick="{{q.hold.toggle}}"><span>Does X2F hold my coins?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.hold.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.hold.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-hold" role="region" aria-labelledby="faq-hold-b" class="ans">
+          <p style="margin: 0;">Never. You pay from and get paid to wallets you already use.</p>
+          <p style="margin: 0;">The app makes one temporary escrow key per trade on your device. It holds no balance and is deleted once the trade closes.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-wallets-b" aria-expanded="{{q.wallets.on}}" aria-controls="faq-wallets" onClick="{{q.wallets.toggle}}"><span>Which wallets work?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.wallets.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.wallets.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-wallets" role="region" aria-labelledby="faq-wallets-b" class="ans">
+          <p style="margin: 0;">Cake Wallet, Edge, Feather, Monerujo, Stack, and the Monero GUI or CLI. A Ledger or Trezor works through Feather.</p>
+          <p style="margin: 0;">Any wallet that gives you a Monero address can get paid.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-keeps-b" aria-expanded="{{q.keeps.on}}" aria-controls="faq-keeps" onClick="{{q.keeps.toggle}}"><span>What does X2F keep?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.keeps.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.keeps.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-keeps" role="region" aria-labelledby="faq-keeps-b" class="ans">
+          <p style="margin: 0;">No IP addresses, and no name, phone number or email address.</p>
+          <p style="margin: 0;">Chats are deleted after <span class="mono">30</span> days. Disputes are deleted <span class="mono">90</span> days after the dispute closes.</p>
+          <p style="margin: 0;">During a trade X2F keeps an encrypted original copy of your payment proof that only a moderator can open, and only if there is a dispute. It is deleted when the trade is over.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-proofs-b" aria-expanded="{{q.proofs.on}}" aria-controls="faq-proofs" onClick="{{q.proofs.toggle}}"><span>What about payment proofs?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.proofs.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.proofs.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-proofs" role="region" aria-labelledby="faq-proofs-b" class="ans">
+          <p style="margin: 0;">Before upload, your phone strips the photo&#39;s metadata. Our privacy tool hides private details such as account numbers and names.</p>
+          <p style="margin: 0;">You check the result and can add more blur. What our privacy tool hid stays hidden. The seller sees it with your private details hidden.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-police-b" aria-expanded="{{q.police.on}}" aria-controls="faq-police" onClick="{{q.police.toggle}}"><span>Can the police get my data?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.police.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.police.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-police" role="region" aria-labelledby="faq-police-b" class="ans">
+          <p style="margin: 0;">X2F answers a lawful request backed by a warrant with the little it holds.</p>
+          <p style="margin: 0;">That is why X2F logs no IP addresses and asks for no name, phone number or email address.</p>
+        </div>
+        </sc-if>
+      </li>
+      </ul>
+    </section>
+    <section aria-labelledby="faq-s-badges" style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 0 0 4px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="5"/><path d="M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5"/></svg></span><h2 id="faq-s-badges" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Badges and reputation</h2></div>
+      <ul class="card">
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-badges-b" aria-expanded="{{q.badges.on}}" aria-controls="faq-badges" onClick="{{q.badges.toggle}}"><span>What do badges mean?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.badges.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.badges.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-badges" role="region" aria-labelledby="faq-badges-b" class="ans">
+          <p style="margin: 0;">Badges are milestones you earn by trading. They can&#39;t be bought or claimed.</p>
+          <p style="margin: 0;">New means fewer than <span class="mono">5</span> completed trades. Trusted means <span class="mono">100</span> or more trades with <span class="mono">98</span>% or more positive reviews.</p>
+          <p style="margin: 0;">There are no volume badges, so nobody can see how much money you move.</p>
+        </div>
+        </sc-if>
+      </li>
+      <li>
+        <h3 style="margin: 0;"><button type="button" class="q" id="faq-past-b" aria-expanded="{{q.past.on}}" aria-controls="faq-past" onClick="{{q.past.toggle}}"><span>What is Past reputation?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.past.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
+        <sc-if value="{{q.past.open}}" hint-placeholder-val="{{false}}">
+        <div id="faq-past" role="region" aria-labelledby="faq-past-b" class="ans">
+          <p style="margin: 0;">If you traded on LocalMonero or a similar site, you can prove it with the PGP key you used there. A moderator checks an archived copy of your old profile against a message you sign now.</p>
+          <p style="margin: 0;">It shows as its own line on your profile, one line per site, for example &ldquo;Imported from LocalMonero: <span class="mono">120.0</span> XMR&rdquo;. It is never added to your X2F totals or rating.</p>
+        </div>
+        </sc-if>
+      </li>
+      </ul>
+    </section>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 16px; box-sizing: border-box; border-radius: 16px; border: 1px solid var(--line); color: var(--ink); text-decoration: none;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><circle cx="16" cy="10" r="3"/><path d="M3 20c.8-3.5 3.2-5 6-5s5.2 1.5 6 5M15 15.5c2.6 0 4.6 1.4 5.4 4.5"/></svg></span><span style="flex-grow: 1; min-width: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Still stuck? Ask X2F staff</span><span style="display: flex; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></a>
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; padding-top: 24px; border-top: 1px solid var(--line);">
+    <h2 class="mono" style="margin: 0; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Craft pass, 7 Nov: each topic leads with a 40 icon tile and an 18/24 heading; an open answer sits in a surface-raised inner block under its question, so it reads as one unit. "Still stuck?" is an outline card with a neutral 40 tile (help is answered by X2F support staff, who are not a vendor's team) and a chevron.</p>
+    <aside aria-label="Copy not signed off" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Copy · unsigned</span>
+      <span style="font-weight: 600;">Every question and answer on this screen is draft copy, written from the spec. Nothing here is signed off.</span>
+      <span>Decided by the owner (p5-4): help comes from X2F staff, and the support headline is "Ask an X2F staff member". The row here now reads "Still stuck? Ask X2F staff" (was "Ask a team member"); that line is still unsigned.</span>
+      <span style="color: var(--ink-muted);">Answers stay to <span class="mono">2</span> to <span class="mono">4</span> short sentences, promise nothing the spec doesn&#39;t, and name no email address. Preview any question with the open tweak. Showing: {{openName}}</span>
+    </aside>
+    <aside aria-label="Open for the owner: the published signing-key fingerprint" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to supply</span>
+      <span style="font-weight: 600;">Owner to supply the published fingerprint of the X2F signing key</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Shown in &quot;How do I check a login message is really from X2F?&quot; as the mono placeholder <span class="mono">[X2F SIGNING KEY FINGERPRINT]</span>.</li>
+        <li>The same fingerprint goes on the site, so the two can be compared.</li>
+      </ul>
+    </aside>
+    <aside aria-label="Open for the owner: wording of the police answer" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · lawyer to confirm</span>
+      <span style="font-weight: 600;">Final wording of &quot;Can the police get my data?&quot; comes from the lawyer</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Shown now: the owner&#39;s plain version from <span class="mono">17 Oct 2026</span> (answers a warrant with the little it holds).</li>
+        <li>The Terms carry the same statement, so both change together.</li>
+      </ul>
+    </aside>
+      <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
+    </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "open": {"editor": "enum", "options": ["escrow", "fee", "cancel", "pgp", "sign", "lost", "keeps", "police", "past"], "default": "escrow"}, "$preview": {"width": 1280, "height": 2389}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: undefined }; }
+  componentDidUpdate(prev) { if (prev.open !== this.props.open) this.setState({ open: undefined }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Height = content (min 800): one question is open at a time, so the root grows with the open answer.
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    // Decided · owner, 8 Nov (p11-11): disputes are deleted 90 days after the dispute closes. Decided · owner, 6 Nov (Q64) + C3 Q10: past reputation is one line per site naming the site, not a badge. COPY-UNSIGNED: both answers.
+    const IDS = ["escrow", "trade", "fee", "noshow", "cancel", "dispute", "pgp", "pgpapps", "sign", "passkey", "lost", "hold", "wallets", "keeps", "proofs", "police", "badges", "past"];
+    // One open question at a time. The open tweak picks the first one; tapping the open question closes it.
+    const open = this.state.open === undefined ? (IDS.indexOf(this.props.open) >= 0 ? this.props.open : 'escrow') : this.state.open;
+    const q = {};
+    IDS.forEach((id) => {
+      const on = open === id;
+      q[id] = {
+        on: on ? 'true' : 'false', open: on,
+        toggle: () => this.setState({ open: on ? null : id }),
+        chev: on ? 'transform: rotate(180deg);' : ''
+      };
+    });
+    return { rootStyle, q, openName: open ? open : 'none' };
+  }
+}
+</script>
+</body>
+</html>

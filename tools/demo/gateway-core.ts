@@ -9,9 +9,12 @@ import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { pendingIdOf } from './door-parse.js';
+import { NOTES_TAG } from './page-csp.js';
 import { fillSelf, forwardedHttps, isLoopbackPeer, isSelfOrigin, selfOriginOf } from './self-origin.js';
+import { STAFF_SESSION_COOKIE, withoutCookies } from './staff-gateway-core.js';
 
-export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
+/** The comment layer's script tag (page-csp.ts), put into the app's HTML. */
+export { NOTES_TAG };
 /** Larger HTML than this is passed on untouched rather than held in memory. */
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 /** The app's JavaScript is held up to this size to put the request's own origin in it (self-origin.ts). */
@@ -211,6 +214,11 @@ export function createGateway(cfg: GatewayConfig): {
     }
     const t = route(req.url ?? '/');
     const headers = { ...req.headers };
+    // One host's cookies go to every port: the staff session (the staff origin's, staff-gateway-core.ts)
+    // never goes to the trader API, the relay or the node proxy.
+    const cookie = withoutCookies(headers.cookie, [STAFF_SESSION_COOKIE]);
+    if (cookie === undefined) delete headers.cookie;
+    else headers.cookie = cookie;
     const self = selfOriginOf(req.headers);
     logSelf(self, req.headers, req.socket.remoteAddress);
     // The node proxy accepts one exact origin (the web build's): a request from another demo origin
@@ -282,7 +290,16 @@ export function createGateway(cfg: GatewayConfig): {
     const t = route(req.url ?? '/');
     const up = net.connect(t.port, '127.0.0.1', () => {
       const lines = [`${req.method} ${t.path} HTTP/1.1`];
-      for (let i = 0; i < req.rawHeaders.length; i += 2) lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        const name = req.rawHeaders[i]!;
+        // The staff session cookie never goes to the trader side (as for plain requests above).
+        if (name.toLowerCase() === 'cookie') {
+          const kept = withoutCookies(req.rawHeaders[i + 1], [STAFF_SESSION_COOKIE]);
+          if (kept !== undefined) lines.push(`${name}: ${kept}`);
+          continue;
+        }
+        lines.push(`${name}: ${req.rawHeaders[i + 1]}`);
+      }
       up.write(`${lines.join('\r\n')}\r\n\r\n`);
       if (head.length > 0) up.write(head);
       up.pipe(socket);

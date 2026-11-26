@@ -23,6 +23,7 @@ import { BadgeChips, badgesFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
 import { UNDER_REVIEW_LABEL } from '@x2f/reputation';
 import { BlockAction } from '../settings/BlockAction.js';
+import { SessionTraderNotes } from '../settings/TraderNotes.js';
 import { DISPUTE_COPY } from '../review/copy.js';
 import { fetchProfile, type PublicReview, type TraderProfile } from './api.js';
 import { PROFILE_COPY as C } from './profileCopy.js';
@@ -201,6 +202,8 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
             {C.offers(p.offers)}
           </p>
           <BlockAction displayName={name} />
+          {/* Job 1c (owner S-094, p7-8): the account's private notes on this trader, for its own team. */}
+          <SessionTraderNotes displayName={name} />
         </div>
       )}
     </main>

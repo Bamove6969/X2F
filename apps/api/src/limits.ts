@@ -176,6 +176,12 @@ export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
  * J-23 review F6: the chat-key courier's writes per account (lead default). A handover posts one
  * box per device and collects it once, so a person never comes near these; a loop runs dry.
  */
+/**
+ * S-085 review S2 and re-verify R2, per session: refused proofs only (`POST /v1/account/session/proof`
+ * answered 401 `proof-invalid`). A valid proof is never charged, and challenges are not capped per
+ * session (they write nothing). The web treats the 429 as "retry later", never as a logout.
+ */
+export const SESSION_PROOF_BUCKET: BucketSize = { capacity: 20, perMinute: 10 };
 export const CHAT_KEY_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 export const CHAT_KEY_COLLECT_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
@@ -208,6 +214,13 @@ export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_
  * default; the owner may change it.
  */
 export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
+
+/**
+ * `GET /staff/v1/accounts/lookup` per staff member (staff Accounts page, lead default): a person
+ * looking up a few traders never comes near it; a loop that walks names or trade codes runs dry
+ * (20 at once, then 4 a minute). Every try counts, misses and bad queries too.
+ */
+export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
 
 export interface Budgets {
   register: TokenBucket;
@@ -242,6 +255,10 @@ export interface Budgets {
   paymentProof: KeyedBuckets;
   /** Per account: `PUT /v1/account/webauthn/label` (security review of wip/lead-seckey-fix). */
   keyLabel: KeyedBuckets;
+  /** Per staff member: `GET /staff/v1/accounts/lookup` (the staff Accounts page). */
+  accountLookup: KeyedBuckets;
+  /** Per session: refused S-085 proofs (review S2, re-verify R2). */
+  sessionProof: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -263,5 +280,7 @@ export function newBudgets(clock: () => Date): Budgets {
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
     paymentProof: new KeyedBuckets(PAYMENT_PROOF_BUCKET, clock),
     keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
+    accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
+    sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
   };
 }

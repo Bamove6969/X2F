@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Deal } from './policy.js';
 import type { ConfirmedTrade, EscrowAction, EscrowErrorCode, EscrowPhase, EscrowRefusal, EscrowStatus } from './runtime.js';
 import type { UserSignal } from './signals.js';
-import type { SettleKind } from '@x2f/trade';
+import type { RecoveryAddressStatement, SettleKind } from '@x2f/trade';
 import type { FromWorker, ToWorker } from './worker.js';
 
 export interface EscrowClient {
@@ -16,6 +16,8 @@ export interface EscrowClient {
   retry(code: string): void;
   /** Calls `cb` with the latest status now (if any) and on every change. */
   subscribe(code: string, cb: (s: EscrowStatus) => void): () => void;
+  /** Lien recovery (Q2): this device's signed "pay my recoveries to `address`" for the dispute of trade `code`; null when it holds no record of that trade. */
+  signRecoveryAddress?(code: string, address: string, issuedAt: string): Promise<{ statement: RecoveryAddressStatement; sig: string } | null>;
 }
 
 /** An EscrowClient over a worker speaking the worker.ts protocol. Resumes every stored trade at once. */
@@ -23,6 +25,7 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
   const latest = new Map<string, EscrowStatus>();
   const subs = new Map<string, Set<(s: EscrowStatus) => void>>();
   const waiting = new Map<number, (ok: boolean) => void>();
+  const signing = new Map<number, (signed: { statement: RecoveryAddressStatement; sig: string } | null) => void>();
   let nextId = 1;
   w.addEventListener('message', (e: MessageEvent<FromWorker>) => {
     const m = e.data;
@@ -32,6 +35,9 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
     } else if (m?.t === 'acted') {
       waiting.get(m.id)?.(m.ok);
       waiting.delete(m.id);
+    } else if (m?.t === 'signed-recovery-address') {
+      signing.get(m.id)?.(m.signed);
+      signing.delete(m.id);
     }
   });
   const post = (m: ToWorker): void => w.postMessage(m);
@@ -45,6 +51,12 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
         post({ t: 'act', id, code, action });
       }),
     retry: (code) => post({ t: 'retry', code }),
+    signRecoveryAddress: (code, address, issuedAt) =>
+      new Promise((resolve) => {
+        const id = nextId++;
+        signing.set(id, resolve);
+        post({ t: 'sign-recovery-address', id, code, address, issuedAt });
+      }),
     subscribe(code, cb) {
       let set = subs.get(code);
       if (!set) subs.set(code, (set = new Set()));

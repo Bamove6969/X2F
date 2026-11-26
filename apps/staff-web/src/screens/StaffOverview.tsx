@@ -2,6 +2,8 @@ import { bannerPublishIntent, maintenanceOnIntent, type KeyTapIntent } from '@x2
 import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
+  disputeQueue,
+  ownerAlerts,
   removeBanner,
   resumeTrading,
   revenue as fetchRevenue,
@@ -41,6 +43,11 @@ import '../ui/staff.css';
  *   DESIGNER-REVIEW). The announced planned maintenance (`PUT …/maintenance/planned`, tapped:
  *   review p4t22 N2) is PlannedMaintenance.tsx's card below it.
  * - the way to News for traders (no board places it; kept here from the shell's first version).
+ * - Mod polish, the Today card (no board; DESIGNER-REVIEW, COPY-UNSIGNED): open disputes and
+ *   appeals waiting (the queue, `GET /staff/v1/disputes`: its count of every open case, and its
+ *   appealed rows, of the first 500 it lists) and new alerts (the owner's unread notifications,
+ *   `GET /staff/v1/owner/alerts`). Existing reads only. Support tickets are left out: the staff API
+ *   has no tickets route yet (Task 30). A figure that cannot be read shows a dash.
  *
  * Exactly one primary: "Show to everyone"/"Remove banner" while trading is live, "Tap key and
  * resume trading" while it is paused (the board draws both orange). DESIGNER-REVIEW
@@ -75,6 +82,7 @@ export function StaffOverview() {
   const [mKind, setMKind] = useState<MaintenanceKind | null>(null);
   const msgId = useId();
   const mmId = useId();
+  const [today, setToday] = useState<Today>({ open: null, appeals: null, alerts: null });
 
   useEffect(() => {
     fetchSite().then(
@@ -92,6 +100,14 @@ export function StaffOverview() {
       (e: unknown) => setFault(faultText(e, 'X2F could not load the site controls just now. Reload to try again.')),
     );
     fetchRevenue(revenueRange(serverNow())).then(setEarn, () => setEarn(null));
+    disputeQueue().then(
+      (q) => setToday((t) => ({ ...t, open: q.counts.open, appeals: q.rows.filter((r) => r.status === 'appealed').length })),
+      () => undefined,
+    );
+    ownerAlerts().then(
+      (a) => setToday((t) => ({ ...t, alerts: a.unread })),
+      () => undefined,
+    );
   }, []);
 
   const run = async (f: () => Promise<StaffSite | null>, fallback: string) => {
@@ -195,6 +211,8 @@ export function StaffOverview() {
         </Notice>
       ) : null}
 
+      <TodayCard t={today} />
+
       <section aria-label="Emergency stop" className="x2f-staff-card x2f-stack" data-part="emergency-stop">
         <h2 className="x2f-h2">Emergency stop</h2>
         {state === null ? null : paused ? (
@@ -235,6 +253,13 @@ export function StaffOverview() {
         </div>
         {/* COPY-UNSIGNED, OWNER-Q: replaces the board's wallet-end and view-only-key sentence (see the header). */}
         <p className="x2f-staff-hint">The 1% fee from each completed trade and each settled dispute goes to X2F's fee wallet. These figures come from X2F's own record of every fee paid.</p>
+        {/* NEEDS_DESIGN_REVENUE: no board places the owner's books (network fees paid and the net, owner
+            16 Nov); a plain link to the minimal Revenue page until design draws it. COPY-UNSIGNED */}
+        <p className="x2f-staff-page__lead">
+          <Link className="x2f-link" to="/overview/revenue">
+            Revenue
+          </Link>
+        </p>
       </section>
 
       <section aria-label="Announcement banner" className="x2f-staff-card x2f-stack" data-part="banner">
@@ -336,6 +361,37 @@ export function StaffOverview() {
         />
       ) : null}
       {refusal !== null ? <CantDoThat body={refusal.text} from={refusal.code} onClose={() => setRefusal(null)} /> : null}
+    </section>
+  );
+}
+
+interface Today {
+  open: number | null;
+  appeals: number | null;
+  alerts: number | null;
+}
+
+/** Mod polish: today's figures, each a way to the page that holds them. COPY-UNSIGNED, DESIGNER-REVIEW */
+function TodayCard({ t }: { t: Today }) {
+  const n = (v: number | null) => (v === null ? '–' : String(v));
+  const tiles: ReadonlyArray<readonly [string, number | null, string, string]> = [
+    ['today-open', t.open, 'Open disputes', '/disputes'],
+    ['today-appeals', t.appeals, 'Appeals waiting', '/disputes'],
+    ['today-alerts', t.alerts, 'New alerts', '/notifications'],
+  ];
+  return (
+    <section aria-label="Today" className="x2f-staff-card x2f-stack" data-part="today">
+      <h2 className="x2f-h2">Today</h2>
+      <ul className="x2f-staff-today">
+        {tiles.map(([part, v, label, to]) => (
+          <li key={part} className="x2f-staff-earn" data-part={part}>
+            <span className="x2f-staff-today__n">{n(v)}</span>
+            <Link className="x2f-link" to={to}>
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

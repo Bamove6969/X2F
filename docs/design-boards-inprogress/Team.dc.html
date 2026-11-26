@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Team</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="align-self: flex-start; padding: 6px 10px 0 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Team</h1>
+  </header>
+  <main style="flex-grow: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Let people you trust work your trades. Each member has their own login, and it always needs two factors. There are no shared passwords.</p>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Team members are for Vendor accounts only.</p>
+      </div>
+    </div>
+
+    <section aria-labelledby="tm-list" style="display: flex; flex-direction: column; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 20px 20px 4px;">
+        <h2 id="tm-list" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team members<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);"> · {{memberLine}}</span></h2>
+        <span aria-hidden="true" style="font-size: 13px; line-height: 16px; color: var(--ink-muted); white-space: nowrap;">{{memberLine}}</span>
+      </div>
+      <ul style="margin: 0; padding: 0 20px 8px; list-style: none;">
+        <sc-for list="{{members}}" as="m" hint-placeholder-count="2">
+          <li style="{{m.rowStyle}}">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span aria-hidden="true" style="{{m.avatar}}">{{m.initials}}</span>
+              <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
+                  <span id="{{m.labelId}}" style="font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span>
+                  <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}"><span style="{{m.pillStyle}}">Team member</span></sc-if>
+                </span>
+                <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span aria-hidden="true" style="{{m.dot}}"></span><span style="{{m.statusStyle}}">{{m.status}}</span></span>
+              </span>
+              <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}">
+                <button type="button" role="switch" aria-checked="{{m.sw.on}}" aria-label="{{m.swLabel}}" onClick="{{m.sw.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{m.sw.track}}"><span style="{{m.sw.knob}}"></span></span></button>
+              </sc-if>
+            </div>
+            <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}">
+              <a href="MemberPermissions.dc.html" aria-label="{{m.editLabel}}" style="display: flex; align-items: center; gap: 12px; min-height: 48px; box-sizing: border-box; padding: 0 12px 0 14px; border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none;">
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+                  <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Edit what they can do</span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.total}}</span> allowed · {{m.presetLabel}}</span>
+                </span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg>
+              </a>
+            </sc-if>
+            <sc-if value="{{m.isInvite}}" hint-placeholder-val="{{false}}">
+              <span style="padding: 10px 14px; border-radius: 12px; background: var(--surface); font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Starts from:</span> {{m.presetLabel}} (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.total}}</span> allowed)</span>
+            </sc-if>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 -8px;">
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{m.sub}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">{{m.when}}</span></span>
+              <button type="button" aria-label="{{m.actLabel}}" onClick="{{m.act}}" style="{{m.actStyle}}">{{m.actText}}</button>
+            </div>
+          </li>
+        </sc-for>
+      </ul>
+    </section>
+    <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
+    </sc-if>
+
+    <section aria-label="How team members work" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <p style="margin: 0; font-size: 15px; line-height: 22px;">Switching a member off logs them out at once. Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> members per account.</p>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
+        <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Adding a member or changing what they can do needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</span></li>
+        <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>You approve each new member&#39;s first login.</span></li>
+        <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M11 18h2"/></svg><span>Members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</span></li>
+        <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold, all team changes wait until the hold ends.</span></li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="tm-can" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 id="tm-can" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What members can do</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You choose for each member, switch by switch. Start from a preset, then fine-tune.</p>
+      </div>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+        <sc-for list="{{presetRows}}" as="p" hint-placeholder-count="4">
+          <li style="{{p.style}}"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{p.label}}</span><span style="flex-shrink: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink);">{{p.n}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{p.total}}</span></span></li>
+        </sc-for>
+      </ul>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Sensitive permissions, like releasing XMR, warn you before they turn on.</p>
+      </div>
+      <p style="display: flex; gap: 10px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><span>Trades are never accepted automatically.</span></p>
+    </section>
+
+    <section aria-labelledby="tm-only" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="tm-only" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Only you can</h2>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+        <sc-for list="{{only}}" as="o" hint-placeholder-count="6">
+          <li style="{{o.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>{{o.text}}</span></li>
+        </sc-for>
+      </ul>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Members can never change payout wallets or start a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="tm-see" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="tm-see" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What trade partners see</h2>
+      <p style="margin: 0; font-size: 15px; line-height: 24px;">Your username, with a <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team); font-size: 12px; line-height: 16px; font-weight: 600; vertical-align: 1px;">Team member</span> label on chat replies a member sends. Never which member. All reviews and reputation go to your account.</p>
+    </section>
+
+    <section aria-labelledby="tm-log" style="display: flex; align-items: flex-start; gap: 14px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 12h6M10 16h6"/></svg></span>
+      <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+        <h2 id="tm-log" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Every action is recorded</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Everything a member does goes in an audit log for you, the owner. It can&#39;t be edited.</p>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; margin-bottom: -10px; font-size: 15px; font-weight: 600; color: var(--monero-ink);">Audit log<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      </div>
+    </section>
+  </main>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <sc-if value="{{isFull}}" hint-placeholder-val="{{false}}">
+      <p style="margin: 0 0 8px; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">You have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> members, the most allowed. Remove one to add another.</p>
+    </sc-if>
+    <button type="button" disabled="{{isFull}}" onClick="{{openAdd}}" style="{{addStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a member</button>
+  </footer>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="tm-sheet-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <sc-if value="{{isName}}" hint-placeholder-val="{{true}}">
+          <h2 id="tm-sheet-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Add a member</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Pick a name for them. Only you and your team see it, never your trade partners.</p>
+          <label for="tm-name" style="display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Member name</span>
+            <input id="tm-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="desk_lee" value="{{draft}}" onChange="{{setDraft}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px;">
+          </label>
+          <div role="radiogroup" aria-labelledby="tm-start-l" style="display: flex; flex-direction: column; gap: 8px;">
+            <span id="tm-start-l" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Start from</span>
+            <sc-for list="{{presetOpts}}" as="r" hint-placeholder-count="4">
+              <button type="button" role="radio" aria-checked="{{r.on}}" onClick="{{r.pick}}" style="{{r.style}}">
+                <span aria-hidden="true" style="{{r.ring}}"><sc-if value="{{r.isOn}}" hint-placeholder-val="{{false}}"><span style="display: block; width: 10px; height: 10px; border-radius: 999px; background: var(--ink);"></span></sc-if></span>
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.label}}</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.desc}}</span></span>
+                <span style="flex-shrink: 0; align-self: flex-start; padding-top: 2px; font-size: 13px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{r.n}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.total}}</span></span>
+              </button>
+            </sc-for>
+          </div>
+          <sc-if value="{{hasSens}}" hint-placeholder-val="{{false}}">
+            <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--caution);"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span style="font-size: 14px; line-height: 20px;">{{sensText}}</span></div>
+          </sc-if>
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">You can fine-tune every permission after they join. This needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold it waits until the hold ends.</p>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <button type="button" disabled="{{noMake}}" onClick="{{makeLink}}" style="{{makeStyle}}">Create invite link</button>
+            <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{isVerify}}" hint-placeholder-val="{{false}}">
+          <h2 id="tm-sheet-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Confirm it&#39;s you</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">{{verifyText}}</p>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <sc-for list="{{methods}}" as="k" hint-placeholder-count="2">
+              <button type="button" onClick="{{k.use}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; box-sizing: border-box; padding: 12px 16px; border: 1px solid var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; text-align: left; cursor: pointer;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span><span>{{k.label}}</span></button>
+            </sc-for>
+            <button type="button" onClick="{{verifyCancel}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{isLink}}" hint-placeholder-val="{{false}}">
+          <h2 id="tm-sheet-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Send {{draftName}} this link</h2>
+          <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 12px; background: var(--surface-raised);">
+            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; word-break: break-all;">https://x2f.example/team/Rk4m8TzQ2vNc</span>
+            <button type="button" onClick="{{copy}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/></svg>{{copyLabel}}</button>
+          </div>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 22px;">
+            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>It works once and expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours, at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2 Nov 2026, 14:05 UTC</span>.</span></li>
+            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Send it privately, for example in an encrypted chat. Anyone who has the link can use it.</span></li>
+            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg><span>When they open it, they set up their own login with two factors, such as a passkey plus a PGP key.</span></li>
+            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--team);"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>You approve their first login. They start as {{draftPreset}}.</span></li>
+          </ul>
+          <button type="button" onClick="{{finish}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Done</button>
+        </sc-if>
+        <sc-if value="{{isRemove}}" hint-placeholder-val="{{false}}">
+          <h2 id="tm-sheet-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Remove {{removeName}}?</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">They are logged out now and their login stops working. What they did stays in the audit log.</p>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <button type="button" onClick="{{doRemove}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Remove {{removeName}}</button>
+            <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
+          </div>
+        </sc-if>
+      </section>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":2499}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      list: [
+        { id: 'sam', name: 'desk_sam', kind: 'member', on: true, online: true, seen: 'Active 4 min ago', since: '2 Sep 2026', allowed: 12, preset: null },
+        { id: 'ana', name: 'desk_ana', kind: 'member', on: true, online: false, seen: 'Last active yesterday', since: '19 Sep 2026', allowed: 9, preset: 'trades' }
+      ],
+      sheet: null, draft: '', target: null, copied: false, note: '', pick: null, verify: null
+    };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const s = this.state;
+    const MAX = 3;
+    // Owner, 2 Nov: per-member permissions (MemberPermissions) replace the two fixed roles. Same four presets and counts.
+    const TOTAL = 19;
+    const PRESETS = [
+      { id: 'chat-only', label: 'Chat only', n: 2, desc: 'See trades and reply in trade chat.', sens: [] },
+      { id: 'offers', label: 'Offers manager', n: 5, desc: 'Post, edit and pause offers, plus trade chat.', sens: ['posting offers', 'editing offers'] },
+      { id: 'trades', label: 'Trade handler', n: 9, desc: 'Accept trades, confirm payment, cancel, disputes and chat.', sens: ['accepting trades', 'confirming payments'] },
+      { id: 'everything', label: 'Everything allowed', n: 16, desc: 'Every permission except the ones coming later.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
+    ];
+    const presetOf = (id) => PRESETS.find((p) => p.id === id);
+    const initials = (n) => { const p = n.split(/[_.\-\s]+/).filter(Boolean); return ((p.length > 1 ? p[0].charAt(0) + p[1].charAt(0) : n.slice(0, 2)) || '?').toUpperCase(); };
+    const sw = (on, toggle) => ({
+      on: on ? 'true' : 'false', isOn: on, toggle,
+      track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (on ? 'var(--team); background: var(--team); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
+      knob: 'width: 24px; height: 24px; border-radius: 999px; background: ' + (on ? 'var(--ground);' : 'var(--ink-muted);')
+    });
+    const update = (id, patch, note) => this.setState({ verify: null, sheet: null, list: s.list.map((m) => (m.id === id ? Object.assign({}, m, patch) : m)), note });
+    const members = s.list.map((m, i) => {
+      const member = m.kind === 'member';
+      const p = presetOf(m.preset);
+      let status, dot, statusStyle = '';
+      if (!member) { status = 'Invite not used yet'; dot = 'border: 1px dashed var(--line);'; }
+      else if (!m.on) { status = 'Switched off'; dot = 'background: var(--danger);'; statusStyle = 'color: var(--danger);'; }
+      else if (m.online) { status = 'Logged in · ' + m.seen.toLowerCase(); dot = 'background: var(--escrow);'; }
+      else { status = 'Logged out · ' + m.seen.toLowerCase(); dot = 'border: 1px solid var(--line);'; }
+      const live = member && m.on;
+      return {
+        name: m.name, initials: initials(m.name), labelId: 'tm-m-' + m.id,
+        isMember: member, isInvite: !member, status, statusStyle,
+        dot: 'display: block; width: 8px; height: 8px; box-sizing: border-box; border-radius: 999px; flex-shrink: 0; ' + dot,
+        avatar: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em; ' + (live ? 'background: var(--team); color: var(--ground);' : (member ? 'background: var(--surface-raised); color: var(--ink-muted);' : 'border: 1px dashed var(--line); color: var(--ink-muted);')),
+        // Members are always --team: avatar, pill and card tint. A switched-off member goes neutral.
+        pillStyle: 'display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; ' + (live ? 'background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team);' : 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink-muted);'),
+        rowStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px 0 12px;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : ''),
+        sub: member ? 'Member since' : 'Expires', when: m.since,
+        allowed: String(m.allowed), total: String(TOTAL), presetLabel: p ? p.label : 'Custom',
+        editLabel: 'Edit what ' + m.name + ' can do',
+        swLabel: m.name + ' is switched on',
+        sw: sw(m.on, () => this.setState({ sheet: 'verify', verify: { kind: m.on ? 'off' : 'on', id: m.id } })),
+        actText: member ? 'Remove' : 'Cancel invite',
+        actStyle: 'height: 44px; flex-shrink: 0; margin-right: -8px; padding: 0 8px; border: 0; background: transparent; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; color: ' + (member ? 'var(--danger);' : 'var(--ink-muted);'),
+        actLabel: (member ? 'Remove ' : 'Cancel invite for ') + m.name,
+        act: member
+          ? () => this.setState({ sheet: 'remove', target: m.id })
+          : () => this.setState({ list: s.list.filter((x) => x.id !== m.id), note: 'Invite for ' + m.name + ' cancelled. The link no longer works.' })
+      };
+    });
+    const count = s.list.length;
+    const online = s.list.filter((m) => m.kind === 'member' && m.on && m.online).length;
+    const full = count >= MAX;
+    const draft = s.draft.trim();
+    const target = s.list.find((m) => m.id === s.target);
+    const picked = presetOf(s.pick);
+    const presetOpts = PRESETS.map((p) => {
+      const on = s.pick === p.id;
+      return {
+        label: p.label, desc: p.desc, n: String(p.n), total: String(TOTAL), on: on ? 'true' : 'false', isOn: on,
+        pick: () => this.setState({ pick: p.id }),
+        style: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; border: 2px solid ' + (on ? 'var(--ink);' : 'transparent;'),
+        ring: 'display: flex; width: 22px; height: 22px; flex-shrink: 0; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid ' + (on ? 'var(--ink);' : 'var(--line);')
+      };
+    });
+    const presetRows = PRESETS.map((p, i) => ({ label: p.label, n: String(p.n), total: String(TOTAL), style: 'display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin: 0 14px;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') }));
+    const ONLY = ['Change payout wallets', 'Add or remove members and change what they can do', 'Change login methods and security settings', 'Manage sessions and devices', 'Change the account type', 'Delete the account'];
+    const noMake = draft === '' || !picked;
+    const primary = (off) => 'display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (off ? 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;');
+
+    // Two-factor check before adding a member or switching one on or off (sample account: passkey + security key).
+    const v = s.verify;
+    const vTarget = v && v.id ? s.list.find((m) => m.id === v.id) : null;
+    let verifyText = '';
+    if (v && v.kind === 'add') verifyText = 'Adding ' + draft + ' to your team needs a two-factor method you’ve already set up: a passkey, security key or PGP key.';
+    if (vTarget) verifyText = 'Switching ' + vTarget.name + (v.kind === 'off' ? ' off' : ' back on') + ' needs a two-factor method you’ve already set up: a passkey, security key or PGP key.';
+    const verified = () => {
+      if (!v) return;
+      if (v.kind === 'add') this.setState({ sheet: 'link', verify: null });
+      else if (vTarget && v.kind === 'off') update(vTarget.id, { on: false, online: false }, vTarget.name + ' is switched off and was logged out.');
+      else if (vTarget) update(vTarget.id, { on: true }, vTarget.name + ' is switched on again and can work after logging in.');
+    };
+    const methods = ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: verified }));
+
+    // Board height = measured content height (night, fonts loaded): 2127 for everything but the member rows,
+    // plus each row (member 177, or 195 when the status wraps; invite 169), the status note (62 for one line, 82 for two) and the "3 of 3" footer line (52).
+    const rowH = (m) => (m.kind !== 'member' ? 169 : ((!m.on ? 'Switched off' : (m.online ? 'Logged in · ' : 'Logged out · ') + m.seen).length > 30 ? 195 : 177));
+    const H = 2127 + s.list.reduce((t, m) => t + rowH(m), 0) + (s.note ? (s.note.length > 46 ? 82 : 62) : 0) + (full ? 52 : 0);
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return {
+      rootStyle, members, presetRows, presetOpts,
+      only: ONLY.map((t, i) => ({ text: t, style: 'display: flex; gap: 10px; align-items: flex-start; margin: 0 14px; padding: 12px 0; font-size: 15px; line-height: 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') })),
+      memberLine: count + ' of ' + MAX + ' · ' + online + ' logged in',
+      hasNote: s.note !== '', note: s.note,
+      isFull: full, addStyle: primary(full),
+      openAdd: () => { if (!full) this.setState({ sheet: 'name', draft: '', copied: false, pick: null, verify: null }); },
+      sheetOpen: s.sheet !== null, isName: s.sheet === 'name', isVerify: s.sheet === 'verify', isLink: s.sheet === 'link', isRemove: s.sheet === 'remove',
+      hasSens: !!picked && picked.sens.length > 0,
+      sensText: picked && picked.sens.length ? '“' + picked.label + '” turns on sensitive permissions: ' + picked.sens.join(', ') + '. They work as soon as you approve the first login.' : '',
+      draft: s.draft, setDraft: (e) => this.setState({ draft: e.target.value }),
+      noMake, makeStyle: primary(noMake),
+      makeLink: () => { if (!noMake) this.setState({ sheet: 'verify', verify: { kind: 'add' } }); },
+      verifyText, methods,
+      verifyCancel: () => this.setState({ sheet: v && v.kind === 'add' ? 'name' : null, verify: null }),
+      draftName: draft, draftPreset: picked ? picked.label : '',
+      copyLabel: s.copied ? 'Copied' : 'Copy link',
+      copy: () => this.setState({ copied: true }),
+      finish: () => this.setState({ sheet: null, draft: '', list: s.list.concat([{ id: 'inv' + count + draft, name: draft, kind: 'invite', on: false, online: false, seen: '', since: '2 Nov 2026, 14:05 UTC', allowed: picked ? picked.n : 0, preset: s.pick }]), note: 'Invite link made for ' + draft + '. It expires in 24 hours.' }),
+      removeName: target ? target.name : '',
+      doRemove: () => this.setState({ sheet: null, list: s.list.filter((m) => m.id !== s.target), note: (target ? target.name : 'Member') + ' was removed and logged out.' }),
+      closeSheet: () => this.setState({ sheet: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

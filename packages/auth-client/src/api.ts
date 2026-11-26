@@ -255,6 +255,9 @@ export interface AccountOverview {
   member?: {
     name: string;
     roles: TeamRole[];
+    /** Job 1c: the member's ticked boxes (`GET /v1/team/permissions` names them). Optional: older API builds do not send them. */
+    abilities?: string[];
+    preset?: string | null;
     chatLabel?: string;
     /** J-20 review F8 (owner question p11-136): the member's own limits; absent while the API's MEMBER_SEES_OWN_LIMITS is off, or on older builds. */
     limits?: { band: TradeBand | null; hours: WorkingHours };
@@ -463,6 +466,33 @@ export interface JabberEvents {
 }
 
 /**
+ * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md; `apps/api` disputes/lienRoutes.ts): one
+ * of the account's own liens. Amounts are atomic XMR as decimal strings; `rateBps` is the share of
+ * each completed trade's proceeds that goes to the creditor (default `defaultRateBps`, 50%). No
+ * account ids, no addresses.
+ */
+export interface LienView {
+  id: string;
+  status: 'active' | 'suspended' | 'repaid';
+  amountAtomic: string;
+  recoveredAtomic: string;
+  remainingAtomic: string;
+  rateBps: number;
+  defaultRateBps: number;
+  fromCode: string;
+}
+
+/**
+ * `GET /v1/account/liens`: what the account owes (never a repaid one) and the liens owed to it.
+ * Owed to it: totals only (review M4, provisional owner answer Q4: no per-trade rows, no times, no
+ * rate), and whether the creditor has signed a recovery address (Q2).
+ */
+export interface MyLiens {
+  owes: LienView[];
+  owedTo: Array<Pick<LienView, 'id' | 'status' | 'amountAtomic' | 'recoveredAtomic' | 'remainingAtomic' | 'fromCode'> & { recoveryAddressSet: boolean }>;
+}
+
+/**
  * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
  * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
  */
@@ -594,6 +624,8 @@ export interface AuthApi {
   cancelHoldChanges(): Promise<void>;
   /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
   cancelHoldChange(id: string): Promise<void>;
+  /** Lien recovery: `GET /v1/account/liens`, the account's own liens, both ways. */
+  listLiens(): Promise<MyLiens>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
@@ -706,9 +738,12 @@ export interface AuthApi {
    * Owner p11-21 (S-104): from a login that waits (a username and password) the invite still goes out, and the answer is also
    * `Staged` (`isStaged`): the member's boxes are a draft that applies 24 h after it is submitted.
    */
-  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
+  /** Job 1c: with `abilities` (the boxes, in catalogue order) instead of `roles`, confirm `team-invite-abilities` (`teamInviteAbilitiesAction`). */
+  inviteMember(b: ({ displayName: string; roles: TeamRole[] } | { displayName: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
   /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
+  /** Job 1c: a member's boxes, in catalogue order; confirm `team-abilities` (`teamAbilitiesAction`). From a login that waits, 202 `Staged`. */
+  setMemberAbilities(id: string, b: { abilities: string[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
@@ -848,6 +883,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
     cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
+    listLiens: () => get('/v1/account/liens'),
     listMethods: () => get('/v1/account/methods'),
     removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
     renameWebAuthnKey: (b) => call('PUT', '/v1/account/webauthn/label', b),
@@ -894,6 +930,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
+    setMemberAbilities: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {

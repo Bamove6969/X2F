@@ -76,6 +76,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
   { method: 'POST', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/accounts/:id/bans/:banId/lift', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
+  // Spec 6.6: the staff Accounts page's read-only lookup (senior moderators and the owner).
+  { method: 'GET', url: '/staff/v1/accounts/lookup', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
@@ -102,6 +104,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
+  // Spec 6.6 "Settings": the starter limits (the defaults unchanged need no tap).
+  { method: 'GET', url: '/staff/v1/starter-limits', perm: 'settings.write', allowed: OWNER },
+  {
+    method: 'PUT', url: '/staff/v1/starter-limits', perm: 'settings.write', allowed: OWNER,
+    body: { starterCapUsd: 200, starterMaxOpenTrades: 3, buildingCapUsd: 1000, buildingMinTrades: 5, buildingMinDays: 7, graduatedMinTrades: 20, graduatedMinDays: 30, tapId: '00000000-0000-4000-8000-000000000000' },
+  },
   { method: 'GET', url: '/staff/v1/site', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
@@ -149,6 +157,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // P-012/P-013: the blur-check answers, read by the feedback readers.
   { method: 'GET', url: '/staff/v1/feedback/blur-checks', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 30: support tickets (tickets.handle: the owner by role, anyone else by the owner's grant).
+  // The sample id names no ticket: an allowed caller gets 404 (a body stops at validation first).
+  { method: 'GET', url: '/staff/v1/tickets', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'GET', url: '/staff/v1/tickets/:id', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'POST', url: '/staff/v1/tickets/:id/take', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/messages', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/close', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/release', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
@@ -170,6 +186,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/re-propose', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { rulingId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f', outcome: 'release-to-buyer', accountAction: { kind: 'none' }, reason: 'A reason of at least forty characters for the new ruling.', evidence: [], tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   { method: 'POST', url: '/staff/v1/disputes/:code/rulings/:id/send-back', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { note: 'Look again.' } },
   { method: 'POST', url: '/staff/v1/freezes/:id/lift', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a moderator proposes a lien's recovery
+  // rate with a reason; a senior moderator or the owner approves it (tapped) or rejects it.
+  { method: 'GET', url: '/staff/v1/liens/:id', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/liens/:id/rate', perm: 'disputes.handle', allowed: MODERATORS, body: { rateBps: 2500, reason: 'Hardship' } },
+  { method: 'POST', url: '/staff/v1/liens/:id/rate/:req/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/liens/:id/rate/:req/reject', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 24 (D-011): who may review an appeal; the owner only (review M1, lead call 12 Nov).
   { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'staff.manage', allowed: OWNER },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
@@ -194,6 +216,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/log/filters', perm: 'log.read.cases', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/log/active-disputes', perm: 'log.read.cases', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/log/integrity', perm: 'log.read.all', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/log/integrity/check', perm: 'log.read.all', allowed: OWNER, body: {} },
   { method: 'GET', url: '/staff/v1/training', perm: 'training.read', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/training/:id', perm: 'training.read', allowed: MODERATORS },
   // Lead call 18 Nov (re-review): the library is review-first; a curator marks each case.

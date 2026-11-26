@@ -149,6 +149,11 @@ function sentence(
     case 'account.site-banned': return d.permanent === true ? 'Banned an account from X2F for good' : 'Banned an account from X2F for a set time';
     case 'account.ban-lifted': return 'Lifted a ban';
     case 'account.reinstated': return 'An account was reinstated at the end of its ban';
+    // The Accounts page's lookup (spec 6.6). COPY-UNSIGNED
+    case 'account.looked-up': {
+      const via = d.by === 'code' ? 'trade code' : 'display name';
+      return d.found === 0 ? `Looked up an account by ${via}; none matched` : `Looked up ${who('accountId', 'an account')} by ${via}`;
+    }
     case 'lien.placed': return `Placed a lien of ${xmr(d.amountAtomic) || 'the trade amount'}`;
     case 'lien.suspended': return 'A lien was suspended while the appeal is open';
     case 'lien.reactivated': return 'A lien is in force again';

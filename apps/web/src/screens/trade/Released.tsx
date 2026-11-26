@@ -24,7 +24,18 @@ export const EXPLORER_TX = 'https://xmrchain.net/tx/';
  * their own device has co-signed (`escrow.phase` `done`) it says the device is adding its
  * signature, and shows a Task 12 refusal or a stopped escrow instead of "is yours" (I2).
  */
-export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; escrow: ReleaseEscrow; reviewSlot?: ReactNode }) {
+export function Released({
+  trade,
+  escrow,
+  reviewSlot,
+  header,
+}: {
+  trade: ReleaseTrade;
+  escrow: ReleaseEscrow;
+  reviewSlot?: ReactNode;
+  /** The trade header with its way back (the Review board's "Back to trades"); the room passes it. */
+  header?: ReactNode;
+}) {
   const live = useConfirmations(trade);
   const other = publicName(trade.counterparty);
   const settled = trade.state === 'released';
@@ -46,6 +57,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
 
   return (
     <div className="x2f-release" data-screen="released">
+      {header}
       <section aria-label="Trade complete" className="x2f-released">
         <EscrowDots filled={[true, true, false]} tone="escrow" />
         <span className="x2f-released__label">{cosigned ? 'Released' : 'Releasing'}</span>
@@ -104,7 +116,16 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
             </div>
           </dl>
         ) : null}
-        {buyer ? <span className="x2f-released__note">Before the Monero network fee, which comes off your payout.</span> : null}
+        {/* COPY-UNSIGNED (owner 16 Nov: each receiving output pays the network fee for itself). Only the
+            poster sees the X2F fee (Global Constraints), so the sentence about its 1% is the poster
+            buyer's only (review B1, 16 Nov); a taker buyer reads the first sentence alone. */}
+        {buyer ? (
+          <span className="x2f-released__note">
+            {trade.fee // the API sends `fee` to the ad poster only (release/view.ts)
+              ? 'Before the network fee for your payout. X2F pays the network fee for its own 1%.'
+              : 'Before the network fee for your payout.'}
+          </span>
+        ) : null}
 
         <div className="x2f-released__confirm">
           <div className="x2f-released__confirm-row">

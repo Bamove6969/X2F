@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dispute room</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+    <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Buying from satoshi_ghost</span>
+      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+    </div>
+  </header>
+
+  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 8px 16px 20px;">
+    <section aria-label="Dispute status" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>In dispute
+        </span>
+        <svg style="flex-shrink: 0; color: var(--danger);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">1.250000</span><span style="font-size: 15px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="display: inline-flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>locked in escrow</span></span>
+      </div>
+      <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);">Replied in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">38</span> min · ruling due by <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">Fri 16 Oct, 10:14</span> (in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">23</span> h)</p>
+    </section>
+
+    <section aria-label="Moderator joined" style="display: flex; gap: 14px; align-items: flex-start; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
+      <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
+      <span style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+        <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Moderator <span style="color: var(--mod);">sarah.v</span> joined this dispute</span>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">She can read this whole chat, including messages from before the trade. Moderators only ever contact you here.</span>
+      </span>
+    </section>
+
+    <section aria-labelledby="dr-ev" style="display: flex; flex-direction: column; gap: 8px;">
+      <h2 id="dr-ev" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Evidence in this dispute</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px; background: var(--surface); font-size: 14px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h5"/></svg>Your Zelle screenshot
+        </span>
+        <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px; background: var(--surface); font-size: 14px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/></svg>Trade chat
+        </span>
+        <sc-if value="{{sent}}" hint-placeholder-val="{{false}}">
+          <span style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 10%, var(--surface)); font-size: 14px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--mod);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>Unblurred copy · moderator only
+          </span>
+        </sc-if>
+      </div>
+    </section>
+
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;">Chats are encrypted. If a dispute is opened, a moderator can read this conversation.</p>
+
+    <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="align-self: center; max-width: 92%; padding: 8px 12px; border-radius: 12px; background: var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:14</span> · You opened a dispute: I paid, but the seller hasn't released</div>
+
+      <div style="align-self: flex-start; max-width: 84%; display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">satoshi_ghost · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:20</span></span>
+        <span style="padding: 10px 14px; border-radius: 12px; background: var(--surface); font-size: 15px; line-height: 22px;">Nothing from Zelle on my side yet. I'll check again tonight.</span>
+      </div>
+
+      <div style="align-self: center; max-width: 92%; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 10%, var(--surface)); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:52</span> · Moderator <span style="color: var(--mod); font-weight: 600;">sarah.v</span> joined this dispute</div>
+
+      <div style="align-self: flex-start; max-width: 88%; display: flex; flex-direction: column; gap: 6px;">
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">
+          <span style="display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod); font-size: 12px; font-weight: 600;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>X2F Moderator</span>
+          <span><span style="color: var(--mod); font-weight: 600;">sarah.v</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:53</span></span>
+        </span>
+        <span style="padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent); font-size: 15px; line-height: 22px;">Hi both. I've read the chat and seen the proof. mira.k, please send me the unblurred screenshot so I can check the sender name. satoshi_ghost, please look in your Zelle activity for $412.50 today with the note K7M2-9QXA-4FTR-8WPN.</span>
+      </div>
+
+      <section aria-label="Request from the moderator" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
+        <span style="display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--mod);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><span><span style="color: var(--mod); font-weight: 600;">sarah.v</span> asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.</span></span>
+        <sc-if value="{{notSent}}" hint-placeholder-val="{{true}}">
+          <button type="button" onClick="{{send}}" style="height: 48px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send unblurred proof to sarah.v</button>
+        </sc-if>
+        <sc-if value="{{sent}}" hint-placeholder-val="{{false}}">
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Sent to sarah.v at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:58</span></span>
+        </sc-if>
+      </section>
+
+      <sc-if value="{{sent}}" hint-placeholder-val="{{false}}">
+        <div style="align-self: center; max-width: 92%; padding: 8px 12px; border-radius: 12px; background: var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:58</span> · You sent an unblurred proof to the moderator only</div>
+      </sc-if>
+    </div>
+  </main>
+
+  <footer style="display: flex; align-items: center; gap: 8px; padding: 16px 16px 12px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <label for="msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
+    <input id="msg" type="text" placeholder="Message satoshi_ghost and sarah.v" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+    <button type="button" aria-label="Send message" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
+    </button>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1237}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sent: false };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const H = this.state.sent ? 1319 : 1237;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return { rootStyle,
+      sent: this.state.sent,
+      notSent: !this.state.sent,
+      send: () => this.setState({ sent: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Fixed E (resumed run, 5 Nov)
+
+## Boards changed
+- OwnerSetup: already fixed by the killed run (centred wordmark header, 720 column, username input in body, PGP link no underline, centred 13/18 hint); this run only set root height / $preview to 1313 to match the render.
+- StaffList: already fixed by the killed run (chip outline dropped, 24-hour HH:MM text inputs, "Add staff member" button only shows when the form is closed, design note); this run only set root height / $preview to 1229.
+- StaffLog: search placeholder in body (placeholder CSS; typed codes stay mono); select defaults to "All entries" with the two active disputes in an "Active disputes (2)" optgroup; "Today, 09:50 UTC" (time mono, zone in body); usernames in Who column body 600; every digit run in "What happened" mono (1.800000 XMR, 1.250000 XMR, 10 confirmations, 500 to 1,000 USD); "Mon–Fri, 09:00–17:00 UTC"; dropdown labels 1.800000 / 0.400000 XMR; height 1096.
+- StaffOverview: hero no longer carries a second Familjen headline: "Emergency stop" is the 13/16 uppercase label, the three state lines (live / confirm / paused) are 18/24 600 Atkinson; "Pause all new trades" is a danger tertiary with chevron (the confirm step keeps its 56/48 danger-confirm button); height unchanged (1140).
+- StaffPerformance: Name column, "dmitri_k, last 8 weeks" heading and the callout's dmitri_k in body text (mono only on digits); callout "the 4 h deadline"; height unchanged (1104).
+- StaffSettings: "[RATE]" inputs now show realistic examples (6, 4, 300 USD in XMR) with a Design notes section under the form holding the "…are examples" caption and an OPEN · owner to choose box for the real pay rates; placeholder "No limit" in body (placeholder CSS); Large-trade bonus block is full width between the Senior and Moderator fields; height 1868.
+- ModQueue: Assigned-to "sarah.v" in body 600; lead "A moderator must reply within 4 h of a dispute opening."; height unchanged (825).
+- ModCase: compact header is now words on line 1 ("Dispute · harbor_lin and quietfox", 15/20 600) and "Trade 7RWD-3MXE-KQ84-HN2T · Zelle · All disputes" (13/16 muted) on line 2; the "Assigned to you" chip is gone and "· assigned to you" closes the meaning line (right hero slot empty, no key mark on a staff screen); chat line now says "right account" (no email); "4.000000 XMR" with the digits mono; harbor_lin / quietfox / sarah.v / lumen.k in body text; "MOD ONLY" tags in label style (13/16 600 uppercase --mod); times alone carry UTC ("11:40 UTC", "11:58 UTC", "11:42 UTC"). Ruling card untouched (no trading-hold option; the separate "Freeze trading" outline card stays under Escrow). Height unchanged (2046).
+- Desktop: nav rail now has the six items from Devices-Wide verbatim (Trade current, Settings and Help added); hero is caution tone with chip "Pay now" (clock icon) and caution key mark; upload row uses BuyerPay's two strings; "[SELLER ZELLE ID]" shows a masked example "(•••) •••-4821" with a Design notes section under the app (examples caption + OPEN box on what the buyer sees); root is min-height 1215, flex-wrap so the notes sit below the app; $preview 1215.
+- Fold-Cover: seller is satoshi_ghost; the note line renders its digits in mono and the dispute note reads "within 4 h".
+- Fold-Trade: chip "Pay now"; seller satoshi_ghost (412 trades, matching Desktop); "Add payment proof" dashed upload row under the Send exactly card (BuyerPay strings); chat pane header without bottom border; chat meta above the bubble; masked Zelle example. Size unchanged (840×1000).
+- Fold-Tabletop: timer is "61" + "min" (56/60 mono, unit 18/24 body, no mm:ss); the line under it is markup with "90" and "31 Oct 2026, 14:05" in mono (paid and cancelled states likewise); Send exactly amount down to 28/32 with "USD", memo 20/24, so the timer is the one big thing; 44px back link left of the context line (wide header pattern); chip "Pay now"; seller satoshi_ghost; chat meta above the bubble; masked Zelle example. Size unchanged (1000×840).
+- Fold-Offers: callout "Nothing changes after you tap Trade." (markup, "30" mono, "min"); the left-pane "Sellers and prices are examples. You pay no X2F fee…" line removed (duplicate fee line and an "examples" caption inside the app; the caption now lives in Fold-Notes). Hinge untouched (412 + 16 + 412).
+- Fold-MyOffers: note no longer clipped (scroll area gap 8, padding 12 16 16); off offers and the off status box use a solid 1px --line outline card; both pane headers without bottom border; Select all is a --surface card with no border; transition / reduced-motion CSS added to the helmet. Hinge untouched.
+- Fold-TriFold: callout "…after you tap Trade." (markup, "30" mono); chat pane header without bottom border; chat meta above the bubble; left-pane duplicate fee/examples line removed. Columns left as they were (419 + 16 + 410 + 16 + 419 = 1280, nothing on either hinge).
+- Fold-Notes: added a "Design notes for the Fold boards" section at the bottom with the "…are examples" caption for the six Fold boards and the OPEN box for the seller's Zelle contact; root min-height / $preview 2026.
+
+## Findings skipped and why
+- ModCase P3 "Release to buyer / Refund to seller show no selected state": the 2px ink ring on --surface-raised is already wired (`outcome` state); the default render has nothing picked, which is right for an unsubmitted ruling. Nothing to change.
+- StaffList P3 (duplicate "Add staff member" button) and StaffLog/StaffSettings/OwnerSetup items were already done by the killed run; verified, not redone.
+- Chat timestamps in message meta lines (e.g. "08:02", "14:03") keep no "UTC" suffix: Desktop / BuyerPay chat does the same and it is outside this group's findings; only times standing alone in a sentence got "UTC".
+- Fold-Tabletop cancelled-state unit "of 10" keeps "10" in body text (a one-string hole shared by three states); minor, not in the findings.
+
+## COPY-UNSIGNED (new or changed user-facing sentences)
+- StaffLog: "All entries" (select default); optgroup label "Active disputes (2)"; "Today, 09:50 UTC" date form; "Created an invite link for a new moderator (Mon–Fri, 09:00–17:00 UTC)"; "Proposed a ruling: release 1.800000 XMR to the buyer (above the limit, waiting for your approval)"; "Funded the escrow with 1.250000 XMR"; dropdown labels "… · Zelle · 1.800000 XMR · waiting for your approval", "… · Revolut · 0.400000 XMR · waiting for a moderator".
+- StaffOverview: none (same words, new sizes).
+- StaffPerformance: "…replied within the 4 h deadline 82% of the time."
+- StaffSettings: example pay values 6 / 4 / 300; notes caption "The pay figures (6, 4, 300 USD) are examples so the fields read as real; nothing is decided."; OPEN box "Per-case and monthly pay rates: what are the real amounts?" + three bullets.
+- ModQueue: "A moderator must reply within 4 h of a dispute opening."
+- ModCase: "Dispute · harbor_lin and quietfox"; "Trade 7RWD-3MXE-KQ84-HN2T · Zelle · All disputes"; "…paid, but the seller hasn't released · assigned to you"; "Nothing in my Zelle. Are you sure you sent it to the right account?"; "quietfox funded the escrow with 4.000000 XMR"; "Opened by you at 11:40 UTC · logged"; "Proposed at 11:58 UTC and logged."; "Requested at 11:42 UTC and logged."
+- Desktop: chip "Pay now"; "Add payment proof" / "Private details are blurred for you to check next. Location and device info are removed." (copied from BuyerPay); Zelle example "(•••) •••-4821"; notes caption "Names, amounts, times and the Zelle contact are examples. The Zelle contact shows masked, as the buyer would see it."; OPEN box "What does the buyer see in the "Zelle to" row?" + three bullets.
+- Fold-Cover: "Buying from satoshi_ghost"; "Left for satoshi_ghost to check and release"; "A moderator usually replies within 4 h".
+- Fold-Trade: chip "Pay now"; every "nightowl_44" → "satoshi_ghost" (title, cancel sheet, chat header, placeholder, message meta); "412 trades"; upload row strings as Desktop.
+- Fold-Tabletop: chip "Pay now"; "61 min"; "Zelle trades get 2 h."; "By Zelle for 1.250000 XMR"; "To (•••) •••-4821"; "nightowl_44" → "satoshi_ghost" throughout; "Paid · waiting for satoshi_ghost".
+- Fold-Offers / Fold-TriFold: "Nothing changes after you tap Trade. satoshi_ghost then has 30 min to lock the XMR in escrow. You only pay once it is locked."
+- Fold-Notes: "Design notes for the Fold boards" caption and the OPEN box (same question as Desktop's, naming Fold-Trade, Fold-Tabletop, Desktop).
+
+## Open questions for the owner
+- Staff pay rates (StaffSettings OPEN box): real per-case / monthly amounts, whether the 0.5% large-trade bonus and its cap stay; to settle with the lawyer.
+- What the buyer sees as the seller's Zelle contact (Desktop and Fold-Notes OPEN box): full contact, masked until tap, or a display name.
+- StaffLog "Today / Yesterday" labels: keep relative days with "UTC" times, or switch to full "6 Nov 2026, 09:50 UTC" dates?
+- Fold-TriFold pane widths: the findings call 412 + 16 + 412 + 16 + 412 correct, but the board is 1280 wide (419 + 16 + 410 + 16 + 419); left as is, nothing crosses a hinge.

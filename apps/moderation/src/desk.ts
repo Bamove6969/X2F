@@ -187,7 +187,9 @@ const CLOSED: readonly string[] = CLOSED_STATES;
 
 const accepted = (r: { status: number; error: string | null }): boolean => r.status === 201 || r.status === 200 || (r.status === 409 && r.error === 'wrong-state');
 
-const outcomeKey = (o: Outcome): string => JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
+/** The fee marks are part of what the tx pays (owner 16 Nov), so they are part of the key (review B3). */
+const outcomeKey = (o: Outcome): string =>
+  JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString(), p.bearsNetworkFee === true])]);
 
 /**
  * A shadow saved before the owner's 8 Nov reversal (no final alert) may sit in the retired

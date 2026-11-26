@@ -57,9 +57,10 @@ async function expectRingOn(page: Page, target: Locator): Promise<void> {
   await expect(ring).toBeVisible();
   await expect
     .poll(async () => {
-      const s = (await ring.boundingBox())!;
-      const t = (await target.boundingBox())!;
-      const c = (await card(page).boundingBox())!;
+      const s = await ring.boundingBox();
+      const t = await target.boundingBox();
+      const c = await card(page).boundingBox();
+      if (!s || !t || !c) return false;
       const around = s.x <= t.x + 1 && s.y <= t.y + 1 && s.x + s.width >= t.x + t.width - 1 && s.y + s.height >= t.y + t.height - 1;
       const clear = c.y >= s.y + s.height || c.y + c.height <= s.y || c.x >= s.x + s.width || c.x + c.width <= s.x;
       return around && clear;
@@ -68,6 +69,7 @@ async function expectRingOn(page: Page, target: Locator): Promise<void> {
 }
 
 async function goTo(page: Page, n: number): Promise<void> {
+  await expect(count(page)).toBeVisible();
   for (let i = Number((await count(page).textContent())!.split(' ')[0]); i < n; i++) {
     await next(page).click();
     await expect(count(page)).toHaveText(`${i + 1} of 19`);
@@ -98,8 +100,9 @@ for (const size of PHONES) {
       const tourBtn = screen.getByRole('button', { name: 'Take the tour' });
       const skipBtn = screen.getByRole('button', { name: 'Skip and get started' });
       await expect(tourBtn).toBeVisible();
-      expect((await tourBtn.boundingBox())!.height).toBeGreaterThanOrEqual(56);
-      expect((await skipBtn.boundingBox())!.height).toBeGreaterThanOrEqual(52);
+      // Polled: the first frame can be read before the webfont swap settles the buttons' height.
+      await expect.poll(async () => (await tourBtn.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(56);
+      await expect.poll(async () => (await skipBtn.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52);
       // Both phones are 760+ tall, so the links show.
       const links = screen.locator('nav[aria-label="Help and settings"] a');
       await expect(links).toHaveText(['FAQ', 'Getting started', 'Support', 'Settings']);
@@ -257,9 +260,12 @@ test('folded iPhone Duo (466x678): the links hide, both choices fit with no scro
   await page.goto('/sell');
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
   await expect(page.locator('nav[aria-label="Help and settings"]')).toBeHidden();
-  const skip = (await page.getByRole('button', { name: 'Skip and get started' }).boundingBox())!;
-  const nav = (await page.locator('nav[aria-label="Main"]').boundingBox())!;
-  expect(skip.y + skip.height).toBeLessThanOrEqual(nav.y);
+  // Waits for layout to settle after the webfont swap (agy-flakes, Job 9); toPass keeps the numbers.
+  await expect(async () => {
+    const skip = (await page.getByRole('button', { name: 'Skip and get started' }).boundingBox())!;
+    const nav = (await page.locator('nav[aria-label="Main"]').boundingBox())!;
+    expect(skip.y + skip.height).toBeLessThanOrEqual(nav.y);
+  }).toPass();
   await noSidewaysScroll(page);
 });
 
@@ -273,8 +279,9 @@ test('unfolded landscape (890x626): the card sits beside the highlight, the arro
   await expect(stage(page)).toHaveAttribute('data-side', 'true');
   await expect
     .poll(async () => {
-      const ring = (await page.locator('[data-part="tour-ring"]').boundingBox())!;
-      const c = (await card(page).boundingBox())!;
+      const ring = await page.locator('[data-part="tour-ring"]').boundingBox();
+      const c = await card(page).boundingBox();
+      if (!ring || !c) return false;
       return c.x >= ring.x + ring.width;
     })
     .toBe(true);

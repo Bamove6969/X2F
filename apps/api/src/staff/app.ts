@@ -1,4 +1,5 @@
 import type { TradePublisher } from '../trades/store.js';
+import { lienRoutes } from '../disputes/lienRoutes.js';
 import fastifyCookie from '@fastify/cookie';
 import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -22,11 +23,13 @@ import { staffDeviceRoutes } from './devices.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
 import { staffBanRoutes } from './bans.js';
+import { staffAccountLookupRoutes } from './accountLookup.js';
 import { staffLimitRoutes } from './limits.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffReviewDisputeRoutes } from './reviewDisputes.js';
@@ -37,6 +40,7 @@ import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
 import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
+import { staffStarterLimitRoutes } from './starterLimits.js';
 import { staffSiteRoutes } from './site.js';
 import { staffLogRoutes } from './activityLog.js';
 import { staffTrainingRoutes } from './training.js';
@@ -179,6 +183,8 @@ export async function buildStaffApi(
   ownerSetupRoutes(app);
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
   staffSettingsRoutes(app);
+  // Spec 6.6 "Settings": the starter limits (spec 2.3), owner_settings rows (settings.write, tapped).
+  staffStarterLimitRoutes(app);
   staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
@@ -192,8 +198,12 @@ export async function buildStaffApi(
   staffLimitRoutes(app);
   // Plan 4 Task 27: ban stages, placed and lifted by a key tap.
   staffBanRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
+  // Spec 6.6 "Account actions": the staff Accounts page finds a trader by display name or trade code.
+  staffAccountLookupRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 30: support tickets, worked by the staff the owner granted tickets.handle.
+  staffTicketRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
   staffDisputeRoutes(app, {
     moderation: deps.moderation,
@@ -206,6 +216,7 @@ export async function buildStaffApi(
   staffRevenueRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
+  lienRoutes(app);
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
   // Plan 4 Task 19: the Activity log page's reads and the training library (closed cases, scrubbed).

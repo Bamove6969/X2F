@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Account type</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div id="bv-app" style="position: relative; flex-shrink: 0; min-height: 844px; display: flex; flex-direction: column; overflow: hidden;">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="padding: 0 10px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Account type</h1>
+  </header>
+
+  <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Traders take offers. Vendors post them. Switch when you&#39;re ready to post your own.</p>
+
+    <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
+      <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>{{note}}</span></p>
+    </sc-if>
+
+    <section aria-labelledby="bv-cur-h" style="{{heroStyle}}">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <h2 id="bv-cur-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your account</h2>
+        <span style="{{chipStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>Current</span>
+      </div>
+      <div aria-hidden="true" style="display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); align-items: center; gap: 8px;">
+        <span style="{{stepTrader}}"><span style="{{tileTrader}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg></span><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Trader</span></span>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color: var(--ink-muted);"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        <span style="{{stepVendor}}"><span style="{{tileVendor}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg></span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Vendor</span></span></span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{typeName}}</span>
+        <sc-if value="{{isTrader}}" hint-placeholder-val="{{true}}"><span style="font-size: 15px; line-height: 22px; color: var(--ink-muted);">You take offers that vendors post. You pay no fee.</span></sc-if>
+        <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}"><span style="font-size: 15px; line-height: 22px; color: var(--ink-muted);">You post offers and can add team members. You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% fee on completed trades.</span></sc-if>
+      </div>
+      <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">1%</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">fee</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">3</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">members</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">24 <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif;">h</span></span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">session</span></span></div>
+      </sc-if>
+    </section>
+
+    <section aria-labelledby="bv-cmp-h" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="bv-cmp-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Trader vs vendor</h2>
+      <table style="width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; line-height: 20px;">
+        <caption style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">What changes between a trader and a vendor account</caption>
+        <colgroup><col style="width: 38%;" /><col style="width: 31%;" /><col style="width: 31%;" /></colgroup>
+        <thead>
+          <tr>
+            <td style="padding: 10px 8px 10px 0;"></td>
+            <th scope="col" style="{{thTrader}}">Trader<sc-if value="{{isTrader}}" hint-placeholder-val="{{true}}"><span style="display: block; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-muted);">Yours</span></sc-if></th>
+            <th scope="col" style="{{thVendor}}">Vendor<sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}"><span style="display: block; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-muted);">Yours</span></sc-if></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Post offers</th>
+            <td style="{{tdTrader}}"><span style="display: inline-flex; align-items: center; gap: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M6 12h12"/></svg>No</span></td>
+            <td style="{{tdVendor}}"><span style="display: inline-flex; align-items: center; gap: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg>Yes</span></td>
+          </tr>
+          <tr>
+            <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Team members (up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">3</span>)</th>
+            <td style="{{tdTrader}}"><span style="display: inline-flex; align-items: center; gap: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M6 12h12"/></svg>No</span></td>
+            <td style="{{tdVendor}}"><span style="display: inline-flex; align-items: center; gap: 6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg>Yes</span></td>
+          </tr>
+          <tr>
+            <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Session length</th>
+            <td style="{{tdTrader}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> or <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</span></td>
+            <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span></td>
+          </tr>
+          <tr>
+            <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Fee on completed trades</th>
+            <td style="{{tdTrader}}">None</td>
+            <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>%</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">For both: when this time is up, we ask you to confirm it&#39;s you to stay logged in.</p>
+    </section>
+
+    <section aria-labelledby="bv-req-h" style="display: flex; flex-direction: column; gap: 4px; padding: 20px 20px 8px; border-radius: 16px; background: var(--surface);">
+      <h2 id="bv-req-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">To become a vendor</h2>
+      <ul aria-label="Requirements" style="margin: 0; padding: 0; list-style: none;">
+        <sc-for list="{{reqs}}" as="r" hint-placeholder-count="1">
+          <li style="{{r.rowStyle}}">
+            <span aria-hidden="true" style="{{r.iconStyle}}">
+              <sc-if value="{{r.met}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></sc-if>
+              <sc-if value="{{r.notMet}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6M12 17v.5"/></svg></sc-if>
+            </span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.title}}</span>
+              <span style="{{r.statusStyle}}">{{r.status}}</span>
+              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{r.pre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.n1}}</span>{{r.mid}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.n2}}</span>{{r.post}}</span>
+              <sc-if value="{{r.hasAction}}" hint-placeholder-val="{{true}}">
+                <a href="SetupLogin.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; margin-top: 6px; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-align: center; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg>Add a passkey, security key or PGP key</a>
+              </sc-if>
+            </span>
+          </li>
+        </sc-for>
+      </ul>
+    </section>
+
+    <section aria-labelledby="bv-back-h" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="bv-back-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Going back to trader</h2>
+      <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">{{backText}}</p>
+    </section>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <sc-if value="{{canSwitch}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{askSwitch}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Switch to a vendor account</button>
+    </sc-if>
+    <sc-if value="{{cantSwitch}}" hint-placeholder-val="{{true}}">
+      <button type="button" disabled aria-describedby="bv-why" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Switch to a vendor account</button>
+    </sc-if>
+    <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+      <a href="PostOffer.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Post an offer</a>
+    </sc-if>
+    <p id="bv-why" style="display: flex; align-items: center; justify-content: center; min-height: 32px; margin: 0; text-align: center; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{footNote}}</p>
+  </footer>
+
+  <sc-if value="{{askingSwitch}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="bv-sw-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <span aria-hidden="true" style="margin-top: 4px; display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg></span>
+        <h2 id="bv-sw-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Switch to a vendor account?</h2>
+        <ul style="margin: 0; padding: 4px 14px; list-style: none; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; font-size: 15px; line-height: 22px;">
+          <li style="padding: 10px 0;">You can post offers and add team members.</li>
+          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% fee on completed trades.</li>
+          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</li>
+          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You can&#39;t switch back. To be a trader again, open a new account.</li>
+        </ul>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" onClick="{{confirmSwitch}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Switch to vendor</button>
+          <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: team members" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Team members are only for vendor accounts</span>
+      <span style="color: var(--ink-muted);">Owner: &quot;team members are only part of vendors&quot;. A trader account has no team.</span>
+    </aside>
+    <aside aria-label="Decided by the owner: requirements" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G26)</span>
+      <span style="font-weight: 600;">A passkey, security key or PGP key is the only requirement.</span>
+      <span style="color: var(--ink-muted);">Any trader can apply, even a beginner. No minimum number of trades.</span>
+    </aside>
+    <aside aria-label="Open for the owner: weaker logins" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+      <span style="font-weight: 600;">Does using a recovery code, or logging in with just a username and password, remove vendor status?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>No: vendor status stays</li>
+        <li>Paused: offers are hidden until the next login with a passkey, security key or PGP key</li>
+        <li>Yes: the account goes back to trader</li>
+      </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: no switching back" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q77), 7 Nov (G14)</span>
+      <span style="font-weight: 600;">A vendor can&#39;t switch back. To trade as a trader again, they open a new account.</span>
+      <span style="color: var(--ink-muted);">The Switch back button and its sheet are gone. G14: a new account can reuse the person&#39;s passkey, security key or PGP key, but needs a new username and display name.</span>
+      <span style="color: var(--ink-muted);">COPY-UNSIGNED: the Going back to trader text and the new line in the switch sheet.</span>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"$preview":{"width":390,"height":2141}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { mode: null, ask: null, note: '' }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const s = this.state;
+
+    // Owner, 2 Nov: Trader (default) and Vendor accounts. Becoming a vendor = a switch in settings.
+    // Confirmed requirement: a two-factor method already set up (passkey, security key or PGP key) on the owner.
+    const STATES = ['not-met', 'met', 'switched'];
+    const mode = s.mode || (STATES.indexOf(this.props.state) >= 0 ? this.props.state : 'not-met');
+    const vendor = mode === 'switched';
+    const strong = mode !== 'not-met';
+    // Decided · owner, 7 Nov (G26): no other requirement. Any trader can apply, even a beginner.
+
+    const reqs = [{
+      title: 'A passkey, security key or PGP key', met: strong, hasAction: !strong,
+      pre: strong ? 'A passkey is set up for the owner.' : 'The owner needs one. A username and password alone isn’t enough.',
+      n1: '', mid: '', n2: '', post: ''
+    }];
+    const allMet = reqs.every((r) => r.met);
+    // v2 list row: toned 40px icon tile + status chip (escrow when met, caution when not).
+    const reqRows = reqs.map((r, i) => ({
+      title: r.title, met: r.met, notMet: !r.met, hasAction: r.hasAction,
+      status: r.met ? 'Met' : 'Not met',
+      statusStyle: 'align-self: flex-start; display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; ' + (r.met ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);'),
+      iconStyle: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; ' + (r.met ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);'),
+      pre: r.pre, n1: r.n1, mid: r.mid, n2: r.n2, post: r.post,
+      rowStyle: 'display: flex; align-items: flex-start; gap: 14px; padding: 16px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+    }));
+
+    // Current column gets a quiet raised background with a 2px ink top line; never orange.
+    const cell = (cur) => 'padding: 12px 8px; border-top: 1px solid var(--surface-raised); vertical-align: top; color: var(--ink);' + (cur ? ' background: var(--surface-raised);' : '');
+    const head = (cur) => 'padding: 10px 8px; text-align: left; vertical-align: top; font-size: 15px; font-weight: 600; color: var(--ink);' + (cur ? ' background: var(--surface-raised); border-top: 2px solid var(--ink); border-radius: 6px 6px 0 0;' : '');
+
+    // Decided · owner, 6 Nov (Q77): no switching back. To trade as a trader again, open a new account.
+
+    let footNote = '';
+    if (vendor) footNote = 'Your offers are listed under My offers.';
+    else if (allMet) footNote = 'All requirements are met.';
+    else footNote = strong ? 'Meet every requirement to switch.' : 'Passkey, security key or PGP key needed.';
+
+    const hasNote = s.note !== '' || (vendor && s.mode === null);
+    // Board = phone screen (measured per state) + the design-notes block under it (measured).
+    const APP = { 'not-met': 1458, 'met': 1364, 'switched': 1496 }[mode] + (hasNote && !vendor ? 62 : 0);
+    const NOTES_H = 683;
+    const H = APP + NOTES_H;
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+
+    // Hero (v2 §6): neutral while the requirement is missing, escrow once it's met and after the switch.
+    const tone = strong ? 'var(--escrow)' : 'var(--ink-muted)';
+    const heroStyle = 'display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + tone + ' 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, ' + tone + ' 35%, transparent);';
+    const chipStyle = 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);';
+    // Current step gets the 2px ink ring (as the table's current column); never orange.
+    const step = (cur) => 'display: flex; flex-direction: column; gap: 10px; padding: 12px; min-width: 0; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); border: 2px solid ' + (cur ? 'var(--ink);' : 'transparent;');
+    const tileBase = 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; ';
+    return {
+      rootStyle, heroStyle, chipStyle,
+      stepTrader: step(!vendor), stepVendor: step(vendor),
+      tileTrader: tileBase + 'background: var(--surface); color: var(--ink);',
+      tileVendor: tileBase + (strong ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: var(--surface); color: var(--ink);'),
+      isTrader: !vendor, isVendor: vendor,
+      typeName: vendor ? 'Vendor account' : 'Trader account',
+      hasNote, note: s.note !== '' ? s.note : 'You’re a vendor. You can post offers.',
+      thTrader: head(!vendor), thVendor: head(vendor), tdTrader: cell(!vendor), tdVendor: cell(vendor),
+      reqs: reqRows,
+      backText: vendor ? 'A vendor account can’t switch back. To trade as a trader again, open a new account.' : 'Once you switch, you can’t switch back. To trade as a trader again, you’d open a new account.',
+      canSwitch: !vendor && allMet, cantSwitch: !vendor && !allMet, footNote,
+      askSwitch: () => { if (allMet) this.setState({ ask: 'switch' }); },
+      askingSwitch: s.ask === 'switch',
+      confirmSwitch: () => this.setState({ mode: 'switched', ask: null, note: 'You’re a vendor. You can post offers.' }),
+      cancel: () => this.setState({ ask: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

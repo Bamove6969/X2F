@@ -186,7 +186,13 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 78 -> 81 (wip/lead-note-223, the owner's full-length Terms, 25 Nov): setup/termsText.ts's
     // sentences with "cannot" ("cannot be restored", "cannot pull back funds", "cannot resolve it",
     // "we do not collect") each carry their own pragma; they explain how X2F works, nothing was tried and refused.
-    expect(notARefusal).toBeLessThanOrEqual(81);
+    // 81 -> 83 (wip/lead-team-ui, Job 1c): settings/teamApi.ts's Availability type and its parse set
+    // name the catalogue's 'owner-only' box kind (a kind of permission box), not a refusal code.
+    // 83 -> 84 (wip/third-lien-recovery merged onto main, 26 Nov): liensCopy.ts's `addressTaken` (lien recovery,
+    // provisional owner answer Q2, 17 Nov 2026), a wallet choice to redo on the same screen, not a rule refusal.
+    // 84 -> 89 (owner open-items walkthrough, 26 Nov): termsText.ts's section 1 ("cannot move them on its
+    // own") and the four TERMS_CHANGES lines, a summary of what changed in the Terms; nothing was tried and refused.
+    expect(notARefusal).toBeLessThanOrEqual(89);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

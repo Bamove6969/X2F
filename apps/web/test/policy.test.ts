@@ -134,7 +134,9 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     const b = ctx('buyer', { state: 'disputed', poster });
     const to = expected('dispute-buyer', b);
     expect(to[0]!.address).toBe(BUYER);
-    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic });
+    // Owner 16 Nov: a buyer win is marked like a release: the buyer's output and the fee output share the network fee.
+    expect(to[0]!.bearsNetworkFee).toBe(true);
+    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic, bearsNetworkFee: true });
     expect(cosignPolicy(b, out(to, 'mod', 'buyer'))).toBe(true);
   });
 
@@ -332,10 +334,20 @@ describe('cosignPolicy refuses', () => {
     expect(cosignPolicy(c, { ...rel, kind: 'other' as never })).toBe(false);
   });
 
-  it('outputs in another order (index 0 bears the network fee)', () => {
+  it('outputs in another order (the order sets which outputs bear the network fee)', () => {
     const c = ctx('buyer');
     const rel = expected('release', c);
     expect(cosignPolicy(c, out([...rel].reverse(), 'seller', 'buyer'))).toBe(false);
+  });
+
+  it('a release whose network fee bearers differ from the buyer and fee outputs (owner 16 Nov)', () => {
+    const c = ctx('buyer');
+    const rel = expected('release', c);
+    expect(rel.map((p) => p.bearsNetworkFee === true)).toEqual([true, true]);
+    expect(cosignPolicy(c, out(rel, 'seller', 'buyer'))).toBe(true);
+    // The whole fee back on the buyer, or the fee output alone, is another set.
+    expect(cosignPolicy(c, out(rel.map(({ address, amountAtomic }) => ({ address, amountAtomic })), 'seller', 'buyer'))).toBe(false);
+    expect(cosignPolicy(c, out([{ address: rel[0]!.address, amountAtomic: rel[0]!.amountAtomic }, rel[1]!], 'seller', 'buyer'))).toBe(false);
   });
 });
 
@@ -436,5 +448,70 @@ describe('rulingOutcomeFor (Plan 4 Task 21: the runtime\'s ruling co-sign)', () 
   it('the buyer: an API amount that disagrees with this device\'s size gets no ruling set', () => {
     const c = ctx('buyer', { state: 'disputed' });
     expect(rulingOutcomeFor({ ...c, trade: { ...c.trade, amountAtomic: AMOUNT + 1n } })).toBeNull();
+  });
+});
+
+// Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): the moderator-signed terms carry the
+// buyer's recovery; a release pays it to the creditor, and only exactly that set is co-signed.
+describe('lien recovery in the signed terms', () => {
+  const CREDITOR = '4CreditorPayoutAddress';
+  const REC = { address: CREDITOR, amountAtomic: 100_000_000_000n };
+  const withRec = (role: 'buyer' | 'seller', accepted: bigint | undefined = REC.amountAtomic): PolicyContext => {
+    const c = ctx(role, { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    return {
+      ...c,
+      // Review B1: the buyer's device keeps the figure the buyer accepted on the quote.
+      own: role === 'buyer' && accepted !== undefined ? { ...c.own, lienRecoveryAtomic: accepted } : c.own,
+      signedTerms: { ...c.signedTerms, lienRecovery: REC },
+    };
+  };
+  const recSet = (c: PolicyContext): Payout[] =>
+    payoutsFor({ ...(() => { const p = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }); return { feeAtomic: p.feeAtomic, sellerFundsAtomic: p.sellerFundsAtomic }; })(),
+      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, lienRecovery: REC });
+
+  it('the buyer co-signs the release that pays the signed recovery, and nothing else', () => {
+    const c = withRec('buyer');
+    const to = recSet(c);
+    expect(to[2]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
+    expect(cosignPolicy(c, out(to, 'seller', 'buyer'))).toBe(true);
+    // The plain release (no recovery) does not match the signed terms.
+    expect(cosignPolicy(c, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
+    // One atomic unit more to the creditor, or another address: refused.
+    const more = to.map((p, i) => (i === 2 ? { ...p, amountAtomic: p.amountAtomic + 1n } : i === 0 ? { ...p, amountAtomic: p.amountAtomic - 1n } : p));
+    expect(cosignPolicy(c, out(more, 'seller', 'buyer'))).toBe(false);
+    const elsewhere = to.map((p, i) => (i === 2 ? { ...p, address: ATTACKER } : p));
+    expect(cosignPolicy(c, out(elsewhere, 'seller', 'buyer'))).toBe(false);
+  });
+
+  it('no recovery in the signed terms: a set with a recovery output is refused', () => {
+    const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    expect(cosignPolicy(c, out(recSet(c), 'seller', 'buyer'))).toBe(false);
+  });
+});
+
+// Review B1 (compromised API): even with signed terms that carry a recovery, the buyer's device
+// co-signs only when it is exactly the figure the buyer accepted on the quote before the take.
+describe('lien recovery: the buyer co-signs only the recovery it accepted (review B1)', () => {
+  const CREDITOR = '4CreditorPayoutAddress';
+  const REC = { address: CREDITOR, amountAtomic: 100_000_000_000n };
+  const set = (c: PolicyContext): Payout[] =>
+    payoutsFor({ ...(() => { const p = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }); return { feeAtomic: p.feeAtomic, sellerFundsAtomic: p.sellerFundsAtomic }; })(),
+      kind: 'release', amountAtomic: AMOUNT, poster: 'seller', balanceAtomic: c.balance, buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, lienRecovery: REC });
+  const buyer = (accepted?: bigint): PolicyContext => {
+    const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    return { ...c, own: { ...c.own, ...(accepted !== undefined ? { lienRecoveryAtomic: accepted } : {}) }, signedTerms: { ...c.signedTerms, lienRecovery: REC } };
+  };
+
+  it('injected (the buyer accepted none) or inflated (another figure): refused; the accepted figure: co-signed', () => {
+    expect(cosignPolicy(buyer(), out(set(buyer()), 'seller', 'buyer'))).toBe(false);
+    expect(cosignPolicy(buyer(REC.amountAtomic - 1n), out(set(buyer()), 'seller', 'buyer'))).toBe(false);
+    expect(cosignPolicy(buyer(REC.amountAtomic), out(set(buyer()), 'seller', 'buyer'))).toBe(true);
+    expect(outcomeFor('release', buyer())).toBeNull();
+  });
+
+  it('a buyer who accepted a recovery refuses signed terms that carry none', () => {
+    const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
+    const accepted = { ...c, own: { ...c.own, lienRecoveryAtomic: REC.amountAtomic } };
+    expect(cosignPolicy(accepted, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
   });
 });

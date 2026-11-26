@@ -511,7 +511,13 @@ export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
  *   changeId }` is returned: the route writes nothing else and answers 202 `stagedReply`;
  * - else null: the route applies the change.
  */
-export async function gateChange(db: Queryable, req: FastifyRequest, change: PendingChange): Promise<{ changeId: string } | null> {
+export async function gateChange(
+  db: Queryable,
+  req: FastifyRequest,
+  change: PendingChange,
+  // Owner 2026-11-26 (note #161): the sign-up session's first wallet is never staged, past the 30 minutes too.
+  opts: { signup?: boolean } = {},
+): Promise<{ changeId: string } | null> {
   const deps = req.server.deps;
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
@@ -520,7 +526,7 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   if (row.kind !== 'trader') return null;
   const running = await holdInTx(db, settleOf(req), accountId, now);
   if (running !== null) throw holdRefusal(running.holdUntil);
-  const onboarding = row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime();
+  const onboarding = (opts.signup === true && row.onboarding_until !== null) || (row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime());
   // Task 9's backup session already waited its 24 hours before it could change anything (R42:
   // the change waits out the 24 hours once, not twice).
   const waited = row.level === 'recovery' && row.hold_until !== null && row.hold_until.getTime() <= now.getTime();
@@ -620,6 +626,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Owner 25 Nov security-key report; security review of wip/lead-seckey-fix: naming a key re-checks
   // the session, the hold and a waiting login under the account lock (auth/webauthn.ts `setKeyLabel`).
   'PUT /v1/account/webauthn/label',
+  // Lien recovery (review B1/Q2): the creditor's signed address its recoveries are paid to
+  // (disputes/lienRoutes.ts; the lock is the account's).
+  'POST /v1/account/liens/:id/recovery-address',
 ];
 
 /**
@@ -634,6 +643,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
 export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/account/pgp/start': 'writes only an add-key challenge bound to this session; its finish is checked',
   'POST /v1/account/onboarding/end': "only clears this session's own sign-up window, which narrows what the session may do (review M1)",
+  // S-085 (auth/deviceBound.ts): renewing this session's own bound cookie with its own browser key.
+  'POST /v1/account/session/proof/challenge': "writes only a proof challenge bound to this session; changes no account, approval or security state",
+  'POST /v1/account/session/proof': "renews this session's own bound cookie after a signature with the key the session was bound to at login; never extends the session, changes no account, approval or security state",
   'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
   'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
   'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
@@ -657,6 +669,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 5 Task 14.
   'PUT /v1/trades/:code/proofs/:id': "a participant's proof ciphertext for their own trade (R42: finishing open trades stays allowed); no account, session, approval or security state, no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  // Plan 4 Task 30: support tickets (the account owner's own question to staff).
+  'POST /v1/tickets': 'a support ticket row and its first message only; no account, session, approval or security state, no obligation',
+  'POST /v1/tickets/:id/messages': "a message on the caller's own support ticket; no account, session, approval or security state, no obligation",
+  'POST /v1/tickets/:id/close': "closes the caller's own support ticket; no account, session, approval or security state, no obligation",
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
   'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
@@ -748,6 +764,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   ...JABBER_WRITE_ROUTES,
   // J-23 groundwork (design note 2.4): nothing is handed over during a hold (auth/chatKeys.ts).
   ...CHAT_KEY_WRITE_ROUTES,
+  // Lien recovery (review B1/Q2): where a creditor's recoveries are paid is not changed during a hold.
+  'POST /v1/account/liens/:id/recovery-address',
 ];
 
 /**

@@ -54,6 +54,7 @@ interface TakeBody {
   walletId: string;
   centsPerXmr: string;
   fiatCents: string;
+  lienRecoveryAtomic?: string;
 }
 
 interface Api {
@@ -74,6 +75,8 @@ interface Api {
   reviews?: string[];
   /** Owner note #6: `POST /v1/wallets` from the quote's new-address sheet; unset answers 404. */
   addWallet?: (body: Record<string, unknown>) => { status: number; json: unknown };
+  /** Review B1: what `GET /v1/account/liens/preview` answers (the buyer's lien recovery); '0' by default. */
+  lienRecovery?: string;
 }
 
 let stub: Api;
@@ -121,6 +124,7 @@ beforeEach(() => {
       return new Response(null, { status: url.pathname.endsWith('/skip') ? 204 : 201 });
     }
     if (/^\/v1\/trades\/[^/]+$/.test(url.pathname)) return json(200, { role: 'buyer' });
+    if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
     const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
     if (take && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as TakeBody;
@@ -190,8 +194,10 @@ function type(host: HTMLElement, value: string): void {
   });
 }
 
-function pick(host: HTMLElement, walletId: string): void {
+/** Picks a wallet, then lets the lien recovery read for it (review B1) answer before Trade is looked at. */
+async function pick(host: HTMLElement, walletId: string): Promise<void> {
   fire(host.querySelector(`input[value="${walletId}"]`)!, new MouseEvent('click', { bubbles: true }));
+  await settle();
 }
 
 const BUY = quotePath('sell', 'ZELLE', 'offer-ghost', 'USD');
@@ -202,7 +208,7 @@ describe('a gift-card quote (J-17, F13 tick-box terms)', () => {
   it('the buyer (who sends the card) ticks every sender term before Trade; the take carries the terms version', async () => {
     stub.giftCard = true;
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     const ticks = boxes(host);
     expect(ticks.map((b) => b.closest('[data-term]')?.getAttribute('data-term'))).toEqual([...GIFT_CARD_TERMS.sender]);
     expect(primary(host).disabled).toBe(true);
@@ -225,7 +231,7 @@ describe('a gift-card quote (J-17, F13 tick-box terms)', () => {
   it('no tick boxes and no terms version on any other method', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
     expect(boxes(host)).toEqual([]);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes[0]).not.toHaveProperty('giftCardTerms');
@@ -274,12 +280,12 @@ describe('BuyQuote', () => {
 
   it('has no X2F fee line, no "1%" and no Deposit row; the network fee row uses the OD-4 copy', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
     expect(rows).not.toContain('X2F');
     expect(host.textContent).not.toContain('1%');
     expect(host.textContent).not.toMatch(/deposit/i);
-    expect(rows).toContain('Network feeabout 0.0001 XMR, taken from the payout');
+    expect(rows).toContain('Network feeabout 0.00005 XMR for your payout, taken from it');
     // The only fee words on the page are the board's footer reassurance.
     expect((host.textContent ?? '').match(/X2F fee/g)).toEqual(['X2F fee']);
     expect(host.textContent).toContain('Taking an offer is free. No X2F fee is added.');
@@ -291,7 +297,7 @@ describe('BuyQuote', () => {
     expect(primary(host).disabled).toBe(true);
     expect(host.querySelector('input[value="w-edge"]')).toBeNull();
     expect(host.textContent).toContain('1 more wallet is still waiting');
-    pick(host, 'w-ledger');
+    await pick(host, 'w-ledger');
     expect(primary(host).disabled).toBe(false);
     expect(host.textContent).toContain('In Ledger (via Feather), address ending …9QbP0b');
     // Re-review gap 2: every ending shown is cut from the full address, never the API's addressEnd.
@@ -300,7 +306,7 @@ describe('BuyQuote', () => {
 
   it('Trade takes with the quoted amount and the picked wallet, then opens the trade room; the stored total is the quoted one (OD-5)', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(1);
@@ -316,9 +322,40 @@ describe('BuyQuote', () => {
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
   });
 
+  it('review B1: a buyer who owes after a dispute sees what this purchase pays to the person they owe; Trade sends it and the device keeps it', async () => {
+    stub.lienRecovery = '625000000000';
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000', lienRecoveryAtomic: '625000000000' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await pick(host, 'w-cake');
+    expect(host.querySelector('[data-part="lien-recovery"]')?.textContent).toContain('0.625');
+    expect(host.querySelector('[data-part="lien-recovery-note"]')?.textContent).toContain('You receive 0.625');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.lienRecoveryAtomic).toBe('625000000000');
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.lienRecoveryAtomic).toBe(625_000_000_000n);
+  });
+
+  it('review B1: a take that reserved another figure than the one shown is not recorded; a refusal reads the figure again', async () => {
+    stub.lienRecovery = '625000000000';
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000', lienRecoveryAtomic: '625000000001' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBeNull();
+    // The API refused: the quote reads the figure again and shows the new one.
+    stub.take = () => ({ status: 409, json: { error: 'lien-recovery-changed' } });
+    stub.lienRecovery = '500000000000';
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('What this purchase pays to the person you owe changed. Check it and tap Trade again.');
+    expect(host.querySelector('[data-part="lien-recovery"]')?.textContent).toContain('0.5');
+  });
+
   it('a price-changed refusal re-quotes at the price now and asks for a fresh tap; nothing is taken until then', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     expect(host.textContent).toContain('$330.00 / XMR');
     // The feed moved after the quote's last poll: the server refuses the stale rate.
     stub.rate = '34000';
@@ -343,7 +380,7 @@ describe('BuyQuote', () => {
 
   it("the take hands the trade room the device's own record of what was confirmed, in the navigation state and in this tab's storage", async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
@@ -365,7 +402,7 @@ describe('BuyQuote', () => {
     // The server locks its own rate now (lead decision 2026-10-29): here 0.3% above the quote.
     stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33099', fiatCents: '41373', maxFiatCents: '150000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
@@ -380,7 +417,7 @@ describe('BuyQuote', () => {
     // The server locks 1 minor unit above the quote, well inside the 0.5% tolerance.
     stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '1500034', fiatCents: String(fiatCents(BigInt(body.amountAtomic), { currency: 'USD', centsPerXmr: 1_500_034n })), maxFiatCents: '1500034' } });
     const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-xmr', 'USD')}&amount=0.5&unit=xmr`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
@@ -395,7 +432,7 @@ describe('BuyQuote', () => {
   it('records the growth ceiling the take fixed (the launch cap, review F1), never one above the maximum shown', async () => {
     stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '120000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
@@ -406,7 +443,7 @@ describe('BuyQuote', () => {
   it('a growth ceiling above the maximum shown is not recorded: the deal keeps what the person saw', async () => {
     stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '9000000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.deal.maxFiatCents).toBe(150_000n);
@@ -415,7 +452,7 @@ describe('BuyQuote', () => {
   it('a locked rate farther than 0.5% from the quote is not recorded: no trade room, the generic refusal', async () => {
     stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33200', fiatCents: '41500', maxFiatCents: '150000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(where(host)).not.toBe('/trade/K7M2-9QXA-4FTR-8WPN');
@@ -425,7 +462,7 @@ describe('BuyQuote', () => {
 
   it('with the feed down every offer, at any margin, is disabled with "Price unavailable right now" (no fixed price, owner Q1)', async () => {
     const above = await open(`${quotePath('sell', 'ZELLE', 'offer-above', 'USD')}&amount=495`);
-    pick(above.host, 'w-cake');
+    await pick(above.host, 'w-cake');
     expect(above.host.textContent).toContain('$495.00 / XMR');
     expect(above.host.textContent).toContain('1.000000 XMR');
     expect(primary(above.host).disabled).toBe(false);
@@ -434,7 +471,7 @@ describe('BuyQuote', () => {
     stub.price = 'down';
     for (const path of [`${BUY}&amount=412.50`, `${quotePath('sell', 'ZELLE', 'offer-above', 'USD')}&amount=495`]) {
       const { host, unmount } = await open(path);
-      pick(host, 'w-cake');
+      await pick(host, 'w-cake');
       expect(primary(host).disabled, path).toBe(true);
       expect(host.textContent, path).toContain('Price unavailable right now');
       unmount();
@@ -443,7 +480,7 @@ describe('BuyQuote', () => {
 
   it('out of range: the board\'s help, and Trade stays off', async () => {
     const { host } = await open(`${BUY}&amount=20`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     expect(host.textContent).toContain('Too low: the smallest trade is $50.');
     expect(primary(host).disabled).toBe(true);
     type(host, '2000');
@@ -560,7 +597,7 @@ describe('BuyQuote', () => {
 
   it('design review 8 Nov item 4: "You receive" shows 6 places (0.151515, not 0.151515151515); the take still sends the exact amount', async () => {
     const { host } = await open(`${BUY}&amount=50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     const figure = host.querySelector('.x2f-quote__xmr')!;
     expect(figure.textContent).toBe('0.151515 XMR');
     expect(figure.hasAttribute('data-long')).toBe(false);
@@ -602,7 +639,7 @@ describe('BuyQuote', () => {
   it('a starter-limit refusal names only the caller\'s own stage', async () => {
     stub.take = () => ({ status: 409, json: { error: 'starter-limit', stage: 'starter', capUsdCents: '20000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     // A rule refused it: the reason opens in CantDoThat (a portal on the body), with its feedback link.
@@ -615,7 +652,7 @@ describe('BuyQuote', () => {
   it('an offer the API marks opensAt is greyed with "Opens at Building"', async () => {
     stub.offers = [{ ...GHOST, opensAt: 'building' }];
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     expect(host.textContent).toContain('Opens at Building.');
     expect(primary(host).disabled).toBe(true);
   });
@@ -627,6 +664,7 @@ describe('BuyQuote', () => {
       if (url.pathname === '/v1/methods') return json(200, { live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'x', giftCard: false, offers: 0, bestRate: null }] });
       if (url.pathname === '/v1/price') return json(200, { currency: 'EUR', centsPerXmr: '30000', exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '33000' });
       if (url.pathname === '/v1/wallets') return json(200, WALLETS);
+      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
       return json(404, { error: 'not-found' });
     }) as typeof fetch;
     const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-ghost', 'EUR')}&amount=300`);
@@ -644,6 +682,7 @@ describe('a 0-decimal currency', () => {
       if (url.pathname === '/v1/methods') return json(200, { live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'x', giftCard: false, offers: 0, bestRate: null }] });
       if (url.pathname === '/v1/price') return json(200, { currency: 'JPY', centsPerXmr: '33000', exponent: 0, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '22000' });
       if (url.pathname === '/v1/wallets') return json(200, WALLETS);
+      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
       const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
       if (take && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as TakeBody;
@@ -653,7 +692,7 @@ describe('a 0-decimal currency', () => {
       return json(404, { error: 'not-found' });
     }) as typeof fetch;
     const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-ghost', 'JPY')}&amount=41250`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     const text = host.textContent ?? '';
     expect(text).toContain('Zelle · JPY · ¥33,000 / XMR');
     expect(text).toContain('satoshi_ghost sells ¥5,000 to ¥150,000 per trade.');
@@ -682,7 +721,7 @@ describe('SellQuote', () => {
 
   it('the XMR figure shows exactly what is sent: 1.0000009 typed is 1.0000009 XMR locked, not 1.000000', async () => {
     const { host } = await open(SELL);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     type(host, '1.0000009');
     const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
     expect(rows).toContain('1.0000009 XMR');
@@ -707,7 +746,7 @@ describe('SellQuote', () => {
     expect(text).toContain('mira.k buys $50 to $1,500 per trade.');
     expect(text).toContain('Which wallet sends the XMR?');
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Max')!, new MouseEvent('click', { bubbles: true }));
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
     // Max: $1,500 at $330.00, as 6-decimal XMR (4.545454); the seller locks exactly that (the
     // poster's 1% comes out of the poster's own payout), and it is still within the offer's maximum.
@@ -931,7 +970,7 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
     fire(host.querySelector('.x2f-quote__switch')!, new MouseEvent('click', { bubbles: true }));
     expect(unitShown(host)).toBe('XMR');
     const typed = amount(host).value;
-    pick(host, 'w-ledger');
+    await pick(host, 'w-ledger');
 
     await layout(true);
     expect(quotes(host)).toHaveLength(1);
@@ -961,7 +1000,7 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
     stub.gate = new Promise<void>((r) => (answer = r));
     stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
     const { host } = await openRoute(`${MIRA_QUOTE}&amount=412.50`);
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(1);
@@ -1033,7 +1072,7 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
     // The amount sits in the list's URL (it came from the method list), so the first input is the tap.
     const { host } = await openRoute(`${LIST}&amount=412.50`);
     expect(amount(host).value).toBe('412.50');
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(1);
@@ -1132,7 +1171,7 @@ describe('after Trade, the quote goes straight to the trade room (the courtesy s
   const sheet = () => document.querySelector<HTMLElement>('[data-sheet="courtesy"]');
 
   async function takeIt(host: HTMLElement) {
-    pick(host, 'w-cake');
+    await pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
   }
@@ -1400,7 +1439,7 @@ describe('the rate-first gate on the quote (Plan 5 Task 6; review 18 Nov M1, M2,
     };
     const r = await open(`${BUY}&amount=412.50`);
     expect(r.host.querySelector<HTMLInputElement>('input[value="w-cake"]')!.checked).toBe(true);
-    pick(r.host, 'w-ledger');
+    await pick(r.host, 'w-ledger');
     await settle();
     tap(primary(r.host));
     await settle();
@@ -1497,7 +1536,7 @@ describe('the rate-first gate on the quote (Plan 5 Task 6; review 18 Nov M1, M2,
     stub.pending = [[]];
     stub.take = () => ({ status: 409, json: { error: 'review-pending' } });
     const { host } = await open(`${BUY}&amount=412.50`);
-    pick(host, 'w-ledger');
+    await pick(host, 'w-ledger');
     await settle();
     tap(primary(host));
     await settle();

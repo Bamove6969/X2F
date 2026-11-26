@@ -62,7 +62,7 @@ export const SUGGESTED_WALLETS: readonly string[] = WALLET_APPS.filter((a) => a 
 
 /** The words on this screen (owner demo notes 12 Nov #32, 16 Nov #96, from his wording). COPY-UNSIGNED */
 export const WALLET_COPY = {
-  intro: 'Any Monero wallet works. X2F never holds your coins.',
+  intro: 'Any Monero wallet works. X2F never takes custody of your coins.',
   listTitle: 'Well-known Monero wallets',
   more: 'and many more.',
   /** Shown to everyone now no app is picked: wallets-model.ts EDGE_TIP (Edge's real setting, owner #96). */

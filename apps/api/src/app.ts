@@ -1,4 +1,5 @@
 import fastifyCookie from '@fastify/cookie';
+import { accountLienRoutes } from './disputes/lienRoutes.js';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
@@ -14,7 +15,8 @@ import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
 import { chatKeyRoutes } from './auth/chatKeys.js';
-import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
+import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, requireSession, runsWithSession, type SessionRealm } from './auth/sessions.js';
+import { deviceBoundRoutes, sessionKeyHook } from './auth/deviceBound.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -36,6 +38,7 @@ import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
 import { maintenanceGate, siteRoutes } from './site/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
+import { ticketTraderRoutes } from './tickets/traderRoutes.js';
 import { feedbackRoutes } from './feedback/mood.js';
 import { pastRepRoutes } from './pastrep/routes.js';
 import type { MarketPrices } from './price/market.js';
@@ -282,6 +285,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
+  // S-085 review S5: a malformed X2F-Session-Key is refused before any login factor is checked.
+  app.addHook('onRequest', sessionKeyHook);
 
   // Plan 4, Task 8: while maintenance is on, every /v1/* route but GET /v1/site answers 503 `maintenance`.
   app.addHook('onRequest', maintenanceGate);
@@ -323,6 +328,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   approvalRoutes(app);
   // J-23 groundwork: the chat-key courier between a person's own strong devices (ciphertext only).
   chatKeyRoutes(app);
+  // S-085: the bound-cookie renewal (off unless X2F_DEVICE_BOUND_SESSIONS=on). Any live session of
+  // the account, a member's, a recovery or held one, or one on stale Terms; touches nothing.
+  deviceBoundRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
@@ -346,6 +354,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   complyRoutes(app);
   // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.
   takeRoutes(app);
+  // Lien recovery (owner 16 Nov 2026): what this account owes and is owed.
+  accountLienRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   chatRoutes(app);
@@ -388,6 +398,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
+  // Plan 4, Task 30: a trader's support tickets to X2F staff (the staff side is staffTicketRoutes).
+  ticketTraderRoutes(app);
 
   return app;
 }

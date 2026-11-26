@@ -49,8 +49,10 @@ const url = (code: string, tail = '') => `/staff/v1/disputes/${code}${tail}`;
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 const NONE: AccountAction = { kind: 'none' };
 
+let ownerId: string | null = null;
 async function staff(role: 'mod' | 'senior' | 'owner') {
-  const s = await seedStaff(deps, { role });
+  // One owner only (the schema's `one_owner`): a later owner is a new session of the same account.
+  const s = role === 'owner' ? { id: (ownerId ??= (await seedStaff(deps, { role })).id) } : await seedStaff(deps, { role });
   const b = new StaffBrowser(staffApp).withSession((await insertSession(deps, s.id, 'staff')).token);
   return { id: s.id, b };
 }
@@ -387,6 +389,36 @@ describe('at or above the large-trade limit: two people', () => {
       expect(await actions(code)).toEqual(['ruling.proposed']);
       const ok = await senior.b.post(url(code, `/rulings/${rulingId}/send-back`), { note: 'Ask for the reference \u{1F4F7} first.' });
       expect(ok.statusCode, ok.body).toBe(200);
+    });
+  });
+
+  it('mod polish: the send-back role gate is a senior moderator or the owner who did not propose it, with a note', async () => {
+    await withLimit(300, async () => {
+      const { code } = await disputed();
+      const senior = await staff('senior');
+      const other = await staff('senior');
+      const owner = await staff('owner');
+      const mod = await staff('mod');
+      const helper = await seedStaff(deps, { role: 'helper' });
+      const helperB = new StaffBrowser(staffApp).withSession((await insertSession(deps, helper.id, 'staff')).token);
+      // A senior moderator proposes this one, so they are the one person of that role who may not send it back.
+      await take(senior, code);
+      const { rulingId } = await propose(senior, code, { outcome: 'refund-to-seller' });
+      const back = (who: { b: StaffBrowser }, note: unknown = 'Ask the buyer for the bank reference.') => who.b.post(url(code, `/rulings/${rulingId}/send-back`), { note });
+      const refused = async (who: { b: StaffBrowser }, want: { status: number; error: string }, note?: unknown) => {
+        const res = await back(who, note);
+        expect({ status: res.statusCode, error: errorOf(res) }).toEqual(want);
+        expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval' });
+      };
+      await refused(mod, { status: 403, error: 'forbidden' });
+      await refused({ b: helperB }, { status: 403, error: 'forbidden' });
+      await refused(senior, { status: 409, error: 'same-person' });
+      for (const note of ['', '   ', 7, null, 'x'.repeat(1001)]) await refused(other, { status: 400, error: 'bad-request' }, note);
+      expect(await actions(code)).toEqual(['ruling.proposed']);
+      const ok = await back(owner);
+      expect(ok.statusCode, ok.body).toBe(200);
+      expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'open', ruling: null, assignee: senior.id });
+      expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.sent-back']);
     });
   });
 });

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Account compromised (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{frameStyle}}">
+  <header style="position: relative; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
+    <span style="display: flex; align-items: center; height: 36px;"><svg width="78" height="32" viewBox="0 0 78 32" role="img" aria-label="X2F" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 32L0 31.75L9.44 15.02L1.35 0.25L1.35 0L8.7 0L14.48 10.71L15.47 10.71L21.09 0L28.14 0L28.14 0.25L20.1 15.02L29.46 31.75L29.46 32L21.83 32L15.1 19.32L14.11 19.32L7.3 32ZM31 32L31 26.68Q34.34 24.14 36.83 22.11Q39.32 20.07 41.09 18.38Q43.75 15.88 45.09 13.86Q46.44 11.85 46.44 9.63Q46.44 7.62 45.29 6.35Q44.15 5.08 41.98 5.08Q39.52 5.08 38.28 6.67Q37.03 8.26 37.03 10.88L31 10.88Q31 7.62 32.25 5.16Q33.49 2.7 35.97 1.35Q38.44 0 42.1 0Q47.28 0 50.12 2.64Q52.95 5.28 52.95 9.59Q52.95 12.7 51.35 15.29Q49.74 17.89 46.56 20.76Q45.19 22.01 43.53 23.31Q41.86 24.62 40.21 25.71L40.21 26.68L54 26.68L54 32ZM57 0H78V5H64V13H68V18H64V32H57Z"/><circle fill="var(--monero)" cx="73" cy="15.5" r="4"/></svg></span>
+    <span style="position: absolute; top: 24px; right: 32px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <sc-if value="{{isForm}}" hint-placeholder-val="{{true}}">
+    <main style="flex-grow: 1; display: flex; justify-content: center; padding: 32px 32px 48px;">
+      <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+          <a href="#" aria-label="Back to log in" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+          <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">My account has been compromised</h1>
+        </div>
+          <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Tell us which account it is. When you send this, we freeze the account straight away, so nobody can <span style="white-space: nowrap;">use it.</span></p>
+
+          <label for="cp-user" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+            Username
+            <input id="cp-user" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="mira.k" value="{{user}}" onChange="{{setUser}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 16px; letter-spacing: 0; text-transform: none; font-family: inherit; font-weight: 400;">
+          </label>
+
+          <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+            <legend style="padding: 0; margin-bottom: 8px; font-size: 18px; line-height: 24px; font-weight: 600;">Ways to log in you still have</legend>
+            <p style="margin: 0 0 4px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Tick every one you can still use. A moderator uses these to check it's really you.</p>
+            <ul style="margin: 0; padding: 4px 20px; list-style: none; border-radius: 16px; background: var(--surface); display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px;">
+              <sc-for list="{{methods}}" as="m" hint-placeholder-count="7">
+                <li style="{{m.rowStyleWide}}">
+                  <label for="{{m.id}}" style="display: flex; align-items: center; gap: 14px; min-height: 52px; font-size: 16px; line-height: 24px; cursor: pointer;">
+                    <input id="{{m.id}}" type="checkbox" checked="{{m.on}}" onChange="{{m.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
+                    <sc-if value="{{m.is_password}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7.5 12h.01M12 12h.01M16.5 12h.01"/></svg></span></sc-if><sc-if value="{{m.is_passkey}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 11a7 7 0 0114 0v2"/><path d="M8.5 20a10 10 0 001.5-5v-4a2 2 0 014 0v3"/><path d="M14 18a14 14 0 01-.6 3"/><path d="M17 16.5V11a5 5 0 00-9.5-2.2"/></svg></span></sc-if><sc-if value="{{m.is_seckey}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2.5" width="8" height="8" rx="1.5"/><path d="M6.5 10.5h11V15a5.5 5.5 0 01-11 0z"/><path d="M12 14v2.5"/></svg></span></sc-if><sc-if value="{{m.is_pgp}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg></span></sc-if><sc-if value="{{m.is_auth}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 7h4M9 12h6M9 16h4"/></svg></span></sc-if><sc-if value="{{m.is_recovery}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 9px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></span></sc-if><sc-if value="{{m.is_none}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: block; flex-shrink: 0; width: 28px;"></span></sc-if>
+                    <span>{{m.label}}</span>
+                  </label>
+                </li>
+              </sc-for>
+            </ul>
+          </fieldset>
+
+          <label for="cp-note" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+            Anything else we should know (optional)
+            <textarea id="cp-note" rows="4" maxlength="2000" value="{{note}}" onChange="{{setNote}}" placeholder="For example: when you noticed, and what changed" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0; text-transform: none; resize: none;"></textarea>
+          </label>
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 8px;">
+          <button type="button" disabled="{{cantSend}}" onClick="{{toConfirm}}" style="{{sendStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Freeze my account</button>
+          <sc-if value="{{showHint}}" hint-placeholder-val="{{true}}">
+            <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{hint}}</p>
+          </sc-if>
+        </div>
+      </div>
+    </main>
+  </sc-if>
+
+  <sc-if value="{{isConfirm}}" hint-placeholder-val="{{false}}">
+    <main style="flex-grow: 1; display: flex; justify-content: center; padding: 32px 32px 48px;">
+      <div style="width: 944px; display: flex; flex-direction: column; gap: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+          <button type="button" aria-label="Back to the form" onClick="{{toForm}}" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Check before you freeze</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+          <section aria-labelledby="cp-c-title" style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+            <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>Full lockout</span>
+            <h1 id="cp-c-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">Freeze <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">{{shownUser}}</span> now?</h1>
+            <ul style="margin: 0; padding: 4px 0; list-style: none; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; font-size: 15px; line-height: 22px;">
+              <li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px;"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Everyone is locked out at once, you included. Every device is logged out.</span></li>
+              <li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-top: 1px solid var(--surface);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><span>If someone else has your login, they are locked out too.</span></li>
+              <li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-top: 1px solid var(--surface);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span>Your open trades are paused. Their timers stop, so nobody loses a trade while the account is frozen.</span></li>
+              <li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-top: 1px solid var(--surface);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v10H8l-4 4z"/></svg><span>To unfreeze it, you talk to a moderator, who checks it's really you.</span></li>
+            </ul>
+          </section>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <button type="button" onClick="{{doFreeze}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Yes, freeze it now</button>
+              <button type="button" onClick="{{toForm}}" style="display: flex; align-items: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Go back and edit</button>
+            </div>
+          </div>
+          <section aria-labelledby="cp-c-sum" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+            <h2 id="cp-c-sum" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What you told us</h2>
+            <dl style="margin: 0; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="flex-shrink: 0; color: var(--ink-muted);">Username</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{shownUser}}</dd></div>
+              <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; box-sizing: border-box; font-size: 14px; line-height: 20px;"><dt style="flex-shrink: 0; color: var(--ink-muted);">Still have</dt><dd style="margin: 0; font-size: 15px; font-weight: 600; text-align: right;">{{haveLine}}</dd></div>
+              <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; box-sizing: border-box; font-size: 14px; line-height: 20px;"><dt style="flex-shrink: 0; color: var(--ink-muted);">Comment</dt><dd style="margin: 0; font-size: 15px; text-align: right; overflow-wrap: anywhere;">{{noteLine}}</dd></div>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </main>
+  </sc-if>
+
+  <sc-if value="{{isFrozen}}" hint-placeholder-val="{{false}}">
+    <main style="flex-grow: 1; display: flex; justify-content: center; padding: 32px 32px 48px;">
+      <div style="width: 944px; display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+        <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+          <section aria-labelledby="cp-f-title" role="status" style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+            <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Account frozen</span>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <h1 id="cp-f-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">Nobody can use <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">{{shownUser}}</span> now</span></h1>
+              <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">We froze it on <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">1 Nov 2026, 14:05 UTC</span>. Every device is logged out, including any the attacker used.</p>
+            </div>
+            <sc-if value="{{hasTicket}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 14px 16px; border-radius: 12px; background: var(--surface-raised);">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your ticket number</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">CT-20481</span></span>
+                <button type="button" onClick="{{copy}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 14px; flex-shrink: 0; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/></svg>{{copyLabel}}</button>
+              </div>
+            </sc-if>
+          </section>
+          <section aria-labelledby="cp-f-next" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+            <h2 id="cp-f-next" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happens next</h2>
+            <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 14px; font-size: 15px; line-height: 22px;">
+              <sc-for list="{{nextSteps}}" as="n" hint-placeholder-count="4">
+                <li style="display: flex; gap: 14px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; font-weight: 500;">{{n.num}}</span><span style="padding-top: 3px;">{{n.text}}</span></li>
+              </sc-for>
+            </ol>
+          </section>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+          <section aria-labelledby="cp-f-contact" style="display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="cp-f-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Reach a moderator</h2>
+            <a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); text-decoration: none;">
+              <span style="display: flex; flex-direction: column;"><span style="font-size: 18px; line-height: 24px; font-weight: 600;">Message a moderator on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px;">@x2f-support:matrix.org</span></span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
+            </a>
+            <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; background: var(--surface); color: var(--ink); text-decoration: none;">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v10H8l-4 4z"/></svg></span>
+              <span style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Or use Telegram</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">@x2f_support</span></span>
+              <span style="color: var(--ink-muted); display: flex;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg></span>
+            </a>
+            <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; border: 1px solid var(--line); color: var(--ink-muted);">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
+              <span style="display: flex; flex-direction: column;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Secure Jabber</span><span style="font-size: 13px; line-height: 18px;">Not available yet</span></span>
+            </div>
+          </section>
+          <section aria-labelledby="cp-f-trades" style="display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="cp-f-trades" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Open trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">2</span> paused</h2>
+            <ul style="margin: 0; padding: 4px 0; list-style: none; border-radius: 16px; background: var(--surface);">
+                <li style="display: flex; gap: 14px; align-items: center; min-height: 64px; box-sizing: border-box; padding: 12px 16px;">
+                  <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">NO</span>
+                  <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Selling <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">0.500000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 400; color: var(--ink-muted);">($165.00)</span> to nightowl_44</span><span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="display: flex; flex-shrink: 0; color: var(--escrow);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></span><span>Timer stopped with <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">41</span> min left</span></span></span>
+                </li>
+                <li style="display: flex; gap: 14px; align-items: center; min-height: 64px; box-sizing: border-box; padding: 12px 16px; border-top: 1px solid var(--surface-raised);">
+                  <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">SG</span>
+                  <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Buying <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.200000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 400; color: var(--ink-muted);">($396.00)</span> from satoshi_ghost</span><span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="display: flex; flex-shrink: 0; color: var(--escrow);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></span><span>Timer stopped with <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> min left</span></span></span>
+                </li>
+            </ul>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Nobody loses a trade because of the freeze.</p>
+          </section>
+        </div>
+      </div>
+    </main>
+  </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 168px 48px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
+    <aside aria-label="Open for the owner: is a tick required" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+      <span style="font-weight: 600;">Must the user tick at least one box to send?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Yes, at least one tick (or &quot;None of these&quot;)</li><li>No, ticks are optional</li></ul>
+      <span style="color: var(--ink-muted);">Applies to the form step. Preview with the tickRule tweak. Showing: {{tickRuleName}}</span>
+    </aside>
+    <aside aria-label="Open for the owner: ticket number" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+      <span style="font-weight: 600;">Does the user get a ticket number?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Show a ticket number (format TBD)</li><li>No ticket number</li></ul>
+      <span style="color: var(--ink-muted);">Applies to the frozen step. Preview with the ticket tweak. Showing: {{ticketName}}</span>
+    </aside>
+    <aside aria-label="Open for the owner: what trade partners see" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+      <span style="font-weight: 600;">Do trade partners see that the trade is paused?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Yes, they see it&#39;s paused</li><li>No, they aren&#39;t shown the pause</li></ul>
+    </aside>
+    <aside aria-label="Open for the owner: support addresses" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · text to come</span>
+      <span style="font-weight: 600;">The Matrix and Telegram moderator addresses are not decided, and Secure Jabber is still to be decided.</span>
+      <span style="color: var(--ink-muted);">The screen shows example handles (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f-support:matrix.org</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f_support</span>) so the layout can be judged, as on Devices. The ticket number <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">CT-20481</span> is an example; its format is not decided.</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8), centred with no page name as on every pre-login page (comment #2).</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["form","confirm","frozen"],"default":"form"},"ticket":{"editor":"enum","options":["show","none"],"default":"show"},"tickRule":{"editor":"enum","options":["required","optional"],"default":"required"},"$preview":{"width":1280,"height":1674}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { base: null, step: null, user: '', have: {}, note: '', copied: false };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const STEPS = ['form', 'confirm', 'frozen'];
+    const propStep = STEPS.indexOf(this.props.step) >= 0 ? this.props.step : 'form';
+    const s = this.state;
+    const step = s.base === propStep && s.step ? s.step : propStep;
+    const go = (next) => this.setState({ base: propStep, step: next });
+    // App area height per step (measured, night) + the design-notes block under it.
+    const HEIGHTS = { form: 1007, confirm: 800, frozen: 840 };
+    const NOTES_H = 667;
+    const frameH = step === 'frozen' && this.props.ticket === 'none' ? 800 : HEIGHTS[step];
+    const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (frameH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const LIST = [
+      { key: 'password', label: 'Password' },
+      { key: 'passkey', label: 'Passkey' },
+      { key: 'seckey', label: 'Security key' },
+      { key: 'pgp', label: 'PGP key' },
+      { key: 'auth', label: 'Authenticator app' },
+      { key: 'recovery', label: 'Recovery code' },
+      { key: 'none', label: 'None of these' }
+    ];
+    const toggle = (key) => {
+      const have = Object.assign({}, s.have);
+      if (have[key]) { delete have[key]; }
+      else if (key === 'none') { this.setState({ have: { none: true } }); return; }
+      else { have[key] = true; delete have.none; }
+      this.setState({ have });
+    };
+    const methods = LIST.map((m, i) => ({
+      is_password: m.key === 'password', is_passkey: m.key === 'passkey', is_seckey: m.key === 'seckey', is_pgp: m.key === 'pgp', is_auth: m.key === 'auth', is_recovery: m.key === 'recovery', is_none: m.key === 'none',
+      id: 'cp-m-' + m.key,
+      label: m.label,
+      on: !!s.have[m.key],
+      toggle: () => toggle(m.key),
+      rowStyleWide: i > 1 ? 'border-top: 1px solid var(--surface-raised);' : 'border-top: 0;',
+      rowStyle: i > 0 ? 'border-top: 1px solid var(--surface-raised);' : 'border-top: 0;'
+    }));
+    const user = s.user.trim();
+    const picked = LIST.filter((m) => s.have[m.key]).map((m) => m.label);
+    // OPEN for the owner: is at least one tick required? (tickRule tweak)
+    const tickRequired = this.props.tickRule !== 'optional';
+    const hasTicket = this.props.ticket !== 'none';
+    const cantSend = user === '' || (tickRequired && picked.length === 0);
+    let hint = '';
+    if (user === '') hint = 'Enter your username first.';
+    else if (tickRequired && picked.length === 0) hint = 'Tick at least one box. Choose "None of these" if you have nothing left.';
+    const primary = (off) => 'display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + 'border: 0; ' + (off ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;');
+    const note = s.note.trim();
+    const firstStep = hasTicket ? 'Message a moderator on Matrix or Telegram and give them your ticket number.' : 'Message a moderator on Matrix or Telegram and tell them your username.';
+    const nextSteps = [firstStep, "They check it's really you, using the ways to log in you still have.", 'Together you remove anything the attacker added and set up new ways to log in.', 'Then we unfreeze the account, and your paused trades carry on where they stopped.'].map((t, i) => ({ num: String(i + 1), text: t }));
+    return {
+      rootStyle, frameStyle, nextSteps,
+      stepName: { form: 'the report form', confirm: 'check before freezing', frozen: 'account frozen' }[step],
+      isForm: step === 'form',
+      isConfirm: step === 'confirm',
+      isFrozen: step === 'frozen',
+      methods,
+      user: s.user,
+      setUser: (e) => this.setState({ user: e.target.value }),
+      note: s.note,
+      setNote: (e) => this.setState({ note: e.target.value }),
+      cantSend,
+      showHint: hint !== '',
+      hint,
+      sendStyle: primary(cantSend),
+      toConfirm: () => { if (!cantSend) go('confirm'); },
+      toForm: () => go('form'),
+      doFreeze: () => go('frozen'),
+      shownUser: user || 'mira.k',
+      haveLine: picked.length ? picked.join(', ') : (tickRequired ? 'Password, Passkey' : 'Nothing ticked'),
+      tickRuleName: tickRequired ? 'Yes, required' : 'No, optional',
+      hasTicket,
+      ticketName: hasTicket ? 'Show a ticket number' : 'No ticket number',
+      noteLine: note || 'No comment',
+      copyLabel: s.copied ? 'Copied' : 'Copy',
+      copy: () => this.setState({ copied: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

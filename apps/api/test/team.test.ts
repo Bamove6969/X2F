@@ -847,6 +847,9 @@ describe('the audit log covers every member action (review M3)', () => {
       // id or who answered"), so a team-audit row naming the member and the trade would undo that.
       'POST /v1/trades/:code/blur-checks/:proofId': 'the blur-check answer is anonymous by design (P-012): a row would tie the member and the trade to the answer',
       'POST /v1/trades/:code/proofs/:proofId/blur-check': 'only counts a proof for the blur-check sample (P-013): the proof itself is the chat upload; a row would tie the member to the ask',
+      // S-085: renewing the calling session's short-lived bound cookie with its own device key.
+      'POST /v1/account/session/proof/challenge': "a single-use challenge for the member's own bound session: writes the session row only, not an account action",
+      'POST /v1/account/session/proof': "renews the member's own bound-session cookie with their own device key: not an account action",
     };
     const found: string[] = [];
     const audited = new Set<string>();

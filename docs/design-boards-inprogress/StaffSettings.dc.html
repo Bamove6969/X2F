@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Staff tools" style="flex: 0 0 240px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;">X2F <span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod); font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Staff</span></span>
+      <a href="StaffOverview.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>Overview</a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>Disputes</a>
+      <a href="StaffList.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.8-3.5 3.2-5 6-5s5.2 1.5 6 5"/><path d="M16 4.5a3.5 3.5 0 010 7"/><path d="M18 15c1.6.6 2.6 2.2 3 5"/></svg>Staff</a>
+      <a href="StaffPerformance.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V11"/><path d="M12 20V5"/><path d="M19 20v-6"/></svg>Performance</a>
+      <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h6a2 2 0 012 2v13a2 2 0 00-2-2H4z"/><path d="M20 5h-6a2 2 0 00-2 2v13a2 2 0 012-2h6z"/></svg>Training library</a>
+      <a href="StaffLog.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>Activity log</a>
+      <a href="StaffSettings.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; background: var(--surface-raised); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</a>
+    <span style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 14px;"><span style="color: var(--mod);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>lumen.k <span style="color: var(--ink-muted);">· Owner</span></span>
+  </nav>
+  <main style="flex: 1 1 0; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column;">
+    <div style="max-width: 720px; width: 100%; display: flex; flex-direction: column; gap: 24px;">
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Settings</h1>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Only the owner can change these. Every change is recorded in the activity log.</p>
+      </section>
+      <section aria-label="Rulings" style="display: flex; flex-direction: column; gap: 20px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Rulings</h2>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="limit" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Large-trade limit</label>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="limit" type="text" value="1,000" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD equivalent</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A moderator can rule alone on trades below this. At or above it, a senior moderator or you must approve too.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="reply" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">First response deadline</label>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="reply" type="text" value="4" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">hours</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">How soon a moderator must reply after a dispute opens. Traders see this deadline and their place in the queue.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="appeal" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Appeal window</label>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="appeal" type="text" value="48" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">hours</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">How long either trader has to appeal a ruling. Appeals go to a senior moderator or you, never the moderator who ruled.</span>
+        </div>
+      </section>
+      <section aria-label="Staff pay" style="display: flex; flex-direction: column; gap: 20px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Staff pay</h2>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Paid in XMR at the end of each shift, when the staff member logs out. Amounts to be decided; check with the lawyer before the first payment.</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label for="pay-senior" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Senior moderator, per case</label>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-senior" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Includes co-approving large rulings.</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--surface-raised);">
+            <label for="pay-large" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Large-trade bonus</label>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-large" type="text" value="0.5" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; width: 128px; background: var(--surface);"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">% of the trade total</span></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Paid on top of the per-case rate for trades at or above the large-trade limit (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,000</span>). Example: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.5%</span> of a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$4,000</span> trade is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$20</span>.</span>
+            <label for="pay-cap" style="margin-top: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Most per case (optional)</label>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-cap" type="text" placeholder="No limit" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; width: 128px; background: var(--surface);"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="pay-mod" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Moderator, per case</label>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-mod" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A ruling overturned on appeal earns nothing.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="pay-helper" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Helper, per month</label>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-helper" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Flat rate, since questions don't come in cases.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 20px; border-top: 1px solid var(--surface-raised);">
+          <h3 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Payout and clawback</h3>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">When a staff member logs out, X2F adds up the shift and sends it to their payout wallet. They see the total before they confirm logging out.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">If an appeal later overturns one of their rulings, the pay for that case is taken back from their next payout.</p>
+          <label for="hold-large" style="{{holdStyle}}">
+            <input id="hold-large" type="checkbox" checked="{{hold}}" onChange="{{toggleHold}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink);">
+            <span>Hold the large-trade bonus until the appeal window closes (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span> h). <span style="color: var(--ink-muted);">Recommended: these amounts are bigger, and XMR sent can't be pulled back if someone leaves.</span></span>
+          </label>
+        </div>
+      </section>
+      <div><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Save settings</button></div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1527}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { hold: true }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1527px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const hold = this.state.hold !== false;
+    const holdStyle = 'display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: ' + (hold ? '13px' : '14px') + '; border-radius: 12px; background: var(--surface-raised); border: ' + (hold ? '2px solid var(--ink)' : '1px solid transparent') + '; font-size: 14px; line-height: 20px; cursor: pointer;';
+    return { rootStyle, hold, holdStyle, toggleHold: () => this.setState({ hold: !hold }) };
+  }
+}
+</script>
+</body>
+</html>

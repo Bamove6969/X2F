@@ -392,9 +392,10 @@ describe('the chain watcher', () => {
     expect(net.reports.filter((r) => r.trade === code && r.kind !== 'setup-done' && r.kind !== 'chain')).toEqual([]);
     expect(net.reports.filter((r) => r.trade === code && r.kind === 'chain')).toHaveLength(1);
     // In a block.
-    p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }] };
+    // The wallet's record of the tx carries its network fee: the report passes it on for the books (owner 16 Nov).
+    p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR, feeAtomic: 30_720_000n }] };
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null }]);
+    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null, networkFeeAtomic: '30720000' }]);
     expect(net.closed.sort()).toEqual([await channelFor(code, 'escrow'), await channelFor(code, 'signals')].sort());
     net.states.set(code, 'released');
     await m.handle.watch();
@@ -647,8 +648,8 @@ describe('the chain watcher', () => {
         txHash: hash('b'),
         txKey: KEY,
         minimums: [
-          { address: TERMS.buyerPayout, amountAtomic: 250_000_000_000n },
-          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n) },
+          { address: TERMS.buyerPayout, amountAtomic: 250_000_000_000n, bearsNetworkFee: true },
+          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n), bearsNetworkFee: true },
         ],
       }]);
       expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);
@@ -928,5 +929,104 @@ describe('the chain watcher', () => {
     const code = await inFunding(m, net);
     await m.handle.stop();
     expect(m.parties.get(code)!.stopped).toBe(true);
+  });
+});
+
+// Review B1 and M2 (lien recovery, 2026-11-16): a recovery this service signed counts against its
+// source trade's lien until the watcher itself sees the trade end without paying it: a refund
+// proven to the signed refund address, or a watch that ends with no coin ever received.
+describe('lien recoveries signed here are freed only by what the watcher sees (review B1, M2)', () => {
+  const owing = async (code: string) => {
+    await db.query(
+      `insert into mod_liens (lien_id, source_code, creditor_side, debtor, creditor, amount_atomic, rate_bps, statement, sig)
+       values ($1, 'SRCE-SRCE-SRCE-SRCE', 'buyer', 'd', 'c', 1000, 5000, '{}', 'x') on conflict (lien_id) do nothing`,
+      [`lien-${code}`],
+    );
+    await db.query(`insert into mod_lien_recoveries (trade, lien_id, source_code, creditor, amount_atomic) values ($1, $2, 'SRCE-SRCE-SRCE-SRCE', 'buyer', 1000)`, [code, `lien-${code}`]);
+  };
+  const freed = async (code: string) => (await db.query<{ f: boolean }>('select freed_at is not null as f from mod_lien_recoveries where trade = $1', [code])).rows[0]!.f;
+
+  it('a trade the API closed before any escrow existed frees it', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = newTradeCode();
+    net.work = [await work(code)];
+    await m.handle.tick();
+    await owing(code);
+    net.states.set(code, 'cancelled');
+    await m.handle.watch();
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
+  });
+
+  it('a released trade keeps it (the recovery was paid); an own sweep of unknown kind keeps it too', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'settling');
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [hash('b')] };
+    await m.handle.watch();
+    expect(net.reports.some((r) => r.kind === 'settled' && r.trade === code)).toBe(true);
+    net.states.set(code, 'released');
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    await m.handle.stop();
+  });
+
+  it('review M2: a recovery freed earlier (a refunded trade) counts again when a sweep that pays it is counted (late coins ruled for the buyer)', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await db.query('update mod_lien_recoveries set freed_at = now() where trade = $1', [code]);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'settling');
+    net.kinds.set(code, 'release');
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [hash('b')] };
+    await m.handle.watch();
+    expect(net.reports.some((r) => r.kind === 'settled' && r.trade === code)).toBe(true);
+    expect(await freed(code)).toBe(false);
+    await m.handle.stop();
+  });
+
+  it('a refund proven to the signed refund address frees it', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'settling');
+    net.kinds.set(code, 'mutual-cancel');
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: 'k'.repeat(64) }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
+    p.prove = () => true;
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toHaveLength(1);
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
+  });
+
+  it('cancelled with an escrow that never got a coin: kept while late coins could still come, freed when the watch ends', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await m.handle.watch();
+    net.states.set(code, 'cancelled');
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(m.parties.get(code)!.stopped).toBe(true);
+    expect(await freed(code)).toBe(true);
+    await m.handle.stop();
   });
 });

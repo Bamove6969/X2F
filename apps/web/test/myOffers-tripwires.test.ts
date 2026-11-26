@@ -8,10 +8,11 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 /**
- * Claude Design's board (2026-10-29) is on origin/wip/design-brief at this path, not merged yet;
- * the parity boards live in design/x2f-app/ once a board is taken onto the line.
+ * Claude Design's board (2026-10-29) is in docs/design-boards/MyOffers.dc.html (the design record,
+ * merged onto main from wip/design-brief on 26 Nov 2026 as an archive). Like the other design
+ * tripwires, this waits for the board to be taken onto the line: the parity boards in design/x2f-app/.
  */
-const BOARDS = ['docs/design-boards/MyOffers.dc.html', 'design/x2f-app/MyOffers.dc.html'];
+const BOARDS = ['design/x2f-app/MyOffers.dc.html'];
 
 describe('My offers waits for its board', () => {
   it('NEEDS_DESIGN_MYOFFERS: the MyOffers board is not on the main line yet', () => {

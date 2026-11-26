@@ -543,7 +543,7 @@ function WalletsScreen() {
 
       <main className="x2f-wallets__main">
         <p className="x2f-wallets__intro">
-          X2F never holds your coins. Link the Monero wallets you already use: you get paid to them and fund trades
+          X2F never takes custody of your coins. Link the Monero wallets you already use: you get paid to them and fund trades
           from them.
         </p>
 

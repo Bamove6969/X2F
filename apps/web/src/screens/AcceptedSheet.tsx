@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatFiat, formatXmr } from '@x2f/trade';
+import { formatFiat, formatXmr, formatXmrExact } from '@x2f/trade';
 import { ApiCallError, api } from '../api/client.js';
 import { DEFAULT_TAG } from './walletsCopy.js';
 import { matchesRecord } from './walletRecord.js';
 import { NEW_ADDRESS } from './quote/addressCopy.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
+import { LIEN_QUOTE_COPY } from './liens/liensCopy.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
@@ -37,6 +38,8 @@ export interface AcceptedTradeView {
   grown: { fromAtomic: string } & Record<string, unknown> | null;
   lockedRate: { currency: string; centsPerXmr: string };
   maxFiatCents: string;
+  /** Lien recovery (owner 16 Nov 2026): the buyer's own view only; absent = none. */
+  lienRecoveryAtomic?: string;
 }
 
 export async function loadAcceptedTrade(code: string): Promise<AcceptedTradeView> {
@@ -59,6 +62,15 @@ export function posterDeal(v: AcceptedTradeView): ConfirmedTrade['deal'] | null 
   if (typeof v.maxFiatCents !== 'string' || !POSITIVE.test(v.maxFiatCents)) return null;
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) return null;
   return { poster: v.poster, takeAmountAtomic: BigInt(take), currency, centsPerXmr: BigInt(centsPerXmr), maxFiatCents: BigInt(v.maxFiatCents) };
+}
+
+/**
+ * Lien recovery the poster-buyer's own view carries (docs/lien-recovery.md): undefined when none,
+ * null when malformed (the sheet then confirms nothing).
+ */
+export function posterRecovery(v: AcceptedTradeView): bigint | undefined | null {
+  if (v.lienRecoveryAtomic === undefined) return undefined;
+  return typeof v.lienRecoveryAtomic === 'string' && POSITIVE.test(v.lienRecoveryAtomic) ? BigInt(v.lienRecoveryAtomic) : null;
 }
 
 /** Where the sheet sends the poster: the trade room, carrying the ConfirmedTrade as router state (Task 22's seam). */
@@ -116,6 +128,7 @@ export function AcceptedSheet({
   const [phase, setPhase] = useState<Phase>('loading');
   const [wallets, setWallets] = useState<AcceptedWallet[]>([]);
   const [deal, setDeal] = useState<ConfirmedTrade['deal'] | null>(null);
+  const [recovery, setRecovery] = useState<bigint | undefined | null>(undefined);
   const [role, setRole] = useState<ConfirmedTrade['role'] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -141,6 +154,7 @@ export function AcceptedSheet({
         setPicked((p) => p ?? offered.find((w) => w.isDefault === true)?.id ?? null);
         const d = posterDeal(view);
         setDeal(d);
+        setRecovery(view.role === 'buyer' ? posterRecovery(view) : undefined);
         setRole(d ? view.role : null);
         if (!d) setFailed(true);
         setPhase('pick');
@@ -159,7 +173,8 @@ export function AcceptedSheet({
   const use = async () => {
     const wallet = wallets.find((w) => w.id === picked);
     if (!wallet || !deal || !role || !confirmableAddress(wallet.address)) return;
-    const confirmed: ConfirmedTrade = { role, ownAddress: wallet.address, deal };
+    if (recovery === null) return;
+    const confirmed: ConfirmedTrade = { role, ownAddress: wallet.address, deal, ...(recovery !== undefined ? { lienRecoveryAtomic: recovery } : {}) };
     setFailed(false);
     setPhase('sending');
     try {
@@ -221,6 +236,13 @@ export function AcceptedSheet({
             <p className="x2f-sheet__body" data-part="deal">
               {role === 'seller' ? 'You sell' : 'You buy'} {formatXmr(deal.takeAmountAtomic)} XMR at {formatFiat(deal.centsPerXmr, deal.currency)} per XMR, up to{' '}
               {formatFiat(deal.maxFiatCents, deal.currency)}
+            </p>
+          ) : null}
+          {role === 'buyer' && typeof recovery === 'bigint' && recovery > 0n ? (
+            // Review B1: the poster who buys sees what this purchase pays to the person they owe, and
+            // accepts it with the wallet; the device then takes only that figure.
+            <p className="x2f-sheet__body" data-part="lien-recovery">
+              {LIEN_QUOTE_COPY.sheet(`${formatXmrExact(recovery)} XMR`)}
             </p>
           ) : null}
           <p className="x2f-sheet__body">Pick the wallet for this trade. Escrow setup starts after that.</p>

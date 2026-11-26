@@ -1,6 +1,18 @@
 import { normalizeTradeCode } from '@x2f/staff';
 import { useEffect, useId, useState } from 'react';
-import { activeDisputes, logFilters, logIntegrity, logPage, type ActiveDispute, type LogEntry, type LogIntegrity, type LogKind, type LogQuery } from '../api.js';
+import {
+  activeDisputes,
+  checkLogIntegrity,
+  logFilters,
+  logPage,
+  logStatus,
+  type ActiveDispute,
+  type LogEntry,
+  type LogIntegrity,
+  type LogKind,
+  type LogQuery,
+  type LogStatus,
+} from '../api.js';
 import { faultText } from '../refusals.js';
 import { Button, Notice } from '../ui/kit.js';
 import { PageTitle, useMe } from '../ui/StaffShell.js';
@@ -15,8 +27,10 @@ import { hhmm } from './modModel.js';
  * owner, site, pay or news entries: the API decides). Filters: the trade code (with or without
  * dashes, board), the Active disputes list (board), and, not on the board (DESIGNER-REVIEW), who
  * acted, the kind of entry and a date range. 50 entries a page, "Show older entries".
- * The owner also sees the chain check (the whole log re-hashed by the API) and the moderation
- * process's log alarm (A8's sentence, Task 17's log-alarm card, until Overview is built).
+ * The owner also sees the moderation process's log alarm (A8's sentence, Task 17's log-alarm card)
+ * and the chain check. Review m7: the page load reads only the entry count and the alarm; the
+ * chain check (the whole log re-hashed by the API from its first entry) runs when the owner taps
+ * "Check integrity". The Active disputes list is paged (100 at a time, "Show more").
  * Copy beyond the board's is draft. COPY-UNSIGNED
  */
 export function StaffLog() {
@@ -31,7 +45,9 @@ export function StaffLog() {
   const [names, setNames] = useState<Record<string, string>>({});
   const [next, setNext] = useState<string | null>(null);
   const [active, setActive] = useState<ActiveDispute[]>([]);
+  const [activeNext, setActiveNext] = useState<string | null>(null);
   const [filters, setFilters] = useState<{ actors: Array<{ id: string; name: string; role: string | null }>; kinds: LogKind[] } | null>(null);
+  const [status, setStatus] = useState<LogStatus | null>(null);
   const [integrity, setIntegrity] = useState<LogIntegrity | null>(null);
   const [checking, setChecking] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
@@ -50,6 +66,7 @@ export function StaffLog() {
       ([a, f]) => {
         if (!live) return;
         setActive(a.items);
+        setActiveNext(a.next ?? null);
         setFilters(f);
       },
       () => undefined,
@@ -59,10 +76,19 @@ export function StaffLog() {
     };
   }, []);
 
+  // Review m7: the count and the alarm only; the chain is checked when the owner asks.
   useEffect(() => {
     if (!owner) return;
-    void check();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let live = true;
+    logStatus().then(
+      (v) => {
+        if (live) setStatus(v);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
   }, [owner]);
 
   useEffect(() => {
@@ -93,11 +119,22 @@ export function StaffLog() {
   async function check() {
     setChecking(true);
     try {
-      setIntegrity(await logIntegrity());
+      setIntegrity(await checkLogIntegrity());
     } catch (e) {
       setFault(faultText(e, 'X2F could not check the activity log just now. Try again.'));
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function moreActive() {
+    if (activeNext === null) return;
+    try {
+      const p = await activeDisputes(activeNext);
+      setActive((cur) => [...cur, ...p.items]);
+      setActiveNext(p.next ?? null);
+    } catch (e) {
+      setFault(faultText(e, 'X2F could not load more active disputes. Try again.'));
     }
   }
 
@@ -138,7 +175,7 @@ export function StaffLog() {
           Every staff action and every step of every trade. Entries can't be edited or deleted by anyone. Opening a dispute chat or an unblurred proof always appears here.
         </p>
       </PageTitle>
-      {owner ? <Integrity v={integrity} checking={checking} onCheck={() => void check()} /> : null}
+      {owner ? <Integrity status={status} v={integrity} checking={checking} onCheck={() => void check()} /> : null}
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
       <div className="x2f-staff-log__filters">
         <label htmlFor={ids.q} className="x2f-sr-only">
@@ -157,13 +194,24 @@ export function StaffLog() {
         <label htmlFor={ids.active} className="x2f-sr-only">
           Active disputes
         </label>
-        <select id={ids.active} className="x2f-input x2f-staff-log__select" value="" onChange={(e) => e.target.value !== '' && setQ(tradeText(e.target.value))}>
-          <option value="">{`Active disputes (${active.length})`}</option>
+        <select
+          id={ids.active}
+          className="x2f-input x2f-staff-log__select"
+          value=""
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === MORE) void moreActive();
+            else if (v !== '') setQ(tradeText(v));
+          }}
+        >
+          <option value="">{`Active disputes (${active.length}${activeNext !== null ? '+' : ''})`}</option>
           {active.map((a) => (
             <option key={a.code} value={a.code}>
               {activeLabel(a)}
             </option>
           ))}
+          {/* Review m7: the next 100. COPY-UNSIGNED */}
+          {activeNext !== null ? <option value={MORE}>Show more active disputes</option> : null}
         </select>
         {filtered ? (
           <button type="button" className="x2f-staff-log__clear" onClick={clear}>
@@ -244,15 +292,27 @@ export function StaffLog() {
   );
 }
 
-/** The owner's chain check and log alarm. No board (DESIGNER-REVIEW). COPY-UNSIGNED */
-function Integrity({ v, checking, onCheck }: { v: LogIntegrity | null; checking: boolean; onCheck: () => void }) {
+/** The Active disputes menu's "Show more" value: never a trade code (codes have dashes and no colon). */
+const MORE = 'more:';
+
+/**
+ * The owner's chain check and log alarm. No board (DESIGNER-REVIEW). Review m7: before the owner
+ * taps "Check integrity" the page says how many entries a check reads; the check itself is the
+ * whole chain from its first entry. COPY-UNSIGNED
+ */
+function Integrity({ status, v, checking, onCheck }: { status: LogStatus | null; v: LogIntegrity | null; checking: boolean; onCheck: () => void }) {
+  const alarm = v?.alarm ?? status?.alarm ?? null;
   return (
     <div className="x2f-staff-log__integrity" data-part="integrity">
-      {v?.alarm ? (
-        <Notice tone="danger">{`The activity log failed its integrity check at ${hhmm(v.alarm)}. Contact your security reviewer.`}</Notice>
-      ) : null}
+      {alarm ? <Notice tone="danger">{`The activity log failed its integrity check at ${hhmm(alarm)}. Contact your security reviewer.`}</Notice> : null}
       {v === null ? (
-        <span className="x2f-staff-log__check">{checking ? 'Checking the activity log…' : ''}</span>
+        <span className="x2f-staff-log__check" data-part="integrity-unchecked">
+          {checking
+            ? 'Checking the activity log…'
+            : status !== null
+              ? `Not checked on this visit. A check re-reads all ${status.entries} entries and confirms each links to the one before it.`
+              : ''}
+        </span>
       ) : v.chain.ok ? (
         <span className="x2f-staff-log__check" data-ok="true">
           {`Chain check passed at ${hhmm(v.checkedAt)}: all ${v.entries} entries link up and none has been changed.`}
@@ -261,7 +321,7 @@ function Integrity({ v, checking, onCheck }: { v: LogIntegrity | null; checking:
         <Notice tone="danger">{`Chain check failed at entry ${v.chain.brokenAt}: an entry was changed or removed. Contact your security reviewer.`}</Notice>
       )}
       <button type="button" className="x2f-staff-log__clear" disabled={checking} onClick={onCheck}>
-        Check again
+        {v === null ? 'Check integrity' : 'Check again'}
       </button>
     </div>
   );

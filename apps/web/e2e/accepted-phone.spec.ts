@@ -84,12 +84,15 @@ async function expectFitsPhone(page: Page): Promise<void> {
 
 /** The sheet's whole box is inside the viewport (nothing cut off at the bottom either). */
 async function expectSheetOnScreen(page: Page): Promise<void> {
-  const box = await page.getByRole('dialog').boundingBox();
-  const vp = page.viewportSize()!;
-  expect(box).not.toBeNull();
-  expect(box!.x).toBeGreaterThanOrEqual(-0.5);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(vp.width + 0.5);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(vp.height + 0.5);
+  // Waits for the sheet's slide-in to settle (agy-flakes, Job 9); toPass keeps each edge's own message.
+  await expect(async () => {
+    const box = await page.getByRole('dialog').boundingBox();
+    const vp = page.viewportSize()!;
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(-0.5);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(vp.width + 0.5);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(vp.height + 0.5);
+  }).toPass();
 }
 
 test.describe('AcceptedSheet at phone sizes', () => {

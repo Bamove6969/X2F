@@ -56,6 +56,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
+  'GET /v1/account/liens': "my own account's liens, both ways: what I owe (owed, recovered, left, rate) and the totals recovered and left on liens owed to me; no account ids, no addresses, never the debtor's purchases",
+  'GET /v1/account/liens/preview': "the lien recovery my own take of an offer would reserve from my own proceeds (my liens only; the figure, never the creditor or their address)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
   'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',
   'GET /v1/account/methods': 'my own login methods',
@@ -93,6 +95,9 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/proofs/:id': 'a proof ciphertext of one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
+  // Plan 4 Task 30: my own support tickets (anyone else's id is the unknown-id 404).
+  'GET /v1/tickets': "my own account's support tickets (account owner only)",
+  'GET /v1/tickets/:id': 'one of my own support tickets and its messages (account owner only)',
 };
 
 /**
@@ -123,6 +128,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/idle-reminder': 'my own idle reminder; answers it',
   // Owner 2 Nov 2026: Trader and Vendor accounts.
   'PUT /v1/account/type': 'switches my own account to a vendor account; answers its type',
+  // Lien recovery, provisional owner answer Q2 (17 Nov 2026): the address recoveries owed to me go to.
+  'POST /v1/account/liens/:id/recovery-address': "sets where recoveries on a lien owed to me are paid, signed by my own device's identity in the disputed trade; no data back",
   'POST /v1/confirm/password': 'a confirm token bound to my own session',
   'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
   'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',
@@ -142,6 +149,9 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/jabber/enabled': 'switches my own Jabber alerts on or off; answers my set-up state',
   'PUT /v1/account/jabber/events': 'turns one event of my own Jabber notices on or off (W-021); answers my event list',
   'DELETE /v1/account/jabber': 'removes my own Jabber set-up; no data back',
+  // S-085: renewing my own session's bound cookie (auth/deviceBound.ts).
+  'POST /v1/account/session/proof/challenge': "a proof challenge for my own session's browser key; answers the challenge only",
+  'POST /v1/account/session/proof': "renews my own session's bound cookie with my own browser key; answers its end only",
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
   'DELETE /v1/account/chat-keys/:id': "marks one of my own account's chat-key envelopes collected; no data back",
@@ -168,6 +178,10 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
   'POST /v1/feedback': 'a platform-feedback row; no data back',
   'POST /v1/feedback/form': 'a feedback row; no data back',
+  // Plan 4 Task 30: support tickets (account owner only; anyone else's id is the unknown-id 404).
+  'POST /v1/tickets': 'opens my own support ticket (naming, at most, one of my own trades); answers its id',
+  'POST /v1/tickets/:id/messages': 'a message on one of my own support tickets; answers that ticket',
+  'POST /v1/tickets/:id/close': 'closes one of my own support tickets; answers that ticket',
   // Wallets and offers (my own).
   'POST /v1/wallets': 'adds my own payout wallets; answers them',
   'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',

@@ -4,6 +4,8 @@
 export { canonicalJson } from './canonical.js';
 // The trade code as `tapChallenge` reads a ruling's (the staff site compares a case's code with its address, review X3-1).
 export { normalizeTradeCode } from '@x2f/core';
+// Plan 4 Task 31: the support-ticket categories and limits, for the staff web app's queue.
+export { TICKET_BODY_MAX, TICKET_CATEGORIES, type TicketCategory, type TicketStatus } from '@x2f/core';
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
@@ -81,6 +83,17 @@ export {
   type RulingFee,
   type TraderDisputeStatus,
 } from './dispute.js';
+export {
+  STARTER_BOUNDS,
+  STARTER_DEFAULTS,
+  STARTER_FIELDS,
+  communityLink,
+  moderatorContactLink,
+  starterInBounds,
+  starterLimitsProblem,
+  type StarterField,
+  type StarterSettings,
+} from './ownerSettings.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';
 export {
   BAN_RULES,
@@ -95,6 +108,7 @@ export {
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
 export {
   lienCreditor,
+  lienCreditorsOf,
   lienSteps,
   type LienCause,
   type LienFacts,
@@ -134,3 +148,12 @@ export {
   type PersonMetrics,
   type WeekMetrics,
 } from './metrics.js';
+export {
+  DEFAULT_RECOVERY_RATE_BPS,
+  RATE_REASON_MAX,
+  canDecideRateRequest,
+  lienRemaining,
+  rateRequestRefusal,
+  recoveryFor,
+  type RateRequestRefusal,
+} from './lienRecovery.js';

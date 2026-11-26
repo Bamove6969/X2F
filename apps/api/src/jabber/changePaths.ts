@@ -109,8 +109,17 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     changes: [
       'id', 'debtor_account_id', 'creditor_account_id', 'amount_atomic', 'fee_atomic', 'from_code', 'dispute_seq', 'round', 'cause',
       'status', 'created_at', 'changed_at', 'lifted_at', 'repayment_code',
+      // Lien recovery (migration 820; lead default, owner p11-119 pattern): the share of the debtor's
+      // proceeds each trade recovers is a change to their lien, set only by a senior-approved request.
+      'recovery_rate_bps',
     ],
-    bookkeeping: {},
+    bookkeeping: {
+      // Q2 (migration 820): where the CREDITOR's recoveries go, set by the creditor's own signed
+      // statement; it changes nothing the debtor owes or does, so the debtor is not notified.
+      creditor_address: "the creditor's own recovery address (the creditor's choice, not a change to the debtor's account)",
+      creditor_address_statement: "the creditor device's signed statement of that address",
+      creditor_address_sig: "the signature on that statement",
+    },
   },
   {
     table: 'fees_owed', accountColumn: 'account_id', ops: ['insert', 'update'],
@@ -233,10 +242,18 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'account_action_minutes.account_id': 'pay and release timings kept by finished trades (the Fast badge), not the account',
   'closed_account_keys.account_id': "a closed account's identifier tags kept for the ban scope, written by the close itself (closed_at notifies)",
   'feedback_form.account_id': 'feedback sent to X2F',
+  // Plan 4 Task 30: support tickets. A ticket is the trader's own question to staff, not a change to
+  // the account; who took it and which staff member wrote a line are staff-side.
+  'tickets.account_id': "a support ticket the account's owner opened to X2F staff",
+  'tickets.taken_by': 'the staff member working a ticket (staff side)',
+  'ticket_messages.staff_id': 'the staff member who wrote a ticket reply (staff side, never shown to the trader)',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
   'liens.creditor_account_id': 'the person a lien is owed to: the debtor is notified (liens.debtor_account_id); the dispute tells the creditor',
+  // Lien recovery (migration 820; lead default): the staff on a rate request; the approved rate notifies the debtor (liens.recovery_rate_bps).
+  'lien_rate_requests.proposed_by': 'the moderator who proposed a lien rate (the debtor is notified when it is approved)',
+  'lien_rate_requests.decided_by': 'the senior moderator who decided a lien rate request (the debtor is notified when it is approved)',
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
   'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",

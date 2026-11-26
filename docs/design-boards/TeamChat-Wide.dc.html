@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trade chat, team reply (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Trade · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2</span></span></div>
+    <a href="MyTrades-Wide.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+
+  <div style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 8px; width: 956px; margin-left: -12px;">
+      <a href="MyTrades-Wide.dc.html" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <div style="display: flex; flex-direction: column; flex-grow: 1;">
+        <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{title}}</h1>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle</span>
+      </div>
+      <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+
+    <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 560px; margin: -8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+          <span style="{{s.labelStyle}}">{{s.label}}</span>
+        </li>
+      </sc-for>
+    </ol>
+
+    <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: stretch;">
+      <main style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section aria-labelledby="tcw-sum" style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>{{chip}}</span>
+            <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <h2 id="tcw-sum" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{sumLabel}}</h2>
+            <span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">0.500000</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--monero-ink);">XMR</span></span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; color: var(--ink-muted);">$165.00</span></span>
+          </div>
+          <dl style="display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px;"><dt style="color: var(--ink-muted);">Payment</dt><dd style="margin: 0; font-size: 15px; font-weight: 600;">Zelle</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$330.00</span> / XMR</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--surface); border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Funded</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">2 Nov 2026, 14:02 UTC</dd></div>
+          </dl>
+        </section>
+
+        <sc-if value="{{notLead}}" hint-placeholder-val="{{true}}">
+          <section aria-label="Seller" style="display: flex; flex-direction: column; padding: 20px; border-radius: 16px; background: var(--surface);"><div style="display: flex; flex-direction: column; gap: 12px;"><div style="display: flex; align-items: center; gap: 12px;"><span style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">SG<span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · replies in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">4</span> min</span></span></div><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">1,284</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">99.4%</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">275.4</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">XMR traded</span></span></div><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><button type="button" aria-haspopup="dialog" aria-label="Trusted badge: 200+ trades and 98%+ positive." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--escrow) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--escrow) 55%, transparent); color: var(--escrow);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Trusted</span></button><button type="button" aria-haspopup="dialog" aria-label="Fast badge: Usually pays or releases within 10 min." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--caution) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--caution) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--caution) 55%, transparent); color: var(--caution);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>Fast</span></button><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="3 more badges" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+3</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></div></div></section>
+        </sc-if>
+        <sc-if value="{{lead}}" hint-placeholder-val="{{false}}">
+          <article aria-label="mira.k" style="display: flex; flex-direction: column; padding: 20px; border-radius: 16px; background: var(--surface);"><div style="display: flex; flex-direction: column; gap: 12px;"><div style="display: flex; align-items: center; gap: 12px;"><span style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">MK<span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">mira.k</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · replies in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">4</span> min</span></span></div><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">212</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">99%</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">41.7</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">XMR traded</span></span></div><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><button type="button" aria-haspopup="dialog" aria-label="Trusted badge: 200+ trades and 98%+ positive." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--escrow) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--escrow) 55%, transparent); color: var(--escrow);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Trusted</span></button><button type="button" aria-haspopup="dialog" aria-label="PGP verified badge: Logs in with a verified PGP key." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg></span>PGP verified</span></button><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="3 more badges" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+3</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></div></div></article>
+        </sc-if>
+        <sc-if value="{{lead}}" hint-placeholder-val="{{false}}">
+          <section aria-labelledby="tcw-team" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--team) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 45%, transparent);">
+            <h2 id="tcw-team" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team replies in this chat</h2>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; background: var(--team); border: 2px solid var(--team); color: var(--ground);">DA</span>
+              <span style="display: flex; flex-direction: column; flex-grow: 1;">
+                <span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 16px; line-height: 24px; font-weight: 700;">desk_ana</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Assistant 1</span></span>
+                <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> replies · last at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:23 UTC</span></span>
+              </span>
+            </div>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">mira.k sees “satoshi_ghost Assistant 1” on each reply, never desk_ana’s name. Every reply is also in your audit log.</p>
+          </section>
+        </sc-if>
+      </main>
+
+      <aside aria-labelledby="tcw-chat" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); min-height: 0;">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 16px 20px; border-bottom: 1px solid var(--surface-raised);">
+          <h2 id="tcw-chat" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{chatTitle}}</h2>
+          <span style="display: flex; align-items: flex-start; gap: 6px;font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><span><span style="font-weight: 600; color: var(--escrow);">End-to-end encrypted.</span> If a dispute is opened, a moderator can read this conversation. It&#39;s erased for good 30 days after the trade ends, or 90 days after a dispute closes.</span></span>
+        </div>
+        <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; flex-grow: 1;">
+          <sc-for list="{{msgs}}" as="m" hint-placeholder-count="8">
+            <sc-if value="{{m.isSys}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</p></div>
+            </sc-if>
+            <sc-if value="{{m.isNotice}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--team) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 30%, transparent); font-size: 14px; line-height: 20px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--team);"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                <span style="display: flex; flex-direction: column; gap: 2px;">
+                  <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</span>
+                  <sc-if value="{{m.hasSub}}" hint-placeholder-val="{{false}}"><span style="color: var(--ink-muted);">{{m.sub}}</span></sc-if>
+                </span>
+              </div>
+            </sc-if>
+            <sc-if value="{{m.isMsg}}" hint-placeholder-val="{{true}}">
+              <div style="{{m.wrapStyle}}"><sc-if value="{{m.personAv}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="{{m.avStyle}}">{{m.init}}</span></sc-if><sc-if value="{{m.teamAv}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); border: 2px solid var(--team); color: var(--ground);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span></sc-if><div style="{{m.rowStyle}}">
+                <span style="{{m.metaStyle}}">
+                  <span style="{{m.whoStyle}}">{{m.who}}</span>
+              <sc-if value="{{m.tagTeam}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>{{m.tagText}}</span></sc-if>
+              <sc-if value="{{m.tagVendor}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if>
+              <sc-if value="{{m.hasTeamOf}}" hint-placeholder-val="{{false}}"><span style="color: var(--team); font-weight: 600;">{{m.teamOf}}</span></sc-if>
+                  <span>·</span>
+                  <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span>
+                </span>
+                <p style="{{m.bubbleStyle}}">{{m.text}}</p>
+              </div></div>
+            </sc-if>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--surface-raised);">
+          <label for="tcw-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
+          <input id="tcw-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+          <button type="button" aria-label="Send message" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
+          </button>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1132}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
+  componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const s = this.state;
+    const lead = this.props.viewer === 'lead';
+    // Measured height: the chat column is the tallest thing on this screen.
+    const H = 1132 + s.sent.length * 76; // p11-25: both viewers measure 1132 since the shorter label
+    const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+
+    // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
+    // Owner p11-25, 9 Nov (replaces the 28 Oct "Team <display> member: <name>" label and the "Team member" tag):
+    // the partner sees "<lead's display name> Assistant <n>", numbered in the order the lead added the members
+    // (satoshi_ghost Assistant 1, satoshi_ghost Assistant 2). The member's own name is never shown to the partner.
+    // The lead sees the member's name plus an "Assistant 1" tag, so he knows which label is whose. COPY-UNSIGNED.
+    const me = lead ? 'vendor' : 'partner';
+    const MSG = [
+      { k: 'sys', t: '14:02', text: 'Escrow funded. 0.500000 XMR is locked for this trade.' },
+      { k: 'vendor', t: '14:03', text: 'Hi mira.k. Escrow is funded. Please send $165.00 by Zelle with K7M2-9QXA-4FTR-8WPN in the memo.' },
+      { k: 'partner', t: '14:06', text: 'Thanks. Sending now.' },
+      { k: 'partner', t: '14:19', text: 'Sent. Can you check, please?' },
+      { k: 'notice', t: '14:21' },
+      { k: 'member', t: '14:21', text: 'Hi, I’m checking Zelle for you now.' },
+      { k: 'member', t: '14:23', text: 'I can see $165.00 with your memo. Confirming now.' },
+      { k: 'partner', t: '14:24', text: 'Great, thanks.' }
+    ].concat(s.sent.map((x) => ({ k: me, t: x.t, text: x.text })));
+
+    // Chat sits on --surface here, so the other person's bubble uses --surface-raised (as on Desktop).
+    const row = (right) => 'display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: ' + (right ? 'flex-end;' : 'flex-start;');
+    // Chat kit (craftfold/foldkit.py): the other side's messages carry the 32 px avatar; bubbles 12/12/12/4.
+    const wrap = (right, max) => 'display: flex; gap: 8px; align-items: flex-end; max-width: ' + max + '; align-self: ' + (right ? 'flex-end;' : 'flex-start;');
+    const av32 = (ring) => 'position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + '; font-family: \'Familjen Grotesk\', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;';
+    const meta = 'display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; line-height: 16px; color: var(--ink-muted);';
+    const bubble = 'margin: 0; padding: 10px 14px; font-size: 15px; line-height: 22px; color: var(--ink); ';
+    const BUB = {
+      other: bubble + 'border-radius: 12px 12px 12px 4px; background: var(--surface-raised);',
+      own: bubble + 'border-radius: 12px 12px 4px 12px; background: transparent; border: 1px solid var(--line);',
+      team: bubble + 'background: color-mix(in srgb, var(--team) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 50%, transparent);'
+    };
+    const NAME = { vendor: 'satoshi_ghost', partner: 'mira.k' };
+
+    const msgs = MSG.map((m) => {
+      if (m.k === 'sys') return { isSys: true, isNotice: false, isMsg: false, t: m.t, text: m.text };
+      if (m.k === 'notice') return {
+        isSys: false, isNotice: true, isMsg: false, t: m.t,
+        text: lead ? 'desk_ana replied for you.' : 'satoshi_ghost Assistant 1 is replying.',
+        hasSub: lead, sub: 'mira.k sees “satoshi_ghost Assistant 1”, not desk_ana.'
+      };
+      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, tagTeam: false, tagVendor: false, hasTeamOf: false, teamOf: '', tagText: '', whoStyle: 'color: var(--ink-muted);' };
+      if (m.k === 'member') {
+        // Partner: people icon + "satoshi_ghost Assistant 1", left. Lead: name + "Assistant 1" tag, right (sent from your account).
+        return Object.assign(base, {
+          rowStyle: row(lead), wrapStyle: wrap(lead, '94%'), personAv: false, teamAv: !lead, init: '', avStyle: '', bubbleStyle: BUB.team + (lead ? 'border-radius: 12px 12px 4px 12px;' : 'border-radius: 12px 12px 12px 4px;'),
+          tagTeam: lead, tagText: 'Assistant 1', hasTeamOf: !lead, teamOf: 'satoshi_ghost Assistant 1',
+          who: lead ? 'desk_ana' : '',
+          whoStyle: lead ? 'color: var(--ink); font-weight: 600;' : 'display: none;'
+        });
+      }
+      const mine = m.k === me;
+      return Object.assign(base, {
+        rowStyle: row(mine), wrapStyle: wrap(mine, '85%'), personAv: !mine, teamAv: false, init: mine ? '' : ({ vendor: 'SG', partner: 'MK' })[m.k], avStyle: av32(m.k === 'vendor'), bubbleStyle: mine ? BUB.own : BUB.other,
+        who: mine ? 'You' : NAME[m.k], tagVendor: !mine && m.k === 'vendor',
+        whoStyle: mine ? 'color: var(--ink-muted);' : 'color: var(--ink); font-weight: 600;'
+      });
+    });
+
+    // Stepper: buyer labels for the partner (mira.k), seller labels for the lead (satoshi_ghost). The checking step is current.
+    const LABELS = lead ? ['Escrow', 'Buyer pays', 'You check', 'Released'] : ['Escrow', 'You pay', 'Seller checks', 'Released'];
+    const current = 2;
+    const steps = LABELS.map((label, i) => ({
+      label,
+      current: i === current ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 4%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
+
+    return {
+      rootStyle, steps,
+      lead,
+      title: lead ? 'Selling to mira.k' : 'Buying from satoshi_ghost',
+      chip: lead ? 'mira.k: Payment sent' : 'Paid',
+      sumLabel: lead ? 'You’re selling' : 'You’re buying',
+      notLead: !lead,
+      chatTitle: lead ? 'Chat with mira.k' : 'Chat with satoshi_ghost',
+      placeholder: lead ? 'Message mira.k' : 'Message satoshi_ghost',
+      msgs,
+      draft: s.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      send: () => {
+        const text = (s.draft || '').trim();
+        if (!text) return;
+        this.setState({ draft: '', sent: s.sent.concat([{ t: '14:25', text }]) });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
