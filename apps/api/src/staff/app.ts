@@ -40,6 +40,7 @@ import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
 import { staffRevenueRoutes } from './revenue.js';
+import { staffEarningsRoutes } from './earnings.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffStarterLimitRoutes } from './starterLimits.js';
 import { staffSiteRoutes } from './site.js';
@@ -215,6 +216,8 @@ export async function buildStaffApi(
   staffRulingRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
   // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
   staffRevenueRoutes(app);
+  // Plan 4 Task 9: what arrived in the fee wallet (its view-only key) and the payroll wallet, by UTC month (earnings.read).
+  staffEarningsRoutes(app);
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
   lienRoutes(app);

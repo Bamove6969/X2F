@@ -9,6 +9,7 @@ import type { TradePublisher } from '../trades/store.js';
 import { startHoursSweeper } from './sweeper.js';
 import { runFeeSweep } from './feeSweep.js';
 import { PAYROLL_PASS_MS, runPayrollPayouts } from './payrollSend.js';
+import { startEarnings, type EarningsWatch } from './earnings.js';
 
 /** The staff listener's settings; `null` when `X2F_STAFF_ORIGIN` is unset (no staff app on this host). */
 export interface StaffListen {
@@ -84,9 +85,22 @@ export interface StartOptions {
  */
 export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions = {}): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
   const code = await ensureSetupCode(deps);
+  // Plan 4 Task 9: the owner's earnings, read from the fee wallet (view-only) and the payroll wallet
+  // every 10 minutes. A failed read is logged by wallet name only (never the error: it may come
+  // from the wallet library).
+  let log: FastifyInstance['log'] | null = null;
+  const earnings: EarningsWatch | null = deps.earnings ?? (deps.feeWalletView || deps.payrollWallet?.incoming
+    ? startEarnings({
+        fee: deps.feeWalletView ?? null,
+        payroll: deps.payrollWallet?.incoming ? { incoming: () => deps.payrollWallet!.incoming!() } : null,
+        clock: deps.clock,
+        onError: (wallet) => log?.warn({ wallet }, 'earnings: wallet read failed'),
+      })
+    : null);
   const app = await buildStaffApi(
     {
       ...deps,
+      ...(earnings ? { earnings } : {}),
       staffOrigin: s.origin,
       ...(s.rpId ? { staffRpId: s.rpId } : {}),
       ...(s.webRoot ? { staffWebRoot: s.webRoot } : {}),
@@ -96,6 +110,7 @@ export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions 
     },
     o.logStream ? { logStream: o.logStream } : {},
   );
+  log = app.log;
   if (code !== null) (o.stderr ?? ((line: string) => void process.stderr.write(line)))(setupCodeLine(code));
   const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (err) => app.log.error({ err }, 'staff hours sweep failed'));
   // Owner 26 Nov: with a payroll wallet, every minute: the payouts waiting to be sent, then the sweep of
@@ -106,6 +121,7 @@ export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions 
     app,
     async close() {
       await payroll?.stop();
+      if (deps.earnings === undefined) await earnings?.stop();
       await sweeper.stop();
       await app.close();
     },

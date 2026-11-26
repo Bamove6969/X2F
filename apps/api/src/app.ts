@@ -1,4 +1,5 @@
 import type { PayrollWallet } from './staff/payrollWallet.js';
+import type { EarningsWatch, IncomeSource } from './staff/earnings.js';
 import fastifyCookie from '@fastify/cookie';
 import { accountLienRoutes } from './disputes/lienRoutes.js';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
@@ -117,6 +118,18 @@ export interface Deps {
    * `waiting-send` and a due sweep moves nothing.
    */
   payrollWallet?: PayrollWallet;
+  /**
+   * Plan 4 Task 9: the fee wallet seen through its view-only key (staff/feeViewWallet.ts,
+   * `X2F_FEE_WALLET_VIEW_KEY`): it lists what arrived and can never spend. Without it the owner's
+   * earnings show the payroll wallet and the books alone.
+   */
+  feeWalletView?: IncomeSource;
+  /**
+   * Plan 4 Task 9: the owner's earnings watch (staff/earnings.ts `startEarnings`), which reads the
+   * fee and payroll wallets every 10 minutes. The staff API starts one from `feeWalletView` and
+   * `payrollWallet` when none is given (tests pass their own).
+   */
+  earnings?: EarningsWatch;
 }
 
 declare module 'fastify' {
