@@ -149,51 +149,18 @@ describe('the screen', () => {
     expect(calls).toContain('/v1/team/log?member=m1');
     expect(host.querySelectorAll('[data-part="team-log-entries"] > li')).toHaveLength(1);
     // The download carries the filter too.
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
-    vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockReturnValue(undefined);
-    fire(byPart(host, 'export-json')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(calls).toContain('/v1/team/log/export?member=m1&format=json');
+    expect(byPart(host, 'export-json')?.getAttribute('href')).toBe('/v1/team/log/export?member=m1&format=json');
   });
 
-  it('the downloads go through the app client with the session and are saved from an object URL', async () => {
-    const made: Blob[] = [];
-    const revoked: string[] = [];
-    vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => {
-      made.push(b as Blob);
-      return 'blob:team-log';
-    });
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation((u) => void revoked.push(u));
-    const saved: { href: string; download: string }[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      saved.push({ href: this.getAttribute('href') ?? '', download: this.download });
-    });
+  it('the downloads are plain links the browser saves itself: no Blob URL (proof-render tripwire)', async () => {
     const { host } = render(<MemoryRouter><TeamLog /></MemoryRouter>);
     await settle();
-    expect(byPart(host, 'export-csv')?.tagName).toBe('BUTTON');
-    fire(byPart(host, 'export-csv')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    await new Promise((r) => setTimeout(r, 5));
-    expect(calls).toContain('/v1/team/log/export?format=csv');
-    expect(inits['/v1/team/log/export?format=csv']).toMatchObject({ method: 'GET', credentials: 'same-origin', redirect: 'error' });
-    expect(saved).toEqual([{ href: 'blob:team-log', download: 'x2f-team-log-2026-11-26.csv' }]);
-    expect(await made[0]!.text()).toBe('"id"\r\n');
-    expect(revoked).toEqual(['blob:team-log']);
-    expect(byPart(host, 'export-error')).toBeNull();
-  });
-
-  it('a download past the hourly budget says when to try again; another failure says to retry', async () => {
-    exportAnswer = () => json(429, { error: 'slow-down', retryAfterSeconds: 600 });
-    const { host } = render(<MemoryRouter><TeamLog /></MemoryRouter>);
-    await settle();
-    fire(byPart(host, 'export-json')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(byPart(host, 'export-error')?.textContent).toMatch(/^Checking the whole log takes a while, so it runs a few times an hour\. Try again after \d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC\.$/);
-    exportAnswer = () => json(500, { error: 'internal' });
-    fire(byPart(host, 'export-csv')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(byPart(host, 'export-error')?.textContent).toBe('The download did not start. Try again in a moment.');
+    for (const f of ['csv', 'json']) {
+      const a = byPart(host, `export-${f}`)!;
+      expect(a.tagName).toBe('A');
+      expect(a.getAttribute('href')).toBe(`/v1/team/log/export?format=${f}`);
+      expect(a.hasAttribute('download')).toBe(true);
+    }
   });
 
   it('retryAt reads a 429 only', () => {

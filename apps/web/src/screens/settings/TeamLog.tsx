@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
+  teamLogExportPath,
   AuthApiError,
   type TeamLogCategory,
   type TeamLogEntry,
@@ -81,19 +82,6 @@ export function retryAt(e: unknown, now: Date): string | null {
   return new Date(now.getTime() + s * 1000).toISOString();
 }
 
-/** Saves `blob` as `filename` through a throwaway object URL (the browser's own download). */
-function saveBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  // Revoked on the next turn, once the click has handed the file to the browser.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
 /** "#12:ab…" as the owner pasted it, or null. */
 export function parseFingerprint(s: string): { id: string; hash: string } | null {
   const m = FINGERPRINT.exec(s.trim());
@@ -117,8 +105,6 @@ export function TeamLog() {
   const [keptResult, setKeptResult] = useState<string | null>(null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [busy, setBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   const boxLabel = useMemo(() => {
     const labels = new Map<string, string>();
@@ -208,21 +194,6 @@ export function TeamLog() {
     } catch (e) {
       const at = retryAt(e, new Date());
       setKeptResult(at === null ? C.loadFailed : C.slowDown(at));
-    }
-  };
-
-  const download = async (format: 'json' | 'csv') => {
-    if (exporting) return;
-    setExporting(true);
-    setExportError(null);
-    try {
-      const { blob, filename } = await authApi.teamLogExport(filter, format);
-      saveBlob(blob, filename);
-    } catch (e) {
-      const at = retryAt(e, new Date());
-      setExportError(at === null ? C.exportFailed : C.slowDown(at));
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -435,22 +406,13 @@ export function TeamLog() {
             {C.exportTitle}
           </h2>
           <p className="x2f-note">{C.exportIntro}</p>
-          <Button variant="secondary" aria-disabled={exporting} onClick={() => void download('csv')} data-part="export-csv">
+          {/* Plain links: the browser sends the session cookie and saves the attachment itself (no Blob URL: proof-render tripwire). */}
+          <a className="x2f-button x2f-button--secondary" href={teamLogExportPath(filter, 'csv')} download data-part="export-csv">
             {C.exportCsv}
-          </Button>
-          <Button variant="secondary" aria-disabled={exporting} onClick={() => void download('json')} data-part="export-json">
+          </a>
+          <a className="x2f-button x2f-button--secondary" href={teamLogExportPath(filter, 'json')} download data-part="export-json">
             {C.exportJson}
-          </Button>
-          {exporting ? (
-            <p className="x2f-note" role="status" data-part="export-status">
-              {C.exporting}
-            </p>
-          ) : null}
-          {exportError !== null ? (
-            <p className="x2f-error" role="alert" data-part="export-error">
-              {exportError}
-            </p>
-          ) : null}
+          </a>
         </section>
       ) : null}
     </main>
