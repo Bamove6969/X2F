@@ -91,7 +91,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
     return r.fulfill({ status: 201, json: added });
   });
   await page.route('**/v1/wallets/rule', (r) =>
-    r.fulfill({ json: { firstWallet: s.wallets.length === 0, strongMethods: [], password: 'immediate', waitHours: 24 } }),
+    r.fulfill({ json: { firstWallet: s.wallets.length === 0, strongMethods: ['pgp'] } }),
   );
   await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: s.lienRecovery ?? '0' } }));
   await page.route('**/v1/offers/*/take', async (r) => {
@@ -385,14 +385,28 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
     expect(seen.takes.map((t) => t.walletId)).toEqual(['w-inline']);
   });
 
-  test('a weak account gets no inline add: the rule points to Settings, where new addresses wait 24 hours', async ({ page }) => {
-    await stubApi(page, { ...base, securityRating: 'weak' });
+  // Passwords and 24-hour holds are gone (owner, 26 Nov 2026): every account confirms with a key, so
+  // an address added on the quote works at once. The sheet says so from the wallets rule, and an
+  // address kept for future trades is picked for this one straight away.
+  test('a new address kept for future trades works at once: the sheet says a key confirm makes it work now, and it is picked for this trade', async ({ page }) => {
+    const seen = await stubApi(page, { ...base, securityRating: 'high' });
     await page.goto(`${BUY}&amount=${B.amount}`);
-    await expect(rule(page)).toContainText('Your account is rated weak');
-    await expect(rule(page)).toContainText('Settings, under Your wallets');
-    await expect(rule(page)).toContainText('24 hours');
-    await expect(page.getByRole('button', { name: 'Add a new address', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveAttribute('href', /^\/wallets\?add=1/);
+    await page.getByRole('button', { name: 'Add a new address' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Add a new address' });
+    await expect(sheet).toContainText('Confirm with a PGP key and they work at once.');
+    await expect(sheet).not.toContainText('24 hours');
+    await sheet.getByLabel('Name', { exact: true }).fill('Savings');
+    await sheet.getByLabel('Monero address').fill('4BoardSavingsAddressd41MnQ');
+    await sheet.getByRole('radio', { name: /Future trades too/ }).check();
+    await sheet.getByRole('button', { name: 'Save address' }).click();
+    await expect(sheet).toHaveCount(0);
+    expect(seen.walletPosts).toEqual([{ app: 'other', label: 'Savings', address: '4BoardSavingsAddressd41MnQ', oneTime: false }]);
+    await expect(page.getByRole('radio', { name: /Savings/ })).toBeChecked();
+    await expect(page.locator('.x2f-quote__wallet', { hasText: 'Savings' })).not.toContainText('One trade only');
+    await expect(page.locator('[data-part="new-address-waits"]')).toHaveCount(0);
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    expect(seen.takes.map((t) => t.walletId)).toEqual(['w-inline']);
   });
 
   test('a medium account gets no inline add; the "?" opens why, by keyboard too, with the two ways forward (owner, 17 Nov)', async ({ page }) => {

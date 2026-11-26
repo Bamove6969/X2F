@@ -104,7 +104,7 @@ async function stubApi(
     methods.push('security-key');
     return json({ ok: true }, 201)(r);
   });
-  await page.route('**/v1/wallets/rule', json({ firstWallet: true, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: ['pgp'] }));
   await page.route('**/v1/wallets', (r) => (r.request().method() === 'GET' ? json([])(r) : json([], 201)(r)));
   return s;
 }
@@ -119,7 +119,11 @@ async function virtualKey(page: Page, transport: 'usb' | 'nfc'): Promise<{ cdp: 
   return { cdp, authenticatorId };
 }
 
-/** Terms and names, then only the security key ticked: the login step's Continue makes the account with it. */
+/**
+ * Terms and names, then the security key ticked and PGP taken off; the passkey stays ticked (it is by
+ * default), so the two kinds the account needs are the security key and a passkey. The security key
+ * comes first in SIGNUP_ORDER, so the login step's Continue makes the account with it.
+ */
 async function toLoginStep(page: Page): Promise<void> {
   await page.goto(`${ORIGIN}/setup?returnTo=%2Fpost`);
   await page.check('[data-part="terms-tick"]');
@@ -149,6 +153,8 @@ async function toSecurityKeyStep(page: Page): Promise<void> {
   await page.click('[data-part="display-continue"]');
 
   await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();
+  // PGP and passkey are ticked by default: the passkey is taken off, leaving PGP and the security key.
+  await page.uncheck('[data-method="passkey"] input[type="checkbox"]');
   await page.click('[data-method="security-key"]');
   await expect(page.locator('[data-method="security-key"] input[type="checkbox"]')).toBeChecked();
   await page.click('[data-part="method-continue"]');
@@ -241,10 +247,10 @@ for (const transport of ['usb', 'nfc'] as const) {
     expect(s.starts).toEqual([{ tradeTag: 'lumen.kai', loginName: 'lumen-login-7', kind: 'security-key' }]);
     expect(s.labels).toEqual([{ credentialId: s.finishes[0]!.response.id, label: 'Gold YubiKey' }]);
     expect(s.finishes[0]!.response.response.transports).toEqual([transport]);
-    // The test is offered once named; Continue goes on to the backup step.
+    // The test is offered once named; Continue goes on to the next ticked method, the passkey.
     await expect(done.locator('[data-part="key-test-run"]')).toBeVisible();
     await done.locator('[data-part="key-continue"]').click();
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await expect(page).toHaveURL(/\/setup\/passkey\?/);
   });
 }
 

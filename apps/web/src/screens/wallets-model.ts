@@ -42,7 +42,7 @@ export function appPromptName(app: WalletApp): string {
 }
 
 /**
- * The wallets a trade's payout/refund picker may offer: only those past any 24-hour wait
+ * The wallets a trade's payout/refund picker may offer: only those the API reports usable
  * (spec 6.3, 6.4). A waiting wallet is shown on this screen with its status but is never takeable,
  * so the take picker (Tasks 17-19) filters its list through this one source of truth.
  */
