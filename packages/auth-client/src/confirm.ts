@@ -52,6 +52,16 @@ export function teamRolesAction(memberId: string, roles: readonly Role[]): Extra
   return { kind: 'team-roles', memberId, roles: rolesText(roles) };
 }
 
+/** Job 1c: the action an invite with boxes is confirmed for: the name as sent and the boxes, comma-separated in the order sent (catalogue order). */
+export function teamInviteAbilitiesAction(name: string, abilities: readonly string[]): Extract<ConfirmAction, { kind: 'team-invite-abilities' }> {
+  return { kind: 'team-invite-abilities', name, abilities: abilities.join(',') };
+}
+
+/** Job 1c: the action a member's new boxes are confirmed for: the member and exactly the boxes, in the order sent (catalogue order). */
+export function teamAbilitiesAction(memberId: string, abilities: readonly string[]): Extract<ConfirmAction, { kind: 'team-abilities' }> {
+  return { kind: 'team-abilities', memberId, abilities: abilities.join(',') };
+}
+
 /**
  * J-20: the action a member's limits are confirmed for, keyed exactly as the API binds it
  * (apps/api/src/team/limits.ts `bandKey`, `hoursKey`).

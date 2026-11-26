@@ -91,3 +91,30 @@ export function memberAbilities(session: Session): string[] {
   const a = ((session.me as { member?: { abilities?: unknown } }).member ?? {}).abilities;
   return Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string') : [];
 }
+
+/** Job 1c (owner S-094, p7-8): what this session may do with the account's notes on traders. */
+export interface NotesAccess {
+  view: boolean;
+  add: boolean;
+  /** Only the account owner deletes a note; no member does, whatever their boxes. */
+  remove: boolean;
+}
+
+const NO_NOTES: NotesAccess = { view: false, add: false, remove: false };
+
+/**
+ * The account owner reads, adds and deletes; a member reads with "View notes on traders"
+ * (`notes-view`) and adds with "Add notes on traders" (`notes-add`), from the boxes
+ * `GET /v1/account/me` sends as `member.abilities` (an older API without them: none). Signed out,
+ * loading, staff: nothing. The API checks the same boxes on every call (apps/api/src/team/notes.ts).
+ */
+export function notesAccessOf(session: Session): NotesAccess {
+  if (session.status !== 'signed-in') return NO_NOTES;
+  if ((session.me as { kind?: unknown }).kind !== 'trader') return NO_NOTES;
+  const m = (session.me as { member?: unknown }).member;
+  if (m === null || m === undefined) return { view: true, add: true, remove: true };
+  if (typeof m !== 'object') return NO_NOTES;
+  const raw = (m as { abilities?: unknown }).abilities;
+  const boxes = Array.isArray(raw) ? raw : [];
+  return { view: boxes.includes('notes-view'), add: boxes.includes('notes-add'), remove: false };
+}

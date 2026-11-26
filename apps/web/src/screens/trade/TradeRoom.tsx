@@ -92,6 +92,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
+import { SessionTraderNotes } from '../settings/TraderNotes.js';
 import { useResumeSync } from '../../session/syncFirst.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
@@ -329,6 +330,8 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         <DisputeEntry trade={tradeFromView(view)} now={clock()} />
         {view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
       </div>
+      {/* Job 1c (owner S-094, p7-8): the account's notes on the counterparty, as the member's boxes allow. */}
+      <SessionTraderNotes displayName={publicName(view.counterparty)} />
     </main>
   );
 }
@@ -410,6 +413,8 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
                 disputed trade the ruling card has the appeal form itself. DESIGNER-REVIEW: placement. */}
             {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
             {broken ? null : <SelfDestructNotice view={view} />}
+            {/* Job 1c (owner S-094, p7-8): the account's private notes on the counterparty. */}
+            {broken ? null : <SessionTraderNotes displayName={publicName(view.counterparty)} />}
           </>
         }
         side={

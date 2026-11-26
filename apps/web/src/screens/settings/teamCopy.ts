@@ -213,3 +213,67 @@ export const MEMBER_TRADE_COPY = {
 
 /** Settings → Security → Devices: a team member's session (review e2e area 7). */
 export const TEAM_MEMBER_SESSION = (name: string) => `team member ${name}`;
+
+/**
+ * Job 1c (J-10; owner S-087, S-092, S-097): the permission box picker's own words. The boxes, their
+ * groups, presets and the owner's rules are the catalogue's (`GET /v1/team/permissions`).
+ * COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN)
+ */
+export const PICKER_COPY = {
+  title: 'What this member may do', // COPY-UNSIGNED
+  presetsLabel: 'Start from a preset', // COPY-UNSIGNED
+  // COPY-UNSIGNED
+  summary: (n: number, preset: string | null) => (n === 0 ? 'No boxes ticked yet. Pick a preset or tick boxes below.' : `${n} ${n === 1 ? 'box' : 'boxes'} ticked${preset === null ? ', a custom set' : `, the ${preset} preset`}`),
+  groupTicked: (on: number, of: number) => (of === 0 ? 'Coming later' : `${on} of ${of}`), // COPY-UNSIGNED
+  reason: {
+    later: 'Coming later', // COPY-UNSIGNED
+    yours: 'Only you', // COPY-UNSIGNED
+    always: 'Every member has this', // COPY-UNSIGNED
+  } as const,
+  loadFailed: 'The permission boxes did not load. Reload the page to try again.', // COPY-UNSIGNED
+  pickBox: 'Tick at least one box.', // COPY-UNSIGNED
+  // COPY-UNSIGNED: a member's row, by the preset their boxes match.
+  presetLine: (label: string) => `${label} preset`,
+  boxesSaved: (name: string) => `Boxes saved for ${name}.`, // COPY-UNSIGNED
+  editBoxes: 'Boxes', // COPY-UNSIGNED
+  changeBoxes: (name: string) => `Change what ${name} may do`, // COPY-UNSIGNED
+  saveBoxes: 'Save boxes', // COPY-UNSIGNED
+  cancelEdit: 'Keep as it was', // COPY-UNSIGNED
+} as const;
+
+/** The Team page's tidied sections (owner: finish Teams). COPY-UNSIGNED // DESIGN: wording */
+export const TEAM_PAGE_COPY = {
+  empty: (max: number) => `No team members yet — invite up to ${max}`, // COPY-UNSIGNED
+  whatIntro: 'Each member gets their own login and the boxes you tick for them. Presets tick a set for you; untick any box.', // COPY-UNSIGNED
+} as const;
+
+/**
+ * Job 1c (owner S-094, p7-8): the account's private notes on another trader. Only the account's
+ * own team sees them: the owner, and members with "View notes on traders". Members with "Add notes
+ * on traders" add; only the owner deletes; nobody edits (a note is signed with name and time).
+ * COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN)
+ */
+export const NOTES_COPY = {
+  title: 'Notes', // COPY-UNSIGNED
+  summary: (name: string) => `Private notes on ${name}`, // COPY-UNSIGNED
+  privacy: 'Only you and your team see these notes. The trader never does.', // COPY-UNSIGNED
+  loading: 'Loading notes…', // COPY-UNSIGNED
+  none: 'No notes on this trader yet.', // COPY-UNSIGNED
+  addLabel: 'Add a note', // COPY-UNSIGNED
+  // COPY-UNSIGNED
+  addHint: (max: number) => `Signed with your name and the time. Up to ${max} characters.`,
+  save: 'Save note', // COPY-UNSIGNED
+  saved: 'Note saved.', // COPY-UNSIGNED
+  by: (who: string | null, byLead: boolean, iso: string) => `${byLead ? 'Account owner' : (who ?? 'A former member')} · ${when(iso)}`, // COPY-UNSIGNED
+  delete: 'Delete', // COPY-UNSIGNED
+  deleteLabel: (when_: string) => `Delete the note from ${when_}`, // COPY-UNSIGNED
+  deleteAsk: 'Delete this note for good?', // COPY-UNSIGNED
+  deleteYes: 'Yes, delete it', // COPY-UNSIGNED
+  deleteNo: 'Keep it', // COPY-UNSIGNED
+  deleted: 'Note deleted.', // COPY-UNSIGNED
+  loadFailed: 'Could not load the notes. Try again.', // COPY-UNSIGNED
+  saveFailed: 'Could not save that. Try again.', // COPY-UNSIGNED
+  empty: 'Write something first.', // COPY-UNSIGNED
+  tooLong: (max: number) => `Keep it to ${max} characters.`, // COPY-UNSIGNED
+  retry: 'Try again', // COPY-UNSIGNED
+} as const;

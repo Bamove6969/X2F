@@ -25,6 +25,7 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
 import { startFixtures } from './fixtures-serve.js';
 import { BOARD, SERVER_NOW, sellerView } from './refundViews.js';
+import { catalogueView } from '../../api/src/team/abilities.js';
 
 const ON = process.env.X2F_DESIGN_SHOTS === '1';
 test.skip(!ON, 'design screenshots: set X2F_DESIGN_SHOTS=1');
@@ -266,6 +267,8 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
   await page.route('**/v1/account/me', json(OWNER_ME));
   await page.route('**/v1/confirm/password', json({ confirmToken: 'tok-1' }));
   await page.route('**/v1/team', (r) => json({ members: s.members, max: 3 })(r));
+  // Job 1c: the API's own permission catalogue.
+  await page.route('**/v1/team/permissions', json(catalogueView()));
   await page.route('**/v1/team/audit*', (r) => {
     const who = new URL(r.request().url()).searchParams.get('member');
     const rows = (s.audit ?? []) as { memberId: string }[];
@@ -273,9 +276,9 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
   });
   await page.route('**/v1/team/invites', (r) => {
     const body = r.request().postDataJSON() as Record<string, unknown>;
-    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'team-invite' }, 403)(r);
+    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: body.abilities !== undefined ? 'team-invite-abilities' : 'team-invite' }, 403)(r);
     if (s.inviteAnswer) return json(s.inviteAnswer.body, s.inviteAnswer.status)(r);
-    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.displayName), body.roles as string[], 'invited')];
+    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.displayName), (body.roles as string[] | undefined) ?? [], 'invited')];
     return json({ id: `m${s.members.length}`, invite: CODE, expiresAt: LATER }, 201)(r);
   });
 }
@@ -293,8 +296,8 @@ test('14-16 the owner invites a member: the form, the confirm, the link', async 
   await page.goto('/settings/team');
   await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
   await page.getByLabel('Their name on your team').fill('Aurora.K');
-  await page.locator('input[data-role="offers"]').uncheck();
-  await page.locator('input[data-role="trades"]').check();
+  await page.locator('[data-part="team-invite"] [data-preset="trades"]').click();
+  await page.locator('[data-part="team-invite"] [data-part="group-trades"]').click();
   await shot(page, '14-team-owner-invite-form');
   await page.locator('[data-part="invite"]').click();
   await confirmWithPassword(page, '15-team-owner-invite-confirm');

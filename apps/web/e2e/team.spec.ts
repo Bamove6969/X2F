@@ -10,6 +10,7 @@ import { expect, test, type Browser, type CDPSession, type Page, type Request, t
 import { sellerView } from './refundViews.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
+import { catalogueView, rolesToAbilities } from '../../api/src/team/abilities.js';
 
 const LOCAL = `http://localhost:${process.env.X2F_E2E_PORT ?? 4317}`;
 /** A 32-byte invite code, base64url (43 characters), as the API makes them. */
@@ -22,9 +23,16 @@ const LATER = '2099-01-01T00:00:00.000Z';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
-const memberMe = (roles: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles } });
+const memberMe = (roles: string[], abilities?: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles, ...(abilities ? { abilities } : {}) } });
 
-type Member = { id: string; displayName: string; roles: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
+/** Job 1c: the API's own catalogue (`GET /v1/team/permissions`), and a preset's boxes the picker can tick now. */
+const CATALOGUE = catalogueView();
+const TICKABLE = new Set(CATALOGUE.groups.flatMap((g) => g.abilities).filter((a) => a.availability === 'grantable').map((a) => a.id));
+const ORDER = CATALOGUE.groups.flatMap((g) => g.abilities).sort((a, b) => a.no - b.no).map((a) => a.id);
+const tickable = (ids: readonly string[]) => ORDER.filter((id) => TICKABLE.has(id) && ids.includes(id));
+const presetBoxes = (id: string) => tickable(CATALOGUE.presets.find((p) => p.id === id)!.abilities);
+
+type Member = { id: string; displayName: string; roles: string[]; abilities?: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
 const member = (id: string, displayName: string, roles: string[], status = 'active'): Member => ({
   id, displayName, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
 });
@@ -38,6 +46,7 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
     return json({ confirmToken: `tok-${seen.confirms.length}` })(r);
   });
   await page.route('**/v1/team', (r) => json({ members: s.members, max: 3 })(r));
+  await page.route('**/v1/team/permissions', json(CATALOGUE));
   await page.route('**/v1/team/audit*', (r) => {
     const url = new URL(r.request().url());
     seen.audits.push(url.search);
@@ -48,20 +57,22 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
   await page.route('**/v1/team/invites', (r) => {
     const body = r.request().postDataJSON() as Record<string, unknown>;
     seen.invites.push(body);
-    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'team-invite' }, 403)(r);
+    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: body.abilities !== undefined ? 'team-invite-abilities' : 'team-invite' }, 403)(r);
     const a = s.inviteAnswer?.(body);
     if (a) return json(a.body, a.status)(r);
-    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.displayName), body.roles as string[], 'invited')];
+    s.members = [...s.members, { ...member(`m${s.members.length + 1}`, String(body.displayName), (body.roles as string[] | undefined) ?? [], 'invited'), abilities: body.abilities as string[] }];
     return json({ id: `m${s.members.length}`, invite: CODE, expiresAt: LATER }, 201)(r);
   });
   await page.route('**/v1/team/members/*', (r) => {
     const id = new URL(r.request().url()).pathname.split('/').pop()!;
     const body = (r.request().postDataJSON() ?? {}) as Record<string, unknown>;
     const method = r.request().method();
-    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: method === 'PATCH' ? 'team-roles' : 'team-remove' }, 403)(r);
+    if (body.confirmToken === undefined) {
+      return json({ error: 'confirm-required', action: method === 'PATCH' ? (body.abilities !== undefined ? 'team-abilities' : 'team-roles') : 'team-remove' }, 403)(r);
+    }
     if (method === 'PATCH') {
       seen.patches.push(body);
-      s.members = s.members.map((m) => (m.id === id ? { ...m, roles: body.roles as string[] } : m));
+      s.members = s.members.map((m) => (m.id === id ? { ...m, abilities: body.abilities as string[] } : m));
       return json(s.members.find((m) => m.id === id))(r);
     }
     seen.deletes.push(id);
@@ -115,18 +126,25 @@ for (const viewport of PHONE_VIEWPORTS) {
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
     await page.getByLabel('Their name on your team').fill('Aurora.K');
-    await page.locator('input[data-role="offers"]').uncheck();
-    await page.locator('input[data-role="trades"]').check();
+    // Job 1c: the Trades preset ticks its boxes; the greyed ones (member keys, chat key) stay unticked.
+    const trades = presetBoxes('trades');
+    await page.locator('[data-part="team-invite"] [data-preset="trades"]').click();
+    await expect(page.locator('[data-part="team-invite"] [data-part="abilities-summary"]')).toContainText('the Trades preset');
+    await page.locator('[data-part="team-invite"] [data-part="group-trades"]').click();
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-accept"]')).toBeDisabled();
+    await expect(page.locator('[data-part="team-invite"] [data-ability="trades-accept"]')).toContainText('Coming later');
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-mark-paid"]')).toBeChecked();
     await expectPhoneLayout(page);
     await page.locator('[data-part="invite"]').click();
-    // Review M9(a): the confirm is for this one named member and these roles.
-    await confirmWithPassword(page, 'invite Aurora.K as a team member (Trades)');
+    // Review M9(a): the confirm is for this one named member and these boxes.
+    await confirmWithPassword(page, `invite Aurora.K as a team member (${trades.length} abilities)`);
     const url = page.locator('[data-part="invite-url"]');
     await expect(url).toHaveText(`${new URL(page.url()).origin}/team/join#${CODE}`);
     const [before] = (await url.innerText()).split('#');
     expect(before).not.toContain(CODE);
-    expect(seen.confirms[0]!.action).toEqual({ kind: 'team-invite', name: 'Aurora.K', roles: 'trades' });
-    expect(seen.invites.at(-1)).toEqual({ displayName: 'Aurora.K', roles: ['trades'], confirmToken: 'tok-1' });
+    expect(seen.confirms[0]!.action).toEqual({ kind: 'team-invite-abilities', name: 'Aurora.K', abilities: trades.join(',') });
+    expect(seen.invites.at(-1)).toEqual({ displayName: 'Aurora.K', abilities: trades, confirmToken: 'tok-1' });
+    expect(trades).not.toContain('trades-accept');
     await page.locator('[data-part="copy-invite"]').click();
     await expect(page.locator('[data-part="copy-invite"]')).toHaveText('Copied');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/team/join#${CODE}`);
@@ -168,7 +186,7 @@ test('a 4th member is refused through CantDoThat (too-many-members), from the se
   await page.goto('/settings/team');
   await page.getByLabel('Their name on your team').fill('Cedric');
   await page.locator('[data-part="invite"]').click();
-  await confirmWithPassword(page, 'invite Cedric as a team member (Offers)');
+  await confirmWithPassword(page, `invite Cedric as a team member (${presetBoxes('start').length} abilities)`);
   const popup = page.locator('[data-part="cant-do-that"]');
   await expect(popup).toHaveAttribute('data-from', 'too-many-members');
   await expect(popup).toContainText('A team can have at most 3 members.');
@@ -673,16 +691,24 @@ for (const viewport of PHONE_VIEWPORTS) {
   });
 }
 
-test('the owner changes roles and removes a member; the member is then signed out; Devices names member sessions', async ({ page, browser }) => {
-  const s = { members: [member('m1', 'Aurora', ['offers', 'trades'])] };
+test('the owner changes boxes and removes a member; the member is then signed out; Devices names member sessions', async ({ page, browser }) => {
+  // A member moved from the old roles: the boxes migration 360 mapped them to (ROLE_ABILITIES).
+  const s = { members: [{ ...member('m1', 'Aurora', ['offers', 'trades']), abilities: rolesToAbilities(['offers', 'trades']) }] };
   const seen = await ownerApi(page, s);
   await page.goto('/settings/team');
-  await page.getByRole('button', { name: 'Change roles for Aurora' }).click();
-  await page.locator('input[data-role="offers"]').first().uncheck();
-  await page.locator('[data-part="save-roles"]').click();
-  await confirmWithPassword(page, "change a team member's roles to Trades");
-  await expect(page.locator('[data-part="team-said"]')).toHaveText('Roles saved for Aurora.');
-  expect(seen.patches).toEqual([{ roles: ['trades'], confirmToken: 'tok-1' }]);
+  await page.getByRole('button', { name: 'Change what Aurora may do' }).click();
+  const aurora = page.locator('[data-member="Aurora"]');
+  await aurora.locator('[data-part="group-offers"]').click();
+  await expect(aurora.locator('input[data-box="offers-post"]')).toBeChecked();
+  await expect(aurora.locator('input[data-box="offers-edit-prices"]')).toBeDisabled();
+  await aurora.locator('input[data-box="offers-post"]').uncheck();
+  await page.locator('[data-part="save-boxes"]').click();
+  // The old roles' greyed boxes (edit prices, accept a trade, ...) are never sent.
+  const want = tickable(rolesToAbilities(['offers', 'trades'])).filter((id) => id !== 'offers-post');
+  await confirmWithPassword(page, `change a team member's abilities (${want.length} abilities)`);
+  await expect(page.locator('[data-part="team-said"]')).toHaveText('Boxes saved for Aurora.');
+  expect(seen.patches).toEqual([{ abilities: want, confirmToken: 'tok-1' }]);
+  expect(want).not.toContain('offers-edit-prices');
   await expect(page.locator('[data-member="Aurora"]')).toContainText('Trades');
 
   // The member's tab, open meanwhile in another browser.
@@ -746,4 +772,91 @@ test('the activity log lists member actions newest first, and filters by member'
   await page.getByLabel('Show activity of').selectOption({ label: 'Every member' });
   await expect(rows).toHaveCount(4);
   await expectPhoneLayout(page);
+});
+
+// ---- 9. Notes on traders (Job 1c; owner S-094, p7-8) -------------------------------------------------
+
+const traderProfile = (name: string) => ({
+  displayName: name,
+  self: false,
+  memberSince: '2025-03',
+  online: true,
+  lastSeenAt: '2026-11-18T10:00:00.000Z',
+  stats: { completedTrades: 212, positivePct: 99, ratedReviews: 198, reviewCount: 205, typicalMinutes: 6, disputes: { won: 0, lost: 0 } },
+  badges: { featured: [], more: [] },
+  pgpProtected: false,
+  recordPublic: false,
+  tradedOverXmr: null,
+  imported: [],
+  reviews: [],
+  offers: 2,
+});
+
+async function notesApi(page: Page, me: unknown) {
+  const seen = { posts: [] as unknown[], deletes: [] as string[], gets: 0 };
+  let notes = [
+    { id: '11111111-1111-4111-8111-111111111111', text: 'Pays fast, asks for receipts.', by: null, byLead: true, at: '2026-11-20T10:00:00.000Z' },
+    { id: '22222222-2222-4222-8222-222222222222', text: 'Slow on weekends.', by: 'Aurora', byLead: false, at: '2026-11-19T10:00:00.000Z' },
+  ];
+  await page.route('**/v1/account/me', json(me));
+  await page.route('**/v1/traders/nightowl_44', json(traderProfile('nightowl_44')));
+  await page.route('**/v1/account/notes/**', (r) => {
+    if (r.request().method() === 'DELETE') {
+      const id = new URL(r.request().url()).pathname.split('/').pop()!;
+      seen.deletes.push(id);
+      notes = notes.filter((n) => n.id !== id);
+      return r.fulfill({ status: 204 });
+    }
+    seen.gets += 1;
+    return json(notes)(r);
+  });
+  await page.route('**/v1/account/notes', (r) => {
+    const body = r.request().postDataJSON() as { about: string; text: string };
+    seen.posts.push(body);
+    const note = { id: '33333333-3333-4333-8333-333333333333', text: body.text, by: null, byLead: true, at: '2026-11-26T10:00:00.000Z' };
+    notes = [note, ...notes];
+    return json(note, 201)(r);
+  });
+  return seen;
+}
+
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`the owner keeps private notes on a trader from their profile: add, then delete (${viewport})`, async ({ page }) => {
+    const seen = await notesApi(page, OWNER_ME);
+    await page.goto('/u/nightowl_44');
+    await setPhone(page, viewport);
+    const panel = page.locator('[data-part="trader-notes"]');
+    await expect(panel).toBeVisible();
+    expect(seen.gets).toBe(0);
+    await panel.locator('[data-part="notes-open"]').click();
+    await expect(panel.locator('[data-part="notes-list"] li')).toHaveCount(2);
+    await expect(panel).toContainText('Only you and your team see these notes');
+    await panel.getByLabel('Add a note').fill('Asked to move off-site.');
+    await panel.locator('[data-part="note-save"]').click();
+    await expect(panel.locator('[data-part="notes-said"]')).toHaveText('Note saved.');
+    expect(seen.posts).toEqual([{ about: 'nightowl_44', text: 'Asked to move off-site.' }]);
+    await expect(panel.locator('[data-part="notes-list"] li').first()).toContainText('Asked to move off-site.');
+    const old = panel.locator('[data-note="22222222-2222-4222-8222-222222222222"]');
+    await old.locator('[data-part="note-delete"]').click();
+    await old.locator('[data-part="note-delete-yes"]').click();
+    await expect(old).toHaveCount(0);
+    expect(seen.deletes).toEqual(['22222222-2222-4222-8222-222222222222']);
+    await expectPhoneLayout(page);
+  });
+}
+
+test('a member with View notes reads them, with no add box and no Delete; a member without the boxes sees no Notes', async ({ page }) => {
+  await notesApi(page, memberMe(['trades'], ['trades-see-active', 'notes-view']));
+  await page.goto('/u/nightowl_44');
+  const panel = page.locator('[data-part="trader-notes"]');
+  await panel.locator('[data-part="notes-open"]').click();
+  await expect(panel.locator('[data-part="notes-list"] li')).toHaveCount(2);
+  await expect(panel.locator('[data-part="note-add"]')).toHaveCount(0);
+  await expect(panel.locator('[data-part="note-delete"]')).toHaveCount(0);
+
+  await page.unroute('**/v1/account/me');
+  await page.route('**/v1/account/me', json(memberMe(['trades'], ['trades-see-active'])));
+  await page.reload();
+  await expect(page.locator('[data-screen="profile"]')).toBeVisible();
+  await expect(page.locator('[data-part="trader-notes"]')).toHaveCount(0);
 });

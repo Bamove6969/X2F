@@ -1,6 +1,6 @@
 /**
- * Settings → Team (Plan 2 Task 18; spec 6.7, R44): the account owner's team members. What members
- * can do, the members and open invites (roles, remove), Invite a member (a one-time link shown
+ * Settings → Team (Plan 2 Task 18, Job 1c; spec 6.7, R44): the account owner's team members. What members
+ * can do, the members and open invites (their permission boxes from the API's catalogue, limits, remove), Invite a member (a one-time link shown
  * once, the code in the #fragment so it never reaches a server log), and the activity log of every
  * member action with an effect. Inviting, changing roles and removing need confirm-it's-you (one
  * shared ConfirmSheet). Every refusal (a member opening this screen: owner-only; the member limit)
@@ -14,14 +14,13 @@ import { Link } from 'react-router';
 import {
   AuthApiError,
   isStaged,
-  teamInviteAction,
+  teamAbilitiesAction,
+  teamInviteAbilitiesAction,
   teamLimitsAction,
   teamRemoveAction,
-  teamRolesAction,
   withConfirm,
   type TeamAuditEntry,
   type TeamMember,
-  type TeamRole,
   type TradeBand,
   type WorkingHours,
 } from '@x2f/auth-client';
@@ -32,35 +31,15 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/Confirm
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
 import { StagedNote } from './HoldChanges.js';
-import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
+import { AbilityPicker } from './AbilityPicker.js';
+import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
+import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import '../screens.css';
 import { hasSpace, spaceProblem } from '../setup/names.js';
-
-const ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
 
 /** The link a new member opens: the code rides in the fragment, which browsers never send. */
 export function inviteLink(origin: string, code: string): string {
   return `${origin}${JOIN_PATH}#${code}`;
-}
-
-function RolePicker({ value, onChange, idPrefix }: { value: readonly TeamRole[]; onChange: (r: TeamRole[]) => void; idPrefix: string }) {
-  return (
-    <fieldset className="x2f-field" data-part="roles">
-      <legend className="x2f-label">Roles</legend>
-      {ROLES.map((r) => (
-        <label className="x2f-row x2f-team__role" key={r} htmlFor={`${idPrefix}-${r}`}>
-          <input
-            id={`${idPrefix}-${r}`}
-            type="checkbox"
-            checked={value.includes(r)}
-            onChange={(e) => onChange(ROLES.filter((x) => (x === r ? e.target.checked : value.includes(x))))}
-            data-role={r}
-          />
-          {ROLE_WORDS[r]}
-        </label>
-      ))}
-    </fieldset>
-  );
 }
 
 type Day = Exclude<WorkingHours, 'any'>['days'][number];
@@ -175,6 +154,18 @@ function LimitsEditor({ value, onChange }: { value: LimitsDraft; onChange: (d: L
   );
 }
 
+/**
+ * A member's row: the preset their boxes match (by the catalogue's label), else "Custom", else the
+ * old roles they read as (an older API that sends no boxes), else "No roles yet".
+ */
+function boxesLine(m: TeamMember, cat: Catalogue | null): string {
+  // Matched here, on the boxes the lead can tick now (the API's `preset` also counts the greyed ones).
+  const preset = m.abilities !== undefined && cat !== null ? presetMatching(cat, m.abilities) : null;
+  if (preset !== null) return P.presetLine(preset.label);
+  if (m.custom === true) return C.custom;
+  return m.roles.length === 0 ? C.noBoxes : C.roles(m.roles);
+}
+
 type CantDo = { code: CantDoCode; max?: number; holdUntil?: string };
 
 function cantDoOf(e: unknown): CantDo | null {
@@ -198,10 +189,15 @@ export function Team() {
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const nameSpaced = hasSpace(name.trim());
-  const [roles, setRoles] = useState<TeamRole[]>(['offers']);
+  // Job 1c: the API's permission catalogue (null while it loads; 'failed' when it did not).
+  const [catalogue, setCatalogue] = useState<Catalogue | null | 'failed'>(null);
+  const cat = catalogue === 'failed' ? null : catalogue;
+  // The invite's boxes: the catalogue's start set once it has loaded (its own "every new member starts with").
+  const [boxes, setBoxes] = useState<string[] | null>(null);
+  const inviteBoxes = cat === null ? [] : sendable(cat, boxes ?? presetBoxes(cat, 'start'));
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [editing, setEditing] = useState<{ id: string; roles: TeamRole[] } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; boxes: string[] } | null>(null);
   const [limits, setLimits] = useState<LimitsDraft | null>(null);
   // The activity log's member filter ('' = every member; review e2e area 8).
   const [logMember, setLogMember] = useState('');
@@ -237,6 +233,14 @@ export function Team() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetchCatalogue(ctl.signal).then(setCatalogue, () => {
+      if (!ctl.signal.aborted) setCatalogue('failed');
+    });
+    return () => ctl.abort();
+  }, []);
+
   const fail = (e: unknown) => {
     if (isConfirmAbort(e)) return;
     const c = cantDoOf(e);
@@ -263,12 +267,18 @@ export function Team() {
 
   const invite = () =>
     run(async () => {
-      if (roles.length === 0) {
-        setError(C.pickRole);
+      // Only the boxes the catalogue lets the lead tick now, in its order: a greyed box is never sent.
+      const abilities = inviteBoxes;
+      if (abilities.length === 0) {
+        setError(P.pickBox);
         return;
       }
       const displayName = name.trim();
-      const r = await withConfirm(teamInviteAction(displayName, roles), (confirmToken) => authApi.inviteMember({ displayName, roles, confirmToken }), prove);
+      const r = await withConfirm(
+        teamInviteAbilitiesAction(displayName, abilities),
+        (confirmToken) => authApi.inviteMember({ displayName, abilities, confirmToken }),
+        prove,
+      );
       setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
       // Owner p11-21 (S-104): from a username-and-password login the boxes wait as a draft.
       if (isStaged(r)) setStaged(true);
@@ -277,16 +287,18 @@ export function Team() {
       await load();
     });
 
-  const saveRoles = (m: TeamMember, next: TeamRole[]) =>
+  const saveBoxes = (m: TeamMember, next: readonly string[]) =>
     run(async () => {
-      if (next.length === 0) {
-        setError(C.pickRole);
+      if (cat === null) return;
+      const abilities = sendable(cat, next);
+      if (abilities.length === 0) {
+        setError(P.pickBox);
         return;
       }
-      const r = await withConfirm(teamRolesAction(m.id, next), (confirmToken) => authApi.setMemberRoles(m.id, { roles: next, confirmToken }), prove);
+      const r = await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
       setEditing(null);
       if (isStaged(r)) setStaged(true);
-      else setSaid(C.rolesSaved(m.displayName));
+      else setSaid(P.boxesSaved(m.displayName));
       await load();
     });
 
@@ -353,11 +365,15 @@ export function Team() {
           <h2 className="x2f-card__title" id="team-what-h">
             {C.whatTitle}
           </h2>
-          <ul className="x2f-sheet__body">
-            {C.what.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
+          <p className="x2f-note">{T.whatIntro}</p>
+          {/* Job 1c: the owner's rules on top of the boxes, as the catalogue words them. */}
+          {cat !== null && cat.rules.length > 0 ? (
+            <ul className="x2f-sheet__body" data-part="ability-rules">
+              {cat.rules.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          ) : null}
           <p className="x2f-note">{C.ownerKeeps}</p>
           <p className="x2f-note">{C.twoFactors}</p>
           <p className="x2f-note">{C.releaseNote}</p>
@@ -393,7 +409,11 @@ export function Team() {
             <p className="x2f-note" data-part="team-count">
               {C.count(members.length, max)}
             </p>
-            {members.length === 0 ? <p className="x2f-note">{C.none}</p> : null}
+            {members.length === 0 ? (
+              <p className="x2f-note" data-part="team-empty">
+                {T.empty(max)}
+              </p>
+            ) : null}
             <ul className="x2f-list" data-part="member-list">
               {members.map((m) => (
                 <li className="x2f-list__row" key={m.id} data-member={m.displayName} data-status={m.status}>
@@ -401,7 +421,7 @@ export function Team() {
                     <span data-username="">{m.displayName}</span>
                     <br />
                     <span className="x2f-list__time">
-                      {m.custom === true ? C.custom : m.roles.length === 0 ? C.noBoxes : C.roles(m.roles)} · {C.status[m.status]}
+                      {boxesLine(m, cat)} · {C.status[m.status]}
                       {m.inviteExpiresAt !== null ? ` · ${C.inviteUntil(m.inviteExpiresAt)}` : ''}
                     </span>
                     {m.chatLabel !== undefined ? (
@@ -417,16 +437,27 @@ export function Team() {
                       {C.limits(m.band, m.hours)}
                     </span>
                   </span>
-                  {editing?.id === m.id ? (
+                  {editing?.id === m.id && cat !== null ? (
                     <div className="x2f-stack">
-                      <RolePicker value={editing.roles} onChange={(r) => setEditing({ id: m.id, roles: r })} idPrefix={`roles-${m.id}`} />
-                      <Button variant="secondary" aria-disabled={busy} onClick={() => void saveRoles(m, editing.roles)} data-part="save-roles">
-                        {C.saveRoles}
+                      <AbilityPicker catalogue={cat} value={editing.boxes} onChange={(b) => setEditing({ id: m.id, boxes: b })} idPrefix={`boxes-${m.id}`} />
+                      <Button variant="secondary" aria-disabled={busy} onClick={() => void saveBoxes(m, editing.boxes)} data-part="save-boxes">
+                        {P.saveBoxes}
+                      </Button>
+                      <Button variant="quiet" onClick={() => setEditing(null)} data-part="cancel-boxes">
+                        {P.cancelEdit}
                       </Button>
                     </div>
                   ) : (
-                    <Button variant="quiet" aria-label={C.changeRoles(m.displayName)} onClick={() => setEditing({ id: m.id, roles: [...m.roles] })} data-part="edit-roles">
-                      Roles
+                    <Button
+                      variant="quiet"
+                      aria-label={P.changeBoxes(m.displayName)}
+                      aria-disabled={cat === null}
+                      // Job 1c: the member's stored boxes as the API sends them (a member moved from the
+                      // old roles holds what migration 360 mapped them to, `ROLE_ABILITIES`).
+                      onClick={() => (cat === null ? undefined : setEditing({ id: m.id, boxes: [...(m.abilities ?? [])] }))}
+                      data-part="edit-boxes"
+                    >
+                      {P.editBoxes}
                     </Button>
                   )}
                   {limits?.id === m.id ? (
@@ -492,11 +523,17 @@ export function Team() {
                 {C.nameHint}
               </p>
             </div>
-            <RolePicker value={roles} onChange={setRoles} idPrefix="invite-role" />
+            {cat !== null ? <AbilityPicker catalogue={cat} value={inviteBoxes} onChange={setBoxes} idPrefix="invite-box" /> : null}
+            {catalogue === null ? <p className="x2f-note">Loading…</p> : null}
+            {catalogue === 'failed' ? (
+              <p className="x2f-error" role="alert" data-part="abilities-failed">
+                {P.loadFailed}
+              </p>
+            ) : null}
             {/* Owner demo note #219 (25 Nov 2026): with every box unticked, Invite is dimmed and says why here. */}
-            {roles.length === 0 ? (
+            {cat !== null && inviteBoxes.length === 0 ? (
               <p className="x2f-note" id={`${fullId}-roles`} data-part="invite-pick-role">
-                {C.pickRole}
+                {P.pickBox}
               </p>
             ) : null}
             {full ? (
@@ -507,9 +544,9 @@ export function Team() {
             <Button
               variant="primary"
               data-primary=""
-              aria-disabled={busy || name.trim() === '' || nameSpaced || full || roles.length === 0}
-              aria-describedby={full ? fullId : roles.length === 0 ? `${fullId}-roles` : undefined}
-              onClick={() => (full || name.trim() === '' || nameSpaced || roles.length === 0 ? undefined : void invite())}
+              aria-disabled={busy || name.trim() === '' || nameSpaced || full || inviteBoxes.length === 0}
+              aria-describedby={full ? fullId : cat !== null && inviteBoxes.length === 0 ? `${fullId}-roles` : undefined}
+              onClick={() => (full || name.trim() === '' || nameSpaced || inviteBoxes.length === 0 ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}

@@ -3,6 +3,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { catalogueView } from '../../api/src/team/abilities.js';
 import { MemberInvite, inviteFromHash } from '../src/screens/auth/MemberInvite.js';
 import { Team, inviteLink } from '../src/screens/settings/Team.js';
 import { JOIN_COPY, rolesText } from '../src/screens/settings/teamCopy.js';
@@ -45,6 +46,7 @@ beforeEach(() => {
     if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: meMember });
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
+    if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
     if (input === '/v1/team/members/m1/limits' && method === 'PUT') return json(200, { ...(members[0] as object), band: body?.band, hours: body?.hours });
     if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
@@ -179,18 +181,22 @@ describe('Team (settings)', () => {
     });
   });
 
-  it('Make an invite link sends the name and roles and shows the link once', async () => {
+  it('Make an invite link sends the name and the start set\'s tickable boxes (Job 1c), and shows the link once', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
     await settle();
     fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { displayName: 'Cosmo', roles: ['offers'] } });
+    const cat = catalogueView();
+    const tickable = new Set(cat.groups.flatMap((g) => g.abilities).filter((a) => a.availability === 'grantable').map((a) => a.id));
+    const start = cat.presets.find((p) => p.id === 'start')!.abilities.filter((id) => tickable.has(id));
+    expect(start.length).toBeGreaterThan(0);
+    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { displayName: 'Cosmo', abilities: start } });
     expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
   });
 
-  it('note #219: with every role unticked, Make an invite link is dimmed, says why, and sends nothing', async () => {
+  it('note #219: with every box unticked, Make an invite link is dimmed, says why, and sends nothing', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
@@ -198,16 +204,21 @@ describe('Team (settings)', () => {
     const button = byPart(host, 'invite')!;
     expect(button.getAttribute('aria-disabled')).toBe('false');
     expect(byPart(host, 'invite-pick-role')).toBeNull();
-    fire(host.querySelector('#invite-role-offers')!, new MouseEvent('click', { bubbles: true }));
+    const invite = byPart(host, 'team-invite')!;
+    for (const g of invite.querySelectorAll<HTMLButtonElement>('[data-part^="group-"]')) fire(g, new MouseEvent('click', { bubbles: true }));
     await settle();
+    for (const box of invite.querySelectorAll<HTMLInputElement>('input[data-box]:checked:not(:disabled)')) {
+      fire(box, new MouseEvent('click', { bubbles: true }));
+      await settle();
+    }
     expect(button.getAttribute('aria-disabled')).toBe('true');
     const note = byPart(host, 'invite-pick-role')!;
-    expect(note.textContent).toBe('Pick at least one role.');
+    expect(note.textContent).toBe('Tick at least one box.');
     expect(button.getAttribute('aria-describedby')).toBe(note.id);
     fire(button, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(calls.some((c) => c.url === '/v1/team/invites')).toBe(false);
-    fire(host.querySelector('#invite-role-trades')!, new MouseEvent('click', { bubbles: true }));
+    fire(invite.querySelector('[data-preset="trades"]')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(button.getAttribute('aria-disabled')).toBe('false');
     expect(byPart(host, 'invite-pick-role')).toBeNull();

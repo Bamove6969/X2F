@@ -255,6 +255,9 @@ export interface AccountOverview {
   member?: {
     name: string;
     roles: TeamRole[];
+    /** Job 1c: the member's ticked boxes (`GET /v1/team/permissions` names them). Optional: older API builds do not send them. */
+    abilities?: string[];
+    preset?: string | null;
     chatLabel?: string;
     /** J-20 review F8 (owner question p11-136): the member's own limits; absent while the API's MEMBER_SEES_OWN_LIMITS is off, or on older builds. */
     limits?: { band: TradeBand | null; hours: WorkingHours };
@@ -706,9 +709,12 @@ export interface AuthApi {
    * Owner p11-21 (S-104): from a login that waits (a username and password) the invite still goes out, and the answer is also
    * `Staged` (`isStaged`): the member's boxes are a draft that applies 24 h after it is submitted.
    */
-  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
+  /** Job 1c: with `abilities` (the boxes, in catalogue order) instead of `roles`, confirm `team-invite-abilities` (`teamInviteAbilitiesAction`). */
+  inviteMember(b: ({ displayName: string; roles: TeamRole[] } | { displayName: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
   /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
+  /** Job 1c: a member's boxes, in catalogue order; confirm `team-abilities` (`teamAbilitiesAction`). From a login that waits, 202 `Staged`. */
+  setMemberAbilities(id: string, b: { abilities: string[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
@@ -894,6 +900,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
+    setMemberAbilities: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {
