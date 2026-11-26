@@ -140,6 +140,22 @@ export const LOG_ACTIONS = {
   'lien.voided': { lienId: 'id' },
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
+  // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md). No reason text: it stays in
+  // lien_rate_requests (Task 3: details never carry staff notes).
+  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount' },
+  'lien.recovered': { lienId: 'id', amountAtomic: 'amount', remainingAtomic: 'amount' },
+  'lien.recovery-released': { lienId: 'id', amountAtomic: 'amount' },
+  // Review M2: a late-paid recovery past what the lien still owed (the ledger records only what was owed).
+  'lien.over-recovered': { lienId: 'id', amountAtomic: 'amount' },
+  // Q6 (provisional, 17 Nov): a recovery paid after its lien was voided, overturned or suspended: for staff.
+  'lien.recovered-after-end': { lienId: 'id', status: 'id', amountAtomic: 'amount' },
+  // Q2: the creditor's device signed the address its recoveries go to (the address is never logged).
+  'lien.recovery-address-set': { lienId: 'id' },
+  // Review B1: the moderation service's signed statement of the lien was stored.
+  'lien.statement': { lienId: 'id', rateBps: 'number' },
+  'lien.rate-proposed': { lienId: 'id', requestId: 'id', rateBps: 'number' },
+  'lien.rate-approved': { lienId: 'id', requestId: 'id', rateBps: 'number' },
+  'lien.rate-rejected': { lienId: 'id', requestId: 'id' },
   // Recommended account limits (Task 26).
   'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
   'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },

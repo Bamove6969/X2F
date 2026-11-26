@@ -73,6 +73,8 @@ export async function signAttestation(
       payWindowMin: terms.payWindowMin,
       buyerPayout: terms.buyerPayout,
       sellerRefund: terms.sellerRefund,
+      // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): signed only when present.
+      ...(terms.lienRecovery !== undefined ? { lienRecovery: { address: terms.lienRecovery.address, amountAtomic: terms.lienRecovery.amountAtomic } } : {}),
     },
   };
   const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), signingSecret));

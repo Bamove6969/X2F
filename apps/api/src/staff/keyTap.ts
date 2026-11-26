@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { normalizeTradeCode } from '@x2f/core';
+import { LIEN_RECOVERY_MAX_BPS } from '@x2f/trade';
 import {
   AFTER_REFUND_OUTCOMES,
   BAN_REASON_CODES,
@@ -517,6 +518,11 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'banner-publish':
       exactKeys(r, ['kind', 'bannerKind', 'textSha256']);
       return { kind: 'banner-publish', bannerKind: oneOf(r, 'bannerKind', ['info', 'warning'] as const), textSha256: match(r, 'textSha256', HEX64) };
+    case 'lien-rate':
+      exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
+      // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
+      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) throw badRequest();
+      return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
       exactKeys(r, ['kind', 'step', 'rulingId', 'code', 'round', 'outcome', 'accountAction', 'amountAtomic', 'reasonSha256', 'evidenceSha256', 'round1Id']);
       const code = typeof r.code === 'string' ? normalizeTradeCode(r.code) : null;
@@ -561,6 +567,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return i.step === 'approve' ? 'rulings.approve' : 'disputes.handle';
     // Task 26: deciding recommended account limits (a senior moderator or the owner).
     case 'account-limit':
+    case 'lien-rate':
       return 'rulings.approve';
     case 'emergency-stop':
     case 'resume-trading':

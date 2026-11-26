@@ -1,4 +1,5 @@
 import { TIMERS } from '@x2f/trade';
+import { releaseStaleRecoveryHoldsJob } from '../src/disputes/recovery.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
@@ -155,8 +156,8 @@ describe('trade_events is append-only', () => {
 });
 
 describe('retention scheduler jobs (X-12)', () => {
-  it('runs every purge in order (purgeJabberPending, purgeJabberPreKeys and purgeChatKeyEnvelopes last of them, J-23 review F5), then closeInactiveAccounts (owner answer Q77)', () => {
-    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts]);
+  it('runs every purge in order (purgeJabberPending, purgeJabberPreKeys and purgeChatKeyEnvelopes last of them, J-23 review F5), then closeInactiveAccounts (owner answer Q77), then releaseStaleRecoveryHolds (re-review N3)', () => {
+    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts, releaseStaleRecoveryHoldsJob]);
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
   });
 

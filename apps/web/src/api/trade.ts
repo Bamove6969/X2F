@@ -109,6 +109,12 @@ export interface TradeView {
    * older API or a live-event view: read as null.
    */
   appealUntil?: string | null;
+  /**
+   * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): to the buyer only, the part of their
+   * proceeds this trade pays to the person they owe; absent when none. The buyer's device confirmed
+   * it at take (ConfirmedDeal.lienRecoveryAtomic); not shown on screen yet (Liens.tsx).
+   */
+  lienRecoveryAtomic?: string;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -193,6 +199,7 @@ export function parseTradeView(raw: unknown): TradeView {
   if (v.deleteAt !== undefined && v.deleteAt !== null && (typeof v.deleteAt !== 'string' || !Number.isFinite(Date.parse(v.deleteAt)))) {
     throw new TradeShapeError('deleteAt');
   }
+  if (v.lienRecoveryAtomic !== undefined) amount(v.lienRecoveryAtomic, 'lienRecoveryAtomic');
   return raw as TradeView;
 }
 

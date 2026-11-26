@@ -45,6 +45,16 @@ describe('one moderation process (security review 7 Nov, finding 2)', () => {
     await next.handle.stop();
   });
 
+  it('re-review 17 Nov (b): every start logs whether lien recovery is on, off by default', async () => {
+    const { fetch } = fakeNetwork(ctx);
+    for (const [lienRecovery, want] of [[undefined, 'lien-recovery-off'], [false, 'lien-recovery-off'], [true, 'lien-recovery-on']] as const) {
+      const logs: string[] = [];
+      const m = await moderation(ctx, fetch, { logs, ...(lienRecovery === undefined ? {} : { lienRecovery }) });
+      await m.handle.stop();
+      expect(logs.filter((l) => l.startsWith('lien-recovery-'))).toEqual([want]);
+    }
+  });
+
   it('review M1: the gate (its store, its sync, the executor) starts only once this process holds the instance lock; a refused second process never writes gate.bin', async () => {
     const { fetch } = fakeNetwork(ctx);
     const dir = await mkdtemp(join(tmpdir(), 'x2f-gate-m1-'));

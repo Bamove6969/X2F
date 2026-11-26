@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { newTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity } from '@x2f/protocol';
 import {
@@ -8,15 +10,20 @@ import {
   INTERNAL_AT_HEADER,
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
+  LIEN_RECOVERY_MIN_ATOMIC,
+  lienStatementValid,
+  signRecoveryAddress,
   verifyAttestation,
   type Attestation,
+  type LienStatement,
   type AttestedTerms,
   type ConfirmedDeal,
   type ModPartyArgs,
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
-import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import {
   loadParty,
   modSubkey,
@@ -24,9 +31,11 @@ import {
   relayRegisterMessage,
   startModeration,
   type Fetch,
+  type ModerationDeps,
   type ModerationHandle,
   type WorkItem,
 } from '../src/main.js';
+import { freeLienRecoveries } from '../src/lienRecovery.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -87,6 +96,8 @@ function fakeNetwork(work: () => WorkItem[]) {
   const refused: string[] = [];
   /** Terminal `refused` reports posted to the API (signed like every internal request). */
   const refusals: Array<{ trade: string; reason: string }> = [];
+  /** Review B1: the moderation service's signed lien statements, posted after an attestation. */
+  const lienStatements: Array<{ statement: LienStatement; sig: string }> = [];
   const modKey = sodium.from_hex(modSign.public);
   const fetch: Fetch = async (url, init) => {
     const reply = (status: number, body: unknown = {}) => ({ status, json: async () => body });
@@ -101,8 +112,9 @@ function fakeNetwork(work: () => WorkItem[]) {
       }
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: work() });
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
-        const body = JSON.parse(init.body ?? '{}') as { kind: string; attestation: Attestation; sig: string; trade: string; reason: string };
+        const body = JSON.parse(init.body ?? '{}') as { kind: string; attestation: Attestation; sig: string; trade: string; reason: string; statement: LienStatement };
         if (body.kind === 'refused') refusals.push({ trade: body.trade, reason: body.reason });
+        else if (body.kind === 'lien-statement') lienStatements.push({ statement: body.statement, sig: body.sig });
         else reports.push({ attestation: body.attestation, sig: body.sig });
         return reply(201, { ok: true });
       }
@@ -121,7 +133,7 @@ function fakeNetwork(work: () => WorkItem[]) {
     }
     return reply(404);
   };
-  return { fetch, reports, registered, refused, refusals };
+  return { fetch, reports, registered, refused, refusals, lienStatements };
 }
 
 /** The running service: one at a time (instance lock, security review 7 Nov finding 2), so a new start is a restart. */
@@ -130,7 +142,14 @@ afterEach(async () => {
   await Promise.all(live.splice(0).map((h) => h.stop()));
 });
 
-async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = () => {}, log?: (e: { reason: string }) => void): Promise<ModerationHandle> {
+async function moderation(
+  fetch: Fetch,
+  runParty: (a: ModPartyArgs) => void = () => {},
+  log?: (e: { reason: string }) => void,
+  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
+): Promise<ModerationHandle> {
+  // Re-review N1: the lien suites run with MOD_LIEN_RECOVERY=on unless they say otherwise; 'unset' leaves the option out (the production default).
+  const { lienRecovery = true, ...deps } = extra;
   await Promise.all(live.splice(0).map((h) => h.stop()));
   const h = await startModeration(
     {
@@ -143,8 +162,9 @@ async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = ()
       feeWallet: '5'.repeat(95),
       relayUrl: 'ws://relay.test',
       network: 'regtest',
+      ...(lienRecovery === 'unset' ? {} : { lienRecovery }),
     },
-    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}) },
+    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}), ...deps },
   );
   live.push(h);
   return h;
@@ -394,5 +414,257 @@ describe('database separation', () => {
     } finally {
       await api.end();
     }
+  });
+});
+
+// Review B1 (lien recovery, 2026-11-16): the moderation service no longer signs whatever recovery
+// the API hands it. A recovery is signed only when this service's own records back it: the source
+// trade it attested, a lien creditor of that trade's rulings as its gate verified them (staff key
+// taps), the creditor's own address from that trade's signed terms, at most half the buyer's
+// proceeds (and never leaving the buyer under the network fee), and never more in total than that
+// trade's XMR across the trades it signed and has not seen end without paying.
+describe('lien recovery at attestation (review B1, provisional owner answers of 17 Nov)', () => {
+  /** A new trade by the debtor, as buyer, on other addresses than the source trade's. */
+  const N_TERMS: AttestedTerms = { ...TERMS, buyerPayout: '4'.padEnd(95, 'N'), sellerRefund: '8'.padEnd(95, 'M') };
+  // N_TERMS: a seller's ad of 0.25 XMR, so the buyer's proceeds are 0.25 XMR.
+  const HALF = 125_000_000_000n; // the exact figure at the 50% default on a lien of at least that much
+  const CREDITOR_ADDRESS = '4'.padEnd(95, 'R');
+  const DEBTOR = '11111111-1111-4111-8111-111111111111';
+  const CREDITOR = '22222222-2222-4222-8222-222222222222';
+  const reasonsOf = () => {
+    const reasons: string[] = [];
+    return { reasons, log: (e: { reason: string }) => void reasons.push(e.reason) };
+  };
+
+  /** Attests the source trade (the disputed one) exactly as any trade; the buyer there is the creditor. */
+  async function sourceTrade(): Promise<{ code: string; creditor: Identity; seller: Identity }> {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+    expect(await (await moderation(net.fetch)).tick()).toEqual([code]);
+    return { code, creditor: buyer.id, seller: seller.id };
+  }
+
+  /** Q2: the creditor's device's signed "pay my recoveries to `address`" (its identity in the source trade). */
+  async function signedAddress(src: { code: string }, key: Identity, address = CREDITOR_ADDRESS, side: 'buyer' | 'seller' = 'buyer') {
+    const statement = { v: 1 as const, fromCode: src.code, creditorSide: side, address, issuedAt: NOW.toISOString() };
+    return { statement, sig: await signRecoveryAddress(statement, key.signSecret) };
+  }
+
+  /** The work item's lien source as the API names it. */
+  async function sourceOf(src: { code: string; creditor: Identity }, over: Record<string, unknown> = {}) {
+    return {
+      fromCode: src.code, creditor: 'buyer', lienId: LIEN, debtorAccount: DEBTOR, creditorAccount: CREDITOR, buyerAccount: DEBTOR, rateBps: 5000,
+      address: await signedAddress(src, src.creditor), ...over,
+    };
+  }
+  let LIEN = '';
+
+  async function debtorTrade(
+    rec: { address: string; amountAtomic: bigint } | null,
+    lienSource: unknown,
+    rulings: NonNullable<ModerationDeps['lienRulings']> | null,
+    extra: Pick<ModerationDeps, 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
+  ) {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const terms: AttestedTerms = rec === null ? N_TERMS : { ...N_TERMS, lienRecovery: { address: rec.address, amountAtomic: rec.amountAtomic.toString() } };
+    const item = { trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms, ...(lienSource !== undefined ? { lienSource } : {}) } as WorkItem;
+    const net = fakeNetwork(() => [item]);
+    const r = reasonsOf();
+    const done = await (await moderation(net.fetch, () => {}, r.log, { ...(rulings === null ? {} : { lienRulings: rulings }), ...extra })).tick();
+    const signed = (await db.query('select 1 from signed_terms where trade = $1', [code])).rows.length === 1;
+    return { code, done, signed, reasons: r.reasons, net, item };
+  }
+
+  const creditorBuyer: NonNullable<ModerationDeps['lienRulings']> = { creditors: async () => ['buyer'] };
+  const rec = (amountAtomic: bigint, address = CREDITOR_ADDRESS) => ({ address, amountAtomic });
+
+  beforeEach(() => {
+    LIEN = randomUUID();
+  });
+
+  it('signs exactly the expected recovery to the creditor\'s signed address, records it against the lien, and signs and posts a lien statement', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    const report = n.net.reports.find((x) => x.attestation.trade === n.code)!;
+    expect(report.attestation.terms?.lienRecovery).toEqual({ address: CREDITOR_ADDRESS, amountAtomic: HALF.toString() });
+    const { rows } = await db.query('select lien_id, source_code, creditor, amount_atomic::text as amount, freed_at from mod_lien_recoveries where trade = $1', [n.code]);
+    expect(rows).toEqual([{ lien_id: LIEN, source_code: src.code, creditor: 'buyer', amount: HALF.toString(), freed_at: null }]);
+    expect(n.net.lienStatements).toHaveLength(1);
+    const ls = n.net.lienStatements[0]!;
+    expect(lienStatementValid(ls.statement, ls.sig, modSign.public)).toBe(true);
+    expect(ls.statement).toMatchObject({ lienId: LIEN, fromCode: src.code, creditorSide: 'buyer', debtor: DEBTOR, creditor: CREDITOR, amountAtomic: '250000000000', rateBps: 5000 });
+  });
+
+  it('re-review N1: with MOD_LIEN_RECOVERY off (the default, or off) every recovery is refused and no lien statement is signed; on, the same item is signed', async () => {
+    const src = await sourceTrade();
+    for (const lienRecovery of ['unset', false] as const) {
+      const n = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer, { lienRecovery });
+      expect(n.done, String(lienRecovery)).toEqual([]);
+      expect(n.signed).toBe(false);
+      expect(n.reasons).toContain('lien-refused-off');
+      expect(n.net.reports.filter((x) => x.attestation.trade === n.code)).toEqual([]);
+      expect(n.net.lienStatements).toEqual([]);
+      expect((await db.query('select 1 from mod_lien_recoveries where lien_id = $1', [LIEN])).rows).toEqual([]);
+      expect((await db.query('select 1 from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([]);
+    }
+    // A trade with no recovery is attested as ever while it is off.
+    const plain = await debtorTrade(null, undefined, creditorBuyer, { lienRecovery: false });
+    expect(plain.done).toEqual([plain.code]);
+    // On: the same lien and source are signed.
+    const on = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer, { lienRecovery: true });
+    expect(on.done).toEqual([on.code]);
+    expect(on.net.lienStatements).toHaveLength(1);
+  });
+
+  it('re-review N1: MOD_LIEN_RECOVERY is on only when it says on; unset, empty or off is off, anything else refuses the start', async () => {
+    const { lienRecoveryFromEnv } = await import('../src/main.js');
+    expect(lienRecoveryFromEnv({})).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: '' })).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: 'off' })).toBe(false);
+    expect(lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: 'on' })).toBe(true);
+    for (const v of ['1', 'true', 'ON', 'yes', ' on']) expect(() => lienRecoveryFromEnv({ MOD_LIEN_RECOVERY: v }), v).toThrow('MOD_LIEN_RECOVERY');
+    // The process entry passes it to startModeration.
+    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+    expect(main.slice(main.indexOf('// `tsx apps/moderation/src/main.ts`'))).toContain('lienRecovery: lienRecoveryFromEnv(env)');
+  });
+
+  it('compromised API (review B1): an injected or inflated recovery, or one to any address the creditor did not sign, is refused and nothing is signed', async () => {
+    const src = await sourceTrade();
+    const ok = await sourceOf(src);
+    const cases: Array<[string, Awaited<ReturnType<typeof debtorTrade>>]> = [
+      // Injected: no source, no gate, a source for no lien.
+      ['lien-refused-no-authority', await debtorTrade(rec(HALF), ok, null)],
+      ['lien-refused-no-source', await debtorTrade(rec(HALF), undefined, creditorBuyer)],
+      ['lien-refused-bad-source', await debtorTrade(null, ok, creditorBuyer)],
+      ['lien-refused-bad-source', await debtorTrade(rec(HALF), { fromCode: src.code, creditor: 'buyer' }, creditorBuyer)],
+      ['lien-refused-source-unknown', await debtorTrade(rec(HALF), await sourceOf({ code: newTradeCode(), creditor: src.creditor }), creditorBuyer)],
+      // Inflated: one atomic unit over (or under) the exact figure, over the 90% cap, under 0.01 XMR.
+      ['lien-refused-not-expected', await debtorTrade(rec(HALF + 1n), ok, creditorBuyer)],
+      ['lien-refused-not-expected', await debtorTrade(rec(HALF - 1n), ok, creditorBuyer)],
+      ['lien-refused-over-rate', await debtorTrade(rec(225_000_000_001n), ok, creditorBuyer)],
+      ['lien-refused-over-rate', await debtorTrade(rec(9_999_999_999n), ok, creditorBuyer)],
+      // Redirected: the API's own address; the address signed by the API instead of the creditor; the
+      // creditor's statement for another trade or side; this trade's own payout (B2).
+      ['lien-refused-wrong-address', await debtorTrade(rec(HALF, '4'.padEnd(95, 'Z')), ok, creditorBuyer)],
+      ['lien-refused-wrong-address', await debtorTrade(rec(HALF, '4'.padEnd(95, 'Z')), await sourceOf(src, { address: await signedAddress(src, await generateIdentity(), '4'.padEnd(95, 'Z')) }), creditorBuyer)],
+      ['lien-refused-wrong-address', await debtorTrade(rec(HALF), await sourceOf(src, { address: await signedAddress(src, src.seller, CREDITOR_ADDRESS, 'seller') }), creditorBuyer)],
+      ['lien-refused-wrong-address', await debtorTrade(rec(HALF, N_TERMS.buyerPayout), await sourceOf(src, { address: await signedAddress(src, src.creditor, N_TERMS.buyerPayout) }), creditorBuyer)],
+      ['lien-refused-wrong-address', await debtorTrade(rec(HALF, '5'.repeat(95)), await sourceOf(src, { address: await signedAddress(src, src.creditor, '5'.repeat(95)) }), creditorBuyer)],
+      // The rulings make the buyer the creditor; the API names the seller. No verified ruling at all.
+      ['lien-refused-not-creditor', await debtorTrade(rec(HALF), ok, { creditors: async () => [] })],
+      ['lien-refused-no-authority', await debtorTrade(rec(HALF), ok, { creditors: async () => null })],
+      // A lien whose debtor is not this trade's buyer.
+      ['lien-refused-not-debtor', await debtorTrade(rec(HALF), await sourceOf(src, { buyerAccount: '33333333-3333-4333-8333-333333333333' }), creditorBuyer)],
+      // A higher rate with no senior's key tap the gate verified (Q1), or above 90%.
+      ['lien-refused-rate-unverified', await debtorTrade(rec(225_000_000_000n), await sourceOf(src, { rateBps: 9000 }), creditorBuyer)],
+      ['lien-refused-rate-unverified', await debtorTrade(rec(225_000_000_000n), await sourceOf(src, { rateBps: 9000 }), creditorBuyer, { lienRates: { approvals: async () => [{ rateBps: 7000, nonce: 'aa'.repeat(32) }] } })],
+      ['lien-refused-over-rate', await debtorTrade(rec(225_000_000_000n), await sourceOf(src, { rateBps: 9001 }), creditorBuyer, { lienRates: { approvals: async () => [{ rateBps: 9001, nonce: 'ab'.repeat(32) }] } })],
+    ];
+    for (const [reason, c] of cases) {
+      expect(c.done, reason).toEqual([]);
+      expect(c.signed, reason).toBe(false);
+      expect(c.reasons, reason).toContain(reason);
+      expect(c.net.refusals, reason).toEqual([]);
+      expect(c.net.reports, reason).toEqual([]);
+    }
+  });
+
+  it('Q1: a rate up to 90% is signed once the gate verified a senior\'s tap for it, and the statement carries it', async () => {
+    const src = await sourceTrade();
+    const asked: string[] = [];
+    const rates = { approvals: async (lienId: string) => (asked.push(lienId), [{ rateBps: 9000, nonce: 'a1'.repeat(32) }]) };
+    const n = await debtorTrade(rec(225_000_000_000n), await sourceOf(src, { rateBps: 9000 }), creditorBuyer, { lienRates: rates });
+    expect(n.done).toEqual([n.code]);
+    expect(asked).toEqual([LIEN]);
+    expect(n.net.lienStatements[0]!.statement.rateBps).toBe(9000);
+    const { rows } = await db.query('select nonce, lien_id, rate_bps, from_rate_bps, trade from mod_lien_rate_taps where lien_id = $1', [LIEN]);
+    expect(rows).toEqual([{ nonce: 'a1'.repeat(32), lien_id: LIEN, rate_bps: 9000, from_rate_bps: 5000, trade: n.code }]);
+  });
+
+  it('Q1, compromised API: an applied tap is spent (no replay of an old approval, no return to the default without a new tap); the replaced rate is good only for the grace period', async () => {
+    const src = await sourceTrade(); // 0.25 XMR owed; each trade's proceeds 0.25 XMR
+    const SIXTY = 150_000_000_000n; // 60% of 0.25 XMR
+    const QUARTER = 62_500_000_000n; // 25%
+    const t60 = { rateBps: 6000, nonce: 'b1'.repeat(32) };
+    const t25 = { rateBps: 2500, nonce: 'b2'.repeat(32) };
+    const taps: Array<{ rateBps: number; nonce: string }> = [t60];
+    const lienRates = { approvals: async () => [...taps] };
+    // The senior approves 60%: applied, and the tap spent.
+    const a = await debtorTrade(rec(SIXTY), await sourceOf(src, { rateBps: 6000 }), creditorBuyer, { lienRates });
+    expect(a.signed).toBe(true);
+    await freeLienRecoveries(db, a.code);
+    // A senior then lowers it to 25% and it is applied.
+    taps.push(t25);
+    const b = await debtorTrade(rec(QUARTER), await sourceOf(src, { rateBps: 2500 }), creditorBuyer, { lienRates });
+    expect(b.signed).toBe(true);
+    expect(b.net.lienStatements[0]!.statement.rateBps).toBe(2500);
+    await freeLienRecoveries(db, b.code);
+    // A day later the API replays the old 60% approval: refused (its tap is spent).
+    await db.query(`update mod_lien_rate_taps set applied_at = now() - interval '25 hours' where lien_id = $1`, [LIEN]);
+    const replay = await debtorTrade(rec(SIXTY), await sourceOf(src, { rateBps: 6000 }), creditorBuyer, { lienRates });
+    expect(replay.signed).toBe(false);
+    expect(replay.reasons).toContain('lien-refused-rate-unverified');
+    // Nor may it go back to the 50% default without a new tap.
+    const back = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer, { lienRates });
+    expect(back.signed).toBe(false);
+    expect(back.reasons).toContain('lien-refused-rate-unverified');
+    // Within the grace period the rate 25% replaced (60%) is still good for a trade reserved before
+    // the change, and the lien keeps 25%.
+    await db.query('update mod_lien_rate_taps set applied_at = now() where lien_id = $1 and rate_bps = 2500', [LIEN]);
+    const late = await debtorTrade(rec(SIXTY), await sourceOf(src, { rateBps: 6000 }), creditorBuyer, { lienRates });
+    expect(late.signed).toBe(true);
+    expect(late.net.lienStatements).toEqual([]);
+    expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
+  });
+
+  it('pins the lien\'s parties on first sight: a later item naming another debtor or creditor for the same lien is refused', async () => {
+    const src = await sourceTrade();
+    const first = await debtorTrade(rec(HALF), await sourceOf(src, { lienId: LIEN }), creditorBuyer);
+    expect(first.signed).toBe(true);
+    const other = '44444444-4444-4444-8444-444444444444';
+    const c = await debtorTrade(rec(HALF), await sourceOf(src, { lienId: LIEN, debtorAccount: other, buyerAccount: other }), creditorBuyer);
+    expect(c.signed).toBe(false);
+    expect(c.reasons).toContain('lien-refused-lien-changed');
+  });
+
+  it('partial: never more in total than the lien (the source trade\'s XMR); the last trade gets exactly what is left; freed recoveries count no more', async () => {
+    const src = await sourceTrade(); // 0.25 XMR owed: two recoveries of 0.125 XMR use it up
+    const ok = await sourceOf(src);
+    const a = await debtorTrade(rec(HALF), ok, creditorBuyer);
+    const b = await debtorTrade(rec(HALF), ok, creditorBuyer);
+    expect([a.signed, b.signed]).toEqual([true, true]);
+    const c = await debtorTrade(rec(LIEN_RECOVERY_MIN_ATOMIC), ok, creditorBuyer);
+    expect(c.signed).toBe(false);
+    expect(c.reasons).toContain('lien-refused-over-owed');
+    // Trade a ends without paying it (the watcher saw it refunded): its share is free again.
+    await freeLienRecoveries(db, a.code);
+    const d = await debtorTrade(rec(HALF), ok, creditorBuyer);
+    expect(d.signed).toBe(true);
+  });
+
+  it('a restart re-posts a trade it already signed without counting its recovery twice', async () => {
+    const src = await sourceTrade();
+    const a = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer);
+    expect(a.signed).toBe(true);
+    const again = fakeNetwork(() => [a.item]);
+    await (await moderation(again.fetch, () => {}, undefined, { lienRulings: creditorBuyer })).tick();
+    const { rows } = await db.query<{ n: number }>('select count(*)::int as n from mod_lien_recoveries where trade = $1', [a.code]);
+    expect(rows[0]!.n).toBe(1);
+  });
+
+  it('the co-signing devices refuse what an API could get past nothing else: the buyer accepts only its own figure (review B1)', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(HALF), await sourceOf(src), creditorBuyer);
+    const report = n.net.reports.find((x) => x.attestation.trade === n.code)!;
+    const buyer = n.item.participants.buyer;
+    const base = { trade: n.code, role: 'buyer' as const, signPublic: buyer.signPublic, boxPublic: buyer.boxPublic, ownAddress: N_TERMS.buyerPayout, identityCreatedAt: NOW.getTime() };
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: HALF } })).resolves.toBeUndefined();
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: DEAL })).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: HALF - 1n } })).rejects.toMatchObject({ code: 'wrong-terms' });
   });
 });

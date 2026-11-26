@@ -95,6 +95,7 @@ export {
 export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';
 export {
   lienCreditor,
+  lienCreditorsOf,
   lienSteps,
   type LienCause,
   type LienFacts,
@@ -134,3 +135,12 @@ export {
   type PersonMetrics,
   type WeekMetrics,
 } from './metrics.js';
+export {
+  DEFAULT_RECOVERY_RATE_BPS,
+  RATE_REASON_MAX,
+  canDecideRateRequest,
+  lienRemaining,
+  rateRequestRefusal,
+  recoveryFor,
+  type RateRequestRefusal,
+} from './lienRecovery.js';

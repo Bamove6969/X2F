@@ -87,5 +87,15 @@ export function readConfirmed(code: string): ConfirmedTrade | null {
   ) {
     return null;
   }
-  return { role: o.role, ownAddress: o.ownAddress, deal: { poster: deal.poster, takeAmountAtomic, currency: deal.currency, centsPerXmr, maxFiatCents } };
+  // Lien recovery (buyer only): a malformed figure drops the record rather than a recovery.
+  let lienRecoveryAtomic: bigint | undefined;
+  if (o.lienRecoveryAtomic !== undefined) {
+    const r = bigString(o.lienRecoveryAtomic);
+    if (r === null || o.role !== 'buyer') return null;
+    lienRecoveryAtomic = r;
+  }
+  return {
+    role: o.role, ownAddress: o.ownAddress, deal: { poster: deal.poster, takeAmountAtomic, currency: deal.currency, centsPerXmr, maxFiatCents },
+    ...(lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic } : {}),
+  };
 }

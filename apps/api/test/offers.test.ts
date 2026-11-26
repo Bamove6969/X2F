@@ -313,15 +313,11 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     }
   });
 
-  it('an account with an active lien cannot post or relist (409 lien); a suspended one can (J-06, owner D-008)', async () => {
+  it('owner option b (16 Nov 2026): an account with an active lien posts and relists as usual (J-06 block lifted)', async () => {
     const p = await poster();
     const id = await post(p, { currency: 'NZD' });
     await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
-    const lienId = await placeLien(p.id);
-    const res = await p.browser.post('/v1/offers', flexBody(BODY));
-    expect({ status: res.statusCode, body: res.json() }).toEqual({ status: 409, body: { error: 'lien' } });
-    expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ error: 'lien' });
-    await deps.db.query(`update liens set status = 'suspended', changed_at = $2 where id = $1`, [lienId, deps.clock()]);
+    await placeLien(p.id);
     expect((await p.browser.post('/v1/offers', flexBody(BODY))).statusCode).toBe(201);
     expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ id, status: 'live' });
   });
@@ -555,18 +551,15 @@ describe('who is listed', () => {
     expect((await list('side=sell&method=ZELLE&currency=CHF')).map((c) => c.id)).toEqual([keep]);
   });
 
-  it('hides the live offers of a poster with an active lien; they come back by themselves once it is no longer active (J-06)', async () => {
+  it('owner option b (16 Nov 2026): a poster with an active lien keeps their offers listed', async () => {
     const owing = await poster();
     const ok = await poster();
     const theirs = await post(owing, { currency: 'SGD' });
     const keep = await post(ok, { currency: 'SGD' });
-    const lienId = await placeLien(owing.id);
-    expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id)).toEqual([keep]);
-    // Their own list says why.
-    const mine = (await owing.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
-    expect(mine.find((o) => o.id === theirs)?.hidden).toBe('lien');
-    await deps.db.query(`update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1`, [lienId, deps.clock()]);
+    await placeLien(owing.id);
     expect((await list('side=sell&method=ZELLE&currency=SGD')).map((c) => c.id).sort()).toEqual([keep, theirs].sort());
+    const mine = (await owing.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
+    expect(mine.find((o) => o.id === theirs)?.hidden).toBeUndefined();
   });
 
   it('/v1/methods counts live offers from the offers table, with the best rate', async () => {

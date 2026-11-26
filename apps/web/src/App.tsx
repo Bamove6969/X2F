@@ -42,6 +42,7 @@ import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
 import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { LIENS_PATH, Liens } from './screens/liens/Liens.js';
 import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { JabberEventsScreen } from './screens/settings/JabberEvents.js';
 import { AlarmListener } from './alerts/alarm.js';
@@ -325,6 +326,7 @@ export function App() {
             <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path={LIENS_PATH} element={<Liens />} />
             <Route path="/settings/jabber" element={<JabberSetup />} />
             {/* W-021: which events send a Jabber notice. */}
             <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />

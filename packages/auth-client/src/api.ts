@@ -463,6 +463,33 @@ export interface JabberEvents {
 }
 
 /**
+ * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md; `apps/api` disputes/lienRoutes.ts): one
+ * of the account's own liens. Amounts are atomic XMR as decimal strings; `rateBps` is the share of
+ * each completed trade's proceeds that goes to the creditor (default `defaultRateBps`, 50%). No
+ * account ids, no addresses.
+ */
+export interface LienView {
+  id: string;
+  status: 'active' | 'suspended' | 'repaid';
+  amountAtomic: string;
+  recoveredAtomic: string;
+  remainingAtomic: string;
+  rateBps: number;
+  defaultRateBps: number;
+  fromCode: string;
+}
+
+/**
+ * `GET /v1/account/liens`: what the account owes (never a repaid one) and the liens owed to it.
+ * Owed to it: totals only (review M4, provisional owner answer Q4: no per-trade rows, no times, no
+ * rate), and whether the creditor has signed a recovery address (Q2).
+ */
+export interface MyLiens {
+  owes: LienView[];
+  owedTo: Array<Pick<LienView, 'id' | 'status' | 'amountAtomic' | 'recoveredAtomic' | 'remainingAtomic' | 'fromCode'> & { recoveryAddressSet: boolean }>;
+}
+
+/**
  * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
  * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
  */
@@ -594,6 +621,8 @@ export interface AuthApi {
   cancelHoldChanges(): Promise<void>;
   /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
   cancelHoldChange(id: string): Promise<void>;
+  /** Lien recovery: `GET /v1/account/liens`, the account's own liens, both ways. */
+  listLiens(): Promise<MyLiens>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
@@ -848,6 +877,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
     cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
+    listLiens: () => get('/v1/account/liens'),
     listMethods: () => get('/v1/account/methods'),
     removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
     renameWebAuthnKey: (b) => call('PUT', '/v1/account/webauthn/label', b),

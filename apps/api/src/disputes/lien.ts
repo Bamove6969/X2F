@@ -1,7 +1,9 @@
 import { lienCreditor, lienSteps, type Dispute, type LienCause, type LienRef, type LienSide, type LienStatus } from '@x2f/staff';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { releaseStaleHolds } from './recovery.js';
 
 /**
  * Plan 4 Task 25 and Task 12's owed fees (J-06; owner D-006, D-008, D-009, D-062, D-063): the
@@ -13,15 +15,19 @@ import { appendLog } from '../log/append.js';
  * the appeal route) cannot skip it, and a change that throws writes no lien either. What changes
  * comes from @x2f/staff `lienSteps`; this file only stores it and logs each step.
  *
- * A lien's effect (Task 25): while `active` its debtor cannot trade: no offer goes live, the
- * debtor's live offers are hidden from every list (they come back by themselves when it lifts), no
- * take, no new trade set up (409 `lien`, `ACTIVE_LIEN_SQL`). Trades already funded still finish,
- * as under a freeze. A `suspended` lien (the debtor's appeal is pending) has no effect.
+ * A lien's effect (owner 16 Nov 2026, option b; docs/lien-recovery.md): an active lien no longer
+ * blocks trading. The debtor keeps trading and each trade in which they receive XMR pays part of
+ * their proceeds to the creditor (disputes/recovery.ts) until the lien is repaid. A moderator's
+ * freeze or ban (`trading_holds`, bans) is separate and unchanged. `LIEN_BLOCKS_SQL` and
+ * `lienBlocksTrading` stay the one choke point the trading guards read (409 `lien`), now false, so
+ * an owner answer to NEEDS_OWNER_SELLER_DEBTOR (e.g. block selling only) has one place to change.
  *
- * NEEDS_REPAYMENT_TRADE: Task 25's repayment trade (an escrow trade, seller = debtor, buyer =
- * creditor, the lien's amount, no fiat leg, no fee of its own per D-063) is not built; nothing sets
- * a lien `repaid` through one yet. The seller's accepted tx proof of `seller-sends-xmr` repays a
- * lien for the XMR alone (`complied`, from the seller's accepted proof: disputes/comply.ts).
+ * Task 25's repayment trade (NEEDS_REPAYMENT_TRADE) is replaced by recovery from the debtor's
+ * trades. The seller's accepted tx proof of `seller-sends-xmr` repays a lien for the XMR alone
+ * (`complied`, from the seller's accepted proof: disputes/comply.ts). Owner rule 4 ("evidence
+ * before enforcement", 16 Nov 2026): `complied` is a system event only, emitted only once the tx
+ * proof is accepted (the money arrived), never on the seller's "sent" claim or on uploaded evidence
+ * alone; recoveries likewise are recorded only on the settled payout.
  * NEEDS_FEE_OWED_COLLECTION: `fees_owed` rows are written; collecting them from the debtor's next
  * settled trades (Revision 2026-10-29c: `feeOwedAtomic` in the signed terms, checked by the gate and
  * every app) is not built.
@@ -37,7 +43,18 @@ export const LIENS_ON_SQL = `coalesce((select f.liens_enabled from site_flags f)
 export const ACTIVE_LIEN_SQL = (p: string) =>
   `(${LIENS_ON_SQL} and exists (select 1 from liens l where l.debtor_account_id = ${p} and l.status = 'active'))`;
 
-/** Whether the account has an active lien (the trading guard's 409 `lien`). */
+/**
+ * SQL: whether account `p`'s liens block its trading (the guards' 409 `lien` and the LISTED
+ * filters). Owner option b (16 Nov 2026): never. `p` is unused while that holds.
+ */
+export const LIEN_BLOCKS_SQL = (_p: string) => `false`;
+
+/** Whether the account's liens block its trading (owner option b: never; see LIEN_BLOCKS_SQL). */
+export async function lienBlocksTrading(_q: Queryable, _accountId: string): Promise<boolean> {
+  return false;
+}
+
+/** Whether the account has an active lien that binds (liens switched on): recovery applies. */
 export async function hasActiveLien(q: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await q.query<{ x: boolean }>(`select ${ACTIVE_LIEN_SQL('$1::uuid')} as x`, [accountId]);
   return rows[0]?.x === true;
@@ -141,6 +158,21 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
           repaid: { status: 'repaid', from: ['active', 'suspended'], action: 'lien.repaid' },
         };
         const c = to[s.op];
+        // Review M2: a lien repaid directly (complied) while a trade of the debtor's still carries a
+        // signed recovery for it would be paid twice; the change waits until that trade ends.
+        if (s.op === 'repaid') {
+          // Re-review N3: a hold that stopped counting (its trade closed without a coin for the whole
+          // moderation watch) is released first, so it never blocks complied for ever.
+          for (const h of await releaseStaleHolds(client, now, s.id)) {
+            await appendLog(client, { at: now, actor: system, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
+          }
+          const open = await client.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [s.id]);
+          if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
+        }
+        if (s.op === 'void') {
+          await applyLienVoid(client, s.id, now, next.code);
+          break;
+        }
         const over = c.status === 'void' || c.status === 'repaid';
         const r = await client.query(
           `update liens set status = $2, changed_at = $3, lifted_at = case when $4 then $3::timestamptz end
@@ -151,4 +183,32 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
       }
     }
   }
+}
+
+/**
+ * Voids lien `id` (a round-2 overturn, from `lienSteps`) on `client` inside the dispute's
+ * transaction, logged on `logCode` (the dispute's trade). Q6 (provisional owner answer, 17 Nov
+ * 2026; docs/lien-recovery.md): the holds of the debtor's trades whose terms are not signed yet are
+ * released, so those trades pay nothing; a trade already attested pays what its signed terms carry
+ * (nothing can change them), and `settleRecovery` records that payment and flags it for staff
+ * (`lien.recovered-after-end`; no automatic clawback). True when the lien changed.
+ */
+export async function applyLienVoid(client: pg.PoolClient, id: string, now: Date, logCode?: string): Promise<boolean> {
+  const released = await client.query<{ trade_code: string; amount_atomic: string }>(
+    `update lien_recovery_holds h set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null
+      where h.lien_id = $1 and h.status = 'open' and not exists (select 1 from trade_attestations a where a.code = h.trade_code)
+      returning h.trade_code, h.amount_atomic::text`,
+    [id, now],
+  );
+  const r = await client.query(
+    `update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1 and status in ('active', 'suspended') returning from_code`,
+    [id, now],
+  );
+  const system = { kind: 'system' as const };
+  for (const h of released.rows) {
+    await appendLog(client, { at: now, actor: system, tradeCode: h.trade_code, action: 'lien.recovery-released', detail: { lienId: id, amountAtomic: h.amount_atomic } });
+  }
+  const changed = (r.rowCount ?? 0) === 1;
+  if (changed) await appendLog(client, { at: now, actor: system, tradeCode: logCode ?? (r.rows[0] as { from_code: string }).from_code, action: 'lien.voided', detail: { lienId: id } });
+  return changed;
 }

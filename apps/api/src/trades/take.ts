@@ -2,6 +2,7 @@ import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import {
   GIFT_CARD_TERMS_VERSION,
   LAUNCH_TRADE_CAP_USD_CENTS,
+  escrowPlan,
   fiatCents,
   newTrade,
   pickTier,
@@ -20,7 +21,9 @@ import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { banHidesSql, tradeBanRefusal } from '../banState.js';
-import { ACTIVE_LIEN_SQL, hasActiveLien } from '../disputes/lien.js';
+import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
+import { releaseHoldAt, reserveRecovery } from '../disputes/recovery.js';
+import { appendLog } from '../log/append.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -99,20 +102,28 @@ interface TakeBody {
   giftCardTerms: unknown;
   methodId: string;
   currency: string;
+  /**
+   * Lien recovery (review B1, docs/lien-recovery.md): the figure the buyer's quote showed and the
+   * buyer accepted ('0' or absent: none). A taker who buys gets 409 `lien-recovery-changed` when the
+   * trade would reserve any other figure; a taker who sells never sends one.
+   */
+  lienRecoveryAtomic: bigint | null;
 }
 
 function parseTake(body: unknown): TakeBody {
   if (!isObject(body)) throw bad();
-  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms').sort().join(',');
+  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms' && k !== 'lienRecoveryAtomic').sort().join(',');
   if (keys !== 'amountAtomic,centsPerXmr,currency,fiatCents,methodId,walletId') throw bad();
-  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms } = body;
+  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms, lienRecoveryAtomic } = body;
+  if (lienRecoveryAtomic !== undefined && (typeof lienRecoveryAtomic !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(lienRecoveryAtomic))) throw bad();
   if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) throw bad();
   if (typeof amountAtomic !== 'string' || !ATOMIC.test(amountAtomic)) throw bad();
   if (typeof walletId !== 'string' || !UUID.test(walletId)) throw bad();
   if (typeof centsPerXmr !== 'string' || !PRICE.test(centsPerXmr)) throw bad();
   if (typeof cents !== 'string' || !CENTS.test(cents)) throw bad();
-  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency, giftCardTerms };
+  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency, giftCardTerms,
+    lienRecoveryAtomic: lienRecoveryAtomic === undefined ? null : BigInt(lienRecoveryAtomic as string) };
 }
 
 function parseWalletBody(body: unknown): string {
@@ -148,7 +159,7 @@ interface OfferRow {
 const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
-      and not ${ACTIVE_LIEN_SQL('o.account_id')}
+      and not ${LIEN_BLOCKS_SQL('o.account_id')}
       and not ${recoveryHoldHidesSql('o.account_id')}
       and not ${banHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
@@ -321,7 +332,7 @@ export function takeRoutes(app: FastifyInstance): void {
         await c.query<{ paused: boolean | null; held: boolean; lien: boolean }>(
           `select (select trading_paused from site_flags for share) as paused,
                   exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held,
-                  ${ACTIVE_LIEN_SQL('$1::uuid')} as lien`,
+                  ${LIEN_BLOCKS_SQL('$1::uuid')} as lien`,
           [takerId],
         )
       ).rows[0]!;
@@ -425,7 +436,28 @@ export function takeRoutes(app: FastifyInstance): void {
       // Task 18: a team member's take is in the account owner's audit log, in this transaction
       // (unreachable until Task 42 lifts `ownerDeviceOnly`; kept so the log is complete then).
       await auditMember(c, req.auth, { action: 'trade-taken', tradeCode: t.code, detail: { offerId: id } }, now);
-      return t;
+      // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): a buyer who owes a lien has part
+      // of this trade's proceeds reserved for the creditor; the signed terms will carry it. The
+      // buyer's proceeds are what a release pays them (amount, or amount − fee on a buyer's ad).
+      const plan = escrowPlan({ amountAtomic: t.amountAtomic, poster });
+      const recovery = await reserveRecovery(c, {
+        code: t.code, buyerId: t.buyerId, sellerId: t.sellerId, now,
+        proceedsAtomic: poster === 'seller' ? t.amountAtomic : t.amountAtomic - plan.feeAtomic,
+        // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route).
+        ownAddresses: [sides.buyerPayout, sides.sellerRefund],
+        feeWallet: req.server.deps.config.feeWallet ?? null,
+        // Review B1: a buying taker accepted this figure on the quote (none sent: none); the poster
+        // buyer accepts it on their own screen before anything is signed (AcceptedSheet).
+        accepted: t.buyerId === takerId ? (b.lienRecoveryAtomic ?? 0n) : null,
+      });
+      if (recovery !== null) {
+        // Last (append.ts M2): nothing is awaited after the log lock but the commit.
+        await appendLog(c, {
+          at: now, actor: { kind: 'system' }, tradeCode: t.code, action: 'lien.recovery-reserved',
+          detail: { lienId: recovery.lienId, amountAtomic: recovery.amountAtomic.toString() },
+        });
+      }
+      return { ...t, recovery };
     });
 
     // "<display name> accepted your offer" to the poster, after the commit and outside the
@@ -440,6 +472,8 @@ export function takeRoutes(app: FastifyInstance): void {
     return {
       code: trade.code, centsPerXmr: trade.lockedRate.centsPerXmr.toString(), fiatCents: trade.fiatCents.toString(),
       maxFiatCents: trade.maxFiatCents.toString(),
+      // Only to a taker who is the buyer (it is their proceeds); their device confirms it (ConfirmedDeal).
+      ...(trade.recovery !== null && trade.buyerId === takerId ? { lienRecoveryAtomic: trade.recovery.amountAtomic.toString() } : {}),
     };
   });
 
@@ -470,7 +504,7 @@ export function takeRoutes(app: FastifyInstance): void {
       await c.query('select id from accounts where id = $1 for update', [me]);
       const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
       if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
-      if (await hasActiveLien(c, me)) throw new ApiError(409, 'lien');
+      if (await lienBlocksTrading(c, me)) throw new ApiError(409, 'lien');
       // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
       await assertNoPendingReview(c, me, now);
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);
@@ -491,7 +525,12 @@ export function takeRoutes(app: FastifyInstance): void {
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
       // Owner demo note #6: a one-time wallet is for this trade only (under the poster's account lock above).
       await useUpOneTimeWallet(c, me, w.id, code, now);
+      // Review B2: a poster's address that is the open recovery's would make the completed trade's
+      // payout unbuildable; the recovery is released before anything is signed (the remainder carries forward).
+      const released = await releaseHoldAt(c, code, w.address, now);
       await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
+      // Last (append.ts M2).
+      if (released !== null) await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: code, action: released.action, detail: released.detail });
     });
     return reply.code(204).send();
   });

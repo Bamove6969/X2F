@@ -583,3 +583,92 @@ describe('instructionsSha256 and instructionsMatch', () => {
     expect(await instructionsMatch(undefined as unknown as string, TERMS)).toBe(false);
   });
 });
+
+// Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): an optional `lienRecovery` in the terms.
+describe('attested lien recovery', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  const REC = { address: CREDITOR, amountAtomic: '100000000000' }; // 0.1 XMR
+
+  it('isAttestedTerms accepts terms with or without a well-formed lienRecovery, nothing else', () => {
+    expect(isAttestedTerms(TERMS)).toBe(true);
+    expect(isAttestedTerms({ ...TERMS, lienRecovery: REC })).toBe(true);
+    for (const bad of [{}, { address: CREDITOR }, { ...REC, amountAtomic: '0' }, { ...REC, amountAtomic: '01' }, { ...REC, address: '' }, { ...REC, extra: 1 }, null]) {
+      expect(isAttestedTerms({ ...TERMS, lienRecovery: bad })).toBe(false);
+    }
+  });
+
+  it('the buyer (the debtor) accepts only the recovery it confirmed; none confirmed means none attested', async () => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: REC } };
+    const sig = resign(t, a);
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 99_999_999_999n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(a, sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 100_000_000_000n } }))).resolves.toBeUndefined();
+    // A confirmed recovery the terms do not carry is also refused.
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 100_000_000_000n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('the seller is not asked to confirm the buyer’s recovery (it costs the seller nothing)', async () => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: REC } };
+    await expect(verifyAttestation(a, resign(t, a), t.modSign.public, meOf(t, 'seller'))).resolves.toBeUndefined();
+  });
+});
+
+// Review B1 and B3 (2026-11-16), provisional owner answers Q1/Q5 (17 Nov): neither device accepts
+// signed terms whose recovery could not be paid by an honest release: above 90% of the buyer's
+// proceeds, leaving the buyer less than the largest network fee + 0.01 XMR, under 0.01 XMR, or to
+// one of the trade's own addresses.
+describe('attested lien recovery limits (review B1, B3)', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  // TERMS: a seller's ad of 0.25 XMR, so the buyer's proceeds are 0.25 XMR and the cap 90%: 0.225 XMR.
+  const CAP = 225_000_000_000n;
+  const signed = async (amountAtomic: bigint, address = CREDITOR) => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: { address, amountAtomic: amountAtomic.toString() } } };
+    return { t, a, sig: resign(t, a) };
+  };
+
+  it('both devices accept the cap and refuse one atomic unit more', async () => {
+    const ok = await signed(CAP);
+    await expect(verifyAttestation(ok.a, ok.sig, ok.t.modSign.public, meOf(ok.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: CAP } }))).resolves.toBeUndefined();
+    await expect(verifyAttestation(ok.a, ok.sig, ok.t.modSign.public, meOf(ok.t, 'seller'))).resolves.toBeUndefined();
+    const over = await signed(CAP + 1n);
+    await expect(verifyAttestation(over.a, over.sig, over.t.modSign.public, meOf(over.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: CAP + 1n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(over.a, over.sig, over.t.modSign.public, meOf(over.t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('both devices refuse a recovery to the buyer\'s payout or the seller\'s refund address', async () => {
+    for (const address of [BUYER_PAYOUT, SELLER_REFUND]) {
+      const s = await signed(100_000_000_000n, address);
+      await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 100_000_000_000n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+      await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    }
+  });
+});
+
+// Q5 (provisional, 17 Nov) and review B1's compromised API: a recovery under 0.01 XMR is never paid,
+// and a buyer who accepted none (or another figure) refuses a recovery the API had signed in.
+describe('attested lien recovery: Q5 floor and an API that injects or inflates a recovery (review B1)', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  const signed = async (amountAtomic: bigint) => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: { address: CREDITOR, amountAtomic: amountAtomic.toString() } } };
+    return { t, a, sig: resign(t, a) };
+  };
+
+  it('both devices refuse a recovery under 0.01 XMR', async () => {
+    const s = await signed(9_999_999_999n);
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 9_999_999_999n } }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('injected: a buyer who accepted no recovery refuses one; inflated: a buyer who accepted 0.05 XMR refuses 0.06', async () => {
+    const injected = await signed(100_000_000_000n);
+    await expect(verifyAttestation(injected.a, injected.sig, injected.t.modSign.public, meOf(injected.t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    const inflated = await signed(60_000_000_000n);
+    await expect(
+      verifyAttestation(inflated.a, inflated.sig, inflated.t.modSign.public, meOf(inflated.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 50_000_000_000n } })),
+    ).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+});

@@ -3,7 +3,7 @@ import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from '@
 import { normalizeTradeCode } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES, canonicalJson, gateUsdCents, tapChallenge, twoPersonRule, type AccountAction, type GateRefusal as StaffGateRefusal, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { payoutsFor, type AttestedTerms } from '@x2f/trade';
+import { attestedRecovery, payoutsFor, type AttestedTerms } from '@x2f/trade';
 import type { GateState, PinnedCred } from './store.js';
 
 /**
@@ -167,6 +167,8 @@ export interface RecordedTerms {
    * that trade needs a second person (fails toward the two-person rule; lead default, see the report).
    */
   usdCents: bigint | null;
+  /** Lien recovery from this process's own attested terms (docs/lien-recovery.md); absent: none. */
+  lienRecovery?: { address: string; amountAtomic: bigint };
 }
 
 /** The recorded terms from this process's attested terms and its own trade (the desk's shadow trade). */
@@ -190,6 +192,7 @@ export function recordedTerms(a: {
     sellerRefund: a.terms.sellerRefund,
     feeWallet: a.feeWallet,
     usdCents,
+    ...(a.terms.lienRecovery !== undefined ? { lienRecovery: attestedRecovery(a.terms)! } : {}),
   };
 }
 
@@ -223,6 +226,12 @@ export interface RulingInput {
    * for R37: see `authorizeRuling`.
    */
   round1?: { ruling: GateRuling; taps: StoredTap[] };
+  /**
+   * Review B1 (lien recovery): only whether the ruling is authorised (its taps, its signers), as the
+   * moderation service checks a recovery's source trade; no payout is worked out (`settle: null`),
+   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle.
+   */
+  verifyOnly?: boolean;
 }
 
 export type Authorization =
@@ -446,7 +455,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
   let settle: { payouts: Payout[]; winner: 'buyer' | 'seller' } | null = null;
   // Review p4t22 m1 (lead default, owner question OQ2): an escrow ruling of either round has a
   // payout; the executor pays round 2's only when round 1's payout never ran (one per trade).
-  if ((ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
+  // Lien recovery review B1: a `verifyOnly` check works out no payout (`settle: null`).
+  if (r.verifyOnly !== true && (ESCROW_OUTCOMES as readonly string[]).includes(rul.outcome)) {
     const winner = rul.outcome === 'release-to-buyer' ? 'buyer' : 'seller';
     try {
       const payouts = payoutsFor({
@@ -459,6 +469,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
         buyerPayout: r.recorded.buyerPayout,
         sellerRefund: r.recorded.sellerRefund,
         feeWallet: r.recorded.feeWallet,
+        // A release to the buyer completes the trade: the signed lien recovery is paid (payoutsFor).
+        ...(r.recorded.lienRecovery !== undefined ? { lienRecovery: r.recorded.lienRecovery } : {}),
       });
       settle = { payouts, winner };
     } catch {

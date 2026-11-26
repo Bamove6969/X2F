@@ -62,6 +62,12 @@ export interface TradeView {
    * built without it (live events).
    */
   appealUntil: string | null;
+  /**
+   * Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md): to the buyer only, the part of
+   * their proceeds this trade pays to the person they owe; absent when none. The buyer's device
+   * confirms it (ConfirmedDeal.lienRecoveryAtomic) and accepts only signed terms that carry it.
+   */
+  lienRecoveryAtomic?: string;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -140,6 +146,8 @@ export interface ViewContext {
   appealUntil?: Date | null;
   /** See `TradeView.deleteAt`; absent → null. */
   deleteAt?: Date | null;
+  /** See `TradeView.lienRecoveryAtomic`: the trade's reserved recovery, or null. */
+  lienRecoveryAtomic?: bigint | null;
 }
 
 /**
@@ -184,6 +192,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     settling: t.settling,
     dispute: t.dispute ? { by: t.dispute.by, at: t.dispute.at.toISOString() } : null,
     appealUntil: ctx.appealUntil ? ctx.appealUntil.toISOString() : null,
+    ...(role === 'buyer' && typeof ctx.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: ctx.lienRecoveryAtomic.toString() } : {}),
     txHash: t.txHash,
     takenAt: t.takenAt.toISOString(),
     setupBy: iso(t.setupBy),

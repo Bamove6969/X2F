@@ -186,7 +186,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 78 -> 81 (wip/lead-note-223, the owner's full-length Terms, 25 Nov): setup/termsText.ts's
     // sentences with "cannot" ("cannot be restored", "cannot pull back funds", "cannot resolve it",
     // "we do not collect") each carry their own pragma; they explain how X2F works, nothing was tried and refused.
-    expect(notARefusal).toBeLessThanOrEqual(81);
+    // 81 -> 82 (wip/third-lien-recovery merged onto main, 26 Nov; counted 66 -> 67 there): liensCopy.ts's
+    // `addressTaken` (lien recovery, provisional owner answer Q2, 17 Nov 2026), a wallet choice to redo
+    // on the same screen (another account holds that address), not a rule refusal.
+    expect(notARefusal).toBeLessThanOrEqual(82);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

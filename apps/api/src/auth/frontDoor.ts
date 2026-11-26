@@ -56,6 +56,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
+  'GET /v1/account/liens': "my own account's liens, both ways: what I owe (owed, recovered, left, rate) and the totals recovered and left on liens owed to me; no account ids, no addresses, never the debtor's purchases",
+  'GET /v1/account/liens/preview': "the lien recovery my own take of an offer would reserve from my own proceeds (my liens only; the figure, never the creditor or their address)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
   'GET /v1/account/jabber/events': 'which events send my own Jabber notices (W-021); never another account',
   'GET /v1/account/methods': 'my own login methods',
@@ -123,6 +125,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/idle-reminder': 'my own idle reminder; answers it',
   // Owner 2 Nov 2026: Trader and Vendor accounts.
   'PUT /v1/account/type': 'switches my own account to a vendor account; answers its type',
+  // Lien recovery, provisional owner answer Q2 (17 Nov 2026): the address recoveries owed to me go to.
+  'POST /v1/account/liens/:id/recovery-address': "sets where recoveries on a lien owed to me are paid, signed by my own device's identity in the disputed trade; no data back",
   'POST /v1/confirm/password': 'a confirm token bound to my own session',
   'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
   'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',
