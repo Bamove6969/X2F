@@ -57,6 +57,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/escrow-keys/reader': "my own reader key's public half and my own unlock envelopes (ciphertext the API cannot open); the holder, or a member the holder assigned",
   'GET /v1/escrow-keys/readers': "the public reader keys my own trades' escrow copies may be sealed to: mine and my assigned members' (the account holder only)",
   'GET /v1/escrow-keys/trades': "which of my own account's trades have an encrypted escrow copy sealed to my reader key",
+  'GET /v1/escrow-keys/unlock-methods': "my own passkeys' and security keys' credential ids and my own PGP public keys, to wrap my own reader key (no authenticator app)",
   'GET /v1/escrow-keys/trades/:code': "one of my own account's encrypted escrow copies and the content key sealed to my own reader key only (ciphertext the API cannot open)",
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",

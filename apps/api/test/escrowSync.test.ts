@@ -3,10 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
+import { sealKey } from '../src/auth/pgp.js';
 import { ESCROW_SYNC_ROUTES } from '../src/escrowSync/routes.js';
 import { ESCROW_COPY_KEEP_AFTER_CLOSE_MS, purgeEscrowBlobs } from '../src/escrowSync/store.js';
 import { rolesToAbilities, sortAbilities } from '../src/team/abilities.js';
-import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { addUnusedKeys, makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { Browser } from './helpers/totp.js';
 import { seedTrade } from './helpers/trades.js';
@@ -69,7 +70,7 @@ async function tradeOf(seller: Who): Promise<string> {
 }
 
 describe('escrow-key sync routes', () => {
-  it('registers all seven routes', () => {
+  it('registers all eight routes', () => {
     for (const r of ESCROW_SYNC_ROUTES) {
       const [method, url] = r.split(' ') as ['GET' | 'PUT' | 'DELETE', string];
       expect(app.hasRoute({ method, url }), r).toBe(true);
@@ -193,5 +194,27 @@ describe('escrow-key sync routes', () => {
     await purgeEscrowBlobs.run(deps.db, now);
     const { rows } = await deps.db.query<{ trade_code: string }>('select trade_code from escrow_blobs where account_id = $1', [holder.id]);
     expect(rows.map((r) => r.trade_code)).toEqual([open]);
+  });
+
+  it("unlock-methods lists the person's own passkeys, security keys and PGP public keys, never an authenticator app", async () => {
+    const holder = await team();
+    await addUnusedKeys(deps, holder.id);
+    const fingerprint = randomBytes(20).toString('hex');
+    const armored = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nplaceholder\n-----END PGP PUBLIC KEY BLOCK-----\n';
+    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [holder.id, fingerprint, sealKey(deps.config, armored, fingerprint), deps.clock()]);
+    const res = await holder.browser.get('/v1/escrow-keys/unlock-methods');
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json() as { keys: { kind: string; label: string; credentialId: string }[]; pgp: { fingerprint: string; label: string; publicKey: string }[] };
+    const { rows } = await deps.db.query<{ kind: string; credential_id: Buffer }>('select kind, credential_id from webauthn_credentials where account_id = $1 order by created_at, id', [holder.id]);
+    expect(body.keys.map((k) => [k.kind, k.credentialId]).sort()).toEqual(rows.map((r) => [r.kind, r.credential_id.toString('base64url')]).sort());
+    expect(body.pgp).toEqual([{ fingerprint: fingerprint.toUpperCase(), label: fingerprint.slice(-16), publicKey: armored }]);
+    expect(Object.keys(body).sort()).toEqual(['keys', 'pgp']);
+    // A member's are their own login's; a member without "Hold trade keys" is refused.
+    const plain = await member(holder.id, rolesToAbilities(['trades']));
+    expect(err(await plain.browser.get('/v1/escrow-keys/unlock-methods'))).toEqual({ status: 403, error: 'forbidden' });
+    const assigned = await member(holder.id, sortAbilities([...rolesToAbilities(['trades']), 'trades-escrow-keys']));
+    const theirs = (await assigned.browser.get('/v1/escrow-keys/unlock-methods')).json() as { keys: unknown[]; pgp: unknown[] };
+    expect(theirs.pgp).toEqual([]);
+    expect(JSON.stringify(theirs)).not.toContain(fingerprint.toUpperCase());
   });
 });
