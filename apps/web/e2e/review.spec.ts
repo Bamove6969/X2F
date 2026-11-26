@@ -149,6 +149,7 @@ async function stub(page: Page, o: { completedTrades?: number } = {}): Promise<S
   await page.route('**/v1/offers?*', json([B.offer]));
   await page.route('**/v1/wallets', json([...B.wallets]));
   await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0' }));
   await page.route('**/v1/offers/*/take', (r) => {
     const body = r.request().postDataJSON() as { centsPerXmr: string; fiatCents: string };
     seen.takes.push(body);

@@ -883,7 +883,7 @@ for (const v of PHONES) {
     await expect(page.locator('.x2f-sign__pad')).toHaveCount(0);
     // Design 9 Nov (p11-15): the intro and the button's words.
     await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
-      "Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll highlight what changed to make it easy to spot, and prompt you to review and agree before continuing.",
+      "Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll show you a short summary of what changed, and prompt you to review and agree before continuing.",
     );
     await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
     await expect(page.locator('#terms-sign-help')).toHaveCount(0);
@@ -921,7 +921,7 @@ test.describe('review fix round', () => {
     await stubApi(page);
     await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
     await acceptTerms(page);
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await pickNames(page, 'lumen.kai', 'lumen-login-7');
     await page.click('[data-part="method-continue"]');
     const pub = page.locator('#pub');
     await expect(pub).toBeVisible();
