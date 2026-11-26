@@ -10,7 +10,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isTotpCode } from '../src/screens/auth/loginRules.js';
 import { POST_MISSING, PostOffer, missingParts, shownErrors } from '../src/screens/PostOffer.js';
 import { DEFAULT_FORM, POST_COPY, validate, type FormState } from '../src/screens/post/offerForm.js';
-import { AddPassword } from '../src/screens/settings/Methods.js';
 import { fire, render } from './render.js';
 
 afterEach(() => {
@@ -116,22 +115,5 @@ describe('Post offer: which problems show, and the hint by the dimmed button', (
     fire(post(), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(posted).toHaveLength(1);
-  });
-});
-
-describe('Settings, Set a password: Save waits for the password rules', () => {
-  it('is disabled until the rules are met, with the rules as quiet help once something is typed', () => {
-    const { host } = render(<AddPassword prove={async () => 'token'} onDone={() => undefined} onCancel={() => undefined} />);
-    const save = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Save')!;
-    const input = host.querySelector<HTMLInputElement>('#new-password')!;
-    expect(save().disabled).toBe(true);
-    expect(host.querySelector('[data-part="password-rules"]')).toBeNull();
-    type(input, 'short');
-    expect(save().disabled).toBe(true);
-    expect(host.querySelector('[data-part="password-rules"]')?.textContent).toBe('Use at least 10 characters, with upper and lower case letters, a number and a symbol.');
-    expect(input.getAttribute('aria-describedby')).toBe('new-password-rules');
-    type(input, 'Another-Horse-8');
-    expect(save().disabled).toBe(false);
-    expect(host.querySelector('[data-part="password-rules"]')).toBeNull();
   });
 });

@@ -1,5 +1,7 @@
 # Owner's hold model (relayed by the lead, 1–2 Nov 2026). It replaces earlier hold ideas.
 
+> **Superseded (owner, 26 Nov 2026): no passwords, no 24-hour hold.** Passwords (and the leaked-password list and password pepper), the 24-hour hold, session strength and staged changes are removed. An account holds at least two kinds of login method among passkey, security key, PGP key and authenticator app (at most one authenticator app; it counts as a kind but never logs in alone); recovery codes do not count. A recovery-code login is a full session that may change every method for 1 hour, with no hold. Where this document says otherwise, this note wins.
+
 ## What starts a 24 h hold
 Only these two things:
 1. **A submitted change from a password-only session.** The change is to login methods or payout wallets.

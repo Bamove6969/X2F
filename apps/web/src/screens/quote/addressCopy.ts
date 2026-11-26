@@ -1,8 +1,8 @@
 // Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md) and his answers of 17 Nov: the words above the wallet list on
 // the quote (the screen where the amount is entered), and on the new-address sheet. The account's
 // rating comes from the API alone (GET /v1/account/me `securityRating`, apps/api/src/auth/rating.ts);
-// the screen only chooses which words to show and whether to offer the inline add. The API decides
-// whether a new address works at once, waits 24 hours or is staged.
+// the screen only chooses which words to show and whether to offer the inline add. Owner, 26 Nov
+// 2026: no passwords and no waits, so a new address works as soon as it is confirmed.
 //
 // COPY-UNSIGNED: every string in this file (owner note #6 asks for the message; the owner signs the
 // final words, docs/trade-wallet-note6.md Q8).
@@ -27,13 +27,10 @@ export function addressRuleText(rating: SecurityRating | null): string {
   if (rating === 'high') {
     return 'Your account is rated highly secure. Pick a saved address, or add a new one right here for the trade you are starting. A new address can be for this trade only or saved for future trades.';
   }
-  if (rating === 'medium') {
-    return 'Your account is rated medium: a password with an authenticator app. Pick a saved address. New addresses are added in Settings, under Your wallets, and start working 24 hours after you add them.';
+  if (rating === 'medium' || rating === 'weak') {
+    return `Your account is rated ${rating}. Pick a saved address. New addresses are added in Settings, under Your wallets.`;
   }
-  if (rating === 'weak') {
-    return 'Your account is rated weak: it logs in with a password and no other method. Pick a saved address. New addresses are added in Settings, under Your wallets, and start working 24 hours after you add them.';
-  }
-  return 'To use a different XMR address for each trade: a highly secure account picks a saved address or adds a new one for the trade it is starting. Any other account adds new addresses in Settings, where they start working 24 hours after they are added.';
+  return 'To use a different XMR address for each trade: a highly secure account picks a saved address or adds a new one for the trade it is starting. Any other account adds new addresses in Settings, under Your wallets.';
 }
 
 /**
@@ -46,9 +43,9 @@ export const ADDRESS_TIP = {
   label: 'Why is there no option to add a new address here?',
   body: (rating: 'weak' | 'medium') =>
     `Adding a new address while you start a trade depends on your account's security rating, and yours is rated ${rating}. You have two options:`,
-  settings: 'Add the new address in Settings, under Your wallets, and wait 24 hours for it to become active.',
+  settings: 'Add the new address in Settings, under Your wallets.',
   settingsLink: 'Go to Your wallets',
-  stronger: 'Or raise the security of your account with a passkey, a security key or a PGP key. Then there is no wait, and you can add new addresses right when you start a trade.',
+  stronger: 'Or raise the security of your account with a passkey, a security key or a PGP key. Then you can add new addresses right when you start a trade.',
   strongerLink: 'Add a login method',
 } as const;
 
@@ -66,7 +63,7 @@ export const NEW_ADDRESS = {
   saved: 'Future trades too',
   savedNote: 'It stays in Your wallets.',
   save: 'Save address',
-  /** A saved address that waits (confirmed with a password): when it starts working. */
+  /** A saved address the API reports as not usable yet: when it starts working. */
   waits: (when: string) => `Saved. This address starts working from ${when}, so pick a saved address for this trade.`,
   /** The API answered with an address other than the one typed: nothing is picked. */
   mismatch: 'X2F answered with a different address from the one you typed, so it was not picked for this trade. Check Your wallets in Settings before you trade.',

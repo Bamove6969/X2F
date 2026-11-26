@@ -43,7 +43,7 @@ export function codesPage(secrets: Record<string, string>, nowMs: number): strin
     `<title>X2F demo codes</title><style>${STYLE}</style>${NOTES_TAG}<script src="/__demo/codes.js" defer></script></head>`,
     `<body data-screen="demo-codes" data-refresh-at="${nowMs + Math.min(left, 10) * 1000}">`,
     '<h1>Demo authenticator codes</h1>',
-    '<p>Regtest demo only (fake money). Password for every account: Demo-Monero-2026!</p>',
+    '<p>Regtest demo only (fake money). An authenticator code never logs in alone; log in at /__demo/login.</p>',
     rows === '' ? '<p>No codes: is the demo seeded?</p>' : `<table>${rows}</table>`,
     `<p>New codes in ${left} s (this page refreshes itself). Each code works once.</p>`,
     '</body></html>',

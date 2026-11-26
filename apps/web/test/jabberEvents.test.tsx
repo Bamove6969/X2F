@@ -69,7 +69,7 @@ describe('JabberEventsScreen', () => {
   it('a refusal shows the shared words and the box keeps what the server has', async () => {
     api.getJabber.mockResolvedValue(ON);
     api.getJabberEvents.mockResolvedValue(ALL);
-    api.setJabberEvent.mockRejectedValue(new AuthApiError(403, 'weak-session', {}));
+    api.setJabberEvent.mockRejectedValue(new AuthApiError(403, 'forbidden', {}));
     const { host } = render(<MemoryRouter><JabberEventsScreen /></MemoryRouter>);
     await flush();
     act(() => box(host, 'trade-attention')!.click());

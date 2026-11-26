@@ -41,8 +41,6 @@ function listen(s: Server): Promise<number> {
   return new Promise((resolve) => s.listen(0, '127.0.0.1', () => resolve((s.address() as AddressInfo).port)));
 }
 
-let passwordSteps: string[];
-
 async function start(rateMax = 1000): Promise<void> {
   const api = http.createServer((req, res) => {
     apiHits.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers });
@@ -60,11 +58,7 @@ async function start(rateMax = 1000): Promise<void> {
   base = `http://${host}`;
   const origins = new Set([base, 'https://demo.example']);
   const demo = createNotesHandler({ files, origins, clientJs: Buffer.from('// notes'), rateMax, seed });
-  const passwordStep = async (id: string): Promise<void> => {
-    await new Promise((r) => setTimeout(r, 20));
-    passwordSteps.push(id);
-  };
-  const gw = createGateway({ api: apiPort, relay: apiPort, node: apiPort, primary: base, origins, demo, passwordStep });
+  const gw = createGateway({ api: apiPort, relay: apiPort, node: apiPort, primary: base, origins, demo });
   const web = http.createServer(gw.handle(gw.web));
   web.on('upgrade', gw.upgrade(gw.web));
   servers.push(web);
@@ -104,7 +98,6 @@ beforeEach(async () => {
     },
   });
   servers = [];
-  passwordSteps = [];
   apiHits = [];
   upgrades = [];
   apiAnswer = (_req, res) => {
@@ -410,42 +403,6 @@ describe('threads', () => {
     expect(await screen()).toHaveLength(1);
   });
 });
-
-describe('demo gateway: the door for the seeded accounts (door.ts)', () => {
-  const PENDING = '128e5942-d223-45be-aa77-055a7ffdd0d8';
-  const login = () => fetch(`${base}/v1/login/password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: '{}' });
-
-  it('hands a second-factor pendingId to the hook before the browser gets the answer, unchanged', async () => {
-    const answer = JSON.stringify({ status: 'second-factor', pendingId: PENDING, needs: ['totp'] });
-    apiAnswer = (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', 'set-cookie': 'a=b' });
-      res.end(gzipSync(answer));
-    };
-    await start();
-    const r = await login();
-    expect(passwordSteps).toEqual([PENDING]);
-    expect(r.status).toBe(200);
-    expect(r.headers.get('set-cookie')).toBe('a=b');
-    expect(await r.text()).toBe(answer);
-  });
-
-  it('calls nothing for any other answer or route', async () => {
-    apiAnswer = (req, res) => {
-      res.writeHead(req.url === '/v1/login/password' ? 403 : 200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ status: 'second-factor', pendingId: PENDING }));
-    };
-    await start();
-    expect((await login()).status).toBe(403);
-    await fetch(`${base}/v1/login/second-factor`, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: '{}' });
-    apiAnswer = (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok' }));
-    };
-    expect(await (await login()).json()).toEqual({ status: 'ok' });
-    expect(passwordSteps).toEqual([]);
-  });
-});
-
 
 describe('builds on where the earlier demos left off (Job 14)', () => {
   const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;

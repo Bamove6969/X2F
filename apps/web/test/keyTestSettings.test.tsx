@@ -9,15 +9,13 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Methods } from '../src/screens/settings/Methods.js';
 import { KEY_TEST_COPY, keyTestErrorText } from '../src/screens/auth/KeyTest.js';
-import { KEY_TEST_RECOVERY } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
-let staged: unknown = undefined;
 const tested: string[] = [];
 let testResult: () => Promise<void> = async () => undefined;
 vi.mock('@x2f/auth-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@x2f/auth-client')>()),
-  addWebAuthnKeyWithId: async (_api: unknown, kind: string) => ({ staged, credentialId: `CRED-${kind}` }),
+  addWebAuthnKeyWithId: async (_api: unknown, kind: string) => ({ credentialId: `CRED-${kind}` }),
   testWebAuthnKey: async (_api: unknown, credentialId: string) => {
     tested.push(credentialId);
     return testResult();
@@ -33,7 +31,6 @@ let list: Entry[] = [];
 const renames: unknown[] = [];
 
 beforeEach(() => {
-  staged = undefined;
   tested.length = 0;
   renames.length = 0;
   testResult = async () => undefined;
@@ -127,8 +124,8 @@ describe('note #94 in Settings: test a security key right after adding it', () =
     expect(r.textContent).toMatch(/didn't respond/);
   });
 
-  it('a passkey is saved and named too, with no test; a staged security key is neither named nor tested', async () => {
-    let host = await shown();
+  it('a passkey is saved and named too, with no test', async () => {
+    const host = await shown();
     await addAndName(host, 'passkey');
     expect(host.querySelector('[data-part="key-saved"]')!.textContent).toBe('Passkey saved');
     expect(renames).toEqual([{ credentialId: 'CRED-passkey', label: 'Passkey 1' }]);
@@ -136,12 +133,6 @@ describe('note #94 in Settings: test a security key right after adding it', () =
     // Done closes it.
     click(host.querySelector('[data-part="key-continue"]'));
     expect(host.querySelector('[data-part="key-just-added"]')).toBeNull();
-    staged = { status: 'staged', changeId: 'c1' };
-    host = await shown();
-    click(host.querySelector('[data-add="security-key"]'));
-    await flush();
-    expect(host.querySelector('[data-part="key-test"]')).toBeNull();
-    expect(host.querySelector('[data-part="key-name-input"]')).toBeNull();
   });
 
   it('security review of wip/lead-seckey-fix: a list that cannot be read after the add still shows the saved key to name', async () => {
@@ -162,8 +153,5 @@ describe('note #94 in Settings: test a security key right after adding it', () =
     expect(keyTestErrorText(new KeyTestError('other-key'))).toBe(KEY_TEST_COPY.otherKey);
     expect(keyTestErrorText(new KeyTestError('not-listed'))).toBe(KEY_TEST_COPY.notListed);
     expect(keyTestErrorText(new Error('?'))).toBe(KEY_TEST_COPY.failed);
-    // Review L1: a backup (recovery) session cannot run the test: said plainly.
-    const { AuthApiError } = await import('@x2f/auth-client');
-    expect(keyTestErrorText(new AuthApiError(403, 'recovery-session'))).toBe(KEY_TEST_RECOVERY);
   });
 });

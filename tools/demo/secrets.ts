@@ -2,7 +2,7 @@
  * DEMO ONLY: makes a fresh set of throwaway secrets for one demo run into .demo/secrets (gitignored,
  * chmod 600). Nothing here is a real secret: every key is random per `npm run demo` and dies with it.
  */
-import { createECDH, createHash, randomBytes } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sodium from 'libsodium-wrappers';
@@ -12,7 +12,6 @@ import { SECRETS_DIR } from './config.js';
 
 export interface DemoSecrets {
   serverKey: string;
-  passwordPeppers: string;
   recoveryCodeKeys: string;
   totpKeys: string;
   loginNameKeys: string;
@@ -20,7 +19,6 @@ export interface DemoSecrets {
   vapidPrivate: string;
   pgpKeyPath: string;
   pgpFingerprint: string;
-  leakedListPath: string;
   modSigningPublic: string;
   modSigningSecret: string;
   modKeystoreKey: string;
@@ -67,14 +65,9 @@ export async function makeSecrets(): Promise<DemoSecrets> {
   const pgpKeyPath = join(SECRETS_DIR, 'pgp-signing.asc');
   writeSecret(pgpKeyPath, privateKey);
 
-  // The leaked-password list: sorted 20-byte SHA-1 records; one entry is enough for the demo.
-  const leakedListPath = join(SECRETS_DIR, 'leaked.bin');
-  writeSecret(leakedListPath, createHash('sha1').update('password').digest());
-
   const mod = sodium.crypto_sign_keypair();
   const s: DemoSecrets = {
     serverKey: key32(),
-    passwordPeppers: ring(),
     recoveryCodeKeys: ring(),
     totpKeys: ring(),
     loginNameKeys: ring(),
@@ -82,7 +75,6 @@ export async function makeSecrets(): Promise<DemoSecrets> {
     vapidPrivate,
     pgpKeyPath,
     pgpFingerprint: pgpKey.getFingerprint().toLowerCase(),
-    leakedListPath,
     modSigningPublic: sodium.to_hex(mod.publicKey),
     modSigningSecret: Buffer.from(mod.privateKey).toString('base64'),
     modKeystoreKey: key32(),

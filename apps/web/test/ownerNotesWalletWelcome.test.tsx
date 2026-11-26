@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Owner demo notes 12 Nov #32 and 16 Nov #96 (/setup/wallet: the wallet names are a recommendation
 // list, not buttons, then one address field; the Edge tip names Edge's real setting) and 16 Nov #97
-// (/setup/welcome: the security rating, the "Username and password" line, a link back to each
+// (/setup/welcome: the security rating, the "Username" line, a link back to each
 // setting). COPY-UNSIGNED.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -15,7 +15,7 @@ import { SUGGESTED_WALLETS, WALLET_COPY, Wallet } from '../src/screens/setup/Wal
 import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, leavePath, methodRows, securityRating, startTradingPath } from '../src/screens/setup/Welcome.js';
 import { render } from './render.js';
 
-const me = vi.hoisted(() => ({ current: { displayName: 'Lumen.K', methods: ['password'] } as Record<string, unknown> }));
+const me = vi.hoisted(() => ({ current: { displayName: 'Lumen.K', methods: ['pgp'] } as Record<string, unknown> }));
 vi.mock('../src/session/useSession.js', () => ({
   useSession: () => ({ status: 'signed-in', me: me.current }),
   refreshSession: () => undefined,
@@ -152,24 +152,23 @@ describe('/setup/wallet (owner #32, #96)', () => {
 
 describe('securityRating (owner #97)', () => {
   it('uses the API rating when it sends one', () => {
-    expect(securityRating({ methods: ['password'], securityRating: 'high' }, fresh)).toBe('high');
+    expect(securityRating({ methods: ['totp'], securityRating: 'high' }, fresh)).toBe('high');
     expect(securityRating({ methods: ['pgp'], securityRating: 'weak' }, fresh)).toBe('weak');
   });
 
-  it("otherwise applies the API's three rules (apps/api/src/auth/rating.ts on main) to the methods", () => {
+  it("otherwise applies the API's rules (apps/api/src/auth/rating.ts on main) to the methods", () => {
     expect(securityRating({ methods: ['pgp'] }, fresh)).toBe('high');
-    expect(securityRating({ methods: ['passkey', 'password'] }, fresh)).toBe('high');
+    expect(securityRating({ methods: ['passkey', 'totp'] }, fresh)).toBe('high');
     expect(securityRating({ methods: ['security-key'] }, fresh)).toBe('high');
-    expect(securityRating({ methods: ['password', 'totp'] }, fresh)).toBe('medium');
     expect(securityRating({ methods: ['totp'] }, fresh)).toBe('weak');
-    expect(securityRating({ methods: ['password'] }, fresh)).toBe('weak');
-    expect(securityRating({ methods: ['password', 'recovery-codes'] }, fresh)).toBe('weak');
+    expect(securityRating({ methods: ['totp', 'recovery-codes'] }, fresh)).toBe('weak');
+    // Owner, 26 Nov 2026: medium is never worked out here (it was a password with the app); only the API could send it.
+    expect(securityRating({ methods: ['pgp'], securityRating: 'medium' }, fresh)).toBe('medium');
     expect(securityRating({ methods: [] }, fresh)).toBe('weak');
   });
 
   it('counts what this setup just did before the account is read again', () => {
-    expect(securityRating({ methods: [] }, { registered: true, method: 'password', backup: 'security-key' })).toBe('high');
-    expect(securityRating({ methods: [] }, { registered: true, method: 'password', backup: 'recovery-codes' })).toBe('weak');
+    expect(securityRating({ methods: [] }, { registered: true, method: 'pgp', backup: 'security-key' })).toBe('high');
   });
 });
 
@@ -179,8 +178,8 @@ describe('/setup/welcome (owner #97)', () => {
   ];
 
   let posts: string[] = [];
-  async function showWelcome(methods: string[], wallets: WalletEntry[], state: Partial<SetupState> = {}) {
-    me.current = { displayName: 'Lumen.K', methods };
+  async function showWelcome(methods: string[], wallets: WalletEntry[], state: Partial<SetupState> = {}, securityRating?: string) {
+    me.current = { displayName: 'Lumen.K', methods, ...(securityRating !== undefined ? { securityRating } : {}) };
     posts = [];
     vi.stubGlobal('fetch', async (u: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
@@ -194,14 +193,15 @@ describe('/setup/welcome (owner #97)', () => {
     return host;
   }
 
-  it('a password-only account: rated Weak, the way to raise it', async () => {
-    const host = await showWelcome(['password', 'recovery-codes'], walletList());
+  it('an account with no key: rated Weak, the way to raise it', async () => {
+    const host = await showWelcome(['totp', 'recovery-codes'], walletList());
     const rating = host.querySelector('[data-part="security-rating"]')!;
     expect(rating.getAttribute('data-rating')).toBe('weak');
     expect(rating.textContent).toContain(`${WELCOME_COPY.verdict} ${RATING_WORDS.weak}`);
     expect(rating.textContent).toContain(WELCOME_COPY.ratingRaise);
     expect(host.querySelector('[data-part="rating-link"]')!.getAttribute('href')).toBe('/settings/security');
-    expect(host.querySelector(`[data-method="password"] [data-part="method-state"]`)!.textContent).toBe("Set up");
+    expect(host.querySelector(`[data-method="totp"] [data-part="method-state"]`)!.textContent).toBe("Set up");
+    expect(host.querySelector('[data-method="password"]')).toBeNull();
   });
 
   it('owner #165: the heading is "Welcome to" and the big X2F logo (no comma), then the name with a comma, then the lead', async () => {
@@ -236,11 +236,11 @@ describe('/setup/welcome (owner #97)', () => {
     });
     for (const [level, methods, word, token] of [
       ['high', ['pgp', 'recovery-codes'], 'Highly secure', '--x2f-good'],
-      ['medium', ['password', 'totp', 'recovery-codes'], RATING_WORDS.medium, '--x2f-caution'],
-      ['weak', ['password', 'recovery-codes'], RATING_WORDS.weak, '--x2f-danger'],
+      ['medium', ['pgp', 'recovery-codes'], RATING_WORDS.medium, '--x2f-caution'],
+      ['weak', ['totp', 'recovery-codes'], RATING_WORDS.weak, '--x2f-danger'],
     ] as const) {
       it(`${level}: "${word}" in var(${token}), never the button's Monero orange`, async () => {
-        const host = await showWelcome([...methods], walletList());
+        const host = await showWelcome([...methods], walletList(), {}, level);
         const section = host.querySelector('[data-part="security-rating"]')!;
         expect(section.getAttribute('data-rating')).toBe(level);
         expect(section.querySelector('[data-part="rating-word"]')!.textContent).toBe(word);
@@ -267,8 +267,8 @@ describe('/setup/welcome (owner #97)', () => {
         link: r.querySelector('a')!.textContent,
       }));
 
-    it('lists all six under the bold heading, set up or not in words, check or cross, Change or Add', async () => {
-      const host = await showWelcome(['password', 'totp', 'recovery-codes'], walletList());
+    it('lists all five under the bold heading, set up or not in words, check or cross, Change or Add', async () => {
+      const host = await showWelcome(['totp', 'recovery-codes'], walletList());
       expect(host.querySelector('#welcome-logins-title')!.textContent).toBe('Secure X2F login methods');
       expect(host.querySelector('#welcome-logins-title')!.tagName).toBe('H2');
       expect(rowsOf(host)).toEqual([
@@ -276,7 +276,6 @@ describe('/setup/welcome (owner #97)', () => {
         { method: 'security-key', set: 'false', text: 'Security key / Not set up', mark: 'mark-unset', link: 'Add' },
         { method: 'passkey', set: 'false', text: 'Passkey / Not set up', mark: 'mark-unset', link: 'Add' },
         { method: 'totp', set: 'true', text: 'Authenticator app / Set up', mark: 'mark-set', link: 'Change' },
-        { method: 'password', set: 'true', text: 'Password / Set up', mark: 'mark-set', link: 'Change' },
         { method: 'recovery-codes', set: 'true', text: 'Recovery code / Set up', mark: 'mark-set', link: 'Change' },
       ]);
       // The marks are pictures for the eye only: the words carry it for a screen reader.
@@ -290,11 +289,11 @@ describe('/setup/welcome (owner #97)', () => {
 
     for (const [level, methods, word] of [
       ['high', ['pgp', 'recovery-codes'], 'Highly secure'],
-      ['medium', ['password', 'totp', 'recovery-codes'], 'Medium'],
-      ['weak', ['password', 'recovery-codes'], 'Weak'],
+      ['medium', ['pgp', 'recovery-codes'], 'Medium'],
+      ['weak', ['totp', 'recovery-codes'], 'Weak'],
     ] as const) {
       it(`the verdict is the one rating line: "You have achieved level: ${word}"`, async () => {
-        const host = await showWelcome([...methods], walletList());
+        const host = await showWelcome([...methods], walletList(), {}, level);
         const lines = host.querySelectorAll('[data-part="security-rating"]');
         expect(lines).toHaveLength(1);
         expect(lines[0]!.getAttribute('data-rating')).toBe(level);
@@ -303,8 +302,8 @@ describe('/setup/welcome (owner #97)', () => {
     }
 
     it('right after sign-up each method link leaves the way Start trading does (owner G25)', async () => {
-      const host = await showWelcome(['password'], walletList(), { registered: true, method: 'password', backup: 'recovery-codes' });
-      for (const id of ['pgp', 'security-key', 'passkey', 'totp', 'password', 'recovery-codes']) {
+      const host = await showWelcome(['totp'], walletList(), { registered: true, method: 'pgp', backup: 'recovery-codes' });
+      for (const id of ['pgp', 'security-key', 'passkey', 'totp', 'recovery-codes']) {
         const target = id === 'recovery-codes' ? WELCOME_LINKS.recovery : WELCOME_LINKS.login;
         expect(host.querySelector(`[data-part="method-link-${id}"]`)!.getAttribute('href'), id).toBe(leavePath({ registered: true, target }).to);
       }
@@ -323,10 +322,10 @@ describe('/setup/welcome (owner #97)', () => {
   });
 
   it('each item links back to its setting: Change once done, Add before', async () => {
-    let host = await showWelcome(['password', 'totp', 'recovery-codes'], walletList());
-    expect(host.querySelector('[data-part="rating-word"]')!.textContent).toBe('Medium');
+    let host = await showWelcome(['totp', 'recovery-codes'], walletList());
+    expect(host.querySelector('[data-part="rating-word"]')!.textContent).toBe('Weak');
     for (const [part, href] of [
-      ['method-link-password', WELCOME_LINKS.login],
+      ['method-link-totp', WELCOME_LINKS.login],
       ['method-link-recovery-codes', WELCOME_LINKS.recovery],
       ['change-wallet', WELCOME_LINKS.wallet],
     ] as const) {
@@ -346,24 +345,24 @@ describe('/setup/welcome (owner #97)', () => {
   });
 
   it('someone already logged in (setup opened only for a wallet) follows a link straight there, still logged in', async () => {
-    const host = await showWelcome(['password'], walletList(), { registered: false });
-    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-password"]')!.click());
+    const host = await showWelcome(['totp'], walletList(), { registered: false });
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-totp"]')!.click());
     await settle();
     expect(where(host)).toBe('/settings/security');
     expect(posts.filter((u) => u.includes('/v1/logout'))).toEqual([]);
   });
 
   it('right after sign-up a link leaves the way Start trading does (owner G25): log out, Log in, then the setting', async () => {
-    const host = await showWelcome(['password'], walletList(), { registered: true, method: 'password', backup: 'recovery-codes' });
+    const host = await showWelcome(['totp'], walletList(), { registered: true, method: 'pgp', backup: 'recovery-codes' }, 'weak');
     for (const [part, target] of [
       ['rating-link', WELCOME_LINKS.rating],
-      ['method-link-password', WELCOME_LINKS.login],
+      ['method-link-totp', WELCOME_LINKS.login],
       ['method-link-recovery-codes', WELCOME_LINKS.recovery],
       ['change-wallet', WELCOME_LINKS.wallet],
     ] as const) {
       expect(host.querySelector(`[data-part="${part}"]`)!.getAttribute('href'), part).toBe(`/login?returnTo=${encodeURIComponent(target)}`);
     }
-    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-password"]')!.click());
+    act(() => host.querySelector<HTMLAnchorElement>('[data-part="method-link-totp"]')!.click());
     await settle();
     expect(posts.filter((u) => u.includes('/v1/logout'))).toHaveLength(1);
     expect(where(host)).toBe(`/login?returnTo=${encodeURIComponent('/settings/security')}`);

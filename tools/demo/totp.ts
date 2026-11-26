@@ -1,7 +1,8 @@
 /**
- * DEMO ONLY: authenticator codes for the demo accounts (RFC 6238: SHA-1, 6 digits, 30 s), so a demo
- * login is "password + authenticator code", a strong login that never waits 24 hours (R42). The
- * secrets are the throwaway ones the seeder enrolled, in .demo/secrets/totp.json.
+ * DEMO ONLY: authenticator codes for the demo accounts (RFC 6238: SHA-1, 6 digits, 30 s). Each demo
+ * account's authenticator app is its second kind of login method (owner, 26 Nov 2026: at least two
+ * kinds; an authenticator app never logs in alone). The secrets are the throwaway ones the seeder
+ * enrolled, in .demo/secrets/totp.json.
  */
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';

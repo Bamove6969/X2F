@@ -8,7 +8,6 @@ import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerRespon
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
-import { pendingIdOf } from './door-parse.js';
 import { NOTES_TAG } from './page-csp.js';
 import { fillSelf, forwardedHttps, isLoopbackPeer, isSelfOrigin, selfOriginOf } from './self-origin.js';
 import { STAFF_SESSION_COOKIE, withoutCookies } from './staff-gateway-core.js';
@@ -39,38 +38,10 @@ export interface GatewayConfig {
   /** Answers everything under /__demo/ on the web origin. */
   demo: (req: IncomingMessage, res: ServerResponse) => void;
   /**
-   * Called with the `pendingId` of a password login step that answered `second-factor`, before the
-   * browser gets that answer (door.ts: the seeded accounts' way in from a fresh browser).
-   */
-  passwordStep?: (pendingId: string) => Promise<void>;
-  /**
    * Awaited before a request goes to the API, with the request's own https origin when it is not
    * one of `origins` (else null) and whether it is a page load (rp-adopt.ts).
    */
   beforeApi?: (selfOrigin: string | null, page: boolean) => Promise<void>;
-}
-
-const PASSWORD_STEP = '/v1/login/password';
-
-/** Holds a password step's JSON answer, gives its pendingId to `hook`, then passes it on unchanged. */
-function holdPasswordStep(r: IncomingMessage, res: ServerResponse, out: IncomingHttpHeaders, hook: (pendingId: string) => Promise<void>, pendingIdOf: (body: Buffer) => string | null): void {
-  const chunks: Buffer[] = [];
-  r.on('data', (c: Buffer) => chunks.push(c));
-  r.on('error', () => res.destroy());
-  r.on('end', () => {
-    const raw = Buffer.concat(chunks);
-    const plain = decode(raw, out['content-encoding']);
-    const id = plain === null ? null : pendingIdOf(plain);
-    const send = (): void => {
-      res.writeHead(r.statusCode ?? 502, out);
-      res.end(raw);
-    };
-    if (id === null) return send();
-    hook(id).then(send, (e: unknown) => {
-      console.log(JSON.stringify({ reason: 'door-failed', error: (e as Error).message }));
-      send();
-    });
-  });
 }
 
 export function isDemoUrl(url: string): boolean {
@@ -259,9 +230,6 @@ export function createGateway(cfg: GatewayConfig): {
         const csp = out['content-security-policy'];
         if (self !== null && typeof csp === 'string') out['content-security-policy'] = fillSelf(csp, self);
         if (fill && status === 200) return fillInto(r, res, out, self);
-        if (t.api && cfg.passwordStep && req.method === 'POST' && t.path.split('?')[0] === PASSWORD_STEP && status === 200) {
-          return holdPasswordStep(r, res, out, cfg.passwordStep, pendingIdOf);
-        }
         if (t.api && isHtml(out) && status !== 204 && status !== 304) {
           if (req.method === 'GET') return injectInto(r, res, out);
           if (req.method === 'HEAD') {

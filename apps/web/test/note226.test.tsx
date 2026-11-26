@@ -12,7 +12,6 @@ import { FIRST_WALLET_LABEL, WALLET_COPY, Wallet, setupWalletLabel } from '../sr
 import { walletName } from '../src/screens/setup/Welcome.js';
 import { RenameSheet, renameReady } from '../src/screens/WalletRename.js';
 import { RENAME, WALLET_NAME_HELP } from '../src/screens/walletsCopy.js';
-import { WALLET_RENAME_WEAK } from '../src/ui/cantDoCodes.js';
 import { forgetTypedAddresses } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
@@ -161,7 +160,7 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
 
   it('starts on the current name with Save disabled, sends only the trimmed label, and reports it back', async () => {
     const onRenamed = vi.fn();
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} onRefused={vi.fn()} />);
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} />);
     const input = document.querySelector<HTMLInputElement>('#wallet-rename')!;
     const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
     expect(input.value).toBe('Wallet 1');
@@ -181,7 +180,7 @@ describe('the Rename sheet in Settings → Your wallets (note #226)', () => {
   it('a wallet gone meanwhile (404) says so in the sheet and reports nothing', async () => {
     reply = () => json(404, { error: 'not-found' });
     const onRenamed = vi.fn();
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} onRefused={vi.fn()} />);
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={onRenamed} />);
     type('#wallet-rename', 'Savings');
     fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
     await settle(() => document.querySelector('[data-part="wallet-rename-error"]') !== null);
@@ -199,7 +198,7 @@ describe('the Welcome checklist shows the name (note #226)', () => {
   });
 });
 
-describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names and weak sessions', () => {
+describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names', () => {
   it('the setup field says why a spoofing name is refused, and holds Finish setup back', () => {
     showSetup();
     type('#xmr-payout', TYPED);
@@ -215,7 +214,7 @@ describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names 
   });
 
   it('the rename sheet keeps Save disabled for a spoofing name and says why', () => {
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={vi.fn()} />);
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} />);
     const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
     for (const [typed, why] of [['Wallet 1 · Default', 'separator'], ['Usable', 'status'], ['abc123x', 'address']] as const) {
       type('#wallet-rename', typed);
@@ -224,15 +223,9 @@ describe('security review of wip/lead-note-226 (Medium 1 and 2): spoofing names 
     }
   });
 
-  it('403 weak-session is handed to the screen for CantDoThat; 429 slow-down says the day is used up', async () => {
-    reply = () => json(403, { error: 'weak-session' });
-    const onRefused = vi.fn();
-    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={onRefused} />);
+  it('429 slow-down says the day is used up', async () => {
+    render(<RenameSheet wallet={WALLET} onClose={vi.fn()} onRenamed={vi.fn()} />);
     type('#wallet-rename', 'Savings');
-    fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
-    await settle(() => onRefused.mock.calls.length > 0);
-    expect(onRefused).toHaveBeenCalledWith({ code: 'weak-session', text: WALLET_RENAME_WEAK });
-
     reply = () => json(429, { error: 'slow-down', retryAfterSeconds: 3600 });
     fire(document.querySelector('[data-part="wallet-rename-save"]')!, new MouseEvent('click', { bubbles: true }));
     await settle(() => document.querySelector('[data-part="wallet-rename-error"]') !== null);
@@ -255,7 +248,7 @@ describe('verification review of wip/lead-note-226: a name may not spell the end
 
   it('rename: the end of any listed address, and its fullwidth form, keep Save disabled', () => {
     const other = `4${'9'.repeat(88)}kfzxqm`;
-    render(<RenameSheet wallet={WALLET} addresses={[TYPED, other]} onClose={vi.fn()} onRenamed={vi.fn()} onRefused={vi.fn()} />);
+    render(<RenameSheet wallet={WALLET} addresses={[TYPED, other]} onClose={vi.fn()} onRenamed={vi.fn()} />);
     const save = () => document.querySelector<HTMLButtonElement>('[data-part="wallet-rename-save"]')!;
     for (const typed of ['Savings kfzxqm', 'ｋｆｚｘｑ', 'AAAAA1']) {
       type('#wallet-rename', typed);

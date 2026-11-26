@@ -1,12 +1,13 @@
 /**
- * DEMO ONLY: seeds the demo traders and offers through the real API (sign-up with a password,
- * first payout wallet, offers), exactly as a browser would. Run by demo.ts after the stack is up.
+ * DEMO ONLY: seeds the demo traders and offers through the real API (sign-up with a throwaway PGP
+ * key, an authenticator app as the second kind of login method, first payout wallet, offers),
+ * exactly as a browser would. Run by demo.ts after the stack is up.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_DIR, DEMO_PASSWORD, ENV_FILE } from './config.js';
+import { DEMO_DIR, ENV_FILE } from './config.js';
 import { SEED_SUMMARY_FILE } from './guide-page.js';
-import { SEEDED_FILE } from './door.js';
+import { TRADERS_FILE, type TraderSecret } from './door.js';
 import { assertDemo } from './guard.js';
 import { throwawayAddress } from './secrets.js';
 import { stepOf, TOTP_FILE, totpCode } from './totp.js';
@@ -18,7 +19,7 @@ import { NEW_NAME_MIN, checkDisplayName, checkLoginName } from '../../packages/a
 import { loginTag } from '../../apps/api/src/accounts.js';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { applyEvent } from '../../apps/api/src/trades/store.js';
-import { newPgp, pgpCode } from '../regtest/e2e/staffClient.js';
+import { newPgp, pgpCode, type PgpPair } from '../regtest/e2e/staffClient.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
 await assertDemo(process.env, process.env.MONERO_DAEMON_URI ?? '');
@@ -147,16 +148,26 @@ async function restoreNames(db: pg.Client, p: Person): Promise<void> {
   }
 }
 
+/**
+ * Owner, 26 Nov 2026 (no passwords): an account holds at least two kinds of login method among
+ * passkey, security key, PGP key and authenticator app, or its sessions are setup-only. The seed
+ * signs up with a throwaway PGP key and adds an authenticator app in sign-up's window (no confirm
+ * needed): two kinds. The PGP key is the one that logs in (an authenticator app never logs in
+ * alone); the gateway's /__demo/login uses it (door.ts).
+ */
 async function signUp(p: Person): Promise<DemoClient> {
   const c = new DemoClient(ORIGIN);
   await c.ok('GET', '/v1/site');
-  await c.ok('POST', '/v1/register/password', {
-    // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
-    displayName: seedName(p.displayName), loginName: seedName(p.loginName), password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
+  const key = await newPgp(`${p.displayName} (demo, not real)`);
+  const s = await c.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/register/pgp/start', {
+    displayName: seedName(p.displayName), loginName: seedName(p.loginName), publicKey: key.publicKey,
   });
+  await c.ok('POST', '/v1/register/pgp/finish', {
+    // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
+    challengeId: s.challengeId, code: await pgpCode(s.encryptedMessage, key), deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
+  });
+  pgp[p.loginName] = key;
   await c.ok('POST', '/v1/wallets', { app: 'cake', label: 'Demo wallet', address: await throwawayAddress() });
-  // An authenticator (during sign-up's onboarding window, no confirm needed): password + code is a
-  // strong login, so a demo login on a new browser never starts the 24-hour hold (R42).
   const start = await c.ok<{ challengeId: string; secret: string }>('POST', '/v1/account/totp/start', {});
   await c.ok('POST', '/v1/account/totp/finish', { challengeId: start.challengeId, code: totpCode(start.secret, stepOf(Date.now())) });
   totp[p.loginName] = start.secret;
@@ -164,10 +175,10 @@ async function signUp(p: Person): Promise<DemoClient> {
 }
 
 const totp: Record<string, string> = {};
+const pgp: Record<string, PgpPair> = {};
 
 /**
- * DEMO ONLY: the real way to become a vendor needs a passkey, security key or PGP key and a strong
- * confirm (PUT /v1/account/type), which a seed script has none of. So the demo marks its posting
+ * DEMO ONLY: the real way to become a vendor needs a key confirm (PUT /v1/account/type). So the demo marks its posting
  * accounts as vendors straight in its own throwaway database, as the switch itself would
  * (account_type, vendor_since), and the offers then go through the real API.
  */
@@ -279,10 +290,8 @@ await tradePool.end();
 
 /**
  * DEMO ONLY (the Teams features): demo_ana's team, two members invited and joined through the real
- * routes. An invite needs a strong session and a confirm (password and authenticator code), so
- * ana logs in again with password + code (a strong login on the browser she signed up on) and
- * confirms each invite; each code works once, so the seed waits for the next 30-second code each
- * time. Each member joins with two throwaway PGP keys (a member's login is PGP plus a second
+ * routes. An invite needs a confirm: ana confirms each one with her throwaway PGP key on the
+ * session her sign-up started. Each member joins with two throwaway PGP keys (a member's login is PGP plus a second
  * method); their keys are not kept, the members are there to be seen on the team page.
  */
 const TEAM = [
@@ -290,23 +299,12 @@ const TEAM = [
   { displayName: 'ana_nights', loginName: 'ana-nights-login', roles: ['offers'] },
 ];
 const team: Array<{ shown: string; login: string; roles: string[] }> = [];
-let lastStep = 0;
-/** The next authenticator code for `login` that no earlier step of the seed has used. */
-async function freshCode(login: string): Promise<string> {
-  while (stepOf(Date.now()) <= lastStep) await new Promise((r) => setTimeout(r, 1_000));
-  lastStep = stepOf(Date.now());
-  return totpCode(totp[login]!, lastStep);
-}
 try {
   const ana = clients.get('ana-demo')!;
-  lastStep = stepOf(Date.now());
-  await ana.ok('POST', '/v1/logout');
-  const pw = await ana.ok<{ pendingId?: string }>('POST', '/v1/login/password', { loginName: 'ana-demo', password: DEMO_PASSWORD, deviceLabel: 'Demo seed' });
-  if (!pw.pendingId) throw new Error(`login answered ${JSON.stringify(pw)}`);
-  await ana.ok('POST', '/v1/login/second-factor', { pendingId: pw.pendingId, code: await freshCode('ana-demo'), deviceLabel: 'Demo seed' });
   for (const m of TEAM) {
     const action = { kind: 'team-invite', name: m.displayName, roles: m.roles.join(',') };
-    const { confirmToken } = await ana.ok<{ confirmToken: string }>('POST', '/v1/confirm/password', { password: DEMO_PASSWORD, totp: await freshCode('ana-demo'), action });
+    const cs = await ana.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/confirm/pgp/start', { action });
+    const { confirmToken } = await ana.ok<{ confirmToken: string }>('POST', '/v1/confirm/pgp/finish', { challengeId: cs.challengeId, code: await pgpCode(cs.encryptedMessage, pgp['ana-demo']!) });
     const inv = await ana.ok<{ invite: string }>('POST', '/v1/team/invites', { displayName: m.displayName, roles: m.roles, confirmToken });
     const member = new DemoClient(ORIGIN);
     await member.ok('POST', '/v1/team/invite', { invite: inv.invite });
@@ -331,8 +329,8 @@ for (const c of clients.values()) await c.call('POST', '/v1/logout');
 for (const f of failures) console.log(`demo seed: refused: ${f}`);
 
 const logins = [
-  'X2F demo logins (password for all: ' + DEMO_PASSWORD + ')',
-  'Then the authenticator code: npm run demo:code <login name> (or add the secret below to an authenticator app).',
+  'X2F demo logins (no passwords): open /__demo/login on the demo and tap the account; the demo does the real PGP login with its throwaway key.',
+  'Each account also has an authenticator app (its second kind of method): npm run demo:code <login name>, or add the secret below to an authenticator app.',
   '',
   'Your accounts (trade with yourself; use one browser profile or device per account):',
   ...OWNER.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
@@ -352,9 +350,9 @@ writeFileSync(SEED_SUMMARY_FILE, JSON.stringify({
   team,
   failures,
 }, null, 2));
-// The accounts the gateway's door lets in from a fresh browser (door.ts).
-const seeded = await db.query<{ id: string }>('select id from accounts where display_name = any($1)', [[...CAST, ...OWNER].map((p) => p.displayName)]);
-writeFileSync(SEEDED_FILE, JSON.stringify(seeded.rows.map((r) => r.id)), { mode: 0o600 });
+// The accounts the gateway's /__demo/login lets in from a fresh browser, with their keys (door.ts).
+const traders: TraderSecret[] = [...OWNER, ...CAST].filter((p) => pgp[p.loginName]).map((p) => ({ displayName: p.displayName, loginName: p.loginName, pgp: pgp[p.loginName]! }));
+writeFileSync(TRADERS_FILE, JSON.stringify(traders, null, 2), { mode: 0o600 });
 await db.end();
 writeFileSync(join(DEMO_DIR, 'logins.txt'), `${logins.join('\n')}\n`);
 // monero-ts keeps a worker alive: exit once the seed is written.

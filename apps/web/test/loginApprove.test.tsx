@@ -194,32 +194,6 @@ describe('the logged-in device (LoginApprove)', () => {
     expect(part(document.body, 'approve-done')).not.toBeNull();
   });
 
-  it('during the 24-hour hold the refusal goes through CantDoThat, and blocking still works', async () => {
-    let n = 0;
-    handler = (_url, init) => {
-      if (init?.method !== 'POST') return undefined;
-      n++;
-      return n === 1 ? json(403, { error: 'recovery-hold', holdUntil: new Date(Date.now() + 3_600_000).toISOString() }) : json(200, { outcome: 'blocked' });
-    };
-    render(
-      <MemoryRouter>
-        <LoginApprove approval={VIEW} onDone={() => undefined} />
-      </MemoryRouter>,
-    );
-    click([...document.body.querySelectorAll('[data-part="approve-choice"] input')][1]!);
-    click(part(document.body, 'approve-yes'));
-    await settle();
-    const popup = document.querySelector('[data-part="cant-do-that"]');
-    expect(popup?.getAttribute('data-from')).toBe('recovery-hold');
-    expect(popup?.textContent).toContain('you can still block this login');
-    expect(document.body.textContent).not.toContain('Could not send your answer');
-    click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
-    await settle();
-    click(part(document.body, 'approve-block'));
-    await settle();
-    expect(part(document.body, 'approve-blocked')).not.toBeNull();
-  });
-
   it('an approval that already ended says so (its own state, not a refusal)', async () => {
     handler = (_url, init) => (init?.method === 'POST' ? json(409, { error: 'approval-ended', outcome: 'expired' }) : undefined);
     render(
