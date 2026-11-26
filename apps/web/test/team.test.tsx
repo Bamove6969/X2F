@@ -8,6 +8,7 @@ import { MemberInvite, inviteFromHash } from '../src/screens/auth/MemberInvite.j
 import { Team, inviteLink } from '../src/screens/settings/Team.js';
 import { JOIN_COPY, rolesText } from '../src/screens/settings/teamCopy.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
+import { TEAM_KEYS_COPY } from '../src/screens/settings/tradeKeysCopy.js';
 import { fire, render } from './render.js';
 
 interface Call {
@@ -22,6 +23,7 @@ let audit: unknown[];
 let teamStatus: number;
 let meMember: unknown;
 let inviteReply: { status: number; body: unknown };
+let keyReaders: unknown;
 
 const CODE = 'A'.repeat(43);
 
@@ -33,6 +35,7 @@ beforeEach(() => {
   calls = [];
   teamStatus = 200;
   meMember = null;
+  keyReaders = null;
   members = [
     { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     { id: 'm2', tradeTag: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
@@ -45,6 +48,7 @@ beforeEach(() => {
     calls.push({ url: input, method, body });
     if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: meMember });
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
+    if (input === '/v1/escrow-keys/readers') return keyReaders === null ? json(500, { error: 'internal' }) : json(200, keyReaders);
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
@@ -96,6 +100,30 @@ describe('helpers', () => {
 });
 
 describe('Team (settings)', () => {
+  it('escrow-key sync: a member holding "Hold trade keys" shows whether they have a reader key yet', async () => {
+    members = [
+      { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm2', tradeTag: 'Basil', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm3', tradeTag: 'Cedar', roles: ['trades'], abilities: [], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    keyReaders = { readers: [{ id: 'r0', memberId: null, memberName: null, publicKey: 'a'.repeat(64) }, { id: 'r1', memberId: 'm1', memberName: 'Aurora', publicKey: 'b'.repeat(64) }] };
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    const line = (tag: string) => host.querySelector(`[data-member="${tag}"] [data-part="member-trade-keys"]`);
+    expect(line('Aurora')?.getAttribute('data-ready')).toBe('yes');
+    expect(line('Aurora')?.textContent).toBe(TEAM_KEYS_COPY.ready);
+    expect(line('Basil')?.getAttribute('data-ready')).toBe('no');
+    expect(line('Basil')?.textContent).toBe(TEAM_KEYS_COPY.waiting);
+    expect(line('Cedar')).toBeNull();
+  });
+
+  it('escrow-key sync: when the readers cannot be read, no reader line is shown', async () => {
+    members = [{ id: 'm1', tradeTag: 'Aurora', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: null, createdAt: '2026-10-29T09:00:00.000Z' }];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-part="member-trade-keys"]')).toBeNull();
+  });
+
   it('lists members with roles and status, the count, and the activity log', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();

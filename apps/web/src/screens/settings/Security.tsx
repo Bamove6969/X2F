@@ -16,6 +16,7 @@ import { Icon } from '../../ui/icons.js';
 import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
+import { TradeKeys } from './TradeKeys.js';
 import { MovedSectionRedirect, SettingsPage, SettingsRow, useKnownMember } from './SettingsTabs.js';
 import { SETTINGS_COPY } from './settingsCopy.js';
 import { useSession } from '../../session/useSession.js';
@@ -128,6 +129,8 @@ function SecurityScreen() {
                 <Methods prove={prove} />
               </>
             ) : null}
+            {/* Escrow-key sync (owner, 26 Nov 2026): the holder's backup, or an assigned member's own reader key. */}
+            {!setupOnly ? <TradeKeys member={member} /> : null}
             {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it, and to
                 the idle reminder (owner Q75), both about how long a login lasts. A team member (order #2
                 M3) gets the idle reminder only: Devices is the owner's. */}
