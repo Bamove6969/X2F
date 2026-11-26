@@ -46,6 +46,8 @@ export function installPrimaryLabelFit(): () => void {
   };
   const mo = new MutationObserver(schedule);
   mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+  // The CAPS switch (ui.css data-button-case) widens every label.
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-button-case'] });
   window.addEventListener('resize', schedule);
   // A face that loads after a screen draws changes the label's width: fit again then.
   document.fonts?.addEventListener('loadingdone', schedule);

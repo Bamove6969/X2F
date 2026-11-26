@@ -41,6 +41,15 @@
   line-height: 1.15;
 }
 
+/* DESIGN: owner 17 Nov, CAPS variant to look at (not decided, off by default): one switch,
+   <html data-button-case="upper">, draws every orange button's label in capitals, bold, a little
+   tracked; ui/fitPrimaryLabels.ts refits it so it still never reaches the sides. */
+:root[data-button-case='upper'] .x2f-button.x2f-button--primary,
+:root[data-button-case='upper'] .x2f-ex__button {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .x2f-button--secondary {
   height: 48px;
   padding: 0 var(--x2f-space-4);

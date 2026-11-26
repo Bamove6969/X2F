@@ -104,6 +104,59 @@ for (const size of SIZES) {
   });
 }
 
+// Lead, 17 Nov (another build crashed Post offer when browser storage is blocked: a localStorage read
+// during render with no try/catch). A browser that blocks site data throws a SecurityError on the
+// very getter (window.localStorage, window.sessionStorage, document.cookie). With all three throwing,
+// and with the CAPS switch on and off, Post offer and its orange button still draw.
+async function blockStorage(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    for (const name of ['localStorage', 'sessionStorage'] as const) {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        get() {
+          throw new DOMException(`The access to ${name} is denied for this document.`, 'SecurityError');
+        },
+      });
+    }
+    Object.defineProperty(Document.prototype, 'cookie', {
+      configurable: true,
+      get() {
+        throw new DOMException('Access is denied for this document.', 'SecurityError');
+      },
+      set() {
+        throw new DOMException('Access is denied for this document.', 'SecurityError');
+      },
+    });
+  });
+}
+
+for (const caps of [false, true]) {
+  test(`Post offer draws with browser storage blocked (CAPS ${caps ? 'on' : 'off'})`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await blockStorage(page);
+    await stubPost(page);
+    await page.goto('/post');
+    const button = page.getByRole('button', { name: 'Post offer', exact: true });
+    await expect(button).toBeVisible();
+    // The switch is an attribute on <html> (ui.css data-button-case), set as the owner shots set it.
+    if (caps) await page.evaluate(() => (document.documentElement.dataset.buttonCase = 'upper'));
+    await expect(page.locator('[data-primary]')).toHaveCount(1);
+    await expect(page.getByLabel('Add a payment method')).toBeVisible();
+    const blocked = await page.evaluate(() => {
+      try {
+        void window.localStorage;
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(blocked, 'the stub really blocks storage').toBe(true);
+    if (caps) await expect(button).toHaveCSS('text-transform', 'uppercase');
+    expect(errors, 'no uncaught error').toEqual([]);
+  });
+}
+
 test('owner after-screenshots of Post offer (floating button)', async ({ page }) => {
   test.skip(process.env.X2F_OWNER_SHOTS !== '1', 'set X2F_OWNER_SHOTS=1 to write the owner screenshots');
   const out = process.env.X2F_OWNER_SHOTS_DIR ?? '/home/user/X2F/owner-review/fonts/after-floating/';
@@ -119,5 +172,23 @@ test('owner after-screenshots of Post offer (floating button)', async ({ page })
     });
     await page.mouse.move(0, 0);
     await page.screenshot({ path: `${out}after_${size.name}_post.png`, animations: 'disabled', caret: 'hide' });
+    // The owner's CAPS variant (ui.css data-button-case), switched on for this shot only.
+    await page.evaluate(async () => {
+      document.documentElement.dataset.buttonCase = 'upper';
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+    });
+    const caps = await page.getByRole('button', { name: 'Post offer', exact: true }).evaluate((b) => {
+      const range = document.createRange();
+      range.selectNodeContents(b);
+      const box = b.getBoundingClientRect();
+      const t = range.getBoundingClientRect();
+      return { transform: getComputedStyle(b).textTransform, left: t.left - box.left, right: box.right - t.right };
+    });
+    expect(caps.transform).toBe('uppercase');
+    expect(Math.min(caps.left, caps.right)).toBeGreaterThanOrEqual(16);
+    await page.screenshot({ path: `${out}after_${size.name}_post_CAPS.png`, animations: 'disabled', caret: 'hide' });
+    await page.evaluate(() => {
+      delete document.documentElement.dataset.buttonCase;
+    });
   }
 });
