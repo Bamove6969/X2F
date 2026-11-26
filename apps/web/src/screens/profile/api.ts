@@ -39,6 +39,8 @@ export interface TraderProfile {
   badges: { featured: string[]; more: string[] };
   pgpProtected: boolean;
   recordPublic: boolean;
+  /** The trader turned on Away in Settings (owner 26 Nov 2026); false from an API without it. */
+  away: boolean;
   tradedOverXmr: number | null;
   imported: { site: string; overUsd: number }[];
   reviews: PublicReview[];
@@ -104,6 +106,7 @@ export function parseProfile(raw: unknown): TraderProfile {
     badges: { featured: b.featured, more: b.more },
     pgpProtected: p.pgpProtected,
     recordPublic: p.recordPublic,
+    away: p.away === true,
     tradedOverXmr: p.tradedOverXmr,
     imported: (p.imported as { site: string; overUsd: number }[]).map((l) => ({ site: l.site, overUsd: l.overUsd })),
     reviews: p.reviews.map(parseReview),

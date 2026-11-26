@@ -4,7 +4,7 @@
  * - Security (/settings/security): login methods, the recovery code, account changes, the payout
  *   wait, and the way on to Devices and sessions and the idle reminder.
  * - Alerts (/settings/alerts): the alarm sound, Jabber notices and the alerts list.
- * - Account (/settings/account): account type, team and blocked traders.
+ * - Account (/settings/account): account type, team and blocked traders, and the Away switch.
  * - Preferences (/settings/preferences): Start on, Preferred currency and the clock line, saved on
  *   this device (Preferences.tsx, prefs.ts).
  * - Help (/settings/help): the guided tour and the welcome screen.
@@ -22,6 +22,7 @@ import { BLOCK_COPY } from './blockCopy.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import { Alerts } from './Alerts.js';
+import { AwayCard } from './Away.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { memberOf } from '../../session/member.js';
 import { useSession } from '../../session/useSession.js';
@@ -174,6 +175,8 @@ export function AccountSettings() {
             </SettingsRow>
           </ul>
         </section>
+        {/* Owner 26 Nov 2026: the Away switch (pauses my live offers; off turns back on the ones it paused). */}
+        <AwayCard />
       </SettingsPage>
     </OwnerOnly>
   );
