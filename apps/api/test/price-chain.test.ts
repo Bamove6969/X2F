@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import {
-  DEFAULT_PRICE_ROUTES, PRICE_ROUTE_NAMES, createPriceChain, directRoute, parsePriceRouteMaxGap, parsePriceRoutes,
+  DEFAULT_PRICE_ROUTE_MAX_GAP_BPS, DEFAULT_PRICE_ROUTES, PRICE_ROUTE_NAMES, createPriceChain, directRoute, parsePriceRouteMaxGap, parsePriceRoutes,
   type PriceRoute, type RouteQuote,
 } from '../src/price/chain.js';
 import { CURRENCY_EXPONENTS } from '../src/price/currencies.js';
@@ -217,7 +217,7 @@ describe('createMarketPrices with several routes', () => {
     expect(prices.quote('USD')).toBeNull();
   });
 
-  async function setup(routes?: Parameters<typeof createMarketPrices>[0]['routes'], maxGapBps?: number) {
+  async function setup(routes?: Parameters<typeof createMarketPrices>[0]['routes'], maxGapBps?: number | null) {
     const c = clockAt(T0);
     let fxDown = false;
     const xmr = createPriceFeed(
@@ -225,13 +225,13 @@ describe('createMarketPrices with several routes', () => {
       { ...PRICE_FEED_DEFAULTS, clock: c.clock },
     );
     const fx = createFxRates([fxStub('one', () => (fxDown ? new Error('down') : { EUR: '0.9', GBP: '0.8' }))], { clock: c.clock, failLimit: 1 });
-    const prices = createMarketPrices({ xmr, fx, clock: c.clock, ...(routes ? { routes } : {}), ...(maxGapBps ? { maxGapBps } : {}) });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock, ...(routes ? { routes } : {}), ...(maxGapBps !== undefined ? { maxGapBps } : {}) });
     await prices.poll();
     return { prices, c, setFxDown: (v: boolean) => void (fxDown = v) };
   }
 
-  it('defaults to the market route only: today\'s prices, now marked with their route', async () => {
-    const { prices, setFxDown } = await setup();
+  it('with the market route only: today\'s prices, now marked with their route', async () => {
+    const { prices, setFxDown } = await setup(['market']);
     expect(prices.quote('EUR')).toMatchObject({ route: 'market', price: { centsPerXmr: 27_000n }, usdCentsPerXmr: 30_000n });
     expect(prices.quote('USD')).toMatchObject({ route: 'market' });
     expect(prices.quote('EUR')!.fx).toMatchObject({ source: 'one', rate: (9n * RATE_SCALE) / 10n });
@@ -255,6 +255,59 @@ describe('createMarketPrices with several routes', () => {
     expect(h.paused).not.toContain('EUR');
     expect(h.coverage.find((x) => x.currency === 'EUR')).toEqual({ currency: 'EUR', route: 'direct' });
     expect(h.coverage.find((x) => x.currency === 'GBP')).toEqual({ currency: 'GBP', route: null });
+  });
+
+  it('by default (OC1 b, OC2): market then direct, 3% gap; EUR falls back to direct when its rate is down', async () => {
+    const { prices, setFxDown } = await setup();
+    expect(prices.quote('EUR')).toMatchObject({ route: 'market' });
+    setFxDown(true);
+    await prices.poll();
+    expect(prices.quote('EUR')).toMatchObject({ route: 'direct' });
+    expect(prices.quote('GBP')).toBeNull();
+  });
+
+  it('by default the 3% gap applies: direct 8% off market leaves EUR with no price; null switches the check off', async () => {
+    const c = clockAt(T0);
+    const xmr = createPriceFeed(
+      [xmrStub('a', () => [q('USD', 30_000n), q('EUR', 25_000n)]), xmrStub('b', () => [q('USD', 30_000n), q('EUR', 25_000n)])],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    const fx = createFxRates([fxStub('one', () => ({ EUR: '0.9' }))], { clock: c.clock });
+    const def = createMarketPrices({ xmr, fx, clock: c.clock });
+    const off = createMarketPrices({ xmr, fx, clock: c.clock, maxGapBps: null });
+    await def.poll();
+    expect(def.quote('EUR')).toBeNull();
+    expect(off.quote('EUR')).toMatchObject({ route: 'market', price: { centsPerXmr: 27_000n } });
+  });
+
+  it('OC6: a currency moving to a backup route raises one owner info alert, and an all-clear when it is back', async () => {
+    const c = clockAt(T0);
+    let fxDown = false;
+    const xmr = createPriceFeed(
+      [xmrStub('a', () => [q('USD', 30_000n), q('EUR', 27_000n)]), xmrStub('b', () => [q('USD', 30_000n), q('EUR', 27_000n)])],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    const fx = createFxRates([fxStub('one', () => (fxDown ? new Error('down') : { EUR: '0.9', GBP: '0.8' }))], { clock: c.clock, failLimit: 1 });
+    const alerts: Array<{ kind: string; detail: { message: string; currencies?: string[]; urgent?: true } }> = [];
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock, onAlert: (a) => void alerts.push(a) });
+    await prices.poll();
+    expect(alerts.filter((a) => a.kind.startsWith('price-route'))).toEqual([]);
+    fxDown = true;
+    for (let i = 0; i < 3; i++) {
+      c.advance(MIN);
+      await prices.poll();
+    }
+    const backup = alerts.filter((a) => a.kind === 'price-route-backup');
+    expect(backup).toEqual([{ kind: 'price-route-backup', detail: { currencies: ['EUR'], message: 'EUR priced by a backup route' } }]);
+    fxDown = false;
+    for (let i = 0; i < 4; i++) {
+      c.advance(5 * MIN);
+      await prices.poll();
+    }
+    expect(alerts.filter((a) => a.kind === 'price-route-primary')).toEqual([
+      { kind: 'price-route-primary', detail: { currencies: ['EUR'], message: 'EUR priced by the first route again' } },
+    ]);
+    expect(alerts.filter((a) => a.kind === 'price-route-backup')).toHaveLength(1);
   });
 
   it('with a gap limit, routes that disagree leave the currency with no price', async () => {
@@ -286,28 +339,34 @@ const ENV = {
 };
 
 describe('config', () => {
-  it('PRICE_ROUTES: default market only; known names, each once, in order', () => {
+  it('PRICE_ROUTES: default market,direct (OC1 b); known names, each once, in order', () => {
     expect(PRICE_ROUTE_NAMES).toEqual(['market', 'direct']);
-    expect(DEFAULT_PRICE_ROUTES).toEqual(['market']);
-    expect(parsePriceRoutes(undefined)).toEqual(['market']);
-    expect(parsePriceRoutes(' ')).toEqual(['market']);
+    expect(DEFAULT_PRICE_ROUTES).toEqual(['market', 'direct']);
+    expect(parsePriceRoutes(undefined)).toEqual(['market', 'direct']);
+    expect(parsePriceRoutes(' ')).toEqual(['market', 'direct']);
+    expect(parsePriceRoutes('market')).toEqual(['market']);
     expect(parsePriceRoutes('market,direct')).toEqual(['market', 'direct']);
     // Review M1: the market route always comes first; direct only after it, never alone or ahead.
     for (const bad of ['nope', 'market,market', 'market,', 'MARKET', 'direct', 'direct,market', 'direct, market']) {
       expect(() => parsePriceRoutes(bad)).toThrow('PRICE_ROUTES');
     }
-    expect(loadConfig(ENV).priceRoutes).toEqual(['market']);
+    expect(loadConfig(ENV).priceRoutes).toEqual(['market', 'direct']);
+    expect(loadConfig({ ...ENV, PRICE_ROUTES: 'market' }).priceRoutes).toEqual(['market']);
     expect(loadConfig({ ...ENV, PRICE_ROUTES: 'market,direct' }).priceRoutes).toEqual(['market', 'direct']);
     expect(() => loadConfig({ ...ENV, PRICE_ROUTES: 'x' })).toThrow('PRICE_ROUTES');
   });
 
-  it('PRICE_ROUTE_MAX_GAP_PCT: unset is off; a whole percent 1..50 in basis points', () => {
-    expect(parsePriceRouteMaxGap(undefined)).toBeNull();
-    expect(parsePriceRouteMaxGap('')).toBeNull();
+  it('PRICE_ROUTE_MAX_GAP_PCT: unset is 3% (OC2); off switches it off; a whole percent 1..50 in basis points', () => {
+    expect(DEFAULT_PRICE_ROUTE_MAX_GAP_BPS).toBe(300);
+    expect(parsePriceRouteMaxGap(undefined)).toBe(300);
+    expect(parsePriceRouteMaxGap('')).toBe(300);
+    expect(parsePriceRouteMaxGap('off')).toBeNull();
+    expect(parsePriceRouteMaxGap(' off ')).toBeNull();
     expect(parsePriceRouteMaxGap('3')).toBe(300);
     expect(parsePriceRouteMaxGap('50')).toBe(5_000);
-    for (const bad of ['0', '51', '2.5', '-1', 'x', '3%']) expect(() => parsePriceRouteMaxGap(bad)).toThrow('PRICE_ROUTE_MAX_GAP_PCT');
-    expect(loadConfig(ENV).priceRouteMaxGapBps).toBeNull();
+    for (const bad of ['0', '51', '2.5', '-1', 'x', '3%', 'OFF', 'none']) expect(() => parsePriceRouteMaxGap(bad)).toThrow('PRICE_ROUTE_MAX_GAP_PCT');
+    expect(loadConfig(ENV).priceRouteMaxGapBps).toBe(300);
+    expect(loadConfig({ ...ENV, PRICE_ROUTE_MAX_GAP_PCT: 'off' }).priceRouteMaxGapBps).toBeNull();
     expect(loadConfig({ ...ENV, PRICE_ROUTE_MAX_GAP_PCT: '3' }).priceRouteMaxGapBps).toBe(300);
   });
 

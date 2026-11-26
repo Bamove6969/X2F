@@ -219,6 +219,40 @@ describe('createAlertGrouper', () => {
     });
   });
 
+  it('OC6: a currency on a backup route gives one info alert per outage (not urgent), an all-clear after the quiet period', () => {
+    const step = stepper();
+    expect(step({ backup: ['NGN', 'EUR'] })).toEqual([
+      { kind: 'price-route-backup', detail: { currencies: ['EUR', 'NGN'], message: 'EUR, NGN priced by a backup route' } },
+    ]);
+    expect(step({ backup: ['EUR', 'NGN'] })).toEqual([]);
+    expect(step({ backup: ['EUR'] })).toEqual([]);
+    expect(step({ backup: ['EUR', 'NGN'] }), 'NGN back during the quiet period: the same outage').toEqual([]);
+    for (let i = 0; i < 3; i++) expect(step({ backup: ['NGN'] })).toEqual([]);
+    expect(step({ backup: ['NGN'] })).toEqual([
+      { kind: 'price-route-primary', detail: { currencies: ['EUR'], message: 'EUR priced by the first route again' } },
+    ]);
+    const many = ['AUD', 'CAD', 'CHF', 'EUR', 'GBP', 'JPY'];
+    expect(stepper()({ backup: many })).toEqual([
+      { kind: 'price-route-backup', detail: { currencies: many, message: '6 currencies priced by a backup route' } },
+    ]);
+  });
+
+  it('OC6: backup to no price stays one backup outage; the all-clear waits for the first route, never fires while paused', () => {
+    const step = stepper();
+    expect(step({ backup: ['EUR'] })).toHaveLength(1);
+    expect(step({ paused: ['EUR'] })).toEqual([
+      { kind: 'market-prices-paused', detail: { urgent: true, currencies: ['EUR'], message: 'EUR market prices paused' } },
+    ]);
+    for (let i = 0; i < 6; i++) expect(step({ paused: ['EUR'] })).toEqual([]);
+    expect(step({ backup: ['EUR'] }), 'priced again, by the backup: no backup alert again').toEqual([]);
+    for (let i = 0; i < 2; i++) expect(step()).toEqual([]);
+    // The pause ended one poll before the backup outage did (it was quiet from the backup poll on).
+    expect(step()).toEqual([{ kind: 'market-prices-resumed', detail: { currencies: ['EUR'], message: 'EUR market prices back' } }]);
+    expect(step()).toEqual([{ kind: 'price-route-primary', detail: { currencies: ['EUR'], message: 'EUR priced by the first route again' } }]);
+    // A currency that pauses without ever being on a backup route raises no backup alert.
+    expect(stepper()({ paused: ['GBP'] }).map((a) => a.kind)).toEqual(['market-prices-paused']);
+  });
+
   it('a flapping XMR median (every currency paused 1 poll in 2) sends one urgent alert, not one per flap', () => {
     const step = stepper(MIN);
     const alerts: PriceAlert[] = [];

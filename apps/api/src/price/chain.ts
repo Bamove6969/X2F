@@ -150,8 +150,18 @@ export function directRoute(xmr: PriceFeed): PriceRoute {
 export const PRICE_ROUTE_NAMES = ['market', 'direct'] as const;
 export type PriceRouteName = (typeof PRICE_ROUTE_NAMES)[number];
 
-/** The default `PRICE_ROUTES`: the market route only (today's behaviour; enabling more is owner call OC1). */
-export const DEFAULT_PRICE_ROUTES: readonly PriceRouteName[] = Object.freeze(['market']);
+/**
+ * The default `PRICE_ROUTES`: the market route, then `direct` as its backup (owner call OC1, option (b),
+ * the plan note's recommendation; built 26 Nov 2026, awaiting the owner's confirmation). No new vendor:
+ * `direct` reads the XMR sources already in use, so EUR keeps a price through an exchange-rate outage.
+ */
+export const DEFAULT_PRICE_ROUTES: readonly PriceRouteName[] = Object.freeze(['market', 'direct']);
+
+/**
+ * The default `PRICE_ROUTE_MAX_GAP_PCT`, in basis points: 3% (owner call OC2, the recommendation;
+ * awaiting the owner's confirmation). Routes further apart leave the currency with no price.
+ */
+export const DEFAULT_PRICE_ROUTE_MAX_GAP_BPS = 300;
 
 /** The named routes over the given feeds, in the given order. */
 export function priceRoutesFor(names: readonly PriceRouteName[], xmr: PriceFeed, fx: FxRates): PriceRoute[] {
@@ -175,11 +185,15 @@ export function parsePriceRoutes(raw: string | undefined): PriceRouteName[] {
   return out;
 }
 
-/** `PRICE_ROUTE_MAX_GAP_PCT`: a whole percent 1..50, as basis points; unset or empty: off (null). */
+/**
+ * `PRICE_ROUTE_MAX_GAP_PCT`: a whole percent 1..50, as basis points; unset or empty: the default (3%);
+ * `off`: no cross-route check (null).
+ */
 export function parsePriceRouteMaxGap(raw: string | undefined): number | null {
-  if (raw === undefined || raw.trim() === '') return null;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_PRICE_ROUTE_MAX_GAP_BPS;
   const t = raw.trim();
+  if (t === 'off') return null;
   const n = /^\d{1,2}$/.test(t) ? Number(t) : Number.NaN;
-  if (!Number.isInteger(n) || n < 1 || n > 50) throw new Error('config: PRICE_ROUTE_MAX_GAP_PCT is malformed (a whole percent from 1 to 50)');
+  if (!Number.isInteger(n) || n < 1 || n > 50) throw new Error('config: PRICE_ROUTE_MAX_GAP_PCT is malformed (a whole percent from 1 to 50, or off)');
   return n * 100;
 }

@@ -26,9 +26,9 @@ export interface Config {
   priceSources: PriceSourceName[];
   /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
   fxSources: FxSourceName[];
-  /** `PRICE_ROUTES` (2026-11-02): the ways a currency is priced, tried in order; default the market route only. */
+  /** `PRICE_ROUTES` (2026-11-02): the ways a currency is priced, tried in order; default `market,direct` (OC1 b). */
   priceRoutes: PriceRouteName[];
-  /** `PRICE_ROUTE_MAX_GAP_PCT` as basis points: routes further apart leave the currency unpriced; null (unset) = off. */
+  /** `PRICE_ROUTE_MAX_GAP_PCT` as basis points: routes further apart leave the currency unpriced; default 300 (OC2); null (`off`) = no check. */
   priceRouteMaxGapBps: number | null;
   /** Peppers mixed into password hashes (HMAC before Argon2id); `X2F_PASSWORD_PEPPERS`. */
   passwordPeppers: Keyring;

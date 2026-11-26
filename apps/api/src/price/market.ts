@@ -1,5 +1,5 @@
 import type { Price } from '@x2f/trade';
-import { DEFAULT_PRICE_ROUTES, createPriceChain, priceRoutesFor, type PriceRouteName, type RouteQuote } from './chain.js';
+import { DEFAULT_PRICE_ROUTE_MAX_GAP_BPS, DEFAULT_PRICE_ROUTES, createPriceChain, priceRoutesFor, type PriceRouteName, type RouteQuote } from './chain.js';
 import { PRICE_FEED_DEFAULTS, type PriceFeed, type PriceSourceHealth } from './feed.js';
 import { FX_DEFAULTS, type FxHealth, type FxRates } from './fx.js';
 import { createAlertGrouper, type PriceAlert } from './health.js';
@@ -51,9 +51,9 @@ export interface MarketOptions {
   clock?: () => Date;
   /** Where price health alerts go (the owner's in-app alerts); a failure here never stops polling. */
   onAlert?: (a: PriceAlert) => void | Promise<void>;
-  /** `PRICE_ROUTES`: the routes tried per currency, in order (default: the market route only). */
+  /** `PRICE_ROUTES`: the routes tried per currency, in order (default: `market`, then `direct`). */
   routes?: readonly PriceRouteName[];
-  /** `PRICE_ROUTE_MAX_GAP_PCT` in basis points: routes further apart leave the currency unpriced. Unset: off. */
+  /** `PRICE_ROUTE_MAX_GAP_PCT` in basis points: routes further apart leave the currency unpriced. Left out: 3%; null: off. */
   maxGapBps?: number | null;
   /**
    * Where a lost alert is reported: one fixed line with the error's message only (never the error
@@ -70,9 +70,10 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
   const inFlight = new Set<Promise<void>>();
 
   // The chain's own age check runs on the server clock (the real time when none is given; review M6).
-  const chain = createPriceChain(priceRoutesFor(o.routes ?? DEFAULT_PRICE_ROUTES, o.xmr, o.fx), {
+  const routes = o.routes ?? DEFAULT_PRICE_ROUTES;
+  const chain = createPriceChain(priceRoutesFor(routes, o.xmr, o.fx), {
     clock,
-    maxGapBps: o.maxGapBps ?? null,
+    maxGapBps: o.maxGapBps === undefined ? DEFAULT_PRICE_ROUTE_MAX_GAP_BPS : o.maxGapBps,
   });
   const quote = (currency: string): MarketQuote | null => chain.quote(currency);
 
@@ -85,7 +86,10 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
   /** After a poll: compares health with the last time and queues the alerts, in order (not awaited here). */
   function evaluate(): void {
     if (!o.xmr.polled() || !o.fx.polled()) return;
-    const alerts = grouper.update({ at: clock(), ...health() });
+    const h = health();
+    // OC6: the currencies priced by a route other than the first one configured (a backup route).
+    const backup = h.coverage.filter((c) => c.route !== null && c.route !== routes[0]).map((c) => c.currency);
+    const alerts = grouper.update({ at: clock(), xmr: h.xmr, fx: h.fx, paused: h.paused, backup });
     const sink = o.onAlert;
     if (sink) {
       for (const a of alerts) {

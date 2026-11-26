@@ -28,7 +28,7 @@ across *ways of pricing* a currency, room for more vendors, and a per-currency v
   an average across routes (the same rule the owner set for exchange rates).
 - Routes:
   1. `market` (default, first, unchanged): XMR/USD median × the FX trust chain, as today.
-  2. `direct` (OFF by default): XMR/X straight from the XMR sources that quote X (Kraken quotes EUR,
+  2. `direct` (ON by default since 26 Nov, OC1 b; was off): XMR/X straight from the XMR sources that quote X (Kraken quotes EUR,
      CoinGecko every currency), under the same median rules (at least 2 sources agreeing). Today only EUR
      can reach 2 sources; a candidate XMR source (below) would add more. It still needs the XMR/USD
      median for the USD value (Q9: a trade with no USD price is refused), so it helps when the exchange
@@ -36,10 +36,9 @@ across *ways of pricing* a currency, room for more vendors, and a per-currency v
 - **Chain checks on every route's answer** (defence in depth on top of each route's own checks): price
   > 0, USD value > 0, not older than the XMR feed's 5 min limit (the `at` of a quote is its oldest XMR
   quote), currency in the supported list.
-- **Disagreement between routes:** optional. When `PRICE_ROUTE_MAX_GAP_PCT` is set and another route also
-  has a price for X, a chosen price further than that from any of them means X has NO price (fail closed;
-  a wrong feed must not set a trade rate). Unset (default) = no cross-route check, today's behaviour.
-  The limit is an owner call (OC2).
+- **Disagreement between routes:** when another route also has a price for X, a chosen price further
+  than `PRICE_ROUTE_MAX_GAP_PCT` from any of them means X has NO price (fail closed; a wrong feed must not
+  set a trade rate). Default 3% (OC2, built 26 Nov); `off` = no cross-route check.
 - **Per-currency "price or none":** `MarketPrices.quote(c)` and `current(c)` keep their shape (every
   current caller unchanged); the quote gains `route` (which route priced it). `health()` gains
   `coverage`: for every supported currency, the route in use or null. `paused` = the currencies with
@@ -89,10 +88,32 @@ Relaxing any of these is part of owner calls OC1 (vendors) and OC3 (daily source
   only when named.
 - `FX_SOURCES`: exchange-rate sources in trust order (default `coinbase,bitpay,coingecko`); now also
   accepts `frankfurter`, `erapi`, only when named.
-- `PRICE_ROUTES`: the routes in order, from `market`, `direct`; default `market` (today's behaviour).
-- `PRICE_ROUTE_MAX_GAP_PCT`: integer 1..50, unset = off.
+- `PRICE_ROUTES`: the routes in order, from `market`, `direct`; default `market,direct` (OC1 b, 26 Nov;
+  `market` alone is the old behaviour).
+- `PRICE_ROUTE_MAX_GAP_PCT`: integer 1..50 or `off`; default 3 (OC2, 26 Nov).
 
-## Owner calls (not decided here; lead to ask)
+## Owner calls (built with the recommended option, awaiting owner confirmation)
+
+Built 26 Nov 2026 on main (merge of this branch onto 842266e1), each with the recommendation below;
+the owner has not yet confirmed any of them. Changing one is a default or a config value, not new code:
+
+| Call | Built | Where |
+|---|---|---|
+| OC1 | (b): `PRICE_ROUTES` default `market,direct`; `coinpaprika`, `frankfurter`, `erapi` stay off unless named | `price/chain.ts` `DEFAULT_PRICE_ROUTES` |
+| OC2 | 3%, failing closed (no price) past it; `PRICE_ROUTE_MAX_GAP_PCT=off` switches it off | `DEFAULT_PRICE_ROUTE_MAX_GAP_BPS` |
+| OC3 | (a): daily sources never used unless named (unchanged) | `FX_SOURCES` |
+| OC4 | keep the 45 currencies (unchanged) | `CURRENCY_EXPONENTS` |
+| OC5 | users see nothing new; only the owner's Price health shows `coverage` (unchanged) | |
+| OC6 | (b): owner-only info alert `price-route-backup` "<CCY> priced by a backup route", all-clear `price-route-primary` "<CCY> priced by the first route again"; grouped per outage with the same quiet period as the paused alerts; in-app only, not pushed | `price/health.ts`, `alerts.ts` |
+
+OC6 detail: "backup" means priced by any route but the first in `PRICE_ROUTES`. A currency that goes
+from a backup route to no price stays in its backup outage (the urgent paused alert covers the gap),
+so the all-clear fires only once the first route prices it again.
+
+The Tor fetch check of the candidate vendors (J-03) is still a manual step: it needs egress to Tor
+relays and to the vendors, which the test machines do not have; no test touches the network.
+
+### The calls as asked
 
 - **OC1. Which feeds to add and enable by default** (privacy/vendor). Options: (a) none, keep today's 3+3;
   (b) turn on the `direct` route only: no new vendor, EUR survives an FX outage; (c) also add
@@ -111,7 +132,7 @@ Relaxing any of these is part of owner calls OC1 (vendors) and OC3 (daily source
   `market` to `direct` it is not paused, so no "market prices paused" alert fires; only the exchange-rate
   source's own failing alert does, and the owner sees the route only in `coverage`. Options: (a) no extra
   alert; (b) an owner-only info alert "<CCY> priced by a backup route" (and an all-clear when it moves
-  back), grouped like the other price alerts. *Recommendation: (b), owner-only.* Not built.
+  back), grouped like the other price alerts. *Recommendation: (b), owner-only.* Built (above).
 - **OC5. Anything users see.** Today a currency with no price is hidden (Task 34) and a take is refused
   with the CantDoThat popup (Q9). Should users ever see which feed priced their currency, or that a
   backup is in use? *Recommendation: no; only the owner's Price health panel (Plan 4) shows `coverage`.*

@@ -87,7 +87,7 @@ export {
   PRICE_FEED_DEFAULTS, createPriceFeed, median, type FeedQuote, type PriceFeed, type PriceFeedOptions, type PriceQuote, type PriceSource,
 } from './price/feed.js';
 export {
-  DEFAULT_PRICE_ROUTES, PRICE_ROUTE_NAMES, createPriceChain, directRoute, marketRoute, parsePriceRouteMaxGap, parsePriceRoutes, priceRoutesFor,
+  DEFAULT_PRICE_ROUTE_MAX_GAP_BPS, DEFAULT_PRICE_ROUTES, PRICE_ROUTE_NAMES, createPriceChain, directRoute, marketRoute, parsePriceRouteMaxGap, parsePriceRoutes, priceRoutesFor,
   type ChainQuote, type PriceChain, type PriceRoute, type PriceRouteName, type RouteQuote,
 } from './price/chain.js';
 export { DEFAULT_PRICE_SOURCES, PRICE_SOURCE_NAMES, parsePriceSources, priceSources, type PriceSourceName } from './price/sources.js';
