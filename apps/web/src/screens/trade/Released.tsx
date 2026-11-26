@@ -24,7 +24,18 @@ export const EXPLORER_TX = 'https://xmrchain.net/tx/';
  * their own device has co-signed (`escrow.phase` `done`) it says the device is adding its
  * signature, and shows a Task 12 refusal or a stopped escrow instead of "is yours" (I2).
  */
-export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; escrow: ReleaseEscrow; reviewSlot?: ReactNode }) {
+export function Released({
+  trade,
+  escrow,
+  reviewSlot,
+  header,
+}: {
+  trade: ReleaseTrade;
+  escrow: ReleaseEscrow;
+  reviewSlot?: ReactNode;
+  /** The trade header with its way back (the Review board's "Back to trades"); the room passes it. */
+  header?: ReactNode;
+}) {
   const live = useConfirmations(trade);
   const other = publicName(trade.counterparty);
   const settled = trade.state === 'released';
@@ -46,6 +57,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
 
   return (
     <div className="x2f-release" data-screen="released">
+      {header}
       <section aria-label="Trade complete" className="x2f-released">
         <EscrowDots filled={[true, true, false]} tone="escrow" />
         <span className="x2f-released__label">{cosigned ? 'Released' : 'Releasing'}</span>

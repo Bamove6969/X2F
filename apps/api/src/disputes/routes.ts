@@ -322,25 +322,35 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const deps = req.server.deps;
     const keepGrant = await disputeGrant(deps.db, row.code, side, b.grant, deps.clock());
     try {
-      await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
-        if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
-        if (keepGrant !== null) await keepGrant(client);
-        else {
-          // Review F5: a key record posted after the check above (the key route holds the chat row's
-          // lock while it inserts) still needs the disputer's grant.
-          await client.query('select 1 from chats where trade_code = $1 for share', [row.code]);
-          const keyed = await client.query('select 1 from chat_keys k join chats c on c.code = k.chat where c.trade_code = $1', [row.code]);
-          if (keyed.rows.length > 0) throw new ApiError(400, 'grant-required');
-        }
+      await applyEvent(
+        { db: deps.db, clock: deps.clock, publish },
+        row.code,
+        { type: 'open-dispute' },
+        side,
+        async (client, prev, _next, now) => {
+          if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+          if (keepGrant !== null) await keepGrant(client);
+          else {
+            // Review F5: a key record posted after the check above (the key route holds the chat row's
+            // lock while it inserts) still needs the disputer's grant.
+            await client.query('select 1 from chats where trade_code = $1 for share', [row.code]);
+            const keyed = await client.query('select 1 from chat_keys k join chats c on c.code = k.chat where c.trade_code = $1', [row.code]);
+            if (keyed.rows.length > 0) throw new ApiError(400, 'grant-required');
+          }
+          // Plan 4 Task 10: the machine starts here, with the owner's settings as they are now (the
+          // large-trade limit is a snapshot) and the trade's USD value; `dispute.opened` is logged.
+          await startDispute(client, prev, { openedBy: side, reason, note, afterRefund: prev.state === 'refunded', now, prices: deps.prices });
+          // Task 18: only the account owner gets here (D-066); kept so a member route would log (the reason, never the note).
+          await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
+        },
         // A held trade: the held account's own sessions are refused (403 recovery-hold); the
-        // partner may open one (owner G7; lead hold v3 review item 5 and minor).
-        await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
-        // Plan 4 Task 10: the machine starts here, with the owner's settings as they are now (the
-        // large-trade limit is a snapshot) and the trade's USD value; `dispute.opened` is logged.
-        await startDispute(client, prev, { openedBy: side, reason, note, afterRefund: prev.state === 'refunded', now, prices: deps.prices });
-        // Task 18: only the account owner gets here (D-066); kept so a member route would log (the reason, never the note).
-        await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
-      });
+        // partner may open one (owner G7; lead hold v3 review item 5 and minor). Checked under the
+        // trade row lock before the machine, as the trade events route does (lead re-verify 9 Nov
+        // m3): the held party is told recovery-hold, not the machine's too-early or wrong-state.
+        // Without `held` this never returns 'stop', so the partner's dispute falls through to the
+        // machine unchanged.
+        (client) => refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute'),
+      );
     } catch (err) {
       if (err instanceof TradeRuleError) {
         // A trade already in dispute (or that had one) refuses open-dispute as wrong-state; say why.

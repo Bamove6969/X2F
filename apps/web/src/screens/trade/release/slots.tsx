@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { TradeHeader } from '../../../ui/TradeHeader.js';
 import { Released } from '../Released.js';
 import { SellerConfirm } from '../SellerConfirm.js';
 import { TradeReview } from '../../review/TradeReview.js';
@@ -55,7 +56,21 @@ export function ReleaseRoomScreen({ code, view, escrow, refresh, serverClock }: 
     // buyer's device still co-signs in `settling`); TradeReview asks the API whether this side may rate.
     const review =
       view.state === 'released' ? <TradeReview code={code} counterparty={publicName(view.counterparty)} rated={view.role === 'buyer' ? 'seller' : 'buyer'} /> : undefined;
-    return <Released trade={view} escrow={escrow} reviewSlot={review} />;
+    // The Review board's compact header: the way back out of a finished trade, as Refunded and the
+    // pay screens have it (no dead end after a release).
+    const header = (
+      <TradeHeader
+        title={
+          <>
+            {view.role === 'buyer' ? 'Buying from' : 'Selling to'} <span data-username="">{publicName(view.counterparty)}</span>
+          </>
+        }
+        code={view.code}
+        method={methodOf(view)}
+        backTo="/trades"
+      />
+    );
+    return <Released trade={view} escrow={escrow} reviewSlot={review} header={header} />;
   }
   if (screen === 'seller-confirm') {
     // Plan 5 Task 16: the smart proof card, from the buyer's newest payment proof in the chat, checked

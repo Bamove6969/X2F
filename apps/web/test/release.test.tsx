@@ -873,6 +873,32 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     expect(done.host.querySelector('[data-part="review-card"] h2')!.textContent).toBe('How was trading with satoshi_ghost?');
   });
 
+  it('the released screen keeps the trade header with its way back (Review board: "Back to trades"), never a dead end', async () => {
+    answer = (c) =>
+      c.url.endsWith('/review') ? { status: 200, body: { reviewable: false, mine: null, theirs: null, skipped: false, held: false } } : { status: 200, body: { confirmations: 1, target: 10 } };
+    const room = (view: ReleaseTrade) =>
+      render(
+        <MemoryRouter>
+          <ReleaseRoomScreen code={view.code} view={view} escrow={escrowStub([], { phase: 'done' })} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
+        </MemoryRouter>,
+      );
+    const buyer = room(trade({ ...RELEASED, role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost') }));
+    await flush();
+    const header = buyer.host.querySelector('header.x2f-trade-header')!;
+    expect(header).not.toBeNull();
+    expect(header.textContent).toContain('Buying from satoshi_ghost');
+    expect(header.textContent).toContain('Trade K7M2-9QXA-4FTR-8WPN');
+    expect(header.querySelector('a[aria-label="Back to trades"]')!.getAttribute('href')).toBe('/trades');
+    // The header comes first, above the released hero.
+    expect(buyer.host.querySelector('[data-screen="released"]')!.firstElementChild!.contains(header)).toBe(true);
+    buyer.unmount();
+    const seller = room(trade({ ...RELEASED, counterparty: who('mira.k') }));
+    await flush();
+    const sh = seller.host.querySelector('header.x2f-trade-header')!;
+    expect(sh.textContent).toContain('Selling to mira.k');
+    expect(sh.querySelector('a[aria-label="Back to trades"]')!.getAttribute('href')).toBe('/trades');
+  });
+
   it('the room picks ReleaseRoomScreen for each Task 24 slot, and nothing else of Task 24\'s', () => {
     const full = (over: Over) => trade(over) as TradeView;
     expect(screenFor(full({ role: 'seller', state: 'paid' }), 0)).toBe(ReleaseRoomScreen);
