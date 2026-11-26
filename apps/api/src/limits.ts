@@ -209,6 +209,13 @@ export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_
  */
 export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
 
+/**
+ * `GET /staff/v1/accounts/lookup` per staff member (staff Accounts page, lead default): a person
+ * looking up a few traders never comes near it; a loop that walks names or trade codes runs dry
+ * (20 at once, then 4 a minute). Every try counts, misses and bad queries too.
+ */
+export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
@@ -242,6 +249,8 @@ export interface Budgets {
   paymentProof: KeyedBuckets;
   /** Per account: `PUT /v1/account/webauthn/label` (security review of wip/lead-seckey-fix). */
   keyLabel: KeyedBuckets;
+  /** Per staff member: `GET /staff/v1/accounts/lookup` (the staff Accounts page). */
+  accountLookup: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -263,5 +272,6 @@ export function newBudgets(clock: () => Date): Budgets {
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
     paymentProof: new KeyedBuckets(PAYMENT_PROOF_BUCKET, clock),
     keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
+    accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
   };
 }

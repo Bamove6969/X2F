@@ -417,6 +417,13 @@ export const removeMember = (accountId: string, tapId: string) => staffApi<unkno
  */
 export const createInvite = (b: { role: InviteRole; hours: LoginHours; inviteId: string; token: string; expiresAt: string; tapId: string }) =>
   staffApi<{ inviteId: string; link: string; expiresAt: string }>('/staff/v1/invites', { method: 'POST', body: b });
+/**
+ * D-032 (owner G60): the owner resets a staff member's security. As for an invite, this browser
+ * makes the link's id, token and expiry, bound by the owner's `reset-staff-security` tap; the link
+ * is shown once.
+ */
+export const resetSecurity = (accountId: string, b: { inviteId: string; token: string; expiresAt: string; tapId: string }) =>
+  staffApi<{ inviteId: string; link: string; expiresAt: string }>(memberPath(accountId, '/reset-security'), { method: 'POST', body: b });
 export const cancelInvite = (inviteId: string) => staffApi<unknown>(`/staff/v1/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 
 // ---------------------------------------------------------------------------------------------
@@ -630,6 +637,59 @@ export const decideLimits = (accountId: string, recId: string, b: { approve: boo
     `/staff/v1/accounts/${encodeURIComponent(accountId)}/limit-recommendations/${encodeURIComponent(recId)}/decide`,
     { method: 'POST', body: b },
   );
+// ---------------------------------------------------------------------------------------------
+// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts, holds.ts):
+// senior moderators and the owner (`accounts.ban`, `accounts.freeze`; the API checks every call).
+
+export type BanKind = 'trade' | 'site';
+export interface AccountStatus {
+  bans: Array<{ id: string; kind: BanKind; reasonCode: import('@x2f/staff').BanReasonCode; until: string | null; permanent: boolean }>;
+  hold: { until: string; reason: string } | null;
+  frozen: boolean;
+  lien: boolean;
+}
+export interface LookedUpAccount {
+  accountId: string;
+  displayName: string;
+  matchedBy: 'name' | 'code';
+  side: Side | null;
+  completedTrades: number;
+  positivePct: number | null;
+  disputes: { won: number; lost: number };
+  stage: string;
+  status: AccountStatus;
+}
+export interface StaffBan {
+  id: string;
+  kind: BanKind;
+  ruleId: string;
+  reasonCode: import('@x2f/staff').BanReasonCode;
+  until: string | null;
+  permanent: boolean;
+  note: string | null;
+  createdAt: string;
+  endedAt: string | null;
+  liftedAt: string | null;
+  active: boolean;
+}
+export interface AccountBans {
+  priorOffences: number;
+  bans: StaffBan[];
+  rules: readonly import('@x2f/staff').BanRule[];
+}
+
+const accountPath = (id: string, rest: string) => `/staff/v1/accounts/${encodeURIComponent(id)}${rest}`;
+/** A trader by public display name or trade code (exact matches only; each lookup is logged). */
+export const lookupAccounts = (q: string) => staffApi<{ accounts: LookedUpAccount[] }>(`/staff/v1/accounts/lookup?q=${encodeURIComponent(q)}`);
+export const accountBans = (id: string) => staffApi<AccountBans>(accountPath(id, '/bans'));
+export const placeBan = (id: string, b: { banId: string; kind: BanKind; ruleId: string; until: string | null; note?: string; tapId: string }) =>
+  staffApi<StaffBan>(accountPath(id, '/bans'), { method: 'POST', body: b });
+export const liftBan = (id: string, banId: string, tapId: string) =>
+  staffApi<StaffBan>(accountPath(id, `/bans/${encodeURIComponent(banId)}/lift`), { method: 'POST', body: { tapId } });
+export const extendHold = (id: string, until: string) => staffApi<{ holdUntil: string }>(accountPath(id, '/hold/extend'), { method: 'POST', body: { until } });
+export const endHold = (id: string, via: 'secure-jabber' | null) =>
+  staffApi<unknown>(accountPath(id, '/hold/end'), { method: 'POST', body: via === null ? {} : { via } });
+
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (

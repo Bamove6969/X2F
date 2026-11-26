@@ -76,6 +76,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
   { method: 'POST', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/accounts/:id/bans/:banId/lift', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
+  // Spec 6.6: the staff Accounts page's read-only lookup (senior moderators and the owner).
+  { method: 'GET', url: '/staff/v1/accounts/lookup', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },

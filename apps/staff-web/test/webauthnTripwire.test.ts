@@ -23,10 +23,12 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
 // carry no id; StaffSettings signs the numbers the fields show.
 // Review p4t22 m2: NewsEditor taps the owner's key to publish (news-publish).
 // Review p4t22 N2: PlannedMaintenance taps `maintenance-planned`, its start, end and message built from the fields (ownerPages.test.tsx).
-const KEY_TAP_CALLERS: string[] = ['screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx', 'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
+const KEY_TAP_CALLERS: string[] = ['screens/AccountActions.tsx', 'screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx', 'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'ui/ClockOut.tsx', 'ui/DeviceCard.tsx'];
 // Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).
 // Plan 4 Task 26: LimitRecommendations taps `account-limit` (approve or decline), every field shown; reviewed in
 // comms review-lead-p4t26-limits-2026-11-20.md (tap binding, rounds 1-3).
+// Spec 6.6 account actions (wip/lead-staff-actions, for its security review): AccountActions taps
+// `ban-account` (account, ban id, kind, rule and end labelled) and `lift-ban` (account, ban id).
 
 describe('WebAuthn on the staff site (re-verify X2, X3)', () => {
   it('startAuthentication only in KeyTapDialog (the checked tap) and Login (the derived login challenge)', () => {

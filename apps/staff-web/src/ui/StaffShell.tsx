@@ -14,6 +14,8 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   disputes: 'Disputes',
   // Plan 5 Task 11: no board places it (DESIGN: not drawn). COPY-UNSIGNED DESIGNER-REVIEW
   'past-reputation': 'Past reputation',
+  // Spec 6.6 "Account actions": no board places it (DESIGN: not drawn). COPY-UNSIGNED DESIGNER-REVIEW
+  accounts: 'Accounts',
   staff: 'Staff',
   performance: 'Performance',
   // Owner Q13 (J-21): the price-health page. DESIGN: not drawn (no board places it); COPY-UNSIGNED
@@ -29,6 +31,7 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   overview: '/overview',
   disputes: '/disputes',
   'past-reputation': '/past-reputation',
+  accounts: '/accounts',
   staff: '/staff',
   performance: '/performance',
   prices: '/prices',
