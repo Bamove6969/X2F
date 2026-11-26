@@ -464,7 +464,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'address']);
       return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
     case 'pay-settings': {
-      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd']);
+      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp']);
       const opt = (key: string): number | null => (r[key] === null ? null : amount(r, key, { integer: true }));
       return {
         kind: 'pay-settings',
@@ -472,7 +472,15 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         seniorDisputeUsdCents: opt('seniorDisputeUsdCents'),
         seniorLargeTradeBp: opt('seniorLargeTradeBp'),
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
+        modFeeBp: opt('modFeeBp'),
+        seniorFeeBp: opt('seniorFeeBp'),
       };
+    }
+    case 'staff-pay': {
+      exactKeys(r, ['kind', 'accountId', 'feeBp']);
+      const feeBp = r.feeBp === null ? null : amount(r, 'feeBp', { integer: true });
+      if (feeBp !== null && feeBp > 10_000) throw badRequest();
+      return { kind: 'staff-pay', accountId: match(r, 'accountId', UUID).toLowerCase(), feeBp };
     }
     case 'starter-limits': {
       // Spec 6.6 "Settings": every starter-limit number, whole, in the order STARTER_FIELDS lists them.
@@ -594,6 +602,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'settings':
     case 'fee-sweep':
     case 'pay-settings':
+    case 'staff-pay':
     case 'starter-limits':
       return 'settings.write';
     case 'ban-account':

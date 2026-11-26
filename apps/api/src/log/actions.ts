@@ -178,6 +178,8 @@ export const LOG_ACTIONS = {
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool' },
+  // Owner 26 Nov 2026: one person's share of the fee, basis points of the fee (null = the role's default).
+  'staff.pay-set': { staffId: 'uuid', from: 'setting', to: 'setting' },
   'staff.session-ended-hours': { staffId: 'uuid' },
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods or ends
   // one of their sessions on the staff site (the method kind only: never a fingerprint or a label).
@@ -198,6 +200,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // Owner 26 Nov 2026: a dispute's pay as earned, for the audit: the share of the fee used (basis
+  // points), the XMR it came to, and whether the role's minimum paid instead.
+  'pay.earned': { staffId: 'uuid', feeBp: 'setting', atomic: 'amount', usdCents: 'amount', minimum: 'bool' },
   // D-041: a staff member's own pre-approved payout addresses (the id only, never the address).
   'pay.address-added': { addressId: 'id' },
   'pay.address-removed': { addressId: 'id' },

@@ -479,6 +479,9 @@ export interface PaySettings {
   seniorDisputeUsdCents: number | null;
   seniorLargeTradeBp: number | null;
   largeTradeThresholdUsd: number | null;
+  /** Owner 26 Nov 2026: each role's default share of X2F's 1% fee per dispute, basis points of the fee. */
+  modFeeBp: number | null;
+  seniorFeeBp: number | null;
 }
 export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
 export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
@@ -523,8 +526,15 @@ export interface StaffPayRow {
   unpaidUsdCents: string;
   unpaidAtomic: string;
   owed: boolean;
+  /** The person's own share of the fee (basis points of the fee); null = their role's default. */
+  feeBp: number | null;
+  /** The share that applies to them now (their own, else their role's); null = none set. */
+  effectiveFeeBp: number | null;
 }
 export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pay/staff');
+/** Owner 26 Nov 2026: one person's share of the fee (tap `staff-pay` bound to the person and value). */
+export const putStaffPay = (staffId: string, feeBp: number | null, tapId: string) =>
+  staffApi<{ feeBp: number | null }>(`/staff/v1/pay/staff/${encodeURIComponent(staffId)}`, { method: 'PUT', body: { feeBp, tapId } });
 
 // ---------------------------------------------------------------------------------------------
 // One's own security (apps/api/src/staff/account.ts; perm self, every role, one's own account)

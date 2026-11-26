@@ -301,7 +301,7 @@ describe('StaffList (board StaffList)', () => {
 // StaffSettings
 
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: null, communityTelegramUrl: null };
-const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: 2500, seniorLargeTradeBp: null, largeTradeThresholdUsd: null };
+const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: 2500, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null };
 
 function settingsApi(extra: Record<string, Parameters<typeof fakeApi>[0][string]> = {}) {
   return fakeApi({
@@ -328,10 +328,10 @@ describe('StaffSettings (board StaffSettings)', () => {
     expect(page.textContent).toContain('A moderator can rule alone on trades below this. At or above it, a senior moderator or you must approve too.');
     expect(page.textContent).toContain('How soon a moderator must reply after a dispute opens. Traders see this deadline and their place in the queue.');
     expect(page.textContent).toContain('How long either trader has to appeal a ruling. Appeals go to a senior moderator or you, never the moderator who ruled.');
-    const mod = field('Moderator, per dispute', page) as HTMLInputElement;
+    const mod = field('Moderator, minimum per dispute', page) as HTMLInputElement;
     expect(mod.value).toBe('');
     expect(mod.placeholder).toBe('Not set');
-    expect((field('Senior moderator, per dispute', page) as HTMLInputElement).value).toBe('25.00');
+    expect((field('Senior moderator, minimum per dispute', page) as HTMLInputElement).value).toBe('25.00');
     expect(page.querySelectorAll('[data-primary]')).toHaveLength(1);
     expect(button('Save settings')!.disabled).toBe(true);
   });
@@ -360,17 +360,18 @@ describe('StaffSettings (board StaffSettings)', () => {
     expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/settings', body: { largeTradeLimitUsd: 2500, appealWindowH: 72, tapId: 'tap-1' } });
   });
 
-  it('a pay amount changed: a pay-settings tap of all four, then the PUT', async () => {
+  it('a pay amount changed: a pay-settings tap of all six, then the PUT', async () => {
     const api = settingsApi();
     await open('/settings');
-    typeInto(field('Moderator, per dispute'), '12.50');
-    typeInto(field('Senior moderator, per dispute'), '');
+    typeInto(field('Moderator, minimum per dispute'), '12.50');
+    typeInto(field('Senior moderator, minimum per dispute'), '');
     typeInto(field('Senior moderator, share of large-trade fees'), '2.5');
     typeInto(field('Large trade from'), '5000');
+    typeInto(field('Moderator, share of the fee'), '40');
     await settle();
     await click(button('Save settings'));
     await click(button('Tap security key'));
-    const next = { modDisputeUsdCents: 1250, seniorDisputeUsdCents: null, seniorLargeTradeBp: 250, largeTradeThresholdUsd: 5000 };
+    const next = { modDisputeUsdCents: 1250, seniorDisputeUsdCents: null, seniorLargeTradeBp: 250, largeTradeThresholdUsd: 5000, modFeeBp: 4000, seniorFeeBp: null };
     expect(tapIntents(api.calls)).toEqual([{ kind: 'pay-settings', ...next }]);
     expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/pay/settings', body: { ...next, tapId: 'tap-1' } });
     expect(api.calls.some((c) => c.path === '/staff/v1/settings' && c.method === 'PUT')).toBe(false);
@@ -380,7 +381,7 @@ describe('StaffSettings (board StaffSettings)', () => {
     const api = settingsApi();
     await open('/settings');
     typeInto(field('Large-trade limit'), '900');
-    typeInto(field('Moderator, per dispute'), '10');
+    typeInto(field('Moderator, minimum per dispute'), '10');
     await settle();
     await click(button('Save settings'));
     await click(button('Tap security key'));

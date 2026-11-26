@@ -76,15 +76,25 @@ export interface PaySettings {
   seniorLargeTradeBp: number | null;
   /** A trade is large at or above this US dollar value (its value when the dispute opened); null = not set. */
   largeTradeThresholdUsd: number | null;
+  /**
+   * Owner 26 Nov 2026: a moderator's default share of X2F's fee on each trade whose dispute they
+   * rule, basis points of the fee (10000 = 100% of the 1%); null = not set. With a share set, the
+   * per-dispute cents above are the minimum a completed dispute pays.
+   */
+  modFeeBp: number | null;
+  /** The same for a senior moderator. */
+  seniorFeeBp: number | null;
 }
 
-const PAY_FIELDS = ['modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd'] as const;
+const PAY_FIELDS = ['modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp'] as const;
 type PayField = (typeof PAY_FIELDS)[number];
 const PAY_BOUNDS: Readonly<Record<PayField, readonly [number, number]>> = {
   modDisputeUsdCents: [0, 10_000_000],
   seniorDisputeUsdCents: [0, 10_000_000],
   seniorLargeTradeBp: [0, 10_000],
   largeTradeThresholdUsd: [1, 10_000_000],
+  modFeeBp: [0, 10_000],
+  seniorFeeBp: [0, 10_000],
 };
 /** The settings' log names (the column names, camel-cased). */
 const PAY_LOG_FIELD: Readonly<Record<PayField, string>> = {
@@ -92,6 +102,8 @@ const PAY_LOG_FIELD: Readonly<Record<PayField, string>> = {
   seniorDisputeUsdCents: 'paySeniorDisputeUsdCents',
   seniorLargeTradeBp: 'seniorLargeTradeBp',
   largeTradeThresholdUsd: 'largeTradeBonusThresholdUsd',
+  modFeeBp: 'payModFeeBp',
+  seniorFeeBp: 'paySeniorFeeBp',
 };
 
 interface PayRow {
@@ -99,15 +111,19 @@ interface PayRow {
   pay_senior_dispute_usd_cents: string | null;
   senior_large_trade_bp: number | null;
   large_trade_bonus_threshold_usd: number | null;
+  pay_mod_fee_bp: number | null;
+  pay_senior_fee_bp: number | null;
 }
 const PAY_SELECT = `select pay_mod_dispute_usd_cents::text, pay_senior_dispute_usd_cents::text, senior_large_trade_bp,
-                           large_trade_bonus_threshold_usd from settings where id = 1`;
+                           large_trade_bonus_threshold_usd, pay_mod_fee_bp, pay_senior_fee_bp from settings where id = 1`;
 const num = (v: string | number | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
 const paySettingsOf = (r: PayRow | undefined): PaySettings => ({
   modDisputeUsdCents: num(r?.pay_mod_dispute_usd_cents),
   seniorDisputeUsdCents: num(r?.pay_senior_dispute_usd_cents),
   seniorLargeTradeBp: num(r?.senior_large_trade_bp),
   largeTradeThresholdUsd: num(r?.large_trade_bonus_threshold_usd),
+  modFeeBp: num(r?.pay_mod_fee_bp),
+  seniorFeeBp: num(r?.pay_senior_fee_bp),
 });
 
 export async function getPaySettings(q: Queryable): Promise<PaySettings> {
@@ -116,7 +132,7 @@ export async function getPaySettings(q: Queryable): Promise<PaySettings> {
 
 const badRequest = (field?: string): ApiError => new ApiError(400, 'bad-request', field ? { field } : undefined);
 
-/** The PUT body: all four settings (each a whole number in bounds, or null) and the `tapId`. */
+/** The PUT body: all six settings (each a whole number in bounds, or null) and the `tapId`. */
 export function parsePaySettings(body: unknown): { next: PaySettings; tapId: string } {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw badRequest();
   const r = body as Record<string, unknown>;
@@ -155,8 +171,9 @@ export async function changePaySettings(
   const n = input.next;
   await client.query(
     `update settings set pay_mod_dispute_usd_cents = $1, pay_senior_dispute_usd_cents = $2, senior_large_trade_bp = $3,
-            large_trade_bonus_threshold_usd = $4, pay_tap_id = $5, pay_set_at = $6, updated_at = $6 where id = 1`,
-    [n.modDisputeUsdCents, n.seniorDisputeUsdCents, n.seniorLargeTradeBp, n.largeTradeThresholdUsd, tap.id, now],
+            large_trade_bonus_threshold_usd = $4, pay_tap_id = $5, pay_set_at = $6, updated_at = $6,
+            pay_mod_fee_bp = $7, pay_senior_fee_bp = $8 where id = 1`,
+    [n.modDisputeUsdCents, n.seniorDisputeUsdCents, n.seniorLargeTradeBp, n.largeTradeThresholdUsd, tap.id, now, n.modFeeBp, n.seniorFeeBp],
   );
   for (const f of changed) {
     await appendLog(client, {
@@ -165,6 +182,50 @@ export async function changePaySettings(
     });
   }
   return n;
+}
+
+// ---------------------------------------------------------------------------------------------
+// One person's share of the fee (owner 26 Nov 2026)
+
+/** The PUT body of `/staff/v1/pay/staff/:id`: `feeBp` (0-10000, or null for the role's default) and `tapId`. */
+export function parseStaffPay(body: unknown): { feeBp: number | null; tapId: string } {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw badRequest();
+  const r = body as Record<string, unknown>;
+  if (Object.keys(r).sort().join(',') !== 'feeBp,tapId') throw badRequest();
+  const v = r.feeBp;
+  if (v !== null && (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0 || v > 10_000)) throw badRequest('feeBp');
+  if (typeof r.tapId !== 'string') throw badRequest('tapId');
+  return { feeBp: v, tapId: r.tapId };
+}
+
+/**
+ * Sets one moderator's or senior moderator's own share in `client`'s transaction, with a tap bound
+ * to the person and the value (intent `staff-pay`), and logs `staff.pay-set` (from, to). The owner
+ * and helpers earn no dispute pay, so their rows are refused (400, field `staffId`). The same value
+ * again needs no tap and logs nothing. Applies to disputes completed from then on.
+ */
+export async function changeStaffPay(
+  client: pg.PoolClient,
+  actor: Pick<StaffContext, 'accountId' | 'role'>,
+  input: { staffId: string; feeBp: number | null; tapId: string; sessionId?: string },
+  now: Date,
+): Promise<{ feeBp: number | null }> {
+  const id = input.staffId.toLowerCase();
+  const { rows } = await client.query<{ role: string; pay_fee_bp: number | null; removed: boolean }>(
+    'select role, pay_fee_bp, removed_at is not null as removed from staff_members where account_id::text = $1 for update',
+    [id],
+  );
+  const row = rows[0];
+  if (row === undefined || row.removed) throw new ApiError(404, 'not-found');
+  if (row.role !== 'mod' && row.role !== 'senior') throw badRequest('staffId');
+  if (row.pay_fee_bp === input.feeBp) return { feeBp: row.pay_fee_bp };
+  const tap = await consumeKeyTap(client, input.tapId, actor.accountId, { kind: 'staff-pay', accountId: id, feeBp: input.feeBp }, now, input.sessionId !== undefined ? { sessionId: input.sessionId } : {});
+  await client.query('update staff_members set pay_fee_bp = $2, pay_tap_id = $3, pay_set_at = $4 where account_id::text = $1', [id, input.feeBp, tap.id, now]);
+  await appendLog(client, {
+    at: now, actor: { kind: 'staff', id: actor.accountId, role: actor.role }, tradeCode: null, action: 'staff.pay-set',
+    detail: { staffId: id, from: row.pay_fee_bp, to: input.feeBp },
+  });
+  return { feeBp: input.feeBp };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -524,17 +585,26 @@ export function staffPayRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     return withTx(db, (c) => changePaySettings(c, req.staff, { ...input, sessionId: req.auth.sessionId }, clock()));
   });
+  // Owner 26 Nov 2026: one moderator's or senior moderator's own share of the fee (tap `staff-pay`).
+  app.put('/staff/v1/pay/staff/:id', owner, async (req) => {
+    const raw = (req.params as { id?: unknown }).id;
+    if (typeof raw !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(raw)) throw badRequest('id');
+    const input = parseStaffPay(req.body);
+    const { db, clock } = req.server.deps;
+    return withTx(db, (c) => changeStaffPay(c, req.staff, { staffId: raw, ...input, sessionId: req.auth.sessionId }, clock()));
+  });
 
   app.get('/staff/v1/pay/staff', earnings, async (req) => {
-    const { rows } = await req.server.deps.db.query<{ staff_id: string; display_name: string; role: string; switched_off: boolean; usd_cents: string; atomic: string }>(
-      `select m.account_id::text as staff_id, a.display_name, m.role, m.switched_off_at is not null as switched_off,
+    const { rows } = await req.server.deps.db.query<{ staff_id: string; display_name: string; role: string; switched_off: boolean; usd_cents: string; atomic: string; pay_fee_bp: number | null }>(
+      `select m.account_id::text as staff_id, a.display_name, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp,
               coalesce(sum(i.usd_cents), 0)::text as usd_cents, coalesce(sum(i.atomic), 0)::text as atomic
          from staff_members m join accounts a on a.id = m.account_id
          left join staff_pay_items i on i.staff_id = m.account_id and i.payout_id is null
         where m.role <> 'owner'
-        group by m.account_id, a.display_name, m.role, m.switched_off_at
+        group by m.account_id, a.display_name, m.role, m.switched_off_at, m.pay_fee_bp
         order by a.display_name`,
     );
+    const defaults = await getPaySettings(req.server.deps.db);
     const price = usdPrice(req.server.deps.prices);
     return {
       members: rows.map((r) => {
@@ -545,6 +615,9 @@ export function staffPayRoutes(app: FastifyInstance): void {
         return {
           staffId: r.staff_id, displayName: r.display_name, role: r.role, switchedOff: r.switched_off,
           unpaidUsdCents: r.usd_cents, unpaidAtomic: r.atomic, owed: net < 0n,
+          // The person's own share of the fee (null = their role's), and the share that applies.
+          feeBp: r.pay_fee_bp,
+          effectiveFeeBp: r.pay_fee_bp ?? (r.role === 'senior' ? defaults.seniorFeeBp : r.role === 'mod' ? defaults.modFeeBp : null),
         };
       }),
     };

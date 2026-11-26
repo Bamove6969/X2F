@@ -19,6 +19,13 @@ import { appendLog } from '../log/append.js';
  *   value at dispute opening is at or above the threshold and the ruling makes the poster pay the
  *   fee (owner g63: a full reversal earns X2F nothing, so it has no share). The share goes to the
  *   proposer if senior, else to the senior who co-approved (lead reading of "decided or co-approved");
+ * - owner 26 Nov 2026, the share of the fee: the proposer also earns their share (basis points of
+ *   the 1% fee, their own `staff_members.pay_fee_bp`, else their role's default) of the trade's X2F
+ *   fee when the ruling makes the poster pay it, as a `fee-share` item in XMR. With a share set,
+ *   the role's cents per dispute are a minimum: when the share (in dollars at the trade's value at
+ *   dispute opening) is below it, or nothing (a full refund takes no fee), the `dispute` item pays
+ *   the minimum and no share is set aside; otherwise the share alone pays and the `dispute` item
+ *   carries no amount. With no share set, pay is the cents per dispute as before. Logged `pay.earned`;
  * - the appeal's own ruling (round 2) earns nothing (owner question, not ruled);
  * - clawback option A: when round 2 is final and differs from round 1 ("Decision overruled"),
  *   every item round 1 earned is reversed by a negative item of the same amount, taken from future
@@ -39,6 +46,23 @@ interface PayRow {
   pay_senior_dispute_usd_cents: string | null;
   senior_large_trade_bp: number | null;
   large_trade_bonus_threshold_usd: number | null;
+  pay_mod_fee_bp: number | null;
+  pay_senior_fee_bp: number | null;
+}
+
+/**
+ * The dispute pay for one ruling (pure): the share of the fee in XMR and in US cents at the trade's
+ * value at opening, and which of share and minimum pays. `feeBp` null = no share set (minimum only).
+ */
+export function disputePay(a: { feeBp: number | null; minUsdCents: bigint | null; feeAtomic: bigint; feeCharged: boolean; tradeUsdCents: bigint }):
+  { shareAtomic: bigint; usdCents: bigint | null; minimum: boolean } {
+  if (a.feeBp === null) return { shareAtomic: 0n, usdCents: a.minUsdCents, minimum: false };
+  const bp = BigInt(a.feeBp);
+  const shareAtomic = a.feeCharged ? (a.feeAtomic * bp) / 10_000n : 0n;
+  // X2F's fee is 1% of the trade (X2F_FEE_BPS), so the share in cents is value * 1% * bp / 10000.
+  const shareCents = a.feeCharged ? (a.tradeUsdCents * bp) / 1_000_000n : 0n;
+  if (a.minUsdCents !== null && (shareAtomic <= 0n || shareCents < a.minUsdCents)) return { shareAtomic: 0n, usdCents: a.minUsdCents, minimum: true };
+  return { shareAtomic, usdCents: null, minimum: false };
 }
 
 async function roleOf(client: pg.PoolClient, id: string | null): Promise<string | null> {
@@ -54,15 +78,37 @@ async function earn(client: pg.PoolClient, d: Dispute, r: RulingDraft, now: Date
   const proposerRole = await roleOf(client, r.proposer);
   if (proposerRole !== 'mod' && proposerRole !== 'senior') return;
   const s = (await client.query<PayRow>(
-    `select pay_mod_dispute_usd_cents::text, pay_senior_dispute_usd_cents::text, senior_large_trade_bp, large_trade_bonus_threshold_usd
+    `select pay_mod_dispute_usd_cents::text, pay_senior_dispute_usd_cents::text, senior_large_trade_bp, large_trade_bonus_threshold_usd,
+            pay_mod_fee_bp, pay_senior_fee_bp
        from settings where id = 1`,
   )).rows[0];
   const rate = proposerRole === 'senior' ? s?.pay_senior_dispute_usd_cents : s?.pay_mod_dispute_usd_cents;
+  const own = (await client.query<{ pay_fee_bp: number | null }>('select pay_fee_bp from staff_members where account_id::text = $1', [r.proposer.toLowerCase()])).rows[0];
+  const feeBp = own?.pay_fee_bp ?? (proposerRole === 'senior' ? s?.pay_senior_fee_bp : s?.pay_mod_fee_bp) ?? null;
+  const posterPays = rulingFee({ status: 'published', round: 1, ruling: r, round1: null }) === 'poster-pays';
+  const tradeFee = (await client.query<{ fee_atomic: string }>('select fee_atomic::text from trades where code = $1', [d.code])).rows[0];
+  const pay = disputePay({
+    feeBp, minUsdCents: rate === null || rate === undefined ? null : BigInt(rate),
+    feeAtomic: tradeFee ? BigInt(tradeFee.fee_atomic) : 0n, feeCharged: posterPays && tradeFee !== undefined, tradeUsdCents: d.usdCents,
+  });
   await client.query(
     `insert into staff_pay_items (staff_id, kind, trade_code, seq, usd_cents, earned_at)
      values ($1, 'dispute', $2, $3, $4, $5) on conflict do nothing`,
-    [r.proposer, d.code, d.seq, rate ?? null, now],
+    [r.proposer, d.code, d.seq, pay.usdCents?.toString() ?? null, now],
   );
+  if (pay.shareAtomic > 0n) {
+    await client.query(
+      `insert into staff_pay_items (staff_id, kind, trade_code, seq, atomic, earned_at)
+       values ($1, 'fee-share', $2, $3, $4, $5) on conflict do nothing`,
+      [r.proposer, d.code, d.seq, pay.shareAtomic.toString(), now],
+    );
+  }
+  if (feeBp !== null) {
+    const detail: Record<string, string | number | boolean> = { staffId: r.proposer.toLowerCase(), feeBp, minimum: pay.minimum };
+    if (pay.shareAtomic > 0n) detail.atomic = pay.shareAtomic.toString();
+    if (pay.usdCents !== null) detail.usdCents = pay.usdCents.toString();
+    await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: null, action: 'pay.earned', detail });
+  }
 
   // The senior moderators' large-trade share (D-043).
   const bp = s?.senior_large_trade_bp ?? null;
