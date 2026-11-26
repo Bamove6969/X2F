@@ -244,7 +244,10 @@ function walletInput(req: FastifyRequest): WalletInput {
   return input;
 }
 
-/** The onboarding exemption covers the account's first wallets only (on top of the session's window). */
+/** The account's creating session, until it ends its sign-up (owner 2026-11-26: no clock for the first wallet). */
+const signupSession = (req: FastifyRequest): boolean => req.auth.onboardingUntil !== null;
+
+/** The onboarding exemption covers the account's first wallets only (on top of the sign-up session). */
 async function noWalletYet(req: FastifyRequest): Promise<boolean> {
   const { rows } = await req.server.deps.db.query<{ had_wallet: boolean }>('select had_wallet from accounts where id = $1', [
     req.auth.accountId,
@@ -263,9 +266,10 @@ async function noWalletYet(req: FastifyRequest): Promise<boolean> {
 const walletConfirm: preHandlerAsyncHookHandler = async function (req) {
   if (req.auth.level === 'recovery') throw new ApiError(403, 'recovery-session');
   if (bodyOf(req).confirmToken !== undefined) return;
-  const until = req.auth.onboardingUntil;
-  const inWindow = until !== null && until.getTime() > req.server.deps.clock().getTime();
-  if (inWindow && (await noWalletYet(req))) return;
+  // Owner, 2026-11-26 (demo note #161, "no matter what"): the first wallet skips the confirm for the
+  // whole sign-up session, with no 30-minute clock. The sign-up session is the creating session
+  // until it reaches Welcome (`onboarding/end` nulls `onboarding_until`); later wallets confirm.
+  if (signupSession(req) && (await noWalletYet(req))) return;
   throw new ApiError(403, 'confirm-required', { action: walletInput(req).action.kind });
 };
 
@@ -355,8 +359,9 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       // the wallet rule of 10-24): a session whose login waits (a username and password; a PGP key login is strong since Q81) adds no wallet
       // at once, whatever it confirmed with: hold model v3, the add is staged like any security
       // change and applies 24 h after it is submitted (`gateChange`; 202 `staged`). The sign-up's
-      // first 30 minutes are exempt there.
-      held = await gateChange(client, req, { kind: 'wallets', items: input.items, method });
+      // first 30 minutes are exempt there, and so is the first wallet of the sign-up session
+      // (owner 2026-11-26, note #161).
+      held = await gateChange(client, req, { kind: 'wallets', items: input.items, method }, { signup: exempted });
       if (held === null) {
         // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
         // usable at once, whenever they are added and however they were confirmed. Later wallets
