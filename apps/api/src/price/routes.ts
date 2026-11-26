@@ -44,7 +44,8 @@ export function priceRoutes(app: FastifyInstance): void {
 /**
  * The owner's Price health data (spec 11.6): each XMR price source and exchange-rate source with its
  * last good fetch, failures in a row and whether it is in use, the rates the sanity guard refused,
- * the currencies whose market prices are paused, and the owner's settings. Served by the staff API
+ * the currencies whose market prices are paused, the route pricing each currency (`coverage`),
+ * and the owner's settings. Served by the staff API
  * only (`GET /staff/v1/price-health`): the owner is refused on the trader site (owner Q13, 6 Nov).
  */
 export function priceHealthBody(prices: Deps['prices']) {
@@ -58,6 +59,8 @@ export function priceHealthBody(prices: Deps['prices']) {
     })),
     rejected: h.fx.rejected.map((r) => ({ source: r.source, currency: r.currency, at: r.at.toISOString() })),
     paused: h.paused,
+    // Per currency, the route pricing it now (null: no price); 2026-11-02 several price feeds.
+    coverage: Object.fromEntries(h.coverage.map((c) => [c.currency, c.route])),
     settings: { staleAfterMinutes: h.fx.settings.staleAfterMs / 60_000, sanityPercent: h.fx.settings.sanityBps / 100 },
   };
 }

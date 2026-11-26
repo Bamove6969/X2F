@@ -580,7 +580,7 @@ describe('GET /v1/price', () => {
   beforeAll(async () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([stub('a', () => answer()), stub('b', () => answer())], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
-    const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }) });
+    const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }), clock: c.clock });
     await prices.poll();
     let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
     ({ app, setNow, trader } = await tradeApp({}, { prices, clock: c.clock }));

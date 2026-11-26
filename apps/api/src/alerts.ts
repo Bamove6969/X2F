@@ -49,6 +49,10 @@ export type AlertKind =
   | 'price-source-recovered'
   | 'market-prices-paused'
   | 'market-prices-resumed'
+  // Owner only, info (owner call OC6 b, awaiting confirmation): a currency moved to a backup price
+  // route, and back to its first route. Detail: currencies, message. Not pushed.
+  | 'price-route-backup'
+  | 'price-route-primary'
   // Owner only: the vendor auto-close hit its per-run cap (lead vendor review item 4).
   | 'auto-close-capped'
   // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published

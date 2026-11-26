@@ -38,6 +38,8 @@ export function testConfig(over: Partial<Config> = {}): Config {
     pgpSigningFingerprint: '0'.repeat(40),
     priceSources: ['kraken', 'bitfinex', 'coingecko'],
     fxSources: ['coinbase', 'bitpay', 'coingecko'],
+    priceRoutes: ['market'],
+    priceRouteMaxGapBps: null,
     passwordPeppers: testRing(),
     recoveryCodeKeys: testRing(),
     totpKeys: testRing(),
@@ -98,6 +100,7 @@ export async function testApp(overrides: Partial<Deps> = {}, options: Omit<Build
     prices: createMarketPrices({
       xmr: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
       fx: createFxRates([], { clock: () => now }),
+      clock: () => now,
     }),
     ...overrides,
   };

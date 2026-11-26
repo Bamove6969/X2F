@@ -19,6 +19,8 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'price-source-recovered': 'A price source is back',
   'market-prices-paused': 'Market prices paused',
   'market-prices-resumed': 'Market prices back',
+  'price-route-backup': 'A currency is priced by a backup route',
+  'price-route-primary': 'A currency is priced by its first route again',
   'auto-close-capped': 'Inactive accounts: the automatic close stopped at its limit for this run',
   'dispute-refund-after-ruling': 'A refund landed after a ruling: the case needs a new ruling',
   'dispute-comply-lapsed': 'A seller did not prove the payment a ruling ordered: the case needs a senior moderator',

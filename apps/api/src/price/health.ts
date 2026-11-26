@@ -8,9 +8,17 @@ import { FX_DEFAULTS, type FxHealth } from './fx.js';
  * backup"; every source for a currency down raises an urgent "<CCY> market prices paused"; each
  * recovery sends an all-clear. Alerts are grouped by outage: a condition alerts when it starts and
  * when it ends, never once per fetch.
+ *
+ * Owner call OC6 (b), built 26 Nov 2026 with the plan note's recommendation, awaiting the owner's
+ * confirmation: a currency that moves off its first price route raises an info (not urgent, not
+ * pushed) "<CCY> priced by a backup route", and an all-clear once it is back on the first route.
+ * Owner only, like every alert here. A currency that goes from a backup route to no price stays in
+ * the backup outage (the paused alert covers the gap), so the all-clear never fires while it is paused.
  */
 
-export type PriceAlertKind = 'price-source-failing' | 'price-source-recovered' | 'market-prices-paused' | 'market-prices-resumed';
+export type PriceAlertKind =
+  | 'price-source-failing' | 'price-source-recovered' | 'market-prices-paused' | 'market-prices-resumed'
+  | 'price-route-backup' | 'price-route-primary';
 
 export interface PriceAlertDetail {
   message: string;
@@ -33,10 +41,14 @@ export interface HealthSnapshot {
   fx: FxHealth;
   /** Currencies with no market price right now. */
   paused: string[];
+  /** Currencies priced right now by a route other than the first (OC6); left out: none. */
+  backup?: string[];
 }
 
 const LABELS: Readonly<Record<string, string>> = {
   kraken: 'Kraken', bitfinex: 'Bitfinex', coingecko: 'CoinGecko', coinbase: 'Coinbase', bitpay: 'BitPay',
+  // Candidate sources, off unless named in config (2026-11-02 plan note).
+  coinpaprika: 'CoinPaprika', frankfurter: 'Frankfurter', erapi: 'ExchangeRate-API',
 };
 const label = (name: string): string => LABELS[name] ?? name;
 
@@ -62,6 +74,11 @@ function recoveredAlert(c: Condition): PriceAlert {
 function ratesOf(currencies: string[]): string {
   if (currencies.length === 1) return `${currencies[0]!} rate`;
   return currencies.length <= 5 ? `${currencies.join(', ')} rates` : `rates for ${currencies.length} currencies`;
+}
+
+/** "EUR", "EUR, GBP", or "6 currencies" once the list gets long. */
+function listOf(currencies: string[]): string {
+  return currencies.length <= 5 ? currencies.join(', ') : `${currencies.length} currencies`;
 }
 
 /**
@@ -117,6 +134,7 @@ export function createAlertGrouper(o: AlertGrouperOptions = {}): AlertGrouper {
   const quietMs = o.quietMs ?? PRICE_HEALTH_DEFAULTS.quietMs;
   const sources = new Map<string, Open<Condition>>();
   const paused = new Map<string, Open<string>>();
+  const backup = new Map<string, Open<string>>();
 
   /** Opens the new keys, keeps the returning ones, and closes those quiet long enough; returns [started, ended]. */
   function step<T>(open: Map<string, Open<T>>, present: Map<string, T>, at: number): [T[], T[]] {
@@ -179,6 +197,21 @@ export function createAlertGrouper(o: AlertGrouperOptions = {}): AlertGrouper {
       if (ended.length > 0) {
         const message = paused.size === 0 && ended.length >= EVERY ? 'Market prices back in every currency' : `${ended.join(', ')} market prices back`;
         out.push({ kind: 'market-prices-resumed', detail: { currencies: ended, message } });
+      }
+
+      // OC6: a currency on a backup route, kept open while it has no price at all (it has not come
+      // back to the first route), closed after the same quiet period once the first route prices it.
+      const pausedNow = new Set(s.paused);
+      const onBackup = new Map((s.backup ?? []).map((c) => [c, c]));
+      for (const c of backup.keys()) if (pausedNow.has(c)) onBackup.set(c, c);
+      const [movedOff, movedBack] = step(backup, onBackup, at);
+      movedOff.sort();
+      movedBack.sort();
+      if (movedOff.length > 0) {
+        out.push({ kind: 'price-route-backup', detail: { currencies: movedOff, message: `${listOf(movedOff)} priced by a backup route` } });
+      }
+      if (movedBack.length > 0) {
+        out.push({ kind: 'price-route-primary', detail: { currencies: movedBack, message: `${listOf(movedBack)} priced by the first route again` } });
       }
       return out;
     },

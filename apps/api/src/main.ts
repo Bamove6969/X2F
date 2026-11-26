@@ -75,8 +75,10 @@ let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind,
 let alertLog: { error(obj: { error: string }, msg: string): void; info(obj: object, msg: string): void } | null = null;
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
-  fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
+  fx: createFxRates(fxSources(config.fxSources, fetch, clock), { clock, settings: () => loadFxSettings(db) }),
   clock,
+  routes: config.priceRoutes,
+  maxGapBps: config.priceRouteMaxGapBps,
   onAlert: (a) => onAlert(a),
   log: { error: (obj, msg) => alertLog?.error(obj, msg) },
 });
