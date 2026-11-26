@@ -826,15 +826,24 @@ export interface ActiveDispute {
   xmr: string;
   status: string;
 }
-export const activeDisputes = () => staffApi<{ items: ActiveDispute[] }>('/staff/v1/log/active-disputes');
+/** Review m7: newest opened first, 100 a page; `before` is the last code of the page before. */
+export const activeDisputes = (before?: string) => staffApi<{ items: ActiveDispute[]; next: string | null }>(page('/staff/v1/log/active-disputes', before));
+/** Review m7: what the owner's page reads on load. No chain check (nothing is re-hashed). */
+export interface LogStatus {
+  entries: number;
+  headId: string | null;
+  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
+  alarm: string | null;
+}
 export interface LogIntegrity {
   checkedAt: string;
   chain: { ok: true; headId: string | null } | { ok: false; brokenAt: string };
   entries: number;
-  /** When the moderation process's own check of the log failed (`site_flags.log_alarm`), or null. */
   alarm: string | null;
 }
-export const logIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity');
+export const logStatus = () => staffApi<LogStatus>('/staff/v1/log/integrity');
+/** Review m7: the whole chain re-hashed from its first entry, on the owner's "Check integrity" only. */
+export const checkLogIntegrity = () => staffApi<LogIntegrity>('/staff/v1/log/integrity/check', { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // The training library (Plan 4 Task 19; perm training.read): closed cases, read through the anonymizer
@@ -887,7 +896,8 @@ export interface TrainingReviewCase extends TrainingCase {
   /** Re-review 3 m1: the tag of the texts as loaded; the save sends it back (409 `case-changed` if they changed). */
   reviewTag: string;
 }
-export const trainingReviewList = () => staffApi<{ items: TrainingReviewItem[] }>('/staff/v1/training/review');
+/** Re-review m3: newest closed first, 50 a page; `before` is the last case's opaque id. */
+export const trainingReviewList = (before?: string) => staffApi<{ items: TrainingReviewItem[]; next: string | null }>(page('/staff/v1/training/review', before));
 export const trainingReviewCase = (id: string) => staffApi<TrainingReviewCase>(`/staff/v1/training/review/${encodeURIComponent(id)}`);
 export const markTrainingCase = (id: string, masks: ManualMask[], reviewTag: string) =>
   staffApi<{ id: string; status: 'marked' }>(`/staff/v1/training/review/${encodeURIComponent(id)}`, { method: 'PUT', body: { masks, reviewTag } });

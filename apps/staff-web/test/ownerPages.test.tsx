@@ -462,6 +462,29 @@ function overviewApi(site: Record<string, unknown> = {}, extra: Record<string, P
 }
 
 describe('StaffOverview (board StaffOverview)', () => {
+  it('mod polish: the Today card counts open disputes, appeals waiting and new alerts from the existing reads; a dash when one fails', async () => {
+    const q = (status: string) => ({ code: 'X', status });
+    const api = overviewApi({}, {
+      'GET /staff/v1/disputes': { body: { rows: [q('open'), q('appealed'), q('appealed'), q('awaiting-approval')], counts: { open: 9, overdue: 0, unassigned: 0, needApproval: 1 }, settings: { firstResponseH: 4, largeTradeLimitUsd: 1000 } } },
+      'GET /staff/v1/owner/alerts': { body: { items: [], unread: 3, next: null } },
+    });
+    await open('/overview');
+    const tile = (p: string) => document.querySelector(`[data-part="${p}"]`)?.textContent;
+    expect(document.querySelector('section[aria-label="Today"] h2')?.textContent).toBe('Today');
+    expect(tile('today-open')).toBe('9Open disputes');
+    expect(tile('today-appeals')).toBe('2Appeals waiting');
+    expect(tile('today-alerts')).toBe('3New alerts');
+    expect(document.querySelector('[data-part="today-alerts"] a')?.getAttribute('href')).toBe('/notifications');
+    // Reads only: no write was made for the card.
+    expect(api.calls.filter((c) => c.method !== 'GET')).toEqual([]);
+    expect(document.querySelector('[data-part="today"]')?.textContent).not.toMatch(/ticket/i);
+    document.body.innerHTML = '';
+    overviewApi({}, { 'GET /staff/v1/disputes': { status: 500, body: { error: 'internal' } } });
+    await open('/overview');
+    expect(tile('today-open')).toBe('–Open disputes');
+    expect(tile('today-appeals')).toBe('–Appeals waiting');
+  });
+
   it('live, then paused with a tap ("Tap key and pause"), then live again with a tap', async () => {
     const api = overviewApi();
     await open('/overview');

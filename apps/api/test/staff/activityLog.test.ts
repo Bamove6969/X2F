@@ -308,7 +308,7 @@ describe('the filters and the active disputes', () => {
 
 describe('the chain check and the log alarm', () => {
   it('the owner sees the chain intact and no alarm; then the alarm the moderation process set', async () => {
-    const res = await owner.b.get('/staff/v1/log/integrity');
+    const res = await owner.b.post('/staff/v1/log/integrity/check', {});
     expect(res.statusCode, res.body).toBe(200);
     const v = res.json() as { chain: { ok: boolean; headId?: string }; alarm: string | null; entries: number; checkedAt: string };
     expect(v.chain.ok).toBe(true);
@@ -317,12 +317,15 @@ describe('the chain check and the log alarm', () => {
     expect(v.checkedAt).toBe(deps.clock().toISOString());
     const at = new Date(T0.getTime() + 70 * H);
     await deps.db.query('update site_flags set log_alarm = $1', [at]);
+    // Review m7: the page's load reads the alarm without the chain check.
     expect(((await owner.b.get('/staff/v1/log/integrity')).json() as { alarm: string }).alarm).toBe(at.toISOString());
+    expect(((await owner.b.post('/staff/v1/log/integrity/check', {})).json() as { alarm: string }).alarm).toBe(at.toISOString());
     await deps.db.query('update site_flags set log_alarm = null');
   });
 
   it('a moderator cannot run the chain check', async () => {
     expect((await mod.b.get('/staff/v1/log/integrity')).statusCode).toBe(403);
+    expect((await mod.b.post('/staff/v1/log/integrity/check', {})).statusCode).toBe(403);
   });
 });
 
@@ -352,7 +355,7 @@ describe('entries never show chat text, ruling reasons, addresses or IP addresse
       const p = await page(who.b, `?code=${A.code}&kind=chat`);
       expect(p.entries.find((e) => e.id === id)).toMatchObject({ action: 'chat.read', detail: {}, withheld: true });
     }
-    const v = (await owner.b.get('/staff/v1/log/integrity')).json() as { chain: { ok: boolean; brokenAt?: string } };
+    const v = (await owner.b.post('/staff/v1/log/integrity/check', {})).json() as { chain: { ok: boolean; brokenAt?: string } };
     expect(v.chain).toEqual({ ok: false, brokenAt: id });
   });
 });

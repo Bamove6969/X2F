@@ -56,6 +56,18 @@ import '../ui/staff.css';
 import { ProofLookFor } from '../ui/ProofCard.js';
 
 const isApprover = (role: StaffRole) => role === 'senior' || role === 'owner';
+
+/**
+ * Whether this person decides the waiting proposal ("Approve ruling" or "Send back"), the API's own
+ * gate (apps/api disputes/rulings.ts `approver`, packages/staff dispute.ts `canApprove`): a senior
+ * moderator or the owner holding `rulings.approve`, never its proposer, and in an appeal never
+ * someone involved in round 1 (review M2: `mayWork` is false for them, R37).
+ */
+export function decidesProposal(c: Pick<DisputeCase, 'status' | 'proposedByYou' | 'round' | 'mayWork'> & { ruling: Pick<DisputeCase['ruling'], 'proposal'> }, role: StaffRole): boolean {
+  return c.status === 'awaiting-approval' && isApprover(role) && can(role, 'rulings.approve') && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+}
+/** The API's send-back note limit (disputes/rulings.ts SEND_BACK_NOTE_MAX). */
+export const SEND_BACK_NOTE_MAX = 1000;
 const nameOf = (t: CaseTrader | null, side: Side) => t?.displayName ?? (side === 'buyer' ? 'the buyer' : 'the seller');
 
 /** A pending key tap: the dialog's intent and words, and what to do with the tap. */
@@ -157,7 +169,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
   const work = c.mayWork && live;
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
   // Review M2: in an appeal, someone involved in round 1 (mayWork false) never decides it (R37).
-  const approving = c.status === 'awaiting-approval' && isApprover(role) && !c.proposedByYou && c.ruling.proposal !== null && (c.round === 1 || c.mayWork);
+  const approving = decidesProposal(c, role);
   // Review p4t22 M1 (e): a senior or the owner who did not propose it adds the second approval the gate asks for.
   const second = c.ruling.gateRefusal?.secondApproval ?? null;
   const rescuing = live && second !== null && isApprover(role) && !second.proposedByYou;
@@ -928,6 +940,7 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
   const outcome = c.ruling.draft?.outcome ?? null;
   const [back, setBack] = useState(false);
   const [note, setNote] = useState('');
+  const [sending, setSending] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
 
   const approve = () => {
@@ -949,12 +962,16 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
     });
   };
   const sendBack = async () => {
+    if (note.trim() === '') return;
     setFault(null);
+    setSending(true);
     try {
       await sendBackRuling(c.code, p.rulingId, note);
       await reload();
     } catch (e) {
       setFault(rulingFault(e, 'The ruling could not be sent back just now. Try again.'));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -978,14 +995,29 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
         Send back
       </Button>
       {back ? (
-        <div className="x2f-field">
+        <div className="x2f-field" data-part="send-back-form">
           <label className="x2f-label" htmlFor={noteId}>
             Note for the moderator
           </label>
-          <textarea id={noteId} className="x2f-textarea" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
-          <Button variant="secondary" disabled={note.trim() === ''} onClick={() => void sendBack()}>
-            Send back to the moderator
-          </Button>
+          <textarea id={noteId} className="x2f-textarea" rows={3} maxLength={SEND_BACK_NOTE_MAX} value={note} onChange={(e) => setNote(e.target.value)} />
+          {/* Mod polish: the note is required, and the traders never see it. COPY-UNSIGNED */}
+          <p className="x2f-staff-hint" data-part="send-back-hint">
+            Required. Staff see this note; the traders do not. The case goes back to the moderator who proposed it.
+          </p>
+          <span className="x2f-row">
+            <Button variant="secondary" disabled={note.trim() === '' || sending} onClick={() => void sendBack()}>
+              Send back to the moderator
+            </Button>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setBack(false);
+                setNote('');
+              }}
+            >
+              Keep the proposal
+            </Button>
+          </span>
         </div>
       ) : null}
       {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}

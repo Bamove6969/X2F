@@ -245,14 +245,18 @@ const STATUS_TEXT: Readonly<Record<TrainingStatus, string>> = {
   stale: 'Hidden: review the masks again',
 };
 
+/** Re-review m3: the curator's list, 50 closed cases a page, newest closed first ("Show older cases"). COPY-UNSIGNED */
 function TrainingReview() {
   const [items, setItems] = useState<TrainingReviewItem[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     trainingReviewList().then(
       (p) => {
-        if (live) setItems(p.items);
+        if (!live) return;
+        setItems(p.items);
+        setNext(p.next ?? null);
       },
       (e: unknown) => {
         if (live) setFault(faultText(e, 'X2F could not load the closed cases just now. Reload to try again.'));
@@ -262,6 +266,16 @@ function TrainingReview() {
       live = false;
     };
   }, []);
+  const older = async () => {
+    if (next === null) return;
+    try {
+      const p = await trainingReviewList(next);
+      setItems((cur) => [...(cur ?? []), ...p.items]);
+      setNext(p.next ?? null);
+    } catch (e) {
+      setFault(faultText(e, 'X2F could not load older cases. Try again.'));
+    }
+  };
   return (
     <section data-screen="training-review">
       <PageTitle title="Review closed cases">
@@ -297,6 +311,11 @@ function TrainingReview() {
             },
           ]}
         />
+      ) : null}
+      {next !== null ? (
+        <Button variant="secondary" onClick={() => void older()}>
+          Show older cases
+        </Button>
       ) : null}
     </section>
   );

@@ -389,6 +389,36 @@ describe('at or above the large-trade limit: two people', () => {
       expect(ok.statusCode, ok.body).toBe(200);
     });
   });
+
+  it('mod polish: the send-back role gate is a senior moderator or the owner who did not propose it, with a note', async () => {
+    await withLimit(300, async () => {
+      const { code } = await disputed();
+      const senior = await staff('senior');
+      const other = await staff('senior');
+      const owner = await staff('owner');
+      const mod = await staff('mod');
+      const helper = await seedStaff(deps, { role: 'helper' });
+      const helperB = new StaffBrowser(staffApp).withSession((await insertSession(deps, helper.id, 'staff')).token);
+      // A senior moderator proposes this one, so they are the one person of that role who may not send it back.
+      await take(senior, code);
+      const { rulingId } = await propose(senior, code, { outcome: 'refund-to-seller' });
+      const back = (who: { b: StaffBrowser }, note: unknown = 'Ask the buyer for the bank reference.') => who.b.post(url(code, `/rulings/${rulingId}/send-back`), { note });
+      const refused = async (who: { b: StaffBrowser }, want: { status: number; error: string }, note?: unknown) => {
+        const res = await back(who, note);
+        expect({ status: res.statusCode, error: errorOf(res) }).toEqual(want);
+        expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'awaiting-approval' });
+      };
+      await refused(mod, { status: 403, error: 'forbidden' });
+      await refused({ b: helperB }, { status: 403, error: 'forbidden' });
+      await refused(senior, { status: 409, error: 'same-person' });
+      for (const note of ['', '   ', 7, null, 'x'.repeat(1001)]) await refused(other, { status: 400, error: 'bad-request' }, note);
+      expect(await actions(code)).toEqual(['ruling.proposed']);
+      const ok = await back(owner);
+      expect(ok.statusCode, ok.body).toBe(200);
+      expect((await loadDispute(deps.db, code))!).toMatchObject({ status: 'open', ruling: null, assignee: senior.id });
+      expect(await actions(code)).toEqual(['ruling.proposed', 'ruling.sent-back']);
+    });
+  });
 });
 
 /** A market quote for any currency: `minor` of it, and `usd` US cents, per XMR. */

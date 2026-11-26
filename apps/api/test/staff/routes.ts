@@ -196,6 +196,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/log/filters', perm: 'log.read.cases', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/log/active-disputes', perm: 'log.read.cases', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/log/integrity', perm: 'log.read.all', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/log/integrity/check', perm: 'log.read.all', allowed: OWNER, body: {} },
   { method: 'GET', url: '/staff/v1/training', perm: 'training.read', allowed: MODERATORS },
   { method: 'GET', url: '/staff/v1/training/:id', perm: 'training.read', allowed: MODERATORS },
   // Lead call 18 Nov (re-review): the library is review-first; a curator marks each case.
