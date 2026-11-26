@@ -1,6 +1,6 @@
 {
   "BadgeSettings": {
-    "sha256": "e760b2d677c32e4d188c62a0653944dcc3b700be413c921d1ccdbd4801702958",
+    "sha256": "f23aec7a59298ea4eab0e11d8942a40bf4a0da614e544bbbf2fd81d8ea42f067",
     "w": 390,
     "h": 844
   },
@@ -15,12 +15,12 @@
     "h": 844
   },
   "BuyOffers": {
-    "sha256": "be3fb55459d5b42772a7cc607768e4158041a917ffaeb1312a94d9b314c1f183",
+    "sha256": "a5a052ac49accd075076f5aa5fe0cab99fe6967a64371d89a00b272075f3e702",
     "w": 390,
     "h": 844
   },
   "BuyQuote": {
-    "sha256": "07d8cb85ca15f1d872bddae2a6136687f42e3ccae4fe30630e40d4fa657e5dff",
+    "sha256": "f9aef27610ac3a244943c9a30d09a8a075d8aa3fe0e5ec56b7f459ba875734d7",
     "w": 390,
     "h": 844
   },
@@ -65,7 +65,7 @@
     "h": 1000
   },
   "OwnerSetup": {
-    "sha256": "cd454909e3171e5d75169a101e316257c189cec012657de0516091d400d04fee",
+    "sha256": "95b0acf099ce8a8bce81c2d1abe889f76ad692aa01f284a43cbb978877b6c049",
     "w": 1280,
     "h": 1180
   },
@@ -95,7 +95,7 @@
     "h": 844
   },
   "SellOffers": {
-    "sha256": "0864b7c941505d92e1580c6f4959f6383634caf94df64776db6d24ce463de5b2",
+    "sha256": "e3bb8389eaac566abf24ce07d306b97d436974ccbacf06237e41bd81eb91c5cd",
     "w": 390,
     "h": 844
   },
