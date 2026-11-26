@@ -33,7 +33,8 @@
  *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
  *   team members are for vendor accounts only, so an invite or a role change by a trader account
  *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
- * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
+ * - `GET /v1/team/audit?from&to&member&trade` → the audit log, newest first (`trade`: one trade's
+ *   team activity, e.g. a member's release, owner question trades-release).
  * - `GET /v1/team/permissions` (the owner and every member) → the abilities catalogue: groups,
  *   each box with its risk, availability, ruling and presets, the presets, and the hard rules.
  *
@@ -66,6 +67,7 @@ import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT
 import { requireSession, startSession } from '../auth/sessions.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
+import { normalizeTradeCode } from '@x2f/core';
 import { requireVendor } from './accountType.js';
 import {
   type Caller,
@@ -301,10 +303,13 @@ export function teamRoutes(app: FastifyInstance): void {
     };
     const member = q.member;
     if (member !== undefined && (typeof member !== 'string' || !UUID.test(member))) throw new ApiError(400, 'bad-request');
+    const trade = q.trade === undefined ? undefined : typeof q.trade === 'string' ? normalizeTradeCode(q.trade) : null;
+    if (trade === null) throw new ApiError(400, 'bad-request');
     const from = date(q.from);
     const to = date(q.to);
     return listAudit(req.server.deps.db, req.auth.accountId, {
       ...(from ? { from } : {}), ...(to ? { to } : {}), ...(typeof member === 'string' ? { memberId: member.toLowerCase() } : {}),
+      ...(trade !== undefined ? { tradeCode: trade } : {}),
     });
   });
 

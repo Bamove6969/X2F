@@ -3,12 +3,14 @@ import {
   ABILITIES,
   ABILITY_GROUPS,
   ABILITY_IDS,
+  ABILITY_REQUIRES,
   ALWAYS_ON,
   effectiveAbilities,
   GRANTABLE,
   HARD_OWNER_ONLY,
   hasAbility,
   legacyRoles,
+  missingRequirements,
   parseAbilities,
   PRESETS,
   presetOf,
@@ -35,10 +37,28 @@ describe('the abilities catalogue', () => {
     }
   });
 
-  it('owner hard rule (p10-2, T-076): no box releases XMR or confirms payment received on the lead\'s sell trades', () => {
+  it('owner hard rule (p10-2, T-076): no box confirms payment received on the lead\'s sell trades', () => {
     expect(byNo(21).id).toBe('trades-confirm-received');
-    expect(byNo(22).id).toBe('trades-release');
-    for (const n of [21, 22]) expect(HARD_OWNER_ONLY.has(byNo(n).id)).toBe(true);
+    expect(HARD_OWNER_ONLY.has(byNo(21).id)).toBe(true);
+  });
+
+  it('owner question trades-release: Release coins (22) is a box off in every preset and role, and needs Hold trade keys (67)', () => {
+    const release = byNo(22);
+    expect(release).toMatchObject({ id: 'trades-release', label: 'Release coins', availability: 'grantable', hard: false, offers: false, trades: false, start: false });
+    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(false);
+    expect(GRANTABLE.has('trades-release')).toBe(true);
+    for (const p of PRESETS) expect(p.abilities, p.id).not.toContain('trades-release');
+    for (const r of TEAM_ROLES) expect(rolesToAbilities([r]), r).not.toContain('trades-release');
+    expect(ABILITY_REQUIRES['trades-release']).toEqual([byNo(67).id]);
+    // The API refuses one without the other; the pair is fine.
+    expect(() => parseAbilities(['trades-release'])).toThrow(expect.objectContaining({ status: 400, code: 'release-needs-trade-keys' }));
+    expect(() => parseAbilities(['trades-see-active', 'trades-release'])).toThrow(expect.objectContaining({ code: 'release-needs-trade-keys' }));
+    expect(parseAbilities(['trades-escrow-keys', 'trades-release'])).toEqual(['trades-release', 'trades-escrow-keys']);
+    expect(missingRequirements(['trades-release'])).toEqual(['trades-release']);
+    expect(missingRequirements(['trades-release', 'trades-escrow-keys'])).toEqual([]);
+    // A corrupt stored set holding Release coins alone never meets it.
+    expect(hasAbility(['trades-release'], 'trades-release')).toBe(false);
+    expect(hasAbility(['trades-release', 'trades-escrow-keys'], 'trades-release')).toBe(true);
   });
 
   it('owner hard rule: payout wallets, members, account deletion and security settings are owner-only', () => {
@@ -96,7 +116,7 @@ describe('the abilities catalogue', () => {
     expect(hasAbility(['offers-see'], ['offers-post', 'offers-see'])).toBe(true);
     expect(hasAbility(['offers-see'], ['offers-post'])).toBe(false);
     // Even a corrupt stored set never grants a hard owner-only ability.
-    expect(hasAbility(['trades-release'], 'trades-release')).toBe(false);
+    expect(hasAbility(['trades-confirm-received'], 'trades-confirm-received')).toBe(false);
   });
 
   it('the old two roles map to exactly what each let a member do before (no one widened), inside the Offers and Trades presets, and back', () => {

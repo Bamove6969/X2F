@@ -12,7 +12,9 @@
  * - No member may sign escrow (R44, spec 3.1): releasing, funding and registering a trade's
  *   signing identity need the trade's party key, which today lives only on the account owner's
  *   device. Until a per-member key scheme is designed (OPEN, Plan 3 Task 42) they get 403
- *   `member-cannot-sign` whatever the member's boxes. Releasing stays the lead's even then (p10-2).
+ *   `member-cannot-sign` whatever the member's boxes. Releasing is the exception since the owner
+ *   question trades-release (26 Nov 2026): a member the lead gave Release coins and Hold trade keys
+ *   releases with the synced escrow keys, after a key confirm (`MEMBER_CONFIRMED_EVENTS`).
  */
 import type { CLIENT_EVENTS, TradeEvent } from '@x2f/trade';
 import type { FastifyRequest } from 'fastify';
@@ -27,8 +29,17 @@ export const MAX_TEAM_MEMBERS = 3;
 /** What a route lets members do: `any` (a read every member may make), one ability, or any one of several. */
 export type MemberAccess = AbilityNeed;
 
-/** The trade events that need the trade's party key (see `MEMBER_SIGNING_EVENTS` below). */
-const MEMBER_SIGNING_EVENTS_LIST: readonly string[] = ['release-started', 'fund-started'];
+/**
+ * The trade events that need the trade's party key and no box opens (see `MEMBER_SIGNING_EVENTS`
+ * below). `release-started` left this list with the owner question trades-release (26 Nov 2026):
+ * a member holding Release coins and Hold trade keys may send it, with a `release-trade` confirm
+ * token from a passkey, security key or PGP key (`MEMBER_CONFIRMED_EVENTS`, trades/routes.ts).
+ * To back out: put it back here.
+ */
+const MEMBER_SIGNING_EVENTS_LIST: readonly string[] = ['fund-started'];
+
+/** Trade events a member sends only with a confirm-it's-you token for this action (trades/routes.ts). */
+export const MEMBER_CONFIRMED_EVENTS: ReadonlySet<string> = new Set(['release-started']);
 
 /**
  * The boxes a live stream (`GET /v1/events`, the account's trade events) needs: either trades box
@@ -55,8 +66,9 @@ export const EVENT_ABILITY: Readonly<Record<EventsRouteEvent, string>> = {
   'withdraw-cancel': 'trades-cancel',
   'walk-away': 'trades-cancel',
   'confirm-cancel': 'trades-confirm-cancel',
-  // Never a member's (refused member-cannot-sign first); named so the map is total.
+  // Owner question trades-release: Release coins (which needs Hold trade keys) and a key confirm.
   'release-started': 'trades-release',
+  // Never a member's (refused member-cannot-sign first); named so the map is total.
   'fund-started': 'trades-fund',
 };
 

@@ -9,12 +9,12 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ABILITY, auditMember } from '../src/team/audit.js';
-import { HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities, sortAbilities } from '../src/team/abilities.js';
+import { ABILITY_REQUIRES, HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities, sortAbilities } from '../src/team/abilities.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
 import { openInvite, purgeTeamLeftovers } from '../src/team/members.js';
 import { NOTES_PER_ACCOUNT } from '../src/team/notes.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { EVENT_ABILITY, eventAbility, MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
+import { EVENT_ABILITY, eventAbility, MAX_TEAM_MEMBERS, MEMBER_CONFIRMED_EVENTS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -424,14 +424,57 @@ describe('owner-only', () => {
     expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
   });
 
-  it('no member signs escrow: release-started and registering a trade identity are member-cannot-sign', async () => {
+  it('a member without Release coins never releases (forbidden), and no member registers a trade identity (member-cannot-sign)', async () => {
     const owner = await team();
     const buyer = await team();
     const m = await member(owner.id, ['trades']);
     const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
     await driveTo(deps, t.trade, 'paid');
-    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'release-started' }))).toEqual({ status: 403, error: 'member-cannot-sign' });
+    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'release-started' }))).toEqual({ status: 403, error: 'forbidden' });
     expect(err(await m.browser.post(`/v1/trades/${t.code}/identity`, {}))).toEqual({ status: 403, error: 'member-cannot-sign' });
+  });
+
+  it('owner question trades-release: a member with Release coins and Hold trade keys releases only with a key confirm for that trade, logged under their name', async () => {
+    const owner = await team();
+    const buyer = await team();
+    const m = await member(owner.id, { abilities: [...rolesToAbilities(['trades']), 'trades-release', 'trades-escrow-keys'] });
+    const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
+    const paid = await driveTo(deps, t.trade, 'paid');
+    const tokenFor = async (action: Parameters<typeof issueConfirmToken>[1]['action'], method: 'passkey' | 'recovery-code' = 'passkey') =>
+      issueConfirmToken(deps, { sessionId: await sessionId(m.browser), accountId: owner.id, action, method });
+    const send = (body: Record<string, unknown>) => m.browser.post(`/v1/trades/${t.code}/events`, { type: 'release-started', ...body });
+    // No token: confirm-required for release-trade. A token for another trade or action: confirm-invalid.
+    expect(err(await send({}))).toEqual({ status: 403, error: 'confirm-required' });
+    expect(err(await send({ confirmToken: await tokenFor({ kind: 'release-trade', tradeCode: 'OTHERCODE' }) }))).toEqual({ status: 403, error: 'confirm-invalid' });
+    expect(err(await send({ confirmToken: await tokenFor({ kind: 'extend-session' }) }))).toEqual({ status: 403, error: 'confirm-invalid' });
+    // Only a passkey, security key or PGP key counts (no authenticator code ever issues a token; a recovery-code one is refused too).
+    expect(err(await send({ confirmToken: await tokenFor({ kind: 'release-trade', tradeCode: t.code }, 'recovery-code') }))).toEqual({ status: 403, error: 'method-not-allowed' });
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
+    expect(await auditRows(owner.id)).toEqual([]);
+    const ok = await send({ confirmToken: await tokenFor({ kind: 'release-trade', tradeCode: t.code }) });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(await auditRows(owner.id)).toEqual([{ action: 'release-started', member_id: m.id, trade_code: t.code }]);
+    // The holder sees it in the trade's team activity, with the member's name and the amount.
+    const list = (await owner.browser.get(`/v1/team/audit?trade=${t.code}`)).json() as { action: string; memberName: string | null; byLead: boolean; detail: Record<string, unknown> }[];
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ action: 'release-started', memberName: m.name, byLead: false, tradeCode: t.code });
+    expect(list[0]!.detail).toMatchObject({ amountAtomic: paid.amountAtomic.toString(), confirmedWith: 'passkey' });
+    expect((await owner.browser.get('/v1/team/audit?trade=nope!')).statusCode).toBe(400);
+    // Funding stays the owner's device's.
+    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'fund-started' }))).toEqual({ status: 403, error: 'member-cannot-sign' });
+  });
+
+  it('owner question trades-release: Release coins without Hold trade keys is refused by the API and the database, and never met', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    const bad = sortAbilities([...rolesToAbilities(['trades']), 'trades-release']);
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: bad.join(',') } as never);
+    expect(err(await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: bad, confirmToken }))).toEqual({ status: 400, error: 'release-needs-trade-keys' });
+    await expect(deps.db.query('update team_members set abilities = $2 where id = $1', [m.id, bad])).rejects.toThrow();
+    const good = sortAbilities([...bad, 'trades-escrow-keys']);
+    const t2 = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: good.join(',') } as never);
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: good, confirmToken: t2 });
+    expect(res.statusCode, res.body).toBe(200);
   });
 });
 
@@ -743,9 +786,12 @@ describe('role changes and removal reach a member in flight', () => {
       expect(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY], e).toMatch(/^trades-/);
       expect(EVENT_ABILITY[e as keyof typeof EVENT_ABILITY], e).toBe(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY]);
     }
-    // The signing events map to boxes no member holds today (release: never, p10-2).
+    // Owner question trades-release: release is a member's event now, behind Release coins (and Hold
+    // trade keys, ABILITY_REQUIRES) and a key confirm; funding stays a signing event no box opens.
+    expect(sendable).toContain('release-started');
     expect(EVENT_ABILITY['release-started']).toBe('trades-release');
-    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(true);
+    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(false);
+    expect([...MEMBER_CONFIRMED_EVENTS]).toEqual(['release-started']);
     // Review 2026-11-09 m2: an event with no box is a 400, never a 500.
     expect(() => eventAbility('a-future-event')).toThrow(expect.objectContaining({ status: 400, code: 'event-not-allowed' }));
     expect(eventAbility('mark-paid')).toBe('trades-mark-paid');
@@ -828,10 +874,10 @@ describe('the audit log covers every member action (review M3)', () => {
       'PUT /v1/account/session/length': "the member's own session length after their own login (owner, 2 Nov 2026): not an account action",
       // Owner Q73 (6 Nov 2026): a member extends their own session with their own login methods.
       'POST /v1/account/session/extend': "the member's own session, re-proved with their own login method: not an account action",
-      'POST /v1/confirm/pgp/start': "a confirm challenge to the member's own keys, extend-session only (confirmerOf): writes a challenge row, not an account action",
-      'POST /v1/confirm/pgp/finish': 'a confirm token for the calling session, extend-session only: not an account action',
-      'POST /v1/confirm/webauthn/start': "a confirm challenge for the member's own credentials, extend-session only: not an account action",
-      'POST /v1/confirm/webauthn/finish': 'a confirm token for the calling session, extend-session only: not an account action',
+      'POST /v1/confirm/pgp/start': "a confirm challenge to the member's own keys, extend-session and release-trade only (confirmerOf): writes a challenge row, not an account action",
+      'POST /v1/confirm/pgp/finish': 'a confirm token for the calling session, extend-session and release-trade only: not an account action',
+      'POST /v1/confirm/webauthn/start': "a confirm challenge for the member's own credentials, extend-session and release-trade only: not an account action",
+      'POST /v1/confirm/webauthn/finish': 'a confirm token for the calling session, extend-session and release-trade only: not an account action',
       // Owner Q75: the member's own idle reminder, on their own login account.
       'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
       'POST /v1/account/terms': "the member's own agreement to the Terms, written to their own login account (review 2026-11-08 F1); it changes nothing of the team account",
@@ -967,23 +1013,24 @@ function sources(dir: string): string[] {
 }
 
 describe('Task 18 seams', () => {
-  it('Task 42 escrow-key sync (migration 860): an assigned member may hold an encrypted copy of the trade keys, and still never signs (owner question trades-release open)', () => {
+  it('Task 42 escrow-key sync (migration 860): an assigned member may hold an encrypted copy of the trade keys, and signs only a release, with Release coins (owner question trades-release)', () => {
     // The tripwire NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (owner 26 Nov
     // 2026: "accessible only to the person they are assigned to and the person who they are assigned
     // to also assigns them to"): apps/api/src/escrowSync/routes.ts, tested in escrowSync.test.ts.
     // The lead assigns a member by ticking "Hold trade keys" (trades-escrow-keys, row 67), and the
     // lead's device then seals each trade's keys to that member's own reader key as well.
-    // Conservative default while the owner's question 'trades-release' is open: the copy is for
-    // reading (a new device restores, a member keeps a copy), never for signing. So every refusal
-    // below stays: `MEMBER_SIGNING_EVENTS` refuses release-started and fund-started, and
-    // `ownerDeviceOnly` refuses the take, the poster's wallet and the trade identity
-    // (member-cannot-sign); release stays a hard owner-only row. When the owner answers yes, lift
-    // these here with tests (a member's take, accept and room through to release).
-    expect([...MEMBER_SIGNING_EVENTS]).toEqual(['release-started', 'fund-started']);
+    // Owner question trades-release (26 Nov 2026, pending his final yes; migration 870): a member
+    // the lead gives "Release coins" (which needs Hold trade keys) may release, with a key confirm
+    // per trade (the release tests above). Everything else stays: `MEMBER_SIGNING_EVENTS` refuses
+    // fund-started, and `ownerDeviceOnly` refuses the take, the poster's wallet and the trade
+    // identity (member-cannot-sign). To back out, put release-started back in MEMBER_SIGNING_EVENTS
+    // and row 22 back to hard owner-only, and restore this check.
+    expect([...MEMBER_SIGNING_EVENTS]).toEqual(['fund-started']);
     expect([...OWNER_DEVICE_ROUTES]).toEqual(['POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet', 'POST /v1/trades/:code/identity']);
     expect(readFileSync(`${ROOT}apps/api/src/trades/identity.ts`, 'utf8')).toMatch(/requireSigner = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
     expect(readFileSync(`${ROOT}apps/api/src/trades/take.ts`, 'utf8')).toMatch(/requireTrader = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
-    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(true);
+    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(false);
+    expect(ABILITY_REQUIRES['trades-release']).toEqual(['trades-escrow-keys']);
     expect(HARD_OWNER_ONLY.has('trades-escrow-keys')).toBe(false);
     expect(existsSync(`${ROOT}apps/api/src/escrowSync/routes.ts`)).toBe(true);
     // No member trade identity yet: the escrow party is still only ever the owner's device.
@@ -1032,15 +1079,15 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     expect(seen.statusCode, seen.body).toBe(200);
   });
 
-  it('p10-2 (T-076): with every box ticked a member still never releases, funds or confirms payment on the lead\'s sell trade', async () => {
+  it('p10-2 (T-076): with every preset box ticked a member still never releases, funds or confirms payment on the lead\'s sell trade (Release coins is in no preset)', async () => {
     const owner = await team();
     const buyer = await team();
     const m = await member(owner.id, ['offers', 'trades']);
     const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
     await driveTo(deps, t.trade, 'paid');
-    for (const type of ['release-started', 'fund-started']) {
-      expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type })), type).toEqual({ status: 403, error: 'member-cannot-sign' });
-    }
+    // Owner question trades-release: releasing needs the Release coins box, which no role or preset ticks.
+    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'release-started' }))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'fund-started' }))).toEqual({ status: 403, error: 'member-cannot-sign' });
     expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
     expect(await auditRows(owner.id)).toEqual([]);
   });
@@ -1048,7 +1095,7 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
   it('no box can be stored that grants a hard owner-only ability: the API refuses it and so does the database', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
-    for (const bad of ['trades-release', 'trades-confirm-received', 'disputes-open', 'wallets-manage', 'team-invite', 'team-remove', 'team-change-abilities', 'account-security', 'sessions-end-others', 'devices-approve', 'account-delete']) {
+    for (const bad of ['trades-confirm-received', 'disputes-open', 'wallets-manage', 'team-invite', 'team-remove', 'team-change-abilities', 'account-security', 'sessions-end-others', 'devices-approve', 'account-delete']) {
       const abilities = ['offers-see', bad];
       const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') } as never);
       expect(err(await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken })), bad).toEqual({ status: 400, error: 'bad-request' });
@@ -1166,7 +1213,16 @@ describe('the abilities catalogue on the API (J-10)', () => {
     expect(lists[0]).toEqual([...ROLE_ABILITIES.offers]);
     expect(lists[1]).toEqual([...ROLE_ABILITIES.trades]);
     // lists[2..4] were hold v3's three member rights (migration 016); migration 853 removed them.
-    expect(new Set(lists[5])).toEqual(HARD_OWNER_ONLY);
+    // Release coins was a hard rule then; migration 870 lifted it (owner question trades-release).
+    expect(new Set(lists[5])).toEqual(new Set([...HARD_OWNER_ONLY, 'trades-release']));
+  });
+
+  it('migration 870 refuses exactly HARD_OWNER_ONLY, and Release coins only together with Hold trade keys', () => {
+    const sql = readFileSync(`${ROOT}apps/api/migrations/870_trades_release.sql`, 'utf8').replace(/^--.*$/gm, '');
+    const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
+    expect(lists).toHaveLength(1);
+    expect(new Set(lists[0])).toEqual(HARD_OWNER_ONLY);
+    expect(sql).toMatch(/not \('trades-release' = any \(abilities\)\) or 'trades-escrow-keys' = any \(abilities\)/);
   });
 
   it('GET /v1/team/permissions lists the groups, every ability with its risk, rule and preset defaults, and the presets', async () => {
@@ -1180,7 +1236,9 @@ describe('the abilities catalogue on the API (J-10)', () => {
     expect(c.groups).toHaveLength(9);
     const all = c.groups.flatMap((g) => g.abilities);
     expect(all).toHaveLength(64);
-    expect(all.find((a) => a.id === 'trades-release')).toMatchObject({ availability: 'owner-only', presets: [] });
+    // Owner question trades-release: a box now, in no preset (off for every member by default).
+    expect(all.find((a) => a.id === 'trades-release')).toMatchObject({ availability: 'grantable', presets: [] });
+    expect(all.find((a) => a.id === 'trades-confirm-received')).toMatchObject({ availability: 'owner-only', presets: [] });
     expect(c.presets.map((p) => p.id)).toEqual(['offers', 'trades', 'manager', 'start']);
     // A member may read it too (what they may and may not do).
     const m = await member(owner.id, ['trades']);
@@ -1282,7 +1340,8 @@ describe('invites carry their boxes at once (owner 26 Nov 2026: no holds)', () =
     const sql = readFileSync(`${ROOT}apps/api/migrations/390_team_assistants.sql`, 'utf8');
     const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
     expect(lists).toHaveLength(1);
-    expect(new Set(lists[0])).toEqual(HARD_OWNER_ONLY);
+    // Plus Release coins, a hard rule until migration 870 (owner question trades-release).
+    expect(new Set(lists[0])).toEqual(new Set([...HARD_OWNER_ONLY, 'trades-release']));
     const owner = await team();
     for (const id of HARD_OWNER_ONLY) {
       await expect(deps.db.query(

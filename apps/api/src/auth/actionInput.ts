@@ -1,4 +1,5 @@
 import type { ConfirmAction, MethodType } from '@x2f/accounts';
+import { normalizeTradeCode } from '@x2f/core';
 import { ApiError } from '../errors.js';
 import { parseAbilities, TEAM_ROLES as ROLE_ORDER } from '../team/abilities.js';
 import { bandFromKey, hoursFromKey } from '../team/limits.js';
@@ -49,6 +50,8 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'team-limits': { memberId: (v) => UUID.test(v), band: (v) => bandFromKey(v) !== undefined, hours: (v) => hoursFromKey(v) !== undefined },
   'extend-session': {},
   'become-vendor': {},
+  // Owner question trades-release: one trade's code, exactly as stored (normalized).
+  'release-trade': { tradeCode: (v) => normalizeTradeCode(v) === v },
   // Review L1 (#94): the key test; confirmed only by a passkey or security key, and no token is issued.
   'key-test': {},
 };

@@ -11,7 +11,9 @@
  * never the checks.
  *
  * Hard rules (the owner's; no box, no preset and no stored set can grant them): `HARD_OWNER_ONLY`.
- * - Members never confirm payment received or release XMR on the lead's sell trades (p10-2, T-076).
+ * - Members never confirm payment received on the lead's sell trades (p10-2, T-076). Releasing was
+ *   one of these rules; since the owner question trades-release (26 Nov 2026, pending his final
+ *   yes) it is the Release coins box (22), which needs Hold trade keys (67) too (`ABILITY_REQUIRES`).
  * - Members never touch payout wallets, the team's members, account deletion or security settings.
  * - Only trade parties open disputes (D-066, p7-7); the "disputes" box sees the dispute and answers
  *   the moderator.
@@ -111,7 +113,12 @@ const ROWS: readonly Row[] = [
   [19, 'trades-cancel-no-show', 'trades', 'Cancel a no-show', 'Get the refund when the buyer never paid', 'medium', 'grantable', false, 'Built in Trades role', 0, 1, 0],
   [20, 'trades-confirm-cancel', 'trades', 'Confirm cancel', 'Close a cancelled trade once the XMR is back', 'low', 'grantable', false, 'Built in Trades role', 0, 1, 0],
   [21, 'trades-confirm-received', 'trades', 'Confirm payment received', "Say the buyer's money arrived", 'high', 'owner-only', true, 'Lead only (p10-2)', 0, 0, 0],
-  [22, 'trades-release', 'trades', 'Release XMR', 'Send escrowed XMR to the buyer', 'high', 'owner-only', true, 'Lead only (p10-2)', 0, 0, 0],
+  // Owner question trades-release (26 Nov 2026, pending the owner's final yes; migration 870): was a
+  // hard owner-only rule (p10-2). Now a box only the account holder ticks, per member, off in every
+  // preset and role; it needs Hold trade keys (67) too (`ABILITY_REQUIRES`), and each release by a
+  // member needs confirm-it's-you with a key (`release-trade`, never an authenticator code) and is
+  // in the team log under the member's name. To back out: restore this row to 'owner-only', true.
+  [22, 'trades-release', 'trades', 'Release coins', "Release a trade's coins with the synced trade keys; needs Hold trade keys, and a passkey, security key or PGP key each time", 'high', 'grantable', false, 'Owner question trades-release (26 Nov): only members the lead assigns', 0, 0, 0],
   [23, 'trades-fund', 'trades', 'Fund the escrow', 'Pay XMR into escrow when you sell', 'high', 'waits-member-keys', false, 'Lead only until member keys exist', 0, 0, 0],
   [24, 'trades-review', 'trades', 'Leave a review', 'Rate the partner after a trade', 'medium', 'not-built', false, null, 0, 0, 0],
   // B3. Chat
@@ -162,7 +169,8 @@ const ROWS: readonly Row[] = [
   [66, 'account-delete', 'account', 'Delete the account', 'Close the account for good', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   // Owner 26 Nov 2026 (escrow-key sync, migration 860): the box IS the lead's assignment. With it the
   // lead's device also seals each trade's escrow keys to the member's own reader key, and the member
-  // may open that copy (escrowSync/routes.ts). It grants no signing: release stays owner-only (22).
+  // may open that copy (escrowSync/routes.ts). On its own it grants no signing; with Release coins
+  // (22) the member may also release (owner question trades-release).
   [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; never releases XMR", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
 ];
 
@@ -231,10 +239,32 @@ export function hasAbility(stored: readonly string[], need: AbilityNeed): boolea
   if (need === 'any') return true;
   const have = effectiveAbilities(stored);
   const needs = typeof need === 'string' ? [need] : need;
-  return needs.some((id) => !HARD_OWNER_ONLY.has(id) && have.has(id));
+  return needs.some((id) => !HARD_OWNER_ONLY.has(id) && have.has(id) && (ABILITY_REQUIRES[id] ?? []).every((r) => have.has(r)));
 }
 
-/** Parses an abilities list from a request body: a non-empty set of grantable ids, in catalogue order. 400 `bad-request` otherwise. */
+/**
+ * Boxes that only work together with others (owner question trades-release, 26 Nov 2026): Release
+ * coins signs with the synced trade keys, so it needs Hold trade keys. A set holding one without
+ * all it needs is refused (`parseAbilities`: 400 `release-needs-trade-keys`; migration 870's check)
+ * and never met (`hasAbility`). So unticking Hold trade keys means unticking Release coins too.
+ */
+export const ABILITY_REQUIRES: Readonly<Record<string, readonly string[]>> = {
+  'trades-release': ['trades-escrow-keys'],
+};
+
+/** The ids in `stored` that lack a box they need (`ABILITY_REQUIRES`). */
+export function missingRequirements(stored: readonly string[]): string[] {
+  const set = new Set(stored);
+  return Object.entries(ABILITY_REQUIRES)
+    .filter(([id, needs]) => set.has(id) && needs.some((n) => !set.has(n)))
+    .map(([id]) => id);
+}
+
+/**
+ * Parses an abilities list from a request body: a non-empty set of grantable ids, in catalogue
+ * order. 400 `bad-request` otherwise, and 400 `release-needs-trade-keys` for Release coins without
+ * Hold trade keys (`ABILITY_REQUIRES`).
+ */
 export function parseAbilities(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > GRANTABLE.size) throw new ApiError(400, 'bad-request');
   const set = new Set<string>();
@@ -242,6 +272,7 @@ export function parseAbilities(raw: unknown): string[] {
     if (typeof id !== 'string' || !GRANTABLE.has(id) || set.has(id)) throw new ApiError(400, 'bad-request');
     set.add(id);
   }
+  if (missingRequirements([...set]).length > 0) throw new ApiError(400, 'release-needs-trade-keys');
   return sortAbilities([...set]);
 }
 
@@ -322,7 +353,7 @@ export function catalogueView(): {
     presets: PRESETS.map((p) => ({ ...p, abilities: [...p.abilities] })),
     // COPY-UNSIGNED: the owner's rules on top of the boxes.
     rules: [
-      'Members never confirm payment received or release XMR on your sell trades.',
+      'Members never confirm payment received on your sell trades. Only a member you give Release coins (with Hold trade keys) can release, after confirming with a passkey, security key or PGP key.',
       'Payout wallets, team members, security settings and closing the account are yours alone.',
       'Only you or your trade partner open a dispute; a member with Answer the moderator can see it and reply.',
       'Every action a member takes is in the team log, with their name and the amount.',
