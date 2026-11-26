@@ -331,6 +331,15 @@ export interface TradeBand {
 /** J-20 (owner p7-11): a member's working hours: any time, or days and a daily window in an IANA time zone. */
 export type WorkingHours = 'any' | { days: ('Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat')[]; start: string; end: string; tz: string };
 
+/** One of a team member's signed-in sessions, as the account owner sees it (`GET /v1/team/members/:id/sessions`). */
+export interface MemberSession {
+  id: string;
+  deviceLabel: string;
+  /** When the member signed in. */
+  createdAt: string;
+  lastSeenAt: string;
+}
+
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
@@ -894,6 +903,12 @@ export interface AuthApi {
   setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
   /** A team member's own access, read only: boxes, band, hours and team lead. The account owner gets 403 `forbidden`. */
   myTeamAccess(): Promise<MyTeamAccess>;
+  /** A member's signed-in sessions, most recently seen first. 404 for a member not of this account. */
+  memberSessions(id: string): Promise<{ sessions: MemberSession[] }>;
+  /** Ends one of a member's sessions (the team log gets `session-ended`). 403 `weak-session` from a login that waits. */
+  endMemberSession(id: string, sessionId: string): Promise<void>;
+  /** Ends every session of a member; answers how many ended. 403 `weak-session` from a login that waits. */
+  endMemberSessions(id: string): Promise<{ ended: number }>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   /** Team audit v2: one page of the team log, newest first (`next` → the following page's `before`). */
@@ -1109,6 +1124,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     myTeamAccess: () => get('/v1/team/me'),
+    memberSessions: (id) => get(`/v1/team/members/${seg(id)}/sessions`),
+    endMemberSession: (id, sessionId) => done(call('DELETE', `/v1/team/members/${seg(id)}/sessions/${seg(sessionId)}`)),
+    endMemberSessions: (id) => call('DELETE', `/v1/team/members/${seg(id)}/sessions`),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

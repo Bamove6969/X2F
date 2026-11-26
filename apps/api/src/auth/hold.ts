@@ -608,6 +608,10 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/team/members/:id',
   // J-20: a member's trade-size band and working hours (team/limits.ts; the lock is the account's).
   'PUT /v1/team/members/:id/limits',
+  // Ending a member's signed-in sessions from the Team screen (team/memberSessions.ts; the lock is
+  // the account's, then the member's sessions, as a removal).
+  'DELETE /v1/team/members/:id/sessions/:sessionId',
+  'DELETE /v1/team/members/:id/sessions',
   // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
   'PUT /v1/account/type',
   // Hold model v3: submitting and cancelling the changes waiting their 24 h (holdRoutes.ts), and
@@ -717,6 +721,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
  */
 export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/sessions/:id',
+  // A member's sessions from the Team screen: a weak session may not end them at all, as it may not
+  // through DELETE /v1/account/sessions/:id (team/memberSessions.ts).
+  'DELETE /v1/team/members/:id/sessions/:sessionId',
+  'DELETE /v1/team/members/:id/sessions',
   // Review round 3 R3-M2, round 4 R4-M1 (lead decision 2026-10-30): a weak full session cancels a
   // backup session only when the weak session is the older of the two.
   'DELETE /v1/account/recovery-sessions/:id',

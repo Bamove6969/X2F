@@ -1398,6 +1398,21 @@ describe('review round 2', () => {
         return (r.json() as { id: string }).id;
       }
 
+      /** A joined member of `o`'s team with one live session; returns the member and that session. */
+      async function memberSession(o: { id: string }): Promise<{ mid: string; sid: string }> {
+        await makeVendor(deps, o.id);
+        const name = unique('Mate');
+        const loginId = await seedAccount(deps, { loginName: unique('matelogin'), kind: 'member' });
+        const { rows } = await deps.db.query<{ id: string }>(
+          `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+           values ($1, $2, $3, '{}', $4, $5, $4, $4) returning id`,
+          [o.id, name, name.toLowerCase(), deps.clock(), loginId],
+        );
+        const r = await new Browser(app).post('/t/login', { accountId: loginId });
+        expect(r.statusCode, r.body).toBe(200);
+        return { mid: rows[0]!.id, sid: (r.json() as { sessionId: string }).sessionId };
+      }
+
       /** A trader with Jabber alerts on (owner rule p5-7). */
       async function jabberOn() {
         const o = await passkeyWithPassword();
@@ -1571,6 +1586,17 @@ describe('review round 2', () => {
           const mid = await teamInvite(o);
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
+        },
+        // Ending a member's signed-in sessions from the Team screen (team/memberSessions.ts).
+        'DELETE /v1/team/members/:id/sessions/:sessionId': async () => {
+          const o = await passkeyWithPassword();
+          const m = await memberSession(o);
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/team/members/${m.mid}/sessions/${m.sid}`) };
+        },
+        'DELETE /v1/team/members/:id/sessions': async () => {
+          const o = await passkeyWithPassword();
+          const m = await memberSession(o);
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/team/members/${m.mid}/sessions`) };
         },
         // J-20: a member's trade-size band and working hours.
         'PUT /v1/team/members/:id/limits': async () => {

@@ -30,6 +30,7 @@ export {
   type DeviceSettings,
   type LienView,
   type LoginResult,
+  type MemberSession,
   type MyLiens,
   type MethodEntry,
   type PasswordLoginResult,

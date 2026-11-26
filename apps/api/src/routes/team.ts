@@ -33,6 +33,13 @@
  *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
  *   team members are for vendor accounts only, so an invite or a role change by a trader account
  *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
+ * - `GET /v1/team/members/:id/sessions` → `{ sessions }`: the member's signed-in sessions (device,
+ *   signed in at, last seen), most recently seen first. `DELETE /v1/team/members/:id/sessions/:sessionId`
+ *   → 204 ends one; `DELETE /v1/team/members/:id/sessions` → `{ ended }` ends every one of theirs.
+ *   404 for a member of another account or removed, and for a session not that member's; 403
+ *   `weak-session` from a username-and-password session (team/memberSessions.ts). No confirm: an
+ *   ending only takes access away, as `DELETE /v1/account/sessions/:id`. Each ending writes the
+ *   team log's `session-ended` row (migration 855's trigger).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  * - `GET /v1/team/permissions` (the owner and every member) → the abilities catalogue: groups,
  *   each box with its risk, availability, ruling and presets, the presets, and the hard rules.
@@ -73,6 +80,7 @@ import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
 import { myAccess } from '../team/access.js';
+import { endMemberSessions, listMemberSessions } from '../team/memberSessions.js';
 import { assertVendor, requireVendor } from './accountType.js';
 import {
   type Caller,
@@ -111,8 +119,8 @@ function str(b: Record<string, unknown>, key: string): string {
   return v;
 }
 
-function idParam(req: FastifyRequest): string {
-  const id = (req.params as { id?: unknown }).id;
+function idParam(req: FastifyRequest, key: 'id' | 'sessionId' = 'id'): string {
+  const id = (req.params as Record<string, unknown>)[key];
   if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
   return id.toLowerCase();
 }
@@ -345,6 +353,22 @@ export function teamRoutes(app: FastifyInstance): void {
       return reply.code(204).send();
     },
   );
+
+  // A member's signed-in sessions (team/memberSessions.ts): the owner sees each and ends any of them.
+  app.get('/v1/team/members/:id/sessions', { preHandler: [owner, checkId] }, async (req) => {
+    const deps = req.server.deps;
+    return { sessions: await listMemberSessions(deps.db, req.auth.accountId, idParam(req), deps.clock()) };
+  });
+
+  app.delete('/v1/team/members/:id/sessions/:sessionId', { preHandler: [owner, checkId] }, async (req, reply) => {
+    await endMemberSessions({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), idParam(req, 'sessionId'));
+    return reply.code(204).send();
+  });
+
+  app.delete('/v1/team/members/:id/sessions', { preHandler: [owner, checkId] }, async (req) => {
+    const ended = await endMemberSessions({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), null);
+    return { ended: ended.length };
+  });
 
   // The catalogue the boxes come from: static, for the owner's screen and for a member to see what they may do.
   app.get('/v1/team/permissions', { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, touch: false, member: 'any' }) }, async () => catalogueView());

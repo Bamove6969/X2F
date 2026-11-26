@@ -17,7 +17,7 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     // Profile tab or Settings), add expectParity at PHONE_VIEWPORTS in an e2e spec, and delete this.
     const boards = readdirSync(`${ROOT}design/x2f-app`).filter((f) => /team|member/i.test(f));
     expect(boards, 'a team board landed: build to it').toEqual([]);
-    for (const f of ['apps/web/src/screens/settings/Team.tsx', 'apps/web/src/screens/settings/MyAccess.tsx', 'apps/web/src/screens/auth/MemberInvite.tsx']) {
+    for (const f of ['apps/web/src/screens/settings/Team.tsx', 'apps/web/src/screens/settings/MyAccess.tsx', 'apps/web/src/screens/settings/MemberSessions.tsx', 'apps/web/src/screens/auth/MemberInvite.tsx']) {
       expect(readFileSync(`${ROOT}${f}`, 'utf8'), f).not.toMatch(/style=\{/);
     }
     expect(existsSync(`${ROOT}apps/web/src/screens/settings/team.css`)).toBe(false);

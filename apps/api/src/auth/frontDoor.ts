@@ -80,6 +80,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
+  'GET /v1/team/members/:id/sessions': "one member of my own team's signed-in sessions: device name, signed in at, last seen (account owner only)",
   'GET /v1/team/log': "my own team's audit log, filtered and paged (the account owner; a member with the team-see-log box sees only their own rows)",
   'GET /v1/team/log/export': "my own team's audit log as a download, with its hash chain (account owner only)",
   'GET /v1/team/log/integrity': "the hash-chain check of my own team's audit log (account owner only)",
@@ -225,6 +226,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
   'PUT /v1/team/members/:id/limits': "sets a member's trade-size band and working hours in my own team (J-20)",
+  'DELETE /v1/team/members/:id/sessions/:sessionId': "ends one signed-in session of a member of my own team",
+  'DELETE /v1/team/members/:id/sessions': "ends every signed-in session of a member of my own team; answers how many",
 };
 
 /**

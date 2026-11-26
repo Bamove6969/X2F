@@ -33,6 +33,7 @@ import { holdSentence } from '../auth/refusals.js';
 import { StagedNote } from './HoldChanges.js';
 import { AbilityPicker } from './AbilityPicker.js';
 import { MyAccess } from './MyAccess.js';
+import { MemberSessions } from './MemberSessions.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
 import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import { TEAM_LOG_COPY, TEAM_LOG_PATH } from './teamLogCopy.js';
@@ -477,6 +478,7 @@ export function Team() {
                   <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.displayName)} onClick={() => void remove(m)} data-part="remove-member">
                     {C.remove}
                   </Button>
+                  {m.status === 'active' ? <MemberSessions member={m} /> : null}
                 </li>
               ))}
             </ul>
