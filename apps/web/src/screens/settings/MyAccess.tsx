@@ -15,7 +15,6 @@ import { Button } from '../../ui/Button.js';
 import { When } from '../../ui/When.js';
 import { authApi } from '../auth/authApi.js';
 import { MY_ACCESS_COPY as C, bandText, hoursText } from './teamCopy.js';
-import { TEAM_LOG_COPY, TEAM_LOG_PATH } from './teamLogCopy.js';
 
 type State = { kind: 'loading' } | { kind: 'ready'; view: MyTeamAccess } | { kind: 'none' } | { kind: 'failed' };
 
@@ -59,7 +58,6 @@ export function MyAccess() {
 
 function AccessBody({ view }: { view: MyTeamAccess }) {
   const boxes = view.groups.flatMap((g) => g.boxes);
-  const seesLog = boxes.some((b) => b.id === 'team-see-log');
   const l = view.limits;
   return (
     <>
@@ -129,12 +127,6 @@ function AccessBody({ view }: { view: MyTeamAccess }) {
         </>
       ) : null}
 
-      {/* Team audit v2: a member with "See the team log" opens their own entries. */}
-      {seesLog ? (
-        <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="my-team-log-link">
-          {TEAM_LOG_COPY.title}
-        </Link>
-      ) : null}
     </>
   );
 }
