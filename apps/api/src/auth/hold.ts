@@ -634,6 +634,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
 export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/account/pgp/start': 'writes only an add-key challenge bound to this session; its finish is checked',
   'POST /v1/account/onboarding/end': "only clears this session's own sign-up window, which narrows what the session may do (review M1)",
+  // S-085 (auth/deviceBound.ts): renewing this session's own bound cookie with its own browser key.
+  'POST /v1/account/session/proof/challenge': "writes only a proof challenge bound to this session; changes no account, approval or security state",
+  'POST /v1/account/session/proof': "renews this session's own bound cookie after a signature with the key the session was bound to at login; never extends the session, changes no account, approval or security state",
   'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
   'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
   'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',

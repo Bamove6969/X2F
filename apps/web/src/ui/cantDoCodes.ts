@@ -146,6 +146,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'confirm-profile': "an input check: the moderator must tick that the archive is the trader's profile on the site (staff app only)",
   'reviewer-own-key': "a moderator's approval of a claim backed by their own login key (staff app only; the staff app shows it with CantDoThat)",
   'bad-request': 'a malformed request (a fault)',
+  // S-085 device-bound sessions: handled by the API client (renew the bound cookie and retry, or end the session), never shown.
+  'session-proof-required': "a bound session's short-lived cookie ran out: the client renews it with the device key",
+  'session-proof-invalid': 'this browser could not prove the session key: the session ends',
+  'not-bound': 'the session has no device key: nothing to renew',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',

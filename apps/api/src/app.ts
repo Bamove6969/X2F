@@ -14,7 +14,8 @@ import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
 import { chatKeyRoutes } from './auth/chatKeys.js';
-import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
+import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, requireSession, runsWithSession, type SessionRealm } from './auth/sessions.js';
+import { deviceBoundRoutes, sessionKeyHook } from './auth/deviceBound.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -283,6 +284,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
+  // S-085 review S5: a malformed X2F-Session-Key is refused before any login factor is checked.
+  app.addHook('onRequest', sessionKeyHook);
 
   // Plan 4, Task 8: while maintenance is on, every /v1/* route but GET /v1/site answers 503 `maintenance`.
   app.addHook('onRequest', maintenanceGate);
@@ -324,6 +327,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   approvalRoutes(app);
   // J-23 groundwork: the chat-key courier between a person's own strong devices (ciphertext only).
   chatKeyRoutes(app);
+  // S-085: the bound-cookie renewal (off unless X2F_DEVICE_BOUND_SESSIONS=on). Any live session of
+  // the account, a member's, a recovery or held one, or one on stale Terms; touches nothing.
+  deviceBoundRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
