@@ -26,7 +26,7 @@
     "demo:reply": "tsx tools/demo/reply.ts"
   },
   "devDependencies": {
-    "@types/node": "24.19.1",
+    "@types/node": "26.6.5",
     "rolldown": "1.2.12",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
