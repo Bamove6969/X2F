@@ -13,6 +13,7 @@ import {
   refundDisputeWindowEndsAt,
   tradeDeleteAt,
   tradeDeleteDue,
+  type ChatRetentionFacts,
   type RetentionFacts,
 } from '../src/index.js';
 
@@ -145,6 +146,9 @@ describe('the chat of a trade always goes no later than the trade', () => {
     released({ closedAt: at(5), disputed: true, disputeClosedAt: at(2) }),
     released({ refundDisputeWindowEndsAt: at(2) }),
     released({ watchEndsAt: at(31) }),
+    // Owner 26 Nov 2026: a lien that ended moves both the trade and its chat.
+    released({ disputed: true, disputeClosedAt: at(3), lienOpen: false, lienEndedAt: at(10) }),
+    released({ lienOpen: false, lienEndedAt: at(-200) }),
   ];
   it.each(cases.map((c, i) => [i, c] as const))('case %i', (_i, f) => {
     for (const d of [29, 30, 31, 32, 60, 92, 93, 95, 96, 200]) {
@@ -159,10 +163,47 @@ describe('the chat of a trade always goes no later than the trade', () => {
           disputeClosedAt: f.disputeClosedAt,
           createdAt: at(-1),
           lastMessageAt: null,
+          lienOpen: f.lienOpen,
+          lienEndedAt: f.lienEndedAt,
         },
         now,
       );
       expect(chatDue, `day ${d}`).toBe(true);
     }
+  });
+});
+
+describe('chatPurgeDue and a lien (owner 26 Nov 2026: the chat and proofs follow the trade row)', () => {
+  const chat = (over: Partial<ChatRetentionFacts> = {}): ChatRetentionFacts => ({
+    tradeLinked: true,
+    tradeClosedAt: T0,
+    disputeOpen: false,
+    disputed: true,
+    disputeClosedAt: at(3),
+    createdAt: at(-1),
+    lastMessageAt: null,
+    ...over,
+  });
+  it('an unpaid lien keeps the chat, however old', () => {
+    expect(chatPurgeDue(chat({ lienOpen: true }), at(4000))).toBe(false);
+    expect(chatPurgeDue(chat({ lienOpen: true, lienEndedAt: at(5) }), at(4000))).toBe(false);
+  });
+  it('once the lien ends: no sooner than 90 days after it ended, and never sooner than the normal timer', () => {
+    const f = chat({ lienOpen: false, lienEndedAt: at(200) });
+    expect(chatPurgeDue(f, at(200 + CHAT_AFTER_DISPUTE_DAYS))).toBe(false);
+    expect(chatPurgeDue(f, at(200 + CHAT_AFTER_DISPUTE_DAYS, 1))).toBe(true);
+    // A lien that ended before the dispute closed: the normal 90 days from the dispute close.
+    const early = chat({ lienOpen: false, lienEndedAt: at(1) });
+    expect(chatPurgeDue(early, at(3 + CHAT_AFTER_DISPUTE_DAYS))).toBe(false);
+    expect(chatPurgeDue(early, at(3 + CHAT_AFTER_DISPUTE_DAYS, 1))).toBe(true);
+    // The chat's date is the trade's: the same instant either way.
+    const trade = released({ disputed: true, disputeClosedAt: at(3), lienOpen: false, lienEndedAt: at(200) });
+    expect(tradeDeleteAt(trade)).toEqual(at(200 + CHAT_AFTER_DISPUTE_DAYS));
+  });
+  it('an invalid lien end keeps the chat', () => {
+    expect(chatPurgeDue(chat({ lienEndedAt: new Date(Number.NaN) }), at(4000))).toBe(false);
+  });
+  it('no lien facts (a pre-trade chat, or an older caller): the rule is unchanged', () => {
+    expect(chatPurgeDue(chat(), at(3 + CHAT_AFTER_DISPUTE_DAYS, 1))).toBe(true);
   });
 });
