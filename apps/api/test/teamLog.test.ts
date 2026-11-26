@@ -290,7 +290,7 @@ describe('the export', () => {
     let prev: Buffer | null = null;
     for (const r of body.rows) {
       expect(r.prevHash).toBe(prev?.toString('hex') ?? null);
-      const h = createHash('sha256').update(prev ?? Buffer.alloc(0)).update(r.line, 'utf8').digest();
+      const h: Buffer = createHash('sha256').update(prev ?? Buffer.alloc(0)).update(r.line, 'utf8').digest();
       expect(h.toString('hex')).toBe(r.hash);
       expect(r.line.startsWith(`${r.id}|`)).toBe(true);
       prev = h;
