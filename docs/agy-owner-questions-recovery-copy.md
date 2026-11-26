@@ -1,5 +1,7 @@
 # Owner & Lead Questions — Recovery Code (`wip/agy-recovery-copy`, 12 Nov Notes #28 & #29)
 
+Line numbers below were taken on the 16 Nov demo base (`wip/third-demo-r3`); main has moved since, so look the lines up again before acting.
+
 This document covers the singular `"recovery code"` wording audit across `apps/web/src` and the design/security questions for the owner and lead on **12 Nov Note #28 (`9459c095`)** and **12 Nov Note #29 (`6b15edc1`)**.
 
 ---
@@ -26,9 +28,9 @@ This document covers the singular `"recovery code"` wording audit across `apps/w
 1. **`packages/accounts/src/confirmAction.ts:100`** (`describeAction({ kind: 'new-recovery-codes' })`):
    - Currently returns `'make new recovery codes'`, which renders inside `ConfirmSheet` (`apps/web/src/screens/auth/ConfirmSheet.tsx:102`) as `"To make new recovery codes, confirm it's you."`
    - **Lead/Claude action:** Change `'make new recovery codes'` → `'make a new recovery code'` in `packages/accounts/src/confirmAction.ts:100` (and update `packages/accounts/test/confirmAction.test.ts:14`, `packages/auth-client/test/flows.test.ts:273`, and `apps/web/test/task30-units.test.tsx:99`).
-2. **`apps/api/src/auth/methods.ts:211,254`** (`GET /v1/account/methods`):
-   - `const RECOVERY_LABEL = 'Recovery codes';` and `label: `${RECOVERY_LABEL} (${rcRow.unused} left)`` send `"Recovery codes (1 left)"` from the API.
-   - **Lead/Claude action:** Change `RECOVERY_LABEL` in `apps/api/src/auth/methods.ts:211` to `'Recovery code'` (and consider whether `(1 left)` should be omitted when `RECOVERY_CODE_COUNT === 1`).
+2. **`apps/api/src/auth/methods.ts`** (`GET /v1/account/methods`, review-agy-recovery-copy-2026-11-17 M1):
+   - `methods.ts:254`: the Security list row's label is `"<n> left"` with no noun, so the row reads "1 left". **Question for the lead/owner:** should it read "Recovery code" (and drop the count, since `RECOVERY_CODE_COUNT` is 1)?
+   - `methods.ts:211,318`: `RECOVERY_LABEL` (`'Recovery codes'`) is the label in the method-removed alert. **Lead/Claude action:** change it to `'Recovery code'`.
 3. **`apps/web/src/screens/setup/termsText.ts:76`** (`/setup` Terms Section 2):
    - Reads `"Keep your login details and recovery codes safe and private."` — this is the owner's verbatim sentence from 13 Nov note #4 (`ce105e5c`), speaking to traders collectively, and is left untouched.
 
