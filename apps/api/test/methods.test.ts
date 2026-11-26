@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { normalizeRecoveryCode, type MethodType } from '@x2f/accounts';
-import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import * as openpgp from 'openpgp';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,9 +14,7 @@ import {
   needsAfter,
   ownerReady,
   pairAllowed,
-  passwordAllowed,
 } from '../src/auth/methods.js';
-import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
@@ -33,11 +30,9 @@ const T0 = new Date('2026-10-17T12:00:00Z');
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
-const GOOD = 'Correct-Horse-9';
 /** The trader API's login mounts, and the staff API's as mounted here (kinds staff and owner). */
 const TRADER_LOGIN = '/v1/login';
 const STAFF_LOGIN = '/s/login';
-const OTHER_GOOD = 'Battery-Staple-7';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -56,10 +51,9 @@ beforeAll(async () => {
     set(d);
   };
   app.post('/t/login', async (req, reply) => {
-    const b = req.body as { accountId: string; firstSession?: boolean; level?: 'full' | 'recovery'; holdUntil?: string };
+    const b = req.body as { accountId: string; firstSession?: boolean };
     const sessionId = await startSession(deps, req, reply, {
-      accountId: b.accountId, level: b.level ?? 'full', deviceLabel: 'Test', method: 'passkey',
-      firstSession: b.firstSession ?? false, ...(b.holdUntil ? { holdUntil: new Date(b.holdUntil) } : {}),
+      accountId: b.accountId, level: 'full', deviceLabel: 'Test', method: 'passkey', firstSession: b.firstSession ?? false,
     });
     return { sessionId };
   });
@@ -139,16 +133,15 @@ class Browser {
 
 async function account(kind: 'trader' | 'staff' | 'owner' = 'trader') {
   const username = uniqueName(kind === 'trader' ? 'user' : kind === 'staff' ? 'crew' : 'boss');
-  const id = await seedAccount(deps, { loginName: username, kind });
+  // No login method yet: each test adds the ones it is about.
+  const id = await seedAccount(deps, { loginName: username, kind, methods: false });
   seeded.push(id);
   return { id, username };
 }
 
-async function loggedIn(accountId: string, o: { firstSession?: boolean; level?: 'full' | 'recovery'; holdUntil?: Date } = {}) {
+async function loggedIn(accountId: string, o: { firstSession?: boolean } = {}) {
   const b = new Browser();
-  const res = await b.post('/t/login', {
-    accountId, firstSession: o.firstSession ?? false, level: o.level ?? 'full', ...(o.holdUntil ? { holdUntil: o.holdUntil.toISOString() } : {}),
-  });
+  const res = await b.post('/t/login', { accountId, firstSession: o.firstSession ?? false });
   expect(res.statusCode).toBe(200);
   b.sessionId = (res.json() as { sessionId: string }).sessionId;
   return b;
@@ -175,11 +168,6 @@ async function addCredential(accountId: string, kind: 'passkey' | 'security-key'
     [accountId, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, kind, attested, `${kind} label`, now],
   );
   return { id: rows[0]!.id, auth };
-}
-
-async function addPassword(accountId: string, pw = GOOD) {
-  const { hash, pepperId } = await hashPassword(deps.config, pw);
-  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [accountId, hash, pepperId, now]);
 }
 
 async function addTotp(accountId: string) {
@@ -214,16 +202,13 @@ async function sessionCount(accountId: string) {
 // ---------------------------------------------------------------------------------------------
 
 describe('policy', () => {
-  it('allowedMethods, passwordAllowed and assertMethodAllowed', () => {
-    expect(PRIMARY).toEqual(['pgp', 'passkey', 'security-key', 'password']);
-    expect(allowedMethods('trader')).toEqual(['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes']);
+  it('allowedMethods and assertMethodAllowed', () => {
+    expect(PRIMARY).toEqual(['pgp', 'passkey', 'security-key']);
+    expect(allowedMethods('trader')).toEqual(['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes']);
     expect(allowedMethods('staff')).toEqual(['pgp', 'security-key', 'passkey']);
     expect(allowedMethods('owner')).toEqual(['pgp', 'security-key']);
-    expect(passwordAllowed('trader')).toBe(true);
-    expect(passwordAllowed('staff')).toBe(false);
-    expect(passwordAllowed('owner')).toBe(false);
     expect(() => assertMethodAllowed('trader', 'totp')).not.toThrow();
-    for (const [kind, m] of [['staff', 'password'], ['staff', 'totp'], ['staff', 'recovery-codes'], ['owner', 'passkey'], ['owner', 'password']] as const) {
+    for (const [kind, m] of [['staff', 'totp'], ['staff', 'recovery-codes'], ['owner', 'passkey'], ['owner', 'totp']] as const) {
       try {
         assertMethodAllowed(kind, m);
         expect.unreachable();
@@ -327,7 +312,6 @@ describe('GET /v1/account/methods', () => {
     const key = await genKey();
     const pgpId = await addPgp(id, key);
     const pass = await addCredential(id, 'passkey', false);
-    await addPassword(id);
     await addTotp(id);
     await addRecoveryCodes(id, ['AAAA-BBBB-CCCC-DDDD', 'EEEE-FFFF-GGGG-HHHH', '0000-1111-2222-3333']);
     await deps.db.query(`update recovery_codes set used_at = $2 where account_id = $1 and ctid = (select min(ctid) from recovery_codes where account_id = $1)`, [id, now]);
@@ -335,23 +319,21 @@ describe('GET /v1/account/methods', () => {
     const res = await (await loggedIn(id)).get('/v1/account/methods');
     expect(res.statusCode).toBe(200);
     const list = res.json() as Array<{ type: MethodType; id: string; label: string; createdAt: string; lastUsedAt: string | null }>;
-    expect(list.map((m) => m.type)).toEqual(['pgp', 'passkey', 'password', 'totp', 'recovery-codes']);
+    expect(list.map((m) => m.type)).toEqual(['pgp', 'passkey', 'totp', 'recovery-codes']);
     expect(list[0]).toEqual({ type: 'pgp', id: pgpId, label: key.fingerprint.slice(-16), createdAt: now.toISOString(), lastUsedAt: null });
     expect(list[1]).toMatchObject({ type: 'passkey', id: pass.id, label: 'passkey label' });
-    expect(list[2]).toMatchObject({ type: 'password', id: 'password' });
-    expect(list[3]).toMatchObject({ type: 'totp', id: 'totp' });
-    expect(list[4]).toMatchObject({ type: 'recovery-codes', id: 'recovery-codes', label: '2 left', lastUsedAt: now.toISOString() });
+    expect(list[2]).toMatchObject({ type: 'totp', id: 'totp' });
+    expect(list[3]).toMatchObject({ type: 'recovery-codes', id: 'recovery-codes', label: '2 left', lastUsedAt: now.toISOString() });
     expect(await listMethods(deps.db, id)).toEqual(list);
     // Nothing secret: no hashes, no armored key.
     expect(res.body).not.toContain('argon2');
     expect(res.body).not.toContain('BEGIN PGP');
   });
 
-  it('answers a held recovery session and a stale Terms version', async () => {
+  it('answers a setup-only session and a stale Terms version', async () => {
     const { id } = await account();
     await addPgp(id, await genKey());
-    const held = await loggedIn(id, { level: 'recovery', holdUntil: new Date(now.getTime() + DAY) });
-    expect((await held.get('/v1/account/methods')).statusCode).toBe(200);
+    expect((await (await loggedIn(id)).get('/v1/account/methods')).statusCode).toBe(200);
     await deps.db.query(`update accounts set terms_version = '2000-01-01' where id = $1`, [id]);
     expect((await (await loggedIn(id)).get('/v1/account/methods')).statusCode).toBe(200);
   });
@@ -366,6 +348,7 @@ describe('removing a login method', () => {
   it('refuses the last primary method; after adding a passkey, removal ends every other session (P2-I6)', async () => {
     const { id } = await account();
     const pgpId = await addPgp(id, await genKey());
+    await addTotp(id);
     const b = await loggedIn(id);
     const other = await loggedIn(id);
     const t = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
@@ -386,10 +369,11 @@ describe('removing a login method', () => {
     expect((await b.get('/v1/account/methods')).statusCode).toBe(200);
   });
 
-  it('needs a confirm token bound to that exact method; a full session only', async () => {
+  it('needs a confirm token bound to that exact method', async () => {
     const { id } = await account();
     const pgpId = await addPgp(id, await genKey());
     const passkey = await addCredential(id, 'passkey', false);
+    await addTotp(id);
     const b = await loggedIn(id);
     const missing = await b.del(`/v1/account/methods/pgp/${pgpId}`, {});
     expect(missing.statusCode).toBe(403);
@@ -400,11 +384,6 @@ describe('removing a login method', () => {
     const res = await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: wrong });
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('confirm-invalid');
-
-    const rec = await loggedIn(id, { level: 'recovery' });
-    const r = await rec.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: 'x' });
-    expect(r.statusCode).toBe(403);
-    expect(errorOf(r)).toBe('recovery-session');
   });
 
   it('answers 404 for an unknown type, an unknown id and another account’s method, before any token is spent', async () => {
@@ -430,9 +409,9 @@ describe('removing a login method', () => {
     expect(rows[0].used_at).toBeNull();
   });
 
-  it("owner G13: a vendor's last passkey, security key or PGP key can't go, even with a password; after adding another it can", async () => {
+  it("owner G13: a vendor's last passkey, security key or PGP key can't go, even with the authenticator app; after adding another it can", async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     const pgpId = await addPgp(id, await genKey());
     await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [id, now]);
     const b = await loggedIn(id);
@@ -442,12 +421,12 @@ describe('removing a login method', () => {
     await addCredential(id, 'passkey', false);
     const t2 = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
     expect((await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: t2 })).statusCode).toBe(200);
-    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'totp']);
   });
 
   it('owner G13 (security review 8 Nov M3): an expired PGP key does not count, so a vendor with one and a passkey keeps the passkey', async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     // Expired a day after it was made, long before `now`.
     await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
     const passkey = await addCredential(id, 'passkey', false);
@@ -458,55 +437,52 @@ describe('removing a login method', () => {
     expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
   });
 
-  // Owner, 16 Nov 2026: a password never stands alone, so TOTP beside a lone password stays too
-  // (409 password-alone); recovery codes can still go.
-  it('a trader whose only primary method is a password keeps it and its TOTP; recovery codes can go', async () => {
+  // Owner, 26 Nov 2026: a trader holds two kinds of login method; recovery codes are no kind and can go.
+  it('a trader with a passkey and the authenticator app keeps both; recovery codes can go', async () => {
     const { id } = await account();
-    await addPassword(id);
+    const passkey = await addCredential(id, 'passkey', false);
     await addTotp(id);
     await addRecoveryCodes(id, ['AAAA-BBBB-CCCC-DDDD']);
     const b = await loggedIn(id);
-    const t = await token(b, id, { kind: 'remove-method', method: 'password', id: 'password' });
-    const res = await b.del('/v1/account/methods/password/password', { confirmToken: t });
-    expect(res.statusCode).toBe(409);
-    expect(errorOf(res)).toBe('last-login-method');
-
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const res = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([res.statusCode, errorOf(res)]).toEqual([409, 'last-login-method']);
     const t2 = await token(b, id, { kind: 'remove-method', method: 'totp', id: 'totp' });
     const totp = await b.del('/v1/account/methods/totp/totp', { confirmToken: t2 });
-    expect([totp.statusCode, errorOf(totp)]).toEqual([409, 'password-alone']);
+    expect([totp.statusCode, errorOf(totp)]).toEqual([409, 'two-methods-required']);
     const t3 = await token(b, id, { kind: 'remove-method', method: 'recovery-codes', id: 'recovery-codes' });
     expect((await b.del('/v1/account/methods/recovery-codes/recovery-codes', { confirmToken: t3 })).statusCode).toBe(200);
-    expect((await listMethods(deps.db, id)).map((m) => m.type)).toEqual(['password', 'totp']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type)).toEqual(['passkey', 'totp']);
   });
 
-  // The password-alone check counts only usable PGP keys, as G13 does (security review 8 Nov M3:
-  // an expired or revoked key logs no one in).
-  it('password-alone: an expired PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+  // The two-kinds check counts only usable PGP keys, as G13 does (security review 8 Nov M3: an
+  // expired or revoked key logs no one in).
+  it('two kinds: an expired PGP key does not count, so a trader with the app, one and a passkey keeps the passkey', async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
     const passkey = await addCredential(id, 'passkey', false);
     const b = await loggedIn(id);
     const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
     const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
-    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
-    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password', 'pgp']);
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'two-methods-required']);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'pgp', 'totp']);
   });
 
   // Review L4: the sign-up's end counts PGP keys the same way (confirm.ts methodKindsOf).
-  it('password-alone: onboarding/end does not count an expired PGP key either (409), nor the setup-only gate', async () => {
+  it('two kinds: onboarding/end does not count an expired PGP key either (409), nor the setup-only gate', async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
     const b = await loggedIn(id);
     const end = await b.post('/v1/account/onboarding/end', {});
-    expect([end.statusCode, errorOf(end)]).toEqual([409, 'password-alone']);
+    expect([end.statusCode, errorOf(end)]).toEqual([409, 'two-methods-required']);
     expect(((await b.get('/v1/account/me')).json() as { setupOnly: boolean }).setupOnly).toBe(true);
   });
 
-  it('password-alone: a revoked PGP key does not count, so a trader with a password, one and a passkey keeps the passkey', async () => {
+  it('two kinds: a revoked PGP key does not count, so a trader with the app, one and a passkey keeps the passkey', async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     const key = await genKey();
     await addPgp(id, key);
     await revokeStored(id, key);
@@ -514,12 +490,12 @@ describe('removing a login method', () => {
     const b = await loggedIn(id);
     const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
     const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
-    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'password-alone']);
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'two-methods-required']);
   });
 
-  it('password-alone: with a usable PGP key beside the password, the passkey can go', async () => {
+  it('two kinds: with a usable PGP key beside the app, the passkey can go', async () => {
     const { id } = await account();
-    await addPassword(id);
+    await addTotp(id);
     await addPgp(id, await genKey());
     const passkey = await addCredential(id, 'passkey', false);
     const b = await loggedIn(id);
@@ -640,6 +616,7 @@ describe('removing a login method', () => {
     const { id } = await account();
     const pgpId = await addPgp(id, await genKey());
     const passkey = await addCredential(id, 'passkey', false);
+    await addCredential(id, 'security-key', false);
     const b = await loggedIn(id);
     const t1 = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
     const t2 = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
@@ -648,84 +625,17 @@ describe('removing a login method', () => {
       b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t2 }),
     ]);
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
-    expect(await listMethods(deps.db, id)).toHaveLength(1);
+    expect(await listMethods(deps.db, id)).toHaveLength(2);
   });
 });
 
-describe('PUT /v1/account/password', () => {
-  it('sets a password, ends every other session and keeps the calling one', async () => {
-    const { id, username } = await account();
-    await addPgp(id, await genKey());
-    const b = await loggedIn(id);
-    const other = await loggedIn(id);
-    const t = await token(b, id, { kind: 'key-test' });
-    const res = await b.put('/v1/account/password', { password: GOOD, confirmToken: t });
-    expect(res.statusCode).toBe(200);
-    // Stored under the current pepper (FU-C).
-    const { rows: pw } = await deps.db.query('select pepper_id from passwords where account_id = $1', [id]);
-    expect(pw).toEqual([{ pepper_id: deps.config.passwordPeppers.current }]);
-    expect((await other.get('/v1/account/methods')).statusCode).toBe(401);
-    expect((await b.get('/v1/account/methods')).statusCode).toBe(200);
-    expect(await alertsOf(id, 'login-method-added')).toEqual([{ method: 'passkey' }]);
-
-    // Replacing it works the same way; the new password logs in, the old one does not.
-    const t2 = await token(b, id, { kind: 'key-test' });
-    expect((await b.put('/v1/account/password', { password: OTHER_GOOD, confirmToken: t2 })).statusCode).toBe(200);
-    const login = (pw: string) => new Browser().post('/v1/login/password', { loginName: username, password: pw, deviceLabel: 'x' });
-    expect((await login(GOOD)).statusCode).toBe(401);
-    expect((await login(OTHER_GOOD)).statusCode).toBe(200);
-  });
-
-  it('needs a confirm token outside onboarding; the creating session has 30 minutes without one', async () => {
-    const { id } = await account();
-    await addPgp(id, await genKey());
-    const later = await loggedIn(id);
-    const res = await later.put('/v1/account/password', { password: GOOD });
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'confirm-required', action: 'set-password' });
-
-    const start = now;
-    const first = await loggedIn(id, { firstSession: true });
-    expect((await first.put('/v1/account/password', { password: GOOD })).statusCode).toBe(200);
-    setNow(new Date(start.getTime() + 31 * MIN));
-    const late = await first.put('/v1/account/password', { password: OTHER_GOOD });
-    expect(late.statusCode).toBe(403);
-    expect(errorOf(late)).toBe('confirm-required');
-  });
-
-  it('checks the password before redeeming the token', async () => {
-    const { id } = await account();
-    await addPgp(id, await genKey());
-    const b = await loggedIn(id);
-    const t = await token(b, id, { kind: 'key-test' });
-    const weak = await b.put('/v1/account/password', { password: 'short', confirmToken: t });
-    expect(weak.statusCode).toBe(400);
-    expect(errorOf(weak)).toBe('password-weak');
-    const leaked = await b.put('/v1/account/password', { password: 'Password123!', confirmToken: t });
-    expect(errorOf(leaked)).toBe('password-leaked');
-    expect((await b.put('/v1/account/password', { password: GOOD, confirmToken: t })).statusCode).toBe(200);
-  });
-
-  it('a held recovery session is refused until the hold ends; then it needs no token', async () => {
-    const { id } = await account();
-    await addTotp(id);
-    const holdUntil = new Date(now.getTime() + DAY);
-    const rec = await loggedIn(id, { level: 'recovery', holdUntil });
-    const held = await rec.put('/v1/account/password', { password: GOOD });
-    expect(held.statusCode).toBe(403);
-    expect(errorOf(held)).toBe('recovery-hold');
-    setNow(holdUntil);
-    expect((await rec.put('/v1/account/password', { password: GOOD })).statusCode).toBe(200);
-  });
-});
-
-describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
+describe('staff and owner: no TOTP or recovery codes (R2)', () => {
   it('refuses them for staff and the owner before any token is spent', async () => {
     for (const kind of ['staff', 'owner'] as const) {
       const { id } = await account(kind);
       const b = await loggedIn(id, { firstSession: true });
-      for (const [url, put] of [['/v1/account/password', true], ['/v1/account/totp/start', false], ['/v1/account/recovery-codes', false]] as const) {
-        const res = put ? await b.put(url, { password: GOOD }) : await b.post(url, {});
+      for (const url of ['/v1/account/totp/start', '/v1/account/recovery-codes']) {
+        const res = await b.post(url, {});
         expect(res.statusCode, `${kind} ${url}`).toBe(403);
         expect(errorOf(res)).toBe('method-not-allowed');
       }
@@ -764,16 +674,6 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
     expect(await sessionCount(id)).toBe(0);
   });
 
-  it('a staff password row never logs in, and the verify runs once against the dummy hash', async () => {
-    const { username, id } = await account('staff');
-    await addPassword(id);
-    const verify = vi.spyOn(argon2, 'verify');
-    const res = await new Browser().post('/v1/login/password', { loginName: username, password: GOOD, deviceLabel: 'x' });
-    expect(res.statusCode).toBe(401);
-    expect(errorOf(res)).toBe('credentials-invalid');
-    expect(verify).toHaveBeenCalledTimes(1);
-    expect(await sessionCount(id)).toBe(0);
-  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1009,7 +909,7 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await sessionCount(trader.id)).toBe(0);
   });
 
-  it('a pending row of another method (a trader password login’s TOTP step) is never a pending pair', async () => {
+  it('a pending row of another method (a TOTP challenge) is never a pending pair', async () => {
     const { id, username } = await account('staff');
     await addPgp(id, keys[0]!, new Date(now.getTime() - 2 * MIN));
     await addPgp(id, keys[1]!, new Date(now.getTime() - MIN));
