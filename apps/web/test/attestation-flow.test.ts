@@ -2750,7 +2750,7 @@ describe('the trade chat identity is registered when the device runs the trade (
 // the escrow address its own party derived and this side as the winner, and hands the party the
 // set cosignPolicy passes against it (builder mod, this side the co-signer), saved first as the
 // record's `ruling` intent. TODO(m4) decided: the release-binding flags never block a ruling.
-describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-built set only against the signed statement', () => {
+describe('Plan 4 rulings (Haveno finding 2; owner 26 Nov): either trader co-signs the moderator-built set, only the winner\'s exact set against the signed statement', () => {
   const paidAt = '2026-10-23T12:30:00.000Z';
   const disputedView = (over: Record<string, unknown> = {}) => tradeView({ state: 'disputed', paidAt, dispute: { by: 'buyer', at: '2026-10-23T13:00:00.000Z' }, ...over });
   const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
@@ -2790,7 +2790,7 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     return { ...t, buyer, seller };
   }
 
-  it('a valid buyer-win statement: the buyer co-signs exactly its set (the mod builds), saved as its ruling intent; nothing else replaces it; the seller co-signs nothing', async () => {
+  it('a valid buyer-win statement: the buyer co-signs exactly its set (the mod builds), saved as its ruling intent; nothing else replaces it; the seller, the loser, co-signs only that same set', async () => {
     const t = await disputed();
     expect(modBuilt(t, 'buyer')).toEqual([]);
     t.state.rulingStatement = await statement(t.mod.secret, 'buyer');
@@ -2803,7 +2803,10 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     await Promise.all([t.parties.ticks('buyer', 4), t.parties.ticks('seller', 4)]);
     // No seller-built release (the standing co-sign) is handed to the party over the ruling.
     expect(t.parties.settles.slice(first).filter((x) => x.role === 'buyer' && x.o.builder !== 'mod')).toEqual([]);
-    expect(modBuilt(t, 'seller')).toEqual([]);
+    // Owner 26 Nov: whichever app opens first co-signs; the loser's app only the ruled set.
+    await until(() => modBuilt(t, 'seller').length > 0);
+    expect(modBuilt(t, 'seller').map((x) => x.o)).toEqual(modBuilt(t, 'seller').map(() => ({ ...want, cosigner: 'seller' })));
+    expect((await t.seller.store.load(CODE))?.intent).toMatchObject({ kind: 'ruling', outcome: { to: want.to, builder: 'mod', cosigner: 'seller' } });
     // The party finishes it: the intent is done, and the device keeps it open meanwhile.
     expect(t.buyer.last()).toMatchObject({ keepOpen: true });
     t.parties.pending.find((p) => p.role === 'buyer' && p.o.builder === 'mod')!.resolve('ab'.repeat(32));
@@ -2811,13 +2814,13 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     expect((await t.buyer.store.load(CODE))?.intent?.kind).toBe('ruling');
   });
 
-  it('a valid seller-win statement: the seller co-signs the whole balance to its refund address; the buyer co-signs nothing', async () => {
+  it('a valid seller-win statement: the seller co-signs the whole balance to its refund address; the buyer, the loser, co-signs only that same set', async () => {
     const t = await disputed();
     t.state.rulingStatement = await statement(t.mod.secret, 'seller');
     await until(() => modBuilt(t, 'seller').length > 0);
     expect(modBuilt(t, 'seller')[0]!.o).toEqual({ kind: 'release', to: [{ address: ADDR.seller, amountAtomic: balance() }], builder: 'mod', cosigner: 'seller' });
-    await t.parties.ticks('buyer', 4);
-    expect(modBuilt(t, 'buyer')).toEqual([]);
+    await until(() => modBuilt(t, 'buyer').length > 0);
+    expect(modBuilt(t, 'buyer').map((x) => x.o)).toEqual(modBuilt(t, 'buyer').map(() => ({ kind: 'release', to: [{ address: ADDR.seller, amountAtomic: balance() }], builder: 'mod', cosigner: 'buyer' })));
   });
 
   const BAD: Array<[string, (t: T) => Promise<{ statement: unknown; sig: unknown }>]> = [
@@ -2904,8 +2907,9 @@ describe('Plan 4 rulings (Haveno finding 2): the winner co-signs the moderator-b
     const t = await disputed();
     t.state.rulingStatement = await statement(t.mod.secret, winner);
     await until(() => modBuilt(t, winner).length > 0);
-    await t.parties.ticks(loser, 2);
-    expect(modBuilt(t, loser)).toEqual([]);
+    // The loser's app co-signs the same set too; the winner's co-sign is the one that lands.
+    await until(() => modBuilt(t, loser).length > 0);
+    expect(modBuilt(t, loser).at(-1)!.o.to).toEqual(modBuilt(t, winner).at(-1)!.o.to);
     t.state.view = tradeView(closed);
     t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
     expect(await t[loser].status((s) => s.phase === 'settled-without-device' || s.phase === 'error')).toMatchObject({ phase: 'settled-without-device', error: null });

@@ -200,6 +200,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'origin-refused': 'a CSRF guard (a fault)',
   'address-invalid': 'an input check on a typed address',
   'address-integrated': 'an input check on a typed address',
+  // Owner 26 Nov: the staff fee-sweep destination must be X2F's fee wallet (staff app only).
+  'not-fee-wallet': 'an input check on a typed address (staff)',
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',

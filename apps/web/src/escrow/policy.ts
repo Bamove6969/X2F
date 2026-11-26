@@ -16,12 +16,14 @@
  * Mod-built (Plan 4 rulings, only while disputed): co-signed only against the moderation service's
  * signed ruling statement (RetoSwap/Haveno review 2026-11-12, finding 2, lead call: the API's
  * unsigned "disputed" is never enough): signed by the pinned moderation key, for this trade and the
- * escrow address this device's own party derived, round 1 (or 2, review p4t22 m1), this side the winner, and paying exactly
+ * escrow address this device's own party derived, round 1 (or 2, review p4t22 m1), naming the winner, and paying exactly
  * the set this device works out itself (`ruling` below, `@x2f/trade` rulingStatementValid); and only when it is exactly the ruling's
  * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
  * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
- * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
- * balance, no fee), so no split can move this side's share to the counterparty or add a fee. The
+ * then the exact fees) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
+ * balance, no fee), so no split can move this side's share to the counterparty or add a fee. Owner
+ * 26 Nov: either side co-signs (whichever app opens first), the loser only the winner's exact set
+ * under a statement naming that winner, so a losing app can never sign anything else. The
  * runtime builds that set with `rulingOutcomeFor` once the signed statement verified (Plan 4 Task 21
  * fix). The signed statement is the only thing that allows a mod-built set: the API's unsigned
  * dispute view never does (its old gate, rulingAllowsCosign, was deleted in review m2, 22 Nov).
@@ -195,20 +197,26 @@ function check(c: PolicyContext, o: Outcome): boolean {
     if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state) && c.trade.paidAt === null;
     // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
     if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
-    return state === 'disputed' && is('dispute-buyer', 'mod', 'buyer') && ruled(c, o);
+    if (state === 'disputed' && is('dispute-buyer', 'mod', 'buyer') && ruled(c, o, 'buyer')) return true;
+    // Owner 26 Nov: the losing side's app may co-sign too, but only the exact set the ruling fixed.
+    return state === 'disputed' && is('dispute-seller', 'mod', 'buyer') && ruled(c, o, 'seller');
   }
   if (route('release')) return RELEASE_STATES.includes(state);
   if (route('lapse-refund')) return state === 'lapsed';
   if (route('auto-refund')) return state === 'settling' && c.trade.settling === 'auto-refund' && c.trade.paidAt === null;
   if (route('mutual-cancel')) return true;
-  return state === 'disputed' && is('dispute-seller', 'mod', 'seller') && ruled(c, o);
+  if (state === 'disputed' && is('dispute-seller', 'mod', 'seller') && ruled(c, o, 'seller')) return true;
+  return state === 'disputed' && is('dispute-buyer', 'mod', 'seller') && ruled(c, o, 'buyer');
 }
 
-/** Haveno finding 2: the outcome is the verified statement's own payout set, for this trade, escrow, round 1 or 2 (review p4t22 m1) and this side. */
-function ruled(c: PolicyContext, o: Outcome): boolean {
+/**
+ * Haveno finding 2: the outcome is the verified statement's own payout set, for this trade, escrow,
+ * round 1 or 2 (review p4t22 m1) and this winner (this side, or the other side when this side lost).
+ */
+function ruled(c: PolicyContext, o: Outcome, winner: 'buyer' | 'seller'): boolean {
   const r = c.ruling;
   if (r === null || r === undefined) return false;
-  return rulingStatementValid(r.statement, r.sig, r.modSigningPublic, { trade: r.code, escrowAddress: r.escrowAddress, winner: c.role, payouts: o.to }).ok;
+  return rulingStatementValid(r.statement, r.sig, r.modSigningPublic, { trade: r.code, escrowAddress: r.escrowAddress, winner, payouts: o.to }).ok;
 }
 
 /** True only for an outcome this side may settle (see the module comment). Never throws. */
@@ -221,13 +229,14 @@ export function cosignPolicy(ctx: PolicyContext, outcome: Outcome): boolean {
 }
 
 /**
- * Plan 4 rulings: the moderator-built set this side co-signs as the winner (`dispute-buyer` for the
- * buyer, `dispute-seller` for the seller), worked out from this side's own facts, or null when
+ * Plan 4 rulings: the moderator-built set this side co-signs for `winner` (`dispute-buyer` when the
+ * buyer won, `dispute-seller` when the seller won; this side by default, the other side when this
+ * side lost: owner 26 Nov, either trader's app may co-sign the ruled payout), worked out from this side's own facts, or null when
  * cosignPolicy refuses it (not disputed, no verified statement for this trade, escrow, round 1 or 2 and
  * this side, or a statement paying anything else). Never built from the statement's own list.
  */
-export function rulingOutcomeFor(ctx: PolicyContext): Outcome | null {
-  const kind: RulingKind = ctx.role === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
+export function rulingOutcomeFor(ctx: PolicyContext, winner: 'buyer' | 'seller' = ctx.role === 'seller' ? 'seller' : 'buyer'): Outcome | null {
+  const kind: RulingKind = winner === 'buyer' ? 'dispute-buyer' : 'dispute-seller';
   let to: Payout[];
   try {
     to = expected(kind, ctx);

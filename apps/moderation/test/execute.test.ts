@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Outcome, PartyHandle } from '@x2f/escrow';
+import { releaseTag, type Outcome, type PartyHandle } from '@x2f/escrow';
 import { escrowPlan, verifyRulingStatement, type RulingStatement } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -73,7 +73,7 @@ beforeAll(async () => {
 const announced: Array<{ statement: RulingStatement; sig: string }> = [];
 const accept = async (r: { statement: RulingStatement; sig: string }) => (announced.push(r), true);
 
-const step = (s: Setup, handle: Pick<PartyHandle, 'settle' | 'peerRelease'>, over: Partial<RulingStepInput> = {}): RulingStepInput => ({
+const step = (s: Setup, handle: Pick<PartyHandle, 'settle' | 'peerRelease' | 'currentRelease'>, over: Partial<RulingStepInput> = {}): RulingStepInput => ({
   code: s.c.ruling.code,
   handle,
   api: { state: 'disputed', paused: false },
@@ -768,5 +768,109 @@ describe('review p4t22 F1: a round 1 the gate authorised still pays once its sig
     expect(p.settles[0]).toMatchObject({ kind: 'release', builder: 'mod', cosigner: 'seller' });
     expect(s.store.state.executions[s.c.ruling.code]?.rulingId).toBe(r2.ruling.id);
     expect(s.store.state.rulingsSeen[s.c.ruling.id]).toMatchObject({ signersOnly: true, signers: [s.c.ruling.proposer] });
+  });
+});
+
+/**
+ * Owner 26 Nov: either trader's app co-signs the ruling's fixed payout, whichever opens first. The
+ * moderator hands it with the winner the co-signer and switches to the other trader only while its
+ * party is not committed, the winner sent nothing for it, and the other trader sent its export for
+ * this very set with itself the co-signer. The payouts never change.
+ */
+describe('either trader co-signs the ruling payout', () => {
+  type View = ReturnType<NonNullable<PartyHandle['peerRelease']>>;
+  function party() {
+    const settles: Outcome[] = [];
+    const waiters: Array<{ resolve: (tx: string | null) => void; reject: (e: Error) => void }> = [];
+    const views: Record<'buyer' | 'seller', View> = { buyer: { current: false, elsewhere: null }, seller: { current: false, elsewhere: null } };
+    const state = { committed: false, current: null as Outcome | null };
+    const handle: Pick<PartyHandle, 'settle' | 'peerRelease' | 'currentRelease'> = {
+      settle: (o) => {
+        // As the party does: an uncommitted settle is replaced and its waiter rejected.
+        waiters.splice(0).forEach((w) => w.reject(new Error('replaced by a later settle()')));
+        settles.push(structuredClone(o));
+        state.current = structuredClone(o);
+        return new Promise<string | null>((resolve, reject) => waiters.push({ resolve, reject }));
+      },
+      peerRelease: (from) => structuredClone(from === 'mod' ? { current: false, elsewhere: null } : views[from]),
+      currentRelease: () => (state.current === null ? null : { tag: releaseTag(state.current), counterpart: state.current.cosigner, committed: state.committed }),
+    };
+    return { handle, settles, views, state, answer: (tx: string | null) => waiters.shift()?.resolve(tx) };
+  }
+  const exported = (o: Outcome): View => ({ current: false, elsewhere: { tag: releaseTag(o), txSet: false, at: 1 } });
+
+  it('the loser opens first: the same payouts are handed again with the loser the co-signer; the record and statement stay the winner\'s', async () => {
+    const s = await setup();
+    const p = party();
+    const logs: string[] = [];
+    const exec = executor(s, s.store, logs);
+    expect(await exec.step(step(s, p.handle))).toBe('handed');
+    const first = p.settles[0]!;
+    expect(first).toMatchObject({ builder: 'mod', cosigner: 'buyer' });
+    expect(await exec.step(step(s, p.handle))).toBe('in-flight');
+    // The seller (the loser) exports for the very same set with itself the co-signer.
+    p.views.seller = exported({ ...first, cosigner: 'seller' });
+    expect(await exec.step(step(s, p.handle))).toBe('handed');
+    expect(p.settles).toHaveLength(2);
+    expect(p.settles[1]).toEqual({ ...first, cosigner: 'seller' });
+    expect(logs).toContain('ruling-cosigner-loser');
+    expect(logs).not.toContain('ruling-settle-failed');
+    expect(await exec.step(step(s, p.handle))).toBe('in-flight');
+    expect(s.store.state.executions[s.c.ruling.code]).toMatchObject({ winner: 'buyer', settledAt: null });
+    // It lands: recorded once, as the ruling's payout.
+    p.answer('9'.repeat(64));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(s.store.state.executions[s.c.ruling.code]).toMatchObject({ winner: 'buyer', settledTx: '9'.repeat(64) });
+    expect(await exec.step(step(s, p.handle))).toBe('settled');
+  });
+
+  it('never switches for an export of another set, once the winner took part, or once the party is committed', async () => {
+    const cases: Array<[string, (p: ReturnType<typeof party>, first: Outcome) => void]> = [
+      ['other payouts', (p, first) => (p.views.seller = exported({ ...first, to: first.to.map((x, i) => (i === 0 ? { ...x, amountAtomic: x.amountAtomic - 1n } : x)), cosigner: 'seller' }))],
+      ['a seller-built set', (p, first) => (p.views.seller = exported({ ...first, builder: 'seller', cosigner: 'mod' }))],
+      ['the winner took part', (p, first) => {
+        p.views.buyer = { current: true, elsewhere: null };
+        p.views.seller = exported({ ...first, cosigner: 'seller' });
+      }],
+      ['committed', (p, first) => {
+        p.state.committed = true;
+        p.views.seller = exported({ ...first, cosigner: 'seller' });
+      }],
+    ];
+    for (const [name, arrange] of cases) {
+      const s = await setup();
+      const p = party();
+      const exec = executor(s);
+      await exec.step(step(s, p.handle));
+      arrange(p, p.settles[0]!);
+      expect(await exec.step(step(s, p.handle)), name).toBe('in-flight');
+      expect(p.settles, name).toHaveLength(1);
+    }
+  });
+
+  it('a party without currentRelease never switches (fail closed)', async () => {
+    const s = await setup();
+    const p = party();
+    const { currentRelease: _, ...handle } = p.handle;
+    const exec = executor(s);
+    await exec.step(step(s, handle));
+    p.views.seller = exported({ ...p.settles[0]!, cosigner: 'seller' });
+    expect(await exec.step(step(s, handle))).toBe('in-flight');
+    expect(p.settles).toHaveLength(1);
+  });
+
+  it('after a restart, the party\'s saved release with the loser co-signing is handed again as it is', async () => {
+    const s = await setup();
+    const p = party();
+    const exec = executor(s);
+    await exec.step(step(s, p.handle));
+    p.views.seller = exported({ ...p.settles[0]!, cosigner: 'seller' });
+    await exec.step(step(s, p.handle));
+    expect(p.settles.at(-1)).toMatchObject({ cosigner: 'seller' });
+    // A new process: the same store, the party resumed with its saved release.
+    const again = executor(s);
+    expect(await again.step(step(s, p.handle))).toBe('handed');
+    expect(p.settles.at(-1)).toMatchObject({ cosigner: 'seller' });
+    expect(p.settles.at(-1)!.to).toEqual(p.settles[0]!.to);
   });
 });

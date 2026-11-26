@@ -552,6 +552,23 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     expect(await bookedFee(t.code)).toEqual([{ network_fee_atomic: '6666666666' }]);
   });
 
+  // Owner 26 Nov: both traders are alerted when a ruling is published: a side with an open stream
+  // re-reads the trade, a side without one gets the phone push (it names no trade).
+  it('a published ruling alerts both traders: the stream, else the phone push', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    const row = (await deps.db.query<{ seller: string; buyer: string }>('select seller_account_id::text as seller, buyer_account_id::text as buyer from trades where code = $1', [t.code])).rows[0]!;
+    const pushed: Array<[string, string]> = [];
+    const streamed: string[] = [];
+    // The seller has a stream open; the buyer has none.
+    const events = { publish: (id: string) => (streamed.push(id), id === row.seller ? 1 : 0) };
+    const push = { send: async (id: string, kind: 'trade') => (pushed.push([id, kind]), true) };
+    await publishRuling({ db: deps.db, clock: deps.clock, events, push }, t.code, { outcome: 'release-to-buyer' });
+    expect(new Set(streamed)).toEqual(new Set([row.seller, row.buyer]));
+    expect(pushed).toEqual([[row.buyer, 'trade']]);
+  });
+
   it('refund to the seller with a network fee books nothing (no fee output, owner g63; C1)', async () => {
     const { t } = await ruled('refund-to-seller');
     const before = await ledgerFee(t.code);

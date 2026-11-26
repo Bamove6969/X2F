@@ -1,4 +1,4 @@
-import type { Outcome, PartyHandle, Payout } from '@x2f/escrow';
+import { releaseTag, type Outcome, type PartyHandle, type Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES, type RulingRefusal } from '@x2f/staff';
 import { signRulingStatement, type RulingKind, type RulingStatement } from '@x2f/trade';
 import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type GateSource, type GateStore, type RecordedTerms, type RulingExecution, type StoredRulings } from './gate/index.js';
@@ -7,9 +7,17 @@ import { gateCheck, type GateContext, type GateRefusal, type GateRuling, type Ga
  * Plan 4 Task 14: the ruling executor. For a trade the API shows disputed, it settles the round-1
  * escrow ruling exactly as the gate authorised it, through the escrow party's existing `settle`
  * (no new signing route): the moderator builds the release to the payouts the gate computed from
- * this process's own recorded terms and the escrow's balance, and the winner's party co-signs
- * (`builder: 'mod'`, the winner the co-signer; the plan's rule: a ruling is never a trader-built set
- * the moderator co-signs, that is only the desk's guarded refunds).
+ * this process's own recorded terms and the escrow's balance, and a trader's party co-signs
+ * (`builder: 'mod'`; the plan's rule: a ruling is never a trader-built set the moderator co-signs,
+ * that is only the desk's guarded refunds). Owner 26 Nov: either trader co-signs, whichever app
+ * opens first; the loser's app signs only the exact set the ruling fixed (apps/web policy.ts). The
+ * payout is handed with the winner the co-signer; while that cosigner has sent nothing for it and
+ * the other trader has sent its export for this very set with itself the co-signer (`peerRelease`,
+ * its tag equal to `releaseTag` of that outcome), and the party is not committed, the same payouts
+ * are handed again with the other trader the co-signer (the party replaces an uncommitted settle).
+ * After a restart the cosigner of the party's saved release is kept when it is this set
+ * (`currentRelease`); a committed one is never switched. The payouts, the builder and the record
+ * are the same whichever trader co-signs.
  *
  * Each pass (`step`), in order; the first that holds answers:
  * - the trade's payout is already recorded as finished: `settled` (never again, across restarts);
@@ -85,8 +93,8 @@ export const RULING_WAIT_REPORT_MS = 15_000;
 
 export interface RulingStepInput {
   code: string;
-  /** The trade's moderator party: its settle(), and its read-only peerRelease() for why a payout waits. */
-  handle: Pick<PartyHandle, 'settle' | 'peerRelease'>;
+  /** The trade's moderator party: its settle(), and its read-only peerRelease() and currentRelease() for who co-signs and why a payout waits. */
+  handle: Pick<PartyHandle, 'settle' | 'peerRelease' | 'currentRelease'>;
   /** The API's watch-list item: a brake only (state and maintenance), never a reason to pay. */
   api: { state: string; paused?: boolean };
   /** The escrow as this process's party reads it. */
@@ -170,17 +178,17 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
    * Why the recorded payout `ex` waits on its winner, from this process's own party only, or null
    * when the winner took part; undefined before the set time, or when the party cannot tell.
    */
-  const waitOf = (s: RulingStepInput, ex: RulingExecution): RulingWait | null | undefined => {
+  const waitOf = (s: RulingStepInput, ex: RulingExecution, cosigner: 'buyer' | 'seller'): RulingWait | null | undefined => {
     if (o.ctx.now().getTime() - Date.parse(ex.recordedAt) < waitMs) return undefined;
-    const view = s.handle.peerRelease?.(ex.winner);
+    const view = s.handle.peerRelease?.(cosigner);
     if (view === undefined) return undefined;
     if (view.current) return null;
     return view.elsewhere?.txSet === true ? 'winner-committed' : 'winner-offline';
   };
 
   /** Logs and reports a change of the wait reason (never anything else); a refused report is tried again. */
-  const waitPass = async (s: RulingStepInput, ex: RulingExecution): Promise<void> => {
-    const why = waitOf(s, ex);
+  const waitPass = async (s: RulingStepInput, ex: RulingExecution, cosigner: 'buyer' | 'seller'): Promise<void> => {
+    const why = waitOf(s, ex, cosigner);
     if (why === undefined || !s.reportWait) return;
     const was = waitReported.get(s.code);
     if (was === why) return;
@@ -300,12 +308,37 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
       }
       announced.set(s.code, key);
     }
-    if (inFlight.get(s.code) === key) {
-      await waitPass(s, o.store.state.executions[s.code]!);
-      return 'in-flight';
+    const other = winner === 'buyer' ? 'seller' : 'buyer';
+    const outcomeWith = (cosigner: 'buyer' | 'seller'): Outcome => ({ kind: 'release', to: auth.settle!.payouts, builder: 'mod', cosigner });
+    const current = s.handle.currentRelease?.() ?? null;
+    // The party's saved release for this very set, with either trader the co-signer (a restart).
+    const saved = current === null ? null : current.tag === releaseTag(outcomeWith(winner)) ? winner : current.tag === releaseTag(outcomeWith(other)) ? other : null;
+    const flying = inFlight.get(s.code);
+    let cosigner: 'buyer' | 'seller' = flying === `${key}|${other}` ? other : flying === `${key}|${winner}` ? winner : (saved ?? winner);
+    if (flying === `${key}|${cosigner}`) {
+      // Owner 26 Nov: the other trader's app opened first. Switch only while the party is not
+      // committed, the current cosigner sent nothing for it, and the other sent its export for this
+      // very set with itself the co-signer.
+      // A party without currentRelease counts as committed (fail closed: no switch).
+      const alt = cosigner === 'buyer' ? 'seller' : 'buyer';
+      const switchable = (): boolean => {
+        if (current?.committed !== false) return false;
+        const mine = s.handle.peerRelease?.(cosigner);
+        if (mine === undefined || mine.current) return false;
+        const theirs = s.handle.peerRelease?.(alt)?.elsewhere ?? null;
+        return theirs !== null && theirs.tag === releaseTag(outcomeWith(alt));
+      };
+      if (switchable()) {
+        cosigner = alt;
+        o.log({ reason: alt === winner ? 'ruling-cosigner-winner' : 'ruling-cosigner-loser' });
+      } else {
+        await waitPass(s, o.store.state.executions[s.code]!, cosigner);
+        return 'in-flight';
+      }
     }
-    inFlight.set(s.code, key);
-    const outcome: Outcome = { kind: 'release', to: auth.settle.payouts, builder: 'mod', cosigner: winner };
+    const flightKey = `${key}|${cosigner}`;
+    inFlight.set(s.code, flightKey);
+    const outcome = outcomeWith(cosigner);
     o.log({ reason: 'ruling-signing' });
     s.handle.settle(outcome).then(
       (tx) =>
@@ -320,12 +353,14 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
             () => o.log({ reason: 'ruling-settled' }),
             // The release is done in the party; the record is retried by the next pass's settle() answer.
             () => {
-              if (inFlight.get(s.code) === key) inFlight.delete(s.code);
+              if (inFlight.get(s.code) === flightKey) inFlight.delete(s.code);
               o.log({ reason: 'ruling-settled-unsaved' });
             },
           ),
       () => {
-        if (inFlight.get(s.code) === key) inFlight.delete(s.code); // the next pass asks again
+        // Replaced by the same payouts with the other co-signer: nothing failed.
+        if (inFlight.get(s.code) !== flightKey) return;
+        inFlight.delete(s.code); // the next pass asks again
         o.log({ reason: 'ruling-settle-failed' });
       },
     );

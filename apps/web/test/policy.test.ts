@@ -457,6 +457,32 @@ describe('rulingOutcomeFor (Plan 4 Task 21: the runtime\'s ruling co-sign)', () 
     }
   });
 
+  // Owner 26 Nov: either trader's app co-signs the ruled payout, whichever opens first; the loser's
+  // app only the winner's exact set, under a statement naming that winner.
+  it.each(['buyer', 'seller'] as const)('%s as the loser: co-signs exactly the winner\'s set under a statement naming the winner, nothing else', (role) => {
+    const other = role === 'buyer' ? 'seller' : 'buyer';
+    const base = ctx(role, { state: 'disputed', ruling: null });
+    const theirs = expected(other === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base);
+    const mine = expected(role === 'buyer' ? 'dispute-buyer' : 'dispute-seller', base);
+    const won = { ...base, ruling: statementFor(base, { winner: other }) };
+    expect(rulingOutcomeFor(won, other)).toEqual(out(theirs, 'mod', role));
+    expect(cosignPolicy(won, out(theirs, 'mod', role))).toBe(true);
+    // Never this side's own set, nor a set built by anyone but the moderator, nor the winner as co-signer.
+    expect(cosignPolicy(won, out(mine, 'mod', role))).toBe(false);
+    expect(cosignPolicy(won, out(theirs, other, role))).toBe(false);
+    expect(rulingOutcomeFor(won)).toBeNull();
+    // A statement naming this side the winner never lets it sign the other side's set.
+    expect(cosignPolicy({ ...base, ruling: statementFor(base, { winner: role, to: theirs }) }, out(theirs, 'mod', role))).toBe(false);
+    // A statement naming the winner but paying anything else (one unit moved) is refused.
+    const shaved = theirs.map((p, i) => (i === 0 ? { ...p, amountAtomic: p.amountAtomic - 1n } : i === theirs.length - 1 ? { ...p, amountAtomic: p.amountAtomic + 1n } : p));
+    const bent = { ...base, ruling: statementFor(base, { winner: other, to: shaved }) };
+    expect(cosignPolicy(bent, out(shaved, 'mod', role))).toBe(false);
+    expect(cosignPolicy(bent, out(theirs, 'mod', role))).toBe(false);
+    expect(rulingOutcomeFor(bent, other)).toBeNull();
+    // Only while disputed.
+    expect(rulingOutcomeFor({ ...won, trade: { ...won.trade, state: 'paid' } }, other)).toBeNull();
+  });
+
   it('the buyer: an API amount that disagrees with this device\'s size gets no ruling set', () => {
     const c = ctx('buyer', { state: 'disputed' });
     expect(rulingOutcomeFor({ ...c, trade: { ...c.trade, amountAtomic: AMOUNT + 1n } })).toBeNull();

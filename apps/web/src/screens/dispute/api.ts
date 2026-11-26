@@ -50,6 +50,8 @@ export interface RulingView {
   ruledAt: string;
   appealUntil: string | null;
   destination: { walletApp: string | null; addressEnd: string } | null;
+  /** Owner 26 Nov: when the ruling's escrow payout ran, or null (not yet). Absent: not yet. */
+  executedAt?: string | null;
 }
 
 export interface DisputeView {
@@ -197,6 +199,7 @@ export function parseDispute(v: unknown): DisputeView {
       ruledAt: iso(r.ruledAt, 'ruling.ruledAt'),
       appealUntil: isoOrNull(r.appealUntil, 'ruling.appealUntil'),
       destination,
+      executedAt: r.executedAt === undefined ? null : isoOrNull(r.executedAt, 'ruling.executedAt'),
     };
   }
   let appeal: DisputeView['appeal'] = null;

@@ -285,9 +285,9 @@ export function DisputeRuling({
             <h1 className="dispute-title">{copy.title}</h1>
             {copy.destination !== null ? (
               <span className="dispute-muted-14">
-                {/* Review I1 (NEEDS_PLAN_4_RULING_PAYOUT, rules.ts): where the XMR goes, not the board's
-                    "Sent to …", until the API reports the payout executed. COPY-UNSIGNED */}
-                Goes to {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
+                {/* Review I1 (rules.ts): the board's "Sent to …" once the API reports the payout
+                    executed; where the XMR goes before it. COPY-UNSIGNED ("Goes to") */}
+                {copy.sent ? 'Sent to' : 'Goes to'} {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
                 .
               </span>
             ) : null}
