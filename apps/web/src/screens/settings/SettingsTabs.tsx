@@ -5,6 +5,8 @@
  *   wait, and the way on to Devices and sessions and the idle reminder.
  * - Alerts (/settings/alerts): the alarm sound, Jabber notices and the alerts list.
  * - Account (/settings/account): account type, team and blocked traders.
+ * - Preferences (/settings/preferences): Start on, Preferred currency and the clock line, saved on
+ *   this device (Preferences.tsx, prefs.ts).
  * - Help (/settings/help): the guided tour and the welcome screen.
  * The tab bar is the Buy / Sell segment's look (browse.css `x2f-segment`: a 2 px ink border on
  * surface-raised for the chosen tab, never orange), drawn with links (`aria-current="page"`)
@@ -47,8 +49,13 @@ export function useKnownMember(): { ready: boolean; member: boolean } {
 /** The tab bar: one link per tab, the current one marked. A team member has no Account tab (it is the owner's). */
 export function SettingsTabs({ current }: { current: SettingsTab }) {
   const { member } = useKnownMember();
+  const nav = useRef<HTMLElement>(null);
+  // On a phone the bar scrolls sideways (settings.css): keep the current tab in sight.
+  useEffect(() => {
+    nav.current?.querySelector('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [current, member]);
   return (
-    <nav aria-label={C.tabsLabel} className="x2f-segment x2f-settings-tabs" data-part="settings-tabs">
+    <nav ref={nav} aria-label={C.tabsLabel} className="x2f-segment x2f-settings-tabs" data-part="settings-tabs">
       {SETTINGS_TABS.filter((t) => !(member && t.id === 'account')).map((t) => (
         <Link
           key={t.id}
