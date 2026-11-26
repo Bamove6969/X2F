@@ -20,9 +20,9 @@
  * - Restore (`restoreTrades`): on a new device of the holder, after unlocking the reader key, each
  *   trade the device does not hold is fetched, opened and stored locally.
  *
- * Only the holder's device runs the escrow, so only it writes copies; a member's device never
- * imports one into an escrow store (TradeRoom MemberRoom): assigned members may read their copy,
- * never sign (owner question 'trades-release' is open; conservative default).
+ * A member the holder assigned ("Hold trade keys") restores the copies sealed to them the same
+ * way, on their own device, when one of their trade boxes needs the escrow there (memberKey.ts;
+ * owner Jess, 26 Nov 2026: fund, release, proof and I've paid are separate boxes).
  */
 import { generateBoxKeyPair, openSealed, sealTo, type BoxKeyPair } from '@x2f/protocol';
 import { decode, encode, type EscrowRecord, type EscrowStore } from './store.js';

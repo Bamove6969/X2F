@@ -21,6 +21,8 @@ export interface EscrowClient {
   signRecoveryAddress?(code: string, address: string, issuedAt: string): Promise<{ statement: RecoveryAddressStatement; sig: string } | null>;
   /** Escrow-key sync: opens and stores every trade copy this device does not hold; the codes, or null on a failure. */
   restoreTrades?(reader: BoxKeyPair): Promise<string[] | null>;
+  /** Team members' trade boxes (memberKey.ts): whether this device's escrow store holds trade `code`. */
+  holdsTrade?(code: string): Promise<boolean>;
 }
 
 /** An EscrowClient over a worker speaking the worker.ts protocol. Resumes every stored trade at once. */
@@ -30,6 +32,7 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
   const waiting = new Map<number, (ok: boolean) => void>();
   const signing = new Map<number, (signed: { statement: RecoveryAddressStatement; sig: string } | null) => void>();
   const restoring = new Map<number, (codes: string[] | null) => void>();
+  const holding = new Map<number, (held: boolean) => void>();
   let nextId = 1;
   w.addEventListener('message', (e: MessageEvent<FromWorker>) => {
     const m = e.data;
@@ -45,6 +48,9 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
     } else if (m?.t === 'restored-trades') {
       restoring.get(m.id)?.(m.codes);
       restoring.delete(m.id);
+    } else if (m?.t === 'holds-trade') {
+      holding.get(m.id)?.(m.held);
+      holding.delete(m.id);
     }
   });
   const post = (m: ToWorker): void => w.postMessage(m);
@@ -69,6 +75,12 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
         const id = nextId++;
         restoring.set(id, resolve);
         post({ t: 'restore-trades', id, boxPublic: reader.boxPublic, boxSecret: reader.boxSecret });
+      }),
+    holdsTrade: (code) =>
+      new Promise((resolve) => {
+        const id = nextId++;
+        holding.set(id, resolve);
+        post({ t: 'holds-trade', id, code });
       }),
     subscribe(code, cb) {
       let set = subs.get(code);

@@ -42,6 +42,7 @@ import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTra
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { useMemberActs } from './memberActs.js';
 import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import { proofUploadOn } from '../../proof/upload.js';
@@ -467,6 +468,10 @@ export function BuyerPay(p: TradeScreenProps) {
   const method = payMethodOf(view);
   const chip = escrowChip(view);
   const action = useTradeAction(p);
+  // A team member's room (memberActs.ts): only the steps their boxes allow are shown at all.
+  const member = useMemberActs();
+  const mayMarkPaid = member === null || member.acts.markPaid;
+  const mayUploadProof = member === null || member.acts.uploadProof;
   const [paySheet, setPaySheet] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
@@ -520,7 +525,7 @@ export function BuyerPay(p: TradeScreenProps) {
   };
 
   // Owner Q12: before secured the reason is the button's muted caption (board BuyerPay, pay-when).
-  const primary = !paid && block === 'not-secured' ? (
+  const primary = !mayMarkPaid ? null : !paid && block === 'not-secured' ? (
     <div className="x2f-pay__primary">
       <Button variant="primary" disabled aria-describedby={payWhenId} onClick={onIvePaid}>
         I've paid
@@ -544,7 +549,7 @@ export function BuyerPay(p: TradeScreenProps) {
     </Button>
   );
   const cancel =
-    cancelMode === 'none' ? null : (
+    cancelMode === 'none' || member !== null ? null : (
       <Button variant="quiet" disabled={action.busy} onClick={() => setCancelSheet(true)}>
         Cancel trade
       </Button>
@@ -561,7 +566,7 @@ export function BuyerPay(p: TradeScreenProps) {
         </GrownNote>
       ) : null}
       {!paid ? <PayOverNote view={view} serverClock={serverClock} /> : null}
-      {showProposal(view) ? (
+      {showProposal(view) && member === null ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}
       {escrow.error !== null ? (
@@ -628,7 +633,8 @@ export function BuyerPay(p: TradeScreenProps) {
     const actions = (
       <>
         {primary}
-        <PaidWaitingActions view={view} serverClock={serverClock} wide={wide} finishFirst={finishFirst} />
+        {/* A member's room has its own dispute entry, and Nudge is none of the member's trade boxes. */}
+        {member === null ? <PaidWaitingActions view={view} serverClock={serverClock} wide={wide} finishFirst={finishFirst} /> : null}
       </>
     );
     if (wide) {
@@ -683,7 +689,7 @@ export function BuyerPay(p: TradeScreenProps) {
           {notices}
           <div className="x2f-room__grid">
             <PaymentCard view={view} method={method} total={total} rate={deviceRate(escrow)} />
-            <ProofSlot wide view={view} escrow={escrow} serverClock={serverClock} />
+            {mayUploadProof ? <ProofSlot wide view={view} escrow={escrow} serverClock={serverClock} /> : null}
           </div>
           <div className="x2f-room__actions">
             {primary}
@@ -704,7 +710,7 @@ export function BuyerPay(p: TradeScreenProps) {
         {notices}
         {paid ? null : <PayTimerCard view={view} serverClock={serverClock} />}
         <PaymentCard view={view} method={method} total={total} rate={null} />
-        <ProofSlot wide={false} view={view} escrow={escrow} serverClock={serverClock} />
+        {mayUploadProof ? <ProofSlot wide={false} view={view} escrow={escrow} serverClock={serverClock} /> : null}
       </div>
       <footer className="x2f-pay__footer">
         {primary}

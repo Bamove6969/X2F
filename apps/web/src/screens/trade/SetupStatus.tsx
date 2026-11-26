@@ -3,6 +3,7 @@
  * check words once the escrow is ready, and the danger state when the security check fails
  * (plan Task 22; P3-C1: both apps show the same four words, so a swapped participant shows up).
  */
+import { useMemberActs } from './memberActs.js';
 import { useState } from 'react';
 import { ApiCallError } from '../../api/client.js';
 import { postTradeEvent, publicName, type TradeView } from '../../api/trade.js';
@@ -107,7 +108,9 @@ export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | '
   const buyer = view.role === 'buyer';
   const proposed = !buyer && view.cancelProposedBy === 'seller' && ['setup', 'funding'].includes(view.state);
   const walkAway = !buyer && sellerMayWalkAway(view);
-  const canCancel = buyer ? ['setup', 'funding'].includes(view.state) : walkAway || (view.state === 'funding' && view.cancelProposedBy === null);
+  // A team member's room (memberActs.ts): their boxes here are funding only, so no cancel is shown.
+  const member = useMemberActs() !== null;
+  const canCancel = !member && (buyer ? ['setup', 'funding'].includes(view.state) : walkAway || (view.state === 'funding' && view.cancelProposedBy === null));
   const cancel = async () => {
     setBusy(true);
     setErr(null);
