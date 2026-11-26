@@ -8,7 +8,7 @@ import {
   type Trade,
 } from '@x2f/trade';
 import type pg from 'pg';
-import { deleteChatRowsAsPurge } from '../chat/retention.js';
+import { deleteChatRowsAsPurge, LIEN_FACTS_SQL } from '../chat/retention.js';
 import type { Queryable } from '../db/pool.js';
 import { deleteDisputeRecords, DISPUTE_FACTS_SQL } from '../disputes/purge.js';
 import { WATCH_LIST_CLOSED_DAYS } from '../internal/routes.js';
@@ -80,8 +80,7 @@ const factsSql = (where: string, tail = ''): string => `
   select t.code, t.state, t.settling, t.paid_at, t.cancel_confirmed_at, t.closed_at, t.dispute_by,
          d.total, d.still_open, d.last_closed,
          exists (select 1 from trade_attestations a where a.code = t.code) as attested,
-         exists (select 1 from liens l where l.from_code = t.code and l.status in ('active', 'suspended')) as lien_open,
-         (select max(l.lifted_at) from liens l where l.from_code = t.code) as lien_ended
+         ${LIEN_FACTS_SQL('t.code')}
     from trades t
     cross join lateral ${DISPUTE_FACTS_SQL('t')} d
    where ${where}

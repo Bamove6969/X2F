@@ -53,7 +53,7 @@ const OWNED: readonly [RegExp, SettingsTab][] = [
   [/^\/settings\/(?:alerts|jabber|jabber\/events)\/?$/, 'alerts'],
   [/^\/settings\/(?:account|account-type|team|team\/log|blocked)\/?$/, 'account'],
   [/^\/settings\/preferences\/?$/, 'preferences'],
-  [/^\/settings\/help\/?$/, 'help'],
+  [/^\/settings\/(?:help|privacy)\/?$/, 'help'],
 ];
 
 /** The tab a settings path belongs to, or null for a path that is not a settings screen. */
