@@ -84,6 +84,10 @@ for (const s of SCREENS) {
 
 // Owner 16 Nov fonts D + sizing: the orange buttons keep their size; the label is bigger and bold,
 // on one line, and clear of the button's top and sides, down to a 360 px phone.
+// Owner 17 Nov button labels: "as much font as possible... never touch the top or the sides": 27 px
+// on the 56 px button (cap height about half of it), stepped down only when a long label would reach
+// the 16 px sides. Clearance above and below is measured on the label's ink (canvas text metrics),
+// which is what the eye sees touching the edge.
 for (const width of [360, 390, 1366]) {
   test(`at ${width} px every orange button keeps its size and its label stays on one line, clear of the edges`, async ({ page }) => {
     await signedOut(page);
@@ -91,6 +95,8 @@ for (const width of [360, 390, 1366]) {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => document.fonts.ready);
+    // The label fit (ui/fitPrimaryLabels.ts) runs on the frame after the fonts load.
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => r())))));
     const buttons = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('.x2f-button--primary')].filter((b) => b.getClientRects().length > 0).map((b) => {
         const box = b.getBoundingClientRect();
@@ -98,8 +104,16 @@ for (const width of [360, 390, 1366]) {
         range.selectNodeContents(b);
         const text = range.getBoundingClientRect();
         const cs = getComputedStyle(b);
+        const g = document.createElement('canvas').getContext('2d')!;
+        g.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const m = g.measureText((b.textContent ?? '').trim());
+        const ink = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+        const cap = g.measureText('H').actualBoundingBoxAscent;
         return {
           landingWay: b.classList.contains('x2f-landing__way'),
+          fitted: b.style.getPropertyValue('--x2f-primary-fit') !== '',
+          inkClear: (box.height - ink) / 2,
+          capShare: cap / box.height,
           label: (b.textContent ?? '').trim(),
           height: Math.round(box.height),
           fontSize: parseFloat(cs.fontSize),
@@ -123,13 +137,16 @@ for (const width of [360, 390, 1366]) {
       } else {
         expect(b.height, b.label).toBe(56);
         expect(b.fontSize, b.label).toBeGreaterThanOrEqual(17);
-        expect(b.fontSize, b.label).toBeLessThanOrEqual(20);
+        expect(b.fontSize, b.label).toBeLessThanOrEqual(27);
+        // owner 17 Nov: full size unless the label had to be stepped down to fit the sides.
+        if (!b.fitted) expect(b.fontSize, b.label).toBe(27);
+        if (!b.fitted) expect(b.capShare, b.label).toBeGreaterThanOrEqual(0.33);
       }
       expect(b.fontWeight, b.label).toBe('700');
       expect(b.lines, b.label).toBe(1);
       expect(b.overflow, b.label).toBe(false);
       expect(Math.min(b.left, b.right), b.label).toBeGreaterThanOrEqual(16);
-      expect(Math.min(b.top, b.bottom), b.label).toBeGreaterThanOrEqual(12);
+      expect(b.inkClear, b.label).toBeGreaterThanOrEqual(12);
     }
   });
 }

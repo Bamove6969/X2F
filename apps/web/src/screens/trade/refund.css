@@ -110,7 +110,7 @@
   flex-direction: column;
   gap: var(--x2f-space-2);
   padding: var(--x2f-space-4);
-  border-top: 1px solid var(--x2f-surface-raised);
+  /* DESIGN: owner 17 Nov floating button: no top line above the orange button. */
 }
 
 .x2f-refund__footer > .x2f-button--primary,
