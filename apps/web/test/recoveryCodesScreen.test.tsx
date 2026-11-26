@@ -28,7 +28,7 @@ describe('RecoveryCodes screen component', () => {
 
     const makeBtn = host.querySelector('[data-part="recovery-make"]');
     expect(makeBtn).not.toBeNull();
-    expect(makeBtn?.textContent).toBe('Show my recovery codes');
+    expect(makeBtn?.textContent).toBe('Show my recovery code');
     expect((makeBtn as HTMLButtonElement).disabled).toBe(false);
 
     // No error or codes initially
@@ -54,7 +54,7 @@ describe('RecoveryCodes screen component', () => {
     });
 
     // Verification notice
-    expect(host.querySelector('.x2f-note')?.textContent).toBe('Save these now. Each works once, and you will not see them again.');
+    expect(host.querySelector('.x2f-note')?.textContent).toBe('Save this now. It works once, and you will not see it again.');
 
     // Not staged
     expect(host.querySelector('.x2f-note--staged')).toBeNull();
@@ -67,7 +67,7 @@ describe('RecoveryCodes screen component', () => {
 
     // Done button
     const doneBtn = host.querySelector('[data-part="recovery-done"]')!;
-    expect(doneBtn.textContent).toBe('I have saved them');
+    expect(doneBtn.textContent).toBe('I have saved it');
 
     act(() => {
       fire(doneBtn, new MouseEvent('click', { bubbles: true }));
@@ -114,7 +114,7 @@ describe('RecoveryCodes screen component', () => {
 
     const error = host.querySelector('.x2f-error[role="alert"]');
     expect(error).not.toBeNull();
-    expect(error?.textContent).toContain('Could not make recovery codes');
+    expect(error?.textContent).toContain('Could not make your recovery code');
 
     // Make button is re-enabled
     expect((makeBtn as HTMLButtonElement).disabled).toBe(false);

@@ -136,7 +136,7 @@ const ENTRIES: readonly Entry[] = [
     a: 'With a PGP key, a passkey, a security key or a password. You tick the ones you want when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password, and works only with one, so remove the app before you remove the password. Settings also refuses a removal that would leave a password with no authenticator app and no other way to log in.',
     sources: [
       `${AUTH}/methods.ts:29 PRIMARY`,
-      `${WEB}/setup/Login.tsx:176 can be added later`,
+      `${WEB}/setup/Login.tsx:240 can be added later`,
       `${AUTH}/strength.ts:25 'password', 'totp'`,
       `${AUTH}/totp.ts:176 totp-needs-password`,
       `${AUTH}/methods.ts:426 password-has-totp`,
@@ -157,7 +157,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'Which PGP keys does X2F accept?',
     a: 'RSA keys of 4096 bits or more, Ed25519 keys and Ed448 keys. X2F never makes keys for you and never sees your private key.',
-    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:158 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:261 X2F never generates keys on your behalf`, `${SPEC}:42 users' PGP private keys`],
+    sources: ['packages/accounts/src/pgp.ts:28 MIN_RSA_BITS', 'packages/accounts/src/pgp.ts:212 Ed25519 and Ed448', `${WEB}/setup/Login.tsx:140 X2F never generates keys on your behalf`, `${SPEC}:42 users' PGP private keys`],
     facts: ['pgpRsaBits'],
   },
   {
@@ -283,7 +283,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How long does the seller have to fund the escrow?',
     a: '30 minutes from when the escrow is ready. If it is not fully funded in time, the trade ends and anything already sent goes back to the seller.',
-    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:88-92 lapse-refund`],
+    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:186-190 lapse-refund`],
     facts: ['fundMinutes'],
   },
   {
@@ -331,7 +331,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'Can I cancel a trade as the buyer?',
     a: 'Yes, at any time until you tap "I\'ve paid". If the escrow was already funded, the XMR goes back to the seller.',
-    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:86 case 'buyer-cancel':`],
+    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:188 case 'buyer-cancel':`],
   },
   {
     id: 'seller-cancel',
@@ -523,8 +523,8 @@ const ENTRIES: readonly Entry[] = [
     a: 'Yes. Every Monero payment pays a small fee to the Monero network, and it is separate from X2F\'s 1% fee. When the escrow pays out, each payout pays the network fee for itself, taken from it: on a completed trade the buyer\'s payout and X2F\'s 1% fee payout each pay their own share, and on a refund or cancel the seller\'s payout pays it.',
     sources: [
       `${T}/payouts.ts:7-13 Who pays the payout's network fee`,
-      `${T}/payouts.ts:88-89 bearsNetworkFee: true`,
-      `${T}/payouts.ts:100 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
+      `${T}/payouts.ts:181-182 bearsNetworkFee: true`,
+      `${T}/payouts.ts:194 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
       'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares',
     ],
     facts: ['feePercent'],
@@ -708,7 +708,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'safety',
     q: 'What will X2F never ask me for?',
     a: 'Your PGP private key, your escrow key, your email or your phone number. X2F does not need any of them, so anyone asking for them in X2F\'s name is not X2F.',
-    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:261 X2F never generates keys on your behalf`],
+    sources: [`${SPEC}:38-43 X2F never holds`, `${SPEC}:15 X2F asks for no name, email or phone`, `${WEB}/setup/Login.tsx:140 X2F never generates keys on your behalf`],
   },
 
   // ---- Teams -----------------------------------------------------------------------------------
@@ -900,7 +900,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor sells?',
     a: 'The vendor puts the trade amount plus 1% into the escrow. The buyer receives the trade amount less the Monero network fee for their own payout, and X2F\'s 1% pays the network fee for its own payout.',
-    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:86 const toBuyer`, `${T}/payouts.ts:88-89 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:178 const toBuyer`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {
@@ -908,7 +908,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor buys?',
     a: 'The seller puts the trade amount into the escrow. The vendor receives the trade amount minus 1%, and less the Monero network fee for their own payout.',
-    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:86 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:88-89 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:178 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {
@@ -916,7 +916,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'When is the fee taken?',
     a: 'When a trade completes, as the XMR leaves the escrow. A cancelled or refunded trade pays no X2F fee: everything in the escrow goes back to the seller, less the Monero network fee.',
-    sources: [`${T}/payouts.ts:82-92 case 'release':`, `${T}/payouts.ts:98-100 Every refund`, `${T}/payouts.ts:14-15 A refund's one`, 'packages/escrow/src/verify.ts:163 the marked payouts, else payouts[0]'],
+    sources: [`${T}/payouts.ts:174-186 case 'release':`, `${T}/payouts.ts:192-194 Every refund`, `${T}/payouts.ts:14-15 A refund's one`, 'packages/escrow/src/verify.ts:163 the marked payouts, else payouts[0]'],
   },
   {
     id: 'fee-dispute',
