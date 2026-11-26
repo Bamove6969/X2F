@@ -126,7 +126,7 @@ const FIAT_OFFER = flexBody({
 });
 
 async function auditCount(teamId: string): Promise<number> {
-  const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from team_audit where account_id = $1', [teamId]);
+  const { rows } = await deps.db.query<{ n: number }>("select count(*)::int as n from team_audit where account_id = $1 and category = 'work'", [teamId]);
   return rows[0]!.n;
 }
 

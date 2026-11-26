@@ -11,6 +11,7 @@
  */
 import { Link, Navigate, useLocation } from 'react-router';
 import { safeReturnTo } from '../../api/client.js';
+import { startPath } from '../settings/prefs.js';
 import { isInside } from '../../session/frontDoor.js';
 import { useSession } from '../../session/useSession.js';
 import { useFoldLayout } from '../../ui/fold.js';
@@ -78,7 +79,8 @@ export function Landing() {
 
   if (session.status === 'loading') return null;
   // Members go on in: the board is for outsiders.
-  if (isInside(session)) return <Navigate to={returnTo ?? '/sell'} replace />;
+  // With no `returnTo`, the side chosen in Settings, Preferences on this device (else /sell).
+  if (isInside(session)) return <Navigate to={returnTo ?? startPath()} replace />;
 
   return (
     <div className="x2f-landing" data-screen="landing" data-wide={wide ? 'true' : 'false'}>

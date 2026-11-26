@@ -23,6 +23,7 @@ const BASE: TraderProfile = {
   badges: { featured: ['new'], more: [] },
   pgpProtected: false,
   recordPublic: false,
+  away: false,
   tradedOverXmr: null,
   imported: [],
   reviews: [

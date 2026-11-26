@@ -159,6 +159,20 @@ describe('createAuthApi requests', () => {
     ]);
   });
 
+  it('reads and sets the Away switch (owner, 26 Nov 2026)', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ away: true, since: '2026-11-26T12:00:00.000Z', paused: ['o1'] }));
+    const api = createAuthApi({ fetch });
+    await api.getAway();
+    await expect(api.setAway({ away: true })).resolves.toEqual({ away: true, since: '2026-11-26T12:00:00.000Z', paused: ['o1'] });
+    await api.setAway({ away: false });
+    expect(sent.map((s) => [s.init.method, s.url])).toEqual([
+      ['GET', '/v1/account/away'],
+      ['PUT', '/v1/account/away'],
+      ['PUT', '/v1/account/away'],
+    ]);
+    expect([bodyOf(sent[1]!), bodyOf(sent[2]!)]).toEqual([{ away: true }, { away: false }]);
+  });
+
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
     const { fetch } = recorder(() => Response.json({ status: 'second-factor', pendingId: 'p', needs: ['totp'] }));
     await expect(createAuthApi({ fetch }).loginPassword({ loginName: 'a', password: 'b', deviceLabel: 'c' })).resolves.toEqual({

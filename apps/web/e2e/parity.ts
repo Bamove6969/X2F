@@ -510,11 +510,9 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   BuyQuote: [
     {
-      text: 'Paid by satoshi_ghost',
-      why: 'OD-4 (spec 11.1), owner 16 Nov: the payout\'s network fee is shared by its receiving outputs, so the row reads "about 0.00005 XMR for your payout, taken from it" (COPY-UNSIGNED).',
+      text: 'about 0.0001 XMR, taken from your payout',
+      why: 'OD-4 (spec 11.1), owner 16 Nov: the payout\'s network fee is shared by its receiving outputs, so the app\'s row reads "about 0.00005 XMR for your payout, taken from it" (BuyQuote.tsx networkFee, COPY-UNSIGNED: the owner owns this copy); the board (b427426e) reads "about 0.0001 XMR, taken from your payout".',
     },
-    { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
-    { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
   ],
   Wallet: [
     {
