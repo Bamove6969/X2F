@@ -119,7 +119,7 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
 
     let current: SetupState = {
       ...INITIAL,
-      terms: { version: 'v1', signature: { kind: 'typed', name: 'AK' } },
+      terms: { version: 'v1' },
       displayName: 'Lumen.K',
       loginName: 'juniper.oak',
       method: 'pgp',
