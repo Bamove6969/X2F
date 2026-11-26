@@ -594,7 +594,8 @@ export function Team() {
               </div>
             ) : null}
             {/* Team audit v2: the full log (filters, integrity check, team changes, logins, download). */}
-            <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="team-log-link">
+            {/* The kit's quiet button look on a router link: a 44 px target, not a 28 px line. */}
+            <Link className="x2f-button x2f-button--quiet" to={TEAM_LOG_PATH} data-part="team-log-link">
               {TEAM_LOG_COPY.title}
             </Link>
             {memberWork(log).length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}

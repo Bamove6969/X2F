@@ -131,7 +131,7 @@ function AccessBody({ view }: { view: MyTeamAccess }) {
 
       {/* Team audit v2: a member with "See the team log" opens their own entries. */}
       {seesLog ? (
-        <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="my-team-log-link">
+        <Link className="x2f-button x2f-button--quiet" to={TEAM_LOG_PATH} data-part="my-team-log-link">
           {TEAM_LOG_COPY.title}
         </Link>
       ) : null}

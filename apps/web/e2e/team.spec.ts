@@ -132,7 +132,10 @@ for (const viewport of PHONE_VIEWPORTS) {
     await page.locator('[data-part="team-invite"] [data-part="group-trades"]').click();
     await expect(page.locator('[data-part="team-invite"] input[data-box="trades-accept"]')).toBeChecked();
     await expect(page.locator('[data-part="team-invite"] [data-ability="trades-accept"]')).toContainText('Coming later');
-    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-release"]')).toBeDisabled();
+    // Owner question trades-release (26 Nov 2026): Release coins is a box the lead may tick now, but
+    // not in the Trades preset (it needs Hold trade keys too).
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-release"]')).toBeEnabled();
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-release"]')).not.toBeChecked();
     await expect(page.locator('[data-part="team-invite"] input[data-box="trades-mark-paid"]')).toBeChecked();
     await expectPhoneLayout(page);
     await page.locator('[data-part="invite"]').click();
