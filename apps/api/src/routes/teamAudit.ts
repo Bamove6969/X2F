@@ -13,6 +13,9 @@
  *   logins, refused attempts and changes made to them in the last `days` (1..365, default 30).
  * - `GET /v1/team/log/export?format=json|csv&...filters` (account owner) → a download of every
  *   matching row, oldest first, each with the exact `line` its hash covers, and the chain check.
+ * - Both of those walk the whole chain, so each has a per-account budget, taken after the session
+ *   check and before any work (TEAM_LOG_INTEGRITY_BUCKET, TEAM_LOG_EXPORT_BUCKET): past it 429
+ *   `slow-down` `{ retryAfterSeconds }`.
  *
  * Refused attempts: `installRefusalAudit` adds an onResponse hook that logs a member's request
  * refused for lack of a box, outside their hours or band (`REFUSAL_CODES`).
@@ -104,6 +107,8 @@ function toCsv(rows: ExportRow[]): string {
 export function teamAuditRoutes(app: FastifyInstance): void {
   const owner = requireSession({ kinds: ['trader'] });
   const ownerOrLogReader = requireSession({ kinds: ['trader'], member: 'team-see-log' });
+  const integrityBudget = async (req: FastifyRequest) => req.server.budgets.teamLogIntegrity.take(req.auth.accountId);
+  const exportBudget = async (req: FastifyRequest) => req.server.budgets.teamLogExport.take(req.auth.accountId);
 
   app.get('/v1/team/log', { preHandler: ownerOrLogReader }, async (req) => {
     const f = filterOf(req.query);
@@ -111,7 +116,7 @@ export function teamAuditRoutes(app: FastifyInstance): void {
     return listAudit(req.server.deps.db, req.auth.accountId, memberId === null ? f : { ...f, onlyMember: memberId });
   });
 
-  app.get('/v1/team/log/integrity', { preHandler: owner }, async (req) => {
+  app.get('/v1/team/log/integrity', { preHandler: [owner, integrityBudget] }, async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     if ((q.id === undefined) !== (q.hash === undefined)) throw new ApiError(400, 'bad-request');
     if (q.id !== undefined && (typeof q.id !== 'string' || !ID.test(q.id) || typeof q.hash !== 'string' || !HEX32.test(q.hash))) {
@@ -128,7 +133,7 @@ export function teamAuditRoutes(app: FastifyInstance): void {
     return { since: since.toISOString(), members: await summariseAudit(req.server.deps.db, req.auth.accountId, since) };
   });
 
-  app.get('/v1/team/log/export', { preHandler: owner }, async (req: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/team/log/export', { preHandler: [owner, exportBudget] }, async (req: FastifyRequest, reply: FastifyReply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const format = q.format ?? 'json';
     if (format !== 'json' && format !== 'csv') throw new ApiError(400, 'bad-request');

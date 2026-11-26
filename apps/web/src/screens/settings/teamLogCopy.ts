@@ -176,4 +176,8 @@ export const TEAM_LOG_COPY = {
     'Download the entries these filters match. The JSON file carries each entry’s seal, so anyone can re-check it without X2F.',
   exportCsv: 'Download CSV',
   exportJson: 'Download JSON',
+  exporting: 'Preparing the file…',
+  exportFailed: 'The download did not start. Try again in a moment.',
+  // 429 slow-down on the chain check or the download: each one re-reads the whole log.
+  slowDown: (at: string) => `Checking the whole log takes a while, so it runs a few times an hour. Try again after ${formatDateTime(at)}.`,
 } as const;

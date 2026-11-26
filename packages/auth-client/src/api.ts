@@ -457,7 +457,7 @@ export interface TeamLogMemberSummary {
   lastLoginAt: string | null;
 }
 
-/** The query string for a team log filter (shared by `teamLog` and the export link). */
+/** The query string for a team log filter (shared by `teamLog` and `teamLogExport`). */
 export function teamLogQuery(q: TeamLogFilter, extra: Record<string, string> = {}): string {
   const p = new URLSearchParams();
   if (q.from !== undefined) p.set('from', q.from);
@@ -473,10 +473,22 @@ export function teamLogQuery(q: TeamLogFilter, extra: Record<string, string> = {
   return qs === '' ? '' : `?${qs}`;
 }
 
-/** The same-origin path of a team log download (a plain link: the browser saves the file). */
+/** The path of a team log download (`teamLogExport` fetches it; paging fields are dropped). */
 export function teamLogExportPath(q: TeamLogFilter, format: 'json' | 'csv'): string {
   const { before: _b, limit: _l, ...rest } = q;
   return `/v1/team/log/export${teamLogQuery(rest, { format })}`;
+}
+
+/** A team log download: the file's bytes and the name the server gave it. */
+export interface TeamLogExport {
+  blob: Blob;
+  filename: string;
+}
+
+/** The file name of a `content-disposition: attachment; filename="..."` header, or null. */
+export function attachmentName(header: string | null): string | null {
+  const m = header === null ? null : /filename="([^"\\/]+)"/.exec(header);
+  return m === null ? null : m[1]!;
 }
 
 /** Task 11: one signed-in device. */
@@ -890,6 +902,12 @@ export interface AuthApi {
   teamLogIntegrity(fp?: { id: string; hash: string }): Promise<TeamLogIntegrity>;
   /** Per-member counts over the last `days` (account owner). */
   teamLogSummary(days?: number): Promise<{ since: string; members: TeamLogMemberSummary[] }>;
+  /**
+   * Every row the filter matches as a file, fetched with the session like any other call (account
+   * owner). `filename` is the server's (`x2f-team-log-<date>.<format>`). 429 `slow-down` past the
+   * account's hourly budget.
+   */
+  teamLogExport(q: TeamLogFilter, format: 'json' | 'csv'): Promise<TeamLogExport>;
   // The invited person's side (no session yet).
   readInvite(b: { invite: string }): Promise<TeamInviteView>;
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
@@ -946,17 +964,33 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   // Looked up at call time, so a page (or a test) that replaces `fetch` later is honoured.
   const send: typeof fetch = o.fetch ?? ((input, init) => globalThis.fetch(input, init));
 
-  async function call<T>(method: Method, path: string, body?: object): Promise<T> {
-    const headers: Record<string, string> = { accept: 'application/json' };
+  /** One request; `accept` is JSON unless a download asks for its own type. */
+  async function request(method: Method, path: string, body?: object, accept = 'application/json'): Promise<Response> {
+    const headers: Record<string, string> = { accept };
     // A redirect is never an auth API answer: refuse it rather than follow it somewhere else.
     const init: RequestInit = { method, credentials: 'same-origin', redirect: 'error', headers };
     if (body !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
-    const res = await send(`${baseUrl}${path}`, init);
+    return send(`${baseUrl}${path}`, init);
+  }
+
+  async function call<T>(method: Method, path: string, body?: object): Promise<T> {
+    const res = await request(method, path, body);
     const data = await readJson(res);
     if (res.ok) return data as T;
+    throw errorOf(res, data);
+  }
+
+  /** A file answer (a download): its bytes, or the same `AuthApiError` as `call`. */
+  async function file(path: string, accept: string): Promise<{ blob: Blob; res: Response }> {
+    const res = await request('GET', path, undefined, accept);
+    if (res.ok) return { blob: await res.blob(), res };
+    throw errorOf(res, await readJson(res));
+  }
+
+  function errorOf(res: Response, data: unknown): AuthApiError {
     const rec = data !== null && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
     const { error, ...extra } = rec;
     if (extra.retryAfterSeconds === undefined) {
@@ -964,7 +998,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
       if (header !== undefined) extra.retryAfterSeconds = header;
     }
     // A reply that is not an API error (a proxy's error page, a body without a code) reads as `internal`.
-    throw new AuthApiError(res.status, typeof error === 'string' ? (error as ApiErrorCode) : 'internal', extra);
+    return new AuthApiError(res.status, typeof error === 'string' ? (error as ApiErrorCode) : 'internal', extra);
   }
 
   const get = <T>(path: string) => call<T>('GET', path);
@@ -1086,6 +1120,10 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     teamLog: (q = {}) => get(`/v1/team/log${teamLogQuery(q)}`),
     teamLogIntegrity: (fp) => get(`/v1/team/log/integrity${fp === undefined ? '' : `?id=${seg(fp.id)}&hash=${seg(fp.hash)}`}`),
     teamLogSummary: (days) => get(`/v1/team/log/summary${days === undefined ? '' : `?days=${days}`}`),
+    teamLogExport: async (q, format) => {
+      const { blob, res } = await file(teamLogExportPath(q, format), format === 'csv' ? 'text/csv' : 'application/json');
+      return { blob, filename: attachmentName(res.headers.get('content-disposition')) ?? `x2f-team-log.${format}` };
+    },
     readInvite: (b) => post('/v1/team/invite', b),
     joinStart: (b) => post('/v1/team/join/start', b),
     joinFinish: (b) => post('/v1/team/join/finish', b),

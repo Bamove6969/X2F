@@ -13,6 +13,9 @@
  * - Each entry opens to its details (amount, offer terms, boxes added and removed, limits before and
  *   after, the device, what was refused and why) and its fingerprint.
  * - Download CSV or JSON of what the filters match (the JSON carries every seal, to re-check offline).
+ *   The file is fetched through the app's client with the session (`teamLogExport`) and saved from
+ *   an object URL. The check and the download each have an hourly budget per account (429
+ *   `slow-down` with `retryAfterSeconds`, shown as the time to try again).
  *
  * A member holding "See the team log" sees only their own entries here, with no integrity, summary
  * or download (the API enforces it). Kit parts and existing classes only (NEEDS_DESIGN_TEAM).
@@ -21,7 +24,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AuthApiError,
-  teamLogExportPath,
   type TeamLogCategory,
   type TeamLogEntry,
   type TeamLogFilter,
@@ -72,6 +74,26 @@ export function filterOfDraft(d: Draft): TeamLogFilter | null {
   };
 }
 
+/** For a 429 `slow-down`: the moment to try again (ISO), else null. */
+export function retryAt(e: unknown, now: Date): string | null {
+  if (!(e instanceof AuthApiError) || e.status !== 429) return null;
+  const s = typeof e.retryAfterSeconds === 'number' && e.retryAfterSeconds > 0 ? e.retryAfterSeconds : 60;
+  return new Date(now.getTime() + s * 1000).toISOString();
+}
+
+/** Saves `blob` as `filename` through a throwaway object URL (the browser's own download). */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  // Revoked on the next turn, once the click has handed the file to the browser.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** "#12:ab…" as the owner pasted it, or null. */
 export function parseFingerprint(s: string): { id: string; hash: string } | null {
   const m = FINGERPRINT.exec(s.trim());
@@ -95,6 +117,8 @@ export function TeamLog() {
   const [keptResult, setKeptResult] = useState<string | null>(null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const boxLabel = useMemo(() => {
     const labels = new Map<string, string>();
@@ -181,8 +205,24 @@ export function TeamLog() {
     try {
       const r = await authApi.teamLogIntegrity(fp);
       setKeptResult(r.fingerprint?.matches === true ? C.matches : C.noMatch);
-    } catch {
-      setKeptResult(C.loadFailed);
+    } catch (e) {
+      const at = retryAt(e, new Date());
+      setKeptResult(at === null ? C.loadFailed : C.slowDown(at));
+    }
+  };
+
+  const download = async (format: 'json' | 'csv') => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { blob, filename } = await authApi.teamLogExport(filter, format);
+      saveBlob(blob, filename);
+    } catch (e) {
+      const at = retryAt(e, new Date());
+      setExportError(at === null ? C.exportFailed : C.slowDown(at));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -395,12 +435,22 @@ export function TeamLog() {
             {C.exportTitle}
           </h2>
           <p className="x2f-note">{C.exportIntro}</p>
-          <a className="x2f-button x2f-button--secondary" href={teamLogExportPath(filter, 'csv')} download data-part="export-csv">
+          <Button variant="secondary" aria-disabled={exporting} onClick={() => void download('csv')} data-part="export-csv">
             {C.exportCsv}
-          </a>
-          <a className="x2f-button x2f-button--secondary" href={teamLogExportPath(filter, 'json')} download data-part="export-json">
+          </Button>
+          <Button variant="secondary" aria-disabled={exporting} onClick={() => void download('json')} data-part="export-json">
             {C.exportJson}
-          </a>
+          </Button>
+          {exporting ? (
+            <p className="x2f-note" role="status" data-part="export-status">
+              {C.exporting}
+            </p>
+          ) : null}
+          {exportError !== null ? (
+            <p className="x2f-error" role="alert" data-part="export-error">
+              {exportError}
+            </p>
+          ) : null}
         </section>
       ) : null}
     </main>

@@ -44,6 +44,7 @@ export {
   type TeamLogFilter,
   type TeamLogIntegrity,
   type TeamLogMemberSummary,
+  type TeamLogExport,
   teamLogExportPath,
   teamLogQuery,
   type TeamInviteView,
