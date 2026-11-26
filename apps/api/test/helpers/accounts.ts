@@ -33,6 +33,12 @@ export async function seedAccount(
   deps: Pick<Deps, 'db' | 'clock' | 'config'>,
   a: {
     loginName: string | null; displayName?: string; kind?: AccountKind; disabled?: boolean; termsVersion?: string | null; loginKeyId?: number;
+    /**
+     * Owner, 26 Nov 2026: a trader account holds at least two kinds of login method, or its sessions
+     * are setup-only. A seeded trader gets an unused passkey and an unused security key unless this
+     * is false (a test of the methods themselves).
+     */
+    methods?: boolean;
   },
 ): Promise<string> {
   const kind = a.kind ?? 'trader';
@@ -48,7 +54,29 @@ export async function seedAccount(
       terms, terms === null ? null : now, now, a.disabled ? now : null,
     ],
   );
-  return rows[0]!.id;
+  const id = rows[0]!.id;
+  if (kind === 'trader' && a.methods !== false) await addUnusedKeys(deps, id);
+  return id;
+}
+
+/** An unused passkey and an unused security key: two kinds of login method nobody can use (tests only). */
+export async function addUnusedKeys(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  for (const [kind, label] of [['passkey', 'Unused passkey'], ['security-key', 'Unused key']] as const) {
+    await deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+       values ($1, $2, $3, 0, $4, $5, $6, $7, $8)`,
+      [accountId, randomBytes(32), randomBytes(77), kind, kind === 'passkey', kind === 'passkey' ? 'multiDevice' : 'singleDevice', label, deps.clock()],
+    );
+  }
+}
+
+/**
+ * Swaps the unused security key of `addUnusedKeys` for an authenticator app, for a test that reads
+ * badges (a security key earns one; the passkey and the app earn none).
+ */
+export async function noSecurityKeyBadge(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  await deps.db.query("delete from webauthn_credentials where account_id = $1 and kind = 'security-key' and label = 'Unused key'", [accountId]);
+  await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3) on conflict do nothing', [accountId, randomBytes(48), deps.clock()]);
 }
 
 /** The login method recorded on a confirm token when it was issued (tests only). */

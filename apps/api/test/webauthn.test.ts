@@ -670,7 +670,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     ];
     const traders: string[] = [];
     for (const [i, key] of keys.entries()) {
-      const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      const traderId = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader', methods: false });
       traders.push(traderId);
       const r = await staffAdd(await loggedIn(traderId, true), key, 'security-key');
       expect(r.options.attestation).toBe('none');
@@ -692,14 +692,14 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // One new trader per key: since sign-up v2 the sign-up window adds a first key only.
     const traders: string[] = [];
     for (const [name, att] of [['another root', { aaguid: UNLISTED, ca: otherRoot }], ['another root, allowlisted model', { aaguid: ALLOWED, ca: otherRoot }], ['expired leaf', { aaguid: ALLOWED, ca: expired }]] as const) {
-      const id = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' });
+      const id = await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader', methods: false });
       traders.push(id);
       const r = await staffAdd(await loggedIn(id, true), createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: att }), 'security-key');
       expect(r.res.statusCode, name).toBe(201);
     }
     const { rows } = await deps.db.query('select kind, attested from webauthn_credentials where account_id = any($1::uuid[])', [traders]);
     expect(rows).toEqual([1, 2, 3].map(() => ({ kind: 'security-key', attested: false })));
-    const trader = await loggedIn(await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader' }), true);
+    const trader = await loggedIn(await seedAccount(deps, { loginName: uniqueName('trd'), kind: 'trader', methods: false }), true);
 
     // The retry without the statement still checks the rest: a wrong origin is still 401.
     const start = await trader.post('/v1/account/webauthn/start', { kind: 'security-key' });
@@ -902,6 +902,8 @@ describe('Plan 4 helpers', () => {
 describe('confirm and adding a credential', () => {
   it('adds a second security key with a WebAuthn confirm token; tokens stay bound to their action', async () => {
     const t = await signUp('security-key');
+    // A second kind of login method (owner 26 Nov 2026), so the session is not setup-only.
+    await deps.db.query("insert into totp (account_id, secret_enc, created_at) values ($1, '\\x01', now())", [t.accountId]);
     setNow(new Date(now.getTime() + 31 * MIN)); // onboarding over
     const noToken = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
     expect(noToken.statusCode).toBe(403);
@@ -945,7 +947,7 @@ describe('confirm and adding a credential', () => {
 
   it('records passkey on a token confirmed with a passkey (owner, 2026-10-23)', async () => {
     const t = await signUp('passkey');
-    const start = await t.b.post('/v1/confirm/webauthn/start', { action: { kind: 'set-password' } });
+    const start = await t.b.post('/v1/confirm/webauthn/start', { action: { kind: 'extend-session' } });
     const { challengeId, options } = start.json();
     const res = await t.b.post('/v1/confirm/webauthn/finish', { challengeId, response: t.auth.authenticate(options, ORIGIN) });
     expect(res.statusCode).toBe(200);
@@ -955,7 +957,7 @@ describe('confirm and adding a credential', () => {
   it('binds a confirm challenge to its session', async () => {
     const t = await signUp('security-key');
     const other = await loggedIn(t.accountId);
-    const start = (await t.b.post('/v1/confirm/webauthn/start', { action: { kind: 'set-password' } })).json();
+    const start = (await t.b.post('/v1/confirm/webauthn/start', { action: { kind: 'key-test' } })).json();
     const res = await other.post('/v1/confirm/webauthn/finish', { challengeId: start.challengeId, response: t.auth.authenticate(start.options, ORIGIN) });
     expect(res.statusCode).toBe(400);
     expect(errorOf(res)).toBe('challenge-expired');
@@ -1002,7 +1004,7 @@ describe('review fixes', () => {
 
     // Confirm: the unattested passkey is refused at finish even though the challenge is real.
     const b = await loggedIn(ownerId);
-    const start = await b.post('/v1/confirm/webauthn/start', { action: { kind: 'set-password' } });
+    const start = await b.post('/v1/confirm/webauthn/start', { action: { kind: 'key-test' } });
     expect(start.statusCode).toBe(200);
     const { challengeId, options } = start.json();
     const fin = await b.post('/v1/confirm/webauthn/finish', { challengeId, response: ownerPasskey.authenticate(options, ORIGIN) });
@@ -1174,7 +1176,7 @@ describe('review fixes', () => {
     const ownerId = await seedOwner();
     const b = await loggedIn(ownerId); // not the creating session: no onboarding window
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [ownerId]);
-    const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' }, method: 'password' });
+    const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' }, method: 'passkey' });
     const res = await b.post('/v1/account/webauthn/start', { kind: 'passkey', confirmToken: token });
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('method-not-allowed');

@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireInside } from '../auth/frontDoor.js';
-import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { listedOfferCount } from '../offers/routes.js';
@@ -128,8 +127,8 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
   const f = (await traderFacts(q, [accountId], now, viewerId, undefined, new Map([[accountId, 'buyer']]))).get(accountId);
   if (!f) throw new ApiError(404, 'not-found');
   const [{ rows: extra }, reviews, offers] = await Promise.all([
-    q.query<{ hidden: boolean; record_public: boolean | null }>(
-      `select ${recoveryHoldHidesSql('a.id')} as hidden, (select bp.portable_public from badge_prefs bp where bp.account_id = a.id) as record_public
+    q.query<{ record_public: boolean | null }>(
+      `select (select bp.portable_public from badge_prefs bp where bp.account_id = a.id) as record_public
          from accounts a where a.id = $1`,
       [accountId],
     ),
@@ -137,15 +136,12 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
     listedOfferCount(q, accountId, now),
   ]);
   const s = f.summary;
-  // During a recovery-code hold the account is offline to everyone and its offers are hidden (owner
-  // 1 Nov), so its profile shows no presence and no offers either; nothing says why.
-  const hidden = extra[0]?.hidden === true && viewerId !== accountId;
   return {
     displayName: s.displayName,
     self: viewerId === accountId,
     memberSince: monthOf(f.createdAt),
-    online: hidden ? false : s.online,
-    lastSeenAt: hidden ? null : s.lastSeenAt,
+    online: s.online,
+    lastSeenAt: s.lastSeenAt,
     stats: {
       completedTrades: s.completedTrades,
       positivePct: s.positivePct,
@@ -160,7 +156,7 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
     tradedOverXmr: s.tradedOverXmr,
     imported: s.imported,
     reviews: reviews.latest.map((r) => (viewerId === accountId ? { ...toPublicReview(r), id: r.id, disputable: !r.disputed } : toPublicReview(r))),
-    offers: hidden ? 0 : offers,
+    offers,
   };
 }
 

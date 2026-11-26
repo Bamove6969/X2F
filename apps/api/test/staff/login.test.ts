@@ -444,15 +444,6 @@ describe('staff sessions are separate from trading sessions', () => {
     }
   });
 
-  it('refuses a password login for a staff username', async () => {
-    const s = await seedStaff(deps, { role: 'mod' });
-    const res = await trader.inject({
-      method: 'POST', url: '/v1/login/password', headers: { origin: TRADER_ORIGIN }, payload: { loginName: s.loginName, password: 'correct horse battery staple', deviceLabel: 'D' },
-    });
-    expect(res.statusCode).toBe(401);
-    expect(errorOf(res)).toBe('credentials-invalid');
-  });
-
   it('logs out on the staff cookie: never 401, the session is revoked and the cookie cleared', async () => {
     const s = await seedStaff(deps, { role: 'mod' });
     const sess = await insertSession(deps, s.id, 'staff');

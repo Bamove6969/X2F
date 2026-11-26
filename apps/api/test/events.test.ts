@@ -30,10 +30,9 @@ beforeAll(async () => {
   }));
   app.post('/t/login', async (req, reply) => {
     const { startSession } = await import('../src/auth/sessions.js');
-    const b = req.body as { accountId: string; level?: 'full' | 'recovery'; holdUntil?: string };
+    const b = req.body as { accountId: string };
     const sessionId = await startSession(deps, req, reply, {
-      accountId: b.accountId, level: b.level ?? 'full', deviceLabel: 'Test browser', method: 'passkey', firstSession: false,
-      ...(b.holdUntil ? { holdUntil: new Date(b.holdUntil) } : {}),
+      accountId: b.accountId, level: 'full', deviceLabel: 'Test browser', method: 'passkey', firstSession: false,
     });
     return { sessionId };
   });
@@ -54,15 +53,13 @@ beforeEach(async () => {
 
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
-async function trader(o: { kind?: 'trader' | 'staff'; level?: 'full' | 'recovery'; holdUntil?: Date; termsVersion?: string } = {}) {
+async function trader(o: { kind?: 'trader' | 'staff'; termsVersion?: string } = {}) {
   const displayName = `Ev_${String(++n).padStart(4, '0')}`;
   const id = await seedAccount(deps, {
     loginName: `${displayName}.lg`, displayName, ...(o.kind ? { kind: o.kind } : {}), ...(o.termsVersion ? { termsVersion: o.termsVersion } : {}),
   });
   const b = new Browser(app);
-  const res = await b.post('/t/login', {
-    accountId: id, ...(o.level ? { level: o.level } : {}), ...(o.holdUntil ? { holdUntil: o.holdUntil.toISOString() } : {}),
-  });
+  const res = await b.post('/t/login', { accountId: id });
   expect(res.statusCode).toBe(200);
   return { id, b, displayName };
 }
@@ -149,16 +146,6 @@ describe('GET /v1/events: who may open a stream', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/events' });
     expect(res.statusCode).toBe(401);
     expect(errorOf(res)).toBe('not-authenticated');
-  });
-
-  it('refuses a recovery session, held or not', async () => {
-    const plain = await trader({ level: 'recovery' });
-    const held = await trader({ level: 'recovery', holdUntil: new Date(T0.getTime() + 400 * DAY) });
-    for (const t of [plain, held]) {
-      const res = await t.b.get('/v1/events');
-      expect(res.statusCode).toBe(403);
-      expect(errorOf(res)).toBe('recovery-session');
-    }
   });
 
   it('refuses staff accounts and traders on stale Terms', async () => {

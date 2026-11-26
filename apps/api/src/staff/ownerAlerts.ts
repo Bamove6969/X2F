@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';
 import { log } from './members.js';

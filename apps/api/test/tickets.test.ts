@@ -171,12 +171,7 @@ describe('trader routes', () => {
     expect([res.statusCode, errorOf(res as never)]).toEqual([404, 'not-found']);
   });
 
-  it('team members and staff sessions cannot use them; a recovery session neither', async () => {
-    const id = await traderId();
-    const { token, sessionId } = await insertSession(t.deps, id, 'trader');
-    await t.deps.db.query("update sessions set level = 'recovery' where id = $1", [sessionId]);
-    const res = await t.trader.inject({ method: 'GET', url: '/v1/tickets', headers: { origin: 'https://x2f.test' }, cookies: { '__Host-x2f_session': token } });
-    expect([res.statusCode, errorOf(res as never)]).toEqual([403, 'recovery-session']);
+  it('they need a session', async () => {
     const anon = await t.trader.inject({ method: 'GET', url: '/v1/tickets', headers: { origin: 'https://x2f.test' } });
     expect(anon.statusCode).toBe(401);
   });

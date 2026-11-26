@@ -2,9 +2,9 @@ import { MAX_WALLET_BATCH, WALLET_LABEL_MAX, addressEnd, addressEnds, addressHas
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
-import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
+import { inRecoveryWindow, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { dailyCapInTx } from '../auth/throttle.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -14,8 +14,6 @@ import type { RetentionJob } from '../retention.js';
 export const WALLET_APPS = ['cake', 'edge', 'feather', 'monerujo', 'stack', 'monero-gui-cli', 'ledger-trezor', 'other'] as const;
 export type WalletApp = (typeof WALLET_APPS)[number];
 
-/** How long a wallet confirmed with a password (or password and TOTP) waits before it can receive payouts. */
-export const PAYOUT_WAIT_MS = 24 * 3_600_000;
 /** A removed wallet's address is kept this long (then nulled by `purgeRemovedWalletAddresses`). */
 export const REMOVED_ADDRESS_RETENTION_MS = 90 * 24 * 3_600_000;
 /**
@@ -36,7 +34,7 @@ export interface Wallet {
   address: string;
   addressEnd: string;
   usableFrom: Date;
-  /** `usableFrom <= now`: false while the 24-hour wait of a password-confirmed wallet runs. */
+  /** `usableFrom <= now` (owner 26 Nov 2026: no wait, so true for every wallet added since). */
   usable: boolean;
   /**
    * Owner demo note #6 (migration 620): for one trade only. Listed until a trade uses it, then
@@ -264,17 +262,15 @@ async function noWalletYet(req: FastifyRequest): Promise<boolean> {
  * with the wallets (M1).
  */
 const walletConfirm: preHandlerAsyncHookHandler = async function (req) {
-  if (req.auth.level === 'recovery') throw new ApiError(403, 'recovery-session');
   if (bodyOf(req).confirmToken !== undefined) return;
+  // Owner, 26 Nov 2026: a recovery-code login's window needs no confirm (`redeemConfirm`).
+  if (inRecoveryWindow(req, req.server.deps.clock())) return;
   // Owner, 2026-11-26 (demo note #161, "no matter what"): the first wallet skips the confirm for the
   // whole sign-up session, with no 30-minute clock. The sign-up session is the creating session
   // until it reaches Welcome (`onboarding/end` nulls `onboarding_until`); later wallets confirm.
   if (signupSession(req) && (await noWalletYet(req))) return;
   throw new ApiError(403, 'confirm-required', { action: walletInput(req).action.kind });
 };
-
-/** Wallets waiting out the account's 24-hour hold (Plan 2 Task 17 review round 2 N-I4), as checked. */
-export type PendingWallet = WalletItem;
 
 /**
  * Inserts checked wallets with one `usable_from` and their `wallet-added` alerts, and sets
@@ -315,26 +311,17 @@ async function insertWallets(
   return wallets;
 }
 
-/**
- * Wallets that waited out the account's hold, applied when it ends by time (review round 2 N-I4):
- * usable at once (they have waited their 24 hours: R42, once, not twice), whatever the confirm.
- * 409 `wallet-exists` drops the change when one of them was added meanwhile.
- */
-export async function applyWallets(db: Queryable, accountId: string, items: readonly PendingWallet[], method: ConfirmMethod | null, now: Date): Promise<void> {
-  await db.query('select 1 from accounts where id = $1 for update', [accountId]);
-  await insertWallets(db, accountId, items, now, method ?? 'onboarding', now);
-}
-
 async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const input = walletInput(req);
   const raw = bodyOf(req).confirmToken;
-  // `walletConfirm` let a request without a token through only under the onboarding exemption.
-  const exempted = raw === undefined;
+  // `walletConfirm` let a request without a token through only under the onboarding exemption or
+  // inside a recovery-code login's window (`redeemConfirm` then answers 'recovery-code').
+  const recovering = raw === undefined && inRecoveryWindow(req, deps.clock());
+  const exempted = raw === undefined && !recovering;
   const now = deps.clock();
   const client = await deps.db.connect();
   let wallets: Wallet[] = [];
-  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
@@ -352,28 +339,13 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       // unused (M1). A present but non-string token (number, null, object) is invalid, never "missing".
       let method: ConfirmMethod | null = null;
       if (!exempted) {
-        method = await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
+        method = await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, recovering ? undefined : typeof raw === 'string' ? raw : '');
       }
       req.confirmedAction = input.action;
-      // Plan 2 Task 17 review round 2 N-I4 (lead decision 2026-10-30, the owner's 14:12 ruling over
-      // the wallet rule of 10-24): a session whose login waits (a username and password; a PGP key login is strong since Q81) adds no wallet
-      // at once, whatever it confirmed with: hold model v3, the add is staged like any security
-      // change and applies 24 h after it is submitted (`gateChange`; 202 `staged`). The sign-up's
-      // first 30 minutes are exempt there, and so is the first wallet of the sign-up session
-      // (owner 2026-11-26, note #161).
-      held = await gateChange(client, req, { kind: 'wallets', items: input.items, method }, { signup: exempted });
-      if (held === null) {
-        // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
-        // usable at once, whenever they are added and however they were confirmed. Later wallets
-        // are usable at once when confirmed with PGP, a passkey or a security key from a strong
-        // login (STRONG_CONFIRM_METHODS; a waiting login was held above), and wait 24 hours when
-        // confirmed with a password. `method` is what the redeemed token recorded, never anything in
-        // this request. A batch shares one clock: every wallet in it gets the same `usable_from`.
-        const strong = method !== null && STRONG_CONFIRM_METHODS.includes(method);
-        const waits = account.had_wallet && !strong;
-        const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
-        wallets = await insertWallets(client, req.auth.accountId, input.items, usableFrom, method ?? 'onboarding', now);
-      }
+      // The session must still be live (the account row is locked above).
+      await requireLiveSessionInTx(client, req.auth, now);
+      // Owner, 26 Nov 2026 (no passwords, no holds): every new wallet is usable at once.
+      wallets = await insertWallets(client, req.auth.accountId, input.items, now, method ?? 'onboarding', now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -382,37 +354,27 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   } finally {
     client.release();
   }
-  if (held !== null) {
-    return reply.code(202).send(stagedReply(held));
-  }
   return reply.code(201).send(input.batch ? wallets.map(toJson) : toJson(wallets[0]!));
 }
 
 /**
  * `GET /v1/wallets/rule`: what adding wallets will do for this account, so the Add a wallet screen
  * can explain it before anything is entered (owner, 2026-10-24). Read from the account's own
- * methods; it changes nothing.
- * - `firstWallet`: the account has never had a wallet, so the next add is usable at once whatever
- *   the method.
- * - `strongMethods`: the PGP, passkey and security-key methods it holds; confirming with one of
- *   them makes new wallets usable at once.
- * - `password`: `none` (no password to confirm with), `immediate` (a password confirm would not
- *   wait, because this is the first wallet) or `waits` (it would wait `waitHours`).
+ * methods; it changes nothing. Owner, 26 Nov 2026: no wallet waits any more.
+ * - `firstWallet`: the account has never had a wallet (the sign-up session adds it without a confirm).
+ * - `strongMethods`: the PGP, passkey and security-key methods it holds, to confirm with.
  */
 export interface WalletRule {
   firstWallet: boolean;
   strongMethods: ConfirmMethod[];
-  password: 'none' | 'immediate' | 'waits';
-  waitHours: number;
 }
 
 export async function walletRule(db: Queryable, accountId: string): Promise<WalletRule> {
-  const { rows } = await db.query<{ had_wallet: boolean; pgp: boolean; passkey: boolean; security_key: boolean; password: boolean }>(
+  const { rows } = await db.query<{ had_wallet: boolean; pgp: boolean; passkey: boolean; security_key: boolean }>(
     `select a.had_wallet,
             exists (select 1 from pgp_keys where account_id = a.id) as pgp,
             exists (select 1 from webauthn_credentials where account_id = a.id and kind = 'passkey') as passkey,
-            exists (select 1 from webauthn_credentials where account_id = a.id and kind = 'security-key') as security_key,
-            exists (select 1 from passwords where account_id = a.id) as password
+            exists (select 1 from webauthn_credentials where account_id = a.id and kind = 'security-key') as security_key
        from accounts a where a.id = $1`,
     [accountId],
   );
@@ -421,13 +383,7 @@ export async function walletRule(db: Queryable, accountId: string): Promise<Wall
   if (r.pgp) strongMethods.push('pgp');
   if (r.passkey) strongMethods.push('passkey');
   if (r.security_key) strongMethods.push('security-key');
-  const firstWallet = !r.had_wallet;
-  return {
-    firstWallet,
-    strongMethods,
-    password: !r.password ? 'none' : firstWallet ? 'immediate' : 'waits',
-    waitHours: PAYOUT_WAIT_MS / 3_600_000,
-  };
+  return { firstWallet: !r.had_wallet, strongMethods };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -486,11 +442,9 @@ export async function restoreOneTimeWallets(db: Queryable, tradeCode: string, ac
 }
 
 /**
- * The removal write (the route's, or a waiting one applied 24 h after a username-and-password
- * session submitted it): the wallet is marked removed (a wallet still waiting to be usable is
- * cancelled with it) and alert `wallet-removed` carries display details only: the app, the label
+ * The removal write: the wallet is marked removed and alert `wallet-removed` carries display details only: the app, the label
  * and the end of the address, never all of it (owner, 2026-10-23). 404 when the wallet is gone
- * already (a waiting removal is then dropped).
+ * already.
  */
 export async function applyWalletRemoval(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
   // Owner note #6 Q10: a one-time wallet a trade is using (used up, `used_by_trade` set) is removed
@@ -516,17 +470,15 @@ export async function applyWalletRemoval(db: Queryable, accountId: string, walle
 }
 
 /**
- * `DELETE /v1/wallets/:id`. Removal cannot redirect money, so it needs no confirm. Owner p5-7 (7
- * Nov 2026, replacing G5): from a session whose login waits (just a username and password) it is
- * staged like every other change (`gateChange`; 202 `staged`) and the wallet stays usable until
- * the change applies; otherwise it applies at once (`applyWalletRemoval`).
+ * `DELETE /v1/wallets/:id`. Removal cannot redirect money, so it needs no confirm; it applies at
+ * once (`applyWalletRemoval`).
  */
 async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
-  const held = await withTx(deps.db, async (client) => {
+  await withTx(deps.db, async (client) => {
     // Review round 4: the removing session must still be live where it writes.
     await requireLiveSessionInTx(client, req.auth, now);
     // Review 17 Nov (b), M1: a one-time wallet a trade used up (`used_by_trade` set) can be removed
@@ -535,13 +487,9 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
       'select label, address from wallets where id = $1 and account_id = $2 and (removed_at is null or (used_by_trade is not null and address is not null))',
       [id, req.auth.accountId],
     );
-    const w = rows[0];
-    if (!w) throw new ApiError(404, 'not-found');
-    const g = await gateChange(client, req, { kind: 'remove-wallet', walletId: id, label: w.label, addressEnd: addressEnd(w.address) });
-    if (g === null) await applyWalletRemoval(client, req.auth.accountId, id, now);
-    return g;
+    if (!rows[0]) throw new ApiError(404, 'not-found');
+    await applyWalletRemoval(client, req.auth.accountId, id, now);
   });
-  if (held !== null) return reply.code(202).send(stagedReply(held));
   return reply.code(204).send();
 }
 
@@ -554,7 +502,7 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
  * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`). Under the
  * account row lock, so one default per account (the partial unique index of migration 630 backs it).
  * It changes no address, no wait and nothing a take accepts (any usable wallet may still be named), so
- * it is not staged; the hold still blocks it, as every wallet write. (Whether it should also send an
+ * it needs no confirm. (Whether it should also send an
  * in-app alert is owner question Q12, still open.)
  */
 async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -586,13 +534,11 @@ async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
  * `bad-request` otherwise. 404 `not-found` for a wallet that is not the account's or not open
  * (removed, used up by a trade, or a staged add, which has no wallet yet). The address, the default,
  * `usable_from` and every other column stay as they are, so it redirects no money and starts or
- * skips no wait: like the default, it needs no confirm and is not staged; the hold still blocks it,
- * as every wallet write, and the session must still be live under the account lock. Security review
+ * skips no wait: like the default, it needs no confirm, and the session must still be live under
+ * the account lock. Security review
  * of wip/lead-note-226: the name follows the spoofing rule (`walletLabelProblem`: no separators,
  * status words, address-like runs or mixed scripts; Medium 1; verification review: nor a look-alike
- * of the end of any of the account's addresses, `labelSpoofsAddress`, read under the lock); a session whose changes must wait
- * (`weakOf`: a username-and-password login, a backup session) gets 403 `weak-session` (Medium 2: so a
- * weak foothold cannot rename any wallet, one still in its wait included); and at most
+ * of the end of any of the account's addresses, `labelSpoofsAddress`, read under the lock); and at most
  * WALLET_RENAMES_PER_DAY renames a day, then 429 `slow-down` (Medium 3). A real change
  * records alert `wallet-renamed` (display details only: the app, both names and the address's last
  * 6); the Jabber change notice goes out from the `wallets` row trigger (`label` is a change column,
@@ -609,8 +555,7 @@ async function renameHandler(req: FastifyRequest, reply: FastifyReply) {
   const now = deps.clock();
   await withTx(deps.db, async (client) => {
     // Takes the account row lock and re-checks that the renaming session is still live.
-    const live = await requireLiveSessionInTx(client, req.auth, now);
-    if (weakOf(live, now)) throw weakRefusal();
+    await requireLiveSessionInTx(client, req.auth, now);
     const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
       'select app, label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
       [id, req.auth.accountId],
@@ -655,15 +600,14 @@ export function walletRoutes(app: FastifyInstance): void {
     {
       preHandler: [
         session,
-        requireNotHeld,
         checkWalletInput,
         walletConfirm,
       ],
     },
     addHandler,
   );
-  app.delete('/v1/wallets/:id', { preHandler: [session, requireNotHeld] }, removeHandler);
-  app.put('/v1/wallets/:id/default', { preHandler: [session, requireNotHeld] }, defaultHandler);
+  app.delete('/v1/wallets/:id', { preHandler: [session] }, removeHandler);
+  app.put('/v1/wallets/:id/default', { preHandler: [session] }, defaultHandler);
   // Owner demo note #226: renaming a wallet, cosmetic (the label only).
-  app.put('/v1/wallets/:id/label', { preHandler: [session, requireNotHeld] }, renameHandler);
+  app.put('/v1/wallets/:id/label', { preHandler: [session] }, renameHandler);
 }

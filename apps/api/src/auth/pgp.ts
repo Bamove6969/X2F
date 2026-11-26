@@ -32,7 +32,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
-import { gateChange, lockAccount, requireNotHeld, stagedReply, withTx } from './hold.js';
+import { lockAccount, requireLiveSessionInTx, withTx } from './liveSession.js';
 import { TRADER_LOGIN_KINDS, realmOf, requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
@@ -906,7 +906,7 @@ async function addKeyStart(req: FastifyRequest) {
   });
 }
 
-async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
+async function addKeyFinish(req: FastifyRequest) {
   const deps = req.server.deps;
   const b = body(req);
   const row = await checkPgpCode(deps, req, str(b, 'challengeId'), str(b, 'code'), {
@@ -918,15 +918,14 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
   const now = deps.clock();
   const client = await deps.db.connect();
-  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
-      // Hold model v3: a waiting login's new key is staged; it applies 24 h after it is submitted.
-      held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc, recipient: pending.recipient ?? null });
+      // The session must still be live, under the account lock.
+      await requireLiveSessionInTx(client, req.auth, now);
       // Re-verify R1: a start let through on the window may add the first key only, never a second.
       if (row.payload.window === true) await recheckWindowInTx(client, req, 'pgp', 'add-method');
-      if (held === null) await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
+      await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -934,9 +933,6 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     }
   } finally {
     client.release();
-  }
-  if (held !== null) {
-    return reply.code(202).send({ ...stagedReply(held), fingerprint: pending.fingerprint });
   }
   return { fingerprint: pending.fingerprint };
 }
@@ -1101,14 +1097,13 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
     {
       bodyLimit: PGP_BODY_LIMIT,
       preHandler: [
-        requireSession({ allowRecovery: true }),
+        requireSession(),
         methodAllowed('pgp'),
-        requireNotHeld,
         inspectNewKey,
-        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: onlyIfNew('pgp'), recovery: true }),
+        requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: onlyIfNew('pgp') }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp'), requireNotHeld] }, addKeyFinish);
+  app.post('/v1/account/pgp/finish', { preHandler: [requireSession(), methodAllowed('pgp')] }, addKeyFinish);
 }

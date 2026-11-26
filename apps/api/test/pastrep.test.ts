@@ -11,7 +11,7 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { openKey } from '../src/auth/pgp.js';
-import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
+import { LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES } from '../src/auth/liveSession.js';
 import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, archivedOriginalHost, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD, PAST_REP_SIG_AAD } from '../src/pastrep/routes.js';
@@ -721,29 +721,7 @@ describe('no lookups (P5-A20, review 2026-10-24)', () => {
   });
 });
 
-describe('hold and throttle (lead follow-up, owner 1 Nov)', () => {
-  it('a held account is refused start and finish with the hold\'s code; list and delete still work', async () => {
-    const { b, id } = await login();
-    const c = await start(b, ed);
-    const signed = await clearsign(c.text, ed);
-    // A claim made before the hold, to list and remove during it.
-    const c2 = await start(b, other, { site: 'Paxful' });
-    const claim = (await b.post('/v1/account/past-rep/finish', { challengeId: c2.challengeId, signed: await clearsign(c2.text, other) })).json().id as string;
-    const until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
-    for (const res of [
-      await b.post('/v1/account/past-rep/start', startBody(ed, { site: 'Bisq' })),
-      await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed }),
-    ]) {
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
-    }
-    expect((await b.get('/v1/account/past-rep')).statusCode).toBe(200);
-    expect((await b.delete(`/v1/account/past-rep/${claim}`)).json()).toEqual({ id: claim, status: 'removed' });
-    expect(await rows()).toMatchObject([{ id: claim, status: 'removed' }]);
-    expect(HOLD_BLOCKED_ROUTES).toEqual(expect.arrayContaining(['POST /v1/account/past-rep/start', 'POST /v1/account/past-rep/finish']));
-    expect(HOLD_BLOCKED_ROUTES).not.toContain('DELETE /v1/account/past-rep/:id');
-  });
-
+describe('throttle (lead follow-up, owner 1 Nov)', () => {
   it(`start is throttled: ${PAST_REP_STARTS_PER_HOUR} an hour per account, the next refused 429 slow-down, fine again after the hour`, async () => {
     expect(PAST_REP_STARTS_PER_HOUR).toBe(10);
     const t = new Date('2026-11-02T08:00:00Z');
@@ -831,32 +809,6 @@ describe('review round 1', () => {
       expect(res.json()).toMatchObject({ error: 'wrong-key' });
     }
     expect(await rows()).toEqual([]);
-  });
-
-  it('M3: a hold that starts after the preHandler refuses finish under the account lock: no row, challenge unused', async () => {
-    const { b, id } = await login();
-    const c = await start(b, ed);
-    const signed = await clearsign(c.text, ed);
-    let until: Date | null = null;
-    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
-    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
-      if (until === null && typeof args[0] === 'string' && args[0].includes('from challenges where id = $1 and purpose')) {
-        until = new Date(0);
-        until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
-      }
-      return orig(...args);
-    }) as never);
-    let res;
-    try {
-      res = await finishOf(b, c.challengeId, signed);
-    } finally {
-      q.mockRestore();
-    }
-    expect(until).not.toBeNull();
-    expect(res.statusCode, res.body).toBe(403);
-    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until!.toISOString() });
-    expect(await rows()).toEqual([]);
-    expect(await challengeUsed(c.challengeId)).toBe(false);
   });
 
   it('M3: a session revoked after the preHandler gets 401 from finish: no row, challenge unused', async () => {
@@ -1032,14 +984,6 @@ describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
 });
 
 describe('members and sessions', () => {
-  it('a recovery (backup) session is refused', async () => {
-    const id = await seedAccount(deps, { loginName: 'recov1x' });
-    const b = new Browser(app);
-    await b.post('/t/login', { accountId: id, level: 'recovery' });
-    const res = await b.post('/v1/account/past-rep/start', startBody(ed));
-    expect(res.statusCode).toBe(403);
-  });
-
   it('a team member gets 403 owner-only on every past-rep route (Task 18: owner-only until decided)', async () => {
     const owner = await login();
     const loginId = await seedAccount(deps, { loginName: 'pmember1x', displayName: 'pm-placeholder', kind: 'member' });

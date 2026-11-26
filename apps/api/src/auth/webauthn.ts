@@ -29,7 +29,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
 import { realmOf, requireSession, startSession } from './sessions.js';
-import { gateChange, holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, stagedReply, weakOf, weakRefusal, withTx } from './hold.js';
+import { requireLiveSessionInTx, withTx } from './liveSession.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
 
@@ -1039,17 +1039,15 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const clean = cleanLabel(label);
   const now = deps.clock();
   const client = await deps.db.connect();
-  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
-      // Task 17: the gate locks the account row first; a waiting login's new key starts the hold
-      // and waits in it (it cannot log in, or end the hold, before the hold ends by time).
-      held = await gateChange(client, req, { kind: 'webauthn', credential: stored, label: clean });
+      // The session must still be live, under the account lock (which also keeps two parallel
+      // finishes from both passing the security-key count).
+      await requireLiveSessionInTx(client, req.auth, now);
       // Re-verify R1: a start let through on the window may add the first of its kind only.
       if (ch.payload?.window === true) await recheckWindowInTx(client, req, kind, 'add-method');
-      // The account row is locked (by the gate) so two parallel finishes cannot both pass the security-key count.
-      if (held === null) await applyCredential(client, req.auth.accountId, stored, clean, now);
+      await applyCredential(client, req.auth.accountId, stored, clean, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -1057,9 +1055,6 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     }
   } finally {
     client.release();
-  }
-  if (held !== null) {
-    return reply.code(202).send(stagedReply(held));
   }
   return reply.code(201).send({ ok: true });
 }
@@ -1071,17 +1066,14 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
  * (trimmed, 1 to 32 letters, digits, spaces and a little punctuation): 400 `key-name-invalid`
  * `{ reason }` otherwise, `reason: 'taken'` when another of the account's keys has that name
  * (`sameKeyName`: trimmed, case and width folded). Another account's credential, or one still
- * staged for review (hold model v3: no row yet), is 404 `not-found`. Only the `label` column
+ * is 404 `not-found`. Only the `label` column
  * changes: no key material, flags or session state.
  *
  * Security review of wip/lead-seckey-fix:
  * - Trader accounts only (`kinds: ['trader']`): a staff or owner key is renamed, if ever, on the
  *   staff API under its own rules; a team member's session is refused as for every owner-only route.
  * - Under the account lock, the calling session must still be live (`requireLiveSessionInTx`,
- *   401), and a trader's running hold refuses it (403 `recovery-hold`), as `gateChange` does. A
- *   session whose changes must wait (`weakOf`: a username-and-password login outside its sign-up
- *   window, a backup session) is refused (403 `weak-session`) rather than staged: a rename is not
- *   worth a 24-hour draft, and a fresh, waiting session must not relabel the owner's keys.
+ *   401).
  * - Each rename queues a Jabber notice (jabber/changePaths.ts lists `label`, which is wanted
  *   against a malicious rename), so renames are budgeted per account: `budgets.keyLabel`
  *   (KEY_LABEL_BUCKET, 10 an hour), 429 `slow-down` past it, taken before any work.
@@ -1097,12 +1089,7 @@ async function setKeyLabel(req: FastifyRequest) {
   const id = Buffer.from(credentialId, 'base64url');
   return withTx(deps.db, async (db) => {
     const now = deps.clock();
-    const session = await requireLiveSessionInTx(db, req.auth, now);
-    if (session.kind === 'trader') {
-      const running = await holdInTx(db, settleOf(req), req.auth.accountId, now);
-      if (running !== null) throw holdRefusal(running.holdUntil);
-    }
-    if (weakOf(session, now)) throw weakRefusal();
+    await requireLiveSessionInTx(db, req.auth, now);
     const { rows } = await db.query<{ credential_id: Buffer; label: string }>('select credential_id, label from webauthn_credentials where account_id = $1', [
       req.auth.accountId,
     ]);
@@ -1148,15 +1135,14 @@ export function webauthnRoutes(app: FastifyInstance): void {
     '/v1/account/webauthn/start',
     {
       preHandler: [
-        requireSession({ allowRecovery: true }),
-        requireNotHeld,
-        requireConfirm(addKeyAction, { onboarding: onlyIfNew((req) => credentialKind(record(req.body).kind)), recovery: true }),
+        requireSession(),
+        requireConfirm(addKeyAction, { onboarding: onlyIfNew((req) => credentialKind(record(req.body).kind)) }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/webauthn/finish', { preHandler: [requireSession({ allowRecovery: true }), requireNotHeld] }, addKeyFinish);
+  app.post('/v1/account/webauthn/finish', { preHandler: [requireSession()] }, addKeyFinish);
   // Owner 25 Nov security-key report: naming a key just saved (or any of my own keys).
   // Traders only: staff and owner keys are managed on the staff API (an owner key change takes both owner keys).
-  app.put('/v1/account/webauthn/label', { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, setKeyLabel);
+  app.put('/v1/account/webauthn/label', { preHandler: [requireSession({ kinds: ['trader'] })] }, setKeyLabel);
 }

@@ -887,17 +887,11 @@ describe('D-016: the frozen trader reads their freeze (GET /v1/account/freeze)',
     expect({ status: asMember.statusCode, error: errorOf(asMember) }).toEqual({ status: 403, error: 'owner-only' });
 
     const backup = new Browser(trader);
-    const login = await backup.post('/t/login', { accountId: seller.id, level: 'recovery' });
+    const login = await backup.post('/t/login', { accountId: seller.id, method: 'recovery-code' });
     expect(login.statusCode, login.body).toBe(200);
-    const sessionId = (login.json() as { sessionId: string }).sessionId;
-    const read = async () => {
-      const res = await backup.get('/v1/account/freeze');
-      expect(res.statusCode, res.body).toBe(200);
-      return (res.json() as { freezes: Array<{ since: string }> }).freezes.map((f) => f.since);
-    };
-    expect(await read()).toEqual([since]);
-    await deps.db.query('update sessions set hold_until = $2 where id = $1', [sessionId, new Date(deps.clock().getTime() + 24 * H)]);
-    expect(await read()).toEqual([since]);
+    const res = await backup.get('/v1/account/freeze');
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { freezes: Array<{ since: string }> }).freezes.map((f) => f.since)).toEqual([since]);
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1 and lifted_at is null', [seller.id, deps.clock()]);
     setNow(START);
   });
@@ -1188,10 +1182,10 @@ describe('Task 11 tripwires (local tree only)', () => {
     expect(staff).not.toMatch(/['`]\/staff\/v1\/disputes\/:code\/proof['`]/);
     // Review I2: the whole API tree, not only staffRoutes.ts and src/internal: only proofs/ and the
     // retention job list may name the proof tables, the store or a proof route (src/staff/*,
-    // trades/held.ts and disputes/moderationClient.ts included).
+    // and disputes/moderationClient.ts included).
     const SRC = `${ROOT}apps/api/src/`;
     const files = (readdirSync(SRC, { recursive: true }) as string[]).filter((f) => /\.ts$/.test(f)).map((f) => f.replace(/\\/g, '/'));
-    expect(files).toEqual(expect.arrayContaining(['staff/app.ts', 'trades/held.ts', 'disputes/moderationClient.ts', 'disputes/staffRoutes.ts']));
+    expect(files).toEqual(expect.arrayContaining(['staff/app.ts', 'disputes/moderationClient.ts', 'disputes/staffRoutes.ts']));
     expect(files.some((f) => f.startsWith('internal/'))).toBe(true);
     for (const f of files) {
       if (f.startsWith('proofs/') || f === 'retentionJobs.ts') continue;
@@ -1210,7 +1204,7 @@ describe('Task 11 tripwires (local tree only)', () => {
       expect(c, f).not.toMatch(/trade_proofs|proof_id_tags|readableProof|proofs\/store/);
       // The route lists (auth/frontDoor.ts, auth/hold.ts) name the trader's proof route; staff,
       // internal and dispute code never does.
-      if (/^(staff|internal|disputes)\//.test(f) || f === 'trades/held.ts') expect(c, f).not.toMatch(/proofs\/:id/);
+      if (/^(staff|internal|disputes)\//.test(f)) expect(c, f).not.toMatch(/proofs\/:id/);
     }
     // Review I1: the GET's kind filter itself (a match on the import of readableProof proved nothing).
     const store = readFileSync(`${SRC}proofs/store.ts`, 'utf8');

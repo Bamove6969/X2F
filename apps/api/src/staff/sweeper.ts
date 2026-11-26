@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
 import { loadStaff, withinHours } from './guard.js';

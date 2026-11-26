@@ -1,7 +1,7 @@
 /**
  * Name rules (spec 6.1, owner 2026-10-23). Every account has two names:
  * - the **display name**, public (offers, profiles, chat), and
- * - the **login name**, private: never shown to anyone, used only to log in with a password, a
+ * - the **login name**, private: never shown to anyone, used only to log in with a
  *   security key by name or a backup code.
  * Both are unique case-insensitively through `key`, and the two must differ case-insensitively.
  * - Length: a **new or changed** name of either kind is 8–20 characters (owner demo notes #126, the

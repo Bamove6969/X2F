@@ -160,16 +160,16 @@ describe('owner lockout', () => {
     expect(errorOf(await senior.browser.post('/staff/v1/owner/keys/start', {}))).toBe('forbidden');
   });
 
-  it("Plan 2's password, TOTP and recovery-code routes refuse the owner", async () => {
+  it("Plan 2's TOTP and recovery-code routes refuse the owner", async () => {
     const { token } = await insertSession(t.deps, owner.id, 'trader');
     const send = (method: 'POST' | 'PUT', url: string, payload: Record<string, unknown>) =>
       t.trader.inject({ method, url, headers: { origin: 'https://x2f.test' }, cookies: { '__Host-x2f_session': token }, payload });
-    for (const [method, url] of [['PUT', '/v1/account/password'], ['POST', '/v1/account/totp/start'], ['POST', '/v1/account/recovery-codes']] as const) {
-      const res = await send(method, url, { password: 'correct horse battery staple 1', confirmToken: 'x' });
+    for (const [method, url] of [['POST', '/v1/account/totp/start'], ['POST', '/v1/account/recovery-codes']] as const) {
+      const res = await send(method, url, { confirmToken: 'x' });
       expect({ url, error: errorOf(res) }).toEqual({ url, error: 'method-not-allowed' });
     }
     // The backup login (a recovery code; an authenticator code is no backup, refused for everyone
-    // before any lookup) and the password login: the same answer as any wrong name (no oracle),
+    // before any lookup): the same answer as any wrong name (no oracle),
     // never a session.
     for (const kind of ['recovery-code']) {
       const res = await t.trader.inject({

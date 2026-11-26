@@ -2,7 +2,7 @@
  * Actions that need a confirm-it's-you token, shared by browser and server:
  * the hash a token is bound to, and the words shown to the person.
  */
-export type MethodType = 'pgp' | 'passkey' | 'security-key' | 'password' | 'totp' | 'recovery-codes';
+export type MethodType = 'pgp' | 'passkey' | 'security-key' | 'totp' | 'recovery-codes';
 
 export type ConfirmAction =
   | { kind: 'add-wallet'; addressHash: string; addressEnd: string }
@@ -13,7 +13,6 @@ export type ConfirmAction =
   | { kind: 'add-wallets'; addressesHash: string; addressEnds: string }
   | { kind: 'add-method'; method: MethodType }
   | { kind: 'remove-method'; method: MethodType; id: string }
-  | { kind: 'set-password' }
   /** A pre-009 account sets its private login name (FU-A re-review 2). */
   | { kind: 'set-login-name' }
   | { kind: 'new-recovery-codes' }
@@ -58,8 +57,8 @@ export type ConfirmAction =
   | { kind: 'key-test' };
 
 /**
- * Actions only a passkey, security key or PGP key may confirm: the confirm sheet offers no
- * password for them, and the server issues no password confirm token for them.
+ * Actions only a passkey, security key or PGP key may confirm. Every confirm is one of those now
+ * (no passwords, owner 26 Nov 2026); the list stays for the key-test split below.
  */
 export const STRONG_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['become-vendor'];
 
@@ -67,7 +66,7 @@ export function needsStrongConfirm(a: ConfirmAction): boolean {
   return STRONG_ONLY_ACTIONS.includes(a.kind) || WEBAUTHN_ONLY_ACTIONS.includes(a.kind);
 }
 
-/** Actions only a passkey or security key may confirm (no password, no PGP key): the key test. */
+/** Actions only a passkey or security key may confirm (no PGP key): the key test. */
 export const WEBAUTHN_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['key-test'];
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
@@ -101,8 +100,6 @@ export function describeAction(a: ConfirmAction): string {
       return `add a login method (${a.method})`;
     case 'remove-method':
       return `remove a login method (${a.method})`;
-    case 'set-password':
-      return 'set a new password';
     case 'set-login-name':
       return 'set your login name';
     case 'new-recovery-codes':
@@ -135,13 +132,9 @@ export function describeAction(a: ConfirmAction): string {
   }
 }
 
-/** Owner p4-8 adds the hold rights (MemberPermissions board wording, COPY-UNSIGNED). */
 const ROLE_WORDS: Readonly<Record<string, string>> = {
   offers: 'Offers',
   trades: 'Trades',
-  'hold-see': 'See waiting changes',
-  'hold-cancel': 'Untick or cancel waiting changes',
-  'hold-end': 'End a hold',
 };
 
 const ATOMIC_PER_XMR = 1_000_000_000_000n;

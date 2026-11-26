@@ -70,7 +70,7 @@ export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'withdraw-cancel': 'trades-cancel',
   'walk-away': 'trades-cancel',
   'confirm-cancel': 'trades-confirm-cancel',
-  // A stronger hold box includes the weaker ones (`effectiveAbilities`).
+  // Hold model v3's (gone since 26 Nov 2026), kept so older log rows still read; no route writes them.
   'hold-changes-cancelled': 'hold-cancel',
   'hold-changes-approved': 'hold-end',
   'note-added': 'notes-add',

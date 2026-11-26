@@ -1,7 +1,7 @@
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { Secret, TOTP } from 'otpauth';
 import type { Deps } from '../../src/app.js';
-import { startSession } from '../../src/auth/sessions.js';
+import { type LoginMethod, startSession } from '../../src/auth/sessions.js';
 
 export const ORIGIN = 'https://x2f.test';
 export const STEP_MS = 30_000;
@@ -61,12 +61,12 @@ export class Browser {
   }
 }
 
-/** Adds `POST /t/login { accountId, firstSession?, level? }`, which starts a session directly (tests only). */
+/** Adds `POST /t/login { accountId, firstSession?, method? }`, which starts a session directly (tests only). */
 export function addTestLogin(app: FastifyInstance, deps: Deps): void {
   app.post('/t/login', async (req, reply) => {
-    const b = req.body as { accountId: string; firstSession?: boolean; level?: 'full' | 'recovery' };
+    const b = req.body as { accountId: string; firstSession?: boolean; method?: LoginMethod };
     const sessionId = await startSession(deps, req, reply, {
-      accountId: b.accountId, level: b.level ?? 'full', deviceLabel: 'Test browser', method: 'passkey',
+      accountId: b.accountId, level: 'full', deviceLabel: 'Test browser', method: b.method ?? 'passkey',
       firstSession: b.firstSession ?? false,
     });
     return { sessionId };

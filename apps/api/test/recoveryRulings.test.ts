@@ -12,12 +12,10 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_MS } from '../src/auth/hold.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { verifyPassword } from '../src/auth/password.js';
 import { SIG } from './helpers/signature.js';
 import { accountIdByLoginName, addUnusedSecurityKey } from './helpers/accounts.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { Browser } from './helpers/totp.js';
 
@@ -51,10 +49,9 @@ const walletAction = (address: string): ConfirmAction => ({
 const OWNER_RULED_S110_CANCELS_ALL_WAITING_CHANGES = false;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await tradeApp({}, { leaked: fixture.list, addresses: fakeValidator }));
+  ({ app, deps, setNow: set } = await tradeApp({}, { addresses: fakeValidator }));
   setNow = (d) => {
     now = d;
     set(d);
@@ -97,8 +94,8 @@ async function sessionOf(b: Browser): Promise<string> {
   return (res.json() as Array<{ id: string; current: boolean }>).find((s) => s.current)!.id;
 }
 
-const tokenFor = async (b: Browser, accountId: string, action: ConfirmAction = { kind: 'set-password' }) =>
-  issueConfirmToken(deps, { sessionId: await sessionOf(b), accountId, action, method: 'password' });
+const tokenFor = async (b: Browser, accountId: string, action: ConfirmAction = { kind: 'key-test' }) =>
+  issueConfirmToken(deps, { sessionId: await sessionOf(b), accountId, action, method: 'passkey' });
 
 /** A second (weak, password) session of the account in a new browser, approved from `t.b`: the thief. */
 async function thiefSession(t: { b: Browser; name: string }): Promise<Browser> {

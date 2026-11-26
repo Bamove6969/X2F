@@ -279,13 +279,12 @@ describe('a banned PGP key can never be used again', () => {
     const other = await seedAccount(deps, { loginName: uniq('keyadder') });
     const br = new Browser(app);
     expect((await br.post('/t/login', { accountId: other })).statusCode).toBe(200);
-    // A strong session with its confirm (this test is about the key, not the confirm or the hold).
-    const sid = (await deps.db.query<{ id: string }>("update sessions set strength = 'strong' where account_id = $1 returning id", [other])).rows[0]!.id;
+    // A session with its confirm (this test is about the key, not the confirm).
+    const sid = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [other])).rows[0]!.id;
     const confirmToken = await issueConfirmToken(deps, { sessionId: sid, accountId: other, action: { kind: 'add-method', method: 'pgp' }, method: 'passkey' });
     const start = await br.post('/v1/account/pgp/start', { publicKey: b.key.publicKey, confirmToken });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, b.key.privateKey));
-    await deps.db.query('delete from account_holds where account_id = $1', [other]);
     const finish = await br.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(finish.statusCode, finish.body).toBe(409);
     expect(finish.json()).toEqual({ error: 'key-unavailable' });

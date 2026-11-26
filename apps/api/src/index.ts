@@ -1,13 +1,13 @@
 export {
   buildApi, BODY_LIMIT, LISTEN_OPTIONS, WITHHELD_MESSAGE,
-  type AddressValidator, type AttestationPolicy, type BuildOptions, type Deps, type LeakedList, type PgpSigner,
+  type AddressValidator, type AttestationPolicy, type BuildOptions, type Deps, type PgpSigner,
 } from './app.js';
 export { assertSigningKeyFile, loadConfig, subkey, type Config, type Keyring } from './config.js';
 export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
 export {
-  ARGON2_SLOTS, KeyedBuckets, REGISTER_BUCKET, SECURITY_CHANGE_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
+  KeyedBuckets, REGISTER_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
 } from './limits.js';
 export { startRetention, type RetentionJob, type RetentionLog } from './retention.js';
 export { addAlert, type AlertKind } from './alerts.js';
@@ -24,16 +24,11 @@ export {
   requireSession, sessionPolicy, startSession, type AuthContext, type LoginMethod, type SessionLevel,
 } from './auth/sessions.js';
 export {
-  QUIET_LOCK_AT, QUIET_LOCK_MS, VISITOR_MISSES_BEFORE_LEAVING, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey,
-  throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
+  dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
 } from './auth/throttle.js';
 export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, assertTraderTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
 export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, optionalTermsSignature, type TermsSignature } from './termsSignature.js';
-export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
-export {
-  DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, pepperedPassword, verifyPassword, type StoredPassword,
-} from './auth/password.js';
 export {
   PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, insertPgpKey, issuePgpChallenge, loadPgpSigner,
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
@@ -45,19 +40,14 @@ export {
 } from './auth/approval.js';
 export {
   PRIMARY, allowedMethods, assertMethodAllowed, listMethods, methodAllowed, methodRoutes, needsAfter, ownerReady, pairAllowed,
-  parseFactor, passwordAllowed, removeMethod, type MethodEntry,
+  parseFactor, removeMethod, type MethodEntry,
 } from './auth/methods.js';
 export {
-  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, rewrapTotpSecrets, sealSecret, totpBox, totpRoutes,
+  TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, openSecret, rewrapTotpSecrets, sealSecret, totpBox, totpRoutes,
   verifyTotp,
 } from './auth/totp.js';
-export {
-  HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, endHoldByModerator, extendHoldByModerator, holdUntil, requireNotHeld, settleDueHolds,
-  type Hold, type HoldReason, type PendingChange,
-} from './auth/hold.js';
-export { MAX_HOLD_CHANGES, settleDueChanges } from './auth/holdChanges.js';
-export { STRONG_COMBOS, loginStrength, type LoginFactorKind, type LoginStrength } from './auth/strength.js';
-export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
+export { LIVE_SESSION_ROUTES, SECURITY_CHANGE_ROUTES, requireLiveSessionInTx, withTx } from './auth/liveSession.js';
+export { RECOVERY_CODE_COUNT, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
 export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
@@ -68,7 +58,7 @@ export {
 } from './auth/webauthn.js';
 export { moneroAddressValidator } from './wallets/address.js';
 export {
-  LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, purgeRemovedWalletAddresses,
+  LABEL_MAX, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, purgeRemovedWalletAddresses,
   usableWallets, walletRoutes, walletRule, type Wallet, type WalletApp, type WalletRule,
 } from './wallets/routes.js';
 export {

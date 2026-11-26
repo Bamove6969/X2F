@@ -24,9 +24,9 @@ import {
 const byNo = (n: number) => ABILITIES.find((a) => a.no === n)!;
 
 describe('the abilities catalogue', () => {
-  it('has the 66 abilities of section B, numbered 1..66, in 9 groups, each id unique', () => {
-    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 66 }, (_, i) => i + 1));
-    expect(new Set(ABILITY_IDS).size).toBe(66);
+  it('has the 63 abilities of section B, numbered 1..66 without 46-48 (the hold boxes, gone with the holds on 26 Nov 2026), in 9 groups, each id unique', () => {
+    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 66 }, (_, i) => i + 1).filter((n) => n < 46 || n > 48));
+    expect(new Set(ABILITY_IDS).size).toBe(63);
     expect(ABILITY_GROUPS.map((g) => g.id)).toEqual(['offers', 'trades', 'chat', 'proof', 'disputes', 'wallets', 'team', 'security', 'account']);
     for (const a of ABILITIES) {
       expect(ABILITY_GROUPS.map((g) => g.id), a.id).toContain(a.group);
@@ -120,32 +120,11 @@ describe('the abilities catalogue', () => {
   });
 });
 
-// Review 2026-11-09 M1: hold v3's member rights (owner p4-8, migration 016) are the catalogue's rows
-// 46-48, and each one includes the ones before it.
-describe('the hold boxes (owner p4-8) after the hold v3 merge', () => {
-  it('rows 46-48 are grantable boxes; ending a hold is high risk', () => {
-    expect([46, 47, 48].map((n) => byNo(n).id)).toEqual(['hold-see', 'hold-cancel', 'hold-end']);
-    for (const n of [46, 47, 48]) expect(byNo(n).availability, byNo(n).id).toBe('grantable');
-    expect(byNo(48).risk).toBe('high');
-    expect(parseAbilities(['hold-end', 'trades-see-active'])).toEqual(['trades-see-active', 'hold-end']);
+describe('the roles', () => {
+  it('parseRoles accepts the two roles (the hold rights went with the holds, owner 26 Nov 2026), in their fixed order', () => {
+    expect(TEAM_ROLES).toEqual(['offers', 'trades']);
+    expect(parseRoles(['trades', 'offers'])).toEqual(['offers', 'trades']);
+    expect(legacyRoles(rolesToAbilities(['trades']))).toEqual(['trades']);
   });
 
-  it('a stronger hold box includes the weaker ones (hold-end covers hold-cancel covers hold-see), and never the reverse', () => {
-    expect(hasAbility(['hold-end'], 'hold-see')).toBe(true);
-    expect(hasAbility(['hold-end'], 'hold-cancel')).toBe(true);
-    expect(hasAbility(['hold-cancel'], 'hold-see')).toBe(true);
-    expect(hasAbility(['hold-cancel'], 'hold-end')).toBe(false);
-    expect(hasAbility(['hold-see'], 'hold-cancel')).toBe(false);
-    expect(hasAbility(['offers-see'], 'hold-see')).toBe(false);
-  });
-
-  it('parseRoles accepts the same five roles as hold v3 (and the confirm), in their fixed order; each hold role keeps what it included', () => {
-    expect(TEAM_ROLES).toEqual(['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end']);
-    expect(parseRoles(['hold-cancel', 'trades', 'hold-see'])).toEqual(['trades', 'hold-see', 'hold-cancel']);
-    expect(rolesToAbilities(['hold-see'])).toEqual(['hold-see']);
-    expect(rolesToAbilities(['hold-cancel'])).toEqual(['hold-see', 'hold-cancel']);
-    expect(rolesToAbilities(['hold-end'])).toEqual(['hold-see', 'hold-cancel', 'hold-end']);
-    expect(legacyRoles(rolesToAbilities(['trades', 'hold-end']))).toEqual(['trades', 'hold-see', 'hold-cancel', 'hold-end']);
-    expect(legacyRoles(['hold-end'])).toEqual(['hold-see', 'hold-cancel', 'hold-end']);
-  });
 });

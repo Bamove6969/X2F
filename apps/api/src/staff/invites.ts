@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { assertNewNames, assertStaffNameUnlike, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type CredentialKind } from '../auth/webauthn.js';
 import type { Queryable } from '../db/pool.js';

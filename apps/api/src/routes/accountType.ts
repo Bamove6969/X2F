@@ -16,11 +16,9 @@
  * - already a vendor: 200, nothing spent;
  * - no passkey, security key or PGP key on the account: 403 `vendor-needs-key`;
  * - the confirm token for `become-vendor` (403 `confirm-required` / `confirm-invalid`), earned
- *   with a passkey, security key or PGP key (the password route issues none for it; any other
- *   method 403 `method-not-allowed`, and the token is not spent);
+ *   with a passkey, security key or PGP key (any other method, such as a recovery-code login's
+ *   window, 403 `method-not-allowed`, and the token is not spent);
  * - then the switch, and alert `became-vendor`.
- * A session strength is not asked for (unlike team invites): the confirm with a passkey, security
- * key or PGP key is the requirement the owner set.
  *
  * There is no switching back to trader (owner answer Q77, 6 Nov 2026: open a new account instead):
  * any `type` but 'vendor' is 400 `bad-request`.
@@ -28,7 +26,7 @@
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm } from '../auth/confirm.js';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -69,15 +67,13 @@ const checkType: preHandlerAsyncHookHandler = async function (req: FastifyReques
 };
 
 export function accountTypeRoutes(app: FastifyInstance): void {
-  app.put('/v1/account/type', { preHandler: [requireSession({ kinds: ['trader'] }), checkType, requireNotHeld] }, async (req) => {
+  app.put('/v1/account/type', { preHandler: [requireSession({ kinds: ['trader'] }), checkType] }, async (req) => {
     const deps = req.server.deps;
     const now = deps.clock();
     const raw = (req.body as { confirmToken?: unknown }).confirmToken;
     const token = raw === undefined ? undefined : typeof raw === 'string' ? raw : '';
     await withTx(deps.db, async (c) => {
       await requireLiveSessionInTx(c, req.auth, now);
-      const hold = await holdInTx(c, settleOf(req), req.auth.accountId, now);
-      if (hold !== null) throw holdRefusal(hold.holdUntil);
       if ((await accountTypeOf(c, req.auth.accountId)) === 'vendor') return;
       if (!(await hasVendorKey(c, req.auth.accountId))) throw new ApiError(403, 'vendor-needs-key');
       const method = await redeemConfirm({ db: c, clock: deps.clock }, req, { kind: 'become-vendor' }, token);

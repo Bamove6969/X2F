@@ -6,7 +6,6 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { PURPOSE_NOTATION, RECORD_HEADER, RECORD_PURPOSE } from '../src/reputation/record.js';
-import { traderProfile } from '../src/reputation/profile.js';
 import { insertReview } from '../src/reviews/store.js';
 import { traderSummaries } from '../src/traders/summary.js';
 import { makeVendor } from './helpers/accounts.js';
@@ -117,28 +116,6 @@ describe('GET /v1/traders/:name', () => {
     const viewer = await trader();
     await postOffer(p);
     expect((await profile(viewer, p.displayName)).json()).toMatchObject({ offers: 1 });
-  });
-
-  // Review I2 (owner 1 Nov: during a recovery-code hold the account is offline to everyone).
-  it('during a recovery-code hold others see no presence and no offers, the account still sees its own, and nothing says why', async () => {
-    const p = await trader();
-    const viewer = await trader();
-    await postOffer(p);
-    const before = (await profile(viewer, p.displayName)).json() as { online: boolean; lastSeenAt: string | null };
-    expect(before.online).toBe(true);
-    expect(before.lastSeenAt).not.toBeNull();
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
-      [p.id, deps.clock(), new Date(deps.clock().getTime() + 86_400_000)],
-    );
-    const held = await profile(viewer, p.displayName);
-    expect(held.statusCode).toBe(200);
-    expect(held.json()).toMatchObject({ online: false, lastSeenAt: null, offers: 0 });
-    expect(held.body).not.toMatch(/hold|recovery|hidden/i);
-    // The account itself (as its own profile reads it) still sees its presence.
-    const own = await traderProfile(deps.db, p.id, p.id, deps.clock());
-    expect([own.online, own.lastSeenAt]).toEqual([true, before.lastSeenAt]);
-    expect(own.self).toBe(true);
   });
 
   // Lead call 18 Nov on OQ1: disabled (a ban, a staff switch-off) and closed accounts answer exactly as

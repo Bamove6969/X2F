@@ -7,7 +7,7 @@ import { assertNewNames, assertStaffNameUnlike, createAccount } from '../account
 import type { Deps } from '../app.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { COOKIE_ATTRS, ensureDeviceCookie } from '../auth/device.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { ownerReady } from '../auth/methods.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { openSession } from '../auth/sessions.js';
@@ -314,7 +314,7 @@ async function finishSetup(req: FastifyRequest, reply: FastifyReply) {
     await c.query('update challenges set used_at = $2 where id = $1', [setupId, now]);
     await c.query('delete from owner_setup_tries');
     const opened = await openSession(c, deps, req, reply, {
-      accountId: ownerId, level: 'full', deviceLabel, method: 'security-key', firstSession: true, strength: 'strong',
+      accountId: ownerId, level: 'full', deviceLabel, method: 'security-key', firstSession: true,
     });
     after = opened.after;
     // Last, just before the commit (the log lock rule).

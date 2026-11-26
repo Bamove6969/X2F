@@ -1,8 +1,8 @@
 // Sign-up login rules (owner 1 Nov 2026, register rows S-012, S-013, S-014; lead job J-09):
 // - S-012: a username with an authenticator code alone is no account and no login;
 // - S-013: a username alone is no account;
-// - S-014: only a strong password is accepted (10+ characters with upper and lower case, a number
-//   and a symbol, and not on the leaked list), at sign-up and at a password change.
+// - S-014 (a strong password) is gone with the passwords (owner 26 Nov 2026): there is no password
+//   route at all.
 // These pin the server's side; the live meter is the web's (apps/web/test/signupRules.test.tsx).
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
@@ -15,13 +15,12 @@ import { checkMemberName } from '../src/team/members.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { SIG } from './helpers/signature.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
+import { signUpWithKey } from './helpers/signup.js';
 import { Browser, addTestLogin, codeAt } from './helpers/totp.js';
 
 const T0 = new Date('2026-11-09T06:00:00Z');
 const HOUR = 3600_000;
 const TERMS = '2026-10-17';
-const GOOD = 'Correct-Horse-9';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -32,10 +31,9 @@ let step = 0;
 let n = 0;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -78,11 +76,6 @@ describe('S-013: a username alone is no account', () => {
     const before = await accountCount();
     const b = new Browser(app);
     const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG };
-    // Password sign-up without a password, or with an empty one.
-    expect((await b.post('/v1/register/password', base)).statusCode).toBe(400);
-    const empty = await b.post('/v1/register/password', { ...base, password: '' });
-    expect(empty.statusCode).toBe(400);
-    expect(empty.json().error).toBe('password-weak');
     // PGP sign-up without a key, or with an empty one.
     expect((await b.post('/v1/register/pgp/start', base)).statusCode).toBe(400);
     expect((await b.post('/v1/register/pgp/start', { ...base, publicKey: '' })).statusCode).toBe(400);
@@ -91,7 +84,7 @@ describe('S-013: a username alone is no account', () => {
     expect(finish.statusCode).toBeGreaterThanOrEqual(400);
     expect(finish.statusCode).toBeLessThan(500);
     // There is no names-only sign-up route.
-    for (const url of ['/v1/register', '/v1/register/name', '/v1/register/username']) {
+    for (const url of ['/v1/register', '/v1/register/name', '/v1/register/username', '/v1/register/password']) {
       expect((await b.post(url, base)).statusCode, url).toBe(404);
     }
     expect(await accountCount()).toBe(before);
@@ -99,14 +92,13 @@ describe('S-013: a username alone is no account', () => {
 });
 
 describe('S-012: a username with an authenticator code alone is no account and no login', () => {
-  it('there is no sign-up with an authenticator code, and the password route does not take one in place of a password', async () => {
+  it('there is no sign-up with an authenticator code', async () => {
     const before = await accountCount();
     const b = new Browser(app);
     const base = { ...names(), deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG };
     for (const url of ['/v1/register/totp', '/v1/register/totp/start', '/v1/register/totp/finish', '/v1/register/authenticator']) {
       expect((await b.post(url, { ...base, code: '123456' })).statusCode, url).toBe(404);
     }
-    expect((await b.post('/v1/register/password', { ...base, totp: '123456' })).statusCode).toBe(400);
     expect(await accountCount()).toBe(before);
   });
 
@@ -116,7 +108,7 @@ describe('S-012: a username with an authenticator code alone is no account and n
     expect((await b.post('/v1/account/totp/finish', { code: '123456' })).statusCode).toBe(401);
   });
 
-  it('a username with a correct authenticator code logs in nowhere: no backup login, no second factor without a password', async () => {
+  it('a username with a correct authenticator code logs in nowhere: no backup login, no second factor', async () => {
     const loginName = name('totp');
     const id = await seedAccount(deps, { loginName });
     const secret = await withTotp(id);
@@ -126,88 +118,52 @@ describe('S-012: a username with an authenticator code alone is no account and n
     // Hold model v3 (owner Q81, 2 Nov): an authenticator code is no backup login at all: 403 method-not-allowed (was a 400 input refusal).
     expect(backup.statusCode).toBe(403);
     expect(backup.json()).toMatchObject({ error: 'method-not-allowed' });
-    // The second-factor step finishes only a password login this browser started.
-    const second = await b.post('/v1/login/second-factor', { pendingId: '00000000-0000-0000-0000-000000000000', code });
-    expect(second.statusCode).toBe(400);
-    expect(second.json()).toEqual({ error: 'challenge-expired' });
+    // There is no second-factor step (it finished a password login).
+    expect((await b.post('/v1/login/second-factor', { pendingId: '00000000-0000-0000-0000-000000000000', code })).statusCode).toBe(404);
     expect(Object.keys(b.cookies)).not.toContain(SESSION_COOKIE);
     const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [id]);
     expect(rows).toEqual([]);
   });
-  // A password + authenticator account cannot drop the password and keep only the app: methods.test.ts
-  // ("a trader whose only primary method is a password keeps it; TOTP and recovery codes can go").
 });
 
-describe('S-014: only a strong password is accepted', () => {
-  const missing: Array<[string, string]> = [
-    ['Short-1a', 'length'],
-    ['correct-horse-9', 'upper'],
-    ['CORRECT-HORSE-9', 'lower'],
-    ['Correct-Horse-x', 'number'],
-    ['CorrectHorse99', 'symbol'],
-  ];
-
-  it('sign-up refuses a password that misses any one rule, and names the rule', async () => {
-    const before = await accountCount();
-    for (const [password, rule] of missing) {
-      const res = await new Browser(app).post('/v1/register/password', { ...names(), password, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
-      expect(res.statusCode, password).toBe(400);
-      expect(res.json(), password).toEqual({ error: 'password-weak', missing: [rule] });
-    }
-    const leaked = await new Browser(app).post('/v1/register/password', { ...names(), password: 'Password123!', deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
-    expect(leaked.json()).toEqual({ error: 'password-leaked' });
-    expect(await accountCount()).toBe(before);
-    const ok = await new Browser(app).post('/v1/register/password', { ...names(), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG });
-    expect(ok.statusCode).toBe(201);
-  });
-
-  it('a password change refuses the same weak and leaked passwords', async () => {
-    const id = await seedAccount(deps, { loginName: name('chg') });
+describe('no passwords (owner 26 Nov 2026)', () => {
+  it('there is no password sign-up, login, change or confirm', async () => {
     const b = new Browser(app);
-    expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
-    for (const [password, rule] of missing) {
-      const res = await b.put('/v1/account/password', { password });
-      expect(res.statusCode, password).toBe(400);
-      expect(res.json(), password).toEqual({ error: 'password-weak', missing: [rule] });
+    for (const [method, url] of [['POST', '/v1/register/password'], ['POST', '/v1/login/password'], ['PUT', '/v1/account/password'], ['POST', '/v1/confirm/password']] as const) {
+      const res = method === 'PUT' ? await b.put(url, { password: 'Correct-Horse-9' }) : await b.post(url, { password: 'Correct-Horse-9' });
+      expect(res.statusCode, url).toBe(404);
     }
-    expect((await b.put('/v1/account/password', { password: 'Password123!' })).json()).toEqual({ error: 'password-leaked' });
-    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
-    expect(rows).toEqual([]);
   });
 });
 
 // Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
 // Owner demo note #108 (17 Nov 2026): but no spaces inside it (the ends are still trimmed).
+/** A passkey sign-up with these names: the refusal of its start, else its finish. */
+const register = async (body: { displayName: string; loginName: string }) =>
+  (await signUpWithKey(new Browser(app), { ...body, deviceLabel: 'Test browser', acceptedTerms: TERMS })).res;
+
 describe('signup round 3: display names with Unicode letters and common symbols', () => {
   it('signs up as "  Cash$Ölaf " (stored as normalised), and the name is found again by any case', async () => {
     const b = new Browser(app);
     const shown = `Cash$Ölaf${n++}`;
-    const res = await b.post('/v1/register/password', {
-      displayName: `  ${shown} `, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
-    });
+    const res = await register({ displayName: `  ${shown} `, loginName: name('priv') });
     expect(res.statusCode).toBe(201);
     const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
     expect(rows).toEqual([{ display_name: shown, display_key: shown.toLowerCase() }]);
     // Someone else with the same name in another case is refused as taken.
-    const twin = await new Browser(app).post('/v1/register/password', {
-      displayName: shown.toUpperCase(), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
-    });
+    const twin = await register({ displayName: shown.toUpperCase(), loginName: name('priv') });
     expect(twin.statusCode).toBe(409);
   });
 
   it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (displayName) => {
-    const res = await new Browser(app).post('/v1/register/password', {
-      displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
-    });
+    const res = await register({ displayName, loginName: name('priv') });
     expect(res.statusCode).toBe(400);
   });
 
   it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
     const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Miranda${n++}` });
     const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
-    const res = await new Browser(app).post('/v1/register/password', {
-      displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
-    });
+    const res = await register({ displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv') });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
   });
@@ -215,9 +171,7 @@ describe('signup round 3: display names with Unicode letters and common symbols'
 
 // Review of third-signup-r3 (16 Nov 2026): the review's attack names, at the API.
 describe('signup round 3 review: invisible characters and staff look-alikes', () => {
-  const reg = (displayName: string) => new Browser(app).post('/v1/register/password', {
-    displayName, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
-  });
+  const reg = (displayName: string) => register({ displayName, loginName: name('priv') });
 
   it('B1: a pixel-identical copy of a trader name with a variation selector, and a blank name, are refused', async () => {
     const base = `Alice${n++}x`;
@@ -265,9 +219,8 @@ describe('signup round 3 review: invisible characters and staff look-alikes', ()
 
 // Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
 // names". New and changed values only: an account made before the rule keeps logging in.
-describe('note #108: no spaces in new usernames, display names or passwords', () => {
-  const reg = (body: Record<string, unknown>) =>
-    new Browser(app).post('/v1/register/password', { displayName: `Plain${n++}x`, loginName: name('priv'), password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG, ...body });
+describe('note #108: no spaces in new usernames or display names', () => {
+  const reg = (body: { displayName?: string; loginName?: string }) => register({ displayName: `Plain${n++}x`, loginName: name('priv'), ...body });
 
   it('sign-up refuses a display name with a space inside, and makes no account', async () => {
     const before = await accountCount();
@@ -286,23 +239,6 @@ describe('note #108: no spaces in new usernames, display names or passwords', ()
     expect(res.json()).toEqual({ error: 'login-name-invalid' });
   });
 
-  it('sign-up and a password change refuse a password with a space, naming the rule', async () => {
-    // Security review of #108: blank-looking characters that are not white space count too.
-    for (const password of ['Correct Horse-9', ' Correct-Horse-9', 'Correct-Horse-9 ', 'Correct\tHorse-9', 'Correct\u2800Horse-9', 'Correct\u3164Horse-9', 'Correct\u200bHorse-9']) {
-      const res = await reg({ password });
-      expect(res.statusCode, password).toBe(400);
-      expect(res.json(), password).toEqual({ error: 'password-weak', missing: ['space'] });
-    }
-    const id = await seedAccount(deps, { loginName: name('sp') });
-    const b = new Browser(app);
-    expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
-    const res = await b.put('/v1/account/password', { password: 'Correct Horse-9' });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'password-weak', missing: ['space'] });
-    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
-    expect(rows).toEqual([]);
-  });
-  // An account made before the rule keeps logging in: password.test.ts ("note #108").
 });
 
 it('migration 800 (610 on wip/third-demo-r3): no database check compares display_key with lower(display_name) any more', async () => {

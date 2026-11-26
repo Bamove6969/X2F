@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { PASSWORD_ONLY_SQL, passwordOnlyNow, setupOnlyAllows } from './setupOnly.js';
+import { FEW_METHODS_SQL, setupOnlyAllows, shortOfMethodsNow } from './setupOnly.js';
 import { siteBanAllows } from '../banState.js';
 import { UNCHOSEN_SESSION_HOURS, type AccountKind } from '@x2f/accounts';
 import type { BanReasonCode } from '@x2f/staff';
@@ -14,7 +14,6 @@ import { insideHours } from '../team/limits.js';
 import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 import { BOUND_COOKIE, boundCookieValid, boundSessionsOn, issueBoundCookie, sessionKeyOf } from './deviceBound.js';
-import type { LoginStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
 /** Plan 4 Task 4: the staff API's own session cookie (its own origin, so its own cookie jar too). */
@@ -55,10 +54,13 @@ const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 export const ONBOARDING_MS = 30 * 60_000;
+/** How long a recovery-code login confirms every change without a token (owner, 26 Nov 2026; confirm.ts). */
+export const RECOVERY_WINDOW_MS = 60 * 60_000;
 const DEVICE_LABEL_MAX = 60;
 
-export type SessionLevel = 'full' | 'recovery';
-export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password' | 'totp' | 'recovery-code';
+/** Every session is a full one (owner, 26 Nov 2026: a recovery-code login is a full session too). */
+export type SessionLevel = 'full';
+export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'recovery-code';
 
 /** What `requireSession` puts on the request. */
 export interface AuthContext {
@@ -67,6 +69,11 @@ export interface AuthContext {
   kind: AccountKind;
   level: SessionLevel;
   onboardingUntil: Date | null;
+  /**
+   * Owner, 26 Nov 2026: a session opened with the recovery code confirms every change without a
+   * token until then (RECOVERY_WINDOW_MS, confirm.ts); null for every other session.
+   */
+  recoveryUntil: Date | null;
   /**
    * When the session ends: a full trader session at the end of its chosen length (session length,
    * owner 2 Nov 2026); other sessions if nothing touches them again (the stored deadline or the
@@ -90,8 +97,8 @@ export interface AuthContext {
    */
   siteBanned: boolean;
   /**
-   * Review M2: the account's only login is a password and the sign-up window is over, so this
-   * session reaches only the set-up routes (setupOnly.ts); `me` says so.
+   * The account holds fewer than two kinds of login method and the sign-up window is over, so
+   * this session reaches only the set-up routes (setupOnly.ts); `me` says so.
    */
   setupOnly: boolean;
 }
@@ -114,12 +121,11 @@ export const STAFF_IDLE_HOURS = 2;
 export const TRADER_COOKIE_MS = 30 * DAY;
 
 /**
- * Idle and absolute lifetimes: staff and owner a fixed 2 h / 12 h; recovery 25 h / 48 h. A full
+ * Idle and absolute lifetimes: staff and owner a fixed 2 h / 12 h. A full
  * trader session has neither (null): it lasts the length chosen at login (`expires_at`), extended
  * only by "Stay logged in?" with a login method, and has no fixed maximum (owner, 2 Nov 2026).
  */
-export function sessionPolicy(kind: AccountKind, level: SessionLevel): { idleMs: number; absoluteMs: number } | null {
-  if (level === 'recovery') return { idleMs: 25 * HOUR, absoluteMs: 48 * HOUR };
+export function sessionPolicy(kind: AccountKind, _level: SessionLevel): { idleMs: number; absoluteMs: number } | null {
   if (kind === 'trader') return null;
   return { idleMs: STAFF_IDLE_HOURS * HOUR, absoluteMs: 12 * HOUR };
 }
@@ -182,21 +188,13 @@ export interface NewSession {
   deviceLabel: string;
   method: LoginMethod;
   firstSession: boolean;
-  holdUntil?: Date;
-  /**
-   * Task 17: how strong the login was (`loginStrength`). Default: a passkey, security key or (Q81,
-   * owner 6 Nov 2026) PGP key alone is strong; anything else single waits (`weak-single`). A
-   * password with its TOTP code passes 'strong'.
-   */
-  strength?: LoginStrength;
 }
 
 /**
  * The statements of a new session, inside the caller's transaction (`db` a client after `begin`).
  * Always mints a new token (a presented cookie is never reused, so a planted one cannot be fixed);
  * a session cookie the request carried is revoked; the device is trusted; later logins (not the
- * first session) add an alert. A recovery session stores `holdUntil` as its hold (Task 9's TOTP
- * backup login). Returns the session id and `after`, which the caller runs once the transaction
+ * first session) add an alert (a recovery-code login its own one). Returns the session id and `after`, which the caller runs once the transaction
  * has committed: it ends the replaced session's streams, pushes `new-login` to the account's
  * other devices and sets the cookie (nothing reaches the browser if the transaction rolls back).
  */
@@ -207,8 +205,6 @@ export async function openSession(
   reply: FastifyReply,
   a: NewSession,
 ): Promise<{ sessionId: string; after: () => void }> {
-  const strength: LoginStrength =
-    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' || a.method === 'pgp' ? 'strong' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -228,16 +224,10 @@ export async function openSession(
   // the member. Only a joined, not removed member of a live team; `for share` makes a removal
   // that runs at the same time wait, so it then ends this session too.
   if (row.kind === 'member') {
-    if (a.level !== 'full') throw new ApiError(401, 'not-authenticated');
-    // Hold model v3: the team account's lock first (the order of every account write; a
-    // recovery-code login logs the team out under it), then no member logs in while the team
-    // account is held (403 `recovery-hold`).
+    // The team account's lock first (the order of every account write; a recovery-code login logs
+    // the team out under it).
     const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
-    if (team.rows[0]) {
-      await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
-      const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
-      if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
-    }
+    if (team.rows[0]) await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
     const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null; hours: unknown }>(
       `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at, tm.hours
          from team_members tm join accounts t on t.id = tm.account_id
@@ -266,19 +256,17 @@ export async function openSession(
     replaced = old.rows[0] ?? null;
   }
   const { rows } = await db.query<{ id: string }>(
-    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, period_started_at, expires_at, hold_until, strength, member_id, app, bound_key)
-     values ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, $9, $10, $11, $12) returning id`,
+    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, period_started_at, expires_at, member_id, app, bound_key, recovery_until)
+     values ($1, $2, $3, $4, $5, $6, $6, $6, $7, $8, $9, $10, $11) returning id`,
     [
       member ? member.teamId : a.accountId, tokenHash(token), a.level, label,
       // A member's session never gets the sign-up window (its exemptions are the account owner's).
       a.firstSession && !member ? new Date(now.getTime() + ONBOARDING_MS) : null,
       now, expiresAt,
-      // Task 9: only a recovery session carries a hold (see `requireSession`'s `allowHeld`).
-      a.level === 'recovery' ? (a.holdUntil ?? null) : null,
-      strength,
       member?.id ?? null,
       realm.app,
       boundKey,
+      a.method === 'recovery-code' && !member ? new Date(now.getTime() + RECOVERY_WINDOW_MS) : null,
     ],
   );
   const sessionId = rows[0]!.id;
@@ -315,10 +303,8 @@ export async function openSession(
       await addAlert(db, member.teamId, 'team-member-login', { member: member.name, method: a.method, deviceLabel: label }, now);
     }
   } else if (!a.firstSession) {
-    if (a.level === 'recovery') {
-      const detail: Record<string, string> = { method: a.method, deviceLabel: label };
-      if (a.holdUntil) detail.holdUntil = a.holdUntil.toISOString();
-      await addAlert(db, a.accountId, 'recovery-login', detail, now);
+    if (a.method === 'recovery-code') {
+      await addAlert(db, a.accountId, 'recovery-login', { method: a.method, deviceLabel: label }, now);
     } else {
       await addAlert(db, a.accountId, 'new-login', { method: a.method, deviceLabel: label }, now);
     }
@@ -366,6 +352,7 @@ interface SessionRow {
   account_id: string;
   level: SessionLevel;
   onboarding_until: Date | null;
+  recovery_until: Date | null;
   created_at: Date;
   last_seen_at: Date;
   expires_at: Date;
@@ -373,7 +360,6 @@ interface SessionRow {
   kind: AccountKind;
   disabled_at: Date | null;
   terms_version: string | null;
-  hold_until: Date | null;
   member_id: string | null;
   member_live: boolean | null;
   member_abilities: string[] | null;
@@ -391,8 +377,8 @@ interface SessionRow {
    */
   site_ban_reason: BanReasonCode | null;
   site_ban_until: Date | null;
-  /** Review M2: a password and no other login on the account (setupOnly.ts PASSWORD_ONLY_SQL). */
-  password_only: boolean;
+  /** The account may hold fewer than two kinds of login method (setupOnly.ts FEW_METHODS_SQL). */
+  few_methods: boolean;
   /** S-085: the session is bound to a browser key; its bound cookie's hash and end. */
   bound: boolean;
   bound_token_hash: Buffer | null;
@@ -408,7 +394,7 @@ const SESSION_HOOK = Symbol('requireSession');
 /**
  * preHandler for routes that need a logged-in account. Defaults to full sessions of any kind.
  * 401 `not-authenticated` (missing, revoked, past its chosen length, idle- or absolute-expired); 403 `account-disabled`
- * (checked on every request); 403 `recovery-session` unless `allowRecovery`; 403
+ * (checked on every request); 403
  * `wrong-account-kind` when `kinds` excludes the account; 403 `terms-required` `{ version }` for a
  * trader on a stale Terms version unless `allowStaleTerms` (R10: only logout, me, terms, methods
  * and sessions routes set it, plus, by lead decision 2026-10-29 (Plan 3 Task 36), the routes that
@@ -417,22 +403,9 @@ const SESSION_HOOK = Symbol('requireSession');
  * a long-lived or self-reconnecting request such as `GET /v1/events` must never count as activity,
  * or an open tab would keep an idle staff session alive past its idle time (review 2026-10-27, I1).
  *
- * The 24-hour hold of a TOTP backup login fails closed (Task 9, P2-I1): a recovery session whose
- * `hold_until` is still ahead gets 403 `recovery-hold` `{ holdUntil }` on every recovery-allowed
- * route unless that route also sets `allowHeld` (only routes that change nothing, such as reading
- * the account or its methods). So every add-method route (PGP, WebAuthn, password) is held without
- * a per-route check; at exactly `hold_until` the session passes.
- *
- * One recorded exception (owner, 2026-10-29; Plan 5 Task 21): `POST /v1/feedback/form` sets
- * `allowHeld` although it writes a row, because the owner wants everyone who is refused, a held
- * backup session included, to be able to say so. It changes nothing about the account: a feedback
- * row, at most FEEDBACK_FORM_DAILY a day and one per FEEDBACK_FORM_MIN_GAP_S. Tested in
- * apps/api/test/feedbackForm.test.ts.
  */
 export function requireSession(
   opts: {
-    allowRecovery?: boolean;
-    allowHeld?: boolean;
     kinds?: AccountKind[];
     allowStaleTerms?: boolean;
     touch?: boolean;
@@ -456,14 +429,14 @@ export function requireSession(
     if (!token) throw new ApiError(401, 'not-authenticated');
     const now = deps.clock();
     const { rows } = await deps.db.query<SessionRow>(
-      `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
-              s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
+      `select s.id, s.account_id, s.level, s.onboarding_until, s.recovery_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
+              a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
               tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, tm.hours as member_hours, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until,
               sb.reason_code as site_ban_reason, sb.until as site_ban_until,
-              ${PASSWORD_ONLY_SQL} as password_only,
+              ${FEW_METHODS_SQL} as few_methods,
               s.bound_key is not null as bound, s.bound_token_hash, s.bound_until, s.bound_prev_hash, s.bound_prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
@@ -519,10 +492,6 @@ export function requireSession(
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
       if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');
     }
-    if (row.level === 'recovery' && !opts.allowRecovery) throw new ApiError(403, 'recovery-session');
-    if (row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime() && !opts.allowHeld) {
-      throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
-    }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
     // Plan 4 Task 27 (2026-10-29b): a site-banned account (its team members' sessions included)
     // reaches only the notice, and while something is unfinished what finishes it (banState.ts);
@@ -533,12 +502,12 @@ export function requireSession(
         throw new ApiError(403, 'banned', { kind: 'site', reasonCode: row.site_ban_reason, until: row.site_ban_until?.toISOString() ?? null });
       }
     }
-    // Review M2 (owner 16 Nov 2026: a password does not stand alone): outside its sign-up window a
-    // password-only account's session reaches only the routes that set up a second method
-    // (setupOnly.ts); every other route is 403 `second-method-required`.
+    // Owner 26 Nov 2026 (at least two kinds of login method): outside its sign-up window the session
+    // of an account holding fewer reaches only the routes that set up another method
+    // (setupOnly.ts); every other route is 403 `two-methods-required`.
     const windowOpen = row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime();
-    const setupOnly = row.password_only && !windowOpen && (await passwordOnlyNow(deps, row.account_id, now));
-    if (setupOnly && !setupOnlyAllows(req.method, req.routeOptions.url ?? '')) throw new ApiError(403, 'second-method-required');
+    const setupOnly = row.few_methods && !windowOpen && (await shortOfMethodsNow(deps, row.account_id, now));
+    if (setupOnly && !setupOnlyAllows(req.method, req.routeOptions.url ?? '')) throw new ApiError(403, 'two-methods-required');
     // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
     // member must have accepted the current Terms on their own login account too; the team
     // account's acceptance is the account owner's and never stands in for theirs.
@@ -567,6 +536,7 @@ export function requireSession(
       kind: row.kind,
       level: row.level,
       onboardingUntil: row.onboarding_until,
+      recoveryUntil: row.recovery_until,
       // The deadline as the row had it (an untouched request did not move it).
       expiresAt: policy === null ? row.expires_at : new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
       memberId: row.member_id,

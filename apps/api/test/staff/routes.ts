@@ -144,8 +144,6 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/past-rep/:id/reject', perm: 'reputation.review', allowed: MODERATORS, body: { reason: 'The archive shows another key.' } },
   { method: 'POST', url: '/staff/v1/past-rep/:id/revoke', perm: 'reputation.revoke', allowed: ['owner', 'senior'], body: { reason: 'The archive was edited later.' } },
   // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.
-  { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
-  { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 26: recommended account limits (bodies valid in shape; an unknown account or case: 404).
   { method: 'POST', url: '/staff/v1/accounts/:id/limit-recommendations', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { capUsd: 300, reason: 'x'.repeat(40) } },
   { method: 'POST', url: '/staff/v1/disputes/:code/limit-recommendations', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', capUsd: 300, reason: 'x'.repeat(40) } },

@@ -226,8 +226,8 @@ describe('team members (review PC1)', () => {
     );
     const token = randomBytes(32).toString('base64url');
     await deps.db.query(
-      `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, strength, app, member_id)
-       values ($1, $2, 'full', 'Test', $3, $3, $4, 'strong', 'trader', $5)`,
+      `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, app, member_id)
+       values ($1, $2, 'full', 'Test', $3, $3, $4, 'trader', $5)`,
       [teamId, createHash('sha256').update(token).digest(), now, new Date(now.getTime() + 2 * 3600_000), m.rows[0]!.id],
     );
     return { id: teamId, token };

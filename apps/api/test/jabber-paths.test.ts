@@ -38,12 +38,6 @@ const hex40 = () => randomBytes(20).toString('hex');
 
 /** One representative row per change table: its insert, an update of a change column, a bookkeeping-only update (if any). */
 const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: string; where: string }> = {
-  passwords: {
-    insert: `insert into passwords (account_id, hash, updated_at) values ($1, 'h', now())`,
-    change: `update passwords set updated_at = now() + interval '1 s', hash = 'h2' where account_id = $1`,
-    bookkeeping: `update passwords set hash = 'h3', pepper_id = 2 where account_id = $1`,
-    where: 'account_id = $1',
-  },
   totp: {
     insert: `insert into totp (account_id, secret_enc, created_at) values ($1, '\\x01', now())`,
     change: `update totp set created_at = now() + interval '1 s' where account_id = $1`,
@@ -80,11 +74,6 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update team_members set abilities = '{offers-see,offers-pause}' where account_id = $1`,
     // J-20: the first login has its own notice (kind team-member-first-login, queued by the login).
     bookkeeping: `update team_members set first_login_at = now() where account_id = $1`,
-    where: 'account_id = $1',
-  },
-  account_holds: {
-    insert: `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, now(), now() + interval '1 day', 'weak-change', '{}')`,
-    change: `update account_holds set hold_until = now() + interval '2 days' where account_id = $1`,
     where: 'account_id = $1',
   },
   // J-06 (migration 400): never deleted, so no delete path (CHANGE_TABLES ops).
@@ -254,7 +243,7 @@ describe('each change path queues exactly one notice per transaction', () => {
     try {
       await c.query('begin');
       await c.query('update accounts set one_device = true where id = $1', [a]);
-      await c.query(`insert into passwords (account_id, hash, updated_at) values ($1, 'h', now())`, [a]);
+      await c.query(`insert into totp (account_id, secret_enc, created_at) values ($1, '\\x01', now())`, [a]);
       await c.query('commit');
       await c.query('begin');
       await c.query('update accounts set idle_reminder_minutes = 30 where id = $1', [a]);

@@ -43,7 +43,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
       });
       expect(res.statusCode).toBe(200);
     }
-    const victim = await new Browser(app).post('/v1/login/password', { loginName: 'realuser1', password: 'x', deviceLabel: 'b' });
+    const victim = await new Browser(app).post('/v1/login/pgp/start', { key: 'x', loginName: 'realuser1' });
     expect(victim.statusCode).toBe(503);
     expect(victim.json()).toMatchObject({ error: 'busy' });
     // The owner's security-key login start is refused the same way.

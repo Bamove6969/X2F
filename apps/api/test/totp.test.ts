@@ -525,7 +525,7 @@ describe('POST /v1/confirm/password with TOTP', () => {
     const { id, b } = await trader();
     const secret = await enrol(b);
     setNow(at(STEP_MS));
-    const action = { kind: 'set-password' };
+    const action = { kind: 'key-test' };
     // No code: refused before any Argon2 work and counted as a password failure, so neither the
     // answer nor the throttle tells whether the password was right.
     const verify = vi.spyOn(argon2, 'verify');

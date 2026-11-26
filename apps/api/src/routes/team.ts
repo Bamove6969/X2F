@@ -61,14 +61,12 @@ import { SIGNED_BODY_LIMIT, checkTermsSignature } from '../termsSignature.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { gateChange, requireNotHeld, settleOf, stagedReply, weakRefusal } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
-import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
-import { assertVendor, requireVendor } from './accountType.js';
+import { requireVendor } from './accountType.js';
 import {
   type Caller,
   checkMemberLoginName,
@@ -76,7 +74,6 @@ import {
   createInvite,
   finishMember,
   inviteView,
-  liveMember,
   listMembers,
   memberNames,
   openInvite,
@@ -87,7 +84,7 @@ import {
 } from '../team/members.js';
 import { catalogueView, parseAbilities, parseRoles, rolesToAbilities, type TeamRole } from '../team/abilities.js';
 import { MAX_TEAM_MEMBERS } from '../team/perms.js';
-import { bandKey, bandView, hoursKey, insideHours, parseBand, parseHours, type MemberLimits } from '../team/limits.js';
+import { bandKey, hoursKey, insideHours, parseBand, parseHours, type MemberLimits } from '../team/limits.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -218,25 +215,8 @@ async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<v
   if ((r.rowCount ?? 0) === 0) throw new ApiError(400, 'challenge-expired');
 }
 
-/** The calling session and its settle deps, for the team writes' gate (`ownerWriteGate`). */
-const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId, settle: settleOf(req) });
-
-/**
- * preHandler after `requireSession` and before `requireConfirm` for an invite (owner 1 Nov 2026,
- * landing review I1; owner p11-21, S-104): 403 `weak-session` for a session whose login waits but
- * whose change would not be staged (inside its sign-up window, as `gateChange` decides), so it is
- * refused before it spends a confirm token. A weak session outside that window passes: its
- * invite's boxes are staged. Re-checked under the account lock in the write's transaction
- * (`createInvite`: `ownerWriteGate`, then `gateChange`).
- */
-const requireStageableSession: preHandlerAsyncHookHandler = async function (req) {
-  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null; onboarding_until: Date | null }>(
-    'select strength, onboarding_until from sessions where id = $1',
-    [req.auth.sessionId],
-  );
-  const r = rows[0];
-  if (waits(r?.strength) && r?.onboarding_until != null && r.onboarding_until.getTime() > req.server.deps.clock().getTime()) throw weakRefusal();
-};
+/** The calling session, for the team writes' gate (`ownerWriteGate`). */
+const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId });
 
 export function teamRoutes(app: FastifyInstance): void {
   // The account owner only: a trader's full session with no member (members get `owner-only`).
@@ -250,7 +230,7 @@ export function teamRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/team/invites',
     {
-      preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStageableSession, requireConfirm((req) => {
+      preHandler: [owner, checkInvite, requireVendor, requireConfirm((req) => {
         const i = input(req);
         return i.roles
           ? { kind: 'team-invite', name: i.name!.name, roles: i.roles.join(',') }
@@ -260,83 +240,50 @@ export function teamRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, abilities } = input(req);
-      // Owner p11-21 (S-104): a username-and-password session's invite goes out with no boxes and
-      // its boxes wait as a `team-abilities` change of the new member (both body shapes alike).
-      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-      const stage = waits(rows[0]?.strength)
-        ? (c: Parameters<typeof gateChange>[0], memberId: string) => gateChange(c, req, { kind: 'team-abilities', memberId, abilities })
-        : undefined;
-      const r = await createInvite(deps, caller(req), { name: name!, abilities }, stage);
-      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt, ...(r.staged ? stagedReply(r.staged) : {}) });
+      const r = await createInvite(deps, caller(req), { name: name!, abilities });
+      return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
     },
   );
 
   app.patch(
     '/v1/team/members/:id',
     {
-      preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireConfirm((req) => {
+      preHandler: [owner, checkRoles, requireVendor, requireConfirm((req) => {
         const i = input(req);
         return i.roles
           ? { kind: 'team-roles', memberId: idParam(req), roles: i.roles.join(',') }
           : { kind: 'team-abilities', memberId: idParam(req), abilities: i.abilities.join(',') };
       })],
     },
-    async (req, reply) => {
+    async (req) => {
       const deps = req.server.deps;
-      // Both body shapes end here as the same boxes (`{ roles }` mapped by `rolesToAbilities`), so
-      // the strength decision below is one branch for both: a weak `{ abilities }` cannot skip it.
+      // Both body shapes end here as the same boxes (`{ roles }` mapped by `rolesToAbilities`).
       const { abilities } = input(req);
-      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-      if (!waits(rows[0]?.strength)) return setAbilities({ ...deps, events: req.server.events }, caller(req), idParam(req), abilities);
-      // Hold model v3: staged under the account lock (`gateChange`), for a live member only, and
-      // (owner 2 Nov 2026) for a vendor account only, checked again under that lock. The set is
-      // checked again when it applies (`applyAbilities`).
-      const staged = await inTransaction(deps.db, async (c) => {
-        const g = await gateChange(c, req, { kind: 'team-abilities', memberId: idParam(req), abilities });
-        if (g === null) throw weakRefusal();
-        await assertVendor(c, req.auth.accountId);
-        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
-        return g;
-      });
-      return reply.code(202).send(stagedReply(staged));
+      return setAbilities({ ...deps, events: req.server.events }, caller(req), idParam(req), abilities);
     },
   );
 
   // J-20 (owner p7-4, p7-11): a member's trade-size band and working hours, bound by the confirm to
-  // exactly these. A strong session applies them at once; a username-and-password session's are
-  // staged and wait 24 h (S-106), as a boxes change.
+  // exactly these.
   app.put(
     '/v1/team/members/:id/limits',
     {
-      preHandler: [owner, checkLimits, requireVendor, requireNotHeld, requireConfirm((req) => {
+      preHandler: [owner, checkLimits, requireVendor, requireConfirm((req) => {
         const l = limitsInput(req);
         return { kind: 'team-limits', memberId: idParam(req), band: bandKey(l.band), hours: hoursKey(l.hours) };
       })],
     },
-    async (req, reply) => {
+    async (req) => {
       const deps = req.server.deps;
-      const limits = limitsInput(req);
-      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-      if (!waits(rows[0]?.strength)) return setLimits({ ...deps, events: req.server.events }, caller(req), idParam(req), limits);
-      const staged = await inTransaction(deps.db, async (c) => {
-        const g = await gateChange(c, req, { kind: 'team-limits', memberId: idParam(req), band: bandView(limits.band), hours: limits.hours });
-        if (g === null) throw weakRefusal();
-        await assertVendor(c, req.auth.accountId);
-        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
-        return g;
-      });
-      return reply.code(202).send(stagedReply(staged));
+      return setLimits({ ...deps, events: req.server.events }, caller(req), idParam(req), limitsInput(req));
     },
   );
 
   app.delete(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkId, requireNotHeld, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
+    { preHandler: [owner, checkId, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      // Owner p5-7: from a username-and-password session the removal is staged (202) and waits 24 h.
-      const staged = await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), (c) =>
-        gateChange(c, req, { kind: 'team-remove', memberId: idParam(req) }));
-      if (staged !== null) return reply.code(202).send(stagedReply(staged));
+      await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req));
       return reply.code(204).send();
     },
   );
@@ -471,7 +418,7 @@ export function teamRoutes(app: FastifyInstance): void {
     });
     // Landing review M1: two factors were just proven, so the member's first session is strong
     // (as every member login, login.ts), whatever the second factor's method default.
-    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: kind, firstSession: true, strength: 'strong' });
+    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: kind, firstSession: true });
     return reply.code(201).send({ status: 'ok' });
   });
 
@@ -502,7 +449,7 @@ export function teamRoutes(app: FastifyInstance): void {
       await finishMember(c, setup.memberAccountId, now);
     });
     // Landing review M1: two PGP keys were just proven, so the member's first session is strong.
-    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true, strength: 'strong' });
+    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true });
     return reply.code(201).send({ status: 'ok' });
   });
 }

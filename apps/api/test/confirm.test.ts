@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
 import { CONFIRM_TTL_MS, issueConfirmToken, redeemConfirm, requireConfirm } from '../src/auth/confirm.js';
-import { SESSION_COOKIE, requireSession, startSession } from '../src/auth/sessions.js';
+import { RECOVERY_WINDOW_MS, SESSION_COOKIE, requireSession, startSession } from '../src/auth/sessions.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 
@@ -31,9 +31,9 @@ beforeAll(async () => {
     set(d);
   };
   app.post('/t/login', async (req, reply) => {
-    const b = req.body as { accountId: string; firstSession?: boolean; level?: 'full' | 'recovery' };
+    const b = req.body as { accountId: string; firstSession?: boolean; method?: 'passkey' | 'recovery-code' };
     const sessionId = await startSession(deps, req, reply, {
-      accountId: b.accountId, level: b.level ?? 'full', deviceLabel: 'Test', method: 'password', firstSession: b.firstSession ?? false,
+      accountId: b.accountId, level: 'full', deviceLabel: 'Test', method: b.method ?? 'passkey', firstSession: b.firstSession ?? false,
     });
     return { sessionId };
   });
@@ -68,15 +68,10 @@ beforeAll(async () => {
     '/t/add-method',
     {
       preHandler: [
-        requireSession({ allowRecovery: true }),
-        requireConfirm({ kind: 'add-method', method: 'passkey' }, { onboarding: true, recovery: true }),
+        requireSession(),
+        requireConfirm({ kind: 'add-method', method: 'passkey' }, { onboarding: true }),
       ],
     },
-    async () => ({ ok: true }),
-  );
-  app.post(
-    '/t/set-password',
-    { preHandler: [requireSession({ allowRecovery: true }), requireConfirm({ kind: 'set-password' })] },
     async () => ({ ok: true }),
   );
 });
@@ -92,13 +87,13 @@ beforeEach(() => {
 let n = 0;
 const name = () => `conf${String(++n).padStart(4, '0')}`;
 
-async function login(accountId: string, o: { firstSession?: boolean; level?: 'full' | 'recovery' } = {}) {
+async function login(accountId: string, o: { firstSession?: boolean; method?: 'passkey' | 'recovery-code' } = {}) {
   const res = await app.inject({ method: 'POST', url: '/t/login', headers: { origin: ORIGIN }, payload: { accountId, ...o } });
   expect(res.statusCode).toBe(200);
   return { token: res.cookies.find((c) => c.name === SESSION_COOKIE)!.value, sessionId: res.json<{ sessionId: string }>().sessionId };
 }
 
-async function session(o: { firstSession?: boolean; level?: 'full' | 'recovery' } = {}) {
+async function session(o: { firstSession?: boolean; method?: 'passkey' | 'recovery-code' } = {}) {
   const accountId = await seedAccount(deps, { loginName: name() });
   return { accountId, ...(await login(accountId, o)) };
 }
@@ -116,7 +111,7 @@ describe('confirm tokens', () => {
 
   it('binds a token to the exact address; a mismatch does not use it up; it works once', async () => {
     const s = await session();
-    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
     const wrong = await post('/t/add-wallet', s.token, { address: ADDR_B, confirmToken });
     expect(wrong.statusCode).toBe(403);
     expect(wrong.json()).toEqual({ error: 'confirm-invalid' });
@@ -129,7 +124,7 @@ describe('confirm tokens', () => {
   it('binds a token to the session it was issued to', async () => {
     const s = await session();
     const t = await login(s.accountId);
-    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
     const res = await post('/t/add-wallet', t.token, { address: ADDR_A, confirmToken });
     expect(res.json()).toEqual({ error: 'confirm-invalid' });
     expect((await post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken })).statusCode).toBe(200);
@@ -138,8 +133,8 @@ describe('confirm tokens', () => {
   it('expires at exactly 5:00 after issue; works at 4:59', async () => {
     expect(CONFIRM_TTL_MS).toBe(5 * MIN);
     const s = await session();
-    const t1 = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
-    const t2 = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
+    const t1 = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
+    const t2 = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
     setNow(new Date(T0.getTime() + 5 * MIN));
     expect((await post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken: t1 })).json()).toEqual({ error: 'confirm-invalid' });
     setNow(new Date(T0.getTime() + 5 * MIN - 1000));
@@ -148,7 +143,7 @@ describe('confirm tokens', () => {
 
   it('attaches the resolved action to req.confirmedAction, after a token and after an onboarding exemption (R17)', async () => {
     const s = await session();
-    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
     const res = await post('/t/confirmed-action', s.token, { address: ADDR_A, confirmToken });
     expect(res.json()).toEqual({ confirmed: walletAction(ADDR_A) });
     const o = await session({ firstSession: true });
@@ -159,14 +154,14 @@ describe('confirm tokens', () => {
   it('refuses a token for another action', async () => {
     const s = await session();
     const confirmToken = await issueConfirmToken(deps, {
-      sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'add-method', method: 'passkey' }, method: 'password',
+      sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'add-method', method: 'passkey' }, method: 'passkey',
     });
     expect((await post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken })).json()).toEqual({ error: 'confirm-invalid' });
   });
 
   it('lets only one of two parallel redemptions through', async () => {
     const s = await session();
-    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'password' });
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: 'passkey' });
     const results = await Promise.all([
       post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken }),
       post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken }),
@@ -197,7 +192,7 @@ describe('confirm tokens', () => {
   it('stores only hashes: the token SHA-256 and the action hash', async () => {
     const s = await session();
     const action = walletAction(ADDR_A);
-    const token = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action, method: 'password' });
+    const token = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action, method: 'passkey' });
     const { rows } = await deps.db.query<{ token_hash: Buffer; action_hash: string; expires_at: Date; account_id: string }>(
       'select token_hash, action_hash, expires_at, account_id from confirm_tokens where session_id = $1',
       [s.sessionId],
@@ -212,7 +207,7 @@ describe('confirm tokens', () => {
 
   it('records the method that proved it was them, and redeemConfirm hands it back (owner, 2026-10-23)', async () => {
     const s = await session();
-    for (const method of ['pgp', 'passkey', 'security-key', 'password'] as const) {
+    for (const method of ['pgp', 'passkey', 'security-key'] as const) {
       const token = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method });
       const res = await post('/t/redeem-method', s.token, { address: ADDR_A, confirmToken: token });
       expect(res.statusCode).toBe(200);
@@ -220,9 +215,9 @@ describe('confirm tokens', () => {
     }
   });
 
-  it('refuses to store a method other than pgp, passkey, security-key or password', async () => {
+  it('refuses to store a method other than pgp, passkey, security-key or recovery-code', async () => {
     const s = await session();
-    for (const method of ['totp', 'recovery-codes', 'onboarding', '']) {
+    for (const method of ['totp', 'password', 'recovery-codes', 'onboarding', '']) {
       await expect(
         issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A), method: method as 'pgp' }),
       ).rejects.toThrow();
@@ -251,22 +246,27 @@ describe('onboarding and recovery exemptions', () => {
     expect((await post('/t/first-wallet', s.token, { address: ADDR_A, first: true })).json()).toMatchObject({ error: 'confirm-required' });
   });
 
-  it('lets a recovery session through only where recovery is allowed', async () => {
-    const s = await session({ level: 'recovery' });
+  it('lets a recovery-code login through without a token inside its recovery window only (owner 26 Nov 2026)', async () => {
+    const s = await session({ method: 'recovery-code' });
     expect((await post('/t/add-method', s.token, {})).statusCode).toBe(200);
-    const res = await post('/t/set-password', s.token, {});
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'recovery-session' });
+    expect((await post('/t/add-wallet', s.token, { address: ADDR_A })).statusCode).toBe(200);
+    expect((await post('/t/redeem-method', s.token, { address: ADDR_A })).json()).toEqual({ method: 'recovery-code' });
+    setNow(new Date(T0.getTime() + RECOVERY_WINDOW_MS));
+    expect((await post('/t/add-wallet', s.token, { address: ADDR_A })).json()).toMatchObject({ error: 'confirm-required' });
+    // Another session of the account gets no window.
+    const other = await login(s.accountId);
+    setNow(T0);
+    expect((await post('/t/add-wallet', other.token, { address: ADDR_A })).json()).toMatchObject({ error: 'confirm-required' });
   });
 });
 
 describe('purgeExpired', () => {
   it('also deletes confirm tokens expired over 1 hour ago', async () => {
     const s = await session();
-    await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'set-password' }, method: 'password' });
-    await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'new-recovery-codes' }, method: 'password' });
+    await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'key-test' }, method: 'passkey' });
+    await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: { kind: 'new-recovery-codes' }, method: 'passkey' });
     await deps.db.query(`update confirm_tokens set expires_at = $2 where session_id = $1 and action_hash = $3`, [
-      s.sessionId, new Date(now.getTime() - 61 * MIN), await actionHash({ kind: 'set-password' }),
+      s.sessionId, new Date(now.getTime() - 61 * MIN), await actionHash({ kind: 'key-test' }),
     ]);
     await purgeExpired.run(deps.db, now);
     const { rows } = await deps.db.query('select action_hash from confirm_tokens where session_id = $1', [s.sessionId]);

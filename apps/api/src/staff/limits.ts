@@ -1,7 +1,7 @@
 import { LIMIT_STAGES, type KeyTapIntent, type LimitStage } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { loadDispute } from '../disputes/store.js';
 import { actorOf, body, codeOf, mayWork } from '../disputes/staffRoutes.js';
 import { ApiError } from '../errors.js';

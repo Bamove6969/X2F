@@ -18,7 +18,6 @@ import { pushOwnerAlert } from '../push/ownerAlert.js';
 import { appealWaiting, syncNoReviewerAlert } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
-import { refuseHeldTradeEvent } from '../trades/held.js';
 import { disputeGrant } from '../chat/grants.js';
 
 /**
@@ -343,13 +342,6 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
           // Task 18: only the account owner gets here (D-066); kept so a member route would log (the reason, never the note).
           await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
         },
-        // A held trade: the held account's own sessions are refused (403 recovery-hold); the
-        // partner may open one (owner G7; lead hold v3 review item 5 and minor). Checked under the
-        // trade row lock before the machine, as the trade events route does (lead re-verify 9 Nov
-        // m3): the held party is told recovery-hold, not the machine's too-early or wrong-state.
-        // Without `held` this never returns 'stop', so the partner's dispute falls through to the
-        // machine unchanged.
-        (client) => refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute'),
       );
     } catch (err) {
       if (err instanceof TradeRuleError) {
@@ -377,8 +369,6 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     let noReviewer = false;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
-        // A held trade's own account may not appeal while held (lead hold v3 review, minor).
-        await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         const s = await disputeSettings(client);
         const by = { kind: 'trader' as const, side };
         // Refused here, before anything is written, when the machine would refuse it: only a

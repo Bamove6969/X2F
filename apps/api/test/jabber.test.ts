@@ -4,7 +4,7 @@ import { createHmac, createPrivateKey, createPublicKey, hkdfSync, randomBytes } 
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { startHold, withTx } from '../src/auth/hold.js';
+import { withTx } from '../src/auth/liveSession.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
@@ -578,21 +578,6 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
 });
 
 describe('who may change it', () => {
-  it('a session whose login waits gets weak-session; during a hold every write gets recovery-hold', async () => {
-    const t = await withJabber();
-    await deps.db.query("update sessions set strength = 'weak-single', onboarding_until = null where account_id = $1", [t.id]);
-    for (const r of [
-      await t.browser.put('/v1/account/jabber/enabled', { on: false }),
-      await t.browser.delete('/v1/account/jabber'),
-      await t.browser.post('/v1/account/jabber/test', { address: address() }),
-    ]) expect(err(r)).toEqual({ status: 403, error: 'weak-session' });
-
-    const h = await withJabber();
-    await startHold(deps.db, h.id, deps.clock(), { reason: 'weak-change', startedBy: null });
-    expect(err(await h.browser.delete('/v1/account/jabber'))).toMatchObject({ status: 403, error: 'recovery-hold' });
-    expect((await h.browser.get('/v1/account/jabber')).json()).toMatchObject({ state: 'on' });
-  });
-
   it("a team member gets owner-only; a member's login change notifies the team account", async () => {
     const owner = await withJabber();
     const loginId = await seedAccount(deps, { loginName: `jmember${n}x`, displayName: `jm-${n}-placeholder`, kind: 'member' });

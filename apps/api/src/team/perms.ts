@@ -19,7 +19,7 @@ import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
 
-export { holdRightOf, HOLD_RIGHTS, legacyRoles, parseAbilities, parseRoles, rolesToAbilities, TEAM_ROLES, type HoldRight, type TeamRole } from './abilities.js';
+export { legacyRoles, parseAbilities, parseRoles, rolesToAbilities, TEAM_ROLES, type TeamRole } from './abilities.js';
 
 /** At most this many live members (open invites included) per account (owner, 2026-10-29c). */
 export const MAX_TEAM_MEMBERS = 3;

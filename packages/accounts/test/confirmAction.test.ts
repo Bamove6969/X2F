@@ -10,7 +10,6 @@ describe('describeAction', () => {
     [{ kind: 'add-wallets', addressesHash: 'ab12', addressEnds: 'q2k3Fz,abcdef' }, 'add 2 payout wallets ending …q2k3Fz, …abcdef'],
     [{ kind: 'add-method', method: 'passkey' }, 'add a login method (passkey)'],
     [{ kind: 'remove-method', method: 'pgp', id: 'm1' }, 'remove a login method (pgp)'],
-    [{ kind: 'set-password' }, 'set a new password'],
     [{ kind: 'new-recovery-codes' }, 'make new recovery codes'],
     [{ kind: 'add-device-key', signPublicHash: 'cd34' }, 'add a trade signing key'],
     [{ kind: 'team-roles', memberId: 'm1', roles: 'offers,trades' }, "change a team member's roles to Offers and Trades"],
@@ -33,7 +32,7 @@ describe('describeAction', () => {
 
 describe('actionHash', () => {
   test('is async (WebCrypto)', () => {
-    expect(actionHash({ kind: 'set-password' })).toBeInstanceOf(Promise);
+    expect(actionHash({ kind: 'set-login-name' })).toBeInstanceOf(Promise);
   });
 
   test('independent of key order', async () => {
@@ -51,11 +50,11 @@ describe('actionHash', () => {
   test('is SHA-256 hex of canonical JSON with sorted keys', async () => {
     const a: ConfirmAction = { kind: 'remove-method', method: 'pgp', id: 'm1' };
     expect(await actionHash(a)).toBe(sha256('{"id":"m1","kind":"remove-method","method":"pgp"}'));
-    expect(await actionHash({ kind: 'set-password' })).toBe(sha256('{"kind":"set-password"}'));
+    expect(await actionHash({ kind: 'set-login-name' })).toBe(sha256('{"kind":"set-login-name"}'));
   });
 
   test('different kinds differ', async () => {
-    expect(await actionHash({ kind: 'set-password' })).not.toBe(await actionHash({ kind: 'new-recovery-codes' }));
+    expect(await actionHash({ kind: 'set-login-name' })).not.toBe(await actionHash({ kind: 'new-recovery-codes' }));
   });
 
   test('non-ASCII input hashes its UTF-8 bytes', async () => {

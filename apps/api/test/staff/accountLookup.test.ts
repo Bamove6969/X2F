@@ -81,7 +81,7 @@ describe('GET /staff/v1/accounts/lookup', () => {
         positivePct: null,
         disputes: { won: 0, lost: 0 },
         stage: expect.any(String),
-        status: { bans: [], hold: null, frozen: false, lien: false },
+        status: { bans: [], frozen: false, lien: false },
       }],
     });
     expect(res.body).not.toContain(t.loginName);
@@ -109,7 +109,7 @@ describe('GET /staff/v1/accounts/lookup', () => {
     expect(JSON.stringify(entries)).not.toContain(trade.code);
   });
 
-  it('shows the bans in force, a running hold, a freeze; staff and the owner are never found', async () => {
+  it('shows the bans in force, a freeze; staff and the owner are never found', async () => {
     const t = await trader();
     const staffer = await seedStaff(deps, { role: 'mod' });
     const placer = (await seedStaff(deps, { role: 'senior' })).id;
@@ -119,15 +119,10 @@ describe('GET /staff/v1/accounts/lookup', () => {
        values (gen_random_uuid(), $1, 'trade', 'abuse', 'abuse', $2, 'staff-only note', $3, $4) returning id::text as id`,
       [t.id, until, placer, NOW],
     );
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
-      [t.id, NOW, new Date(NOW.getTime() + 24 * HOUR)],
-    );
     const s = await as('senior');
     const res = await lookup(s.b, t.displayName);
     expect(res.json().accounts[0].status).toEqual({
       bans: [{ id: rows[0]!.id, kind: 'trade', reasonCode: 'abuse', until: until.toISOString(), permanent: false }],
-      hold: { until: new Date(NOW.getTime() + 24 * HOUR).toISOString(), reason: 'recovery-code' },
       frozen: false,
       lien: false,
     });

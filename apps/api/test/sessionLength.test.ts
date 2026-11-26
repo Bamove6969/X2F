@@ -11,12 +11,12 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { sessionAccountType } from '../src/routes/account.js';
-import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, addUnusedKeys, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { signUpWithKey } from './helpers/signup.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { testApp } from './helpers/app.js';
 import { SIG } from './helpers/signature.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
@@ -24,7 +24,6 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const TERMS = '2026-10-17';
-const GOOD = 'Correct-Horse-9';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -33,9 +32,8 @@ let n = 0;
 let cleanup: () => Promise<void>;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
-  ({ app, deps, setNow } = await testApp({ leaked: fixture.list }));
+  cleanup = async () => {};
+  ({ app, deps, setNow } = await testApp({}));
   addTestLogin(app, deps);
 });
 
@@ -66,7 +64,7 @@ async function sessionOf(b: Browser): Promise<SessionInfo | null> {
   return (res.json() as { session: SessionInfo | null }).session;
 }
 
-async function loggedIn(accountId: string, o: { level?: 'full' | 'recovery' } = {}): Promise<Browser & { sessionId: string }> {
+async function loggedIn(accountId: string, o: { method?: 'passkey' | 'recovery-code' } = {}): Promise<Browser & { sessionId: string }> {
   const b = new Browser(app) as Browser & { sessionId: string };
   const res = await b.post('/t/login', { accountId, ...o });
   expect(res.statusCode, res.body).toBe(200);
@@ -79,9 +77,27 @@ async function trader(kind: 'trader' | 'staff' | 'owner' = 'trader') {
   return { id, b: await loggedIn(id) };
 }
 
+/** A passkey sign-up through the real routes (with an unused second kind of method). */
+async function keyTrader(prefix: string) {
+  const b = new Browser(app);
+  const name = `${prefix}${String(++n).padStart(5, '0')}x`;
+  const { res, auth } = await signUpWithKey(b, { displayName: `P${name}`, loginName: name, acceptedTerms: TERMS });
+  expect(res.statusCode, res.body).toBe(201);
+  const accountId = (await accountIdByLoginName(deps, name))!;
+  await addUnusedKeys(deps, accountId);
+  return { b, auth, accountId };
+}
+
+/** The confirm route with `auth`'s key for `action`: the finish's response. */
+async function keyConfirm(b: Browser, auth: SoftAuthenticator, action: object): Promise<LightMyRequestResponse> {
+  const st = await b.post('/v1/confirm/webauthn/start', { action });
+  const { challengeId, options } = st.json() as { challengeId: string; options: Parameters<SoftAuthenticator['authenticate']>[0] };
+  return b.post('/v1/confirm/webauthn/finish', { challengeId, response: auth.authenticate(options, ORIGIN) });
+}
+
 const setLength = (b: Browser, hours: unknown) => b.put('/v1/account/session/length', { hours });
 const extendToken = (b: Browser & { sessionId: string }, accountId: string) =>
-  issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action: { kind: 'extend-session' }, method: 'password' });
+  issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action: { kind: 'extend-session' }, method: 'passkey' });
 
 describe('choosing the session length', () => {
   it('a new trader session lasts 2 hours until a length is chosen, and me offers the choices with none chosen', async () => {
@@ -196,7 +212,7 @@ describe('"Stay logged in?": extending the session', () => {
     const bare = await b.post('/v1/account/session/extend', {});
     expect(bare.statusCode).toBe(403);
     expect(bare.json()).toEqual({ error: 'confirm-required', action: 'extend-session' });
-    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-password' }, method: 'password' });
+    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'key-test' }, method: 'passkey' });
     expect(errorOf(await b.post('/v1/account/session/extend', { confirmToken: wrong }))).toBe('confirm-invalid');
     const token = b.cookies[SESSION_COOKIE];
     const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
@@ -281,16 +297,14 @@ describe('"Stay logged in?": extending the session', () => {
     expect(errorOf(await b.post('/v1/account/session/extend', { confirmToken: token }))).toBe('confirm-invalid');
   });
 
-  it('works with the password alone, through the real confirm route (owner: any login method)', async () => {
-    const b = new Browser(app);
-    const name = `pw${String(++n).padStart(5, '0')}x`;
-    const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
-    expect(reg.statusCode, reg.body).toBe(201);
+  it('works through the real confirm route with the passkey (owner: any login method)', async () => {
+    const { b, auth } = await keyTrader('pw');
     expect((await setLength(b, 2)).statusCode).toBe(200);
     at(2 * HOUR - MIN);
-    const miss = await b.post('/v1/confirm/password', { password: 'Wrong-Horse-9', action: { kind: 'extend-session' } });
+    const other = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const miss = await keyConfirm(b, other, { kind: 'extend-session' });
     expect(miss.statusCode).toBe(401);
-    const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
+    const ok = await keyConfirm(b, auth, { kind: 'extend-session' });
     expect(ok.statusCode, ok.body).toBe(200);
     const { confirmToken } = ok.json() as { confirmToken: string };
     const res = await b.post('/v1/account/session/extend', { confirmToken });
@@ -346,19 +360,6 @@ describe('"Stay logged in?": extending the session', () => {
     expect(await sessionOf(b)).toMatchObject({ lengthHours: 2, expiresAt: iso(3 * HOUR) });
   });
 
-  it('an account in a 24-hour hold can still extend its session (owner G8)', async () => {
-    const { id, b } = await trader();
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, pending_change, started_methods, started_by)
-       values ($1, $2, $3, 'weak-change', null, '{}', null)`,
-      [id, T0, new Date(T0.getTime() + DAY)],
-    );
-    at(HOUR);
-    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 4 });
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(5 * HOUR) });
-  });
-
   it('extending raises no alert (owner G9)', async () => {
     const { id, b } = await trader();
     const count = async () => Number((await deps.db.query<{ n: string }>('select count(*) as n from alerts where account_id = $1', [id])).rows[0]!.n);
@@ -368,29 +369,11 @@ describe('"Stay logged in?": extending the session', () => {
     expect(await count()).toBe(before);
   });
 
-  it('an account with an authenticator code may still extend with its password alone (owner G10); other confirms still need the code', async () => {
-    const b = new Browser(app);
-    const name = `pt${String(++n).padStart(5, '0')}x`;
-    const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
-    expect(reg.statusCode, reg.body).toBe(201);
-    const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);
-    await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [rows[0]!.account_id, randomBytes(48), T0]);
-    expect((await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } })).statusCode).toBe(401);
-    const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
-    expect(ok.statusCode, ok.body).toBe(200);
-    const res = await b.post('/v1/account/session/extend', { ...(ok.json() as { confirmToken: string }), hours: 2 });
-    expect(res.statusCode, res.body).toBe(200);
-  });
-
   it('a session on old Terms can still prove itself to stay logged in, and only for that (review M5)', async () => {
-    const b = new Browser(app);
-    const name = `ps${String(++n).padStart(5, '0')}x`;
-    const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
-    expect(reg.statusCode, reg.body).toBe(201);
-    const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);
-    await deps.db.query(`update accounts set terms_version = '2000-01-01' where id = $1`, [rows[0]!.account_id]);
-    expect(errorOf(await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } }))).toBe('terms-required');
-    const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
+    const { b, auth, accountId } = await keyTrader('ps');
+    await deps.db.query(`update accounts set terms_version = '2000-01-01' where id = $1`, [accountId]);
+    expect(errorOf(await b.post('/v1/confirm/webauthn/start', { action: { kind: 'add-method', method: 'pgp' } }))).toBe('terms-required');
+    const ok = await keyConfirm(b, auth, { kind: 'extend-session' });
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await b.post('/v1/account/session/extend', ok.json() as { confirmToken: string })).statusCode).toBe(200);
   });
@@ -414,14 +397,6 @@ describe('who has a session length', () => {
       expect(errorOf(await setLength(b, 2))).toBe('wrong-account-kind');
       expect(errorOf(await b.post('/v1/account/session/extend', {}))).toBe('wrong-account-kind');
     }
-  });
-
-  it('a backup (recovery) session keeps its own rules', async () => {
-    const id = await seedAccount(deps, { loginName: `rec${String(++n).padStart(4, '0')}x` });
-    const b = await loggedIn(id, { level: 'recovery' });
-    expect(await sessionOf(b)).toBeNull();
-    expect(errorOf(await setLength(b, 2))).toBe('recovery-session');
-    expect(errorOf(await b.post('/v1/account/session/extend', {}))).toBe('recovery-session');
   });
 
   async function member(abilities: string[] = ['trades-see-active']) {
@@ -454,7 +429,7 @@ describe('who has a session length', () => {
     await insertPgpKey(deps.db, deps.config, { accountId: loginId, fingerprint: own.fingerprint, armored: own.publicKey, now: deps.clock() });
     await insertPgpKey(deps.db, deps.config, { accountId: teamId, fingerprint: owners.fingerprint, armored: owners.publicKey, now: deps.clock() });
     // Any other confirm stays the account owner's (Task 18: members get owner-only).
-    expect(errorOf(await m.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } }))).toBe('owner-only');
+    expect(errorOf(await m.post('/v1/confirm/pgp/start', { action: { kind: 'become-vendor' } }))).toBe('owner-only');
     at(2 * HOUR - 4 * MIN);
     const start = await m.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } });
     expect(start.statusCode, start.body).toBe(200);
@@ -507,8 +482,6 @@ describe('who has a session length', () => {
     await insertPgpKey(deps.db, deps.config, { accountId: teamId, fingerprint: owners.fingerprint, armored: owners.publicKey, now: deps.clock() });
     expect(errorOf(await m.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } }))).toBe('method-not-allowed');
     expect(errorOf(await m.post('/v1/confirm/webauthn/start', { action: { kind: 'extend-session' } }))).toBe('method-not-allowed');
-    // A member has no password: that confirm stays the owner's.
-    expect(errorOf(await m.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } }))).toBe('owner-only');
   });
 
 });
@@ -564,12 +537,9 @@ describe('the idle reminder (owner, Q75): a reminder in personal settings, never
     expect(await reminderOf(m)).toBe(60);
   });
 
-  it('staff and backup sessions have none', async () => {
+  it('staff sessions have none', async () => {
     // (One owner account per database: the owner's refusal is the same kinds check, in "who has a session length".)
     const { b } = await trader('staff');
     expect(errorOf(await setReminder(b, 30))).toBe('wrong-account-kind');
-    const id = await seedAccount(deps, { loginName: `irec${String(++n).padStart(4, '0')}x` });
-    const r = await loggedIn(id, { level: 'recovery' });
-    expect(errorOf(await setReminder(r, 30))).toBe('recovery-session');
   });
 });

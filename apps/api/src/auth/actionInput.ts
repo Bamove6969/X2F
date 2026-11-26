@@ -3,7 +3,7 @@ import { ApiError } from '../errors.js';
 import { parseAbilities, TEAM_ROLES as ROLE_ORDER } from '../team/abilities.js';
 import { bandFromKey, hoursFromKey } from '../team/limits.js';
 
-const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes'];
+const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes'];
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS_END = /^[1-9A-HJ-NP-Za-km-z]{1,6}$/; // base58, as Monero addresses are written
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -36,7 +36,6 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'add-wallets': { addressesHash: (v) => HEX64.test(v), addressEnds: (v) => ADDRESS_ENDS.test(v) },
   'add-method': { method: (v) => (METHODS as readonly string[]).includes(v) },
   'remove-method': { method: (v) => (METHODS as readonly string[]).includes(v), id: (v) => ID.test(v) },
-  'set-password': {},
   'set-login-name': {},
   'new-recovery-codes': {},
   'set-one-device': { on: (v) => v === 'on' || v === 'off' },

@@ -5,7 +5,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { startHold, withTx } from '../src/auth/hold.js';
+import { withTx } from '../src/auth/liveSession.js';
 import { startDispute } from '../src/disputes/store.js';
 import { sendDueNotices } from '../src/jabber/outbox.js';
 import { RESEND_WAIT_S } from '../src/jabber/routes.js';
@@ -205,16 +205,6 @@ describe('changing the picks is itself an account change, told to the address (s
 });
 
 describe('who may change the picks', () => {
-  it('a waiting (weak) session gets weak-session; during a hold the write gets recovery-hold', async () => {
-    const t = await withJabber();
-    await deps.db.query("update sessions set strength = 'weak-single', onboarding_until = null where account_id = $1", [t.id]);
-    expect(err(await t.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }))).toEqual({ status: 403, error: 'weak-session' });
-    const h = await withJabber();
-    await startHold(deps.db, h.id, deps.clock(), { reason: 'weak-change', startedBy: null });
-    expect(err(await h.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false }))).toMatchObject({ status: 403, error: 'recovery-hold' });
-    for (const x of [t, h]) expect((await x.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
-  });
-
   it('a team member gets owner-only, for the list and the change', async () => {
     const owner = await withJabber();
     const loginId = await seedAccount(deps, { loginName: `evmember2${n}x`, displayName: `em2-${n}-placeholder`, kind: 'member' });

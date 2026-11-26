@@ -252,10 +252,7 @@ export async function lockNames(db: Queryable): Promise<void> {
  * login name for `self` (null for a new account) in both namespaces: no account's display key
  * equals it (review I1 A), and no other account holds its tag under any key of the ring. With
  * `displayKey`, also that no account's login tag is that display name's (review I1 B: a display
- * name may never be someone's private login name). A login name waiting out an account's 24-hour
- * hold (`account_holds.pending_change`) or among the changes waiting their 24 h (`hold_changes`, hold
- * model v3), of kind `login-name`, its tag under its key id, counts as taken in both namespaces too
- * (review round 2 N-M1), and so does a name on the ban list (owner 2 Nov 2026, bans.ts: a banned
+ * name may never be someone's private login name). A name on the ban list (owner 2 Nov 2026, bans.ts: a banned
  * display or login name, in either namespace). One query; the tags are computed by the caller.
  */
 /** Every banned name is out of both namespaces (owner 2 Nov 2026, the ban list; bans.ts). */
@@ -267,24 +264,17 @@ async function namesTaken(
   o: { lock: boolean } = { lock: true },
 ): Promise<boolean> {
   if (o.lock) await lockNames(db);
-  const pending = (ids: number) =>
-    `exists (select 1 from (select account_id, pending_change as c from account_holds
-                            union all select account_id, change from hold_changes) h
-              where h.c->>'kind' = 'login-name' and h.account_id is distinct from $4
-                and ((h.c->>'keyId')::smallint, decode(h.c->>'tag', 'base64'))
-                    in (select * from unnest($${ids}::smallint[], $${ids + 1}::bytea[])))`;
   const { rows } = await db.query<{ taken: boolean }>(
     `select exists (select 1 from accounts where display_key = $1)
          or exists (select 1 from accounts a where ${loginTagMatch('a', 2)} and a.id is distinct from $4)
          or exists (select 1 from accounts a where ${loginTagMatch('a', 5)} and a.id is distinct from $4)
-         or ${pending(2)} or ${pending(5)}
          or ${bannedTagSql(BANNED_NAMES, 2)} or ${bannedTagSql(BANNED_NAMES, 5)} as taken`,
     [q.loginKey, q.login.ids, q.login.tags, q.self, q.display?.ids ?? [], q.display?.tags ?? []],
   );
   return rows[0]!.taken;
 }
 
-/** True when `loginKey` is taken in either namespace (under `NAMES_LOCK`, in the caller's transaction); Task 17 checks it before a login name waits out the hold. */
+/** True when `loginKey` is taken in either namespace (under `NAMES_LOCK`, in the caller's transaction). */
 export async function loginNameTaken(db: Queryable, config: Config, accountId: string, loginKey: string): Promise<boolean> {
   return namesTaken(db, { self: accountId, loginKey, login: loginTags(config, loginKey), display: null });
 }

@@ -38,8 +38,8 @@ beforeAll(async () => {
     set(d);
   };
   addTestLogin(app, deps);
-  app.get('/t/recovery-ok', { preHandler: requireSession({ allowRecovery: true }) }, async () => ({ ok: true }));
-  app.get('/t/held-ok', { preHandler: requireSession({ allowRecovery: true, allowHeld: true }) }, async () => ({ ok: true }));
+  app.get('/t/recovery-ok', { preHandler: requireSession() }, async () => ({ ok: true }));
+  app.get('/t/held-ok', { preHandler: requireSession() }, async () => ({ ok: true }));
   key = await genKey();
 });
 
@@ -289,7 +289,7 @@ describe('backup login with a recovery code', () => {
     const b = new Browser(app);
     expect((await backup(b, username, 'recovery-code', codes[0]!)).statusCode).toBe(200);
     for (const [url, body] of [
-      ['/v1/confirm/password', { password: 'x', action: { kind: 'set-password' } }],
+      ['/v1/confirm/password', { password: 'x', action: { kind: 'key-test' } }],
       ['/v1/account/recovery-codes', {}],
       ['/v1/account/totp/start', {}],
     ] as const) {

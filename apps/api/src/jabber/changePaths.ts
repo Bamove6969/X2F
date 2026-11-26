@@ -48,11 +48,6 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     },
   },
   {
-    table: 'passwords', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'updated_at'],
-    bookkeeping: { hash: 'rehashed under the current pepper at login (updated_at stays)', pepper_id: 'rehash' },
-  },
-  {
     table: 'totp', accountColumn: 'account_id', ops: ALL,
     changes: ['account_id', 'created_at'],
     bookkeeping: { secret_enc: 'rewrapped under the current key (rewrap-totp)', last_step: 'advanced by every login code' },
@@ -96,11 +91,6 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {
       first_login_at: "set once by the member's first login, which queues its own notice (kind team-member-first-login, J-20)",
     },
-  },
-  {
-    table: 'account_holds', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'started_at', 'hold_until', 'reason', 'pending_change', 'started_methods', 'started_by'],
-    bookkeeping: {},
   },
   {
     // J-06 (migration 400): a lien on the account and a 1% it owes are changes to it, like a freeze
@@ -234,8 +224,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_payout_addresses.staff_id': 'staff records: a staff member\'s payout address (added with a security-key tap)',
   // Batch 4 (lead default, owner p11-119): silent.
   // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.
-  'hold_changes.account_id': 'a draft or waiting change (hold v3); the change notifies when it applies, through the table it writes',
-  'held_trades.account_id': 'the trades a hold pauses, kept by the hold job; the hold itself notifies (account_holds)',
   'recovery_code_reveals.account_id': 'a one-time reveal of the new recovery code after a recovery-code login (a login step)',
   'trader_notes.account_id': "the account's own private notes on traders (staff-like records of its own)",
   'trader_notes.about_account_id': 'the trader a note is about: never told (private notes)',

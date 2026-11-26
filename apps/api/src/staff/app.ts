@@ -27,7 +27,6 @@ import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
-import { staffHoldRoutes } from './holds.js';
 import { staffBanRoutes } from './bans.js';
 import { staffAccountLookupRoutes } from './accountLookup.js';
 import { staffLimitRoutes } from './limits.js';
@@ -193,7 +192,6 @@ export async function buildStaffApi(
   // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
   staffPastRepRoutes(app);
   staffReviewDisputeRoutes(app);
-  staffHoldRoutes(app);
   // Plan 4 Task 26: account limits a moderator recommends and a senior moderator or the owner decides.
   staffLimitRoutes(app);
   // Plan 4 Task 27: ban stages, placed and lifted by a key tap.

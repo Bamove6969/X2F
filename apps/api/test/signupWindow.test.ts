@@ -1,17 +1,17 @@
 // Security review of sign-up v2 (12 Nov 2026), M1: the creating session's sign-up window
 // (`onboarding_until`, 30 minutes) lets a method be ADDED without confirm-it's-you, never REPLACED,
 // and it closes when sign-up ends (`POST /v1/account/onboarding/end`, sent on reaching Welcome).
-// The reviewer's probe: replacing an existing password inside the window is refused (403).
+// The reviewer's probe was replacing an existing password inside the window (passwords are gone
+// since 26 Nov 2026; the same rule holds for every other method).
 // Re-verify R1 (P4 to P8, and WebAuthn like P6): the rule holds where each change WRITES, not only
 // where its ceremony starts, and `onboarding/end` uses up ceremonies opened on the window.
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
-import { hashPassword } from '../src/auth/password.js';
+import { randomBytes } from 'node:crypto';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { Browser, ORIGIN, addTestLogin, codeAt } from './helpers/totp.js';
@@ -29,9 +29,8 @@ let cleanup: () => Promise<void>;
 
 beforeAll(async () => {
   let set: (d: Date) => void;
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  cleanup = async () => {};
+  ({ app, deps, setNow: set } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -50,15 +49,28 @@ beforeEach(() => {
 
 /** A trader and its creating session (first session: inside the 30-minute sign-up window). */
 async function signedUp(): Promise<{ id: string; b: Browser }> {
-  const id = await seedAccount(deps, { loginName: `win${String(++n).padStart(4, '0')}` });
+  const id = await seedAccount(deps, { loginName: `win${String(++n).padStart(4, '0')}`, methods: false });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
   return { id, b };
 }
 
-async function withPassword(accountId: string, password = 'Correct-Horse-9'): Promise<void> {
-  const { hash, pepperId } = await hashPassword(deps.config, password);
-  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [accountId, hash, pepperId, now]);
+/** Methods written straight to the account (owner 26 Nov 2026: sign-up ends only with two kinds). */
+async function withKinds(accountId: string, kinds: Array<'totp' | 'security-key' | 'pgp'>): Promise<void> {
+  for (const k of kinds) {
+    if (k === 'totp') await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [accountId, randomBytes(48), now]);
+    if (k === 'security-key') {
+      await deps.db.query(
+        `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+         values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', 'Key', $4)`,
+        [accountId, randomBytes(32), randomBytes(77), now],
+      );
+    }
+    if (k === 'pgp') {
+      const key = await genKey();
+      await insertPgpKey(deps.db, deps.config, { accountId, fingerprint: key.fingerprint, armored: key.publicKey, now });
+    }
+  }
 }
 
 const confirmNeeded = (res: { statusCode: number; json: () => unknown }) => {
@@ -67,24 +79,8 @@ const confirmNeeded = (res: { statusCode: number; json: () => unknown }) => {
 };
 
 describe('M1(b): inside the sign-up window a method may be added, never replaced', () => {
-  it("the reviewer's probe: replacing an existing password inside the window gets 403", async () => {
-    const { id, b } = await signedUp();
-    await withPassword(id);
-    confirmNeeded(await b.put('/v1/account/password', { password: 'Another-Lantern-58' }));
-  });
-
-  it('adding a first password inside the window needs no confirmation (the PGP-then-password path)', async () => {
-    const { b } = await signedUp();
-    const res = await b.put('/v1/account/password', { password: 'Another-Lantern-58' });
-    expect(res.statusCode).toBe(200);
-    // A second one is a replacement.
-    confirmNeeded(await b.put('/v1/account/password', { password: 'Third-Harbour-77' }));
-  });
-
   it('a first authenticator app is added freely; another one would replace it and needs confirmation', async () => {
     const { id, b } = await signedUp();
-    // Owner, 16 Nov 2026: TOTP only with a password.
-    await withPassword(id);
     expect((await b.post('/v1/account/totp/start', {})).statusCode).toBe(200);
     await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [id, Buffer.from('x'), now]);
     confirmNeeded(await b.post('/v1/account/totp/start', {}));
@@ -108,12 +104,15 @@ describe('M1(b): inside the sign-up window a method may be added, never replaced
 describe('M1(a): the window closes when sign-up ends', () => {
   it('POST /v1/account/onboarding/end closes it: after that even a first method needs confirmation', async () => {
     const { id, b } = await signedUp();
+    // Owner 26 Nov 2026: with fewer than two kinds sign-up does not end (409, the window stays open).
+    expect((await b.post('/v1/account/onboarding/end', {})).json()).toEqual({ error: 'two-methods-required' });
+    await withKinds(id, ['totp', 'security-key']);
     const res = await b.post('/v1/account/onboarding/end', {});
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     const { rows } = await deps.db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where account_id = $1', [id]);
     expect(rows.map((r) => r.onboarding_until)).toEqual([null]);
-    confirmNeeded(await b.put('/v1/account/password', { password: 'Another-Lantern-58' }));
+    confirmNeeded(await b.post('/v1/account/pgp/start', { publicKey: (await genKey()).publicKey }));
     confirmNeeded(await b.post('/v1/account/recovery-codes', {}));
   });
 
@@ -122,6 +121,7 @@ describe('M1(a): the window closes when sign-up ends', () => {
     expect(anon.statusCode).toBe(401);
     const a = await signedUp();
     const other = await signedUp();
+    await withKinds(a.id, ['totp', 'security-key']);
     expect((await a.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
     expect((await other.b.post('/v1/account/recovery-codes', {})).statusCode).toBe(200);
   });
@@ -138,8 +138,6 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P4: two app enrolments opened in the window; once one finishes, the other cannot replace it', async () => {
     const { id, b } = await signedUp();
-    // Owner, 16 Nov 2026: TOTP only with a password.
-    await withPassword(id);
     const a = await totpStart(b);
     const second = await totpStart(b);
     expect((await totpFinish(b, second)).statusCode).toBe(200);
@@ -151,11 +149,8 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P5: an app enrolment opened in the window cannot finish after onboarding/end', async () => {
     const { id, b } = await signedUp();
-    // Owner, 16 Nov 2026: TOTP only with a password, and a password never alone, so sign-up can end
-    // here only with another way to log in too (a PGP key).
-    await withPassword(id);
-    const key = await genKey();
-    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
+    // Sign-up ends only with two kinds of login method (owner 26 Nov 2026).
+    await withKinds(id, ['pgp', 'security-key']);
     const s = await totpStart(b);
     expect((await b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
     const res = await totpFinish(b, s);
@@ -165,8 +160,6 @@ describe('re-verify R1: the window is checked again where the change writes', ()
 
   it('P5 (window run out): a start in the window, a finish after the 30 minutes, gets 403', async () => {
     const { id, b } = await signedUp();
-    // Owner, 16 Nov 2026: TOTP only with a password.
-    await withPassword(id);
     const s = await totpStart(b);
     // Still inside the 5-minute enrolment, but past the window: moved by a direct update of the session.
     await deps.db.query("update sessions set onboarding_until = $2 where account_id = $1", [id, new Date(now.getTime() - 1000)]);
@@ -192,6 +185,7 @@ describe('re-verify R1: the window is checked again where the change writes', ()
     const k = await genKey();
     const s = await b.post('/v1/account/pgp/start', { publicKey: k.publicKey });
     const code = codeOf(await decrypt(s.json().encryptedMessage, k.privateKey));
+    await withKinds(id, ['totp', 'security-key']);
     expect((await b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
     expect((await b.post('/v1/account/pgp/finish', { challengeId: s.json().challengeId, code })).statusCode).not.toBe(200);
     expect((await deps.db.query('select 1 from pgp_keys where account_id = $1', [id])).rows).toHaveLength(0);
@@ -215,22 +209,13 @@ describe('re-verify R1: the window is checked again where the change writes', ()
       const { id, b } = await signedUp();
       const auth = createSoftAuthenticator({ backedUp: kind === 'passkey', userVerified: true });
       const s = await b.post('/v1/account/webauthn/start', { kind });
+      await withKinds(id, ['totp', 'pgp']);
       expect((await b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
       const f = await b.post('/v1/account/webauthn/finish', { challengeId: s.json().challengeId, response: auth.register(s.json().options, ORIGIN) });
       expect(f.statusCode).not.toBe(201);
       expect((await deps.db.query('select 1 from webauthn_credentials where account_id = $1', [id])).rows).toHaveLength(0);
     });
   }
-
-  it('P7: two parallel first passwords; exactly one is set, the other gets 403', async () => {
-    const { b } = await signedUp();
-    const res = await Promise.all([
-      b.put('/v1/account/password', { password: 'Another-Lantern-58' }),
-      b.put('/v1/account/password', { password: 'Third-Harbour-77' }),
-    ]);
-    expect(res.map((r) => r.statusCode).sort()).toEqual([200, 403]);
-    confirmNeeded(res.find((r) => r.statusCode === 403)!);
-  });
 
   it('P8: two parallel first recovery codes; exactly one is made, the other gets 403', async () => {
     const { id, b } = await signedUp();

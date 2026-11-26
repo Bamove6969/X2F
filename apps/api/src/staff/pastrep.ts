@@ -1,6 +1,6 @@
 import type { StaffRole } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { archivedOriginalHost, groupFingerprint } from '../pastrep/challenge.js';

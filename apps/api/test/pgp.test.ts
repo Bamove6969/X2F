@@ -11,7 +11,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
-import { confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { addUnusedKeys, confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
@@ -105,6 +105,9 @@ async function registerPgp(displayName: string, key: Pair, b = new Browser()): P
     challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
   expect(fin.statusCode).toBe(201);
+  // Owner 26 Nov 2026: an account holds two kinds of login method; an unused passkey and security
+  // key stand in for the second, so the account is not setup-only once its sign-up window ends.
+  await addUnusedKeys(deps, await accountId(displayName));
   return b;
 }
 
@@ -462,9 +465,6 @@ describe('login', () => {
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
     const attacker = new Browser();
     for (let i = 0; i < 5; i++) expect((await loginStart(attacker, key)).statusCode).toBe(200);
-    // Earlier tests' PGP-alone logins on new browsers started the account's 24-hour hold, during
-    // which a login that waits opens nothing (Task 17 review round 2 N-C1); this test is about challenges.
-    await deps.db.query('delete from account_holds');
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
     const sixth = await loginStart(attacker, key);
@@ -699,7 +699,7 @@ describe('binding', () => {
     const sb = await loginStart(b, key);
     await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey))), (u) => b.post(u, {}));
 
-    const action = { kind: 'set-password' };
+    const action = { kind: 'extend-session' };
     const ca = await a.post('/v1/confirm/pgp/start', { action });
     expect(ca.statusCode).toBe(200);
     const codeA = codeOf(await dec(ca.json().encryptedMessage, key.privateKey, signerPublic));
@@ -725,9 +725,6 @@ describe('binding', () => {
     const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey, confirmToken });
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, newKey.privateKey, signerPublic));
-    // X's PGP-alone login may have started the 24-hour hold (Task 17, coolingOff.test.ts), which
-    // would refuse first; this test is about the binding.
-    await deps.db.query('delete from account_holds');
     const byX = await home.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(byX.json()).toEqual({ error: 'challenge-expired' });
   });
@@ -757,9 +754,6 @@ describe('confirm and adding a key', () => {
     // The token records how it was earned (owner, 2026-10-23: a PGP confirm makes a new wallet usable at once).
     expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
 
-    // A PGP-alone session's change waits 24 hours (Task 17, owner 2026-10-29 14:12; coolingOff.test.ts):
-    // here the session counts as strong, since this test is about the key itself.
-    await deps.db.query("update sessions set strength = 'strong' where account_id = (select id from accounts where display_key = $1)", [n.toLowerCase()]);
     const as = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey, confirmToken });
     expect(as.statusCode).toBe(200);
     const atext = await dec(as.json().encryptedMessage, k2.privateKey, signerPublic);
@@ -786,7 +780,7 @@ describe('confirm and adding a key', () => {
     const k = await genKey();
     const b = await registerPgp(n, k);
     setNow(new Date(now.getTime() + 31 * MIN));
-    const cs = await b.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } });
+    const cs = await b.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } });
     const cf = await b.post('/v1/confirm/pgp/finish', {
       challengeId: cs.json().challengeId, code: codeOf(await dec(cs.json().encryptedMessage, k.privateKey)),
     });

@@ -57,11 +57,11 @@ afterAll(async () => {
   await app.close();
 });
 
-/** A trader logged in with a recovery (backup) session, no hold. */
-async function recoveryBrowser(): Promise<Browser> {
-  const id = await seedAccount(deps, { loginName: `rec${Math.random().toString(36).slice(2, 10)}` });
+/** A trader whose account holds no login method, outside its sign-up window: setup-only. */
+async function setupOnlyBrowser(): Promise<Browser> {
+  const id = await seedAccount(deps, { loginName: `rec${Math.random().toString(36).slice(2, 10)}`, methods: false });
   const b = new Browser(app);
-  expect((await b.post('/t/login', { accountId: id, level: 'recovery' })).statusCode).toBe(200);
+  expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return b;
 }
 
@@ -110,7 +110,7 @@ describe('the route list', () => {
 
   // Review 2026-11-08 F2: "some session" is not the front door. Every read behind a session either
   // runs behind `requireInside` (and is then checked below, logged out, half set up and on a
-  // recovery session) or answers only the caller's own data, with the reason recorded.
+  // setup-only session) or answers only the caller's own data, with the reason recorded.
   // Review 6a5949a6 F2b: every method, not only GET. A write behind a session (a "search" POST, say)
   // is behind requireInside or listed in OWN_DATA_WRITES with what it writes and answers.
   it('every session-guarded route, whatever its method, is behind requireInside or is listed as own-data-only with a reason; READS covers every requireInside route', async () => {
@@ -156,14 +156,14 @@ describe('marketplace reads are behind the front door', () => {
       expect((await t.browser.get(url)).statusCode).toBe(inside);
     });
 
-    it(`${url}: refused, with no data, to a session that has not finished setup or is only a recovery session`, async () => {
+    it(`${url}: refused, with no data, to a session on stale Terms or a setup-only one`, async () => {
       const stale = await (await staleTermsBrowser()).get(url);
       expect(stale.statusCode).toBe(403);
       expect(stale.json()).toEqual({ error: 'terms-required', version: deps.config.termsVersion });
 
-      const rec = await (await recoveryBrowser()).get(url);
+      const rec = await (await setupOnlyBrowser()).get(url);
       expect(rec.statusCode).toBe(403);
-      expect(rec.json()).toEqual({ error: 'recovery-session' });
+      expect(rec.json()).toEqual({ error: 'two-methods-required' });
     });
   }
 
@@ -281,7 +281,7 @@ describe('GET /v1/site on both sides of the door', () => {
       expect(anon.statusCode).toBe(200);
       expect(anon.json()).toEqual({ maintenance: null, plannedMaintenance: null });
       expect((await (await staleTermsBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
-      expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
+      expect((await (await setupOnlyBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
 
       const t = await trader();
       expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null, communityLinks: { matrix: null, telegram: null } });

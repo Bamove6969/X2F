@@ -351,7 +351,7 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     const { id, b, sessionId } = await trader();
     for (const address of ['4' + fakeAddress().slice(1), 'not an address', '', fakeAddress(96), 'x'.repeat(2000)]) {
       // Issued directly so even '' gets a token for exactly its own action (the confirm route refuses an empty addressEnd).
-      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'password' });
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'passkey' });
       const res = await addWallet(b, { address, confirmToken: token });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'address-invalid' });
@@ -468,7 +468,7 @@ describe('staff and owner accounts hold no payout wallets (R3)', () => {
     it(`answers 403 wrong-account-kind to a ${kind} session on every wallet route`, async () => {
       const { id, b, sessionId } = await trader({ kind });
       const address = fakeAddress();
-      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'password' });
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'passkey' });
       const responses = [
         await b.get('/v1/wallets'),
         await addWallet(b, { address, confirmToken: token }),

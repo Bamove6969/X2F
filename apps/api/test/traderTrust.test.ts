@@ -6,7 +6,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { countActionTimes, countFastPayment } from '../src/traders/actionTimes.js';
 import { applyEvent } from '../src/trades/store.js';
-import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { makeVendor, noSecurityKeyBadge, seedAccount } from './helpers/accounts.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
 import { flexBody } from './helpers/offers.js';
@@ -68,6 +68,7 @@ afterAll(async () => {
 /** A trader with a usable wallet; `graduated` gives them 40 days and 2 untimed released trades. */
 async function person(o: { graduated?: boolean; ageDays?: number } = {}): Promise<Who> {
   const t = await trader();
+  await noSecurityKeyBadge(deps, t.id);
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'feather', 'Main', $2, $3, $4) returning id`,

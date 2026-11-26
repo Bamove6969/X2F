@@ -26,7 +26,7 @@
 import { normalizeTradeCode, TICKET_CATEGORIES, TICKET_OPEN_AT_ONCE, TICKET_OPEN_DAILY, type TicketCategory } from '@x2f/core';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';

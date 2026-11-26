@@ -1,23 +1,20 @@
-// Security review of wip/lead-notes-all 656d259c, M2: the owner ruled a password alone does not
-// finish sign-up (16 Nov 2026), yet a password-only account became permanent once its 30-minute
-// sign-up window passed, and its password login got a full session. Now a trader account whose
-// only login is a password (no authenticator app, passkey, security key or usable PGP key) gets a
-// setup-only session outside the window: `me` (setupOnly: true), adding a second method (and its
-// confirm, its staged change and the recovery code), the Terms, and logging out. Everything else
-// is 403 `second-method-required`.
+// Owner, 26 Nov 2026 (no passwords): a trader account holds at least two kinds of login method
+// (passkey, security key, PGP key, authenticator app; recovery codes do not count). A trader
+// account owner's session whose account holds fewer gets a setup-only session once its sign-up
+// window has passed: `me` (setupOnly: true), adding a second method (and its confirm, and the
+// recovery code), the Terms, its sessions, and logging out. Everything else is 403
+// `two-methods-required`.
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
-import { SIG } from './helpers/signature.js';
-import { Browser, addTestLogin } from './helpers/totp.js';
+import { logInWithKey, signUpWithKey } from './helpers/signup.js';
+import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
 const T0 = new Date('2026-11-09T06:00:00Z');
 const HOUR = 3600_000;
 const MIN = 60_000;
-const GOOD = 'Correct-Horse-9';
 let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
@@ -27,10 +24,9 @@ let n = 0;
 let cleanup: () => Promise<void>;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -52,14 +48,14 @@ const names = () => {
   return { loginName: `soxp${p}n${k}`, displayName: `Setup${p}x${k}` };
 };
 
-/** A password-only sign-up; answers the creating browser and the names. */
-async function passwordOnly() {
+/** A sign-up with one passkey only; answers the creating browser, the names and the passkey. */
+async function oneKind() {
   const nm = names();
   const b = new Browser(app);
-  const reg = await b.post('/v1/register/password', { ...nm, password: GOOD, deviceLabel: 'P', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
+  const { res: reg, auth } = await signUpWithKey(b, { ...nm, deviceLabel: 'P', acceptedTerms: deps.config.termsVersion });
   expect(reg.statusCode, reg.body).toBe(201);
   const { rows } = await deps.db.query<{ id: string }>('select account_id as id from sessions order by created_at desc limit 1');
-  return { b, nm, id: rows[0]!.id };
+  return { b, nm, id: rows[0]!.id, auth };
 }
 
 const addKeyRow = (id: string) =>
@@ -82,56 +78,58 @@ async function expectRefused(b: Browser) {
   ] as const) {
     const res = method === 'GET' ? await b.get(url) : method === 'PUT' ? await b.put(url, body) : await b.post(url, body);
     expect(res.statusCode, `${method} ${url}`).toBe(403);
-    expect(res.json(), `${method} ${url}`).toMatchObject({ error: 'second-method-required' });
+    expect(res.json(), `${method} ${url}`).toMatchObject({ error: 'two-methods-required' });
   }
 }
 
-describe('review M2: a password alone gives a setup-only session', () => {
+describe('one kind of login method gives a setup-only session', () => {
   it('inside the sign-up window the creating session is not held back', async () => {
-    const { b } = await passwordOnly();
+    const { b } = await oneKind();
     expect((await b.get('/v1/account/me')).json()).toMatchObject({ setupOnly: false });
     expect((await b.get('/v1/wallets')).statusCode).toBe(200);
   });
 
   it('once the window has passed, the creating session is setup-only', async () => {
-    const { b } = await passwordOnly();
+    const { b } = await oneKind();
     setNow(new Date(now.getTime() + 31 * MIN));
     const me = await b.get('/v1/account/me');
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({ setupOnly: true, methods: ['password'] });
+    expect(me.json()).toMatchObject({ setupOnly: true, methods: ['passkey'] });
     await expectRefused(b);
   });
 
-  it('a password login after the window answers setupOnly, and the session reaches only the set-up routes', async () => {
-    const { b, nm } = await passwordOnly();
+  it('a login after the window answers setupOnly, and the session reaches only the set-up routes', async () => {
+    const { b, auth } = await oneKind();
     setNow(new Date(now.getTime() + 31 * MIN));
     await b.post('/v1/logout');
-    // The same browser (its device is trusted for the account: a new one with nothing logged in to
-    // approve it is refused, approval-unavailable, as before).
-    const b2 = b;
-    const login = await b2.post('/v1/login/password', { loginName: nm.loginName, password: GOOD, deviceLabel: 'Q' });
+    // The same browser (its device is trusted for the account).
+    const login = await logInWithKey(b, auth, 'Q');
     expect(login.statusCode, login.body).toBe(200);
-    expect(login.json()).toEqual({ status: 'ok', setupOnly: true });
-    await expectRefused(b2);
-    // What it may do: read itself and its methods, confirm with the password, start adding a second
-    // method (the authenticator app here), see its staged changes, and log out.
-    expect((await b2.get('/v1/account/me')).json()).toMatchObject({ setupOnly: true });
-    expect((await b2.get('/v1/account/methods')).statusCode).toBe(200);
-    expect((await b2.get('/v1/account/hold')).statusCode).toBe(200);
-    expect((await b2.get('/v1/terms')).statusCode).toBe(200);
-    const confirm = await b2.post('/v1/confirm/password', { password: GOOD, action: { kind: 'add-method', method: 'totp' } });
-    expect(confirm.statusCode, confirm.body).toBe(200);
-    const start = await b2.post('/v1/account/totp/start', { confirmToken: confirm.json().confirmToken });
+    expect(login.json()).toMatchObject({ status: 'ok' });
+    await expectRefused(b);
+    // What it may do: read itself and its methods, confirm with its passkey, start adding a second
+    // method (the authenticator app or a security key here), and log out.
+    expect((await b.get('/v1/account/me')).json()).toMatchObject({ setupOnly: true });
+    expect((await b.get('/v1/account/methods')).statusCode).toBe(200);
+    expect((await b.get('/v1/terms')).statusCode).toBe(200);
+    const confirm = async (action: object) => {
+      const st = await b.post('/v1/confirm/webauthn/start', { action });
+      expect(st.statusCode, st.body).toBe(200);
+      const { challengeId, options } = st.json();
+      const fin = await b.post('/v1/confirm/webauthn/finish', { challengeId, response: auth.authenticate(options, ORIGIN) });
+      expect(fin.statusCode, fin.body).toBe(200);
+      return fin.json().confirmToken as string;
+    };
+    const start = await b.post('/v1/account/totp/start', { confirmToken: await confirm({ kind: 'add-method', method: 'totp' }) });
     expect(start.statusCode, start.body).toBe(200);
-    const c2 = await b2.post('/v1/confirm/password', { password: GOOD, action: { kind: 'add-method', method: 'security-key' } });
-    const wa = await b2.post('/v1/account/webauthn/start', { kind: 'security-key', confirmToken: c2.json().confirmToken });
+    const wa = await b.post('/v1/account/webauthn/start', { kind: 'security-key', confirmToken: await confirm({ kind: 'add-method', method: 'security-key' }) });
     expect(wa.statusCode, wa.body).toBe(200);
-    expect((await b2.post('/v1/logout')).statusCode).toBe(200);
-    expect((await b2.get('/v1/account/me')).statusCode).toBe(401);
+    expect((await b.post('/v1/logout')).statusCode).toBe(200);
+    expect((await b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
   it('once a second method is on the account, the same session is a normal one', async () => {
-    const { b, id } = await passwordOnly();
+    const { b, id } = await oneKind();
     setNow(new Date(now.getTime() + 31 * MIN));
     expect((await b.get('/v1/wallets')).statusCode).toBe(403);
     await addKeyRow(id);
@@ -140,22 +138,21 @@ describe('review M2: a password alone gives a setup-only session', () => {
     expect((await b.get('/v1/trades')).statusCode).toBe(200);
   });
 
-  it('an account with no password (another method) is never setup-only', async () => {
-    const { b, id } = await passwordOnly();
-    await addKeyRow(id);
-    await deps.db.query('delete from passwords where account_id = $1', [id]);
+  it('a stored PGP key that cannot log in (expired, revoked, unreadable) counts as no kind', async () => {
+    const { b, id } = await oneKind();
+    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
+      id, randomBytes(20).toString('hex'), randomBytes(64), now,
+    ]);
     setNow(new Date(now.getTime() + 31 * MIN));
-    expect((await b.get('/v1/account/me')).json()).toMatchObject({ setupOnly: false });
-    expect((await b.get('/v1/wallets')).statusCode).toBe(200);
+    expect((await b.get('/v1/account/me')).json()).toMatchObject({ setupOnly: true });
   });
 
   it('re-review N2: a setup-only owner sees its sessions and ends a stranger\'s newer one', async () => {
-    const { b, id } = await passwordOnly();
+    const { b, id } = await oneKind();
     setNow(new Date(now.getTime() + 31 * MIN));
-    // A stranger's newer username-and-password session on the account.
+    // A stranger's newer session on the account.
     const stranger = new Browser(app);
     expect((await stranger.post('/t/login', { accountId: id })).statusCode).toBe(200);
-    await deps.db.query("update sessions set strength = 'weak-single' where account_id = $1", [id]);
     const list = await b.get('/v1/account/sessions');
     expect(list.statusCode, list.body).toBe(200);
     const theirs = (list.json() as Array<{ id: string; current: boolean }>).find((s) => !s.current)!;

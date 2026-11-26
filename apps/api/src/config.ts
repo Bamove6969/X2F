@@ -11,7 +11,6 @@ export interface Config {
   origins: string[];
   rpId: string;
   databaseUrl: string;
-  leakedListPath: string;
   serverKey: Uint8Array /* 32 bytes */;
   attestationDir: string;
   moneroNetwork: 'mainnet' | 'stagenet' | 'testnet';
@@ -25,8 +24,6 @@ export interface Config {
   priceSources: PriceSourceName[];
   /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
   fxSources: FxSourceName[];
-  /** Peppers mixed into password hashes (HMAC before Argon2id); `X2F_PASSWORD_PEPPERS`. */
-  passwordPeppers: Keyring;
   /** Keys of the recovery-code HMAC; `X2F_RECOVERY_CODE_KEYS`. */
   recoveryCodeKeys: Keyring;
   /** Keys that seal TOTP secrets (the file/env key store, `totpBox`); `X2F_TOTP_KEYS`. */
@@ -35,7 +32,7 @@ export interface Config {
   loginNameKeys: Keyring;
   /**
    * `X2F_LEGACY_SECRETS` (`on` by default, or `off`): whether values stored before FU-C are still
-   * accepted: unpeppered password hashes, SHA-256 recovery codes and format-0 TOTP blobs. Turned off
+   * accepted: SHA-256 recovery codes and format-0 TOTP blobs. Turned off
    * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
    */
   legacySecrets: boolean;
@@ -251,8 +248,6 @@ export function loadConfig(env: Env): Config {
   const databaseUrl = required(env, 'DATABASE_URL');
   if (!/^postgres(ql)?:\/\//.test(databaseUrl)) throw malformed('DATABASE_URL', 'a postgres:// URL');
 
-  const leakedListPath = required(env, 'X2F_LEAKED_LIST_PATH');
-
   const rawKey = required(env, 'X2F_SERVER_KEY');
   if (!BASE64.test(rawKey)) throw malformed('X2F_SERVER_KEY', 'base64 of 32 random bytes');
   const serverKey = new Uint8Array(Buffer.from(rawKey, 'base64'));
@@ -276,7 +271,6 @@ export function loadConfig(env: Env): Config {
 
   const priceSources = parsePriceSources(env.PRICE_SOURCES);
   const fxSources = parseFxSources(env.FX_SOURCES);
-  const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
   const loginNameKeys = parseKeyring('X2F_LOGIN_NAME_KEYS', ringSource(env, 'X2F_LOGIN_NAME_KEYS'));
@@ -293,7 +287,7 @@ export function loadConfig(env: Env): Config {
   const trainingIdKey = parseTrainingIdKey(env, moneroNetwork);
   assertSeparate(serverKey, [
     ['X2F_TRAINING_ID_KEY', { current: 1, keys: new Map([[1, trainingIdKey]]) }],
-    ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
+    ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
     ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
   ]);
 
@@ -313,8 +307,8 @@ export function loadConfig(env: Env): Config {
   if (feeWallet !== null && !/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(feeWallet)) throw malformed('X2F_FEE_WALLET', 'a Monero address');
 
   return {
-    siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
-    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
+    siteName, origins, rpId, databaseUrl, serverKey, attestationDir,
+    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, recoveryCodeKeys, totpKeys,
     loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet,
   };
 }

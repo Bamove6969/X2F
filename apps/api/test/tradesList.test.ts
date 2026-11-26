@@ -303,27 +303,6 @@ describe('GET /v1/trades', () => {
     expect(JSON.stringify(seen)).not.toContain(second.name);
   });
 
-  it('review lead-trades-list-2 m1 (lead call): lastActedBy only to a full owner session, never a recovery or held one (as GET /v1/team/audit)', async () => {
-    const owner = await trader();
-    await makeVendor(deps, owner.id);
-    const other = await trader();
-    tick();
-    const t = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
-    const actor = await teamMember(owner.id);
-    await audit(owner.id, actor.id, t.code, 'mark-paid', new Date(at));
-    expect((await page(owner.browser, '?status=open')).trades[0]!.lastActedBy).toEqual({ memberName: actor.name, at: new Date(at).toISOString() });
-
-    const recovery = new Browser(app);
-    const { sessionId } = (await recovery.post('/t/login', { accountId: owner.id, level: 'recovery' })).json() as { sessionId: string };
-    for (const label of ['recovery', 'held']) {
-      if (label === 'held') await deps.db.query('update sessions set hold_until = $2 where id = $1', [sessionId, new Date(at + 3_600_000)]);
-      const rows = (await page(recovery, '?status=open')).trades;
-      expect(rows.map((r) => r.code), label).toEqual([t.code]);
-      expect(rows[0], label).not.toHaveProperty('lastActedBy');
-      expect(JSON.stringify(rows), label).not.toContain(actor.name);
-    }
-  });
-
   it('a trade deleted by the retention rule (R36) is simply gone: no row, no stub', async () => {
     const me = await trader();
     const other = await trader();

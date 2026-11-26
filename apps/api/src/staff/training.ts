@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { MANUAL_MASK, anonymizeText, applyManualMasks, offsetLabel, type AnonymizeNames, type Scrubbed } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';

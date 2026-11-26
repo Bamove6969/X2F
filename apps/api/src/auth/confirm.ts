@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { usablePgpIds } from './methods.js';
-import { actionHash, passwordAlone, type ConfirmAction } from '@x2f/accounts';
+import { actionHash, enoughMethods, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -16,8 +16,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     /**
      * R17: the action `requireConfirm` resolved for this request, set once it has been redeemed with
-     * a token or exempted (onboarding); null otherwise (and on a recovery session let through by
-     * `recovery: true`). A handler acts on exactly this action rather than re-deriving it.
+     * a token, by the recovery window, or exempted (onboarding); null otherwise. A handler acts on exactly this action rather than re-deriving it.
      */
     confirmedAction: ConfirmAction | null;
   }
@@ -28,13 +27,24 @@ const tokenHash = (token: string): Buffer => createHash('sha256').update(token).
 /**
  * How the person proved it was them, recorded on the token by the confirm route that checked the
  * proof (owner, 2026-10-23): `pgp` (a fresh PGP code), `passkey` or `security-key` (the kind of the
- * stored credential whose assertion verified), `password` (with its TOTP code when enrolled).
- * Never taken from the request body.
+ * stored credential whose assertion verified), or `recovery-code` (no token: the session's recovery
+ * window, `redeemConfirm`). Never taken from the request body.
  */
-export type ConfirmMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
+export type ConfirmMethod = 'pgp' | 'passkey' | 'security-key' | 'recovery-code';
 
-/** The methods strong enough that a new payout wallet confirmed with them is usable at once. */
+/** The methods that may confirm a vendor switch (owner G13): a login key, never a recovery code. */
 export const STRONG_CONFIRM_METHODS: readonly ConfirmMethod[] = ['pgp', 'passkey', 'security-key'];
+
+/**
+ * Owner, 26 Nov 2026 ("if you use it then you can change everything"): a session opened with the
+ * recovery code confirms every change without a token while its recovery window
+ * (`recovery_until`, sessions.ts RECOVERY_WINDOW_MS) is open, so the person can replace every
+ * login method.
+ */
+export function inRecoveryWindow(req: FastifyRequest, now: Date): boolean {
+  const until = req.auth.recoveryUntil;
+  return until !== null && until.getTime() > now.getTime();
+}
 
 /**
  * Issues a single-use token bound to this session and this exact action, recording `method`.
@@ -68,6 +78,7 @@ export async function redeemConfirm(
   action: ConfirmAction,
   token: string | undefined,
 ): Promise<ConfirmMethod> {
+  if (token === undefined && inRecoveryWindow(req, deps.clock())) return 'recovery-code';
   if (token === undefined) throw new ApiError(403, 'confirm-required', { action: action.kind });
   if (!TOKEN.test(token)) throw new ApiError(403, 'confirm-invalid');
   const { rows } = await deps.db.query(
@@ -128,7 +139,6 @@ export const staleTermsOnlyToExtend: preHandlerAsyncHookHandler = async function
  * how to tell the account already holds one.
  */
 const HOLDS = {
-  password: 'select 1 from passwords where account_id = $1',
   totp: 'select 1 from totp where account_id = $1',
   'recovery-codes': 'select 1 from recovery_codes where account_id = $1 limit 1',
   pgp: 'select 1 from pgp_keys where account_id = $1 limit 1',
@@ -149,7 +159,7 @@ export function onlyIfNew(kind: NewMethodKind | ((req: FastifyRequest) => NewMet
   };
 }
 
-/** Requests that `requireConfirm` let through on the sign-up window alone (no token, not a recovery session). */
+/** Requests that `requireConfirm` let through on the sign-up window alone (no token). */
 const byWindow = new WeakSet<FastifyRequest>();
 
 /** True when this request's change was let through on the sign-up window, with no confirm token. */
@@ -191,14 +201,14 @@ async function methodKindsOf(deps: Pick<Deps, 'db' | 'config'>, accountId: strin
  * web app sends it on reaching Welcome). Idempotent; any full session may call it for itself.
  * Re-verify R1: it also uses up this session's open add ceremonies that were started on the
  * window (`payload.window`), so none of them can finish after the window is closed. 409
- * `password-alone` for an account whose only login is a password without TOTP (owner, 16 Nov 2026).
+ * `two-methods-required` while the account holds fewer than two kinds of login method (owner, 26
+ * Nov 2026).
  */
 export async function endOnboarding(req: FastifyRequest): Promise<{ ok: true }> {
   const deps = req.server.deps;
-  // Owner, 16 Nov 2026: a password does not stand alone, so sign-up does not finish with only a
-  // password (409 `password-alone`, the window stays open for the authenticator app or another way
-  // to log in).
-  if (passwordAlone(await methodKindsOf(deps, req.auth.accountId, deps.clock()))) throw new ApiError(409, 'password-alone');
+  // Owner, 26 Nov 2026: sign-up does not finish with fewer than two kinds of login method (409
+  // `two-methods-required`; the window stays open to add another).
+  if (!enoughMethods(await methodKindsOf(deps, req.auth.accountId, deps.clock()))) throw new ApiError(409, 'two-methods-required');
   await deps.db.query('update sessions set onboarding_until = null where id = $1 and onboarding_until is not null', [req.auth.sessionId]);
   await deps.db.query(
     `update challenges set used_at = $2
@@ -216,22 +226,15 @@ type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promis
  * - `onboarding: true` lets the token be omitted while the session's `onboarding_until > now`
  *   (only the creating session has one, for 30 minutes); a function adds the route's own
  *   predicate on top (Task 12: first wallet only).
- * - `recovery: true` lets a recovery session through without a token (add-method routes only;
- *   a held TOTP backup session never gets here: `requireSession` enforces the hold and fails
- *   closed). Otherwise a recovery session gets 403 `recovery-session`: recovery sessions cannot
- *   confirm.
+ * - A session in its recovery window passes without a token (`redeemConfirm`).
  */
 export function requireConfirm(
   action: ActionOf,
-  opts: { onboarding?: boolean | ((req: FastifyRequest) => Promise<boolean>); recovery?: boolean } = {},
+  opts: { onboarding?: boolean | ((req: FastifyRequest) => Promise<boolean>) } = {},
 ): preHandlerAsyncHookHandler {
   return async function (req: FastifyRequest) {
     const deps = req.server.deps;
     if (!req.auth) throw new ApiError(401, 'not-authenticated');
-    if (req.auth.level === 'recovery') {
-      if (opts.recovery) return;
-      throw new ApiError(403, 'recovery-session');
-    }
     const resolved = typeof action === 'function' ? await action(req) : action;
     const body = req.body;
     const raw = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).confirmToken : undefined;

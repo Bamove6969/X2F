@@ -1,7 +1,7 @@
 import { GRANTABLE_PERMS, can, validateHours, type GrantablePerm, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { endAllSessions } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { retireStaffCopies } from './staffCopies.js';

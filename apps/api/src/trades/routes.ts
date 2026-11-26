@@ -3,16 +3,14 @@ import { reservedAtomic } from '../disputes/recovery.js';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { cancelWaiting, counterpartyProblem, refuseHeldTradeEvent } from './held.js';
 import { requireSession } from '../auth/sessions.js';
-import { requireLiveSessionInTx } from '../auth/hold.js';
+import { requireLiveSessionInTx } from '../auth/liveSession.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditLead, auditMember, type AuditAction } from '../team/audit.js';
 import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ, tradePartAbility } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
-import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 import { tradeSelfDestruct } from '../retention/tradePurge.js';
 import { appealOpenUntil } from '../disputes/appeals.js';
@@ -66,12 +64,10 @@ export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
 }
 
 /**
- * Plan 2 Task 17 and R42: trades already open can be finished during the 24-hour hold, from a
- * backup (recovery) session too, held or not: reading the trade, every trade event (mark paid,
- * release started and its signals, the buyer's cancel), the confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
- * (`take` checks the hold and takes full sessions only).
+ * The session a trade's own routes take: the account owner's trader sessions (a recovery-code
+ * login's too: it salvages the open trades, owner 26 Nov 2026), and members by their abilities.
  */
-export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allowHeld: true } as const satisfies Parameters<typeof requireSession>[0];
+export const FINISH_OPEN_TRADES = { kinds: ['trader'] } as const satisfies Parameters<typeof requireSession>[0];
 
 /**
  * `GET /v1/trades/:code` and `POST /v1/trades/:code/events` (Task 6). Trader sessions only, and
@@ -110,8 +106,6 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterparty: await traderSummary(deps.db, other, now, me, other === t.sellerId ? 'seller' : 'buyer'),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
-      counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
-      cancelWaiting: await cancelWaiting(deps.db, t.code),
       paymentInstructions: row.method_instructions,
       lienRecoveryAtomic: t.buyerId === me ? await reservedAtomic(deps.db, t.code) : null,
       // D-005: the File appeal button's deadline, only for the account owner or a member who can
@@ -186,18 +180,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
           // T-076 (p7-1): on a team account the lead's release is in the team log too, with the amount.
           if (e.type === 'release-started') await auditLead(client, req.auth, { action: 'release-started', tradeCode: row.code }, now);
         },
-        async (client, now, prev) => {
+        async (client, now) => {
           await requireLiveSessionInTx(client, req.auth, now);
-          // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts);
-          // the partner's buyer-cancel is only recorded while coins are in escrow (owner G7, I5).
-          // R-C1: the dry run is the caller's real side (`by`); a seller's buyer-cancel falls through to the machine (409 wrong-party).
-          const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now, by });
-          if (held === 'stop') {
-            await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
-            // Recorded only; the cancel itself is logged as `trade.buyer-cancel` when the sync applies it (lead review 8 Nov I5).
-            await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel-recorded', detail: {} });
-          }
-          return held;
         },
       );
     } catch (err) {

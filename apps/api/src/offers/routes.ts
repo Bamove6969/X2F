@@ -27,8 +27,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
-import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
-import { recoveryHoldHidesSql } from '../auth/holdSql.js';
+import { requireLiveSessionInTx } from '../auth/liveSession.js';
 import { banHidesSql, tradeBanRefusal, tradeBanned } from '../banState.js';
 import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
 import type { AuthContext } from '../auth/sessions.js';
@@ -179,7 +178,7 @@ export interface MyOffer {
    * methods under legal review, or none of its currencies with a market price now (Task 34 review
    * M4). Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'lien' | 'trade-ban' | 'recovery-hold' | 'review-pending' | 'method-unavailable' | 'no-price';
+  hidden?: 'trading-paused' | 'trading-hold' | 'lien' | 'trade-ban' | 'review-pending' | 'method-unavailable' | 'no-price';
   createdAt: string;
 }
 
@@ -300,7 +299,6 @@ export const MARKET_PRICED = `o.price_mode = 'market'`;
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not ${LIEN_BLOCKS_SQL('o.account_id')}
-  and not ${recoveryHoldHidesSql('o.account_id')}
   and not ${banHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
@@ -964,7 +962,7 @@ async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow
 }
 
 export function offerRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers', { preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
+  app.post('/v1/offers', { preHandler: [requireTrader] }, async (req, reply) => {
     const deps = req.server.deps;
     const o = parseNewOffer(req.body);
     const catalog = o.methods.map((m) => getMethod(m.methodId));
@@ -1062,9 +1060,6 @@ export function offerRoutes(app: FastifyInstance): void {
     const update = (q: Queryable) =>
       q.query(`update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
     if (status === 'live') {
-      // Task 17: an account on its 24-hour hold cannot turn an offer on (pausing or removing one is fine).
-      const until = await holdUntil(deps, accountId, req.server.events);
-      if (until !== null) throw holdRefusal(until);
       // Relisting is posting again: the same checks (every method may be offered now, as at post),
       // in one transaction with the write (review M1).
       for (const m of row.methods) assertMethodAvailable(m);
@@ -1240,16 +1235,13 @@ export function offerRoutes(app: FastifyInstance): void {
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
-    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; lien: boolean; banned: boolean; recovery: boolean }>(
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; lien: boolean; banned: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
               exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
               ${LIEN_BLOCKS_SQL('$1::uuid')} as lien,
-              ${banHidesSql('$1::uuid')} as banned,
-              ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
+              ${banHidesSql('$1::uuid')} as banned`,
       [accountId],
     );
-    // Hold model v3's recovery-code hold before main's pending review: the account-wide hold is the
-    // reason while it lasts (its sessions cannot rate a trade meanwhile anyway).
     const accountHidden = why[0]!.paused
       ? 'trading-paused'
       : why[0]!.held
@@ -1258,11 +1250,9 @@ export function offerRoutes(app: FastifyInstance): void {
           ? 'lien'
           : why[0]!.banned
             ? 'trade-ban'
-            : why[0]!.recovery
-              ? 'recovery-hold'
-              : (await hasPendingReview(deps.db, accountId, deps.clock()))
-                ? 'review-pending'
-                : null;
+            : (await hasPendingReview(deps.db, accountId, deps.clock()))
+              ? 'review-pending'
+              : null;
     const flex = await loadFlex(deps.db, rows.map((r) => r.id));
     return rows.map((r) => {
       const f = flex.get(r.id)!;
@@ -1338,11 +1328,6 @@ export function offerRoutes(app: FastifyInstance): void {
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
     if (status === 'live') await assertTermsCurrent(deps, req.auth!);
-    // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
-    if (status === 'live') {
-      const until = await holdUntil(deps, accountId, req.server.events);
-      if (until !== null) throw holdRefusal(until);
-    }
     const now = deps.clock();
 
     const results = await inTransaction(deps.db, async (client) => {

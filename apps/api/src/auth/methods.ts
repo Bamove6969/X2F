@@ -1,18 +1,19 @@
 /**
  * Login-method policy, listing and removal; staff and owner primitives (Task 10).
  *
- * - Which methods an account kind may hold (`allowedMethods`): traders all six; staff PGP, security
- *   keys and passkeys; the owner PGP and security keys. Staff and the owner never get a password,
- *   TOTP or recovery codes (R2), so they have no reset and no backup login.
+ * - Which methods an account kind may hold (`allowedMethods`): traders all five; staff PGP, security
+ *   keys and passkeys; the owner PGP and security keys. Staff and the owner never get an authenticator app,
+ *   or recovery codes (R2), so they have no reset and no backup login.
  * - Staff and the owner log in with two factors (R1): `pairAllowed` says which two make a login,
  *   `needsAfter` what a first factor still needs; `completeLogin` (login.ts) applies both. The one
  *   exception is owner G3's known device: a moderator holding all three methods logs in with one
  *   of them on a device they logged in on before (`knownDeviceRule`, staff/login.ts).
- * - Removing a method never leaves an account unable to log in: at least one primary method, and
+ * - Removing a method never leaves an account unable to log in: at least one primary method, for a trader two kinds
+ *   (owner, 26 Nov 2026: `enoughMethods`),
  *   for the owner two attested security keys and a PGP key, for staff a valid pair (`removeMethod`);
  *   for staff and the owner only PGP keys usable now count (a revoked or expired key logs in no one).
  */
-import { inspectPublicKey, partnerNeededBy, passwordAlone, type AccountKind, type MethodType } from '@x2f/accounts';
+import { enoughMethods, inspectPublicKey, type AccountKind, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -23,12 +24,12 @@ import { redeemConfirm } from './confirm.js';
 import type { LoginFactor } from './login.js';
 import { openKey } from './pgp.js';
 import { requireSession } from './sessions.js';
-import { gateChange, stagedReply, requireNotHeld } from './hold.js';
+import { requireLiveSessionInTx } from './liveSession.js';
 
 /** Methods that log in on their own (TOTP and recovery codes never do). */
-export const PRIMARY: MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
+export const PRIMARY: MethodType[] = ['pgp', 'passkey', 'security-key'];
 
-const ALL: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes'];
+const ALL: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes'];
 
 /** The methods an account kind may hold, in display order. */
 export function allowedMethods(kind: AccountKind): MethodType[] {
@@ -36,10 +37,6 @@ export function allowedMethods(kind: AccountKind): MethodType[] {
   // A team member logs in by the staff rule (Plan 2 Task 18, lead default): always two factors.
   if (kind === 'staff' || kind === 'member') return ['pgp', 'security-key', 'passkey'];
   return ['pgp', 'security-key'];
-}
-
-export function passwordAllowed(kind: AccountKind): boolean {
-  return allowedMethods(kind).includes('password');
 }
 
 /** 403 `method-not-allowed` when the account kind may not hold `method`. */
@@ -198,15 +195,14 @@ export interface MethodEntry {
   id: string;
   label: string;
   /**
-   * When it was added (a password: when it was last set). Null only for recovery codes: their table
-   * keeps no creation time (Task 9's schema) and Task 10 adds no migration.
+   * When it was added. Null only for recovery codes: their table keeps no creation time (Task 9's
+   * schema).
    */
   createdAt: string | null;
   lastUsedAt: string | null;
 }
 
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
-const PASSWORD_LABEL = 'Password';
 const TOTP_LABEL = 'Authenticator app';
 const RECOVERY_LABEL = 'Recovery codes';
 /** A PGP key is shown by the last 16 hex characters of its fingerprint (never a user ID). */
@@ -226,7 +222,6 @@ export async function listMethods(db: Queryable, accountId: string): Promise<Met
     'select id, kind, label, created_at, last_used_at from webauthn_credentials where account_id = $1 order by created_at, id',
     [accountId],
   );
-  const pw = await db.query<{ updated_at: Date }>('select updated_at from passwords where account_id = $1', [accountId]);
   const totp = await db.query<{ created_at: Date }>('select created_at from totp where account_id = $1', [accountId]);
   const rc = await db.query<{ total: number; unused: number; last_used: Date | null }>(
     `select count(*)::int as total, (count(*) filter (where used_at is null))::int as unused, max(used_at) as last_used
@@ -243,9 +238,6 @@ export async function listMethods(db: Queryable, accountId: string): Promise<Met
       out.push({ type: kind, id: r.id, label: r.label, createdAt: iso(r.created_at), lastUsedAt: iso(r.last_used_at) });
     }
   }
-  if (pw.rows[0]) {
-    out.push({ type: 'password', id: 'password', label: PASSWORD_LABEL, createdAt: iso(pw.rows[0].updated_at), lastUsedAt: null });
-  }
   if (totp.rows[0]) {
     out.push({ type: 'totp', id: 'totp', label: TOTP_LABEL, createdAt: iso(totp.rows[0].created_at), lastUsedAt: null });
   }
@@ -261,9 +253,8 @@ export async function listMethods(db: Queryable, accountId: string): Promise<Met
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Methods an account holds at most one of: their id is the type's own name. */
-const SINGLE: readonly MethodType[] = ['password', 'totp', 'recovery-codes'];
+const SINGLE: readonly MethodType[] = ['totp', 'recovery-codes'];
 const EXISTS = {
-  password: 'select 1 from passwords where account_id = $1',
   totp: 'select 1 from totp where account_id = $1',
   'recovery-codes': 'select 1 from recovery_codes where account_id = $1 limit 1',
 } as const;
@@ -275,7 +266,6 @@ interface Counts {
   attestedKeys: number;
   keys: number;
   passkeys: number;
-  password: number;
 }
 
 async function countsOf(db: Queryable, accountId: string): Promise<Omit<Counts, 'usablePgp'>> {
@@ -283,8 +273,7 @@ async function countsOf(db: Queryable, accountId: string): Promise<Omit<Counts, 
     `select (select count(*)::int from pgp_keys where account_id = $1) as pgp,
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested) as "attestedKeys",
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key') as keys,
-            (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'passkey') as passkeys,
-            (select count(*)::int from passwords where account_id = $1) as password`,
+            (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'passkey') as passkeys`,
     [accountId],
   );
   return rows[0]!;
@@ -292,7 +281,7 @@ async function countsOf(db: Queryable, accountId: string): Promise<Omit<Counts, 
 
 /** Whether what is left still logs in: a primary method, plus the owner's and staff minimums (R1). */
 function leavesLogin(kind: AccountKind, c: Counts): boolean {
-  const primary = c.pgp + c.keys + c.passkeys + (passwordAllowed(kind) ? c.password : 0);
+  const primary = c.pgp + c.keys + c.passkeys;
   if (primary === 0) return false;
   if (kind === 'owner') return c.attestedKeys >= 2 && c.usablePgp >= 1;
   if (kind === 'staff' || kind === 'member') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
@@ -313,10 +302,10 @@ async function findMethod(
   const t = type as MethodType;
   if (SINGLE.includes(t)) {
     if (id !== t) return null;
-    const { rows } = await db.query(EXISTS[t as 'password' | 'totp' | 'recovery-codes'], [accountId]);
+    const { rows } = await db.query(EXISTS[t as 'totp' | 'recovery-codes'], [accountId]);
     if (rows.length === 0) return null;
-    const label = t === 'password' ? PASSWORD_LABEL : t === 'totp' ? TOTP_LABEL : RECOVERY_LABEL;
-    return { type: t, label, less: t === 'password' ? { password: 1 } : {} };
+    const label = t === 'totp' ? TOTP_LABEL : RECOVERY_LABEL;
+    return { type: t, label, less: {} };
   }
   if (!UUID.test(id)) return null;
   if (t === 'pgp') {
@@ -337,45 +326,36 @@ async function deleteMethod(db: Queryable, accountId: string, type: MethodType, 
   if (type === 'pgp') await db.query('delete from pgp_keys where id = $1 and account_id = $2', [id, accountId]);
   else if (type === 'passkey' || type === 'security-key') {
     await db.query('delete from webauthn_credentials where id = $1 and account_id = $2 and kind = $3', [id, accountId, type]);
-  } else if (type === 'password') await db.query('delete from passwords where account_id = $1', [accountId]);
-  else if (type === 'totp') await db.query('delete from totp where account_id = $1', [accountId]);
+  } else if (type === 'totp') await db.query('delete from totp where account_id = $1', [accountId]);
   else await db.query('delete from recovery_codes where account_id = $1', [accountId]);
 }
 
 /**
- * Removes one login method of the request's account (behind `requireSession()`, full sessions
- * only), in one transaction with the account row locked, so two parallel removals cannot both pass
- * the minimum. In order: 404 `not-found` (unknown type or id, another account's method); 409
- * `last-login-method` when what is left would not log in (`leavesLogin`); 409 `password-has-totp`
- * for the password while TOTP is enrolled, and 409 `password-alone` when a password would be left
- * alone (owner, 16 Nov 2026); then the body's
- * `confirmToken` is redeemed for exactly `{ kind: 'remove-method', method: type, id }` (403
- * `confirm-required` / `confirm-invalid`). A refusal before that point leaves the token unused.
- * Then the method is deleted, alert `login-method-removed` `{ method, label }`, every other session
- * of the account ends, and alert `sessions-ended` `{ count, reason }` when any did.
+ * Removes one login method of the request's account (behind `requireSession()`), in one
+ * transaction with the account row locked, so two parallel removals cannot both pass the minimum.
+ * In order: 404 `not-found` (unknown type or id, another account's method); 409
+ * `last-login-method` when what is left would not log in (`leavesLogin`); for a trader, 409
+ * `two-methods-required` when what is left is fewer than two kinds (owner, 26 Nov 2026,
+ * `enoughMethods`); then the body's `confirmToken` is redeemed for exactly `{ kind:
+ * 'remove-method', method: type, id }` (403 `confirm-required` / `confirm-invalid`). A refusal
+ * before that point leaves the token unused. Then the calling session must still be live, the
+ * method is deleted, alert `login-method-removed` `{ method, label }`, every other session of the
+ * account ends, and alert `sessions-ended` `{ count, reason }` when any did.
  */
-export async function removeMethod(
-  deps: Pick<Deps, 'db' | 'config' | 'clock'>,
-  req: FastifyRequest,
-  type: string,
-  id: string,
-): Promise<{ status: 'staged'; changeId: string } | null> {
+export async function removeMethod(deps: Pick<Deps, 'db' | 'config' | 'clock'>, req: FastifyRequest, type: string, id: string): Promise<void> {
   const accountId = req.auth.accountId;
   const body = req.body;
   const raw = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).confirmToken : undefined;
   const token = raw === undefined ? undefined : typeof raw === 'string' ? raw : '';
   const client = await deps.db.connect();
-  let held: { changeId: string } | null = null;
   let ended = 0;
   try {
     await client.query('begin');
     try {
       const found = await removable(client, deps.config, accountId, type, id, deps.clock());
       await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'remove-method', method: found.type, id }, token);
-      // Hold model v3: a waiting login's removal is staged; the method stays until 24 h after the
-      // removal is submitted (a strong login may approve it now or cancel it, owner G58).
-      held = await gateChange(client, req, { kind: 'remove-method', type: found.type, id });
-      if (held === null) ended = await applyRemoval(client, deps.config, accountId, found.type, id, req.auth.sessionId, deps.clock());
+      await requireLiveSessionInTx(client, req.auth, deps.clock());
+      ended = await applyRemoval(client, deps.config, accountId, found.type, id, req.auth.sessionId, deps.clock());
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -384,19 +364,15 @@ export async function removeMethod(
   } finally {
     client.release();
   }
-  if (held !== null) {
-    return stagedReply(held);
-  }
   // The other sessions are revoked: end their live streams now, not at the stream lifetime.
   if (ended > 0) req.server.events.closeAccount(accountId, req.auth.sessionId);
-  return null;
 }
 
 /**
  * With the account row locked: the method, or 404 `not-found` (unknown type or id, another
  * account's method); 409 `last-login-method` when what is left would not log in (`leavesLogin`);
- * 409 `password-has-totp` for the password while TOTP is enrolled, and 409 `password-alone` when
- * what is left is a password with neither TOTP nor a method that stands alone (owner, 16 Nov 2026).
+ * 409 `two-methods-required` when a trader would be left with fewer than two kinds of method
+ * (owner, 26 Nov 2026). Only PGP keys usable now count toward the two.
  */
 async function removable(db: Queryable, config: Config, accountId: string, type: string, id: string, now: Date) {
   const acct = await db.query<{ kind: AccountKind; account_type: string }>('select kind, account_type from accounts where id = $1 for update', [accountId]);
@@ -407,8 +383,6 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   // Staff and the owner have no reset (R2): only keys a login challenge can go to count. A vendor's
   // G13 check below counts them too (security review 8 Nov M3: an expired key logs no one in).
   const vendor = acct.rows[0]!.account_type === 'vendor';
-  // The keys usable now, for the G13 and password-alone checks (a trader's last-login check counts
-  // every stored key: it has a reset).
   const usableNow = await usablePgpIds(db, config, accountId, now);
   const usable = kind === 'trader' && !vendor ? null : usableNow;
   const counts = await countsOf(db, accountId);
@@ -416,30 +390,23 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
   if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
   if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
-  // Owner G13 (7 Nov): a vendor never goes back to a password-only login. Its last passkey,
-  // security key or PGP key can only be exchanged: add the new one, then remove the old.
+  // Owner G13 (7 Nov): a vendor's last passkey, security key or PGP key can only be exchanged:
+  // add the new one, then remove the old.
   if (vendor && after.usablePgp + after.keys + after.passkeys === 0) throw new ApiError(409, 'last-login-method');
-  // Owner, 16 Nov 2026: the authenticator app goes only with a password, so the password stays
-  // while TOTP is on (remove the authenticator app first). Under the same account lock as a TOTP
-  // enrolment's write (totp.ts `assertPasswordForTotp`).
-  const { rows: totp } = await db.query(EXISTS.totp, [accountId]);
-  if (partnerNeededBy(found.type, totp.length > 0 ? ['totp'] : []) !== null) throw new ApiError(409, 'password-has-totp');
-  // Owner, 16 Nov 2026: a password does not stand alone. What is left may not be a password with
-  // neither TOTP nor a PGP key, passkey or security key (409 `password-alone`). Only a PGP key
-  // usable now counts, as for G13 (lead call 18 Nov: an expired or revoked key logs no one in).
-  const left: MethodType[] = [];
-  if (usableNow.size - (found.type === 'pgp' && usableNow.has(id) ? 1 : 0) > 0) left.push('pgp');
-  if (after.passkeys > 0) left.push('passkey');
-  if (after.keys > 0) left.push('security-key');
-  if (after.password > 0) left.push('password');
-  if (totp.length > 0 && found.type !== 'totp') left.push('totp');
-  if (passwordAlone(left)) throw new ApiError(409, 'password-alone');
+  if (kind === 'trader') {
+    const { rows: totp } = await db.query(EXISTS.totp, [accountId]);
+    const left: MethodType[] = [];
+    if (usableNow.size - (found.type === 'pgp' && usableNow.has(id) ? 1 : 0) > 0) left.push('pgp');
+    if (after.passkeys > 0) left.push('passkey');
+    if (after.keys > 0) left.push('security-key');
+    if (totp.length > 0 && found.type !== 'totp') left.push('totp');
+    if (!enoughMethods(left)) throw new ApiError(409, 'two-methods-required');
+  }
   return found;
 }
 
 /**
- * The write of a removal (the route's, or a pending one when the hold ends by time; the checks of
- * `removable` run again): the method deleted, alert `login-method-removed` `{ method, label }`,
+ * The write of a removal (the checks of `removable` run again): the method deleted, alert `login-method-removed` `{ method, label }`,
  * every session but `keepSessionId` ended and alert `sessions-ended` `{ count, reason }` when any
  * did. Returns how many sessions it ended.
  */
@@ -468,21 +435,19 @@ export async function applyRemoval(
 // Routes
 
 /**
- * `GET /v1/account/methods` (any session of the account, a held recovery session and a stale Terms
+ * `GET /v1/account/methods` (any session of the account, a stale Terms
  * version included: it changes nothing) and `DELETE /v1/account/methods/:type/:id { confirmToken }`
- * (full sessions only). `PUT /v1/account/password` lives with the other password routes
- * (password.ts).
+ * (full sessions only).
  */
 export function methodRoutes(app: FastifyInstance): void {
   app.get(
     '/v1/account/methods',
-    { preHandler: requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true }) },
+    { preHandler: requireSession({ allowStaleTerms: true }) },
     async (req) => listMethods(req.server.deps.db, req.auth.accountId),
   );
-  app.delete('/v1/account/methods/:type/:id', { preHandler: [requireSession(), requireNotHeld] }, async (req, reply) => {
+  app.delete('/v1/account/methods/:type/:id', { preHandler: requireSession() }, async (req) => {
     const { type, id } = req.params as { type: string; id: string };
-    const held = await removeMethod(req.server.deps, req, type, id);
-    if (held !== null) return reply.code(202).send(held);
+    await removeMethod(req.server.deps, req, type, id);
     return { ok: true };
   });
 }

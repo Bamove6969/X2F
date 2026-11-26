@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';

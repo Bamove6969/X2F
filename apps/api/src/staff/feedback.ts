@@ -3,7 +3,7 @@ import { ApiError } from '../errors.js';
 import { listFeedbackForm } from '../feedback/form.js';
 import { feedbackMoodCounts, listFeedback } from '../feedback/mood.js';
 import { blurCheckCounts, listBlurChecks } from '../proof/blurCheck.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { requireStaff } from './guard.js';
 import { log } from './members.js';
 

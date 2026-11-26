@@ -1,7 +1,7 @@
 import { displayKeyOf } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { activeBans } from '../banState.js';
 import type { Queryable } from '../db/pool.js';
 import { hasActiveLien } from '../disputes/lien.js';
@@ -51,7 +51,6 @@ export interface LookedUpAccount {
   stage: string;
   status: {
     bans: Array<{ id: string; kind: 'trade' | 'site'; reasonCode: string; until: string | null; permanent: boolean }>;
-    hold: { until: string; reason: string } | null;
     frozen: boolean;
     lien: boolean;
   };
@@ -59,15 +58,9 @@ export interface LookedUpAccount {
 
 async function statusOf(q: Queryable, accountId: string, now: Date): Promise<LookedUpAccount['status']> {
   const bans = await activeBans(q, accountId, now);
-  const hold = await q.query<{ hold_until: Date; reason: string }>(
-    'select hold_until, reason from account_holds where account_id = $1 and hold_until > $2',
-    [accountId, now],
-  );
   const frozen = await q.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
-  const h = hold.rows[0];
   return {
     bans: bans.map((b) => ({ id: b.id, kind: b.kind, reasonCode: b.reasonCode, until: b.until?.toISOString() ?? null, permanent: b.until === null })),
-    hold: h ? { until: h.hold_until.toISOString(), reason: h.reason } : null,
     frozen: frozen.rows.length > 0,
     lien: await hasActiveLien(q, accountId),
   };

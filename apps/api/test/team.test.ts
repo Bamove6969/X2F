@@ -6,7 +6,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_MS } from '../src/auth/hold.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
@@ -421,7 +420,7 @@ describe('owner-only', () => {
       await m.browser.get('/v1/team/audit'),
       await m.browser.get('/v1/account/sessions'),
       // Owner Q73: a member confirms with their own methods for "Stay logged in" only.
-      await m.browser.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } }),
+      await m.browser.post('/v1/confirm/pgp/start', { action: { kind: 'key-test' } }),
       await m.browser.post('/v1/confirm/webauthn/start', { action: { kind: 'team-remove', memberId: m.id } }),
       await m.browser.post('/v1/account/login-name', { loginName: 'whatever1' }),
     ];

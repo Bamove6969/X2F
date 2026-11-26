@@ -10,9 +10,9 @@ import { requireSession } from './sessions.js';
  * Every route that answers with marketplace or user data (offers and their counts, prices, profiles,
  * reviews, news, the site banner) runs behind `requireInside`: a live full session of a trader
  * account on the current Terms. A team member passes as the account they work for (their session
- * is a row of that account). Without one: 401 `not-authenticated`, a recovery session 403
- * `recovery-session`, stale Terms 403 `terms-required` (the web sends that to the Terms screen), and
- * never any data.
+ * is a row of that account). Without one: 401 `not-authenticated`, a setup-only session 403
+ * `two-methods-required`, stale Terms 403 `terms-required` (the web sends that to the Terms screen),
+ * and never any data.
  *
  * It does not touch the session (`touch: false`): reading lists and prices, some of them polled,
  * must never keep an idle session alive in an open tab (review 2026-10-27, I1).
@@ -46,7 +46,7 @@ export function runsInside(preHandler: unknown): boolean {
  * (review 2026-11-08 F2). `test/frontDoor.test.ts` fails when a session-guarded GET is neither.
  */
 export const OWN_DATA_READS: Readonly<Record<string, string>> = {
-  'GET /v1/account/me': "who I am: my display name, login methods, session level and Terms state (read on stale Terms and recovery to route me)",
+  'GET /v1/account/me': "who I am: my display name, login methods, session level and Terms state (read on stale Terms and setup-only to route me)",
   'GET /v1/account/alerts': 'my own security alerts',
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
@@ -55,7 +55,6 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
-  'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/liens': "my own account's liens, both ways: what I owe (owed, recovered, left, rate) and the totals recovered and left on liens owed to me; no account ids, no addresses, never the debtor's purchases",
   'GET /v1/account/liens/preview': "the lien recovery my own take of an offer would reserve from my own proceeds (my liens only; the figure, never the creditor or their address)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
@@ -109,7 +108,6 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
  */
 export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   // Login methods and security settings (my own account).
-  'PUT /v1/account/password': 'sets or changes my own password; no data back',
   'POST /v1/account/pgp/start': 'an add-key challenge for my own account, encrypted to the key I sent',
   'POST /v1/account/pgp/finish': 'adds a PGP key to my own account',
   'POST /v1/account/webauthn/start': 'registration options for my own account',
@@ -130,7 +128,6 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/type': 'switches my own account to a vendor account; answers its type',
   // Lien recovery, provisional owner answer Q2 (17 Nov 2026): the address recoveries owed to me go to.
   'POST /v1/account/liens/:id/recovery-address': "sets where recoveries on a lien owed to me are paid, signed by my own device's identity in the disputed trade; no data back",
-  'POST /v1/confirm/password': 'a confirm token bound to my own session',
   'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
   'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',
   'POST /v1/confirm/webauthn/start': 'confirm options bound to my own session, for my own keys',
@@ -138,7 +135,6 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   // Sessions, approvals, alerts, push and the Terms (my own account).
   'POST /v1/account/approvals/:id': 'my decision on one of my own new-device login approvals',
   'DELETE /v1/account/sessions/:id': 'ends one of my own sessions',
-  'DELETE /v1/account/recovery-sessions/:id': 'cancels one of my own backup sessions',
   'POST /v1/account/push': 'my own push subscription',
   'DELETE /v1/account/push': 'drops my own push subscriptions',
   'POST /v1/account/alerts/:id/seen': 'marks one of my own alerts seen',
@@ -155,11 +151,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
   'DELETE /v1/account/chat-keys/:id': "marks one of my own account's chat-key envelopes collected; no data back",
-  // Hold model v3: my own account's changes waiting their 24 h, and its replaced recovery code.
-  'POST /v1/account/hold/changes/submit': "submits my own session's drafts; answers their count and date",
-  'POST /v1/account/hold/changes/approve': "approves my own account's waiting changes now (a strong session); answers the outcome",
-  'DELETE /v1/account/hold/changes': "cancels my own account's waiting changes; no data back",
-  'DELETE /v1/account/hold/changes/:id': "cancels one of my own account's waiting changes; no data back",
+  // The replaced recovery code.
   'POST /v1/account/recovery-code/reveal': "shows my own account's new recovery code once, to the session allowed to read it",
   'POST /v1/account/onboarding/end': "closes my own session's sign-up window (review M1(a)); no data back",
   // Settings and social rows (my own account).
@@ -234,18 +226,15 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'GET /v1/pgp/signing-key': "X2F's own public signing key, to check the signed sign-up and login challenges",
   'GET /.well-known/x2f-signing-key.asc': "the same public signing key as a file to import (sign-up v2); public armor only",
   'POST /v1/register/name-check': 'create an account: the live "is available" tick for the login name (rate limited per device and site wide, auth/nameCheck.ts); answers { available } only',
-  'POST /v1/register/password': 'create an account (password)',
   'POST /v1/register/pgp/start': 'create an account (PGP)',
   'POST /v1/register/pgp/finish': 'create an account (PGP)',
   'POST /v1/register/webauthn/start': 'create an account (passkey or security key)',
   'POST /v1/register/webauthn/finish': 'create an account (passkey or security key)',
-  'POST /v1/login/password': 'log in',
   'POST /v1/login/pgp/start': 'log in',
   'POST /v1/login/pgp/finish': 'log in',
   'POST /v1/login/webauthn/start': 'log in',
   'POST /v1/login/webauthn/finish': 'log in',
-  'POST /v1/login/second-factor': 'log in (second step)',
-  'POST /v1/login/backup': 'account recovery: recovery code or authenticator backup login',
+  'POST /v1/login/backup': 'account recovery: recovery code login',
   'POST /v1/login/approval/:id/poll': 'log in on a new device: waits for the approval from a logged-in device (needs the secret approval id)',
   'POST /v1/login/approval/:id/cancel': 'log in on a new device: gives up waiting',
   'POST /v1/team/invite': "team member sign-up: opens an invite by its secret code (shows only what that invite says)",

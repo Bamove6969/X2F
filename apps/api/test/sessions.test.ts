@@ -36,20 +36,18 @@ beforeAll(async () => {
   };
   app.post('/t/login', async (req, reply) => {
     const b = req.body as {
-      accountId: string; level?: 'full' | 'recovery'; deviceLabel?: string; firstSession?: boolean; holdUntil?: string;
+      accountId: string; method?: 'passkey' | 'recovery-code'; deviceLabel?: string; firstSession?: boolean;
     };
     const sessionId = await startSession(deps, req, reply, {
       accountId: b.accountId,
-      level: b.level ?? 'full',
+      level: 'full',
       deviceLabel: b.deviceLabel ?? 'Test browser',
-      method: 'passkey',
+      method: b.method ?? 'passkey',
       firstSession: b.firstSession ?? false,
-      ...(b.holdUntil ? { holdUntil: new Date(b.holdUntil) } : {}),
     });
     return { sessionId };
   });
   app.get('/t/me', { preHandler: requireSession() }, async (req) => req.auth);
-  app.get('/t/recovery-ok', { preHandler: requireSession({ allowRecovery: true }) }, async (req) => req.auth);
   app.get('/t/trader', { preHandler: requireSession({ kinds: ['trader'] }) }, async () => ({ ok: true }));
   app.get('/t/stale', { preHandler: requireSession({ allowStaleTerms: true }) }, async () => ({ ok: true }));
   app.post('/t/device', async (req, reply) => {
@@ -76,7 +74,7 @@ function cookieOf(res: LightMyRequestResponse, cookie: string) {
 
 async function login(
   accountId: string,
-  o: { level?: 'full' | 'recovery'; firstSession?: boolean; cookies?: Record<string, string>; holdUntil?: string; deviceLabel?: string } = {},
+  o: { method?: 'passkey' | 'recovery-code'; firstSession?: boolean; cookies?: Record<string, string>; deviceLabel?: string } = {},
 ): Promise<{ res: LightMyRequestResponse; token: string; sessionId: string }> {
   const { cookies, ...body } = o;
   const res = await app.inject({
@@ -91,15 +89,12 @@ async function login(
 const get = (url: string, token: string) => app.inject({ method: 'GET', url, cookies: { [SESSION_COOKIE]: token } });
 
 describe('sessionPolicy', () => {
-  it('gives staff and owner 2 h idle / 12 h absolute and recovery 25 h / 48 h; a full trader session lasts its chosen length (null)', () => {
+  it('gives staff and owner 2 h idle / 12 h absolute; a trader session lasts its chosen length (null)', () => {
     // Owner, 2 Nov 2026: a trader's full session ends at the length chosen at login (expires_at),
     // extended only by "Stay logged in?"; no idle rule and no fixed maximum.
     expect(sessionPolicy('trader', 'full')).toBeNull();
     for (const k of ['staff', 'owner'] as const) {
       expect(sessionPolicy(k, 'full')).toEqual({ idleMs: 2 * HOUR, absoluteMs: 12 * HOUR });
-    }
-    for (const k of ['trader', 'staff', 'owner'] as const) {
-      expect(sessionPolicy(k, 'recovery')).toEqual({ idleMs: 25 * HOUR, absoluteMs: 48 * HOUR });
     }
   });
 });
@@ -172,17 +167,6 @@ describe('sessions', () => {
     expect((await get('/t/me', token)).statusCode).toBe(401);
   });
 
-  it('ends a recovery session after 25 h idle, not at 24 h 59 min (M4)', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
-    const kept = await login(id, { level: 'recovery' });
-    setNow(new Date(T0.getTime() + 25 * HOUR - MIN));
-    expect((await get('/t/recovery-ok', kept.token)).statusCode).toBe(200);
-    setNow(T0);
-    const idle = await login(id, { level: 'recovery' });
-    setNow(new Date(T0.getTime() + 25 * HOUR));
-    expect((await get('/t/recovery-ok', idle.token)).statusCode).toBe(401);
-  });
-
   it('moves a staff session\'s expires_at to the idle deadline on use, so idle sessions get purged (M1)', async () => {
     const id = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     const { token, sessionId } = await login(id);
@@ -205,26 +189,8 @@ describe('sessions', () => {
     expect((await deps.db.query('select 1 from sessions where id = $1', [other.sessionId])).rows).toHaveLength(0);
   });
 
-  it('ends a recovery session after 48 h', async () => {
+  it('refuses a staff session where kinds is trader', async () => {
     const id = await seedAccount(deps, { loginName: name() });
-    const { token } = await login(id, { level: 'recovery' });
-    for (let h = 24; h < 48; h += 24) {
-      setNow(new Date(T0.getTime() + h * HOUR));
-      expect((await get('/t/recovery-ok', token)).statusCode).toBe(200);
-    }
-    setNow(new Date(T0.getTime() + 47 * HOUR));
-    expect((await get('/t/recovery-ok', token)).statusCode).toBe(200);
-    setNow(new Date(T0.getTime() + 48 * HOUR));
-    expect((await get('/t/recovery-ok', token)).statusCode).toBe(401);
-  });
-
-  it('refuses a recovery session without allowRecovery, and a staff session where kinds is trader', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
-    const rec = await login(id, { level: 'recovery' });
-    const r1 = await get('/t/me', rec.token);
-    expect(r1.statusCode).toBe(403);
-    expect(r1.json()).toEqual({ error: 'recovery-session' });
-    expect((await get('/t/recovery-ok', rec.token)).json()).toMatchObject({ level: 'recovery' });
 
     const staff = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     const s = await login(staff);
@@ -359,10 +325,9 @@ describe('sessions', () => {
     const s = await deps.db.query('select device_label from sessions where id = $1', [later.sessionId]);
     expect(s.rows[0].device_label).toBe('L'.repeat(60));
 
-    const hold = new Date(T0.getTime() + DAY).toISOString();
-    await login(id, { level: 'recovery', holdUntil: hold });
+    await login(id, { method: 'recovery-code' });
     const rec = await deps.db.query(`select detail from alerts where account_id = $1 and kind = 'recovery-login'`, [id]);
-    expect(rec.rows).toEqual([{ detail: { method: 'passkey', deviceLabel: 'Test browser', holdUntil: hold } }]);
+    expect(rec.rows).toEqual([{ detail: { method: 'recovery-code', deviceLabel: 'Test browser' } }]);
   });
 
   it('strips control and bidi/format characters from the device label (M2)', async () => {
@@ -441,8 +406,8 @@ describe('sessions', () => {
     const cleared = cookieOf(res, SESSION_COOKIE);
     expect(cleared?.value).toBe('');
     expect((await get('/t/stale', token)).statusCode).toBe(401);
-    // A recovery session can log out too.
-    const rec = await login(id, { level: 'recovery' });
+    // A recovery-code login can log out too.
+    const rec = await login(id, { method: 'recovery-code' });
     const r2 = await app.inject({ method: 'POST', url: '/v1/logout', headers: { origin: ORIGIN }, cookies: { [SESSION_COOKIE]: rec.token } });
     expect(r2.statusCode).toBe(200);
   });

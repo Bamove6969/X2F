@@ -1,6 +1,6 @@
 import { BadgeError, applyChoice, levelShown, nextMilestones, type BadgeId, type Visibility } from '@x2f/reputation';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';

@@ -466,10 +466,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
   // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; held: boolean }>(
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
       `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
-              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
-              exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
          from trades t
          join trade_attestations a on a.code = t.code
          left join chats c on c.trade_code = t.code
@@ -483,9 +482,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
-        // Lead review 8 Nov C2 (owner G7): a trade a recovery-code hold holds is paused for the
-        // moderator's timers too, until the hold ends or a moderator decides.
-        paused: r.paused_at !== null || r.site_paused || r.held,
+        paused: r.paused_at !== null || r.site_paused,
       })),
     });
   }));

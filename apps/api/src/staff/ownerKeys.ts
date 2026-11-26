@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import { consumeChallenge } from '../auth/challenges.js';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { WEBAUTHN_TTL_MS, verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions } from '../auth/webauthn.js';
 import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';

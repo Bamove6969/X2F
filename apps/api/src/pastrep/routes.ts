@@ -33,7 +33,7 @@ import { randomUUID } from 'node:crypto';
 import { PAST_REP_MIN_RSA_BITS, PAST_REP_VERIFY_CONFIG, inspectPublicKey, type InspectOptions } from '@x2f/accounts';
 import * as openpgp from 'openpgp';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { requestOrigin } from '../auth/origin.js';
 import { PGP_BODY_LIMIT, openKey, sealKey, storableKey } from '../auth/pgp.js';
 import { requireSession } from '../auth/sessions.js';
@@ -107,7 +107,7 @@ export function pastRepRoutes(app: FastifyInstance): void {
   // Owner-only for team members (no `member` option); full trader sessions only (no backup login).
   const requireTrader = requireSession({ kinds: ['trader'] });
 
-  app.post('/v1/account/past-rep/start', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader, requireNotHeld] }, async (req) => {
+  app.post('/v1/account/past-rep/start', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader] }, async (req) => {
     const deps = req.server.deps;
     const now = deps.clock();
     const b = body(req);
@@ -146,7 +146,7 @@ export function pastRepRoutes(app: FastifyInstance): void {
     return { challengeId: inserted.rows[0]!.id, text, expiresAt: expiresAt.toISOString() };
   });
 
-  app.post('/v1/account/past-rep/finish', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
+  app.post('/v1/account/past-rep/finish', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader] }, async (req, reply) => {
     const deps = req.server.deps;
     const now = deps.clock();
     const b = body(req);
@@ -179,10 +179,8 @@ export function pastRepRoutes(app: FastifyInstance): void {
 
     const id = await withTx(deps.db, async (db) => {
       // Review round 1 M3 (Task 18's ownerWriteGate pattern): under the account lock, the calling
-      // session must still be live and the account not on hold; then the challenge row lock.
+      // session must still be live; then the challenge row lock.
       await requireLiveSessionInTx(db, req.auth, now);
-      const hold = await holdInTx(db, settleOf(req), accountId, now);
-      if (hold !== null) throw holdRefusal(hold.holdUntil);
       const locked = await db.query<{ used_at: Date | null }>('select used_at from challenges where id = $1 for update', [challengeId]);
       if (locked.rows.length === 0) throw new ApiError(400, 'challenge-expired');
       if (locked.rows[0]!.used_at !== null) throw new ApiError(409, 'challenge-used');

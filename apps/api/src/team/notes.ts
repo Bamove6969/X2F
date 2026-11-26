@@ -17,7 +17,7 @@
  * characters, and never edited (migration 361).
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { requireLiveSessionInTx } from '../auth/hold.js';
+import { requireLiveSessionInTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { addAlert } from '../src/alerts.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { startSession } from '../src/auth/sessions.js';
+import { RECOVERY_WINDOW_MS, startSession } from '../src/auth/sessions.js';
 import { isLoginNameClash } from '../src/routes/account.js';
 import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -32,10 +32,10 @@ beforeAll(async () => {
     set(d);
   };
   app.post('/t/login', async (req, reply) => {
-    const b = req.body as { accountId: string; level?: 'full' | 'recovery'; holdUntil?: string; deviceLabel?: string };
+    const b = req.body as { accountId: string; method?: 'passkey' | 'recovery-code'; deviceLabel?: string };
     const sessionId = await startSession(deps, req, reply, {
-      accountId: b.accountId, level: b.level ?? 'full', deviceLabel: b.deviceLabel ?? 'Test browser', method: 'passkey',
-      firstSession: false, ...(b.holdUntil ? { holdUntil: new Date(b.holdUntil) } : {}),
+      accountId: b.accountId, level: 'full', deviceLabel: b.deviceLabel ?? 'Test browser', method: b.method ?? 'passkey',
+      firstSession: false,
     });
     return { sessionId };
   });
@@ -52,19 +52,19 @@ beforeEach(() => {
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 const at = (ms: number) => new Date(now.getTime() + ms);
 
-async function account(kind: 'trader' | 'staff' = 'trader') {
+/** A seeded account; `methods: false` for one with no login method yet (a test adds its own). */
+async function account(kind: 'trader' | 'staff' = 'trader', methods = true) {
   const username = `acct${String(++n).padStart(4, '0')}x`;
-  return { id: await seedAccount(deps, { loginName: username, kind }), username };
+  return { id: await seedAccount(deps, { loginName: username, kind, methods }), username };
 }
 
 async function loggedIn(
   accountId: string,
-  o: { level?: 'full' | 'recovery'; holdUntil?: Date; deviceLabel?: string } = {},
+  o: { method?: 'passkey' | 'recovery-code'; deviceLabel?: string } = {},
 ): Promise<Browser & { sessionId: string }> {
   const b = new Browser(app) as Browser & { sessionId: string };
   const res = await b.post('/t/login', {
-    accountId, ...(o.level ? { level: o.level } : {}), ...(o.holdUntil ? { holdUntil: o.holdUntil.toISOString() } : {}),
-    ...(o.deviceLabel ? { deviceLabel: o.deviceLabel } : {}),
+    accountId, ...(o.method ? { method: o.method } : {}), ...(o.deviceLabel ? { deviceLabel: o.deviceLabel } : {}),
   });
   expect(res.statusCode).toBe(200);
   b.sessionId = (res.json() as { sessionId: string }).sessionId;
@@ -84,9 +84,6 @@ async function addCredential(accountId: string, kind: 'passkey' | 'security-key'
     [accountId, randomBytes(32), randomBytes(77), kind, now],
   );
 }
-async function addPassword(accountId: string): Promise<void> {
-  await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [accountId, '$argon2id$stub', now]);
-}
 async function addTotp(accountId: string): Promise<void> {
   await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [accountId, randomBytes(48), now]);
 }
@@ -103,13 +100,13 @@ interface Me {
   needsLoginName: boolean;
   kind: string;
   level: string;
-  holdUntil: string | null;
+  recoveryUntil: string | null;
   methods: string[];
   hasBackup: boolean;
   suggestions: string[];
   session: { lengthHours: number | null; choices: number[]; expiresAt: string; canExtend: boolean; serverNow: string } | null;
   termsCurrent: boolean;
-  securityRating: 'weak' | 'medium' | 'high' | null;
+  securityRating: 'weak' | 'high' | null;
 }
 
 async function me(b: Browser): Promise<Me> {
@@ -128,8 +125,8 @@ describe('GET /v1/account/me', () => {
     const bare = await b.post('/v1/account/login-name', { loginName: 'Private.OT1' });
     expect(bare.statusCode).toBe(403);
     expect(errorOf(bare)).toBe('confirm-required');
-    const token = () => issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });
-    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-password' }, method: 'password' });
+    const token = () => issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'passkey' });
+    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'key-test' }, method: 'passkey' });
     expect(errorOf(await b.post('/v1/account/login-name', { loginName: 'Private.OT1', confirmToken: wrong }))).toBe('confirm-invalid');
     const set = async (loginName: unknown) => b.post('/v1/account/login-name', { loginName, confirmToken: await token() });
     expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
@@ -162,7 +159,7 @@ describe('GET /v1/account/me', () => {
     expect(errorOf(again)).toBe('login-name-set');
     // An account that chose its names at sign-up never needs one.
     const ob = await loggedIn(other);
-    const otherToken = await issueConfirmToken(deps, { sessionId: ob.sessionId, accountId: other, action: { kind: 'set-login-name' }, method: 'password' });
+    const otherToken = await issueConfirmToken(deps, { sessionId: ob.sessionId, accountId: other, action: { kind: 'set-login-name' }, method: 'passkey' });
     expect(errorOf(await ob.post('/v1/account/login-name', { loginName: 'Fresh.OT1', confirmToken: otherToken }))).toBe('login-name-set');
   });
 
@@ -174,8 +171,8 @@ describe('GET /v1/account/me', () => {
       const b = await seedAccount(deps, { loginName: null, displayName: nb });
       const ba = await loggedIn(a);
       const bb = await loggedIn(b);
-      const ta = await issueConfirmToken(deps, { sessionId: ba.sessionId, accountId: a, action: { kind: 'set-login-name' }, method: 'password' });
-      const tb = await issueConfirmToken(deps, { sessionId: bb.sessionId, accountId: b, action: { kind: 'set-login-name' }, method: 'password' });
+      const ta = await issueConfirmToken(deps, { sessionId: ba.sessionId, accountId: a, action: { kind: 'set-login-name' }, method: 'passkey' });
+      const tb = await issueConfirmToken(deps, { sessionId: bb.sessionId, accountId: b, action: { kind: 'set-login-name' }, method: 'passkey' });
       const [ra, rb] = await Promise.all([
         ba.post('/v1/account/login-name', { loginName: nb, confirmToken: ta }),
         bb.post('/v1/account/login-name', { loginName: na, confirmToken: tb }),
@@ -198,72 +195,61 @@ describe('GET /v1/account/me', () => {
     expect(isLoginNameClash(null)).toBe(false);
   });
 
-  it('the login-name route needs a full session', async () => {
-    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer2' });
-    const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
-    expect((await held.post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(403);
+  it('the login-name route needs a session', async () => {
     expect((await new Browser(app).post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(401);
   });
 
-  it('describes the account; a password-only account is told to add an authenticator and a backup', async () => {
-    const { id, username } = await account();
-    await addPassword(id);
+  it('describes the account; an account with one kind of method is setup-only and told to add a backup', async () => {
+    const { id, username } = await account('trader', false);
+    await addCredential(id, 'passkey');
     const b = await loggedIn(id);
     const res = await b.get('/v1/account/me');
     // The private login name is never sent, not even to its owner.
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', completedTrades: 0, methods: ['password'], hasBackup: false,
-      // Review M2: a password alone, outside the sign-up window: the session is setup-only.
-      suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, setupOnly: true, accountHoldUntil: null, pendingChanges: null, changesWait: false, recoveryCodeToShow: false, member: null, teamHold: null,
+      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', recoveryUntil: null, stage: 'starter', completedTrades: 0, methods: ['passkey'], hasBackup: false,
+      // Owner 26 Nov 2026: one kind of method, outside the sign-up window: the session is setup-only.
+      suggestions: ['add-backup'], termsCurrent: true, setupOnly: true, recoveryCodeToShow: false, member: null,
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
       idleReminderMinutes: null,
       accountType: 'trader',
-      securityRating: 'weak',
+      securityRating: 'high',
     });
     await addTotp(id);
     const after = await me(b);
     expect(after.suggestions).toEqual([]);
     expect(after.hasBackup).toBe(true);
-    expect(after.methods).toEqual(['password', 'totp']);
+    expect(after.methods).toEqual(['passkey', 'totp']);
+    expect((after as unknown as { setupOnly: boolean }).setupOnly).toBe(false);
   });
 
-  it('rates the account weak, medium or high by its login methods (owner demo note #6, answers of 17 Nov)', async () => {
-    const { id } = await account();
-    await addPassword(id);
+  it('rates the account weak or high by its login methods (owner demo note #6; no passwords since 26 Nov)', async () => {
+    const { id } = await account('trader', false);
     const b = await loggedIn(id);
     expect((await me(b)).securityRating).toBe('weak');
     // A recovery code is a backup way in, not one of the other ways (docs/trade-wallet-note6.md Q6).
     await addRecoveryCodes(id, 1);
-    expect((await me(b)).securityRating).toBe('weak');
-    // "User/pass/display name/otp is kinda like medium security."
     await addTotp(id);
-    expect((await me(b)).securityRating).toBe('medium');
-    // The authenticator app counts only with a password (owner, 16 Nov 2026).
-    await deps.db.query('delete from passwords where account_id = $1', [id]);
     expect((await me(b)).securityRating).toBe('weak');
-    // A PGP key, passkey or security key: high, with or without a password.
+    // A PGP key, passkey or security key: high.
     await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
       id, randomBytes(20).toString('hex'), randomBytes(64), now,
     ]);
     expect((await me(b)).securityRating).toBe('high');
-    await addPassword(id);
-    expect((await me(b)).securityRating).toBe('high');
   });
 
   it('lists methods in a fixed order; spent recovery codes are not a method', async () => {
-    const { id } = await account();
+    const { id } = await account('trader', false);
     await addRecoveryCodes(id, 2, true);
     await addTotp(id);
-    await addPassword(id);
     await addCredential(id, 'security-key');
     await addCredential(id, 'passkey');
     await addPgp(id);
     await addPgp(id);
     const b = await loggedIn(id);
-    expect((await me(b)).methods).toEqual(['pgp', 'passkey', 'security-key', 'password', 'totp']);
+    expect((await me(b)).methods).toEqual(['pgp', 'passkey', 'security-key', 'totp']);
     await addRecoveryCodes(id, 1);
-    expect((await me(b)).methods).toEqual(['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes']);
+    expect((await me(b)).methods).toEqual(['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes']);
   });
 
   it('shows no session length for staff (their sessions keep fixed rules; sessionLength.test.ts has the rest)', async () => {
@@ -271,19 +257,15 @@ describe('GET /v1/account/me', () => {
     expect((await me(await loggedIn(staff.id))).session).toBeNull();
   });
 
-  it('a held recovery session sees its level and hold; at the hold time it is no longer held', async () => {
+  it('a recovery-code login shows when its window to change anything without a confirm ends (owner 26 Nov 2026)', async () => {
     const { id } = await account();
-    await addPgp(id);
-    await addTotp(id);
-    const holdUntil = at(DAY);
-    const b = await loggedIn(id, { level: 'recovery', holdUntil });
+    const b = await loggedIn(id, { method: 'recovery-code' });
     const res = await me(b);
-    expect(res.level).toBe('recovery');
-    expect(res.holdUntil).toBe(holdUntil.toISOString());
-    setNow(holdUntil);
-    const later = await me(b);
-    expect(later.level).toBe('recovery');
-    expect(later.holdUntil).toBeNull();
+    expect(res.level).toBe('full');
+    expect(res.recoveryUntil).toBe(at(RECOVERY_WINDOW_MS).toISOString());
+    setNow(at(RECOVERY_WINDOW_MS));
+    expect((await me(b)).recoveryUntil).toBeNull();
+    expect((await me(await loggedIn(id))).recoveryUntil).toBeNull();
   });
 
   it('needs a session', async () => {
@@ -306,13 +288,10 @@ describe('GET /v1/account/me', () => {
   });
 });
 
-describe('hasBackup (R11: a password never counts as the backup)', () => {
+describe('hasBackup (R11)', () => {
   const cases: Array<[string, (id: string) => Promise<void>, boolean]> = [
-    ['password only', async (id) => addPassword(id), false],
-    ['PGP + password', async (id) => { await addPgp(id); await addPassword(id); }, false],
     ['one passkey only', async (id) => addCredential(id, 'passkey'), false],
     ['one security key only', async (id) => addCredential(id, 'security-key'), false],
-    ['password + passkey', async (id) => { await addPassword(id); await addCredential(id, 'passkey'); }, true],
     ['PGP + security key', async (id) => { await addPgp(id); await addCredential(id, 'security-key'); }, true],
     ['two passkeys', async (id) => { await addCredential(id, 'passkey'); await addCredential(id, 'passkey'); }, true],
     ['two PGP keys', async (id) => { await addPgp(id); await addPgp(id); }, true],
@@ -322,7 +301,7 @@ describe('hasBackup (R11: a password never counts as the backup)', () => {
   ];
   for (const [label, setup, expected] of cases) {
     it(`${label} → ${expected}`, async () => {
-      const { id } = await account();
+      const { id } = await account('trader', false);
       await setup(id);
       const res = await me(await loggedIn(id));
       expect(res.hasBackup).toBe(expected);
@@ -330,15 +309,8 @@ describe('hasBackup (R11: a password never counts as the backup)', () => {
     });
   }
 
-  it('PGP + password suggests a backup and an authenticator', async () => {
-    const { id } = await account();
-    await addPgp(id);
-    await addPassword(id);
-    expect((await me(await loggedIn(id))).suggestions).toEqual(['add-authenticator', 'add-backup']);
-  });
-
-  it('no password → no authenticator suggestion', async () => {
-    const { id } = await account();
+  it('no authenticator suggestion (it was a password\'s second factor)', async () => {
+    const { id } = await account('trader', false);
     await addPgp(id);
     expect((await me(await loggedIn(id))).suggestions).toEqual(['add-backup']);
   });
@@ -396,19 +368,15 @@ describe('sessions', () => {
     expect((await t.get('/v1/account/me')).statusCode).toBe(200);
   });
 
-  it('a recovery session may list sessions (even while held) but not end one', async () => {
+  it('a recovery-code login may list sessions and end one (owner 26 Nov 2026: it may change everything)', async () => {
     const { id } = await account();
-    await addPgp(id);
-    await addTotp(id);
     const full = await loggedIn(id);
-    const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
-    const list = await held.get('/v1/account/sessions');
+    const rec = await loggedIn(id, { method: 'recovery-code' });
+    const list = await rec.get('/v1/account/sessions');
     expect(list.statusCode).toBe(200);
-    expect((list.json() as Array<{ id: string; level: string }>).find((s) => s.id === held.sessionId)?.level).toBe('recovery');
-    const res = await held.delete(`/v1/account/sessions/${full.sessionId}`);
-    expect(res.statusCode).toBe(403);
-    expect(errorOf(res)).toBe('recovery-session');
-    expect((await full.get('/v1/account/me')).statusCode).toBe(200);
+    expect((list.json() as Array<{ id: string; level: string }>).find((s) => s.id === rec.sessionId)?.level).toBe('full');
+    expect((await rec.delete(`/v1/account/sessions/${full.sessionId}`)).statusCode).toBe(204);
+    expect((await full.get('/v1/account/me')).statusCode).toBe(401);
   });
 
   it('needs a session', async () => {
@@ -453,29 +421,12 @@ describe('alerts', () => {
     expect(((await b.get('/v1/account/alerts')).json() as Array<{ seenAt: string | null }>)[0]!.seenAt).toBe(at(-HOUR).toISOString());
   });
 
-  it('a held recovery session can read its alerts but cannot mark them seen', async () => {
+  it('a recovery-code login can read its alerts and mark them seen', async () => {
     const { id } = await account();
-    await addPgp(id);
-    await addTotp(id);
-    const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
-    const list = (await held.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
-    expect(list.map((a) => a.kind)).toContain('recovery-login');
-    const alert = list.find((a) => a.kind === 'recovery-login')!;
-    const res = await held.post(`/v1/account/alerts/${alert.id}/seen`);
-    expect(res.statusCode).toBe(403);
-    expect((res.json() as { error: string }).error).toBe('recovery-session');
-    const { rows } = await deps.db.query<{ seen_at: Date | null }>('select seen_at from alerts where id = $1', [alert.id]);
-    expect(rows[0]!.seen_at).toBeNull();
-  });
-
-  it('a recovery session without a hold cannot mark its alerts seen either', async () => {
-    const { id } = await account();
-    await addPgp(id);
-    await addTotp(id);
-    const rec = await loggedIn(id, { level: 'recovery' });
+    const rec = await loggedIn(id, { method: 'recovery-code' });
     const list = (await rec.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
     const alert = list.find((a) => a.kind === 'recovery-login')!;
-    expect((await rec.post(`/v1/account/alerts/${alert.id}/seen`)).statusCode).toBe(403);
+    expect((await rec.post(`/v1/account/alerts/${alert.id}/seen`)).statusCode).toBe(204);
   });
 });
 

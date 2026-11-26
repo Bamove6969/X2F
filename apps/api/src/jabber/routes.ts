@@ -28,7 +28,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import { dailyCap } from '../auth/throttle.js';
 import { ApiError } from '../errors.js';
@@ -119,10 +119,7 @@ function statusOf(app: FastifyInstance, accountId: string, c: ContactRow | null)
 /** First in each write's transaction (as team/members.ts `ownerWriteGate`). */
 async function writeGate(c: pg.PoolClient, req: FastifyRequest): Promise<void> {
   const now = req.server.deps.clock();
-  const live = await requireLiveSessionInTx(c, req.auth, now);
-  const hold = await holdInTx(c, settleOf(req), req.auth.accountId, now);
-  if (hold !== null) throw holdRefusal(hold.holdUntil);
-  if (weakOf(live, now)) throw weakRefusal();
+  await requireLiveSessionInTx(c, req.auth, now);
 }
 
 export interface JabberEvents {
@@ -144,7 +141,7 @@ async function mutedOf(db: pg.PoolClient | pg.Pool, accountId: string): Promise<
 
 export function jabberRoutes(app: FastifyInstance): void {
   const owner = requireSession({ kinds: ['trader'] });
-  const writes = { preHandler: [owner, requireNotHeld] };
+  const writes = { preHandler: [owner] };
 
   app.get('/v1/account/jabber', { preHandler: owner }, async (req) =>
     statusOf(app, req.auth.accountId, await contactOf(app.deps.db, req.auth.accountId, false)),

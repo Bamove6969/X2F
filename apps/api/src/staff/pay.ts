@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { COOKIE_ATTRS } from '../auth/device.js';
 import { realmOf } from '../auth/sessions.js';
 import { subkey, type Config } from '../config.js';

@@ -25,7 +25,6 @@ import { securityKeyLoginRoutes } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 
@@ -49,10 +48,9 @@ let step = 0;
 let keys: Pair[];
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -197,7 +195,7 @@ async function addRecoveryCodes(accountId: string, codes: string[]) {
 }
 
 async function token(b: Browser, accountId: string, action: Parameters<typeof issueConfirmToken>[1]['action']) {
-  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action, method: 'password' });
+  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action, method: 'passkey' });
 }
 
 async function alertsOf(accountId: string, kind: string) {
@@ -660,7 +658,7 @@ describe('PUT /v1/account/password', () => {
     await addPgp(id, await genKey());
     const b = await loggedIn(id);
     const other = await loggedIn(id);
-    const t = await token(b, id, { kind: 'set-password' });
+    const t = await token(b, id, { kind: 'key-test' });
     const res = await b.put('/v1/account/password', { password: GOOD, confirmToken: t });
     expect(res.statusCode).toBe(200);
     // Stored under the current pepper (FU-C).
@@ -668,10 +666,10 @@ describe('PUT /v1/account/password', () => {
     expect(pw).toEqual([{ pepper_id: deps.config.passwordPeppers.current }]);
     expect((await other.get('/v1/account/methods')).statusCode).toBe(401);
     expect((await b.get('/v1/account/methods')).statusCode).toBe(200);
-    expect(await alertsOf(id, 'login-method-added')).toEqual([{ method: 'password' }]);
+    expect(await alertsOf(id, 'login-method-added')).toEqual([{ method: 'passkey' }]);
 
     // Replacing it works the same way; the new password logs in, the old one does not.
-    const t2 = await token(b, id, { kind: 'set-password' });
+    const t2 = await token(b, id, { kind: 'key-test' });
     expect((await b.put('/v1/account/password', { password: OTHER_GOOD, confirmToken: t2 })).statusCode).toBe(200);
     const login = (pw: string) => new Browser().post('/v1/login/password', { loginName: username, password: pw, deviceLabel: 'x' });
     expect((await login(GOOD)).statusCode).toBe(401);
@@ -699,7 +697,7 @@ describe('PUT /v1/account/password', () => {
     const { id } = await account();
     await addPgp(id, await genKey());
     const b = await loggedIn(id);
-    const t = await token(b, id, { kind: 'set-password' });
+    const t = await token(b, id, { kind: 'key-test' });
     const weak = await b.put('/v1/account/password', { password: 'short', confirmToken: t });
     expect(weak.statusCode).toBe(400);
     expect(errorOf(weak)).toBe('password-weak');

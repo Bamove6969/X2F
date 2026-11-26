@@ -1,6 +1,6 @@
 // J-23 (S-075) phase 1 groundwork (docs/security/multi-device-2026-11-09.md, sections 3.1, 4.2,
 // 6.1): the chat-key envelopes the API carries between a person's own devices. The API is a courier:
-// it stores and serves sealed bytes to the account's own strong sessions and never opens them.
+// it stores and serves sealed bytes to the account owner's own sessions and never opens them.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,16 +9,15 @@ import { generateBoxKeyPair, openSealed, sealTo } from '@x2f/protocol';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { CHAT_KEY_ENVELOPE_TTL_MS, MAX_OPEN_CHAT_KEY_ENVELOPES, keysOffered, purgeChatKeyEnvelopes, strongForKeys } from '../src/auth/chatKeys.js';
+import { CHAT_KEY_ENVELOPE_TTL_MS, MAX_OPEN_CHAT_KEY_ENVELOPES, purgeChatKeyEnvelopes } from '../src/auth/chatKeys.js';
 import { CHAT_KEY_COLLECT_BUCKET, CHAT_KEY_POST_BUCKET } from '../src/limits.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { ensureDeviceCookie } from '../src/auth/device.js';
-import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_ROUTES, WEAK_LIMITED_ROUTES } from '../src/auth/hold.js';
+import { LIVE_SESSION_ROUTES } from '../src/auth/liveSession.js';
 import { OWN_DATA_READS, OWN_DATA_WRITES } from '../src/auth/frontDoor.js';
 import { completeLogin, type LoginFactor } from '../src/auth/login.js';
-import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, addUnusedKeys, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { SIG } from './helpers/signature.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
@@ -27,7 +26,6 @@ const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
 const HOUR = 3600_000;
 const TERMS = '2026-10-17';
-const GOOD = 'Correct-Horse-9';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -38,10 +36,9 @@ let cleanup: () => Promise<void>;
 let logs: string[];
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set, logs } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set, logs } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -96,26 +93,13 @@ class Browser {
   get = (url: string) => this.send('GET', url);
   post = (url: string, payload: unknown = {}) => this.send('POST', url, payload);
   delete = (url: string) => this.send('DELETE', url);
-  login(name: string, password = GOOD) {
-    return this.post('/v1/login/password', { loginName: name, password, deviceLabel: this.label });
-  }
 }
 
 let seq = 0;
 const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 
-/** A password trader in a fresh browser: a username-and-password session, `weak-single`. */
-async function weakTrader(label = 'Firefox on Linux') {
-  const b = new Browser(label);
-  const name = unique('ck');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
-  expect(res.statusCode).toBe(201);
-  const accountId = (await accountIdByLoginName(deps, name))!;
-  return { b, name, accountId };
-}
-
-/** A passkey trader in a fresh browser: a strong session (a passkey alone is on the owner's list). */
-async function strongTrader() {
+/** A passkey trader in a fresh browser (and an unused second kind of method, owner 26 Nov 2026: two kinds). */
+async function passkeyTrader() {
   const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
   const b = new Browser('Chrome on Windows');
   const name = unique('pk');
@@ -124,11 +108,12 @@ async function strongTrader() {
   const fin = await b.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(fin.statusCode, fin.body).toBe(201);
   const accountId = (await accountIdByLoginName(deps, name))!;
+  await addUnusedKeys(deps, accountId);
   return { b, name, accountId, auth };
 }
 
-/** A second strong browser of the same passkey account (approved from the first: both strong). */
-async function secondStrongBrowser(t: Awaited<ReturnType<typeof strongTrader>>): Promise<Browser> {
+/** A second browser of the same passkey account (approved from the first). */
+async function secondBrowser(t: Awaited<ReturnType<typeof passkeyTrader>>): Promise<Browser> {
   const b = new Browser('Safari on iOS');
   const s = (await b.post('/v1/login/webauthn/start', {})).json();
   const res = await b.post('/v1/login/webauthn/finish', { challengeId: s.challengeId, response: t.auth.authenticate(s.options, ORIGIN), deviceLabel: 'Phone' });
@@ -139,9 +124,6 @@ async function secondStrongBrowser(t: Awaited<ReturnType<typeof strongTrader>>):
   return b;
 }
 
-const strengthOf = async (accountId: string) =>
-  (await deps.db.query<{ strength: string | null }>('select strength from sessions where account_id = $1 and revoked_at is null order by created_at', [accountId])).rows.map((r) => r.strength);
-
 /** A sealed 32-byte key to `recipient`, as the posting device would send it. */
 async function envelopeFor(recipient: { boxPublic: string }, epoch = 0) {
   const ack = randomBytes(32);
@@ -151,25 +133,9 @@ async function envelopeFor(recipient: { boxPublic: string }, epoch = 0) {
 
 type Listed = { epoch: number; envelopes: Array<{ id: string; recipientPublic: string; sealed: string; epoch: number; createdAt: string; expiresAt: string }> };
 
-describe('the strength rule, strictly (section 3.1 rule 2)', () => {
-  it("is 'strong' exactly on both sides: null and weak-single never offer keys", () => {
-    expect(strongForKeys('strong')).toBe(true);
-    expect(strongForKeys('weak-single')).toBe(false);
-    expect(strongForKeys(null)).toBe(false);
-    expect(strongForKeys(undefined)).toBe(false);
-    expect(keysOffered('strong', 'strong')).toBe(true);
-    expect(keysOffered('strong', 'weak-single')).toBe(false);
-    expect(keysOffered('weak-single', 'strong')).toBe(false);
-    expect(keysOffered('weak-single', 'weak-single')).toBe(false);
-    expect(keysOffered('strong', null)).toBe(false);
-    expect(keysOffered(null, 'strong')).toBe(false);
-  });
-});
-
-describe('the courier: strong sessions of the account store and read sealed envelopes', () => {
-  it('a strong session posts a box to a device key; the second strong device lists it byte for byte and opens it with its own secret; the server could not', async () => {
-    const t = await strongTrader();
-    expect(await strengthOf(t.accountId)).toEqual(['strong']);
+describe('the courier: the account owner\'s sessions store and read sealed envelopes', () => {
+  it('a session posts a box to a device key; the second device lists it byte for byte and opens it with its own secret; the server could not', async () => {
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const { ack, body } = await envelopeFor(device);
     const posted = await t.b.post('/v1/account/chat-keys', body);
@@ -177,8 +143,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
     const { id, expiresAt } = posted.json() as { id: string; expiresAt: string };
     expect(expiresAt).toBe(new Date(now.getTime() + CHAT_KEY_ENVELOPE_TTL_MS).toISOString());
 
-    const phone = await secondStrongBrowser(t);
-    expect(await strengthOf(t.accountId)).toEqual(['strong', 'strong']);
+    const phone = await secondBrowser(t);
     const list = (await phone.get('/v1/account/chat-keys')).json() as Listed;
     expect(list).toEqual({
       epoch: 0,
@@ -197,7 +162,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('a box sealed to another device is only ciphertext to this one', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const theirs = await generateBoxKeyPair();
     const mine = await generateBoxKeyPair();
     const { body } = await envelopeFor(theirs);
@@ -207,11 +172,11 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('collected once: the receiving device deletes it, then nobody is served it and a second delete is 404', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const { body } = await envelopeFor(device);
     const { id } = (await t.b.post('/v1/account/chat-keys', body)).json() as { id: string };
-    const phone = await secondStrongBrowser(t);
+    const phone = await secondBrowser(t);
     expect(((await phone.get('/v1/account/chat-keys')).json() as Listed).envelopes).toHaveLength(1);
     expect((await phone.delete(`/v1/account/chat-keys/${id}`)).statusCode).toBe(204);
     expect(((await phone.get('/v1/account/chat-keys')).json() as Listed).envelopes).toEqual([]);
@@ -223,7 +188,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('expires unread after its time; a later post sweeps the expired and collected rows of the account', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const a = await generateBoxKeyPair();
     const b = await generateBoxKeyPair();
     const first = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(a)).body)).json() as { id: string };
@@ -239,7 +204,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('a newer box to the same device supersedes the open one; at most the limit are open, the oldest expiring', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const first = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json() as { id: string };
     setNow(new Date(now.getTime() + 1000));
@@ -258,7 +223,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('review F4: a second box to the same device in the same millisecond replaces the first (no 500); the cap holds at one instant too', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const a = await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body);
     const b = await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body);
@@ -280,7 +245,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it("review F4: a constraint error on this table is a 500 whose log holds none of the row's bytes", async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const marker = 'c0ffee'.repeat(5) + 'ab';
     const before = logs.length;
     const res = await app.inject({ method: 'POST', url: '/t/envelope-check-fails', headers: { origin: ORIGIN }, payload: { accountId: t.accountId, marker } });
@@ -295,7 +260,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
 
   it('review F5: a retention job deletes expired envelopes, whoever they belong to; open ones stay', async () => {
     expect(RETENTION_JOBS).toContain(purgeChatKeyEnvelopes);
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const old = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json() as { id: string };
     setNow(new Date(now.getTime() + CHAT_KEY_ENVELOPE_TTL_MS - 1));
     const fresh = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json() as { id: string };
@@ -307,7 +272,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('review F6: posting and collecting are rate limited per account (429 slow-down)', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     let refused: LightMyRequestResponse | null = null;
     for (let i = 0; i < CHAT_KEY_POST_BUCKET.capacity + 1 && refused === null; i++) {
       const r = await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body);
@@ -325,7 +290,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it("the epoch must be the account's current one (0 until a rotation exists); the refusal names it", async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const res = await t.b.post('/v1/account/chat-keys', (await envelopeFor(device, 1)).body);
     expect(res.statusCode).toBe(400);
@@ -340,7 +305,7 @@ describe('the courier: strong sessions of the account store and read sealed enve
   });
 
   it('refuses malformed posts without storing anything', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const { body } = await envelopeFor(device);
     const bad: unknown[] = [
@@ -376,47 +341,17 @@ describe('the courier: strong sessions of the account store and read sealed enve
 });
 
 describe('who may use the courier', () => {
-  it('a username-and-password session may neither read nor post nor collect (403 weak-session), whatever the account holds', async () => {
-    const w = await weakTrader();
-    expect(await strengthOf(w.accountId)).toEqual(['weak-single']);
-    const device = await generateBoxKeyPair();
-    const { body } = await envelopeFor(device);
-    expect((await w.b.post('/v1/account/chat-keys', body)).json()).toEqual({ error: 'weak-session' });
-    expect((await w.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'weak-session' });
-    // A strong session of the account posts one; the weak one still sees nothing and collects nothing.
-    await deps.db.query("update sessions set strength = 'strong' where account_id = $1", [w.accountId]);
-    const { id } = (await w.b.post('/v1/account/chat-keys', body)).json() as { id: string };
-    await deps.db.query("update sessions set strength = 'weak-single' where account_id = $1", [w.accountId]);
-    expect((await w.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'weak-session' });
-    expect((await w.b.delete(`/v1/account/chat-keys/${id}`)).json()).toEqual({ error: 'weak-session' });
-    expect((await deps.db.query('select collected_at from chat_key_envelopes where id = $1', [id])).rows).toEqual([{ collected_at: null }]);
-  });
-
-  it("a sign-up's first 30 minutes do not count: strictly 'strong', not merely 'not weak' (weakOf would let it through)", async () => {
-    const w = await weakTrader();
-    const { rows } = await deps.db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where account_id = $1', [w.accountId]);
-    expect(rows[0]!.onboarding_until!.getTime()).toBeGreaterThan(now.getTime());
-    expect((await w.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'weak-session' });
-    expect((await w.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json()).toEqual({ error: 'weak-session' });
-  });
-
-  it('a session from before strength was stored (null) is not strong', async () => {
-    const t = await strongTrader();
-    await deps.db.query('update sessions set strength = null where account_id = $1', [t.accountId]);
-    expect((await t.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'weak-session' });
-  });
-
-  it('a recovery session and a team member never see or post envelopes; another account sees nothing and collects nothing', async () => {
-    const t = await strongTrader();
+  it('a team member never sees or posts envelopes; another account sees nothing and collects nothing', async () => {
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const { id } = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json() as { id: string };
 
-    // Another trader, strong: their own list is empty and the id is not theirs.
-    const other = await strongTrader();
+    // Another trader: their own list is empty and the id is not theirs.
+    const other = await passkeyTrader();
     expect((await other.b.get('/v1/account/chat-keys')).json()).toEqual({ epoch: 0, envelopes: [] });
     expect((await other.b.delete(`/v1/account/chat-keys/${id}`)).statusCode).toBe(404);
 
-    // A team member's session (two factors, strong, a session of the team account): owner-only routes.
+    // A team member's session (two factors, a session of the team account): owner-only routes.
     const name = unique('mem');
     const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
     await deps.db.query(
@@ -433,33 +368,7 @@ describe('who may use the courier', () => {
     expect((await mb.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json()).toEqual({ error: 'owner-only' });
     expect((await mb.delete(`/v1/account/chat-keys/${id}`)).json()).toEqual({ error: 'owner-only' });
 
-    // A recovery session (a backup login) of the account itself.
-    await deps.db.query(`update sessions set level = 'recovery' where account_id = $1 and member_id is null`, [t.accountId]);
-    expect((await t.b.get('/v1/account/chat-keys')).json()).toMatchObject({ error: 'recovery-session' });
-    expect((await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json()).toMatchObject({ error: 'recovery-session' });
-    expect((await t.b.delete(`/v1/account/chat-keys/${id}`)).json()).toMatchObject({ error: 'recovery-session' });
     expect((await deps.db.query('select collected_at from chat_key_envelopes where id = $1', [id])).rows).toEqual([{ collected_at: null }]);
-  });
-
-  it('nothing is handed over during an account hold (403 recovery-hold), and the envelope stays uncollected', async () => {
-    const t = await strongTrader();
-    const device = await generateBoxKeyPair();
-    const { id } = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json() as { id: string };
-    const until = new Date(now.getTime() + 24 * HOUR);
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
-      [t.accountId, now, until],
-    );
-    try {
-      expect((await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
-      expect((await t.b.delete(`/v1/account/chat-keys/${id}`)).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
-      // Review F3: the listing too (the box is what is handed over, not the DELETE).
-      expect((await t.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
-      expect((await deps.db.query('select collected_at from chat_key_envelopes where id = $1', [id])).rows).toEqual([{ collected_at: null }]);
-      expect((await deps.db.query('select count(*)::int as n from chat_key_envelopes where account_id = $1', [t.accountId])).rows[0]).toEqual({ n: 1 });
-    } finally {
-      await deps.db.query('delete from account_holds where account_id = $1', [t.accountId]);
-    }
   });
 
   it('logged out, there is no courier at all', async () => {
@@ -469,21 +378,19 @@ describe('who may use the courier', () => {
     expect((await app.inject({ method: 'POST', url: '/v1/account/chat-keys', headers: { origin: ORIGIN }, payload: {} })).statusCode).toBe(401);
   });
 
-  it('the routes are classified: own-data lists, live-session, hold-blocked and weak-limited', () => {
+  it('the routes are classified: own-data lists and live-session', () => {
     expect(OWN_DATA_READS['GET /v1/account/chat-keys']).toBeDefined();
     expect(OWN_DATA_WRITES['POST /v1/account/chat-keys']).toBeDefined();
     expect(OWN_DATA_WRITES['DELETE /v1/account/chat-keys/:id']).toBeDefined();
     for (const r of ['POST /v1/account/chat-keys', 'DELETE /v1/account/chat-keys/:id']) {
       expect(LIVE_SESSION_ROUTES, r).toContain(r);
-      expect(HOLD_BLOCKED_ROUTES, r).toContain(r);
-      expect(WEAK_LIMITED_ROUTES, r).toContain(r);
     }
   });
 });
 
 describe('the table', () => {
   it('cascades with the account and refuses a key or a box of the wrong size', async () => {
-    const t = await strongTrader();
+    const t = await passkeyTrader();
     const device = await generateBoxKeyPair();
     const { id } = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body)).json() as { id: string };
     const ins = (cols: { recipient?: number; sealed?: number; epoch?: number }) =>

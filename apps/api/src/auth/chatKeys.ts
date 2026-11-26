@@ -6,15 +6,10 @@
  *   to another device's X25519 public key and posts the box here; the receiving device fetches it
  *   over its own session and opens it with its device secret. The API stores and serves the sealed
  *   bytes exactly as posted and can open nothing (it holds no chat secret).
- * - **Strong to strong, strictly** (section 3.1 rule 2): both the posting and the reading session
- *   must have `sessions.strength = 'strong'` as stored at login (`loginStrength`), not merely "not
- *   weak" (`weakOf` lets a sign-up's first 30 minutes through, which is right for logging out and
- *   wrong for handing over keys). Anything else is 403 `weak-session`. The approval view's
- *   `keysOffered` (approval.ts) is the same rule applied to the new login and its approver.
- * - Never during an account hold (403 `recovery-hold`, checked under the account lock, for the
- *   listing too: review F3), never a
- *   recovery session or a team member's session (`requireSession`: full trader sessions, the
- *   account owner only; section 3.1 rule 4).
+ * - Owner, 26 Nov 2026 (no passwords): every trader login is with a passkey, a security key or a PGP
+ *   key (or the recovery code), so every live owner session may post and read (section 3.1 rule 2's
+ *   "strong to strong" now always holds). Never a team member's session (`requireSession`: trader
+ *   sessions, the account owner only; section 3.1 rule 4).
  * - `POST /v1/account/chat-keys { recipientPublic, sealed, epoch }` → 201 `{ id, expiresAt }`.
  *   `recipientPublic` is 64 lower-case hex; `sealed` is base64url of 48 to 1024 bytes; `epoch` must
  *   be the account's current `chat_key_epoch` (400 `bad-request` with the current one otherwise).
@@ -28,7 +23,7 @@
  * - `DELETE /v1/account/chat-keys/:id` → 204: the receiving device collects the envelope, which
  *   deletes it (review F5); an expired one is deleted by `purgeChatKeyEnvelopes` (retention); 404 `not-found` for an unknown, collected or expired id,
  *   or another account's.
- * - Classified in hold.ts (`LIVE_SESSION_ROUTES`, `HOLD_BLOCKED_ROUTES`, `WEAK_LIMITED_ROUTES`) and
+ * - Classified in liveSession.ts (`LIVE_SESSION_ROUTES`) and
  *   in the front door's own-data lists (frontDoor.ts). Nothing here logs a key or a ciphertext.
  *
  * Not here yet (waits for owner p12-5 and the boards): binding an envelope to a login approval and
@@ -40,9 +35,8 @@ import type pg from 'pg';
 import type { RetentionJob } from '../retention.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, settleOf, weakRefusal, withTx, type LiveSession } from './hold.js';
+import { requireLiveSessionInTx, withTx, type LiveSession } from './liveSession.js';
 import { requireSession } from './sessions.js';
-import type { LoginStrength } from './strength.js';
 
 /** How long a posted envelope waits to be collected. */
 export const CHAT_KEY_ENVELOPE_TTL_MS = 10 * 60_000;
@@ -56,17 +50,6 @@ const HEX_KEY = /^[0-9a-f]{64}$/;
 const B64URL = /^[A-Za-z0-9_-]+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BODY_KEYS = ['recipientPublic', 'sealed', 'epoch'] as const;
-
-/**
- * The one rule of the handover (section 3.1 rule 2), for a stored strength: `'strong'` exactly.
- * Null (a session from before migration 014) and `'weak-single'` are not. Used for both ends: the
- * new login's strength on its approval row and the approving or reading session's own.
- */
-export const strongForKeys = (s: LoginStrength | null | undefined): boolean => s === 'strong';
-
-/** Both sides strong, strictly: whether a chat-key handover may be offered at all (approval.ts `keysOffered`). */
-export const keysOffered = (newLogin: LoginStrength | null | undefined, approver: LoginStrength | null | undefined): boolean =>
-  strongForKeys(newLogin) && strongForKeys(approver);
 
 export interface ChatKeyEnvelopeView {
   id: string;
@@ -139,13 +122,9 @@ async function epochOf(db: Queryable, accountId: string): Promise<number> {
   return rows[0]?.chat_key_epoch ?? 0;
 }
 
-/** Inside a write's transaction: the live caller under the account lock, strong strictly, and no hold running. */
-async function strongCallerInTx(db: Queryable, req: FastifyRequest, now: Date): Promise<LiveSession> {
-  const caller = await requireLiveSessionInTx(db, req.auth, now);
-  if (!strongForKeys(caller.strength)) throw weakRefusal();
-  const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
-  if (hold !== null) throw holdRefusal(hold.holdUntil);
-  return caller;
+/** Inside a write's transaction: the live caller under the account lock. */
+async function liveCallerInTx(db: Queryable, req: FastifyRequest, now: Date): Promise<LiveSession> {
+  return requireLiveSessionInTx(db, req.auth, now);
 }
 
 export function chatKeyRoutes(app: FastifyInstance): void {
@@ -160,9 +139,9 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const { accountId } = req.auth;
     // Review F3: the listing hands the boxes over, so it is checked as the writes are: the live
-    // caller under the account lock, strong strictly, and never during an account hold.
+    // caller under the account lock.
     return withTx(deps.db, async (db) => {
-      await strongCallerInTx(db, req, now);
+      await liveCallerInTx(db, req, now);
       const { rows } = await db.query<EnvelopeRow>(
         `select id, recipient_public, sealed, epoch, created_at, expires_at from chat_key_envelopes
           where account_id = $1 and collected_at is null and expires_at > $2 order by created_at, id`,
@@ -178,7 +157,7 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const { accountId, sessionId } = req.auth;
     const out = await withTx(deps.db, async (db) => {
-      await strongCallerInTx(db, req, now);
+      await liveCallerInTx(db, req, now);
       const epoch = await epochOf(db, accountId);
       if (body.epoch !== epoch) throw new ApiError(400, 'bad-request', { epoch });
       // Housekeeping for this account: what was collected or ran out is gone.
@@ -214,7 +193,7 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const { accountId } = req.auth;
     await withTx(deps.db, async (db) => {
-      await strongCallerInTx(db, req, now);
+      await liveCallerInTx(db, req, now);
       // Review F5: collecting deletes the row, sealed bytes and all.
       const { rowCount } = await db.query(
         'delete from chat_key_envelopes where id = $1 and account_id = $2 and collected_at is null and expires_at > $3',
