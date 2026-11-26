@@ -65,7 +65,16 @@ export type LoginState = { ended?: 'hours' | 'expired' } | null;
  * (401 `outside-login-hours` from any call, or 401 `not-authenticated`: the session ran out) the
  * shell returns to Login, which says "Your login hours have ended." for the first.
  */
-export function StaffShell({ pages, notifications }: { pages: Partial<Record<NavItem, ReactNode>>; notifications?: ReactNode }) {
+/**
+ * My security (lead re-review 6 Nov items 1 and 2): every role's own login methods, sessions and
+ * alerts, at /security. Not a `nav` item: the API's `self` perm, which every staff role holds,
+ * reads it, so the rail links it under the nav for everyone. No board places it. DESIGNER-REVIEW
+ */
+export const SECURITY_PATH = '/security';
+/** COPY-UNSIGNED */
+export const SECURITY_LABEL = 'My security';
+
+export function StaffShell({ pages, notifications, security }: { pages: Partial<Record<NavItem, ReactNode>>; notifications?: ReactNode; security?: ReactNode }) {
   const [clockingOut, setClockingOut] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -137,6 +146,14 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
             </Link>
           ))}
         </nav>
+        {security !== undefined ? (
+          // COPY-UNSIGNED: the nav's name for the person's own pages.
+          <nav aria-label="Your account" className="x2f-staff__nav x2f-staff__self">
+            <Link to={SECURITY_PATH} data-part="my-security" aria-current={pathname === SECURITY_PATH ? 'page' : undefined}>
+              {SECURITY_LABEL}
+            </Link>
+          </nav>
+        ) : null}
         <div className="x2f-staff__foot">
           <SessionCountdown endsAt={who.sessionEndsAt} />
           {who.role === 'owner' ? (
@@ -187,6 +204,7 @@ export function StaffShell({ pages, notifications }: { pages: Partial<Record<Nav
             {who.nav.map((item) => (
               <Route key={item} path={`${NAV_PATHS[item]}/*`} element={pages[item] ?? <PageTitle title={NAV_LABELS[item]} />} />
             ))}
+            {security !== undefined ? <Route path={SECURITY_PATH} element={security} /> : null}
             <Route
               path="/notifications"
               element={

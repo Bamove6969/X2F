@@ -5,6 +5,10 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Notice } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle } from '../ui/StaffShell.js';
+import { FeeSweepSection } from './settings/FeeSweepSection.js';
+import { LinksSection } from './settings/LinksSection.js';
+import { StaffPaySection } from './settings/StaffPaySection.js';
+import { StarterLimitsSection } from './settings/StarterLimitsSection.js';
 import '../ui/staff.css';
 
 /**
@@ -23,6 +27,11 @@ import '../ui/staff.css';
  *
  * "Save settings" (the page's one primary action) saves what changed: the rulings first, then pay,
  * each with its own tap when it needs one.
+ *
+ * Spec 6.6 "Settings" (the rest of the owner's settings, no board draws them; DESIGNER-REVIEW):
+ * below, each with its own outlined Save, are the starter limits (tap `starter-limits`), the
+ * moderator contact and community links (no tap), the fee wallet's sweep (tap `fee-sweep`) and,
+ * read only, the pay each staff member is owed (`settings/`).
  */
 
 type RulingField = keyof RulingSettings;
@@ -252,6 +261,11 @@ export function StaffSettings() {
           Save settings
         </Button>
       </div>
+      {/* Spec 6.6 "Settings": each section below loads and saves on its own (no board draws them). */}
+      <StarterLimitsSection />
+      <LinksSection />
+      <FeeSweepSection />
+      <StaffPaySection />
       {step !== null ? (
         <KeyTapDialog
           intent={step.intent}

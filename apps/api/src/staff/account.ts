@@ -13,7 +13,8 @@ import { THREE_METHOD_ROLES } from './login.js';
 // Q19, Q13), so their own account work moves here (perm `self`, every role, own account only):
 //
 // - `GET /staff/v1/account/methods` → the account's login methods (as the trader route).
-// - `POST /staff/v1/account/pgp/start { publicKey }` → a challenge to the new key;
+// - `POST /staff/v1/account/pgp/start { publicKey }` → a challenge to the new key, with the key's
+//   `fingerprint` (lower-case hex: what the tap below binds);
 //   `POST /staff/v1/account/pgp/finish { challengeId, code, tapId }` → `{ fingerprint }`: the code
 //   proves the key, a tap `add-pgp-key` (bound to the fingerprint) by one of the person's security
 //   keys confirms it, the key is stored and `staff.method-added` logged, in one transaction. The
@@ -42,6 +43,8 @@ export function staffAccountRoutes(app: FastifyInstance): void {
   pgpAddKeyRoutesAt(app, '/staff/v1/account/pgp', {
     config: opts.config,
     preHandler: [...opts.preHandler],
+    // The staff site's My security page signs the tap for this fingerprint (and shows it first).
+    startNamesFingerprint: true,
     async inTx(c, req, fingerprint) {
       const intent = { kind: 'add-pgp-key' as const, fingerprint: fingerprint.toLowerCase() };
       const now = req.server.deps.clock();

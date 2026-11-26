@@ -1062,3 +1062,35 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+
+/* My security (no board; DESIGNER-REVIEW): the lists of methods, sessions and alerts, a key's fingerprint, the New mark. */
+.x2f-staff-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-staff-list > li + li {
+  padding-top: var(--x2f-space-3);
+  border-top: 1px solid var(--x2f-line);
+}
+
+.x2f-staff-fingerprint {
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.x2f-staff-new {
+  margin-inline-start: 0.5em;
+  color: var(--x2f-caution);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The person's own pages (My security), under the role's nav, set apart by a rule. */
+.x2f-staff__self {
+  margin-top: var(--x2f-space-3);
+  padding-top: var(--x2f-space-3);
+  border-top: 1px solid var(--x2f-line);
+}

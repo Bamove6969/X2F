@@ -10,6 +10,7 @@ import {
   tapChallenge,
   GRANTABLE_PERMS,
   LIMIT_STAGES,
+  STARTER_FIELDS,
   type AccountAction,
   type KeyTapIntent,
   type Perm,
@@ -472,6 +473,13 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
       };
     }
+    case 'starter-limits': {
+      // Spec 6.6 "Settings": every starter-limit number, whole, in the order STARTER_FIELDS lists them.
+      exactKeys(r, ['kind', ...STARTER_FIELDS]);
+      const out: Record<string, unknown> = { kind: 'starter-limits' };
+      for (const f of STARTER_FIELDS) out[f] = amount(r, f, { integer: true });
+      return out as KeyTapIntent;
+    }
     case 'account-limit': {
       // Task 26: exactly one of a whole-dollar cap and a stage.
       exactKeys(r, ['kind', 'recId', 'accountId', 'approve', 'capUsd', 'stage']);
@@ -579,6 +587,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'settings':
     case 'fee-sweep':
     case 'pay-settings':
+    case 'starter-limits':
       return 'settings.write';
     case 'ban-account':
     case 'lift-ban':

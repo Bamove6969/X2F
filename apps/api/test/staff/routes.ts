@@ -102,6 +102,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
+  // Spec 6.6 "Settings": the starter limits (the defaults unchanged need no tap).
+  { method: 'GET', url: '/staff/v1/starter-limits', perm: 'settings.write', allowed: OWNER },
+  {
+    method: 'PUT', url: '/staff/v1/starter-limits', perm: 'settings.write', allowed: OWNER,
+    body: { starterCapUsd: 200, starterMaxOpenTrades: 3, buildingCapUsd: 1000, buildingMinTrades: 5, buildingMinDays: 7, graduatedMinTrades: 20, graduatedMinDays: 30, tapId: '00000000-0000-4000-8000-000000000000' },
+  },
   { method: 'GET', url: '/staff/v1/site', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },

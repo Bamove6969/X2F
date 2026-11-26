@@ -1,3 +1,4 @@
+import { STARTER_DEFAULTS, starterInBounds, type StarterSettings } from '@x2f/staff';
 import type { Queryable } from '../db/pool.js';
 
 /**
@@ -7,25 +8,9 @@ import type { Queryable } from '../db/pool.js';
  */
 export type Stage = 'starter' | 'building' | 'graduated';
 
-export interface StarterSettings {
-  starterCapUsd: number;
-  buildingCapUsd: number;
-  buildingMinTrades: number;
-  buildingMinDays: number;
-  graduatedMinTrades: number;
-  graduatedMinDays: number;
-  starterMaxOpenTrades: number;
-}
-
-export const STARTER_DEFAULTS: Readonly<StarterSettings> = Object.freeze({
-  starterCapUsd: 200,
-  buildingCapUsd: 1000,
-  buildingMinTrades: 5,
-  buildingMinDays: 7,
-  graduatedMinTrades: 20,
-  graduatedMinDays: 30,
-  starterMaxOpenTrades: 3,
-});
+// The settings, their defaults and bounds are `@x2f/staff`'s (ownerSettings.ts), shared with the
+// owner's Settings page; re-exported here for the callers that had them.
+export { STARTER_DEFAULTS, type StarterSettings };
 
 /** The `owner_settings` key of each setting (whole numbers; the owner changes them in Settings, Plan 4). */
 export const STARTER_SETTING_KEYS: Readonly<Record<keyof StarterSettings, string>> = Object.freeze({
@@ -38,17 +23,6 @@ export const STARTER_SETTING_KEYS: Readonly<Record<keyof StarterSettings, string
   starterMaxOpenTrades: 'starter_max_open_trades',
 });
 
-// A row outside these bounds is ignored (the default applies).
-const BOUNDS: Record<keyof StarterSettings, { min: number; max: number }> = {
-  starterCapUsd: { min: 1, max: 1_000_000_000 },
-  buildingCapUsd: { min: 1, max: 1_000_000_000 },
-  buildingMinTrades: { min: 0, max: 100_000 },
-  buildingMinDays: { min: 0, max: 3650 },
-  graduatedMinTrades: { min: 0, max: 100_000 },
-  graduatedMinDays: { min: 0, max: 3650 },
-  starterMaxOpenTrades: { min: 1, max: 1000 },
-};
-
 /** The owner's starter-limit settings; each missing or out-of-range row falls back to its default. */
 export async function loadStarterSettings(db: Queryable): Promise<StarterSettings> {
   const keys = Object.values(STARTER_SETTING_KEYS);
@@ -57,8 +31,8 @@ export async function loadStarterSettings(db: Queryable): Promise<StarterSetting
   for (const name of Object.keys(STARTER_SETTING_KEYS) as (keyof StarterSettings)[]) {
     const raw = rows.find((r) => r.key === STARTER_SETTING_KEYS[name])?.value;
     const n = raw === undefined ? NaN : Number(raw);
-    const b = BOUNDS[name];
-    if (Number.isInteger(n) && n >= b.min && n <= b.max) out[name] = n;
+    // A row outside the bounds is ignored (the default applies).
+    if (starterInBounds(name, n)) out[name] = n;
   }
   return out;
 }
