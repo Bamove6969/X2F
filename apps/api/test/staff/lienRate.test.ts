@@ -44,22 +44,22 @@ async function lien(amount = 2n * XMR): Promise<{ id: string; debtor: string; cr
 const rate = async (id: string) => (await deps.db.query<{ r: number }>('select recovery_rate_bps as r from liens where id = $1', [id])).rows[0]!.r;
 
 describe('rate change requests', () => {
-  it('defaults to 50%; a change needs a reason; it waits for a senior and the default applies meanwhile', async () => {
+  it('owner 26 Nov 2026: defaults to 100%; a change needs a reason; it waits for a senior and the default applies meanwhile', async () => {
     const l = await lien();
-    expect(await rate(l.id)).toBe(5000);
+    expect(await rate(l.id)).toBe(10_000);
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: '' }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500 }))).toBe('bad-request');
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 0, reason: 'x' }))).toBe('bad-request');
-    // Q1 (provisional, 17 Nov): at most 90%.
-    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 9001, reason: 'x' }))).toBe('bad-request');
+    // Q1 (owner, 26 Nov 2026): at most 100%.
+    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 10_001, reason: 'x' }))).toBe('bad-request');
     const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'Proceeds are their only income' });
     expect(res.statusCode, res.body).toBe(201);
     const req = (res.json() as { id: string }).id;
-    expect(await rate(l.id)).toBe(5000);
+    expect(await rate(l.id)).toBe(10_000);
     // One pending request per lien.
     expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 3000, reason: 'Another' }))).toBe('request-pending');
     const view = (await mod.get(`/staff/v1/liens/${l.id}`)).json() as { lien: { rateBps: number; remainingAtomic: string }; rateRequests: { status: string; reason: string }[] };
-    expect(view.lien).toMatchObject({ rateBps: 5000, remainingAtomic: (2n * XMR).toString() });
+    expect(view.lien).toMatchObject({ rateBps: 10_000, remainingAtomic: (2n * XMR).toString() });
     expect(view.rateRequests).toMatchObject([{ status: 'pending', reason: 'Proceeds are their only income' }]);
 
     // The senior approves with a tap bound to exactly this request and rate.
@@ -87,7 +87,19 @@ describe('rate change requests', () => {
     const owner = await seedStaff(deps, { role: 'owner' });
     const ob = new StaffBrowser(app).withSession((await insertSession(deps, owner.id, 'staff')).token);
     expect((await ob.post(`/staff/v1/liens/${l.id}/rate/${own.id}/reject`, {})).statusCode).toBe(200);
-    expect(await rate(l.id)).toBe(5000);
+    expect(await rate(l.id)).toBe(10_000);
+  });
+
+  it('a lower rate can be raised back to the 100% default only by a request with a reason and a senior\'s tap', async () => {
+    const l = await lien();
+    await deps.db.query('update liens set recovery_rate_bps = 2500 where id = $1', [l.id]);
+    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 10_000, reason: '' }))).toBe('bad-request');
+    const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 10_000, reason: 'Hardship over' });
+    expect(res.statusCode, res.body).toBe(201);
+    const req = (res.json() as { id: string }).id;
+    const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: req, rateBps: 10_000 });
+    expect((await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, { tapId: tap })).statusCode).toBe(200);
+    expect(await rate(l.id)).toBe(10_000);
   });
 
   it('a lien that is over takes no request', async () => {
@@ -110,7 +122,7 @@ describe('GET /v1/account/liens (rules 1-3: what the debtor owes and the credito
     const d = await as(l.debtor);
     expect(d.owedTo).toEqual([]);
     expect(d.owes).toEqual([
-      expect.objectContaining({ id: l.id, amountAtomic: (2n * XMR).toString(), recoveredAtomic: (XMR / 2n).toString(), remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 5000, defaultRateBps: 5000, status: 'active' }),
+      expect.objectContaining({ id: l.id, amountAtomic: (2n * XMR).toString(), recoveredAtomic: (XMR / 2n).toString(), remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 10_000, defaultRateBps: 10_000, status: 'active' }),
     ]);
     expect(JSON.stringify(d)).not.toContain(l.creditor);
     const c = await as(l.creditor);

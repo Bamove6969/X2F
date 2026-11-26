@@ -695,6 +695,37 @@ export interface RevenueReport {
 export const revenue = (q?: { by: 'day' | 'month'; from: string; to: string }) =>
   staffApi<RevenueReport>(q === undefined ? '/staff/v1/revenue?by=month' : `/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
 
+/**
+ * Mirrors apps/api `EarningsReport` (Plan 4 Task 9, `GET /staff/v1/earnings`, earnings.read): what
+ * arrived in X2F's fee wallet (read through its view-only key) and payroll wallet by UTC month,
+ * beside the books. Amounts are atomic units (decimal strings); a wallet is null when this server
+ * has none set up.
+ */
+export type EarningsWalletState = 'syncing' | 'ready' | 'stale' | 'unavailable';
+export interface EarningsWallet {
+  walletEnd: string;
+  state: EarningsWalletState;
+  syncedAt: string | null;
+}
+export interface EarningsMonth {
+  month: string;
+  feeWalletAtomic: string;
+  sweptInAtomic: string;
+  payrollWalletAtomic: string;
+  earnedAtomic: string;
+  usdEstimateCents: string | null;
+  trades: number;
+  bookedNetAtomic: string;
+}
+export interface EarningsReport {
+  feeWallet: EarningsWallet | null;
+  payrollWallet: EarningsWallet | null;
+  usdCentsPerXmr: string | null;
+  months: EarningsMonth[];
+  allTime: EarningsMonth;
+}
+export const earnings = () => staffApi<EarningsReport>('/staff/v1/earnings');
+
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
 
