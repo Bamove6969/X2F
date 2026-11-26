@@ -14,7 +14,8 @@ design/x2f-app/support.js
 
 # The local demo stack (npm run demo): throwaway secrets, logs, chain and its web build
 .demo/
-apps/web/dist-demo/
+.demo-*/
+apps/web/dist-demo*/
 
 # TypeScript incremental build state (review P-m3)
 *.tsbuildinfo

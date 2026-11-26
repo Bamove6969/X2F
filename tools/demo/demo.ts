@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { migrate } from '../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
-import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
+import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_CONTAINER_FILE, PG_IMAGE, PORT_OFFSET, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
 import { pushEnabled } from './notes-push.js';
@@ -22,6 +22,7 @@ import { phoneIp } from './phone.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
 import { SELF_HTTP, SELF_WS } from './self-origin.js';
 import { makeSecrets } from './secrets.js';
+import { buildWeb } from './web-build.js';
 
 assertDemoFlag(process.env);
 const step = (s: string): void => console.log(`demo: ${s}`);
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   rmSync(DEMO_DIR, { recursive: true, force: true });
   mkdirSync(LOG_DIR, { recursive: true });
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+  if (PORT_OFFSET !== 0) step(`DEMO_PORT_OFFSET=${PORT_OFFSET}: ports ${PORTS.gateway}/${PORTS.gatewayNode} (and every other port +${PORT_OFFSET}), Postgres container ${PG_CONTAINER}`);
 
   // ── Tailscale (optional, private tailnet only) ──────────────────────────────
   let tsIp = '';
@@ -99,6 +101,7 @@ async function main(): Promise<void> {
   execFileSync('docker', ['rm', '-f', PG_CONTAINER], { stdio: 'ignore' });
   execFileSync('docker', ['run', '-d', '--name', PG_CONTAINER, '--label', 'x2f-demo=1', '-p', `${HOST}:${PORTS.postgres}:5432`,
     '-e', `POSTGRES_PASSWORD=${s.pgPassword}`, '--tmpfs', '/var/lib/postgresql/data', PG_IMAGE], { stdio: 'ignore' });
+  writeFileSync(PG_CONTAINER_FILE, `${PG_CONTAINER}\n`);
   const pgUrl = (db: string) => `postgres://postgres:${s.pgPassword}@${HOST}:${PORTS.postgres}/${db}`;
   await waitFor('Postgres', async () => {
     const c = new pg.Client({ connectionString: pgUrl('postgres') });
@@ -139,22 +142,11 @@ async function main(): Promise<void> {
 
   // ── the web build ───────────────────────────────────────────────────────────
   step('building apps/web for this demo (regtest, demo moderation key)');
-  execFileSync('npx', ['vite', 'build', '--outDir', WEB_DIST, '--emptyOutDir'], {
-    cwd: join(ROOT, 'apps/web'),
-    stdio: ['ignore', 'ignore', 'inherit'],
-    env: {
-      ...process.env,
-      VITE_MONERO_NETWORK: 'regtest',
-      VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
-      VITE_FEE_WALLET: s.feeWallet,
-      VITE_RELAY_URL: `${SELF_WS}/relay`,
-      VITE_NODE_PROXY_URL: SELF_HTTP,
-    },
-  });
+  buildWeb(WEB_DIST, s);
 
   // ── services ────────────────────────────────────────────────────────────────
   const origins = o.allowed;
-  const demo = { X2F_DEMO: '1' };
+  const demo: Record<string, string> = { X2F_DEMO: '1', ...(PORT_OFFSET !== 0 ? { DEMO_PORT_OFFSET: String(PORT_OFFSET) } : {}) };
 
   startTs('relay', 'apps/relay/src/main.ts', {
     RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(PORTS.relay),
@@ -180,6 +172,7 @@ async function main(): Promise<void> {
     X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
     X2F_TOTP_KEYS: s.totpKeys,
     X2F_LOGIN_NAME_KEYS: s.loginNameKeys,
+    X2F_TRAINING_ID_KEY: s.trainingIdKey,
     X2F_VAPID_PUBLIC: s.vapidPublic,
     X2F_VAPID_PRIVATE: s.vapidPrivate,
     X2F_HOST: HOST,
@@ -266,6 +259,7 @@ async function main(): Promise<void> {
       ? '  GitHub:   comments go to the comms branch 30 s after each change, and at demo:stop (the Comment button says whether they are there yet; DEMO_NOTES_PUSH=0 turns this off)'
       : '  GitHub:   off (DEMO_NOTES_PUSH=0); comments stay on this computer',
   );
+  console.log(`  Guide:    ${PUBLIC_ORIGIN || LOCAL_ORIGIN}/__demo/guide (every screen, with the account to use)`);
   console.log(`  Codes:    ${LOCAL_ORIGIN}/__demo/codes (the authenticator codes; or npm run demo:code <login name>)`);
   console.log(`  Logs:     ${LOG_DIR}`);
 }

@@ -644,6 +644,10 @@ describe('builds on where the earlier demos left off (Job 14)', () => {
         gatewayNotesEnv({ DEMO_NOTES_FILE: '/n/d.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl', DEMO_NOTES_PUSH: '0', SSH_AUTH_SOCK: '/s', WSL_INTEROP: '/w', WSL_DISTRO_NAME: 'U', HOME: '/h', SECRET: 's' }),
       ).toEqual({ DEMO_NOTES_FILE: '/n/d.jsonl', DEMO_NOTES_SEED: '/c/x.jsonl', DEMO_NOTES_PUSH: '0', SSH_AUTH_SOCK: '/s', WSL_INTEROP: '/w', WSL_DISTRO_NAME: 'U' });
       expect(gatewayNotesEnv({ HOME: '/h' })).toEqual({});
+      // git's own environment config (all its pairs, nothing past the count), askpass, CA file and proxy.
+      expect(
+        gatewayNotesEnv({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: 'x', GIT_CONFIG_KEY_1: 'core.pager', GIT_CONFIG_VALUE_1: 'y', GIT_ASKPASS: '/a', GIT_SSL_CAINFO: '/ca', HTTPS_PROXY: 'http://p:1', NO_PROXY: 'localhost', GIT_DIR: '/d' }),
+      ).toEqual({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: 'x', GIT_ASKPASS: '/a', GIT_SSL_CAINFO: '/ca', HTTPS_PROXY: 'http://p:1', NO_PROXY: 'localhost' });
     });
   });
 

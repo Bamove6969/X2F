@@ -2,7 +2,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_DIR, LOG_DIR, PG_CONTAINER, PIDS_FILE, ROOT } from './config.js';
+import { DEMO_DIR, LOG_DIR, PG_CONTAINER, PG_CONTAINER_FILE, PIDS_FILE, ROOT } from './config.js';
 
 export type Pids = Record<string, number>;
 
@@ -82,8 +82,16 @@ export async function stopAll(log: (s: string) => void = console.log): Promise<v
     log(`stopped ${name}`);
   }
   rmSync(PIDS_FILE, { force: true });
+  // The container this demo started (demo r6: an offset demo has its own), else this shell's.
+  let container = PG_CONTAINER;
   try {
-    execFileSync('docker', ['rm', '-f', PG_CONTAINER], { stdio: 'ignore' });
+    const recorded = readFileSync(PG_CONTAINER_FILE, 'utf8').trim();
+    if (/^x2f-demo-postgres(-\d+)?$/.test(recorded)) container = recorded;
+  } catch {
+    // none recorded
+  }
+  try {
+    execFileSync('docker', ['rm', '-f', container], { stdio: 'ignore' });
     log('removed the Postgres container');
   } catch {
     // not running

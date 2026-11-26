@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { createCodesHandler } from './codes-page.js';
+import { createGuideHandler } from './guide-page.js';
 import { createDoor } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
@@ -83,8 +84,12 @@ if (pusher) {
 }
 // The seeded accounts' authenticator codes as a page (codes-page.ts), for a phone.
 const codes = createCodesHandler({ origins: ORIGINS, secrets: readTotpSecrets });
+// The screen-by-screen demo guide (guide-page.ts), for a phone.
+const guide = createGuideHandler({ origins: ORIGINS });
 const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-  if ((req.url ?? '').split(/[?#]/, 1)[0] === '/__demo/codes') codes(req, res);
+  const path = (req.url ?? '').split(/[?#]/, 1)[0];
+  if (path === '/__demo/codes' || path === '/__demo/codes.js') codes(req, res);
+  else if (path === '/__demo/guide' || path === '/__demo/guide/legal') guide(req, res);
   else notes(req, res);
 };
 // The seeded accounts' way in from a fresh browser (door.ts).
