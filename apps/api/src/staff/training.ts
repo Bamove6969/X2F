@@ -358,10 +358,11 @@ export function staffTrainingRoutes(app: FastifyInstance): void {
     if (typeof before === 'string') {
       // The cursor is the last case's opaque id (never its trade code), found as review/:id finds it.
       const found = await findForCurator(db, config.trainingIdKey, before);
-      const cur = found ? await db.query<{ closed_at: Date }>(`select closed_at from disputes where code = $1 and seq = $2 and status = 'closed'`, [found.code, found.seq]) : null;
+      const cur = found ? await db.query(`select 1 from disputes where code = $1 and seq = $2 and status = 'closed'`, [found.code, found.seq]) : null;
       if (!found || !cur?.rows[0]) throw new ApiError(404, 'not-found');
-      args.push(cur.rows[0].closed_at, found.code, found.seq);
-      after = ` and (d.closed_at, d.code, d.seq) < ($2, $3, $4)`;
+      // The cursor's closing is compared in SQL, never read back into a JS Date (milliseconds only).
+      args.push(found.code, found.seq);
+      after = ` and (d.closed_at, d.code, d.seq) < ((select c.closed_at from disputes c where c.code = $2 and c.seq = $3), $2, $3)`;
     }
     const { rows } = await db.query<CaseRow>(`${CLOSED_SELECT}${after} order by d.closed_at desc, d.code desc, d.seq desc limit $1`, args);
     const page = rows.slice(0, REVIEW_PAGE);

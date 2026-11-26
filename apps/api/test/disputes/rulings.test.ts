@@ -49,8 +49,10 @@ const url = (code: string, tail = '') => `/staff/v1/disputes/${code}${tail}`;
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 const NONE: AccountAction = { kind: 'none' };
 
+let ownerId: string | null = null;
 async function staff(role: 'mod' | 'senior' | 'owner') {
-  const s = await seedStaff(deps, { role });
+  // One owner only (the schema's `one_owner`): a later owner is a new session of the same account.
+  const s = role === 'owner' ? { id: (ownerId ??= (await seedStaff(deps, { role })).id) } : await seedStaff(deps, { role });
   const b = new StaffBrowser(staffApp).withSession((await insertSession(deps, s.id, 'staff')).token);
   return { id: s.id, b };
 }

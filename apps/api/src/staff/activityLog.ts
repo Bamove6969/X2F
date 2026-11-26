@@ -207,7 +207,8 @@ export function staffLogRoutes(app: FastifyInstance): void {
   });
 
   // Review m7: paged, newest opened first. The cursor is the last code of the page before; its
-  // dispute's opening is read back, so the cursor needs no time of its own (no precision lost).
+  // dispute's opening is compared in SQL (never read back into a JS Date, which keeps only
+  // milliseconds of Postgres's microseconds), so the cursor needs no time of its own.
   app.get('/staff/v1/log/active-disputes', { preHandler: cases, config: cfg }, async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     if (Object.keys(q).some((k) => k !== 'before' && k !== 'limit')) throw new ApiError(400, 'bad-request');
@@ -224,10 +225,11 @@ export function staffLogRoutes(app: FastifyInstance): void {
       const code = normalizeTradeCode(s.before);
       if (code === null) throw new ApiError(400, 'bad-request');
       // The cursor's dispute may have closed since its page was read: it still marks the place.
-      const cur = await db.query<{ opened_at: Date }>(`select d.opened_at from disputes d where d.code = $1 and ${latest}`, [code]);
+      const cur = await db.query(`select 1 from disputes d where d.code = $1 and ${latest}`, [code]);
       if (!cur.rows[0]) throw new ApiError(404, 'not-found');
-      args.push(cur.rows[0].opened_at, code);
-      after = ' and (d.opened_at < $2 or (d.opened_at = $2 and d.code > $3))';
+      args.push(code);
+      const at = `(select c.opened_at from disputes c where c.code = $2 and c.seq = (select max(y.seq) from disputes y where y.code = $2))`;
+      after = ` and (d.opened_at < ${at} or (d.opened_at = ${at} and d.code > $2))`;
     }
     const { rows } = await db.query<{ code: string; method_id: string; amount_atomic: string; status: string }>(
       `select d.code, t.method_id, t.amount_atomic::text as amount_atomic, d.status

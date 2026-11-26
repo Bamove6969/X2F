@@ -143,6 +143,22 @@ describe('the active disputes, paged newest first (review m7)', () => {
     }
   });
 
+  it('openings within one millisecond: the cursor compares Postgres microseconds, so the older one is not skipped', async () => {
+    // A JS Date keeps milliseconds only: a cursor time read back and sent again would drop the
+    // microseconds and skip open[0], opened 300 µs before open[1] in the same millisecond.
+    const base = new Date(T0.getTime() + 90 * 1000);
+    await deps.db.query(`update disputes set opened_at = $2::timestamptz + interval '400 microseconds' where code = $1`, [open[1]!.code, base]);
+    await deps.db.query(`update disputes set opened_at = $2::timestamptz + interval '100 microseconds' where code = $1`, [open[0]!.code, base]);
+    try {
+      const first = (await mod.get('/staff/v1/log/active-disputes?limit=4')).json() as Active;
+      expect(first.next).toBe(open[1]!.code);
+      const rest = (await mod.get(`/staff/v1/log/active-disputes?limit=4&before=${first.next}`)).json() as Active;
+      expect(rest.items.map((i) => i.code)).toEqual([open[0]!.code]);
+    } finally {
+      for (const [i, n] of [[0, 1], [1, 2]] as const) await deps.db.query('update disputes set opened_at = $2 where code = $1', [open[i]!.code, new Date(T0.getTime() + n * MIN)]);
+    }
+  });
+
   it('an unknown cursor is a 404; a malformed cursor, limit or extra key is a 400', async () => {
     expect((await mod.get('/staff/v1/log/active-disputes?before=ZZZZ-ZZZZ-ZZZZ-ZZZZ')).statusCode).toBe(404);
     for (const qs of ['before=nope', 'before=', 'limit=0', 'limit=101', 'limit=1e2', 'limit=-1', 'page=2', 'before=A&before=B']) {
@@ -254,6 +270,18 @@ describe("the training curator's list, paged newest closed first (re-review m3)"
     const p = (await owner.get(`/staff/v1/training/review?before=${idOf(2)}`)).json() as Review;
     expect(p).toEqual({ items: [expect.objectContaining({ id: idOf(1), status: 'unmarked' })], next: null });
     expect((await owner.get(`/staff/v1/training/review?before=${idOf(1)}`)).json()).toEqual({ items: [], next: null });
+  });
+
+  it('closings within one millisecond: the cursor compares Postgres microseconds, so the older one is not skipped', async () => {
+    const base = new Date(T0.getTime() + 4 * MIN);
+    await deps.db.query(`update disputes set closed_at = $2::timestamptz + interval '400 microseconds' where code = $1 and seq = 5`, [closed.code, base]);
+    await deps.db.query(`update disputes set closed_at = $2::timestamptz + interval '100 microseconds' where code = $1 and seq = 4`, [closed.code, base]);
+    try {
+      const p = (await owner.get(`/staff/v1/training/review?before=${idOf(5)}`)).json() as Review;
+      expect(p.items.map((i) => i.id)).toEqual([idOf(4), idOf(3), idOf(2), idOf(1)]);
+    } finally {
+      for (const seq of [4, 5]) await deps.db.query('update disputes set closed_at = $3 where code = $1 and seq = $2', [closed.code, seq, new Date(T0.getTime() + seq * MIN)]);
+    }
   });
 
   it('an unknown cursor is a 404; a malformed one or another key is a 400; only a curator reads it', async () => {
