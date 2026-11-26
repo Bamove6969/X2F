@@ -7,7 +7,7 @@
  * KEY_NAME_MAX code points of letters, combining marks, digits, spaces and the punctuation in
  * KEY_NAME_PUNCTUATION, with at least one letter or digit. Control, format (bidi overrides,
  * zero-width) and every other character are refused, so a name always shows as what it says.
- * Security review of wip/lead-seckey-fix (confusables): as display names are (username.ts), the
+ * Security review of wip/lead-seckey-fix (confusables): as Trade Tags are (username.ts), the
  * letters must be "highly restrictive" (UTS #39: one script, or Latin with the CJK sets), and a
  * combining mark must follow a letter, at most two in a row.
  */
@@ -32,7 +32,7 @@ export function checkKeyName(raw: string): KeyNameCheck {
   return { ok: true, name };
 }
 
-/** True when two key names are the same name (trimmed, case and width folded, as display names compare). */
+/** True when two key names are the same name (trimmed, case and width folded, as Trade Tags compare). */
 export function sameKeyName(a: string, b: string): boolean {
   return displayKeyOf(a) === displayKeyOf(b);
 }

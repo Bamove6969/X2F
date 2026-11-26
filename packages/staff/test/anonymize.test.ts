@@ -116,7 +116,7 @@ describe('anonymizeText: the review\'s bypasses', () => {
     expect(s('Мira Kowal paid')).toBe('Buyer paid');
   });
 
-  it('M1: a display name with a run of spaces or a line break', () => {
+  it('M1: a Trade Tag with a run of spaces or a line break', () => {
     expect(s('Mira  Kowal paid')).toBe('Buyer paid');
     expect(s('Mira\nKowal paid')).toBe('Buyer paid');
     expect(s('Mira\t \nKowal paid')).toBe('Buyer paid');
@@ -365,7 +365,7 @@ describe('anonymizeText: re-review 3', () => {
     expect(out).not.toContain('123456789');
   });
 
-  it('m4: each part of a multi-part display name on its own, in any order', () => {
+  it('m4: each part of a multi-part Trade Tag on its own, in any order', () => {
     expect(s('Mira paid late')).toBe('Buyer paid late');
     expect(s('Kowal never answered')).toBe('Buyer never answered');
     expect(s('Kowal Mira wrote')).toBe('Buyer Buyer wrote');

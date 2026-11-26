@@ -16,7 +16,7 @@ import type { Deps } from '../app.js';
 import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import { addAlert } from '../alerts.js';
 import {
-  assertDisplayNameFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, retagLoginName, sealNames,
+  assertTradeTagFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, retagLoginName, sealNames,
 } from '../accounts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -191,14 +191,14 @@ const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_
 
 interface AccountRow {
   id: string;
-  /** The public display name: the only name an authenticator ever stores or shows (never the login name). */
-  display_name: string;
+  /** The public Trade Tag: the only name an authenticator ever stores or shows (never the login name). */
+  trade_tag: string;
   kind: AccountKind;
   webauthn_user_id: Buffer;
 }
 
 async function accountById(db: Queryable, accountId: string): Promise<AccountRow> {
-  const { rows } = await db.query<AccountRow>('select id, display_name, kind, webauthn_user_id from accounts where id = $1', [accountId]);
+  const { rows } = await db.query<AccountRow>('select id, trade_tag, kind, webauthn_user_id from accounts where id = $1', [accountId]);
   if (!rows[0]) throw new ApiError(401, 'not-authenticated');
   return rows[0];
 }
@@ -483,7 +483,7 @@ export async function webauthnRegistrationOptions(
     kind: o.kind ?? 'security-key',
     accountKind: account.kind,
     userID: account.webauthn_user_id,
-    userName: account.display_name,
+    userName: account.trade_tag,
     exclude,
     ...(o.challenge ? { challenge: o.challenge } : {}),
   });
@@ -759,7 +759,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       afterPgp = found !== null;
       tag = pendingTag(deps, pendingId);
     } else {
-      // The private login name (owner, 2026-10-23), never the public display name.
+      // The private login name (owner, 2026-10-23), never the public Trade Tag.
       const loginName = str(body, 'loginName');
       const name = loginNameLookup(deps.config, loginName);
       tag = name.tag;
@@ -914,12 +914,12 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
   const body = record(req.body);
-  const names = await assertNewNames(deps.db, body.displayName, body.loginName);
+  const names = await assertNewNames(deps.db, body.tradeTag, body.loginName);
   const kind = credentialKind(body.kind);
-  await assertDisplayNameFree(deps.db, names, deps.config);
+  await assertTradeTagFree(deps.db, names, deps.config);
   // The account does not exist yet: its WebAuthn user handle is chosen now and kept with the challenge.
   const userID = randomBytes(32);
-  const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });
+  const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.tradeTag, exclude: [] });
   const challengeId = await storeChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', method: kind, challenge: options.challenge,
     payload: { names: sealNames(deps.config, names), userId: b64url(userID) },
@@ -961,7 +961,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: kind, firstSession: true });
-  return reply.code(201).send({ displayName: names.displayName });
+  return reply.code(201).send({ tradeTag: names.tradeTag });
 }
 
 async function confirmStart(req: FastifyRequest) {
@@ -1017,7 +1017,7 @@ async function addKeyStart(req: FastifyRequest) {
   if (kind === 'security-key') await assertSecurityKeyRoom(deps.db, account.id);
   const exclude = (await credentialsOf(deps.db, account.id)).map((c) => c.credential_id);
   const options = await buildRegistrationOptions(deps, {
-    kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.display_name, exclude,
+    kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.trade_tag, exclude,
   });
   const challengeId = await storeChallenge(deps, req, {
     accountId: account.id, sessionId: req.auth.sessionId, purpose: 'add-key', method: kind, challenge: options.challenge,

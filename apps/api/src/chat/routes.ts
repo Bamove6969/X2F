@@ -73,7 +73,7 @@ export interface ChatView {
   chat: string;
   role: ChatRole;
   offerId: string;
-  /** The other side, by display name only (never a login name, FU-A). */
+  /** The other side, by Trade Tag only (never a login name, FU-A). */
   counterparty: TraderSummary | null;
   /** The trade a take linked to this chat, or null before a take. */
   tradeCode: string | null;
@@ -347,7 +347,7 @@ export function chatRoutes(app: FastifyInstance): void {
       chat: r.code,
       role: r.buyer_account_id === me ? 'buyer' : 'seller',
       offerId: r.offer_id,
-      counterparty: names.get(others[i]!)?.displayName ?? null,
+      counterparty: names.get(others[i]!)?.tradeTag ?? null,
       lastMessageAt: r.last_message_at?.toISOString() ?? null,
     }));
     return { chats };

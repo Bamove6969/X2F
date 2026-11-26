@@ -91,7 +91,7 @@ describe('Invite: the Terms step (owner 9 Nov 2026, p11-14)', () => {
     typeInto(field('Login name'), 'dk-login');
     await click(button('Continue'));
     expect(accountCalls(api.calls).map((c) => c.body)).toEqual([
-      { displayName: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' } },
+      { tradeTag: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' } },
     ]);
     expect(document.querySelector('h2')?.textContent).toBe('3. Your login keys');
   });

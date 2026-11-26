@@ -80,7 +80,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/accounts/lookup', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
-  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { tradeTag: 'Matrix1', loginName: 'matrix1' } },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/finish', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/start', perm: 'public-invite', allowed: 'public', body: {} },
@@ -95,7 +95,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/owner/alerts/:id/read', perm: 'self', allowed: OWNER, body: {} },
   // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
   { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
-  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },
+  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { tradeTag: 'matrix.owner', loginName: 'matrix-login' } },
   { method: 'POST', url: '/staff/v1/setup/key/start', perm: 'public-setup', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/setup/key/finish', perm: 'public-setup', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', allowed: 'public', body: {} },

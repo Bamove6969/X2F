@@ -79,11 +79,11 @@ for (let i = 0; i < 120 && code === null; i++) {
 if (code === null) throw new Error(`demo staff seed: the API printed no owner setup code (see ${API_LOG})`);
 
 const ownerPlan = STAFF_CAST.find((p) => p.role === 'owner')!;
-const owner: Staffer = { displayName: ownerPlan.displayName, loginName: ownerPlan.loginName, role: 'owner', keys: [newKey(), newKey()], pgp: await newPgp(ownerPlan.displayName), client: new StaffClient(API, ORIGIN) };
+const owner: Staffer = { tradeTag: ownerPlan.tradeTag, loginName: ownerPlan.loginName, role: 'owner', keys: [newKey(), newKey()], pgp: await newPgp(ownerPlan.tradeTag), client: new StaffClient(API, ORIGIN) };
 {
   const c = new StaffClient(API, ORIGIN);
   await c.ok('POST', '/staff/v1/setup/code', { code });
-  await c.ok('POST', '/staff/v1/setup/account', { displayName: owner.displayName, loginName: owner.loginName });
+  await c.ok('POST', '/staff/v1/setup/account', { tradeTag: owner.tradeTag, loginName: owner.loginName });
   for (const [i, k] of owner.keys.entries()) {
     await addKey(c, '/staff/v1/setup/key/start', {}, '/staff/v1/setup/key/finish', (s, response) => ({ challengeId: s.challengeId, response, label: i === 0 ? 'Main key (demo)' : 'Spare key (demo)' }), k, true);
   }
@@ -92,7 +92,7 @@ const owner: Staffer = { displayName: ownerPlan.displayName, loginName: ownerPla
   await c.ok('POST', '/staff/v1/setup/finish', { deviceLabel: 'Demo seed' });
 }
 await login(owner);
-console.log(`demo staff seed: ${owner.displayName} (owner)`);
+console.log(`demo staff seed: ${owner.tradeTag} (owner)`);
 
 // ── staff hired through the owner's invites ─────────────────────────────────
 const failures: string[] = [];
@@ -109,21 +109,21 @@ for (const plan of STAFF_CAST.filter((p) => p.role !== 'owner')) {
     const c = new StaffClient(API, ORIGIN);
     const url = (step = '') => `/staff/v1/invites/accept/${token}${step}`;
     await c.ok('GET', url());
-    await c.ok('POST', url('/account'), { displayName: plan.displayName, loginName: plan.loginName, acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: plan.displayName } });
+    await c.ok('POST', url('/account'), { tradeTag: plan.tradeTag, loginName: plan.loginName, acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: plan.tradeTag } });
     const key = newKey();
     await addKey(c, url('/key/start'), { kind: 'security-key' }, url('/key/finish'), (_s, response) => ({ kind: 'security-key', response }), key, true);
     const passkey = newKey();
     await addKey(c, url('/key/start'), { kind: 'passkey' }, url('/key/finish'), (_s, response) => ({ kind: 'passkey', response }), passkey, false);
-    const pgp = await newPgp(plan.displayName);
+    const pgp = await newPgp(plan.tradeTag);
     const ps = await c.ok<{ challengeId: string; encryptedMessage: string }>('POST', url('/pgp/start'), { publicKey: pgp.publicKey });
     await c.ok('POST', url('/pgp/finish'), { challengeId: ps.challengeId, code: await pgpCode(ps.encryptedMessage, pgp) });
     await c.ok('POST', url('/finish'), {});
-    const p: Staffer = { displayName: plan.displayName, loginName: plan.loginName, role: plan.role, keys: [key, passkey], pgp, client: new StaffClient(API, ORIGIN) };
+    const p: Staffer = { tradeTag: plan.tradeTag, loginName: plan.loginName, role: plan.role, keys: [key, passkey], pgp, client: new StaffClient(API, ORIGIN) };
     await login(p);
     staff.push(p);
-    console.log(`demo staff seed: ${p.displayName} (${p.role})`);
+    console.log(`demo staff seed: ${p.tradeTag} (${p.role})`);
   } catch (e) {
-    failures.push(`${plan.displayName}: ${(e as Error).message}`);
+    failures.push(`${plan.tradeTag}: ${(e as Error).message}`);
   }
 }
 
@@ -148,7 +148,7 @@ if (senior && disputed[0]) {
   try {
     await senior.client.ok('POST', `/staff/v1/disputes/${disputed[0]}/take`, {});
     taken.push(disputed[0]);
-    console.log(`demo staff seed: ${senior.displayName} took ${disputed[0]}`);
+    console.log(`demo staff seed: ${senior.tradeTag} took ${disputed[0]}`);
   } catch (e) {
     failures.push(`take ${disputed[0]}: ${(e as Error).message}`);
   }
@@ -162,7 +162,7 @@ const secrets: StaffSecret[] = staff.map(({ client: _c, ...s }) => s);
 writeFileSync(STAFF_FILE, JSON.stringify(secrets, null, 2), { mode: 0o600 });
 const summary: StaffSummary = {
   origin: ORIGIN,
-  people: staff.map((p) => ({ login: p.loginName, shown: p.displayName, role: p.role })),
+  people: staff.map((p) => ({ login: p.loginName, shown: p.tradeTag, role: p.role })),
   disputes: disputed,
   taken,
   news: NEWS.title,
@@ -174,7 +174,7 @@ appendFileSync(join(DEMO_DIR, 'logins.txt'), [
   '',
   `Staff (the staff app, its own origin: ${ORIGIN}):`,
   `  Log in at ${ORIGIN}/__demo/staff (one tap: the demo holds each account's throwaway security key and PGP key and does the real two-step staff login).`,
-  ...STAFF_CAST.filter((p) => staff.some((s) => s.loginName === p.loginName)).map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} ${role(p.role)}: ${p.sees}`),
+  ...STAFF_CAST.filter((p) => staff.some((s) => s.loginName === p.loginName)).map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.tradeTag.padEnd(14)} ${role(p.role)}: ${p.sees}`),
   ...(disputed.length > 0 ? [`  Open disputes in the queue: ${disputed.join(', ')}${taken.length > 0 ? ` (${taken.join(', ')} taken by the senior moderator)` : ''}`] : []),
   '',
 ].join('\n'));

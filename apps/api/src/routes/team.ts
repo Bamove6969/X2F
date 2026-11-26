@@ -4,9 +4,9 @@
  * The account owner's side (a full trader session of the account owner; a member gets 403
  * `owner-only` from `requireSession`, which lets no member through unless a route says so):
  * - `GET /v1/team` → `{ members, max }`.
- * - `POST /v1/team/invites { displayName, abilities, confirmToken }` (confirm `team-invite-abilities`,
+ * - `POST /v1/team/invites { tradeTag, abilities, confirmToken }` (confirm `team-invite-abilities`,
  *   bound to the name and the boxes) → 201 `{ id, invite, expiresAt }`: `invite` is the one-time
- *   code, shown once. The old body `{ displayName, roles }` (confirm `team-invite`) still works: each
+ *   code, shown once. The old body `{ tradeTag, roles }` (confirm `team-invite`) still works: each
  *   role ticks the boxes it allowed (`ROLE_ABILITIES`). Owner p11-21 (S-104, 9 Nov 2026): from a
  *   username-and-password session the invite still goes out (201 with the code), with no boxes;
  *   the boxes are staged as that session's draft and the answer also carries `{ status: 'staged',
@@ -39,7 +39,7 @@
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
  * after the first is bound to the device that took it):
- * - `POST /v1/team/invite { invite }` → `{ displayName, roles, expiresAt }` (404 for a wrong, used
+ * - `POST /v1/team/invite { invite }` → `{ tradeTag, roles, expiresAt }` (404 for a wrong, used
  *   or expired code). It never names the team account: the vendor is named only inside the door
  *   (review 2026-11-08 F3).
  * - `POST /v1/team/join/start { invite, loginName, publicKey, acceptedTerms }` → a PGP challenge to
@@ -148,7 +148,7 @@ function boxes(b: Record<string, unknown>): Pick<Checked, 'abilities' | 'roles'>
 const checkInvite: preHandlerAsyncHookHandler = async function (req) {
   const b = body(req);
   const set = boxes(b);
-  const name = await checkMemberName(req.server.deps.db, b.displayName);
+  const name = await checkMemberName(req.server.deps.db, b.tradeTag);
   checked.set(req, { name, ...set });
 };
 

@@ -51,10 +51,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <label for="ss-user" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
             Username
             <input id="ss-user" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" value="{{uname}}" onChange="{{onUser}}" aria-describedby="ss-user-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
-            <span id="ss-user-hint" style="font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; text-transform: none;">You type this to log in. Only you see it. Nobody can work it out from your display name.</span>
+            <span id="ss-user-hint" style="font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; text-transform: none;">You type this to log in. Only you see it. Nobody can work it out from your Trade Tag.</span>
           </label>
           <label for="ss-disp" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
-            Display name
+            Trade Tag
             <input id="ss-disp" type="text" autocomplete="nickname" spellcheck="false" value="{{dname}}" onChange="{{onDisp}}" aria-describedby="ss-disp-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
             <span id="ss-disp-hint" style="font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; text-transform: none;">Other traders see this. It can&#39;t be used to log in.</span>
           </label>
@@ -205,7 +205,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </aside>
     <aside aria-label="Decided by the owner: password plus authenticator counts as strong" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G34, G13)</span>
-      <span style="font-weight: 600;">Traders: username, password, authenticator code and display name count as a strong login. Vendors still need a passkey, security key or PGP key (G13).</span>
+      <span style="font-weight: 600;">Traders: username, password, authenticator code and Trade Tag count as a strong login. Vendors still need a passkey, security key or PGP key (G13).</span>
       <span style="color: var(--ink-muted);">The authenticator note shows only with a password and says what it unlocks. COPY-UNSIGNED.</span>
     </aside>
     <aside aria-label="Decided by the owner: strength chart wording per tier" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -326,7 +326,7 @@ class Component extends DCLogic {
       };
     });
     const T = {
-      none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
+      none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your Trade Tag can’t be used to log in.', 'Pick at least one way to log in.'] },
       totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
       // S-015 (owner draft, 1 Nov, reworded by design 9 Nov). COPY-UNSIGNED.
       weak: { title: 'Weak', lines: ['A username and password alone is weak by industry standards.', 'If someone ever breaks in, proving the account is yours is slower and harder.', 'Your changes wait through a 24 h cooling-off. That stops an intruder, but it applies to you too while we check.', 'Harden it with an authenticator app, passkey, security key or PGP key, and your changes take effect at once.'] },
@@ -361,7 +361,7 @@ class Component extends DCLogic {
     const dname = (s.dname || '').trim();
     let footNote = 'Next: recovery.';
     if (!uname) footNote = 'Choose a username to continue.';
-    else if (!dname) footNote = 'Choose a display name to continue.';
+    else if (!dname) footNote = 'Choose a Trade Tag to continue.';
     else if (tier === 'none') footNote = 'Pick a way to log in to continue.';
     else if (tier === 'totp') footNote = 'Add a password or another way to log in to continue.';
     else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';

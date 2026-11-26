@@ -220,7 +220,7 @@ describe('team members (review PC1)', () => {
     const loginId = await seedAccount(deps, { loginName: name.toLowerCase(), kind: 'member' });
     const now = deps.clock();
     const m = await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
       [teamId, name, name.toLowerCase(), abilities, now, loginId],
     );

@@ -458,14 +458,14 @@ describe('POST /v1/offers/:id/take', () => {
     });
   });
 
-  it('tells the poster "<display name> accepted your offer" on their live stream after the take commits', async () => {
+  it('tells the poster "<Trade Tag> accepted your offer" on their live stream after the take commits', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
     const publish = vi.spyOn(app.events, 'publish');
     try {
       const code = await taken(buyer, offer, body(buyer, tenth));
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }, { closed: false }));
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.tradeTag }, { closed: false }));
       // Nothing to the taker.
       expect(publish.mock.calls.filter(([id]) => id === buyer.id)).toEqual([]);
     } finally {

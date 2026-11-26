@@ -107,7 +107,7 @@ export async function rewrapTotpSecrets(deps: Pick<Deps, 'db' | 'config'>): Prom
 /** otpauth wants an ArrayBuffer of exactly the secret's bytes (a Buffer may sit in a shared pool). */
 const secretOf = (bytes: Uint8Array) => new Secret({ buffer: new Uint8Array(bytes).buffer });
 
-/** `label` is the public display name, never the login name. */
+/** `label` is the public Trade Tag, never the login name. */
 function totpOf(bytes: Uint8Array, label: string): TOTP {
   return new TOTP({ issuer: 'X2F', label, algorithm: 'SHA1', digits: DIGITS, period: PERIOD_S, secret: secretOf(bytes) });
 }
@@ -183,9 +183,9 @@ function str(b: Record<string, unknown>, key: string): string {
 async function enrolStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const now = deps.clock();
-  const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [req.auth.accountId]);
-  const displayName = rows[0]?.display_name;
-  if (displayName === undefined) throw new ApiError(401, 'not-authenticated');
+  const { rows } = await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [req.auth.accountId]);
+  const tradeTag = rows[0]?.trade_tag;
+  if (tradeTag === undefined) throw new ApiError(401, 'not-authenticated');
   // A fresh secret per enrolment, from the OS CSPRNG only (R9).
   const bytes = new Uint8Array(randomBytes(TOTP_SECRET_BYTES));
   const { rows: ch } = await deps.db.query<{ id: string }>(
@@ -209,7 +209,7 @@ async function enrolStart(req: FastifyRequest) {
          order by (payload->>'n')::bigint desc offset $2)`,
     [req.auth.sessionId, TOTP_OPEN_ENROLMENTS, now],
   );
-  const totp = totpOf(bytes, displayName);
+  const totp = totpOf(bytes, tradeTag);
   return { challengeId: ch[0]!.id, otpauthUri: totp.toString(), secret: totp.secret.base32 };
 }
 

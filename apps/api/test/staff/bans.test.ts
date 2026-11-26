@@ -165,7 +165,7 @@ describe('placing a ban (Task 27, D-017)', () => {
     expect((await t.deps.db.query('select 1 from banned_identifiers where account_id = $1', [timed])).rows).toEqual([]);
     const life = await trader();
     expect((await ban(senior, life, { kind: 'site', ruleId: 'scamming', until: null })).res.statusCode).toBe(201);
-    expect((await t.deps.db.query('select kind from banned_identifiers where account_id = $1 order by kind', [life])).rows.map((r) => r.kind)).toEqual(['display-name', 'login-name']);
+    expect((await t.deps.db.query('select kind from banned_identifiers where account_id = $1 order by kind', [life])).rows.map((r) => r.kind)).toEqual(['login-name', 'trade-tag']);
   });
 
   it('MF2 (lead call): lifting a lifetime site ban takes the account\'s and its members\' identifiers off the ban list, and only theirs', async () => {
@@ -175,7 +175,7 @@ describe('placing a ban (Task 27, D-017)', () => {
     await addPgpKey(t.deps, member);
     const memberName = `Bm${randomBytes(3).toString('hex')}`;
     await t.deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, '{trades-see-active}', $4, $5, $4, $4)`,
       [id, memberName, memberName.toLowerCase(), t.deps.clock(), member],
     );
@@ -184,14 +184,14 @@ describe('placing a ban (Task 27, D-017)', () => {
     const b = await ban(senior, id, { kind: 'site', ruleId: 'scamming', until: null });
     expect(b.res.statusCode).toBe(201);
     const rowsOf = async (acc: string) => (await t.deps.db.query('select kind from banned_identifiers where account_id = $1 order by kind', [acc])).rows.map((r) => r.kind);
-    expect([...new Set(await rowsOf(id))]).toEqual(['display-name', 'login-name', 'pgp-fingerprint']);
+    expect([...new Set(await rowsOf(id))]).toEqual(['login-name', 'pgp-fingerprint', 'trade-tag']);
     expect([...new Set(await rowsOf(member))]).toEqual(['login-name', 'pgp-fingerprint']);
     const recorded = (await rowsOf(id)).length + (await rowsOf(member)).length;
     expect((await lift(senior, id, b.banId)).statusCode).toBe(200);
     expect(await rowsOf(id)).toEqual([]);
     expect(await rowsOf(member)).toEqual([]);
     // Someone else's ban stays.
-    expect(await rowsOf(bystander)).toEqual(['display-name', 'login-name']);
+    expect(await rowsOf(bystander)).toEqual(['login-name', 'trade-tag']);
     expect((await logEntries(t.deps, 'account.ban-lifted')).map((e) => JSON.parse(e.detail))).toContainEqual({ accountId: id, banId: b.banId, kind: 'site', identifiersRemoved: recorded });
   });
 
@@ -284,8 +284,8 @@ describe('a site ban on the trader app (Task 27, 2026-10-29b)', () => {
   it('MF1: an open trade opens only itself and its chat; a closed trade, its chat, an offer chat and the chat list stay 403 banned', async () => {
     const id = await trader();
     const other = await trader();
-    const { rows } = await t.deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [other]);
-    const otherName = rows[0]!.display_name;
+    const { rows } = await t.deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [other]);
+    const otherName = rows[0]!.trade_tag;
     const open = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
     const closed = await seedTrade(t.deps, { sellerId: id, buyerId: other, poster: 'seller' });
     await driveTo(t.deps, closed.trade, 'released');
@@ -500,7 +500,7 @@ describe('a site ban and the trade room\'s later routes (batch 10a, lead call 1)
     const loginId = await seedAccount(t.deps, { loginName: name.toLowerCase(), kind: 'member' });
     const now = t.deps.clock();
     const m = await t.deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
       [teamId, name, name.toLowerCase(), abilities, now, loginId],
     );

@@ -69,10 +69,10 @@ async function team(): Promise<Who & { wallet: string }> {
 /** A joined member seeded directly (the real sign-up is team.test.ts's), not yet logged in unless `login`. */
 async function member(teamId: string, abilities: string[], o: { login?: boolean } = {}) {
   const name = `Lmember${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `lmlogin${n}x`, displayName: `lm-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `lmlogin${n}x`, tradeTag: `lm-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );

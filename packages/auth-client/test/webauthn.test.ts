@@ -23,7 +23,7 @@ const ASSERT = { id: 'cred', type: 'public-key' } as unknown as AuthenticationRe
 function fakeApi() {
   const api = {
     registerWebAuthnStart: vi.fn(async () => ({ challengeId: 'ch-reg', options: CREATE })),
-    registerWebAuthnFinish: vi.fn(async () => ({ displayName: 'Alice' })),
+    registerWebAuthnFinish: vi.fn(async () => ({ tradeTag: 'Alice' })),
     loginWebAuthnStart: vi.fn(async () => ({ challengeId: 'ch-login', options: GET })),
     loginWebAuthnFinish: vi.fn(async () => ({ status: 'ok' as const })),
     confirmWebAuthnStart: vi.fn(async () => ({ challengeId: 'ch-confirm', options: GET })),
@@ -42,9 +42,9 @@ describe('WebAuthn ceremony wrappers', () => {
     const { api, calls } = fakeApi();
     const ceremony = registration();
     await expect(
-      registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'passkey', 'Browser on Linux', '2026-10-17', ceremony),
-    ).resolves.toEqual({ displayName: 'Alice', credentialId: REG.id });
-    expect(calls.registerWebAuthnStart).toHaveBeenCalledWith({ displayName: 'Alice', loginName: 'alice.login', kind: 'passkey' });
+      registerWithWebAuthn(api, { tradeTag: 'Alice', loginName: 'alice.login' }, 'passkey', 'Browser on Linux', '2026-10-17', ceremony),
+    ).resolves.toEqual({ tradeTag: 'Alice', credentialId: REG.id });
+    expect(calls.registerWebAuthnStart).toHaveBeenCalledWith({ tradeTag: 'Alice', loginName: 'alice.login', kind: 'passkey' });
     expect(ceremony.startRegistration).toHaveBeenCalledWith({ optionsJSON: CREATE });
     expect(calls.registerWebAuthnFinish).toHaveBeenCalledWith({
       challengeId: 'ch-reg', response: REG, deviceLabel: 'Browser on Linux', acceptedTerms: '2026-10-17',
@@ -53,7 +53,7 @@ describe('WebAuthn ceremony wrappers', () => {
 
   it('registerWithWebAuthn passes a credential label when given', async () => {
     const { api, calls } = fakeApi();
-    await registerWithWebAuthn(api, { displayName: 'Alice', loginName: 'alice.login' }, 'security-key', 'Browser', 'v', registration(), { label: 'YubiKey' });
+    await registerWithWebAuthn(api, { tradeTag: 'Alice', loginName: 'alice.login' }, 'security-key', 'Browser', 'v', registration(), { label: 'YubiKey' });
     expect(calls.registerWebAuthnFinish).toHaveBeenCalledWith(expect.objectContaining({ label: 'YubiKey' }));
   });
 
@@ -99,7 +99,7 @@ describe('WebAuthn ceremony wrappers', () => {
     const cancelled = new Error('NotAllowedError');
     await expect(loginWithPasskey(api, 'Browser', { startAuthentication: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
     expect(calls.loginWebAuthnFinish).not.toHaveBeenCalled();
-    await expect(registerWithWebAuthn(api, { displayName: 'Aaaaa', loginName: 'bbbbb' }, 'passkey', 'B', 'v', { startRegistration: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
+    await expect(registerWithWebAuthn(api, { tradeTag: 'Aaaaa', loginName: 'bbbbb' }, 'passkey', 'B', 'v', { startRegistration: async () => Promise.reject(cancelled) })).rejects.toBe(cancelled);
     expect(calls.registerWebAuthnFinish).not.toHaveBeenCalled();
   });
 });

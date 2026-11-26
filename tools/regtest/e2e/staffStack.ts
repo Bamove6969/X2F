@@ -34,7 +34,7 @@ export interface StaffInfo {
   api: string;
   /** The test attestation CA: new staff keys are registered with it. */
   ca: CaData;
-  owner: { accountId: string; displayName: string; loginName: string; keys: KeyData[]; pgp: PgpPair };
+  owner: { accountId: string; tradeTag: string; loginName: string; keys: KeyData[]; pgp: PgpPair };
 }
 
 export interface StaffPrep {
@@ -168,13 +168,13 @@ export async function prepareStaff(o: { root: string; work: string; logDir: stri
       if (code === null) throw new Error(`stack: the API printed no owner setup code; see ${apiLog}`);
       await staff.ok('POST', '/staff/v1/setup/code', { code });
       const tag = randomBytes(3).toString('hex');
-      const owner = { displayName: `Lumen${tag}`, loginName: `owner-login-${tag}` };
+      const owner = { tradeTag: `Lumen${tag}`, loginName: `owner-login-${tag}` };
       await staff.ok('POST', '/staff/v1/setup/account', owner);
       const keys = [newKey(), newKey()];
       for (const [i, k] of keys.entries()) {
         await addKey(staff, { path: '/staff/v1/setup/key/start', body: {} }, (s, response) => ({ path: '/staff/v1/setup/key/finish', body: { challengeId: s.challengeId, response, label: i === 0 ? 'Main key' : 'Spare key' } }), k, ca);
       }
-      const pgp = await newPgp(owner.displayName);
+      const pgp = await newPgp(owner.tradeTag);
       const ps = await staff.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/staff/v1/setup/pgp/start', { publicKey: pgp.publicKey });
       await staff.ok('POST', '/staff/v1/setup/pgp/finish', { challengeId: ps.challengeId, code: await pgpCode(ps.encryptedMessage, pgp) });
       await staff.ok('POST', '/staff/v1/setup/finish', { deviceLabel: 'e2e' });

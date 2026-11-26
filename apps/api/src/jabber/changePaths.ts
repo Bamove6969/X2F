@@ -30,7 +30,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     // close (closed_at, closed_reason) and the idle reminder are changes the owner should hear about;
     // last_login_at and the sealed Terms signature are bookkeeping. idle_hours went with migration 307.
     changes: [
-      'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
+      'id', 'trade_tag', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
     ],
@@ -81,7 +81,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   {
     table: 'team_members', accountColumn: 'account_id', ops: ALL,
     changes: [
-      'id', 'account_id', 'display_name', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
+      'id', 'account_id', 'trade_tag', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
       'joined_at', 'created_at', 'removed_at',
       // Migration 390 (S-105): the member's chat number, set with the invite (its insert notifies).
       'assistant_no',

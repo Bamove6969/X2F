@@ -13,7 +13,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const me = (role: 'owner' | 'senior' | 'mod' | 'helper') => ({
-  displayName: 'lumen.k',
+  tradeTag: 'lumen.k',
   role,
   nav: NAV[role],
   sessionEndsAt: new Date(Date.now() + 120 * 60_000).toISOString(),

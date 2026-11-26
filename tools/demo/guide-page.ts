@@ -92,12 +92,12 @@ export function guideSteps(s: SeedSummary | null, staff: StaffSummary | null = n
       title: '1. Sign up',
       links: [link('/'), link('/setup')],
       who: 'Nobody: make a new account of your own (it gets no door, see Log in).',
-      todo: [`Tap Create account; read and sign the Terms (v${TERMS_TEXT_VERSION}); pick a username and a display name; tick the login methods you want.`, 'Save the one recovery code, then type it back on the next screen.', `Paste a payout address when asked (any address shape the form accepts is fine on regtest).${ROUND ? ' "New in this demo" above walks each screen.' : ''}`],
+      todo: [`Tap Create account; read and sign the Terms (v${TERMS_TEXT_VERSION}); pick a username and a Trade Tag; tick the login methods you want.`, 'Save the one recovery code, then type it back on the next screen.', `Paste a payout address when asked (any address shape the form accepts is fine on regtest).${ROUND ? ' "New in this demo" above walks each screen.' : ''}`],
     },
     {
       title: '2. Log in',
       links: [link('/login'), link('/__demo/codes', '/__demo/codes (authenticator codes)')],
-      who: `Any seeded account, password ${login(DEMO_PASSWORD)}. Use the login name, not the display name.`,
+      who: `Any seeded account, password ${login(DEMO_PASSWORD)}. Use the login name, not the Trade Tag.`,
       todo: ['Type the login name and password.', 'For the 6-digit code, open /__demo/codes in another tab and type that account\'s current code (each code works once; a new one every 30 s).', 'If the account is logged in on another device, log it out there first or approve from it.'],
     },
     {
@@ -134,7 +134,7 @@ export function guideSteps(s: SeedSummary | null, staff: StaffSummary | null = n
       title: '8. Rating',
       links: [link('/trades')],
       who: 'Both sides of a released trade.',
-      todo: ['Rate the other side after release (the next take waits until you rate or skip).', 'See the rating on the other trader\'s profile (/u/<display name>).'],
+      todo: ['Rate the other side after release (the next take waits until you rate or skip).', 'See the rating on the other trader\'s profile (/u/<Trade Tag>).'],
     },
     {
       title: '9. My trades',

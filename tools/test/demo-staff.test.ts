@@ -258,7 +258,7 @@ describe('the staff gateway', () => {
   });
 
   it('the login page escapes what it shows', () => {
-    expect(staffLoginPage([{ displayName: '<b>', loginName: 'x"y', role: 'mod', sees: 'a&b' }], '<i>')).not.toMatch(/as <b>|<i>|x"y|a&b/);
+    expect(staffLoginPage([{ tradeTag: '<b>', loginName: 'x"y', role: 'mod', sees: 'a&b' }], '<i>')).not.toMatch(/as <b>|<i>|x"y|a&b/);
   });
 });
 
@@ -281,7 +281,7 @@ describe('the trader gateway keeps the staff session away from the trader side',
 describe('the demo staff login (software keys, the real two steps)', () => {
   it('signs the security-key challenge, decrypts the PGP code, and returns the API\'s cookies', async () => {
     const pgp = await newPgp('Lumen_Prime');
-    const who: StaffSecret = { displayName: 'Lumen_Prime', loginName: 'lumen-demo', role: 'owner', keys: [newKey()], pgp };
+    const who: StaffSecret = { tradeTag: 'Lumen_Prime', loginName: 'lumen-demo', role: 'owner', keys: [newKey()], pgp };
     const calls: Array<{ path: string; body: Record<string, unknown>; origin: string | null; cookie: string | null }> = [];
     const encrypted = await openpgp.encrypt({ message: await openpgp.createMessage({ text: 'X2F login code: K7Q2-M9XA\n' }), encryptionKeys: await openpgp.readKey({ armoredKey: pgp.publicKey }) });
     const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
@@ -331,7 +331,7 @@ describe('the guide\'s staff step', () => {
   };
   const staff: StaffSummary = {
     origin: 'https://x2f-lead.tail1.ts.net',
-    people: STAFF_CAST.map((p) => ({ login: p.loginName, shown: p.displayName, role: p.role })),
+    people: STAFF_CAST.map((p) => ({ login: p.loginName, shown: p.tradeTag, role: p.role })),
     disputes: ['DISP-1111'], taken: ['DISP-1111'], news: 'Welcome to the X2F demo', failures: [],
   };
 

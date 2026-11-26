@@ -14,7 +14,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
 
 async function open(path: string) {
   render(
@@ -44,18 +44,18 @@ const row = (name: string) => [...document.querySelectorAll('table[aria-label="S
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const MEMBERS = () => [
-  { accountId: 'o-1', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
-  { accountId: 's-1', inviteId: null, displayName: 'sarah.v', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-09-04T00:00:00Z', lastActiveAt: ago(12 * 60_000 + 5_000), openCases: 41, expiresAt: null, missingMethods: [] },
+  { accountId: 'o-1', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
+  { accountId: 's-1', inviteId: null, tradeTag: 'sarah.v', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-09-04T00:00:00Z', lastActiveAt: ago(12 * 60_000 + 5_000), openCases: 41, expiresAt: null, missingMethods: [] },
   {
-    accountId: 'm-1', inviteId: null, displayName: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '09:00', end: '17:00', tz: 'UTC' },
+    accountId: 'm-1', inviteId: null, tradeTag: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '09:00', end: '17:00', tz: 'UTC' },
     joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(2 * H + 5_000), openCases: 17, expiresAt: null, missingMethods: ['security-key'],
   },
   {
-    accountId: 'h-1', inviteId: null, displayName: 'tobi.w', role: 'helper', status: 'switched-off', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], start: '18:00', end: '23:00', tz: 'UTC' },
+    accountId: 'h-1', inviteId: null, tradeTag: 'tobi.w', role: 'helper', status: 'switched-off', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], start: '18:00', end: '23:00', tz: 'UTC' },
     joinedAt: '2026-10-09T00:00:00Z', lastActiveAt: ago(30 * H), openCases: 0, expiresAt: null, missingMethods: [],
   },
   {
-    accountId: null, inviteId: 'i-1', displayName: null, role: 'mod', status: 'waiting', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '09:00', end: '17:00', tz: 'UTC' },
+    accountId: null, inviteId: 'i-1', tradeTag: null, role: 'mod', status: 'waiting', grants: [], hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '09:00', end: '17:00', tz: 'UTC' },
     joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: new Date(Date.now() + 21 * H + 30 * 60_000).toISOString(), missingMethods: [],
   },
 ];

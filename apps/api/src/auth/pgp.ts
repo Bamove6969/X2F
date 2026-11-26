@@ -21,7 +21,7 @@ import type { Deps } from '../app.js';
 import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import { addAlert } from '../alerts.js';
 import { assertKeyNotBanned, hasBinding, keyFingerprints } from '../bans.js';
-import { assertDisplayNameFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
+import { assertTradeTagFree, assertNewNames, assertTraderTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -804,10 +804,10 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   req.server.budgets.start.take();
   const now = deps.clock();
   const b = body(req);
-  const names = await assertNewNames(deps.db, b.displayName, b.loginName);
+  const names = await assertNewNames(deps.db, b.tradeTag, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now, 'new-key');
-  await assertDisplayNameFree(deps.db, names, deps.config);
+  await assertTradeTagFree(deps.db, names, deps.config);
   // Fingerprint clashes and the ban list are not checked here: only `finish`, after the code proves
   // the key, says key-in-use or key-unavailable (insertPgpKey). A check here would tell anyone,
   // with no proof, whether a key is in use or banned (lead review 2026-11-06 item 1).
@@ -850,7 +850,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true });
-  return reply.code(201).send({ displayName: names.displayName });
+  return reply.code(201).send({ tradeTag: names.tradeTag });
 }
 
 async function confirmStart(req: FastifyRequest) {

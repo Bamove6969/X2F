@@ -103,7 +103,7 @@ async function passkeyTrader() {
   const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
   const b = new Browser('Chrome on Windows');
   const name = unique('pk');
-  const start = await b.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' });
+  const start = await b.post('/v1/register/webauthn/start', { tradeTag: `D.${name}`, loginName: name, kind: 'passkey' });
   const { challengeId, options } = start.json();
   const fin = await b.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(fin.statusCode, fin.body).toBe(201);
@@ -353,9 +353,9 @@ describe('who may use the courier', () => {
 
     // A team member's session (two factors, a session of the team account): owner-only routes.
     const name = unique('mem');
-    const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: name, tradeTag: `m-${name}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $6, $4, $5, $4, $4)`,
       [t.accountId, `M${name}`, `m${name}`.toLowerCase(), now, loginId, rolesToAbilities(['offers', 'trades'])],
     );

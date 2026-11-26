@@ -23,12 +23,12 @@ import { COMPLETED_TRADES_SQL, loadStarterSettings, purgedSql, stageFor, type St
  * is real data: `positivePct` from submitted reviews, `typicalMinutes` from the running action-time
  * lists (traders/actionTimes.ts) and `badges` from @x2f/reputation's earning rules.
  *
- * `displayName` is the PUBLIC display name (spec 6.1, FU-A), read through events/publicName.ts's
+ * `tradeTag` is the PUBLIC Trade Tag (spec 6.1, FU-A), read through events/publicName.ts's
  * column; never the private login name.
  */
 export interface TraderSummary {
-  /** The public display name; the private login name is never shown to anyone. */
-  displayName: string;
+  /** The public Trade Tag; the private login name is never shown to anyone. */
+  tradeTag: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -253,7 +253,7 @@ export async function traderFacts(
     const prefs = prefsFromRow({ chosen: r.bp_chosen, levels: r.bp_levels, featured_order: r.bp_order });
     const shown = resolveVisibility(earned, prefs);
     const summary: TraderSummary = {
-      displayName: r.name,
+      tradeTag: r.name,
       completedTrades: completed,
       online: r.last_seen !== null && r.last_seen.getTime() >= since,
       // Public, so only to the 5 minutes, floored (review M3): enough for "last seen", not for timing someone's requests.

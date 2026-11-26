@@ -116,7 +116,7 @@ async function expectBound(b: Browser): Promise<void> {
 
 /** A passkey sign-up in `a`, then a passkey login in a new browser that waits for `a` to approve it. */
 async function waitingLogin(a: Browser, loginName: string): Promise<{ b: Browser; approvalId: string; number: number }> {
-  const { res: reg, auth } = await signUpWithKey(a, { displayName: `P${loginName}`, loginName, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion });
+  const { res: reg, auth } = await signUpWithKey(a, { tradeTag: `P${loginName}`, loginName, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion });
   expect(reg.statusCode, reg.body).toBe(201);
   const b = new Browser();
   const wait = await logInWithKey(b, auth, 'Phone');
@@ -133,7 +133,7 @@ describe('every real login path binds the session (S4)', () => {
     for (const k of [memberKey, memberKey2]) await insertPgpKey(deps.db, deps.config, { accountId: memberId, fingerprint: k.fingerprint, armored: k.publicKey, now });
     const name = unique('Member');
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [owner, name, name.toLowerCase(), rolesToAbilities(['offers']), now, memberId],
     );
@@ -178,16 +178,16 @@ describe('every real login path binds the session (S4)', () => {
   });
 
   it('a PGP login', async () => {
-    const displayName = unique('pgp');
+    const tradeTag = unique('pgp');
     const a = new Browser(null);
-    const start = await a.post('/v1/register/pgp/start', { displayName, loginName: `${displayName}.l`, publicKey: pgpKey.publicKey });
+    const start = await a.post('/v1/register/pgp/start', { tradeTag, loginName: `${tradeTag}.l`, publicKey: pgpKey.publicKey });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, pgpKey.privateKey));
     const fin = await a.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
     expect(fin.statusCode, fin.body).toBe(201);
     // A PGP key is a strong login: it gets in from a new browser while the account is logged in elsewhere (or asks that device; collected below).
     const b = new Browser();
-    const ls = await b.post('/v1/login/pgp/start', { key: pgpKey.publicKey, loginName: `${displayName}.l` });
+    const ls = await b.post('/v1/login/pgp/start', { key: pgpKey.publicKey, loginName: `${tradeTag}.l` });
     expect(ls.statusCode, ls.body).toBe(200);
     const lcode = codeOf(await decrypt(ls.json().encryptedMessage, pgpKey.privateKey));
     const res = await b.post('/v1/login/pgp/finish', { challengeId: ls.json().challengeId, code: lcode, deviceLabel: 'Laptop' });
@@ -205,7 +205,7 @@ describe('every real login path binds the session (S4)', () => {
     const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const loginName = unique('pk');
     const a = new Browser();
-    const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${loginName}`, loginName, kind: 'passkey' });
+    const start = await a.post('/v1/register/webauthn/start', { tradeTag: `D.${loginName}`, loginName, kind: 'passkey' });
     expect(start.statusCode, start.body).toBe(200);
     const { challengeId, options } = start.json();
     const reg = await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });

@@ -54,7 +54,7 @@ beforeEach(() => {
 const name = (p = 'rule') => `${p}${String(process.pid % 1000).padStart(3, '0')}x${String(++n).padStart(3, '0')}`;
 const names = () => {
   const loginName = name('priv');
-  return { loginName, displayName: name('Shown') };
+  return { loginName, tradeTag: name('Shown') };
 };
 
 async function accountCount(): Promise<number> {
@@ -136,42 +136,42 @@ describe('no passwords (owner 26 Nov 2026)', () => {
   });
 });
 
-// Signup round 3, lead call (13 Nov 2026): a display name may hold most printable characters.
+// Signup round 3, lead call (13 Nov 2026): a Trade Tag may hold most printable characters.
 // Owner demo note #108 (17 Nov 2026): but no spaces inside it (the ends are still trimmed).
 /** A passkey sign-up with these names: the refusal of its start, else its finish. */
-const register = async (body: { displayName: string; loginName: string }) =>
+const register = async (body: { tradeTag: string; loginName: string }) =>
   (await signUpWithKey(new Browser(app), { ...body, deviceLabel: 'Test browser', acceptedTerms: TERMS })).res;
 
-describe('signup round 3: display names with Unicode letters and common symbols', () => {
+describe('signup round 3: Trade Tags with Unicode letters and common symbols', () => {
   it('signs up as "  Cash$Ölaf " (stored as normalised), and the name is found again by any case', async () => {
     const b = new Browser(app);
     const shown = `Cash$Ölaf${n++}`;
-    const res = await register({ displayName: `  ${shown} `, loginName: name('priv') });
+    const res = await register({ tradeTag: `  ${shown} `, loginName: name('priv') });
     expect(res.statusCode).toBe(201);
-    const { rows } = await deps.db.query<{ display_name: string; display_key: string }>('select display_name, display_key from accounts where display_name = $1', [shown]);
-    expect(rows).toEqual([{ display_name: shown, display_key: shown.toLowerCase() }]);
+    const { rows } = await deps.db.query<{ trade_tag: string; display_key: string }>('select trade_tag, display_key from accounts where trade_tag = $1', [shown]);
+    expect(rows).toEqual([{ trade_tag: shown, display_key: shown.toLowerCase() }]);
     // Someone else with the same name in another case is refused as taken.
-    const twin = await register({ displayName: shown.toUpperCase(), loginName: name('priv') });
+    const twin = await register({ tradeTag: shown.toUpperCase(), loginName: name('priv') });
     expect(twin.statusCode).toBe(409);
   });
 
-  it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (displayName) => {
-    const res = await register({ displayName, loginName: name('priv') });
+  it.each(['bob‮smith', 'שלום עולם', 'аlice.k', 'X2F Support'])('refuses %j at sign-up', async (tradeTag) => {
+    const res = await register({ tradeTag, loginName: name('priv') });
     expect(res.statusCode).toBe(400);
   });
 
   it('a look-alike of a staff name with an accent or a Cyrillic letter is reserved', async () => {
-    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Miranda${n++}` });
-    const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff]);
-    const res = await register({ displayName: rows[0]!.display_name.replace('i', 'í'), loginName: name('priv') });
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, tradeTag: `Miranda${n++}` });
+    const { rows } = await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [staff]);
+    const res = await register({ tradeTag: rows[0]!.trade_tag.replace('i', 'í'), loginName: name('priv') });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: 'display-name-reserved' });
+    expect(res.json()).toMatchObject({ error: 'trade-tag-reserved' });
   });
 });
 
 // Review of third-signup-r3 (16 Nov 2026): the review's attack names, at the API.
 describe('signup round 3 review: invisible characters and staff look-alikes', () => {
-  const reg = (displayName: string) => register({ displayName, loginName: name('priv') });
+  const reg = (tradeTag: string) => register({ tradeTag, loginName: name('priv') });
 
   it('B1: a pixel-identical copy of a trader name with a variation selector, and a blank name, are refused', async () => {
     const base = `Alice${n++}x`;
@@ -179,58 +179,58 @@ describe('signup round 3 review: invisible characters and staff look-alikes', ()
     for (const attack of [`${base}\ufe0f`, `${base}\u{e0100}`, `${base.slice(0, 3)}\u034f${base.slice(3)}`, `${base}\u180b`]) {
       const copy = await reg(attack);
       expect(copy.statusCode, JSON.stringify(attack)).toBe(400);
-      expect(copy.json()).toEqual({ error: 'display-name-invalid' });
+      expect(copy.json()).toEqual({ error: 'trade-tag-invalid' });
     }
     for (const blank of ['\u3164\u3164\u3164\u3164\u3164', 'Bob\u3164Smith', 'Bob\uffa0Smith', 'Bob\u115fSmith', 'Bob\u1160Smith', '\u115f\u1160\u115f\u1160\u115f']) {
       const res = await reg(blank);
       expect(res.statusCode, JSON.stringify(blank)).toBe(400);
-      expect(res.json()).toEqual({ error: 'display-name-invalid' });
+      expect(res.json()).toEqual({ error: 'trade-tag-invalid' });
     }
   });
 
   it('M1/M2: a staff name with a dotless i, a comma or a space for its dot, and "Admın Desk", are reserved', async () => {
-    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Mira.K${n++}` });
-    const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, tradeTag: `Mira.K${n++}` });
+    const s = (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [staff])).rows[0]!.trade_tag;
     for (const attack of [s.replace('i', 'ı'), s.replace('.', ','), s.replace('.', '_'), s.replace('.', '-'), s.replace('M', 'ᴍ')]) {
       const res = await reg(attack);
       expect(res.statusCode, attack).toBe(400);
-      expect(res.json()).toEqual({ error: 'display-name-reserved' });
+      expect(res.json()).toEqual({ error: 'trade-tag-reserved' });
     }
     // Owner demo note #108: a space for its dot is now refused for the space itself.
     const spaced = await reg(s.replace('.', ' '));
     expect(spaced.statusCode).toBe(400);
-    expect(spaced.json()).toEqual({ error: 'display-name-invalid' });
+    expect(spaced.json()).toEqual({ error: 'trade-tag-invalid' });
     const adm = await reg('Admın Desk');
     expect(adm.statusCode, adm.body).toBe(400);
-    expect(adm.json()).toEqual({ error: 'display-name-reserved' });
+    expect(adm.json()).toEqual({ error: 'trade-tag-reserved' });
   });
 
   it('M2: a team member name is held to the same staff comparison', async () => {
-    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, displayName: `Kim.Lor${n++}` });
-    const s = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [staff])).rows[0]!.display_name;
+    const staff = await seedAccount(deps, { kind: 'staff', loginName: null, tradeTag: `Kim.Lor${n++}` });
+    const s = (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [staff])).rows[0]!.trade_tag;
     for (const attack of [s.replace('.', ','), s.replace('i', 'ı')]) {
-      await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'display-name-reserved' });
+      await expect(checkMemberName(deps.db, attack), attack).rejects.toMatchObject({ status: 400, code: 'trade-tag-reserved' });
     }
     // Owner demo note #108: a member name with a space is refused for the space.
-    await expect(checkMemberName(deps.db, s.replace('.', ' '))).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
-    await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'display-name-invalid' });
+    await expect(checkMemberName(deps.db, s.replace('.', ' '))).rejects.toMatchObject({ status: 400, code: 'trade-tag-invalid' });
+    await expect(checkMemberName(deps.db, `${s}\ufe0f`)).rejects.toMatchObject({ status: 400, code: 'trade-tag-invalid' });
   });
 });
 
-// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or display
-// names". New and changed values only: an account made before the rule keeps logging in.
-describe('note #108: no spaces in new usernames or display names', () => {
-  const reg = (body: { displayName?: string; loginName?: string }) => register({ displayName: `Plain${n++}x`, loginName: name('priv'), ...body });
+// Owner demo note #108 (17 Nov 2026): "Do not allow spaces in username or passwords or Trade
+// Tags". New and changed values only: an account made before the rule keeps logging in.
+describe('note #108: no spaces in new usernames or Trade Tags', () => {
+  const reg = (body: { tradeTag?: string; loginName?: string }) => register({ tradeTag: `Plain${n++}x`, loginName: name('priv'), ...body });
 
-  it('sign-up refuses a display name with a space inside, and makes no account', async () => {
+  it('sign-up refuses a Trade Tag with a space inside, and makes no account', async () => {
     const before = await accountCount();
-    for (const displayName of [`Bob Smith${n++}`, `Bob   Smith${n++}`, `R&B Trader${n++}`]) {
-      const res = await reg({ displayName });
-      expect(res.statusCode, displayName).toBe(400);
-      expect(res.json()).toEqual({ error: 'display-name-invalid' });
+    for (const tradeTag of [`Bob Smith${n++}`, `Bob   Smith${n++}`, `R&B Trader${n++}`]) {
+      const res = await reg({ tradeTag });
+      expect(res.statusCode, tradeTag).toBe(400);
+      expect(res.json()).toEqual({ error: 'trade-tag-invalid' });
     }
     expect(await accountCount()).toBe(before);
-    expect((await reg({ displayName: `  BobSmith${n++}  ` })).statusCode).toBe(201);
+    expect((await reg({ tradeTag: `  BobSmith${n++}  ` })).statusCode).toBe(201);
   });
 
   it('sign-up refuses a username with a space (as it always did)', async () => {
@@ -241,16 +241,16 @@ describe('note #108: no spaces in new usernames or display names', () => {
 
 });
 
-it('migration 800 (610 on wip/third-demo-r3): no database check compares display_key with lower(display_name) any more', async () => {
+it('migration 800 (610 on wip/third-demo-r3): no database check compares display_key with lower(trade_tag) any more', async () => {
   const { rows } = await deps.db.query(
-    `select conname from pg_constraint where conrelid in ('accounts'::regclass, 'team_members'::regclass) and pg_get_constraintdef(oid) like '%lower(display_name)%'`,
+    `select conname from pg_constraint where conrelid in ('accounts'::regclass, 'team_members'::regclass) and pg_get_constraintdef(oid) like '%lower(trade_tag)%'`,
   );
   expect(rows).toEqual([]);
 });
 
 // Security review of wip/lead-notes-all, L3: the display key became a full case fold
 // (@x2f/accounts displayKeyOf). Migration 810 recomputes every stored key with the same fold in SQL
-// (display_key_fold, ICU case mapping), and refuses loudly (rekey_display_names raises) when two
+// (display_key_fold, ICU case mapping), and refuses loudly (rekey_trade_tags raises) when two
 // names would then share a key.
 describe('review L3: migration 810 refolds stored display keys', () => {
   const CORPUS = ['ΑΒΓΔΣ', 'αβγδς', 'Straße', 'STRASSE', 'ﬀabcd', 'Ǆabcd', 'ǅabcd', 'İstanbul', 'Ꮇira.Ꮶ', 'Ｆｕｌｌname', 'Ἀθηνᾶ', '東京の取引者', 'Zoë-Ann', 'Ölaf_Ünal', 'Привет мир', '  Bob   Smith ', 'Satoshi.N'];
@@ -263,19 +263,19 @@ describe('review L3: migration 810 refolds stored display keys', () => {
     }
   });
 
-  it('rekey_display_names recomputes a stale key, and fails on a collision, changing nothing', async () => {
-    const a = await seedAccount(deps, { loginName: `rk${++n}aa`, displayName: `ΑΒΓΔΣ${n}` });
-    await deps.db.query("update accounts set display_key = lower(display_name) where id = $1", [a]);
-    await deps.db.query('select rekey_display_names()');
+  it('rekey_trade_tags recomputes a stale key, and fails on a collision, changing nothing', async () => {
+    const a = await seedAccount(deps, { loginName: `rk${++n}aa`, tradeTag: `ΑΒΓΔΣ${n}` });
+    await deps.db.query("update accounts set display_key = lower(trade_tag) where id = $1", [a]);
+    await deps.db.query('select rekey_trade_tags()');
     const { rows } = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = $1', [a]);
     expect(rows[0]!.display_key).toBe(`αβγδσ${n}`);
 
-    const s1 = await seedAccount(deps, { loginName: `rk${++n}bb`, displayName: `Straße${n}` });
+    const s1 = await seedAccount(deps, { loginName: `rk${++n}bb`, tradeTag: `Straße${n}` });
     // Stored before the fold: two keys that differ (seeded apart, as the old key made them).
-    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, displayName: `Stras${n}` });
-    await deps.db.query('update accounts set display_name = $2 where id = $1', [s2, `STRASSE${n}`]);
-    await deps.db.query("update accounts set display_key = lower(display_name) where id = any($1)", [[s1, s2]]);
-    await expect(deps.db.query('select rekey_display_names()')).rejects.toThrow(/display key collision/);
+    const s2 = await seedAccount(deps, { loginName: `rk${n}cc`, tradeTag: `Stras${n}` });
+    await deps.db.query('update accounts set trade_tag = $2 where id = $1', [s2, `STRASSE${n}`]);
+    await deps.db.query("update accounts set display_key = lower(trade_tag) where id = any($1)", [[s1, s2]]);
+    await expect(deps.db.query('select rekey_trade_tags()')).rejects.toThrow(/display key collision/);
     const after = await deps.db.query<{ display_key: string }>('select display_key from accounts where id = any($1)', [[s1, s2]]);
     expect(after.rows.map((r) => r.display_key).sort()).toEqual([`strasse${n}`, `straße${n}`].sort());
     await deps.db.query('delete from accounts where id = any($1)', [[s1, s2]]);

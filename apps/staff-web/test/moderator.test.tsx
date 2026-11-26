@@ -18,10 +18,10 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
 const ends = () => new Date(Date.now() + 3600_000).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
-const HELPER = { displayName: 'help.desk', role: 'helper', nav: NAV.helper, sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const HELPER = { tradeTag: 'help.desk', role: 'helper', nav: NAV.helper, sessionEndsAt: ends() };
 
 const CODE = '7RWD3MXEKQ84HN2T';
 const REASON = 'The bank statement shows the Zelle payment arrived on time and in full.';
@@ -45,7 +45,7 @@ const QUEUE = {
 };
 
 const trader = (name: string, trades: number, pct: number | null) => ({
-  displayName: name, completedTrades: trades, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: pct, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
+  tradeTag: name, completedTrades: trades, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: pct, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
 });
 
 const kase = (o: Record<string, unknown> = {}, ruling: Record<string, unknown> = {}) => ({

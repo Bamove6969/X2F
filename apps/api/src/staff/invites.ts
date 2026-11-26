@@ -43,7 +43,7 @@ import { pushOwnerAlert } from '../push/ownerAlert.js';
 // process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
 // - `GET /staff/v1/terms` → `{ version }`: the Terms version to accept (the trader API's `GET /v1/terms`);
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
-// - `POST …/:token/account { displayName, loginName, acceptedTerms, termsSignature }` → 201: the
+// - `POST …/:token/account { tradeTag, loginName, acceptedTerms, termsSignature }` → 201: the
 //   public name and the private login name (FU-D), once (409 `wrong-state` after that), with the
 //   Terms accepted and signed (owner 9 Nov 2026, p11-14: everyone who gets a login signs;
 //   `assertTermsAccepted`'s 400s, first). The account is created disabled: it cannot log in until
@@ -328,7 +328,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     req.server.budgets.register.take();
     const b = body(req);
     const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
-    const names = await assertNewNames(deps.db, b.displayName, b.loginName);
+    const names = await assertNewNames(deps.db, b.tradeTag, b.loginName);
     await assertStaffNameUnlike(deps.db, names.displayKey);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {

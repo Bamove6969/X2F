@@ -7,7 +7,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
-const ME = { displayName: 'nightowl_44', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const ME = { tradeTag: 'nightowl_44', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 const ITEMS = [
   {
     id: 'd1', openedAt: '2026-11-12T12:00:00.000Z', reason: 'Revenge for the dispute I opened.',

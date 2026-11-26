@@ -72,7 +72,7 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - **Not tracked:** Monero addresses, payment details, IP addresses and device fingerprints.
 - Team members' sessions do not count toward the lead's 3 devices (owner, 2 Nov).
 - The lead can log out one member's session, or all of them with "Log out all team members". "Log out all other devices" covers only the lead's own devices (owner, 2 Nov).
-- Switching a team member on or off needs a Strong login. A session with just a username and password gets the 24 h hold pop-up instead (owner, 2 Nov). The weakest possible login is username + password; username and display name are always separate and both required.
+- Switching a team member on or off needs a Strong login. A session with just a username and password gets the 24 h hold pop-up instead (owner, 2 Nov). The weakest possible login is username + password; username and Trade Tag are always separate and both required.
 - Hold warning pop-ups also say: the only way around the hold is to message a moderator on Matrix or Telegram and ask to be verified over a secure Jabber channel (owner, 2 Nov).
 - Trade chat: the trade partner sees only "replied by a team member", never which member. The lead always sees the member's name, in the chat and in the audit log (owner, 2 Nov).
 - **Two-factor wording:** sensitive actions say "Needs a two-factor method you've already set up: a passkey, security key or PGP key." "Strong login" is no longer used as a requirement. Weak / Strong / Armored vault remain only as the signup chart's tier names (owner, 2 Nov).

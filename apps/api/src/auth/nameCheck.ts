@@ -1,7 +1,7 @@
 /**
  * `POST /v1/register/name-check { loginName }` → `{ available }` (design real-app review item 6,
  * board SetupUsername: "juniper.oak is available"). The sign-up's live tick for the one private
- * username (the login name; the public display name has its own step and is checked at register).
+ * username (the login name; the public Trade Tag has its own step and is checked at register).
  *
  * The trade-off (lead job 2026-11-08, reported to the lead): any availability answer is an oracle
  * for whether a private login name exists, which helps a password guesser pick targets. It is bounded,

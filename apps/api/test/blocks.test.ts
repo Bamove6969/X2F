@@ -89,10 +89,10 @@ async function listed(who: Browser, currency: string): Promise<string[]> {
 }
 
 const block = async (a: Who, b: Who) => {
-  expect((await a.browser.post('/v1/account/blocks', { displayName: b.displayName })).statusCode).toBe(204);
+  expect((await a.browser.post('/v1/account/blocks', { tradeTag: b.tradeTag })).statusCode).toBe(204);
 };
 const unblock = async (a: Who, b: Who) => {
-  expect((await a.browser.delete(`/v1/account/blocks/${encodeURIComponent(b.displayName)}`)).statusCode).toBe(204);
+  expect((await a.browser.delete(`/v1/account/blocks/${encodeURIComponent(b.tradeTag)}`)).statusCode).toBe(204);
 };
 
 describe('GET, POST and DELETE /v1/account/blocks', () => {
@@ -106,9 +106,9 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     // b was blocked first.
     await deps.db.query('update account_blocks set created_at = $3 where account_id = $1 and blocked_id = $2', [a.id, b.id, new Date(deps.clock().getTime() - 5000)]);
     await block(a, c);
-    const list = (await a.browser.get('/v1/account/blocks')).json() as { displayName: string; blockedAt: string }[];
-    expect(list.map((e) => e.displayName)).toEqual([c.displayName, b.displayName]);
-    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName', 'note']);
+    const list = (await a.browser.get('/v1/account/blocks')).json() as { tradeTag: string; blockedAt: string }[];
+    expect(list.map((e) => e.tradeTag)).toEqual([c.tradeTag, b.tradeTag]);
+    expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'note', 'tradeTag']);
     // Who blocked me is never answered: c blocked a, and a's list only has a's own blocks.
     expect(((await b.browser.get('/v1/account/blocks')).json() as unknown[]).length).toBe(0);
     // The private login name is never sent. The database holds only its tag (FU-D), so the test
@@ -119,7 +119,7 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     await unblock(a, b);
     await unblock(a, b);
     // Unblocking is by name, case-insensitively.
-    expect((await a.browser.delete(`/v1/account/blocks/${c.displayName.toUpperCase()}`)).statusCode).toBe(204);
+    expect((await a.browser.delete(`/v1/account/blocks/${c.tradeTag.toUpperCase()}`)).statusCode).toBe(204);
     expect((await a.browser.get('/v1/account/blocks')).json()).toEqual([]);
     // c's block of a is c's own, untouched.
     expect(await blockedEitherWay(deps.db, a.id, c.id)).toBe(true);
@@ -130,8 +130,8 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     const b = await trader();
     await block(a, b);
     // A name the current rules refuse (a later reserved-word or shape change), set directly.
-    await deps.db.query(`update accounts set display_name = 'x', display_key = 'x' where id = $1`, [b.id]);
-    expect((await a.browser.get('/v1/account/blocks')).json()).toMatchObject([{ displayName: 'x' }]);
+    await deps.db.query(`update accounts set trade_tag = 'x', display_key = 'x' where id = $1`, [b.id]);
+    expect((await a.browser.get('/v1/account/blocks')).json()).toMatchObject([{ tradeTag: 'x' }]);
     expect((await a.browser.delete('/v1/account/blocks/X')).statusCode).toBe(204);
     expect((await a.browser.get('/v1/account/blocks')).json()).toEqual([]);
     expect(await blockedEitherWay(deps.db, a.id, b.id)).toBe(false);
@@ -142,7 +142,7 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     expect((await a.browser.delete('/v1/account/blocks/Dnobody1234567x')).json()).toEqual({ error: 'not-found' });
     expect((await a.browser.delete(`/v1/account/blocks/${'x'.repeat(65)}`)).statusCode).toBe(400);
     expect((await anon.get('/v1/account/blocks')).statusCode).toBe(401);
-    expect((await anon.delete(`/v1/account/blocks/${a.displayName}`)).statusCode).toBe(401);
+    expect((await anon.delete(`/v1/account/blocks/${a.tradeTag}`)).statusCode).toBe(401);
   });
 });
 
@@ -150,7 +150,7 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
 // note is the blocker's own private text on the person they blocked; only the blocker ever reads it.
 describe('S-093: a private note per blocked person, and when they were blocked', () => {
   const noteOf = async (a: Who, b: Who) =>
-    ((await a.browser.get('/v1/account/blocks')).json() as { displayName: string; note: string | null; blockedAt: string }[]).find((e) => e.displayName === b.displayName);
+    ((await a.browser.get('/v1/account/blocks')).json() as { tradeTag: string; note: string | null; blockedAt: string }[]).find((e) => e.tradeTag === b.tradeTag);
   const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
 
   it('a block starts with no note and its exact time; the blocker sets, changes and clears the note', async () => {
@@ -158,18 +158,18 @@ describe('S-093: a private note per blocked person, and when they were blocked',
     const b = await trader();
     await block(a, b);
     const first = await noteOf(a, b);
-    expect(first).toEqual({ displayName: b.displayName, blockedAt: deps.clock().toISOString(), note: null });
-    const set = await putNote(a, b.displayName, '  Asked for my phone number in chat.  ');
+    expect(first).toEqual({ tradeTag: b.tradeTag, blockedAt: deps.clock().toISOString(), note: null });
+    const set = await putNote(a, b.tradeTag, '  Asked for my phone number in chat.  ');
     expect([set.statusCode, set.json()]).toEqual([200, { note: 'Asked for my phone number in chat.' }]);
     expect((await noteOf(a, b))!.note).toBe('Asked for my phone number in chat.');
     // By the name case-insensitively, as unblock.
-    expect((await putNote(a, b.displayName.toUpperCase(), 'Second try.')).json()).toEqual({ note: 'Second try.' });
+    expect((await putNote(a, b.tradeTag.toUpperCase(), 'Second try.')).json()).toEqual({ note: 'Second try.' });
     // A note keeps the block's time.
     expect((await noteOf(a, b))!.blockedAt).toBe(first!.blockedAt);
     // Null or blank text clears it.
-    expect((await putNote(a, b.displayName, null)).json()).toEqual({ note: null });
-    await putNote(a, b.displayName, 'Again.');
-    expect((await putNote(a, b.displayName, '   ')).json()).toEqual({ note: null });
+    expect((await putNote(a, b.tradeTag, null)).json()).toEqual({ note: null });
+    await putNote(a, b.tradeTag, 'Again.');
+    expect((await putNote(a, b.tradeTag, '   ')).json()).toEqual({ note: null });
     expect((await noteOf(a, b))!.note).toBeNull();
   });
 
@@ -177,7 +177,7 @@ describe('S-093: a private note per blocked person, and when they were blocked',
     const a = await trader();
     const b = await trader();
     await block(a, b);
-    await putNote(a, b.displayName, 'Private words 7Q2.');
+    await putNote(a, b.tradeTag, 'Private words 7Q2.');
     await block(b, a);
     // The blocked person's own list has their own block of a, with no note of a's.
     expect(await noteOf(b, a)).toMatchObject({ note: null });
@@ -198,49 +198,49 @@ describe('S-093: a private note per blocked person, and when they were blocked',
     const c = await trader();
     // c blocked b; a did not block b: a cannot write a note on c's row or on a block that does not exist.
     await block(c, b);
-    expect((await putNote(a, b.displayName, 'x')).json()).toEqual({ error: 'not-found' });
+    expect((await putNote(a, b.tradeTag, 'x')).json()).toEqual({ error: 'not-found' });
     expect((await putNote(a, 'Dnobody1234567x', 'x')).json()).toEqual({ error: 'not-found' });
     expect((await noteOf(c, b))!.note).toBeNull();
     await block(a, b);
     for (const bad of [12, ['x'], { t: 'x' }, 'x'.repeat(501), 'tab\u0000nul', undefined]) {
-      const res = await putNote(a, b.displayName, bad);
+      const res = await putNote(a, b.tradeTag, bad);
       expect(res.statusCode, String(bad)).toBe(400);
     }
     // 500 characters (not bytes) is the limit, and a new line is allowed.
-    expect((await putNote(a, b.displayName, '\u00e9'.repeat(500))).statusCode).toBe(200);
-    expect((await putNote(a, b.displayName, 'line one\nline two')).json()).toEqual({ note: 'line one\nline two' });
+    expect((await putNote(a, b.tradeTag, '\u00e9'.repeat(500))).statusCode).toBe(200);
+    expect((await putNote(a, b.tradeTag, 'line one\nline two')).json()).toEqual({ note: 'line one\nline two' });
     expect((await a.browser.put(`/v1/account/blocks/${'x'.repeat(65)}/note`, { note: 'x' })).statusCode).toBe(400);
-    expect((await anon.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' })).statusCode).toBe(401);
+    expect((await anon.put(`/v1/account/blocks/${encodeURIComponent(b.tradeTag)}/note`, { note: 'x' })).statusCode).toBe(401);
   });
 });
 
 describe('S-093 review: the note check, team members and the Jabber notice', () => {
   const putNote = (a: Who, name: string, note: unknown) => a.browser.put(`/v1/account/blocks/${encodeURIComponent(name)}/note`, { note });
-  const block = async (a: Who, b: Who) => expect((await a.browser.post('/v1/account/blocks', { displayName: b.displayName })).statusCode).toBe(204);
+  const block = async (a: Who, b: Who) => expect((await a.browser.post('/v1/account/blocks', { tradeTag: b.tradeTag })).statusCode).toBe(204);
 
   it('m1: the same character rule as S-094 trader notes: C1 controls, format characters and tab are refused; a new line is allowed', async () => {
     const a = await trader();
     const b = await trader();
     await block(a, b);
     for (const bad of ['a\u0085b', 'a\u009fb', 'a\u202eb', 'a\u2066b', 'a\u200bb', 'a\u200db', 'a\u2028b', 'a\u2029b', 'a\ufeffb', 'a\tb', 'a\rb']) {
-      expect((await putNote(a, b.displayName, bad)).statusCode, JSON.stringify(bad)).toBe(400);
+      expect((await putNote(a, b.tradeTag, bad)).statusCode, JSON.stringify(bad)).toBe(400);
     }
-    expect((await putNote(a, b.displayName, 'one\ntwo')).json()).toEqual({ note: 'one\ntwo' });
+    expect((await putNote(a, b.tradeTag, 'one\ntwo')).json()).toEqual({ note: 'one\ntwo' });
   });
 
   it('m4: a team member cannot read or write the lead\'s block notes (403 owner-only)', async () => {
     const lead = await trader();
     const b = await trader();
     await block(lead, b);
-    const loginId = await seedAccount(deps, { loginName: 'blocknotemember1x', displayName: 'bn-m-1', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: 'blocknotemember1x', tradeTag: 'bn-m-1', kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'BnMember1', 'bnmember1', $2, $3, $4, $3, $3)`,
       [lead.id, rolesToAbilities(['offers', 'trades']), deps.clock(), loginId],
     );
     const mb = new Browser(app);
     expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
-    const res = await mb.put(`/v1/account/blocks/${encodeURIComponent(b.displayName)}/note`, { note: 'x' });
+    const res = await mb.put(`/v1/account/blocks/${encodeURIComponent(b.tradeTag)}/note`, { note: 'x' });
     expect([res.statusCode, res.json()]).toEqual([403, { error: 'owner-only' }]);
     expect((await mb.get('/v1/account/blocks')).json()).toEqual({ error: 'owner-only' });
   });
@@ -252,9 +252,9 @@ describe('S-093 review: the note check, team members and the Jabber notice', () 
     const notices = async () => (await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [a.id])).rows[0]!.n;
     await block(a, b);
     await deps.db.query('delete from jabber_outbox where account_id = $1', [a.id]);
-    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect((await putNote(a, b.tradeTag, 'Pushy in chat.')).statusCode).toBe(200);
     expect(await notices()).toBe(1);
-    expect((await putNote(a, b.displayName, 'Pushy in chat.')).statusCode).toBe(200);
+    expect((await putNote(a, b.tradeTag, 'Pushy in chat.')).statusCode).toBe(200);
     expect(await notices()).toBe(1);
     expect((await deps.db.query<{ n: number }>('select count(*)::int as n from jabber_outbox where account_id = $1', [b.id])).rows[0]!.n).toBe(0);
   });
@@ -335,9 +335,9 @@ describe('a block stops business both ways (Task 37)', () => {
     await block(a, b);
     const { code } = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
     const asB = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
-    expect(asB.counterparty).toMatchObject({ displayName: a.displayName, online: false, lastSeenAt: null });
+    expect(asB.counterparty).toMatchObject({ tradeTag: a.tradeTag, online: false, lastSeenAt: null });
     const asA = (await a.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
-    expect(asA.counterparty).toMatchObject({ displayName: b.displayName, online: true });
+    expect(asA.counterparty).toMatchObject({ tradeTag: b.tradeTag, online: true });
     await unblock(a, b);
     const again = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
     expect(again.counterparty).toMatchObject({ online: true });

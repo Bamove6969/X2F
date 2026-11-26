@@ -62,7 +62,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const { version } = await j.api.getTerms();
   const key = await genKey();
   const username = uniqueName('pgp');
-  const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
+  const start = await j.api.registerPgpStart({ tradeTag: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({
     challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version,
   });
@@ -74,7 +74,7 @@ async function registerPasskey(j: Jar, prefix = 'key'): Promise<{ username: stri
   const { version } = await j.api.getTerms();
   const username = uniqueName(prefix);
   const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
-  await registerWithWebAuthn(j.api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, version, ceremonyOf(soft));
+  await registerWithWebAuthn(j.api, { tradeTag: `D${username}`, loginName: username }, 'passkey', LABEL, version, ceremonyOf(soft));
   return { username, soft };
 }
 

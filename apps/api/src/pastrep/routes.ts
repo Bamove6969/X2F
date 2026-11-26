@@ -128,12 +128,12 @@ export function pastRepRoutes(app: FastifyInstance): void {
     const accountId = req.auth.accountId;
     if (await siteClaimed(deps.db, accountId, site)) throw new ApiError(409, 'site-claimed');
 
-    const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [accountId]);
-    const displayName = rows[0]?.display_name;
-    if (displayName === undefined) throw new ApiError(401, 'not-authenticated');
+    const { rows } = await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [accountId]);
+    const tradeTag = rows[0]?.trade_tag;
+    if (tradeTag === undefined) throw new ApiError(401, 'not-authenticated');
     const fingerprint = inspection.fingerprint;
     const text = pastRepChallenge({
-      origin: requestOrigin(req).origin, displayName, site, url, fingerprint, nonce: pastRepNonce(), issuedAt: now,
+      origin: requestOrigin(req).origin, tradeTag, site, url, fingerprint, nonce: pastRepNonce(), issuedAt: now,
     });
     const keyEnc = sealKey(deps.config, await storableKey(b.publicKey, now, PAST_REP_INSPECT), fingerprint, PAST_REP_KEY_AAD).toString('base64');
     const expiresAt = new Date(now.getTime() + PAST_REP_CHALLENGE_MINUTES * 60_000);

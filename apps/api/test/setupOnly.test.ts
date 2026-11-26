@@ -45,7 +45,7 @@ const pad = (v: number, w: number) => String(v).padStart(w, '0');
 const names = () => {
   const p = pad(process.pid % 1000, 3);
   const k = pad(++n, 2);
-  return { loginName: `soxp${p}n${k}`, displayName: `Setup${p}x${k}` };
+  return { loginName: `soxp${p}n${k}`, tradeTag: `Setup${p}x${k}` };
 };
 
 /** A sign-up with one passkey only; answers the creating browser, the names and the passkey. */
@@ -74,7 +74,7 @@ async function expectRefused(b: Browser) {
     ['POST', '/v1/offers', {}],
     ['GET', '/v1/account/offers', undefined],
     ['PUT', '/v1/account/type', { type: 'vendor' }],
-    ['POST', '/v1/account/blocks', { displayName: 'Someone1' }],
+    ['POST', '/v1/account/blocks', { tradeTag: 'Someone1' }],
   ] as const) {
     const res = method === 'GET' ? await b.get(url) : method === 'PUT' ? await b.put(url, body) : await b.post(url, body);
     expect(res.statusCode, `${method} ${url}`).toBe(403);

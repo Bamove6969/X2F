@@ -35,11 +35,11 @@ async function as(role: StaffRole): Promise<{ id: string; b: StaffBrowser }> {
   return { id: s, b: new StaffBrowser(app).withSession(token) };
 }
 
-async function trader(display?: string): Promise<{ id: string; loginName: string; displayName: string }> {
+async function trader(display?: string): Promise<{ id: string; loginName: string; tradeTag: string }> {
   const loginName = `lk${randomBytes(4).toString('hex')}`;
-  const displayName = display ?? `Lookup${randomBytes(3).toString('hex')}`;
-  const id = await seedAccount(deps, { loginName, displayName, kind: 'trader' });
-  return { id, loginName, displayName };
+  const tradeTag = display ?? `Lookup${randomBytes(3).toString('hex')}`;
+  const id = await seedAccount(deps, { loginName, tradeTag, kind: 'trader' });
+  return { id, loginName, tradeTag };
 }
 
 const lookup = (b: StaffBrowser, q: string) => b.get(`/staff/v1/accounts/lookup?q=${encodeURIComponent(q)}`);
@@ -57,24 +57,24 @@ describe('GET /staff/v1/accounts/lookup', () => {
     const t = await trader();
     for (const role of ['mod', 'helper'] as const) {
       const p = await as(role);
-      const res = await lookup(p.b, t.displayName);
+      const res = await lookup(p.b, t.tradeTag);
       expect([res.statusCode, errorOf(res)], role).toEqual([403, 'forbidden']);
       expect(await lookedUp(p.id), role).toEqual([]);
     }
     // No staff session at all.
-    const anon = await new StaffBrowser(app).get(`/staff/v1/accounts/lookup?q=${t.displayName}`);
+    const anon = await new StaffBrowser(app).get(`/staff/v1/accounts/lookup?q=${t.tradeTag}`);
     expect(anon.statusCode).toBe(401);
   });
 
-  it('a senior moderator finds a trader by display name, any case; exactly the case fields and the status, never the login name', async () => {
+  it('a senior moderator finds a trader by Trade Tag, any case; exactly the case fields and the status, never the login name', async () => {
     const t = await trader();
     const s = await as('senior');
-    const res = await lookup(s.b, `  ${t.displayName.toUpperCase()} `);
+    const res = await lookup(s.b, `  ${t.tradeTag.toUpperCase()} `);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toEqual({
       accounts: [{
         accountId: t.id,
-        displayName: t.displayName,
+        tradeTag: t.tradeTag,
         matchedBy: 'name',
         side: null,
         completedTrades: 0,
@@ -96,10 +96,10 @@ describe('GET /staff/v1/accounts/lookup', () => {
     const dashed = trade.code.toLowerCase().replace(/(.{4})(?!$)/g, '$1-');
     const res = await lookup(o.b, dashed);
     expect(res.statusCode, res.body).toBe(200);
-    const got = (res.json() as { accounts: Array<{ accountId: string; side: string; matchedBy: string; displayName: string }> }).accounts;
-    expect(got.map((a) => [a.side, a.accountId, a.matchedBy, a.displayName])).toEqual([
-      ['buyer', buyer.id, 'code', buyer.displayName],
-      ['seller', seller.id, 'code', seller.displayName],
+    const got = (res.json() as { accounts: Array<{ accountId: string; side: string; matchedBy: string; tradeTag: string }> }).accounts;
+    expect(got.map((a) => [a.side, a.accountId, a.matchedBy, a.tradeTag])).toEqual([
+      ['buyer', buyer.id, 'code', buyer.tradeTag],
+      ['seller', seller.id, 'code', seller.tradeTag],
     ]);
     const entries = (await lookedUp(o.id)).slice(-2);
     expect(entries).toEqual([
@@ -120,7 +120,7 @@ describe('GET /staff/v1/accounts/lookup', () => {
       [t.id, until, placer, NOW],
     );
     const s = await as('senior');
-    const res = await lookup(s.b, t.displayName);
+    const res = await lookup(s.b, t.tradeTag);
     expect(res.json().accounts[0].status).toEqual({
       bans: [{ id: rows[0]!.id, kind: 'trade', reasonCode: 'abuse', until: until.toISOString(), permanent: false }],
       frozen: false,
@@ -128,7 +128,7 @@ describe('GET /staff/v1/accounts/lookup', () => {
     });
     // The staff note stays on the bans route.
     expect(res.body).not.toContain('staff-only note');
-    const staffName = (await deps.db.query<{ n: string }>('select display_name as n from accounts where id = $1', [staffer.id])).rows[0]!.n;
+    const staffName = (await deps.db.query<{ n: string }>('select trade_tag as n from accounts where id = $1', [staffer.id])).rows[0]!.n;
     expect((await lookup(s.b, staffName)).json()).toEqual({ accounts: [] });
     expect((await lookedUp(s.id)).at(-1)).toEqual({ role: 'senior', tradeCode: null, detail: { by: 'name', found: 0 } });
   });
@@ -136,7 +136,7 @@ describe('GET /staff/v1/accounts/lookup', () => {
   it('exact matches only: a prefix finds nothing', async () => {
     const t = await trader();
     const s = await as('senior');
-    expect((await lookup(s.b, t.displayName.slice(0, -1))).json()).toEqual({ accounts: [] });
+    expect((await lookup(s.b, t.tradeTag.slice(0, -1))).json()).toEqual({ accounts: [] });
   });
 
   it('a bad query is 400: empty, too long, a second key, repeated', async () => {

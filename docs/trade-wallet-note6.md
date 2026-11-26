@@ -5,9 +5,9 @@ in `to-lead.log` 2026-11-16 23:12:25. Branch `wip/third-trade-wallet`, from main
 
 The owner's words, in short: on the screen where the amount is entered (after tapping to trade) show
 "what wallet address should those funds be transferred to", with smaller text explaining the rule. A
-**secure** account (login name + display name + password **and at least one other method**) picks from a
+**secure** account (login name + Trade Tag + password **and at least one other method**) picks from a
 dropdown of approved addresses or adds a new one right there, one-time or saved for future trades. A
-**weak** account (only login name + display name + password) gets the dropdown only and adds new
+**weak** account (only login name + Trade Tag + password) gets the dropdown only and adds new
 addresses in Settings, where they take 24 hours before they work. Both can name a wallet.
 
 ## Step 1: the map (main 4f0afa14)
@@ -96,7 +96,7 @@ Method counts for an account already exist: `methodCounts` (`routes/account.ts:1
 
 1. **Account rating, one server function**: `accountRating` (`apps/api/src/auth/rating.ts:20-24`).
    `secure` = a PGP key, passkey or security key, or a password with an authenticator app, on top of the
-   login name and display name every account has; `weak` = anything less (a password alone, a password
+   login name and Trade Tag every account has; `weak` = anything less (a password alone, a password
    with recovery codes (Q6), an authenticator app with no password, no method). Exposed as
    `securityRating` on `GET /v1/account/me` (`apps/api/src/routes/account.ts:72,318`; null for team
    members, staff and owner). Tests: `apps/api/test/rating.test.ts` (14 combinations),
@@ -294,11 +294,11 @@ Round 2 checks, for the record:
   display them. A drop-down menu is pretty easy." Built: item 8 (overrides OD-11).
 - **Q2 (dropdown). ANSWERED 17 Nov:** same words as Q1 ("whatever creative way ... A drop-down menu is
   pretty easy"). Built: the accessible radio list stays, with the default picked first.
-- **Q3 (inline add for TOTP accounts). ANSWERED 17 Nov:** "User/pass/display name/otp is kinda like
+- **Q3 (inline add for TOTP accounts). ANSWERED 17 Nov:** "User/pass/Trade Tag/otp is kinda like
   medium security but they still wouldn't qualify to avoid the 24 hour hold since stronger security is
   so easy to achieve. They will not have the option at the time of trade to change the wallet." And:
   "on a lot of sites having no password is considered high security... as long as they have a username,
-  a display name, and either a passkey, PGP key, or security key, then their account is rated as highly
+  a Trade Tag, and either a passkey, PGP key, or security key, then their account is rated as highly
   secure." On the "?" tip: "Maybe we should make some sort of a ? Mark or just something that they can
   click on or mouse over for more info that says if you are wondering why you cannot add a new wallet
   to send funds to at this time, it is because of the security rating their account has. Their options

@@ -16,7 +16,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const PGP_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nabc\n-----END PGP PUBLIC KEY BLOCK-----';
-const ME = { displayName: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
+const ME = { tradeTag: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
 
 async function open(path: string) {
   render(
@@ -198,10 +198,10 @@ describe('Invite', () => {
     typeInto(field('Username'), 'dmitri_k');
     typeInto(field('Login name'), 'dk-login');
     await click(button('Continue'));
-    // Owner Q54: the public name goes as displayName (the API refuses a field named username).
+    // Owner Q54: the public name goes as tradeTag (the API refuses a field named username).
     // Owner 9 Nov 2026 (p11-14): the Terms version and the signature go with the names.
     expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({
-      displayName: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' },
+      tradeTag: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' },
     });
     // D-070 (owner p11-19, changing G3): a moderator holds a passkey and a PGP key; the security key
     // is optional, so the passkey row is shown and finish waits for the passkey and the PGP key.
@@ -317,7 +317,7 @@ describe('OwnerSetup', () => {
     typeInto(field('Username'), 'lumen.k');
     typeInto(field('Login name'), 'lumen-login');
     await click(button('Tap key to register'));
-    expect(api.calls.find((c) => c.path.endsWith('/setup/account'))?.body).toEqual({ displayName: 'lumen.k', loginName: 'lumen-login' });
+    expect(api.calls.find((c) => c.path.endsWith('/setup/account'))?.body).toEqual({ tradeTag: 'lumen.k', loginName: 'lumen-login' });
     expect(create().disabled).toBe(true);
     await click(button('Tap key to register'));
     expect(api.calls.filter((c) => c.path.endsWith('/setup/key/finish'))).toHaveLength(2);
@@ -389,14 +389,14 @@ describe('OwnerSetup', () => {
 describe('Feedback (owner)', () => {
   it('lists both feedback kinds with the 30-day Great / OK / Needs work counts; a named message shows its account (D-058), never the raw id', async () => {
     fakeApi({
-      'GET /staff/v1/me': { body: { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner } },
+      'GET /staff/v1/me': { body: { ...ME, tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner } },
       'GET /staff/v1/feedback': {
         body: { items: [{ id: 'm1', mood: 'needs-work', note: 'Slow payouts', createdOn: '2026-11-05' }], counts: { great: 4, ok: 2, needsWork: 1 }, next: null },
       },
       'GET /staff/v1/feedback/form': {
         body: {
           items: [
-            // Review m1 (lead 12 Nov): the API sends no raw account id, only the display name.
+            // Review m1 (lead 12 Nov): the API sends no raw account id, only the Trade Tag.
             { id: 'f1', kind: 'complaint', text: 'Limits too low', accountName: 'Quiet.Fox', from: 'starter-limit', createdOn: '2026-11-04' },
             { id: 'f2', kind: 'feedback', text: 'Nice app', accountName: null, from: null, createdOn: '2026-11-03' },
           ],
@@ -420,7 +420,7 @@ describe('Feedback (owner)', () => {
 });
 
 describe('NewsEditor (owner; Plan 4 Task 28)', () => {
-  const OWNER = { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner };
+  const OWNER = { ...ME, tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner };
   const ITEM = { id: 7, title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', publishedAt: '2026-11-05T10:00:00Z', editedAt: null };
 
   it('writes with a preview that is the trader view ("As traders will see it"), edits and deletes', async () => {
@@ -497,8 +497,8 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
 });
 
 // Owner demo note #108 (17 Nov 2026; security review follow-up): the staff name ("Username", the
-// display name staff see) holds no spaces; said inline as soon as one is typed, and nothing is sent.
-describe('note #108: no spaces in a staff display name', () => {
+// Trade Tag staff see) holds no spaces; said inline as soon as one is typed, and nothing is sent.
+describe('note #108: no spaces in a staff Trade Tag', () => {
   it('Invite: the line shows under Username, Continue is disabled and no account call is made', async () => {
     const api = fakeApi({
       'GET /staff/v1/terms': { body: { version: TERMS_TEXT_VERSION } },
@@ -514,7 +514,7 @@ describe('note #108: no spaces in a staff display name', () => {
     typeInto(field('Username'), 'dmitri k');
     typeInto(field('Login name'), 'dk-login');
     await settle();
-    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A Trade Tag has no spaces.');
     expect(field('Username')!.getAttribute('aria-invalid')).toBe('true');
     expect(button('Continue')!.disabled).toBe(true);
     await click(button('Continue')!);
@@ -539,7 +539,7 @@ describe('note #108: no spaces in a staff display name', () => {
     typeInto(field('Username'), 'lumen k');
     typeInto(field('Login name'), 'lumen-login');
     await settle();
-    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(document.querySelector('[data-part="name-space"]')?.textContent).toBe('Remove the spaces. A Trade Tag has no spaces.');
     expect(field('Username')!.getAttribute('aria-invalid')).toBe('true');
     await click(button('Tap key to register'));
     expect(api.calls.some((c) => c.path.endsWith('/setup/account'))).toBe(false);

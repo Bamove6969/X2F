@@ -12,7 +12,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | 3 | [Backup Login (Recovery Code)](#login-backup) | `/login/backup` | 1 |
 | 4 | [Session Length & Stay Logged In Prompt](#session-length) | `/session-length`, `/settings/idle-reminder` | 23 |
 | 5 | [Create Account — Step 1: Terms of Service](#setup-terms) | `/setup`, `/terms` | 6 |
-| 6 | [Create Account — Step 2: Username & Display Name](#setup-names) | `/setup/name`, `/setup/display-name` | 24 |
+| 6 | [Create Account — Step 2: Username & Trade Tag](#setup-names) | `/setup/name`, `/setup/trade-tag` | 24 |
 | 7 | [Create Account — Step 3: Login & Security Methods](#setup-login) | `/setup/login`, `/setup/security-key`, `/setup/passkey`, `/setup/password` | 39 |
 | 8 | [Create Account — Step 3b: PGP Key & Challenge](#setup-pgp) | `/setup/pgp-key`, `/setup/pgp-code` | 8 |
 | 9 | [Create Account — Step 4: Save Recovery Code](#setup-backup) | `/setup/backup` | 10 |
@@ -294,42 +294,42 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 ---
 
 <a id="setup-names"></a>
-## 6. Create Account — Step 2: Username & Display Name
+## 6. Create Account — Step 2: Username & Trade Tag
 
-- **Route(s):** `/setup/name`, `/setup/display-name`
+- **Route(s):** `/setup/name`, `/setup/trade-tag`
 
-### `apps/web/src/screens/setup/DisplayName.tsx` (6)
+### `apps/web/src/screens/setup/TradeTag.tsx` (6)
 
 **Marker (line 71):** COPY-UNSIGNED (owner demo note #220: the card is an example, not their record)
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/DisplayName.tsx:72` | `What your trader card could look like` |
+| `apps/web/src/screens/setup/TradeTag.tsx:72` | `What your trader card could look like` |
 
 **Marker (line 84):** COPY-UNSIGNED (owner demo note #220): the stats are labelled as an example, for screen readers too.
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/DisplayName.tsx:85` | `Example stats` |
+| `apps/web/src/screens/setup/TradeTag.tsx:85` | `Example stats` |
 
 **Marker (line 145):** Owner demo note #199 (25 Nov): "It must be different from your Login ID". COPY-UNSIGNED.
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/DisplayName.tsx:146` | `Pick a display name` |
-| `apps/web/src/screens/setup/DisplayName.tsx:146` | `This is how traders see you. It must be different from your Login ID.` |
+| `apps/web/src/screens/setup/TradeTag.tsx:146` | `Pick a Trade Tag` |
+| `apps/web/src/screens/setup/TradeTag.tsx:146` | `This is how traders see you. It must be different from your Login ID.` |
 
 **Marker (line 201):** COPY-UNSIGNED (owner demo note #200: the refresh chip)
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/DisplayName.tsx:202` | `More suggestions` |
+| `apps/web/src/screens/setup/TradeTag.tsx:202` | `More suggestions` |
 
-**Marker (line 211):** COPY-UNSIGNED: owner demo note #199, his sentence (verified 25 Nov 2026: no API route changes a display name).
+**Marker (line 211):** COPY-UNSIGNED: owner demo note #199, his sentence (verified 25 Nov 2026: no API route changes a Trade Tag).
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/DisplayName.tsx:212` | `Your display name is permanent—pick a handle you'll be happy building your trading reputation under.` |
+| `apps/web/src/screens/setup/TradeTag.tsx:212` | `Your Trade Tag is permanent—pick a handle you'll be happy building your trading reputation under.` |
 
 ### `apps/web/src/screens/setup/names.ts` (5)
 
@@ -339,24 +339,24 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 |---|---|
 | `apps/web/src/screens/setup/names.ts:56` | `Remove the spaces. A ${label ?? field} has no spaces.` |
 
-**Marker (line 64):** COPY-UNSIGNED (owner demo notes #126 and #127: a new username or display name is 8 to 20 characters)
+**Marker (line 64):** COPY-UNSIGNED (owner demo notes #126 and #127: a new username or Trade Tag is 8 to 20 characters)
 
 | `file:line` | User-facing text |
 |---|---|
 | `apps/web/src/screens/setup/names.ts:65` | `${which} needs 8 to 20 characters.` |
 
-**Marker (line 66):** COPY-UNSIGNED (signup round 3: the display name's wider set; note #108: no spaces)
+**Marker (line 66):** COPY-UNSIGNED (signup round 3: the Trade Tag's wider set; note #108: no spaces)
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/names.ts:67` | `Your display name` |
+| `apps/web/src/screens/setup/names.ts:67` | `Your Trade Tag` |
 | `apps/web/src/screens/setup/names.ts:67` | `${which} can use letters, numbers and common symbols such as ${DISPLAY_SYMBOLS}, with no spaces.` |
 
 **Marker (line 88):** COPY-UNSIGNED (owner demo note #199: "It must be different from your Login ID")
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/web/src/screens/setup/names.ts:89` | `Your display name must be different from your Login ID.` |
+| `apps/web/src/screens/setup/names.ts:89` | `Your Trade Tag must be different from your Login ID.` |
 
 ### `apps/web/src/screens/setup/Username.tsx` (13)
 
@@ -379,7 +379,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `file:line` | User-facing text |
 |---|---|
 | `apps/web/src/screens/setup/Username.tsx:83` | `Create your private login ID` |
-| `apps/web/src/screens/setup/Username.tsx:83` | `You'll use this private username to sign in—nobody else will ever see it. In the next step, you'll choose a separate public display name that other traders see. Your display name cannot be traced back to your login username, and X2F never asks for an email address or phone number.` |
+| `apps/web/src/screens/setup/Username.tsx:83` | `You'll use this private username to sign in—nobody else will ever see it. In the next step, you'll choose a separate public Trade Tag that other traders see. Your Trade Tag cannot be traced back to your login username, and X2F never asks for an email address or phone number.` |
 
 **Marker (line 91):** Owner demo note #197 (25 Nov): "Private login ID", sentence case, the strong field label. COPY-UNSIGNED.
 
@@ -1136,18 +1136,18 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `apps/web/src/screens/help/helpLibrary.ts:102` | `${SPEC}:5 the seller locks the XMR` |
 | `apps/web/src/screens/help/helpLibrary.ts:102` | `${M}:694-697 case 'release-started'` |
 | `apps/web/src/screens/help/helpLibrary.ts:107` | `How do I create an account?` |
-| `apps/web/src/screens/help/helpLibrary.ts:109` | `Tick the box to agree to the Terms, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.` |
+| `apps/web/src/screens/help/helpLibrary.ts:109` | `Tick the box to agree to the Terms, then choose a private username and a public Trade Tag. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.` |
 | `apps/web/src/screens/help/helpLibrary.ts:110` | `${WEB}/setup/SetupFlow.tsx:5-9 0 Terms` |
 | `apps/web/src/screens/help/helpLibrary.ts:110` | `${WEB}/setup/Terms.tsx:276 I have read and agree to the` |
 | `apps/web/src/screens/help/helpLibrary.ts:115` | `Do I need to give my name, email or phone number?` |
-| `apps/web/src/screens/help/helpLibrary.ts:117` | `X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your display name is shown to other traders, so pick one that does not identify you.` |
+| `apps/web/src/screens/help/helpLibrary.ts:117` | `X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your Trade Tag is shown to other traders, so pick one that does not identify you.` |
 | `apps/web/src/screens/help/helpLibrary.ts:119` | `${WEB}/setup/Terms.tsx:276 I have read and agree to the` |
 | `apps/web/src/screens/help/helpLibrary.ts:120` | `apps/api/src/accounts.ts:342 absent → `null`` |
-| `apps/web/src/screens/help/helpLibrary.ts:121` | `${SPEC}:215 The display name is separate and public` |
-| `apps/web/src/screens/help/helpLibrary.ts:127` | `What is the difference between my username and my display name?` |
-| `apps/web/src/screens/help/helpLibrary.ts:128` | `Your username is private: you use it to log in, and other traders never see it. Your display name is the public name other traders see on offers and trades.` |
+| `apps/web/src/screens/help/helpLibrary.ts:121` | `${SPEC}:215 The Trade Tag is separate and public` |
+| `apps/web/src/screens/help/helpLibrary.ts:127` | `What is the difference between my username and my Trade Tag?` |
+| `apps/web/src/screens/help/helpLibrary.ts:128` | `Your username is private: you use it to log in, and other traders never see it. Your Trade Tag is the public name other traders see on offers and trades.` |
 | `apps/web/src/screens/help/helpLibrary.ts:129` | `${WEB}/setup/SetupFlow.tsx:5-6 the private username` |
-| `apps/web/src/screens/help/helpLibrary.ts:129` | `${SPEC}:215 The display name is separate and public` |
+| `apps/web/src/screens/help/helpLibrary.ts:129` | `${SPEC}:215 The Trade Tag is separate and public` |
 | `apps/web/src/screens/help/helpLibrary.ts:134` | `Which ways can I log in?` |
 | `apps/web/src/screens/help/helpLibrary.ts:135` | `With a PGP key, a passkey, a security key or a password. You tick the ones you want when you sign up and can add others later in Settings. An authenticator app can be added as a second step after your password, and works only with one, so remove the app before you remove the password. Settings also refuses a removal that would leave a password with no authenticator app and no other way to log in.` |
 | `apps/web/src/screens/help/helpLibrary.ts:137` | `${AUTH}/methods.ts:29 PRIMARY` |
@@ -1514,7 +1514,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `apps/web/src/screens/help/helpLibrary.ts:749` | `apps/api/src/team/abilities.ts:104-105 trades-accept` |
 | `apps/web/src/screens/help/helpLibrary.ts:749` | `apps/api/src/team/abilities.ts:115 trades-fund` |
 | `apps/web/src/screens/help/helpLibrary.ts:756` | `What does X2F keep about me?` |
-| `apps/web/src/screens/help/helpLibrary.ts:758` | `Your display name, your username stored only as a one-way code, and which version of the Terms you agreed to and when. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, other public keys, or a password kept only as a hash. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.` |
+| `apps/web/src/screens/help/helpLibrary.ts:758` | `Your Trade Tag, your username stored only as a one-way code, and which version of the Terms you agreed to and when. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, other public keys, or a password kept only as a hash. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.` |
 | `apps/web/src/screens/help/helpLibrary.ts:760` | `${SPEC}:34 password hashes` |
 | `apps/web/src/screens/help/helpLibrary.ts:761` | `${SPEC}:215 Stored only as HMAC-SHA-256` |
 | `apps/web/src/screens/help/helpLibrary.ts:762` | `apps/api/src/accounts.ts:342 absent → `null`` |
@@ -1564,7 +1564,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `apps/web/src/screens/help/helpLibrary.ts:841` | `${WEB}/profile/profileCopy.ts:83-84 Off unless you tick it.` |
 | `apps/web/src/screens/help/helpLibrary.ts:842` | `${WEB}/profile/profileCopy.ts:91 The copy on your profile never lists a PGP fingerprint.` |
 | `apps/web/src/screens/help/helpLibrary.ts:848` | `Who can see my profile?` |
-| `apps/web/src/screens/help/helpLibrary.ts:849` | `Anyone signed in to X2F can open your profile at /u/ followed by your display name, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.` |
+| `apps/web/src/screens/help/helpLibrary.ts:849` | `Anyone signed in to X2F can open your profile at /u/ followed by your Trade Tag, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.` |
 | `apps/web/src/screens/help/helpLibrary.ts:851` | `apps/web/src/App.tsx:288 path="/u/:name"` |
 | `apps/web/src/screens/help/helpLibrary.ts:852` | `apps/api/src/reputation/profile.ts:16-17 only a set-up trader (or a member of` |
 | `apps/web/src/screens/help/helpLibrary.ts:853` | `apps/api/src/reputation/profile.ts:19-20 a trader who blocked the viewer` |
@@ -1584,7 +1584,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `apps/web/src/screens/help/helpLibrary.ts:874` | `apps/api/src/termsSignature.ts:20 It is never shown to other users` |
 | `apps/web/src/screens/help/helpLibrary.ts:875` | `apps/api/src/termsSignature.ts:37 At rest it is sealed` |
 | `apps/web/src/screens/help/helpLibrary.ts:881` | `What happens to my details when my account closes after 60 days?` |
-| `apps/web/src/screens/help/helpLibrary.ts:883` | `Your PGP keys are deleted, so you can use the same key on a new account. Your username and display name stay taken.` |
+| `apps/web/src/screens/help/helpLibrary.ts:883` | `Your PGP keys are deleted, so you can use the same key on a new account. Your username and Trade Tag stay taken.` |
 | `apps/web/src/screens/help/helpLibrary.ts:884` | `apps/api/src/accountInactivity.ts:24-25 keys are deleted so the person can reuse one` |
 | `apps/web/src/screens/help/helpLibrary.ts:884` | `apps/api/src/accountInactivity.ts:36 INACTIVE_MS` |
 | `apps/web/src/screens/help/helpLibrary.ts:892` | `Who pays the X2F fee?` |
@@ -5544,14 +5544,14 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:76` | `Limits moderators recommend for habitual offenders and hit-and-run cases. The trader sees only their own limit, never the reason.` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:82` | `No recommended limits are waiting.` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:82` | `When a moderator recommends limits for an account, they wait here for a decision.` |
-| `apps/staff-web/src/screens/LimitRecommendations.tsx:88` | `${r.displayName}: ${limitWhatText(r)}` |
+| `apps/staff-web/src/screens/LimitRecommendations.tsx:88` | `${r.tradeTag}: ${limitWhatText(r)}` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:90` | `Now on ${STAGE_WORDS[r.currentStage]}${r.currentCapUsdCents === null ? ', no cap per trade' : `, up to $${(Number(r.currentCapUsdCents) / 100).toLocaleString('en-US')} per trade`}. Recommended by ${r.recommendedBy}${r.code === null ? '' : ` from case ${codeText(r.code)}`}.` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:94` | `You recommended this; another senior moderator or the owner decides it.` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:97` | `Approve` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:100` | `Decline` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:110` | `Approve these limits` |
 | `apps/staff-web/src/screens/LimitRecommendations.tsx:110` | `Decline these limits` |
-| `apps/staff-web/src/screens/LimitRecommendations.tsx:111` | `Tap your security key to ${tap.approve ? 'approve' : 'decline'}: ${tap.r.displayName}, ${limitWhatText(tap.r).toLowerCase()}.` |
+| `apps/staff-web/src/screens/LimitRecommendations.tsx:111` | `Tap your security key to ${tap.approve ? 'approve' : 'decline'}: ${tap.r.tradeTag}, ${limitWhatText(tap.r).toLowerCase()}.` |
 
 ### `apps/staff-web/src/screens/Login.tsx` (15)
 
@@ -5577,7 +5577,7 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 
 ### `apps/staff-web/src/screens/logModel.ts` (189)
 
-**Marker (line 1):** Plan 4 Task 19: the Activity log page's words, kept apart from the React. `describeLog` is the plan's single function with one sentence per action; where board StaffLog has an example, the sentence mirrors it ("Tapped I've paid", "Opened the trade chat", "Requested the unblurred payment proof", "Escrow secured after 10 confirmations", "Changed the large-trade limit from 500 to 1,000 USD", "Ended dmitri_k's session at the end of their login hours"). Every other sentence is draft copy. COPY-UNSIGNED A sentence is built from the entry's action and its detail only (ids, enums, amounts and setting numbers: never chat text, a ruling's reason, an address or an IP, Plan 4 Global Constraints); an id in the detail is shown by the display name the API sent with the page, else not at all.
+**Marker (line 1):** Plan 4 Task 19: the Activity log page's words, kept apart from the React. `describeLog` is the plan's single function with one sentence per action; where board StaffLog has an example, the sentence mirrors it ("Tapped I've paid", "Opened the trade chat", "Requested the unblurred payment proof", "Escrow secured after 10 confirmations", "Changed the large-trade limit from 500 to 1,000 USD", "Ended dmitri_k's session at the end of their login hours"). Every other sentence is draft copy. COPY-UNSIGNED A sentence is built from the entry's action and its detail only (ids, enums, amounts and setting numbers: never chat text, a ruling's reason, an address or an IP, Plan 4 Global Constraints); an id in the detail is shown by the Trade Tag the API sent with the page, else not at all.
 
 | `file:line` | User-facing text |
 |---|---|
@@ -6661,11 +6661,11 @@ Total user-facing strings marked `COPY-UNSIGNED`: **3346** across **171** source
 
 ### `apps/staff-web/src/ui/noSpaces.ts` (1)
 
-**Marker (line 11):** COPY-UNSIGNED (owner demo note #108): the inline line under the display name field.
+**Marker (line 11):** COPY-UNSIGNED (owner demo note #108): the inline line under the Trade Tag field.
 
 | `file:line` | User-facing text |
 |---|---|
-| `apps/staff-web/src/ui/noSpaces.ts:12` | `Remove the spaces. A display name has no spaces.` |
+| `apps/staff-web/src/ui/noSpaces.ts:12` | `Remove the spaces. A Trade Tag has no spaces.` |
 
 ### `apps/staff-web/src/ui/PgpProof.tsx` (11)
 

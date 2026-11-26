@@ -57,7 +57,7 @@ Process ids are in `.demo/pids.json`, logs in `.demo/logs/<name>.log`, the login
 ## Accounts
 
 Every demo account's password is **`Demo-Monero-2026!`**. Sign in with the **login name** (the
-private one), not the display name. The login then asks for an authenticator code: run
+private one), not the Trade Tag. The login then asks for an authenticator code: run
 
 ```sh
 npm run demo:code ana-demo     # or with no name: every account's current code
@@ -83,7 +83,7 @@ shows).
 Only a vendor can post offers (owner, 2 Nov 2026). The cast and `ana-demo` are made vendors by the
 seeder, straight in the demo database (becoming one for real needs a passkey, security key or PGP
 key); `ben-demo` and `cy-demo` stay traders, so you can see both. The seed signs the Terms with
-each account's display name typed (the sign-up's signature, migration 316).
+each account's Trade Tag typed (the sign-up's signature, migration 316).
 
 Yours, with no offers, to trade with yourself (one browser profile or device per account, since
 each trade's escrow keys live in that browser):

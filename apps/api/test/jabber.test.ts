@@ -580,9 +580,9 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
 describe('who may change it', () => {
   it("a team member gets owner-only; a member's login change notifies the team account", async () => {
     const owner = await withJabber();
-    const loginId = await seedAccount(deps, { loginName: `jmember${n}x`, displayName: `jm-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `jmember${n}x`, tradeTag: `jm-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at, first_login_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at, first_login_at)
        values ($1, 'Jmate', 'jmate', '{offers-see}', $2, $3, $2, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );
@@ -592,7 +592,7 @@ describe('who may change it', () => {
     expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
     expect(err(await mb.get('/v1/account/jabber'))).toEqual({ status: 403, error: 'owner-only' });
     expect(err(await mb.post('/v1/account/jabber/test', { address: address() }))).toEqual({ status: 403, error: 'owner-only' });
-    await deps.db.query("update accounts set display_name = 'jm-renamed', display_key = 'jm-renamed' where id = $1", [loginId]);
+    await deps.db.query("update accounts set trade_tag = 'jm-renamed', display_key = 'jm-renamed' where id = $1", [loginId]);
     expect(await notices(owner.id)).toBe(2);
   });
 });
@@ -600,9 +600,9 @@ describe('who may change it', () => {
 describe("a team member's first login tells the team account (J-20, owner p11-27, S-107; review F4)", () => {
   it('queues one team-member-first-login notice in the login, sends its sentence; later logins queue nothing more', async () => {
     const owner = await withJabber();
-    const loginId = await seedAccount(deps, { loginName: `jfirst${n}x`, displayName: `jf-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `jfirst${n}x`, tradeTag: `jf-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Jfirst', 'jfirst', '{offers-see}', $2, $3, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );

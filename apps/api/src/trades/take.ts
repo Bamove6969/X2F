@@ -458,7 +458,7 @@ export function takeRoutes(app: FastifyInstance): void {
       return { ...t, recovery };
     });
 
-    // "<display name> accepted your offer" to the poster, after the commit and outside the
+    // "<Trade Tag> accepted your offer" to the poster, after the commit and outside the
     // response (as tradeRoutes delivers): their open streams, else the generic trade push.
     setImmediate(() => {
       void (async () => {

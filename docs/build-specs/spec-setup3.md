@@ -51,10 +51,10 @@ The optional view's blocks carry `hint-placeholder-val="{{true}}"`, the required
 
 ## 2. SetupUsername (step 1) · `canvas/project/SetupUsername.dc.html`
 
-Reached from: SignupSecurity / Terms. Goes to: display-name screen (main) / SetupLogin (board link).
+Reached from: SignupSecurity / Terms. Goes to: trade-tag screen (main) / SetupLogin (board link).
 Change: the rules line drops the public-name sentence "It shows exactly as you type it." It now reads:
 "5 to 20 characters: letters, numbers, dots, dashes and underscores." (with 5 and 20 in mono)
-The other old public-name text ("This is how traders see you. No email or phone number needed, now or ever.") was already gone from this canvas; the intro already reads "You type this to log in. Only you see it. Nobody can work it out from your display name. Nothing else to give us, now or ever." (same as main).
+The other old public-name text ("This is how traders see you. No email or phone number needed, now or ever.") was already gone from this canvas; the intro already reads "You type this to log in. Only you see it. Nobody can work it out from your Trade Tag. Nothing else to give us, now or ever." (same as main).
 - **DIFFERENCE, kept the board's layout:** the board shows "Pick something that isn't your real name or used elsewhere." as its own info panel under the field card; main appends it to the help line ("5 to 20 characters: … underscores. Pick something that isn't your real name or used elsewhere."). Same words. Head designer to rule whether main should use the panel.
 Height: unchanged (844). Pre-existing mismatch: content measures 664 against the fixed 844 (present before my edit, left as is).
 
@@ -69,7 +69,7 @@ Main shows three lines the board does not have (not drawn, for the head designer
 - "Next, log in with what you just set up, to check it works." (only after a fresh sign-up; owner G25)
 - "You pay X2F 1% of each completed trade from your own ads. Taking an offer is free." (OD-7, pending owner)
 - main has no avatar row / "New" badge under the heading (the board does).
-Also flagged: the board welcomes "juniper.oak", the same example used as the PRIVATE username on SetupUsername. Main welcomes the display name. Suggest a different example public name here.
+Also flagged: the board welcomes "juniper.oak", the same example used as the PRIVATE username on SetupUsername. Main welcomes the Trade Tag. Suggest a different example public name here.
 
 ---
 

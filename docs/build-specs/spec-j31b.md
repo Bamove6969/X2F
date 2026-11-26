@@ -32,7 +32,7 @@ Boards: `canvas/project/<Board>.dc.html`. Backups: `$S/bak-j31b/`.
 
 ## TeamChat (phone 390) and TeamChat-Wide (1280) — p11-25
 
-Label rule: the partner sees `<lead's display name> Assistant <n>`; n = order the lead added the member (Assistant 1, Assistant 2 …). The member's own name is never shown to the partner. Replaces both the "Team member" tag and "Team <display> member: <name>".
+Label rule: the partner sees `<lead's Trade Tag> Assistant <n>`; n = order the lead added the member (Assistant 1, Assistant 2 …). The member's own name is never shown to the partner. Replaces both the "Team member" tag and "Team <display> member: <name>".
 
 - Partner view (viewer = partner):
   - Team notice: `14:21 · satoshi_ghost Assistant 1 is replying.` (was "desk_ana from Team satoshi_ghost is replying.")

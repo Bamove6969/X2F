@@ -12,7 +12,7 @@ From the owner, through the design session. The owner asked for this to be writt
 ## Where those decisions are
 - **Your inbox:** design's messages to you, from about 00:22 UTC on 2 Nov onwards.
 - **The written record:** `docs/design-hold-model-2026-11-02.md` on `wip/design-brief`. Its "Decided (owner, directly to design, 2 Nov)" sections cover:
-  - accounts, logins and devices: Trader/Vendor accounts and becoming a vendor, the 3 devices with "one device at a time" off by default, logging in with no other device, idle logout times (traders and vendors), the session-length question on every login, and username + display name;
+  - accounts, logins and devices: Trader/Vendor accounts and becoming a vendor, the 3 devices with "one device at a time" off by default, logging in with no other device, idle logout times (traders and vendors), the session-length question on every login, and username + Trade Tag;
   - team members: vendor-only, not counted toward the 3, log out one or all, on/off with a two-factor method or a hold;
   - security: the hold notifications, the moderator route around a hold, two-factor wording and authenticator apps;
   - the ban list;

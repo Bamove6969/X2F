@@ -54,7 +54,7 @@ const onboarding = (accountId: string, until: Date | null) =>
 async function ownerWithCode() {
   const b = new Browser(app);
   const name = unique('recov');
-  const { res } = await signUpWithKey(b, { displayName: `P${name}`, loginName: name, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+  const { res } = await signUpWithKey(b, { tradeTag: `P${name}`, loginName: name, deviceLabel: 'Laptop', acceptedTerms: TERMS });
   expect(res.statusCode, res.body).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
   const codes = (await b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };

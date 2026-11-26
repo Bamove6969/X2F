@@ -122,9 +122,9 @@ export type Suggestion = 'add-authenticator' | 'add-backup';
 
 /** Task 11: `GET /v1/account/me`. */
 export interface AccountOverview {
-  /** The public display name; the private login name is never sent. */
-  displayName: string;
-  /** True for an account made before login names existed (migration 009): it still logs in by its public display name and should set a private login name (`setLoginName`). */
+  /** The public Trade Tag; the private login name is never sent. */
+  tradeTag: string;
+  /** True for an account made before login names existed (migration 009): it still logs in by its public Trade Tag and should set a private login name (`setLoginName`). */
   needsLoginName: boolean;
   kind: AccountKind;
   level: 'full';
@@ -213,7 +213,7 @@ export type WorkingHours = 'any' | { days: ('Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
   id: string;
-  displayName: string;
+  tradeTag: string;
   /** The old roles the member's boxes read as (Job 1c). */
   roles: TeamRole[];
   /** Job 1c: the boxes, in catalogue order, and the preset they match (null: none). Optional: older API builds do not send them. */
@@ -222,7 +222,7 @@ export interface TeamMember {
   /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
   custom?: boolean;
   status: 'invited' | 'joining' | 'active';
-  /** Owner p11-25 (S-105): how trade chats show the member, "<lead's display name> Assistant N". Optional: older API builds do not send it. */
+  /** Owner p11-25 (S-105): how trade chats show the member, "<lead's Trade Tag> Assistant N". Optional: older API builds do not send it. */
   chatLabel?: string;
   /** J-20: the trade-size band (null: none) and working hours (null: stored value invalid, never inside). Optional: older API builds do not send them. */
   band?: TradeBand | null;
@@ -237,7 +237,7 @@ export interface TeamMember {
  * the team account: the vendor is named only once the member is inside (review 2026-11-08 F3).
  */
 export interface TeamInviteView {
-  displayName: string;
+  tradeTag: string;
   roles: TeamRole[];
   expiresAt: string;
 }
@@ -417,7 +417,7 @@ export interface AuthApi {
    * site wide (503 `busy`), both with `retryAfterSeconds`; 400 `login-name-invalid` for a wrong shape.
    */
   nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
-  /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
+  /** Both names are picked at sign-up (spec 6.1): the public `tradeTag` and the private `loginName`; they must differ. */
   /** `POST /v1/login/approval/:id/poll` (Task 16): only the browser that started the login, with its approval cookie; anything else 404. */
   pollLoginApproval(id: string): Promise<ApprovalPoll>;
   /** `POST /v1/login/approval/:id/cancel` (Task 16): stop waiting. */
@@ -428,8 +428,8 @@ export interface AuthApi {
    * 2026). The code is spent and a new one is shown once (`revealRecoveryCode`).
    */
   loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
-  registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  registerPgpStart(b: { tradeTag: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ tradeTag: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
@@ -438,14 +438,14 @@ export interface AuthApi {
   /** Owner G6 (7 Nov 2026): the trader login takes the private `loginName` with the key (400 without; a wrong name answers like an unknown key). */
   loginPgpStart(b: { loginName: string; key: string; pendingId?: string }): Promise<PgpChallenge>;
   loginPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
-  registerWebAuthnStart(b: { displayName: string; loginName: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
+  registerWebAuthnStart(b: { tradeTag: string; loginName: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
   registerWebAuthnFinish(b: {
     challengeId: string;
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
     label?: string;
-  }): Promise<{ displayName: string }>;
+  }): Promise<{ tradeTag: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
   /** Without `loginName`: discoverable passkey login, or with `pendingId` the second step of a staff or owner login (the pending login names the account). */
   loginWebAuthnStart(b: { loginName?: string; pendingId?: string }): Promise<AuthenticationChallenge>;
@@ -581,10 +581,10 @@ export interface AuthApi {
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
   /**
-   * Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once.
+   * Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `trade-tag-taken`. `invite` is shown once.
    */
   /** Job 1c: with `abilities` (the boxes, in catalogue order) instead of `roles`, confirm `team-invite-abilities` (`teamInviteAbilitiesAction`). */
-  inviteMember(b: ({ displayName: string; roles: TeamRole[] } | { displayName: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
+  inviteMember(b: ({ tradeTag: string; roles: TeamRole[] } | { tradeTag: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
   /** Confirm `team-roles` (`teamRolesAction`). */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember>;
   /** Job 1c: a member's boxes, in catalogue order; confirm `team-abilities` (`teamAbilitiesAction`). */

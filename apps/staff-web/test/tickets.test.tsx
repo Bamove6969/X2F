@@ -15,9 +15,9 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const later = new Date(Date.now() + 3600_000).toISOString();
-const HELPER = { displayName: 'hana', role: 'helper', nav: navFor('helper', ['tickets.handle']), sessionEndsAt: later };
-const BARE_HELPER = { displayName: 'hana', role: 'helper', nav: navFor('helper'), sessionEndsAt: later };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: navFor('mod', ['tickets.handle']), sessionEndsAt: later };
+const HELPER = { tradeTag: 'hana', role: 'helper', nav: navFor('helper', ['tickets.handle']), sessionEndsAt: later };
+const BARE_HELPER = { tradeTag: 'hana', role: 'helper', nav: navFor('helper'), sessionEndsAt: later };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: navFor('mod', ['tickets.handle']), sessionEndsAt: later };
 const ID = '11111111-1111-4111-8111-111111111111';
 const AT = new Date(Date.now() - 2 * 3600_000).toISOString();
 

@@ -65,7 +65,7 @@ export interface Scrubbed {
   masks: Mask[];
 }
 
-/** The names to replace: each list may hold a public display name and a login name. */
+/** The names to replace: each list may hold a public Trade Tag and a login name. */
 export interface AnonymizeNames {
   buyer: readonly string[];
   seller: readonly string[];
@@ -210,7 +210,7 @@ function nameSpans(text: string, names: AnonymizeNames): Span[] {
     for (const raw of list) {
       const parts = skeleton(normalizeText(raw)).s.split(/[^\p{L}\p{N}]+/u).filter((p) => p !== '');
       variants.push(parts);
-      // A display name's parts are separated by spaces (`Mira Kowal`); a login's (`mira.k`) are not split.
+      // A Trade Tag's parts are separated by spaces (`Mira Kowal`); a login's (`mira.k`) are not split.
       if (parts.length > 1 && /\s/u.test(raw.trim())) for (const p of parts) if (p.length >= 3) variants.push([p]);
     }
     for (const parts of variants) {

@@ -12,7 +12,7 @@ const QUERY_MAX = 64;
 
 /**
  * The Accounts page (spec 6.6 "Account actions"; no board, DESIGN not drawn, DESIGNER-REVIEW):
- * a senior moderator or the owner finds a trader by public display name or trade code and acts on
+ * a senior moderator or the owner finds a trader by public Trade Tag or trade code and acts on
  * the account outside a case, with the same card and actions as ModCase's Account actions
  * (AccountActions.tsx). The menu shows it only to the roles the API serves it to (NAV_PERM
  * `accounts.ban`); the API refuses the lookup to anyone else too. Each lookup is written to the
@@ -57,7 +57,7 @@ export function AccountsPage({ role }: { role: StaffRole }) {
   return (
     <section data-screen="accounts">
       <PageTitle title="Accounts">
-        <p className="x2f-staff-page__lead">Find a trader by display name or trade code, then ban, lift a ban or work an account hold. Each lookup is written to the activity log.</p>
+        <p className="x2f-staff-page__lead">Find a trader by Trade Tag or trade code, then ban, lift a ban or work an account hold. Each lookup is written to the activity log.</p>
       </PageTitle>
       {!can(role, 'accounts.ban') ? (
         // not-a-refusal: the shell never shows this page to such a role; a fallback line only.
@@ -66,7 +66,7 @@ export function AccountsPage({ role }: { role: StaffRole }) {
         <>
           <form className="x2f-staff-hours-row" onSubmit={submit} data-part="account-lookup">
             <label className="x2f-label" htmlFor={inputId}>
-              Display name or trade code
+              Trade Tag or trade code
             </label>
             <input id={inputId} className="x2f-input" autoComplete="off" spellCheck={false} maxLength={QUERY_MAX} value={q} onChange={(e) => setQ(e.target.value)} data-mask="" />
             <Button variant="primary" type="submit" disabled={busy || query === ''}>
@@ -81,7 +81,7 @@ export function AccountsPage({ role }: { role: StaffRole }) {
           ) : null}
           {found !== null && found.length === 0 ? (
             <EmptyState icon="shield" title="No trader found" data-part="lookup-empty">
-              {`No trader has the display name or trade code "${asked ?? ''}".`}
+              {`No trader has the Trade Tag or trade code "${asked ?? ''}".`}
             </EmptyState>
           ) : null}
           <div className="x2f-stack">

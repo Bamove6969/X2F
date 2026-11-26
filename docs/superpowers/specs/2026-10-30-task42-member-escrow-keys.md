@@ -75,7 +75,7 @@ So the real question is not "how does the owner's key reach the member". It is: 
 1. Each account has an account key, pinned at the moderation service with the hold and the owner-device check of 2.1.1.
 2. Every identity registration from an owner device carries a slot binding signed by that key.
 3. The moderation service refuses an unbound slot for an account whose key is pinned.
-4. The attestation names each slot's account (display name), and the counterparty's app checks it against the trade it confirmed.
+4. The attestation names each slot's account (Trade Tag), and the counterparty's app checks it against the trade it confirmed.
 
 That is roughly the first half of 42a. It also replaces Plan 6 D20: the counterparty needs no TOFU, because the moderation service checks the binding.
 
@@ -109,7 +109,7 @@ In one line: every device that fills an account's slot proves that the account a
 The review's point is right: "the first registration sticks", reached through the API, is trust on first use **through the attacker**. A confirm-it's-you does not fix that on its own. The API verifies the WebAuthn or PGP assertion and supplies the credential's public key, so a compromised API can fake it. The fix is therefore a hold plus a check that the API cannot forge, run by every owner device:
 
 - **Registration.**
-  - The owner's device signs `AccountKeyRegistration {account, displayName, accountKey, at}` with the new key.
+  - The owner's device signs `AccountKeyRegistration {account, tradeTag, accountKey, at}` with the new key.
   - The API forwards it to the moderation service, which stores it as **pending**. It becomes the pin `ACCOUNT_KEY_HOLD_H = 72` hours later, unless it is vetoed or contested.
   - While a key is pending, owner slots stay unbound (as today), and member slots are refused.
   - The 72 h hold (not 24 h like R42) is meant to cover a weekend away. Owner question Q10.
@@ -184,7 +184,7 @@ Here `by` is `owner` (the binding is signed with the account key K) or `member:<
 - For a member's trade, from then on the runtime runs unchanged on the member's device: securing, funding display, "I've paid", release, co-signing a mutual cancel, the buyer's standing release co-sign, and the auto-refund and lapse paths.
 
 **The attestation names each slot's account.**
-- The terms gain `buyerAccount` and `sellerAccount` (public display names; spec 6.1: display names are public and burned forever, never reused).
+- The terms gain `buyerAccount` and `sellerAccount` (public Trade Tags; spec 6.1: Trade Tags are public and burned forever, never reused).
 - Each trader app's `verifyAttestation` checks that:
   - its own slot names its own account;
   - the other slot names the counterpart it confirmed at take or accept, from `ConfirmedTrade`, never from the attestation. A failure is `wrong-terms`.
@@ -193,7 +193,7 @@ Here `by` is `owner` (the binding is signed with the account key K) or `member:<
 
 #### 2.1.4 What the moderation service checks (new, in `checkWork`)
 
-For each trader slot, the moderation service resolves the slot's account by the display name in the work item:
+For each trader slot, the moderation service resolves the slot's account by the Trade Tag in the work item:
 - **Account without a pin in force** (none, pending or contested): the slot is attested unbound, as today (the 1.1 residual). But if the work item says the slot is a member's, it is refused.
 - **Account with a pin in force:** the slot is attested only if:
   1. a binding is present and verifies, under K for `by: owner`, or under the delegation's member key for `by: member`, for this account, code, role and these trade keys.
@@ -225,7 +225,7 @@ Any failure is a final `AttestRefused('bad-binding')` or `AttestRefused('bad-del
 - **One new check, no new data about members.** The counterparty's app also checks the other slot's account name (2.1.3). Otherwise the attestation is as before: three participant slots, terms and channels.
 - The account's slot holds per-trade keys, which are fresh each trade. So the counterparty cannot link two trades to the same member, or tell a member's trade from the owner's by the keys.
 - The counterparty's guarantee is still "the moderation service vouches for the other slot". The service now checks, before vouching, that the account itself allowed this key.
-- The only member-visible data is the spec 6.7 chat label "Message from Team <account display name> member: <member name>". The delegation, the member's key, its id, its login name and its caps never leave the API and the moderation service.
+- The only member-visible data is the spec 6.7 chat label "Message from Team <account Trade Tag> member: <member name>". The delegation, the member's key, its id, its login name and its caps never leave the API and the moderation service.
 
 #### 2.1.6 Revocation, handover and takeover
 
@@ -472,7 +472,7 @@ Why:
   - Plan 6 D20 (device-key TOFU) is superseded by 42a-0, so mark it there.
 - **Spec 6.7 and R44:** the OPEN line and R44's "until a per-member escrow key scheme is designed and reviewed" become "designed (`docs/superpowers/specs/2026-10-30-task42-member-escrow-keys.md`); built in Task 42a-0 and 42a–c; security review required". R44's text then reads:
 
-  > R44 (owner, 2026-10-29c; scheme 2026-10-30): team members, at most 3 per account, act only within their roles (Offers, Trades); every member action with an effect is written to the account owner's audit log in the same transaction; a member's chat messages carry the label "Message from Team <account display name> member: <member name>". X2F still holds at most one key per trade (spec 3.1): a member's device may fill the account's slot only under a delegation signed by the account key and checked by the moderation service (Task 42); the API can revoke but never grant. Payout wallets, members and account deletion stay owner-only; members always log in with two factors.
+  > R44 (owner, 2026-10-29c; scheme 2026-10-30): team members, at most 3 per account, act only within their roles (Offers, Trades); every member action with an effect is written to the account owner's audit log in the same transaction; a member's chat messages carry the label "Message from Team <account Trade Tag> member: <member name>". X2F still holds at most one key per trade (spec 3.1): a member's device may fill the account's slot only under a delegation signed by the account key and checked by the moderation service (Task 42); the API can revoke but never grant. Payout wallets, members and account deletion stay owner-only; members always log in with two factors.
 - **Spec 3.3** gains one bullet: "Every account slot is bound to the account: the moderation service attests a slot of an account whose key is pinned only with a binding under the account key, or under a member key that the account key delegated. The attestation names each slot's account, and each app checks it. The account key is pinned after a 72 h hold that any owner device can veto. The API can revoke but never grant."
 - **Spec 8**, the "Escrow keys" row: "keys never leave the device" becomes "keys never leave the device unencrypted; a member trade's keys are also kept on X2F's server, sealed to the account key, until the trade ends (Task 42)".
 - **Spec 4.1 and R36:** add the handover copies to the retention list: deleted at close plus 10 confirmations, never later than the R36 purge.

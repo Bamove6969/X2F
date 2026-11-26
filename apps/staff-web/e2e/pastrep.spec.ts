@@ -8,12 +8,12 @@ import { expect, test, type Page, type Request, type Route } from '@playwright/t
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
-const ME = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const ME = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 const ARCHIVE = 'https://web.archive.org/web/2023/https://localmonero.co/user/rook';
 const CLAIM = {
   id: '11111111-1111-4111-8111-111111111111', site: 'LocalMonero', url: ARCHIVE, claimedTrades: 1300, verifiedTrades: null, verifiedUsdCents: null,
   status: 'signed', fingerprint: 'A1B2 C3D4 E5F6 0718 293A 4B5C 6D7E 8F90 1234 5678', keyId: '6D7E8F9012345678', signatureValid: true,
-  displayName: 'rook88', createdAt: '2026-11-01T10:00:00.000Z', originalHost: 'localmonero.co',
+  tradeTag: 'rook88', createdAt: '2026-11-01T10:00:00.000Z', originalHost: 'localmonero.co',
 };
 
 async function stub(page: Page, posts: Array<{ path: string; body: unknown }>): Promise<void> {

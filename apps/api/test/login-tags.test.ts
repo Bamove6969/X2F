@@ -68,8 +68,8 @@ const key32 = () => new Uint8Array(crypto.randomBytes(32));
 /** A ring with a new current key `id` in front of the test's original key 1. */
 const rotated = (id = 2): Keyring => ({ current: id, keys: new Map([[id, key32()], ...original.keys]) });
 
-const register = async (b: Browser, loginName: string, displayName = `P${loginName}`) =>
-  (await signUpWithKey(b, { displayName, loginName, deviceLabel: 'T', acceptedTerms: TERMS })).res;
+const register = async (b: Browser, loginName: string, tradeTag = `P${loginName}`) =>
+  (await signUpWithKey(b, { tradeTag, loginName, deviceLabel: 'T', acceptedTerms: TERMS })).res;
 const backup = (loginName: string, code: string, b = new Browser(app)) =>
   b.post('/v1/login/backup', { loginName, kind: 'recovery-code', code, deviceLabel: 'T' });
 
@@ -249,7 +249,7 @@ describe('uniqueness across keys', () => {
     const b: Keyring = { current: 1, keys: new Map([[1, original.keys.get(1)!], [2, a.keys.get(2)!]]) };
     const name = uniq('roll');
     const names = (d: string) => ({
-      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
+      tradeTag: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
     });
     const first = await deps.db.connect();
     const second = await deps.db.connect();
@@ -284,7 +284,7 @@ describe('uniqueness across keys', () => {
   // signs. `npm run typecheck` is what enforces these.
   it('createAccount needs a signature and a version for a trader, a member and staff, by type', () => {
     type Args = Parameters<typeof createAccount>[2];
-    const base = { displayName: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
+    const base = { tradeTag: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
     // @ts-expect-error a trader must carry a signature
     const unsigned: Args = { ...base, kind: 'trader', termsVersion: TERMS };
     // @ts-expect-error a trader must carry a Terms version
@@ -307,7 +307,7 @@ describe('uniqueness across keys', () => {
       await client.query('begin');
       await expect(
         createAccount(client, deps.config, {
-          displayName: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
+          tradeTag: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
           kind: 'trader', termsVersion: TERMS, termsSignature: SIG, now: new Date(),
         }),
       ).rejects.toEqual(new ApiError(400, 'names-same'));
@@ -320,10 +320,10 @@ describe('uniqueness across keys', () => {
 
 describe('one namespace for both names with tags (FU-A review I1, coordination note 2)', () => {
   const names = (display: string, login: string) => ({
-    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
+    tradeTag: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
   });
 
-  it("B: a display name that is someone's login name under an old key is refused at create (names-unavailable)", async () => {
+  it("B: a Trade Tag that is someone's login name under an old key is refused at create (names-unavailable)", async () => {
     const { loginName } = await account(1);
     deps.config.loginNameKeys = rotated();
     const res = await register(new Browser(app), uniq('carol'), loginName.toUpperCase());
@@ -331,15 +331,15 @@ describe('one namespace for both names with tags (FU-A review I1, coordination n
     expect(res.json()).toEqual({ error: 'names-unavailable' });
   });
 
-  it("A: a login name that is someone's display name is refused, even when the display name appears after the sign-up started", async () => {
-    // At start (cheap, display names are public): FU-A's assertDisplayNameFree.
+  it("A: a login name that is someone's Trade Tag is refused, even when the Trade Tag appears after the sign-up started", async () => {
+    // At start (cheap, Trade Tags are public): FU-A's assertTradeTagFree.
     const alice = uniq('Mira.K');
     expect((await register(new Browser(app), uniq('alice'), alice)).statusCode).toBe(201);
     const early = await register(new Browser(app), alice.toUpperCase(), uniq('Bob.T'));
     expect(early.json()).toEqual({ error: 'names-unavailable' });
-    // At create, under the lock: the display name was taken between a sign-up's start and finish.
+    // At create, under the lock: the Trade Tag was taken between a sign-up's start and finish.
     const late = uniq('Late.D');
-    await seedAccount(deps, { loginName: uniq('late'), displayName: late });
+    await seedAccount(deps, { loginName: uniq('late'), tradeTag: late });
     const client = await deps.db.connect();
     try {
       await client.query('begin');
@@ -375,7 +375,7 @@ describe('one namespace for both names with tags (FU-A review I1, coordination n
   it('the login-name route of a pre-009 account checks both namespaces under every key', async () => {
     const { loginName } = await account(1);
     deps.config.loginNameKeys = rotated();
-    const id = await seedAccount(deps, { loginName: null, displayName: uniq('Old.T') });
+    const id = await seedAccount(deps, { loginName: null, tradeTag: uniq('Old.T') });
     const b = new Browser(app);
     const { sessionId } = (await b.post('/t/login', { accountId: id })).json() as { sessionId: string };
     const set = async (name: string) =>
@@ -391,10 +391,10 @@ describe('one namespace for both names with tags (FU-A review I1, coordination n
 
 describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
   it('round-trips; holds no plaintext login name; anything that does not open is challenge-expired', () => {
-    const n = { displayName: 'Shown.Name1', displayKey: 'shown.name1', loginKey: 'very.secret1' };
+    const n = { tradeTag: 'Shown.Name1', displayKey: 'shown.name1', loginKey: 'very.secret1' };
     const sealed = sealNames(deps.config, n);
     expect(JSON.stringify(sealed)).not.toContain('very.secret1');
-    expect(sealed.displayName).toBe('Shown.Name1');
+    expect(sealed.tradeTag).toBe('Shown.Name1');
     expect(openNames(deps.config, sealed)).toEqual(n);
     expect(sealNames(deps.config, n).login).not.toBe(sealed.login); // a fresh nonce each time
     const raw = Buffer.from(sealed.login, 'base64url');
@@ -402,7 +402,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     for (const bad of [
       { ...sealed, login: raw.toString('base64url') }, { ...sealed, login: '' }, { ...sealed, login: 1 }, null, 'x',
       // A payload from before FU-D (plaintext names) cannot finish.
-      { displayName: 'Shown.Name1', displayKey: 'shown.name1', loginName: 'very.secret1', loginKey: 'very.secret1' },
+      { tradeTag: 'Shown.Name1', displayKey: 'shown.name1', loginName: 'very.secret1', loginKey: 'very.secret1' },
     ]) {
       expect(() => openNames(deps.config, bad)).toThrow(new ApiError(400, 'challenge-expired'));
     }
@@ -413,7 +413,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     const pair = await genKey();
     const loginName = uniq('pgpsign');
     const b = new Browser(app);
-    const start = await b.post('/v1/register/pgp/start', { displayName: uniq('Shown.Pgp'), loginName, publicKey: pair.publicKey });
+    const start = await b.post('/v1/register/pgp/start', { tradeTag: uniq('Shown.Pgp'), loginName, publicKey: pair.publicKey });
     expect(start.statusCode).toBe(200);
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, deps.clock()));
@@ -436,9 +436,9 @@ describe('no plaintext login name anywhere', () => {
     keep(await new Browser(app).post('/v1/login/webauthn/start', { loginName: secret }));
     // Sign-ups that wait in a challenge (PGP code, WebAuthn ceremony) keep the login name sealed meanwhile.
     const other = uniq('Hidden.Other');
-    const pgp = keep(await new Browser(app).post('/v1/register/pgp/start', { displayName: uniq('Shown.Pgp'), loginName: other, publicKey: (await genKey()).publicKey }));
+    const pgp = keep(await new Browser(app).post('/v1/register/pgp/start', { tradeTag: uniq('Shown.Pgp'), loginName: other, publicKey: (await genKey()).publicKey }));
     expect(pgp.statusCode).toBe(200);
-    const wa = keep(await new Browser(app).post('/v1/register/webauthn/start', { displayName: uniq('Shown.Wa'), loginName: other, kind: 'passkey' }));
+    const wa = keep(await new Browser(app).post('/v1/register/webauthn/start', { tradeTag: uniq('Shown.Wa'), loginName: other, kind: 'passkey' }));
     expect(wa.statusCode).toBe(200);
     const me = keep(await b.get('/v1/account/me'));
     expect(me.json()).toMatchObject({ needsLoginName: false });
@@ -469,7 +469,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       for (const f of (await readdir(MIGRATIONS_DIR)).filter((f) => f < '012')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
       await migrate(db, dir);
       // As 009 left them: two accounts with private login names, and a pre-009 one (legacy: its login
-      // name is its display name until it sets one).
+      // name is its Trade Tag until it sets one).
       const insert = (display: string, login: string) =>
         db.query(
           `insert into accounts (display_name, display_key, login_name, login_key, legacy_login_name, kind, webauthn_user_id, created_at)
@@ -483,7 +483,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       await db.query(
         `insert into challenges (purpose, method, payload, created_at, expires_at)
          values ('register', 'pgp', $1, now(), now() + interval '5 minutes'), ('login', 'pgp', '{}', now(), now() + interval '5 minutes')`,
-        [{ names: { displayName: 'Shown.Four4', displayKey: 'shown.four4', loginName: 'Tool.Secret4', loginKey: 'tool.secret4' } }],
+        [{ names: { tradeTag: 'Shown.Four4', displayKey: 'shown.four4', loginName: 'Tool.Secret4', loginKey: 'tool.secret4' } }],
       );
       expect((await db.query("select kind from name_keys where key like 'tool.%'")).rows).toHaveLength(2);
       // As autovacuum would have done by now: the planner's samples (pg_statistic) hold the names.
@@ -519,7 +519,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       expect(run.stdout).toBe('{"tagged":3}\n');
 
       const { rows } = await db.query(
-        'select id, login_tag, login_tag_key_id, login_name, login_key, legacy_login_name from accounts order by display_name',
+        'select id, login_tag, login_tag_key_id, login_name, login_key, legacy_login_name from accounts order by trade_tag',
       );
       const key = config.loginNameKeys.keys.get(4)!;
       expect(rows).toEqual([

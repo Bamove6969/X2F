@@ -54,14 +54,14 @@ beforeEach(async () => {
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
 async function trader(o: { kind?: 'trader' | 'staff'; termsVersion?: string } = {}) {
-  const displayName = `Ev_${String(++n).padStart(4, '0')}`;
+  const tradeTag = `Ev_${String(++n).padStart(4, '0')}`;
   const id = await seedAccount(deps, {
-    loginName: `${displayName}.lg`, displayName, ...(o.kind ? { kind: o.kind } : {}), ...(o.termsVersion ? { termsVersion: o.termsVersion } : {}),
+    loginName: `${tradeTag}.lg`, tradeTag, ...(o.kind ? { kind: o.kind } : {}), ...(o.termsVersion ? { termsVersion: o.termsVersion } : {}),
   });
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id });
   expect(res.statusCode).toBe(200);
-  return { id, b, displayName };
+  return { id, b, tradeTag };
 }
 
 async function stream(b: Browser): Promise<SseStream> {
@@ -239,7 +239,7 @@ describe('GET /v1/events: the stream', () => {
   it('the server ends a stream after maxStreamMs, so the client reconnects and its session is checked again', async () => {
     const short = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 1000, maxStreamMs: 80 } });
     try {
-      const id = await seedAccount(short.deps, { loginName: 'Ev_short.lg', displayName: 'Ev_short' });
+      const id = await seedAccount(short.deps, { loginName: 'Ev_short.lg', tradeTag: 'Ev_short' });
       const { startSession } = await import('../src/auth/sessions.js');
       short.app.post('/t/login', async (req, reply) => ({
         sessionId: await startSession(short.deps, req, reply, {
@@ -260,7 +260,7 @@ describe('GET /v1/events: the stream', () => {
 
   it('closing the app ends open streams', async () => {
     const other = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 1000, maxStreamMs: 60_000 } });
-    const id = await seedAccount(other.deps, { loginName: 'Ev_close.lg', displayName: 'Ev_close' });
+    const id = await seedAccount(other.deps, { loginName: 'Ev_close.lg', tradeTag: 'Ev_close' });
     const { startSession } = await import('../src/auth/sessions.js');
     other.app.post('/t/login', async (req, reply) => ({
       sessionId: await startSession(other.deps, req, reply, {
@@ -290,21 +290,21 @@ describe('GET /v1/events: the stream', () => {
 });
 
 describe('public names in events', () => {
-  it('events name an account only by its public display name', async () => {
+  it('events name an account only by its public Trade Tag', async () => {
     const a = await trader();
-    expect(await publicName(deps.db, a.id)).toBe(a.displayName);
-    expect(await acceptedEvent(deps.db, CODE, a.id)).toEqual({ type: 'accepted', code: CODE, by: a.displayName });
+    expect(await publicName(deps.db, a.id)).toBe(a.tradeTag);
+    expect(await acceptedEvent(deps.db, CODE, a.id)).toEqual({ type: 'accepted', code: CODE, by: a.tradeTag });
   });
 
   it('an unknown account has no name', async () => {
     expect(await publicName(deps.db, '00000000-0000-4000-8000-000000000000')).toBeNull();
   });
 
-  // FU-A (migration 009) renamed accounts.username to display_name and added a private login_name:
-  // PUBLIC_NAME_COLUMN must be the display name, never the login name.
-  it('reads the public-name column that exists in the schema (display_name since FU-A)', async () => {
+  // FU-A (migration 009) renamed accounts.username to trade_tag and added a private login_name:
+  // PUBLIC_NAME_COLUMN must be the Trade Tag, never the login name.
+  it('reads the public-name column that exists in the schema (trade_tag since FU-A)', async () => {
     const { rows } = await deps.db.query<{ column_name: string }>(
-      "select column_name from information_schema.columns where table_name = 'accounts' and column_name in ('username', 'display_name')",
+      "select column_name from information_schema.columns where table_name = 'accounts' and column_name in ('username', 'trade_tag')",
     );
     expect(rows.map((r) => r.column_name)).toEqual([PUBLIC_NAME_COLUMN]);
     expect(PUBLIC_NAME_COLUMN).not.toMatch(/login/);
@@ -446,10 +446,10 @@ describe('a session revoked between requireTrader and attach (security review ME
     await makeVendor(deps, owner.id);
     const memberStream = async (after: string[] | null) => {
       const name = `Evm${String(++n).padStart(4, '0')}`;
-      const loginId = await seedAccount(deps, { loginName: `${name}.lg`, displayName: `${name}-placeholder`, kind: 'member' });
+      const loginId = await seedAccount(deps, { loginName: `${name}.lg`, tradeTag: `${name}-placeholder`, kind: 'member' });
       const now = deps.clock();
       const { rows } = await deps.db.query<{ id: string }>(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
         [owner.id, name, name.toLowerCase(), ['trades-see-active'], now, loginId],
       );
@@ -492,7 +492,7 @@ describe('GET /v1/events never refreshes the session (review 2026-10-27, Importa
   async function shortApp(maxStreamMs: number, loginAt: Date) {
     const short = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 1000, maxStreamMs } });
     short.setNow(loginAt);
-    const id = await seedAccount(short.deps, { loginName: `Ev_idle_${maxStreamMs}.lg`, displayName: `Ev_idle_${maxStreamMs}` });
+    const id = await seedAccount(short.deps, { loginName: `Ev_idle_${maxStreamMs}.lg`, tradeTag: `Ev_idle_${maxStreamMs}` });
     const { startSession } = await import('../src/auth/sessions.js');
     short.app.post('/t/login', async (req, reply) => ({
       sessionId: await startSession(short.deps, req, reply, {

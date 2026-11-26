@@ -124,13 +124,13 @@ describe('account type', () => {
     const t = await trader();
     const action = { kind: 'team-invite' as const, name: 'Sailor001', roles: 'offers' };
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(t.browser), accountId: t.id, action, method: 'passkey' });
-    const res = await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken });
+    const res = await t.browser.post('/v1/team/invites', { tradeTag: 'Sailor001', roles: ['offers'], confirmToken });
     expect(res.statusCode, res.body).toBe(403);
     expect(errorOf(res)).toBe('not-vendor');
     const { rows } = await deps.db.query('select used_at from confirm_tokens where account_id = $1', [t.id]);
     expect(rows[0]).toEqual({ used_at: null });
     await makeVendor(deps, t.id);
-    expect((await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
+    expect((await t.browser.post('/v1/team/invites', { tradeTag: 'Sailor001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
   });
 });
 
@@ -194,10 +194,10 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
   it("a team member gets 403 owner-only (account type is the account holder's only)", async () => {
     const t = await withKey();
     await makeVendor(deps, t.id);
-    const loginId = await seedAccount(deps, { loginName: 'vendormember1', displayName: 'vm-1-placeholder', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: 'vendormember1', tradeTag: 'vm-1-placeholder', kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Vm1', 'vm1', '{offers-see}', $2, $3, $2, $2)`,
       [t.id, now, loginId],
     );
@@ -229,7 +229,7 @@ describe('migration 198: existing accounts', () => {
       }
       if (o.team) {
         await deps.db.query(
-          `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
+          `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
           [id, now],
         );
       }

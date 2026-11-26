@@ -15,7 +15,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: 'https://matrix.to/#/#x2f:matrix.org', communityTelegramUrl: null };
 const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null };
 const STARTER = { ...STARTER_DEFAULTS, updatedAt: null as string | null };
@@ -208,9 +208,9 @@ describe('Staff pay owed', () => {
       'GET /staff/v1/pay/staff': {
         body: {
           members: [
-            { staffId: 's-1', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false },
-            { staffId: 'm-1', displayName: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true },
-            { staffId: 'h-1', displayName: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false },
+            { staffId: 's-1', tradeTag: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false },
+            { staffId: 'm-1', tradeTag: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true },
+            { staffId: 'h-1', tradeTag: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false },
           ],
         },
       },

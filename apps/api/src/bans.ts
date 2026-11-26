@@ -1,6 +1,6 @@
 /**
  * The ban list (owner, 2 Nov 2026; docs/design-hold-model-2026-11-02.md): when an account is
- * banned, its usernames (display name and login name), its PGP key fingerprints and its secure
+ * banned, its usernames (Trade Tag and login name), its PGP key fingerprints and its secure
  * Jabber account are recorded, and none of them can be used again. Of a PGP key, only what the
  * account has shown it controls (security review 8 Nov I1, `bannableFingerprints`): the primary
  * key, every subkey a code was encrypted to and proved (`pgp_keys.proved_subkeys`), and signing
@@ -11,13 +11,13 @@
  * Storage (migration 017): only keyed tags under X2F_LOGIN_NAME_KEYS, matched under every key of
  * the ring, as login names are since FU-D. Names are tagged exactly as login names are
  * (`loginTag`), so they are checked inside `namesTaken` (accounts.ts) with every other name rule,
- * in one namespace: a banned display name can be neither a display nor a login name, and the same
+ * in one namespace: a banned Trade Tag can be neither a display nor a login name, and the same
  * for a banned login name. Fingerprints and Jabber addresses get their own `banTag`.
  *
  * Where each check runs:
  * - names: `createAccount`, `setLoginName` and a login name waiting out the hold (all through
- *   `namesTaken`: 409 `names-unavailable`, never saying why); a banned display name is also
- *   refused early by `assertDisplayNameFree` (409 `display-name-taken`; display names are public).
+ *   `namesTaken`: 409 `names-unavailable`, never saying why); a banned Trade Tag is also
+ *   refused early by `assertTradeTagFree` (409 `trade-tag-taken`; Trade Tags are public).
  * - PGP keys: `assertKeyNotBanned` (409 `key-unavailable`) only where a key is written, after its
  *   code proved it: `insertPgpKey` (sign-up, a team member's and a staff invitee's join) and
  *   `applyPgpKey` (an added key, at once or when the hold ends). Never at a start: a check there
@@ -38,10 +38,10 @@ import type { Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
 
-export type BannedKind = 'display-name' | 'login-name' | 'pgp-fingerprint' | 'jabber';
+export type BannedKind = 'trade-tag' | 'login-name' | 'pgp-fingerprint' | 'jabber';
 
 /** Domain separation of the fingerprint and Jabber tags (names use `loginTag`'s own). */
-const BAN_TAG_CONTEXT: Record<Exclude<BannedKind, 'display-name' | 'login-name'>, string> = {
+const BAN_TAG_CONTEXT: Record<Exclude<BannedKind, 'trade-tag' | 'login-name'>, string> = {
   'pgp-fingerprint': 'x2f/ban/pgp-fingerprint\0',
   jabber: 'x2f/ban/jabber\0',
 };
@@ -53,7 +53,7 @@ export function banTag(key: Uint8Array, kind: 'pgp-fingerprint' | 'jabber', valu
 
 /** A value's tags under every key of the ring (`ids[i]` ↔ `tags[i]`) and the one under the current key. */
 function ringTags(config: Config, kind: BannedKind, value: string): { ids: number[]; tags: Buffer[]; current: Buffer } {
-  if (kind === 'display-name' || kind === 'login-name') return loginTags(config, value);
+  if (kind === 'trade-tag' || kind === 'login-name') return loginTags(config, value);
   const ids: number[] = [];
   const tags: Buffer[] = [];
   let current: Buffer | undefined;
@@ -191,9 +191,9 @@ export async function assertKeyNotBanned(db: Queryable, config: Config, armored:
   }
 }
 
-/** True when the display name (its case-insensitive key) is banned as a display name. */
-export async function displayNameBanned(db: Queryable, config: Config, displayKey: string): Promise<boolean> {
-  return anyBanned(db, config, ['display-name'], 'display-name', [displayKey]);
+/** True when the Trade Tag (its case-insensitive key) is banned as a Trade Tag. */
+export async function tradeTagBanned(db: Queryable, config: Config, displayKey: string): Promise<boolean> {
+  return anyBanned(db, config, ['trade-tag'], 'trade-tag', [displayKey]);
 }
 
 /**
@@ -220,7 +220,7 @@ export async function recordBannedValues(
   let added = 0;
   for (const v of new Set(a.values)) {
     if (await anyBanned(db, config, [a.kind], a.kind, [v])) continue;
-    const tag = a.kind === 'display-name' || a.kind === 'login-name' ? loginTag(key, v) : banTag(key, a.kind, v);
+    const tag = a.kind === 'trade-tag' || a.kind === 'login-name' ? loginTag(key, v) : banTag(key, a.kind, v);
     added += await insertTag(db, { kind: a.kind, keyId: ring.current, tag, accountId: a.accountId, now: a.now });
   }
   return added;
@@ -237,7 +237,7 @@ async function insertTag(db: Queryable, r: { kind: BannedKind; keyId: number; ta
 
 /**
  * Puts a banned account's identifiers on the ban list (the internal function Plan 4's ban action
- * calls, in its transaction when given one): its display name, its login name (its stored tag,
+ * calls, in its transaction when given one): its Trade Tag, its login name (its stored tag,
  * copied as it is: the plaintext is never kept), what it controls of each PGP key on it
  * (`bannableFingerprints`; and the keys the 60-day close kept, M2), and
  * `jabber` when given (the account's Jabber address; there is no column for it yet), and for a team
@@ -257,10 +257,10 @@ export async function recordBan(
   );
   const acc = rows[0];
   if (!acc) throw new ApiError(404, 'not-found');
-  let recorded = await recordBannedValues(db, config, { kind: 'display-name', values: [acc.display_key], accountId, now });
+  let recorded = await recordBannedValues(db, config, { kind: 'trade-tag', values: [acc.display_key], accountId, now });
   recorded += await recordLoginAndKeys(deps, accountId, acc, now);
   // Owner G27 (7 Nov): banning a team account bans its members' entries too: each member login
-  // that still exists gives its login name and its PGP keys (a member's display name is a random
+  // that still exists gives its login name and its PGP keys (a member's Trade Tag is a random
   // placeholder on its login account, so there is no public name to ban).
   const members = await db.query<{ id: string; login_tag: Buffer | null; login_tag_key_id: number | null }>(
     `select a.id, a.login_tag, a.login_tag_key_id from team_members m join accounts a on a.id = m.member_account_id

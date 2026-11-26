@@ -19,7 +19,7 @@ let n = 0;
 async function account(kind = 'trader'): Promise<string> {
   n++;
   const { rows } = await db.query<{ id: string }>(
-    `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at)
+    `insert into accounts (trade_tag, display_key, kind, webauthn_user_id, created_at)
      values ($1, lower($1), $2, $3, now()) returning id`,
     [`Path${n}x${randomBytes(3).toString('hex')}`, kind, randomBytes(16)],
   );
@@ -70,7 +70,7 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     where: 'account_id = $1',
   },
   team_members: {
-    insert: `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
+    insert: `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
     change: `update team_members set abilities = '{offers-see,offers-pause}' where account_id = $1`,
     // J-20: the first login has its own notice (kind team-member-first-login, queued by the login).
     bookkeeping: `update team_members set first_login_at = now() where account_id = $1`,
@@ -119,7 +119,7 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     where: 'account_id = $1',
   },
   banned_identifiers: {
-    insert: `insert into banned_identifiers (kind, tag_key_id, tag, account_id, banned_at) values ('display-name', 1, decode('${randomBytes(32).toString('hex')}', 'hex'), $1, now())`,
+    insert: `insert into banned_identifiers (kind, tag_key_id, tag, account_id, banned_at) values ('trade-tag', 1, decode('${randomBytes(32).toString('hex')}', 'hex'), $1, now())`,
     change: `update banned_identifiers set banned_at = now() + interval '1 s' where account_id = $1`,
     where: 'account_id = $1',
   },
@@ -270,7 +270,7 @@ describe('each change path queues exactly one notice per transaction', () => {
     const team = await account();
     const member = await account('member');
     await db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Mate', 'mate', '{offers-see}', now(), $2, now(), now())`,
       [team, member],
     );
@@ -282,7 +282,7 @@ describe('each change path queues exactly one notice per transaction', () => {
   it("J-20: a member's trade-size band and working hours are team changes", async () => {
     const team = await account();
     await db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
       [team],
     );
     await withJabber(team);

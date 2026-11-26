@@ -154,9 +154,9 @@ describe('a muted event sends nothing; the others still do', () => {
     const owner = await withJabber();
     expect((await owner.browser.put('/v1/account/jabber/events', { kind: 'trade-attention', on: false })).statusCode).toBe(200);
     await clearOutbox(owner.id);
-    const loginId = await seedAccount(deps, { loginName: `evmember${n}x`, displayName: `em-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `evmember${n}x`, tradeTag: `em-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Evmate', 'evmate', '{offers-see}', $2, $3, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );
@@ -207,9 +207,9 @@ describe('changing the picks is itself an account change, told to the address (s
 describe('who may change the picks', () => {
   it('a team member gets owner-only, for the list and the change', async () => {
     const owner = await withJabber();
-    const loginId = await seedAccount(deps, { loginName: `evmember2${n}x`, displayName: `em2-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `evmember2${n}x`, tradeTag: `em2-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Evmate2', 'evmate2', '{offers-see}', $2, $3, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );

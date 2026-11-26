@@ -81,7 +81,7 @@ async function trader(kind: 'trader' | 'staff' | 'owner' = 'trader') {
 async function keyTrader(prefix: string) {
   const b = new Browser(app);
   const name = `${prefix}${String(++n).padStart(5, '0')}x`;
-  const { res, auth } = await signUpWithKey(b, { displayName: `P${name}`, loginName: name, acceptedTerms: TERMS });
+  const { res, auth } = await signUpWithKey(b, { tradeTag: `P${name}`, loginName: name, acceptedTerms: TERMS });
   expect(res.statusCode, res.body).toBe(201);
   const accountId = (await accountIdByLoginName(deps, name))!;
   await addUnusedKeys(deps, accountId);
@@ -401,10 +401,10 @@ describe('who has a session length', () => {
 
   async function member(abilities: string[] = ['trades-see-active']) {
     const { id: teamId } = await trader();
-    const loginId = await seedAccount(deps, { loginName: `mlen${++n}x`, displayName: `m-len-${n}`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `mlen${++n}x`, tradeTag: `m-len-${n}`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [teamId, `Member${n}`, `member${n}`, abilities, now, loginId],
     );
@@ -522,10 +522,10 @@ describe('the idle reminder (owner, Q75): a reminder in personal settings, never
 
   it("a team member's reminder is their own, not the account owner's", async () => {
     const { id: teamId, b: owner } = await trader();
-    const loginId = await seedAccount(deps, { loginName: `midle${++n}x`, displayName: `m-idle-${n}`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `midle${++n}x`, tradeTag: `m-idle-${n}`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [teamId, `Member${n}`, `member${n}`, ['offers-see'], now, loginId],
     );

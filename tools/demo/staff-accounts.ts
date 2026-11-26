@@ -19,7 +19,7 @@ import { STAFF_FILE } from './config.js';
 
 /** One seeded staff account, as the seed planned it. */
 export interface StaffPerson {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   role: Exclude<StaffRole, 'helper'>;
   /** Which screens this account shows (the guide and logins.txt). */
@@ -28,15 +28,15 @@ export interface StaffPerson {
 
 /** The demo's staff: the owner, a senior moderator and two moderators. */
 export const STAFF_CAST: readonly StaffPerson[] = [
-  { displayName: 'Lumen_Prime', loginName: 'lumen-demo', role: 'owner', sees: 'everything: Overview (site controls, news, maintenance), Disputes, Past reputation, Staff (invites, grants), Performance, Prices, Training, Activity log, Feedback, Settings, Alerts' },
-  { displayName: 'Vale_Hartley', loginName: 'vale-demo', role: 'senior', sees: 'Disputes (and approving rulings), Past reputation, Training, Activity log, Feedback; freezes and bans' },
-  { displayName: 'Kestrel_Ash', loginName: 'kestrel-demo', role: 'mod', sees: 'Disputes (the queue and a case), Past reputation, Training, Activity log' },
-  { displayName: 'Wren_Calloway', loginName: 'wren-demo', role: 'mod', sees: 'Disputes (the queue and a case), Past reputation, Training, Activity log' },
+  { tradeTag: 'Lumen_Prime', loginName: 'lumen-demo', role: 'owner', sees: 'everything: Overview (site controls, news, maintenance), Disputes, Past reputation, Staff (invites, grants), Performance, Prices, Training, Activity log, Feedback, Settings, Alerts' },
+  { tradeTag: 'Vale_Hartley', loginName: 'vale-demo', role: 'senior', sees: 'Disputes (and approving rulings), Past reputation, Training, Activity log, Feedback; freezes and bans' },
+  { tradeTag: 'Kestrel_Ash', loginName: 'kestrel-demo', role: 'mod', sees: 'Disputes (the queue and a case), Past reputation, Training, Activity log' },
+  { tradeTag: 'Wren_Calloway', loginName: 'wren-demo', role: 'mod', sees: 'Disputes (the queue and a case), Past reputation, Training, Activity log' },
 ];
 
 /** A seeded staff account with its throwaway keys (keys[0] is the one the demo login uses). */
 export interface StaffSecret {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   role: StaffPerson['role'];
   keys: KeyData[];

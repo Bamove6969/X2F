@@ -68,7 +68,7 @@ export function decidesProposal(c: Pick<DisputeCase, 'status' | 'proposedByYou' 
 }
 /** The API's send-back note limit (disputes/rulings.ts SEND_BACK_NOTE_MAX). */
 export const SEND_BACK_NOTE_MAX = 1000;
-const nameOf = (t: CaseTrader | null, side: Side) => t?.displayName ?? (side === 'buyer' ? 'the buyer' : 'the seller');
+const nameOf = (t: CaseTrader | null, side: Side) => t?.tradeTag ?? (side === 'buyer' ? 'the buyer' : 'the seller');
 
 /** A pending key tap: the dialog's intent and words, and what to do with the tap. */
 interface Tap {
