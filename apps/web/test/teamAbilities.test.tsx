@@ -5,11 +5,11 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ROLE_ABILITIES, catalogueView } from '../../api/src/team/abilities.js';
+import { GRANTABLE, ROLE_ABILITIES, catalogueView, presetOf } from '../../api/src/team/abilities.js';
 import { AbilityPicker } from '../src/screens/settings/AbilityPicker.js';
 import { Team } from '../src/screens/settings/Team.js';
 import { TraderNotes } from '../src/screens/settings/TraderNotes.js';
-import { allAbilities, isTickable, parseCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from '../src/screens/settings/teamApi.js';
+import { allAbilities, boxKind, isTickable, parseCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from '../src/screens/settings/teamApi.js';
 import { notesAccessOf } from '../src/session/member.js';
 import type { Session } from '../src/session/useSession.js';
 import { fire, render } from './render.js';
@@ -94,25 +94,38 @@ describe('the catalogue helpers', () => {
     expect(() => parseCatalogue({ group: [], presets: [] })).toThrow();
   });
 
-  it('sendable keeps only grantable boxes the catalogue knows, once each, in catalogue order; never a greyed one', () => {
+  it('sendable keeps only the boxes the catalogue knows, once each, in catalogue order; never an owner-only or always-on one', () => {
     const c = real();
     const all = allAbilities(c);
-    const greyed = all.filter((a) => !isTickable(a)).map((a) => a.id);
-    expect(greyed).toEqual(expect.arrayContaining(['offers-edit-prices', 'trades-accept', 'chat-read', 'trades-release', 'own-login-methods']));
-    const out = sendable(c, ['notes-add', ...greyed, 'offers-see', 'made-up-box', 'offers-see']);
-    expect(out).toEqual(['offers-see', 'notes-add']);
+    const locked = all.filter((a) => !isTickable(a)).map((a) => a.id);
+    expect(locked).toEqual(expect.arrayContaining(['trades-release', 'trades-confirm-received', 'own-login-methods']));
+    expect(locked).not.toContain('offers-edit-prices');
+    const out = sendable(c, ['notes-add', ...locked, 'chat-read', 'offers-see', 'made-up-box', 'offers-see', 'trades-accept']);
+    expect(out).toEqual(['offers-see', 'trades-accept', 'chat-read', 'notes-add']);
   });
 
-  it('a preset fills only its tickable boxes, and a set matching them reads as that preset', () => {
+  it('the tickable boxes are exactly what the API stores (abilities.ts GRANTABLE)', () => {
+    const c = real();
+    expect(new Set(allAbilities(c).filter(isTickable).map((a) => a.id))).toEqual(new Set(GRANTABLE));
+    expect(boxKind({ availability: 'not-built' })).toBe('later');
+    expect(boxKind({ availability: 'waits-member-keys' })).toBe('later');
+    expect(boxKind({ availability: 'waits-member-chat-key' })).toBe('later');
+    expect(boxKind({ availability: 'owner-only' })).toBe('yours');
+    expect(boxKind({ availability: 'always' })).toBe('always');
+  });
+
+  it('a preset fills its own boxes, and a set reads as a preset exactly when the API\'s presetOf says so', () => {
     const c = real();
     for (const p of c.presets) {
-      const boxes = presetBoxes(c, p.id);
-      expect(boxes.every((id) => isTickable(allAbilities(c).find((a) => a.id === id)!))).toBe(true);
-      expect(boxes.length).toBeLessThanOrEqual(p.abilities.length);
+      expect(presetBoxes(c, p.id)).toEqual(sendable(c, p.abilities));
+      expect(presetBoxes(c, p.id).length).toBe(p.abilities.length);
+      expect(presetMatching(c, presetBoxes(c, p.id))?.id).toBe(presetOf(presetBoxes(c, p.id)));
     }
     expect(presetMatching(c, presetBoxes(c, 'trades'))?.id).toBe('trades');
-    // The preset's greyed boxes alongside change nothing (they are never sent).
-    expect(presetMatching(c, c.presets.find((p) => p.id === 'trades')!.abilities)?.id).toBe('trades');
+    // One box short of the preset is a custom set, as the API reads it.
+    const short = presetBoxes(c, 'trades').filter((id) => id !== 'trades-accept');
+    expect(presetMatching(c, short)).toBeNull();
+    expect(presetOf(short)).toBeNull();
     expect(presetMatching(c, ['offers-see'])).toBeNull();
     expect(presetMatching(c, [])).toBeNull();
   });
@@ -137,7 +150,7 @@ describe('AbilityPicker', () => {
     expect(seen.at(-1)).toEqual(['zz-one']);
   });
 
-  it('groups the boxes as the catalogue does, and greys the not-yet-built ones with "Coming later", untickable', async () => {
+  it('groups the boxes as the catalogue does; the not-yet-built ones say "Coming later" and can be ticked; owner-only and always-on ones cannot', async () => {
     const c = real();
     const { host } = render(<Harness catalogue={c} start={[]} onChange={() => undefined} />);
     expect([...host.querySelectorAll('[data-part^="group-"]')].map((g) => g.getAttribute('data-part'))).toEqual(c.groups.map((g) => `group-${g.id}`));
@@ -146,9 +159,14 @@ describe('AbilityPicker', () => {
     expect(host.querySelectorAll('input[data-box]').length).toBe(allAbilities(c).length);
     for (const a of allAbilities(c)) {
       const input = host.querySelector<HTMLInputElement>(`input[data-box="${a.id}"]`)!;
-      expect(input.disabled, a.id).toBe(a.availability !== 'grantable');
+      expect(input.disabled, a.id).toBe(a.availability === 'owner-only' || a.availability === 'always');
       if (['not-built', 'waits-member-keys', 'waits-member-chat-key'].includes(a.availability)) {
         expect(host.querySelector(`[data-ability="${a.id}"]`)?.textContent, a.id).toContain('Coming later');
+      }
+      if (a.availability === 'owner-only') expect(host.querySelector(`[data-ability="${a.id}"]`)?.textContent, a.id).toContain('Only you');
+      if (a.availability === 'always') {
+        expect(input.checked, a.id).toBe(true);
+        expect(host.querySelector(`[data-ability="${a.id}"]`)?.textContent, a.id).toContain('Every member has this');
       }
     }
   });
@@ -161,14 +179,17 @@ describe('AbilityPicker', () => {
     await settle();
     click(host.querySelector('input[data-box="offers-see"]')!);
     expect(seen.at(-1)).toEqual(['offers-see', 'notes-add']);
+    // A "Coming later" box ticks too (the harness keeps the starting value, so each tick starts from it).
+    click(host.querySelector('input[data-box="offers-edit-prices"]')!);
+    expect(seen.at(-1)).toEqual(['offers-edit-prices', 'notes-add']);
     click(host.querySelector('[data-preset="offers"]')!);
     expect(seen.at(-1)).toEqual(presetBoxes(c, 'offers'));
-    expect(seen.at(-1)).not.toContain('offers-edit-prices');
+    expect(seen.at(-1)).toContain('offers-edit-prices');
   });
 });
 
 describe('Team: editing a member', () => {
-  it('a member moved from the old Offers role shows its boxes; saving never sends the greyed ones', async () => {
+  it('a member moved from the old Offers role shows its boxes; saving keeps the stored "Coming later" ones', async () => {
     const legacy = [...ROLE_ABILITIES.offers];
     expect(legacy).toContain('offers-edit-prices');
     members = [{ id: 'm1', displayName: 'Aurora', roles: ['offers'], abilities: legacy, preset: null, custom: false, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' }];
@@ -182,14 +203,19 @@ describe('Team: editing a member', () => {
     await settle();
     expect(row.querySelector<HTMLInputElement>('input[data-box="offers-see"]')!.checked).toBe(true);
     expect(row.querySelector<HTMLInputElement>('input[data-box="offers-post"]')!.checked).toBe(true);
-    expect(row.querySelector<HTMLInputElement>('input[data-box="offers-edit-prices"]')!.disabled).toBe(true);
+    const prices = row.querySelector<HTMLInputElement>('input[data-box="offers-edit-prices"]')!;
+    expect(prices.disabled).toBe(false);
+    expect(prices.checked).toBe(true);
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(true);
     click(row.querySelector('input[data-box="notes-view"]')!);
     await settle();
     click(byPart(host, 'save-boxes')!);
     await settle();
     const patch = calls.find((c) => c.method === 'PATCH')!;
     expect(patch.url).toBe('/v1/team/members/m1');
-    expect(patch.body).toEqual({ abilities: ['offers-see', 'offers-pause', 'offers-post', 'offers-delete', 'notes-view', 'feedback-send'] });
+    expect(patch.body).toEqual({
+      abilities: ['offers-see', 'offers-pause', 'offers-edit-prices', 'offers-edit-amounts', 'offers-edit-methods', 'offers-edit-currencies', 'offers-post', 'offers-delete', 'notes-view', 'feedback-send'],
+    });
     expect(host.querySelector('[data-part="team-said"]')?.textContent).toBe('Boxes saved for Aurora.');
   });
 

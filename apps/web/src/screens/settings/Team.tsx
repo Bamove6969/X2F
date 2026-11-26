@@ -159,7 +159,6 @@ function LimitsEditor({ value, onChange }: { value: LimitsDraft; onChange: (d: L
  * old roles they read as (an older API that sends no boxes), else "No roles yet".
  */
 function boxesLine(m: TeamMember, cat: Catalogue | null): string {
-  // Matched here, on the boxes the lead can tick now (the API's `preset` also counts the greyed ones).
   const preset = m.abilities !== undefined && cat !== null ? presetMatching(cat, m.abilities) : null;
   if (preset !== null) return P.presetLine(preset.label);
   if (m.custom === true) return C.custom;
@@ -267,7 +266,7 @@ export function Team() {
 
   const invite = () =>
     run(async () => {
-      // Only the boxes the catalogue lets the lead tick now, in its order: a greyed box is never sent.
+      // Only boxes the catalogue names as boxes, in its order: an owner-only or always-on one is never sent.
       const abilities = inviteBoxes;
       if (abilities.length === 0) {
         setError(P.pickBox);

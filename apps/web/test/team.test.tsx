@@ -181,16 +181,14 @@ describe('Team (settings)', () => {
     });
   });
 
-  it('Make an invite link sends the name and the start set\'s tickable boxes (Job 1c), and shows the link once', async () => {
+  it('Make an invite link sends the name and the start set\'s boxes (Job 1c), and shows the link once', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
     await settle();
     fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    const cat = catalogueView();
-    const tickable = new Set(cat.groups.flatMap((g) => g.abilities).filter((a) => a.availability === 'grantable').map((a) => a.id));
-    const start = cat.presets.find((p) => p.id === 'start')!.abilities.filter((id) => tickable.has(id));
+    const start = [...catalogueView().presets.find((p) => p.id === 'start')!.abilities];
     expect(start.length).toBeGreaterThan(0);
     expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { displayName: 'Cosmo', abilities: start } });
     expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);

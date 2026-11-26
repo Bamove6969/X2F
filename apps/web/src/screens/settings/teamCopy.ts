@@ -224,7 +224,7 @@ export const PICKER_COPY = {
   presetsLabel: 'Start from a preset', // COPY-UNSIGNED
   // COPY-UNSIGNED
   summary: (n: number, preset: string | null) => (n === 0 ? 'No boxes ticked yet. Pick a preset or tick boxes below.' : `${n} ${n === 1 ? 'box' : 'boxes'} ticked${preset === null ? ', a custom set' : `, the ${preset} preset`}`),
-  groupTicked: (on: number, of: number) => (of === 0 ? 'Coming later' : `${on} of ${of}`), // COPY-UNSIGNED
+  groupTicked: (on: number, of: number) => `${on} of ${of}`, // COPY-UNSIGNED
   reason: {
     later: 'Coming later', // COPY-UNSIGNED
     yours: 'Only you', // COPY-UNSIGNED

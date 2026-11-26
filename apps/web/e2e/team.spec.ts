@@ -25,12 +25,9 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
 const memberMe = (roles: string[], abilities?: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles, ...(abilities ? { abilities } : {}) } });
 
-/** Job 1c: the API's own catalogue (`GET /v1/team/permissions`), and a preset's boxes the picker can tick now. */
+/** Job 1c: the API's own catalogue (`GET /v1/team/permissions`), and a preset's boxes. */
 const CATALOGUE = catalogueView();
-const TICKABLE = new Set(CATALOGUE.groups.flatMap((g) => g.abilities).filter((a) => a.availability === 'grantable').map((a) => a.id));
-const ORDER = CATALOGUE.groups.flatMap((g) => g.abilities).sort((a, b) => a.no - b.no).map((a) => a.id);
-const tickable = (ids: readonly string[]) => ORDER.filter((id) => TICKABLE.has(id) && ids.includes(id));
-const presetBoxes = (id: string) => tickable(CATALOGUE.presets.find((p) => p.id === id)!.abilities);
+const presetBoxes = (id: string) => [...CATALOGUE.presets.find((p) => p.id === id)!.abilities];
 
 type Member = { id: string; displayName: string; roles: string[]; abilities?: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
 const member = (id: string, displayName: string, roles: string[], status = 'active'): Member => ({
@@ -126,13 +123,14 @@ for (const viewport of PHONE_VIEWPORTS) {
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="team-count"]')).toHaveText('0 of 3 members');
     await page.getByLabel('Their name on your team').fill('Aurora.K');
-    // Job 1c: the Trades preset ticks its boxes; the greyed ones (member keys, chat key) stay unticked.
+    // Job 1c: the Trades preset ticks its boxes, the "Coming later" ones (member keys, chat key) too.
     const trades = presetBoxes('trades');
     await page.locator('[data-part="team-invite"] [data-preset="trades"]').click();
     await expect(page.locator('[data-part="team-invite"] [data-part="abilities-summary"]')).toContainText('the Trades preset');
     await page.locator('[data-part="team-invite"] [data-part="group-trades"]').click();
-    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-accept"]')).toBeDisabled();
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-accept"]')).toBeChecked();
     await expect(page.locator('[data-part="team-invite"] [data-ability="trades-accept"]')).toContainText('Coming later');
+    await expect(page.locator('[data-part="team-invite"] input[data-box="trades-release"]')).toBeDisabled();
     await expect(page.locator('[data-part="team-invite"] input[data-box="trades-mark-paid"]')).toBeChecked();
     await expectPhoneLayout(page);
     await page.locator('[data-part="invite"]').click();
@@ -144,7 +142,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     expect(before).not.toContain(CODE);
     expect(seen.confirms[0]!.action).toEqual({ kind: 'team-invite-abilities', name: 'Aurora.K', abilities: trades.join(',') });
     expect(seen.invites.at(-1)).toEqual({ displayName: 'Aurora.K', abilities: trades, confirmToken: 'tok-1' });
-    expect(trades).not.toContain('trades-accept');
+    expect(trades).toContain('trades-accept');
     await page.locator('[data-part="copy-invite"]').click();
     await expect(page.locator('[data-part="copy-invite"]')).toHaveText('Copied');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/team/join#${CODE}`);
@@ -700,15 +698,15 @@ test('the owner changes boxes and removes a member; the member is then signed ou
   const aurora = page.locator('[data-member="Aurora"]');
   await aurora.locator('[data-part="group-offers"]').click();
   await expect(aurora.locator('input[data-box="offers-post"]')).toBeChecked();
-  await expect(aurora.locator('input[data-box="offers-edit-prices"]')).toBeDisabled();
+  await expect(aurora.locator('input[data-box="offers-edit-prices"]')).toBeChecked();
   await aurora.locator('input[data-box="offers-post"]').uncheck();
   await page.locator('[data-part="save-boxes"]').click();
-  // The old roles' greyed boxes (edit prices, accept a trade, ...) are never sent.
-  const want = tickable(rolesToAbilities(['offers', 'trades'])).filter((id) => id !== 'offers-post');
+  // The old roles' "Coming later" boxes (edit prices, accept a trade, ...) are kept, not dropped.
+  const want = rolesToAbilities(['offers', 'trades']).filter((id) => id !== 'offers-post');
   await confirmWithPassword(page, `change a team member's abilities (${want.length} abilities)`);
   await expect(page.locator('[data-part="team-said"]')).toHaveText('Boxes saved for Aurora.');
   expect(seen.patches).toEqual([{ abilities: want, confirmToken: 'tok-1' }]);
-  expect(want).not.toContain('offers-edit-prices');
+  expect(want).toContain('offers-edit-prices');
   await expect(page.locator('[data-member="Aurora"]')).toContainText('Trades');
 
   // The member's tab, open meanwhile in another browser.

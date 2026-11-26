@@ -78,16 +78,22 @@ export async function fetchCatalogue(signal?: AbortSignal): Promise<Catalogue> {
   return parseCatalogue(await api<unknown>('/v1/team/permissions', signal ? { signal } : {}));
 }
 
-/** A box the lead can tick now: only `grantable` ones. Every other kind is shown greyed and never sent. */
-export function isTickable(a: Pick<CatalogueAbility, 'availability'>): boolean {
-  return a.availability === 'grantable';
-}
+/**
+ * What kind of box this is, for the picker:
+ * - `now`: a box whose member routes check it today (`grantable`).
+ * - `later`: a box the API stores but nothing uses yet (`not-built`, `waits-member-keys`,
+ *   `waits-member-chat-key`): tickable, marked "Coming later". It is a box like any other in the
+ *   API's model (abilities.ts `GRANTABLE`), the presets tick it, and migration 360 stored it for
+ *   members moved from the old roles, so dropping it on a save would quietly take it away.
+ * - `yours`: the account owner's alone; never a box, shown unticked and disabled.
+ * - `always`: every member has it; not a box, shown ticked and disabled.
+ */
+export type BoxKind = 'now' | 'later' | 'yours' | 'always';
 
-/** Why a box cannot be ticked, as the picker groups the reasons (null: it can). */
-export function untickableReason(a: Pick<CatalogueAbility, 'availability'>): 'later' | 'yours' | 'always' | null {
+export function boxKind(a: Pick<CatalogueAbility, 'availability'>): BoxKind {
   switch (a.availability) {
     case 'grantable':
-      return null;
+      return 'now';
     case 'not-built':
     case 'waits-member-keys':
     case 'waits-member-chat-key':
@@ -100,6 +106,12 @@ export function untickableReason(a: Pick<CatalogueAbility, 'availability'>): 'la
   }
 }
 
+/** A box the lead can tick: one the API stores (`now` or `later`); never an owner-only or always-on one. */
+export function isTickable(a: Pick<CatalogueAbility, 'availability'>): boolean {
+  const k = boxKind(a);
+  return k === 'now' || k === 'later';
+}
+
 /** Every box of the catalogue, in its own order (the row number). */
 export function allAbilities(c: Catalogue): CatalogueAbility[] {
   return c.groups.flatMap((g) => g.abilities).sort((a, b) => a.no - b.no);
@@ -107,7 +119,7 @@ export function allAbilities(c: Catalogue): CatalogueAbility[] {
 
 /**
  * What is sent for `picked`: only the tickable boxes the catalogue knows, once each, in catalogue
- * order (the API binds the confirm to that exact list). A box that is not tickable now, or that the
+ * order (the API binds the confirm to that exact list). An owner-only or always-on one, or one the
  * catalogue does not name, is dropped, never sent.
  */
 export function sendable(c: Catalogue, picked: readonly string[]): string[] {
@@ -117,13 +129,13 @@ export function sendable(c: Catalogue, picked: readonly string[]): string[] {
     .map((a) => a.id);
 }
 
-/** The boxes a preset ticks, as the picker can tick them (its not-yet-built ones left out). */
+/** The boxes a preset ticks (the catalogue's own list, in catalogue order). */
 export function presetBoxes(c: Catalogue, presetId: string): string[] {
   const p = c.presets.find((x) => x.id === presetId);
   return p === undefined ? [] : sendable(c, p.abilities);
 }
 
-/** The preset whose tickable boxes are exactly `picked` (null: none, a custom set). */
+/** The preset whose boxes are exactly `picked` (null: none, a custom set), as the API's `presetOf` reads it. */
 export function presetMatching(c: Catalogue, picked: readonly string[]): CataloguePreset | null {
   const mine = sendable(c, picked);
   if (mine.length === 0) return null;
