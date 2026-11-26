@@ -47,6 +47,7 @@ import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { traderBanRoutes } from './staff/bans.js';
 import { teamRoutes } from './routes/team.js';
+import { installRefusalAudit, teamAuditRoutes } from './routes/teamAudit.js';
 import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
 import type { JabberSender } from './jabber/sender.js';
@@ -232,6 +233,7 @@ export function installErrorAnswers(app: FastifyInstance): void {
 
   app.setErrorHandler((err: FastifyError | ApiError, req, reply) => {
     if (err instanceof ApiError) {
+      req.apiErrorCode = err.code;
       const retry = err.extra?.retryAfterSeconds;
       if (typeof retry === 'number') void reply.header('retry-after', String(retry));
       return reply.code(err.status).send({ ...err.extra, error: err.code });
@@ -295,6 +297,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.removeContentTypeParser('text/plain');
 
   installErrorAnswers(app);
+  // Team audit v2: a member's refused request goes in the team log (after the answer).
+  installRefusalAudit(app);
 
   // Review round 5 M1: records each route that writes with a session (registered below).
   const sessionWriteRoutes: string[] = [];
@@ -392,6 +396,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   recordRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Team audit v2 (migration 855): the team log's reading, integrity and export routes.
+  teamAuditRoutes(app);
   // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
   jabberRoutes(app);
   // Job 1c (J-10, S-094): notes on traders.

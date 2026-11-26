@@ -202,7 +202,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'login_approvals.account_id': 'a new device asking to log in (push and alert)',
   'push_subscriptions.account_id': 'a browser subscribing to pushes, renewed by the browser itself',
   'name_keys.account_id': 'kept by a trigger from accounts (which notifies)',
-  'team_audit.account_id': "the team's audit log, written with the member change (team_members notifies)",
   'offers.account_id': 'trading, not the account',
   'trades.seller_account_id': 'trading, not the account',
   'trades.buyer_account_id': 'trading, not the account',

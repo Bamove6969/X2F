@@ -356,9 +356,10 @@ export function teamRoutes(app: FastifyInstance): void {
     if (member !== undefined && (typeof member !== 'string' || !UUID.test(member))) throw new ApiError(400, 'bad-request');
     const from = date(q.from);
     const to = date(q.to);
-    return listAudit(req.server.deps.db, req.auth.accountId, {
-      ...(from ? { from } : {}), ...(to ? { to } : {}), ...(typeof member === 'string' ? { memberId: member.toLowerCase() } : {}),
+    const page = await listAudit(req.server.deps.db, req.auth.accountId, {
+      ...(from ? { from } : {}), ...(to ? { to } : {}), ...(typeof member === 'string' ? { members: [member.toLowerCase()] } : {}),
     });
+    return page.entries;
   });
 
   // ---- The member's side ----
