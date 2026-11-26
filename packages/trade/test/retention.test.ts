@@ -45,6 +45,13 @@ describe('tradeDeleteAt', () => {
     expect(tradeDeleteAt(released({ closedAt: null }))).toBeNull();
   });
 
+  it('owner 26 Nov 2026: an unpaid lien leaves no date; an ended one keeps it 90 days after it ended', () => {
+    expect(tradeDeleteAt(released({ lienOpen: true }))).toBeNull();
+    expect(tradeDeleteAt(released({ lienOpen: false, lienEndedAt: at(200) }))).toEqual(at(200 + DISPUTE_KEEP_DAYS));
+    expect(tradeDeleteAt(released({ lienOpen: false, lienEndedAt: at(-200) }))).toEqual(at(TRADE_KEEP_DAYS));
+    expect(tradeDeleteAt(released({ lienEndedAt: new Date(Number.NaN) }))).toBeNull();
+  });
+
   it('a trade with no dispute: 30 days after it closed', () => {
     expect(tradeDeleteAt(released())).toEqual(at(30));
   });

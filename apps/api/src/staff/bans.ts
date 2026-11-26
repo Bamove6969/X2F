@@ -2,7 +2,8 @@
  * Plan 4 Task 27 (Revision 2026-10-29, 2026-10-29b), with D-017's rule list (owner Q15) and D-020's
  * notice (owner G39). Migration 780 (`account_bans`); the trader-side checks are banState.ts.
  *
- * Staff side (perm `accounts.ban`: senior moderators and the owner; a moderator cannot ban):
+ * Staff side (owner 26 Nov 2026: `accounts.ban` to place, `accounts.unban` to lift, the owner or a
+ * senior moderator ticked for each; the history with `accounts.freeze`; a moderator cannot ban):
  * - `GET /staff/v1/accounts/:id/bans` → `{ priorOffences, bans }`: every ban of the account, newest
  *   first, the staff note included.
  * - `POST /staff/v1/accounts/:id/bans { banId, kind, ruleId, until, note?, tapId }` → 201 the ban.
@@ -110,10 +111,14 @@ export interface StaffBanOptions {
 }
 
 export function staffBanRoutes(app: FastifyInstance, o: StaffBanOptions = {}): void {
+  // Owner 26 Nov 2026: the history reads with accounts.freeze (senior moderators and the owner);
+  // placing a ban needs accounts.ban and lifting one accounts.unban (the owner, or a senior ticked for it).
   const perm = 'accounts.ban' as const;
   const opts = { config: { perm }, preHandler: requireStaff(perm) };
+  const readOpts = { config: { perm: 'accounts.freeze' as const }, preHandler: requireStaff('accounts.freeze') };
+  const liftOpts = { config: { perm: 'accounts.unban' as const }, preHandler: requireStaff('accounts.unban') };
 
-  app.get('/staff/v1/accounts/:id/bans', opts, async (req) => {
+  app.get('/staff/v1/accounts/:id/bans', readOpts, async (req) => {
     const accountId = uuidParam(req, 'id');
     const { db, clock } = req.server.deps;
     const { rows: kind } = await db.query<{ kind: string }>('select kind from accounts where id = $1', [accountId]);
@@ -185,7 +190,7 @@ export function staffBanRoutes(app: FastifyInstance, o: StaffBanOptions = {}): v
     return reply.code(201).send(view);
   });
 
-  app.post('/staff/v1/accounts/:id/bans/:banId/lift', opts, async (req) => {
+  app.post('/staff/v1/accounts/:id/bans/:banId/lift', liftOpts, async (req) => {
     const accountId = uuidParam(req, 'id');
     const banId = uuidParam(req, 'banId');
     const b = bodyOf(req, ['tapId'], ['tapId']);

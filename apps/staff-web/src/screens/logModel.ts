@@ -166,6 +166,7 @@ function sentence(
     case 'lien.suspended': return 'A lien was suspended while the appeal is open';
     case 'lien.reactivated': return 'A lien is in force again';
     case 'lien.voided': return 'A lien was cancelled';
+    case 'lien.uncollectible': return 'Wrote a lien off as uncollectible';
     case 'lien.repaid': return 'A lien was repaid';
     case 'fee.owed': return `An account owes the 1% fee: ${xmr(d.amountAtomic) || 'the fee'}`;
     case 'limits.recommended': return `Recommended account limits${typeof d.capUsd === 'number' ? ` of ${num(d.capUsd)} USD` : ''}`;

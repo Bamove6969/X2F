@@ -26,6 +26,9 @@ const G = { usdCents: 41_250n, limitUsdCents: 100_000n };
 const owner: Actor = { kind: 'staff', id: 'owner-1', role: 'owner' };
 const senior: Actor = { kind: 'staff', id: 'senior-1', role: 'senior' };
 const senior2: Actor = { kind: 'staff', id: 'senior-2', role: 'senior' };
+// Owner 26 Nov 2026: a senior moderator approves a ban only when the owner ticked their Ban box.
+const seniorBan: Actor = { ...senior, grants: ['accounts.ban'] };
+const senior2Ban: Actor = { ...senior2, grants: ['accounts.ban'] };
 const mod: Actor = { kind: 'staff', id: 'mod-1', role: 'mod' };
 const mod2: Actor = { kind: 'staff', id: 'mod-2', role: 'mod' };
 const helper: Actor = { kind: 'staff', id: 'helper-1', role: 'helper' };
@@ -224,7 +227,7 @@ describe('approve and send back', () => {
     const lapsed = { ...p, ruling: { ...p.ruling!, accountAction: { kind: 'trade-ban' as const, until: at(4).toISOString(), reasonCode: 'terms' as const } } };
     rule('invalid-action', () => applyDispute(lapsed, { type: 'approve' }, owner, at(5), S));
     // Sending such a draft back stays possible (it clears the ruling).
-    expect(applyDispute(freezeDraft, { type: 'send-back' }, senior, at(5), S).status).toBe('open');
+    expect(applyDispute(freezeDraft, { type: 'send-back' }, seniorBan, at(5), S).status).toBe('open');
   });
   test('send-back returns the case to open and clears the ruling', () => {
     const d = applyDispute(pending(), { type: 'send-back' }, senior, at(5), S);
@@ -250,8 +253,10 @@ describe('N2: the actor role is the one loaded for this request, never a cached 
     const d = banPending();
     expect(d.status).toBe('awaiting-approval');
     // Before the demotion the same person could approve and send back.
-    expect(applyDispute(d, { type: 'approve' }, senior2, at(3), S).status).toBe('published');
-    expect(applyDispute(d, { type: 'send-back' }, senior2, at(3), S).status).toBe('open');
+    expect(applyDispute(d, { type: 'approve' }, senior2Ban, at(3), S).status).toBe('published');
+    expect(applyDispute(d, { type: 'send-back' }, senior2Ban, at(3), S).status).toBe('open');
+    // Owner 26 Nov 2026: without the Ban box a senior moderator cannot approve a ban.
+    rule('wrong-party', () => applyDispute(d, { type: 'approve' }, senior2, at(3), S));
     rule('wrong-party', () => applyDispute(d, { type: 'approve' }, demoted, at(3), S));
     rule('wrong-party', () => applyDispute(d, { type: 'send-back' }, demoted, at(3), S));
     // Nor hand a case to someone else (a senior power).
@@ -270,7 +275,7 @@ describe('N2: the actor role is the one loaded for this request, never a cached 
   });
 
   test('the dispute state stores no role that a later event could trust', () => {
-    const d = applyDispute(banPending(), { type: 'approve' }, senior2, at(3), S);
+    const d = applyDispute(banPending(), { type: 'approve' }, senior2Ban, at(3), S);
     const json = JSON.stringify(d, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
     expect(json).not.toMatch(/"role"/);
     for (const r of ['owner', 'senior', 'mod', 'helper']) expect(json).not.toContain(`"${r}"`);

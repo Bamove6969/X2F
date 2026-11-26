@@ -20,7 +20,7 @@ const H = 3_600_000;
 const DAY = 24 * H;
 const ends = () => new Date(Date.now() + H).toISOString();
 const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: ends() };
+const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, grants: ['accounts.ban', 'accounts.unban'], sessionEndsAt: ends() };
 const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const SELLER = '1b2c3d4e-2f0e-4b8a-9d55-0a1b2c3d4e5f';
@@ -119,6 +119,18 @@ describe('the Accounts page (spec 6.6)', () => {
     expect(document.querySelector('[data-screen="accounts"]')).toBeNull();
     expect(part('nothing-for-role')).not.toBeNull();
     expect(api.calls.some((c) => c.path.startsWith('/staff/v1/accounts'))).toBe(false);
+  });
+
+  it('owner 26 Nov 2026: a senior moderator without the Ban box sees the history but no ban button', async () => {
+    fakeApi({
+      'GET /staff/v1/me': { body: { ...SENIOR, grants: [] } },
+      'GET /staff/v1/accounts/lookup': { body: { accounts: [account()] } },
+      'GET /staff/v1/accounts/:id/bans': { body: bans() },
+    });
+    await open('/accounts');
+    await lookUp('harbor_lin');
+    expect(part('account-bans')).not.toBeNull();
+    expect(button('Ban harbor_lin')).toBeUndefined();
   });
 
   it('looks up by name and shows the card: reputation and status; no match says so', async () => {

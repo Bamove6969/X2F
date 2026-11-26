@@ -1,4 +1,4 @@
-import { GRANTABLE_PERMS, can, type GrantablePerm } from '@x2f/staff';
+import { GRANTABLE_PERMS, can, grantableTo, type GrantablePerm } from '@x2f/staff';
 import { useState } from 'react';
 import { setGrants, type Member } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
@@ -15,6 +15,9 @@ import '../ui/staff.css';
 export const GRANT_LABELS: Readonly<Record<GrantablePerm, { title: string; help: string }>> = {
   'feedback.read': { title: 'Feedback', help: "Reads traders' feedback. Never who sent a named message." },
   'tickets.handle': { title: 'Support tickets', help: "Answers traders' support tickets." },
+  // Owner 26 Nov 2026: senior moderators only, off unless ticked.
+  'accounts.ban': { title: 'Ban traders', help: 'Places trade bans and site bans from an account lookup.' },
+  'accounts.unban': { title: 'Lift bans', help: 'Lifts a ban in force from an account lookup.' },
 };
 
 /** Shown beside a box the role always holds (a senior moderator's Feedback, owner Q60). */
@@ -85,7 +88,7 @@ function MemberGrants({ member }: { member: Member }) {
         {` · ${ROLE_LABELS[member.role]}`}
         {member.status === 'switched-off' ? ' · Switched off' : null}
       </legend>
-      {GRANTABLE_PERMS.map((p) => {
+      {GRANTABLE_PERMS.filter((p) => grantableTo(member.role, p)).map((p) => {
         const byRole = can(member.role, p);
         const holds = ROLE_HOLDS[p];
         return (

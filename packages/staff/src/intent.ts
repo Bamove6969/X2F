@@ -172,6 +172,8 @@ export type KeyTapIntent =
   // approves a moderator's request to change how much of a debtor's proceeds each trade recovers
   // (basis points). It changes who gets money, so it is tapped and bound to exactly that request.
   | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
+  // Owner 26 Nov 2026: the owner writes a lien off as uncollectible (it ends; the trade can then go).
+  | { kind: 'lien-uncollectible'; lienId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -223,6 +225,7 @@ export const KEY_TAP_KINDS = [
   'news-publish',
   'banner-publish',
   'lien-rate',
+  'lien-uncollectible',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

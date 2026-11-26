@@ -1,4 +1,4 @@
-import { GRANTABLE_PERMS, can, validateHours, type GrantablePerm, type LoginHours, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, can, grantableTo, validateHours, type GrantablePerm, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { lockAccount, withTx } from '../auth/hold.js';
@@ -161,7 +161,7 @@ export interface MemberRow {
  */
 export function perPersonGrants(role: StaffRole, grants: readonly string[]): GrantablePerm[] {
   return [...new Set(grants)]
-    .filter((g): g is GrantablePerm => (GRANTABLE_PERMS as readonly string[]).includes(g) && !can(role, g as GrantablePerm))
+    .filter((g): g is GrantablePerm => grantableTo(role, g as GrantablePerm) && !can(role, g as GrantablePerm))
     .sort();
 }
 
@@ -305,7 +305,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       // Review F5: the tap is bound to the list as sent; what the role holds anyway is not stored.
       const kept = perPersonGrants(target.role, grants);
       await c.query('update staff_members set grants = $2::text[] where account_id = $1', [id, kept]);
-      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: kept.includes('tickets.handle'), feedbackRead: kept.includes('feedback.read') });
+      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: kept.includes('tickets.handle'), feedbackRead: kept.includes('feedback.read'), ban: kept.includes('accounts.ban'), liftBan: kept.includes('accounts.unban') });
       return kept;
     });
     return { grants: stored };

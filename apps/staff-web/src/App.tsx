@@ -15,6 +15,7 @@ import { StaffList } from './screens/StaffList.js';
 import { StaffOverview } from './screens/StaffOverview.js';
 import { StaffPerformance } from './screens/StaffPerformance.js';
 import { StaffWork } from './screens/StaffWork.js';
+import { TradeStatus } from './screens/TradeStatus.js';
 import { StaffSettings } from './screens/StaffSettings.js';
 import { StaffLog } from './screens/StaffLog.js';
 import { Training } from './screens/Training.js';
@@ -52,6 +53,7 @@ function Overview() {
       <Route index element={<StaffOverview />} />
       <Route path="news" element={<NewsEditor />} />
       <Route path="revenue" element={<Revenue />} />
+      <Route path="trades" element={<TradeStatus />} />
     </Routes>
   );
 }
