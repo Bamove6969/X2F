@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
+    <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+      <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+        <a href="#" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      </div>
+      <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Feedback</span>
+      <h1 id="fb-title" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Tell us what you think</h1>
+      <p style="margin: 8px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+    </header>
+    <main aria-labelledby="fb-title" style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
+      <section style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="fb-text" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your message</label>
+          <textarea id="fb-text" rows="9" maxlength="2000" value="{{text}}" onChange="{{onText}}" placeholder="Write anything you like" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+          <span style="align-self: flex-end; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{count}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2000</span> characters</span>
+        </div>
+        <label for="fb-anon" style="{{anonStyle}}">
+          <input id="fb-anon" type="checkbox" checked="{{anon}}" onChange="{{toggleAnon}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+          <span style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Send anonymously</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{anonHint}}</span>
+          </span>
+        </label>
+      </section>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <button type="button" disabled="{{empty}}" onClick="{{send}}" style="{{sendStyle}}">Send</button>
+    </footer>
+  </sc-if>
+  <sc-if value="{{showThanks}}" hint-placeholder-val="{{false}}">
+    <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+      <a href="#" aria-label="Back" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Feedback</span>
+    </header>
+    <main style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 16px 24px;" aria-live="polite">
+      <section style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px 20px; border-radius: 16px; text-align: center; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
+        <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 16%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Thank you!</h1>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Each and every comment is appreciated and reviewed to help make this community a better place for us all.</p>
+        <span style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;">{{sentAs}}</span>
+      </section>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Done</a>
+      <button type="button" onClick="{{again}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Write another</button>
+    </footer>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["form", "sent"], "default": "form"}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { sent: props.view === 'sent', text: '', anon: false }; }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ sent: this.props.view === 'sent' }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const { sent, text, anon } = this.state;
+    const empty = text.trim().length === 0;
+    const sendBase = "display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ";
+    return {
+      rootStyle,
+      showForm: !sent,
+      showThanks: sent,
+      text,
+      anon,
+      empty,
+      count: String(text.length),
+      anonHint: anon ? "Your username isn't attached, so we can't follow up with you." : 'Sent with your username, mira.k, so we can follow up if needed.',
+      anonStyle: 'display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: var(--surface-raised); cursor: pointer; border: 2px solid ' + (anon ? 'var(--ink);' : 'transparent;'),
+      sentAs: anon ? 'Sent anonymously.' : 'Sent as mira.k.',
+      sendStyle: sendBase + (empty ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;'),
+      onText: (e) => this.setState({ text: e.target.value }),
+      toggleAnon: () => this.setState({ anon: !anon }),
+      send: () => { if (!empty) this.setState({ sent: true }); },
+      again: () => this.setState({ sent: false, text: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

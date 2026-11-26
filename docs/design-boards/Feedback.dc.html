@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
+  <sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
+    <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+      <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+        <a href="#" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      </div>
+      <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Feedback</span>
+      <h1 id="fb-title" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Tell us what you think</h1>
+      <p style="margin: 8px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+    </header>
+    <main aria-labelledby="fb-title" style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
+      <sc-if value="{{reached}}" hint-placeholder-val="{{false}}">
+        <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">You&#39;ve sent <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> today</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink);">To stop spam, you can send up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> messages a day. You can send more tomorrow.</span>
+          </div>
+        </div>
+      </sc-if>
+      <section style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px;">
+          <label for="fb-text" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your message</label>
+          <textarea id="fb-text" disabled="{{reached}}" rows="9" maxlength="2000" value="{{text}}" onChange="{{onText}}" placeholder="Write anything you like" style="flex-grow: 1; box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+          <span style="align-self: flex-end; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{count}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2000</span> characters</span>
+        </div>
+        <label for="fb-anon" style="{{anonStyle}}">
+          <input id="fb-anon" type="checkbox" checked="{{anon}}" onChange="{{toggleAnon}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+          <span style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Send anonymously</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{anonHint}}</span>
+          </span><span style="margin-left: auto; align-self: center;"><sc-if value="{{named}}" hint-placeholder-val="{{true}}"><span style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">MK</span></sc-if><sc-if value="{{anon}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0112 6c5 0 8.5 4 9.5 6a13 13 0 01-2.7 3.5"/><path d="M6.6 7.6C4.6 9 3.2 10.9 2.5 12c1 2 4.5 6 9.5 6 1.7 0 3.2-.5 4.5-1.2"/><path d="M9.9 10a3 3 0 004.2 4.2"/></svg></span></sc-if></span>
+        </label>
+      </section>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <button type="button" disabled="{{sendOff}}" onClick="{{send}}" style="{{sendStyle}}">Send</button>
+    </footer>
+  </sc-if>
+  <sc-if value="{{showThanks}}" hint-placeholder-val="{{false}}">
+    <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+      <a href="#" aria-label="Back" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Feedback</span>
+    </header>
+    <main style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 16px 24px;" aria-live="polite">
+      <section aria-live="polite" aria-labelledby="fb-thanks" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center;"><span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span><h2 id="fb-thanks" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Thank you!</h2><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Each and every comment is appreciated and reviewed to help make this community a better place for us all.</p><span style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;">{{sentAs}}</span></section>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Done</a>
+      <button type="button" onClick="{{again}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Write another</button>
+    </footer>
+  </sc-if>
+  </div>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: daily limits" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q67, Q69)</span>
+      <span style="font-weight: 600;">Feedback and support tickets: up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> a day each.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Support tickets count across a vendor&#39;s whole team. Feedback counts per member.</li>
+        <li>At the limit, a caution callout shows above the form and Send is disabled. The count resets the next day.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the limit tweak. Showing: {{limitName}}</span>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["form", "sent"], "default": "form"}, "limit": {"editor": "enum", "options": ["ok", "reached"], "default": "ok"}, "$preview": {"width": 390, "height": 1087}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { sent: props.view === 'sent', text: '', anon: false }; }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ sent: this.props.view === 'sent' }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Heights measured (night, fonts loaded): app screen, then the design-notes block under it.
+    const APP_H = 844;
+    const NOTES_H = 243;
+    const H = APP_H + NOTES_H;
+    const appStyle = 'position: relative; display: flex; flex-direction: column; flex-shrink: 0; height: ' + APP_H + 'px;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const { sent, text, anon } = this.state;
+    const empty = text.trim().length === 0;
+    const reached = this.props.limit === 'reached';
+    const sendOff = empty || reached;
+    const sendBase = "display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ";
+    return {
+      rootStyle,
+      appStyle,
+      reached,
+      sendOff,
+      limitName: reached ? 'reached' : 'ok',
+      showForm: !sent,
+      showThanks: sent,
+      text,
+      anon,
+      empty,
+      count: String(text.length),
+      named: !anon,
+      anonHint: anon ? "Your username isn't attached, so we can't follow up with you." : 'Sent with your username, mira.k, so we can follow up if needed.',
+      anonStyle: 'display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: var(--surface-raised); cursor: pointer; border: 2px solid ' + (anon ? 'var(--ink);' : 'transparent;'),
+      sentAs: anon ? 'Sent anonymously.' : 'Sent as mira.k.',
+      sendStyle: sendBase + (sendOff ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;'),
+      onText: (e) => this.setState({ text: e.target.value }),
+      toggleAnon: () => this.setState({ anon: !anon }),
+      send: () => { if (!sendOff) this.setState({ sent: true }); },
+      again: () => this.setState({ sent: false, text: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Create the owner account</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <main style="flex: 1 1 100%; display: flex; justify-content: center; padding: 64px 24px 48px;">
+    <div style="width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 24px;">
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>First-time setup</span>
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Create the owner account</h1>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">The owner adds and removes staff, sets the rules for large trades and sees every action taken. This page works once. After you finish, it locks for good.</p>
+      </section>
+
+      <section aria-label="Setup code" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">1</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">1. </span>Setup code</h2></div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The server printed a one-time code in its log when it first started. Only someone with access to the server can see it, which stops anyone else from claiming this page.</p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="code" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Setup code</label>
+          <input id="code" type="text" value="7QX4-MP2D-91KA" spellcheck="false" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg>Code accepted</span>
+        </div>
+      </section>
+
+      <section aria-label="Owner username" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">2</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">2. </span>Your username</h2></div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="ou" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Shown to staff, never to traders</label>
+          <input id="ou" type="text" value="lumen.k" spellcheck="false" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+        </div>
+      </section>
+
+      <section aria-label="Security keys" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">3</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">3. </span>Two security keys</h2></div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The owner account logs in only with a hardware security key, such as a YubiKey. Register two: one you use, and a spare you keep somewhere safe. There is no password and no reset by message.</p>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+          <sc-for list="{{keys}}" as="k" hint-placeholder-count="2">
+            <div style="{{k.rowStyle}}">
+              <span style="{{k.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M18 5l2 2"/></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{k.name}}</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{k.note}}</span></span>
+              <sc-if value="{{k.done}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Registered</span></sc-if>
+              <sc-if value="{{k.todo}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{k.add}}" style="display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Tap key to register</button></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-label="PGP key" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
+        <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">4</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">4. </span>PGP key <span style="font-size: 14px; font-weight: 400; color: var(--ink-muted);">(optional)</span></h2></div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Add your PGP public key to receive encrypted staff alerts and to sign important rulings.</p>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 44px; margin: -4px 0 -8px; font-size: 15px; font-weight: 600;">Add PGP key<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      </section>
+
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <button type="button" disabled="{{locked}}" style="{{ctaStyle}}">Create owner account</button>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{ctaNote}}</span>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1295}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { keys: 1 }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1295px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const n = this.state.keys;
+    const keys = [
+      { name: 'Main key', note: 'The one you carry' },
+      { name: 'Spare key', note: 'Keep it somewhere safe, apart from the main key' }
+    ].map((k, i) => ({ ...k, done: i < n, todo: i >= n, add: () => this.setState({ keys: i + 1 }),
+      rowStyle: 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : ''),
+      tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (i < n ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: var(--surface); color: var(--ink);') }));
+    const ready = n >= 2;
+    const base = 'display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ';
+    return { rootStyle,
+      keys, locked: !ready,
+      ctaStyle: base + (ready ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      ctaNote: ready ? 'This page locks after this step.' : 'Register both keys to continue.'
+    };
+  }
+}
+</script>
+</body>
+</html>

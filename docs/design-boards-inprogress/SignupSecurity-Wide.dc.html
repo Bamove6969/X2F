@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Secure your account (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{frameStyle}}">
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 32px 0;">
+    <span aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
+    <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <main style="flex-grow: 1; display: flex; justify-content: center; padding: 24px 32px 48px;">
+    <div style="width: 944px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+          <a href="SetupWelcome.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+          <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Secure your account</h1>
+        </div>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Pick how you&#39;ll prove it&#39;s you. The more ways you add, the harder your account is to break into.</p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+        <div data-m="L" style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section aria-labelledby="ss-names" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <h2 id="ss-names" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your names</h2>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;">
+          <label for="ss-user" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+            Username
+            <input id="ss-user" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" value="{{uname}}" onChange="{{onUser}}" aria-describedby="ss-user-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+            <span id="ss-user-hint" style="font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; text-transform: none;">You type this to log in. Only you see it. Nobody can work it out from your display name.</span>
+          </label>
+          <label for="ss-disp" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+            Display name
+            <input id="ss-disp" type="text" autocomplete="nickname" spellcheck="false" value="{{dname}}" onChange="{{onDisp}}" aria-describedby="ss-disp-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+            <span id="ss-disp-hint" style="font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; text-transform: none;">Other traders see this. It can&#39;t be used to log in.</span>
+          </label>
+          </div>
+        </section>
+
+        <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+          <legend style="padding: 0 0 12px; font-size: 18px; line-height: 24px; font-weight: 600;">Ways to log in</legend>
+          <sc-for list="{{methods}}" as="m" hint-placeholder-count="5">
+            <label style="{{m.style}}">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><sc-if value="{{m.isPw}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="10" rx="2"/><path d="M7 13h.01M11 13h.01M15 13h.01"/></svg></sc-if><sc-if value="{{m.isPasskey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 11c0 3-1 6-3 8"/><path d="M8 7.5A5 5 0 0117 11c0 2-.3 4-1 6"/><path d="M5 10a7 7 0 012-4.5"/><path d="M12 15c0 2-.4 3.6-1 5"/></svg></sc-if><sc-if value="{{m.isKey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="14" rx="2"/><path d="M12 16v6"/><path d="M10 6h4"/></svg></sc-if><sc-if value="{{m.isPgp}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></sc-if><sc-if value="{{m.isTotp}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 7h4M9 12h6M9 16h4"/></svg></sc-if></span>
+              <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-grow: 1;">
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}<sc-if value="{{m.hasTag}}" hint-placeholder-val="{{false}}"><span style="{{m.tagStyle}}">{{m.tag}}</span></sc-if></span>
+                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{m.desc}}</span>
+              </span>
+              <input type="checkbox" checked="{{m.on}}" onChange="{{m.toggle}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink); cursor: pointer;">
+            </label>
+          </sc-for>
+          <sc-if value="{{totpNote}}" hint-placeholder-val="{{false}}">
+            <div role="note" aria-labelledby="ss-totp-t" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+              <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; line-height: 20px;">
+                <h3 id="ss-totp-t" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">What an authenticator app can&#39;t do on its own</h3>
+                <p style="margin: 0;">It&#39;s fine for logging in with your password. But some sensitive actions need a passkey, security key or PGP key instead:</p>
+                <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
+                  <li>Ending a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold early</li>
+                  <li>Logging in on a new device when your other devices aren&#39;t with you</li>
+                  <li>Adding team members, changing their roles or switching them on and off</li>
+                  <li>Switching to a vendor account</li>
+                </ul>
+                <p style="margin: 0; color: var(--ink-muted);">Add one of those too and you won&#39;t be limited.</p>
+              </div>
+            </div>
+          </sc-if>
+        </fieldset>
+
+        <sc-if value="{{showPw}}" hint-placeholder-val="{{true}}">
+          <section aria-labelledby="ss-pw-h" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface); gap: 12px;">
+            <h2 id="ss-pw-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your password</h2>
+            <label for="ss-pw" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
+              Password
+              <span style="position: relative; display: flex;">
+                <input id="ss-pw" type="{{pwType}}" autocomplete="new-password" spellcheck="false" value="{{pw}}" onChange="{{onPw}}" aria-describedby="ss-pw-meter ss-pw-rule" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none; padding: 0 52px 0 14px; font-family: 'Atkinson Hyperlegible Mono', monospace;">
+                <button type="button" onClick="{{togglePw}}" aria-label="{{pwToggleLabel}}" aria-pressed="{{pwShownAria}}" style="position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--ink-muted); cursor: pointer;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+              </span>
+            </label>
+            <div id="ss-pw-meter" role="status" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px;">
+              <div aria-hidden="true" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">
+                <sc-for list="{{meter}}" as="seg" hint-placeholder-count="3"><span style="{{seg.style}}"></span></sc-for>
+              </div>
+              <span style="display: flex; gap: 8px; font-size: 14px; line-height: 20px;"><span style="{{strengthStyle}}">{{strengthName}}</span><span style="color: var(--ink-muted);">{{strengthHint}}</span></span>
+            </div>
+            <p id="ss-pw-rule" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{pwRuleText}}</p>
+          </section>
+        </sc-if>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">Next you&#39;ll set up recovery. Everyone needs it. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</p>
+        </div>
+
+          <div style="display: flex; align-items: center; gap: 24px;">
+            <sc-if value="{{canGo}}" hint-placeholder-val="{{true}}">
+              <a href="RecoveryCode-Wide.dc.html" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
+            </sc-if>
+            <sc-if value="{{cantGo}}" hint-placeholder-val="{{false}}">
+              <button type="button" disabled="{{yes}}" aria-describedby="ss-why" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Continue</button>
+            </sc-if>
+            <p id="ss-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{footNote}}</p>
+          </div>
+        </div>
+
+        <div data-m="R" style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section aria-labelledby="ss-tier-h" style="{{tierHeroStyle}}">
+          <h2 id="ss-tier-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: {{tierTone}};">How strong your login is</h2>
+          <ol aria-label="Login strength" style="list-style: none; margin: 0; padding: 0 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end;">
+            <sc-for list="{{bars}}" as="b" hint-placeholder-count="4">
+              <li aria-current="{{b.cur}}" style="display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 8px; min-width: 0; height: 156px;">
+                <span aria-hidden="true" style="{{b.caret}}"><svg width="14" height="9" viewBox="0 0 14 9" style="fill: currentColor;"><path d="M0 0h14L7 9z"/></svg></span>
+                <span aria-hidden="true" style="{{b.bar}}"><sc-if value="{{b.vault}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></sc-if></span>
+              </li>
+            </sc-for>
+          </ol>
+          <div aria-hidden="true" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: -8px; padding-top: 8px; border-top: 1px solid {{tierRule}};">
+            <sc-for list="{{bars}}" as="b" hint-placeholder-count="4"><span style="{{b.labelStyle}}">{{b.label}}</span></sc-for>
+          </div>
+
+          <div role="status" aria-live="polite" style="display: flex; flex-direction: column;">
+            <sc-if value="{{isArmored}}" hint-placeholder-val="{{false}}">
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                  <svg width="76" height="76" viewBox="0 0 72 72" aria-hidden="true" style="flex-shrink: 0;">
+                        <path d="M36.0 3.0 L40.6 6.9 L46.2 4.6 L49.4 9.7 L55.4 9.3 L56.9 15.1 L62.7 16.6 L62.3 22.6 L67.4 25.8 L65.1 31.4 L69.0 36.0 L65.1 40.6 L67.4 46.2 L62.3 49.4 L62.7 55.4 L56.9 56.9 L55.4 62.7 L49.4 62.3 L46.2 67.4 L40.6 65.1 L36.0 69.0 L31.4 65.1 L25.8 67.4 L22.6 62.3 L16.6 62.7 L15.1 56.9 L9.3 55.4 L9.7 49.4 L4.6 46.2 L6.9 40.6 L3.0 36.0 L6.9 31.4 L4.6 25.8 L9.7 22.6 L9.3 16.6 L15.1 15.1 L16.6 9.3 L22.6 9.7 L25.8 4.6 L31.4 6.9Z" style="fill: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); stroke: var(--escrow); stroke-width: 1.5; stroke-linejoin: round;"/>
+                        <circle cx="36" cy="36" r="24" style="fill: none; stroke: var(--ink); stroke-width: 1;"/>
+                        <circle cx="36" cy="36" r="21" style="fill: none; stroke: var(--escrow); stroke-width: 1; stroke-dasharray: 2 3;"/>
+                        <circle cx="36" cy="36" r="11" style="fill: none; stroke: var(--ink); stroke-width: 1.5;"/>
+                        <path d="M36 22v28M23.9 29l24.2 14M23.9 43l24.2-14" style="fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round;"/>
+                        <circle cx="36" cy="36" r="4" style="fill: var(--escrow); stroke: var(--ink); stroke-width: 1;"/>
+                      </svg>
+                  <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                    <span style="font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--escrow);">Armored vault</span>
+                    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em;">Sealed like a vault</span>
+                    <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{sealLine}}</span>
+                  </div>
+                </div>
+                <p style="margin: 0; font-size: 16px; line-height: 24px;">{{armoredMsg}}</p>
+                <p style="margin: 0; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--escrow) 45%, transparent); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
+              </div>
+            </sc-if>
+            <sc-if value="{{notArmored}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <h3 style="display: flex; align-items: center; gap: 10px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="{{tierIconStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{tierTitle}}</h3>
+                <sc-for list="{{tierLines}}" as="t" hint-placeholder-count="2">
+                  <p style="margin: 0; font-size: 15px; line-height: 22px;">{{t.text}}</p>
+                </sc-for>
+                <sc-if value="{{hasNext}}" hint-placeholder-val="{{true}}">
+                  <p style="display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 0; padding-top: 12px; border-top: 1px solid {{tierRule}}; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>{{nextHint}}</span></p>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+        </section>
+
+        <section aria-labelledby="ss-idle-h" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface); gap: 12px;">
+          <h2 id="ss-idle-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Session length</h2>
+          <div role="group" aria-labelledby="ss-idle-l" aria-describedby="ss-idle-v ss-idle-note" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+              <span id="ss-idle-l" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Stay logged in for</span>
+              <span style="{{idleTextStyle}}">{{idleText}}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+              <sc-for list="{{idleOpts}}" as="o" hint-placeholder-count="4">
+                <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="{{o.style}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.num}}</span> h</button>
+              </sc-for>
+            </div>
+          </div>
+          <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+            <p id="ss-idle-v" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
+          </sc-if>
+          <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">When this time is up, we&#39;ll ask you to confirm it&#39;s you to stay logged in. If you don&#39;t, you&#39;re logged out.</p>
+        </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 168px 48px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{variantName}} · {{accountTypeName}}</p>
+    <aside aria-label="Open for the owner: password strength rule" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+      <span style="font-weight: 600;">When does a password count as strong?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>A: 12+ chars with 3 of 4 types, or 16+ with 2 types</li>
+        <li>B: length only, 14+</li>
+        <li>C: zxcvbn-style score ≥ 3</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the pwRule tweak. Showing: {{pwRuleName}}</span>
+    </aside>
+    <aside aria-label="Open for the owner: Armored vault without a password" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+      <span style="font-weight: 600;">Can a setup without a password reach Armored vault?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Yes, 2+ strong methods without a password</li>
+        <li>No, Armored vault needs a password</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the vaultRule tweak (try the passwordless variant). Showing: {{vaultRuleName}}</span>
+    </aside>
+    <aside aria-label="Open for the owner: default session length" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+      <span style="font-weight: 600;">Which time is the default, for each account type?</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+        <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
+        <li>Until chosen, nothing is pre-selected: Not set</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Default not decided for either account type. Current build: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+    </aside>
+    <aside aria-label="Decided by the owner: session length by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Session length choices depend on the account type</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+        <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
+        <li>Session = the chosen time. At the end: confirm with a passkey, security key, PGP key or the password (plus authenticator code if set up) to extend by the same time; otherwise logged out (owner, 2 Nov). No fixed maximum.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the accountType tweak. Showing: {{accountTypeName}}</span>
+    </aside>
+    <aside aria-label="Decided by the owner: the password can extend" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">The password also works for extending, plus the authenticator code when the account has one. Accounts with only a username and password can extend too.</span>
+    </aside>
+    <aside aria-label="Decided: who counts as a vendor" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
+      <span style="color: var(--ink-muted);">Switching needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. See BecomeVendor.</span>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2289}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.preset(props); }
+  preset(p) {
+    const SETS = {
+      'not-allowed': [], 'authenticator-only': ['totp'], weak: ['pw'], strong: ['pw', 'passkey'], 'password-authenticator': ['pw', 'totp'],
+      passwordless: ['passkey', 'pgp'], armored: ['pw', 'passkey', 'totp']
+    };
+    const PWS = { weak: 'lantern', medium: 'Lantern74', strong: 'Orbit-lantern-74' };
+    const on = {};
+    (SETS[p.variant] || SETS.strong).forEach((k) => { on[k] = true; });
+    const idleH = parseInt(p.idleDefault, 10);
+    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: (p.accountType === 'vendor' ? [2, 6, 12, 24] : [2, 4, 6, 12]).indexOf(idleH) >= 0 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
+  }
+  componentDidUpdate(prev) {
+    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter || prev.idleDefault !== this.props.idleDefault || prev.accountType !== this.props.accountType) this.setState(this.preset(this.props));
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Authenticator app ticked with no passkey, security key or PGP key: show its limits (owner, 2 Nov).
+    const on0 = this.state.on || {};
+    const totpNote = !!on0.totp && !on0.passkey && !on0.key && !on0.pgp;
+    const s = this.state;
+    const on = s.on;
+
+    // Methods
+    const DEFS = [
+      { id: 'pw', name: 'Password', desc: 'Something only you know. It has to be strong.' },
+      { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.' },
+      { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.' },
+      { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', tag: 'Recommended', tagColor: 'var(--escrow)' },
+      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 seconds.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
+    ];
+    const rowStyle = (o) => 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; cursor: pointer; ' + (o ? 'background: var(--surface-raised); border: 2px solid var(--ink);' : 'background: var(--surface); border: 2px solid transparent;');
+    const methods = DEFS.map((d) => ({
+      name: d.name, desc: d.desc, on: !!on[d.id], style: rowStyle(!!on[d.id]),
+      isPw: d.id === 'pw', isPasskey: d.id === 'passkey', isKey: d.id === 'key', isPgp: d.id === 'pgp', isTotp: d.id === 'totp',
+      hasTag: !!d.tag, tag: d.tag || '',
+      tagStyle: 'display: inline-flex; padding: 2px 10px; border-radius: 999px; background: ' + (d.id === 'pgp' ? 'color-mix(in srgb, var(--escrow) 14%, transparent)' : 'color-mix(in srgb, var(--ink-muted) 16%, transparent)') + '; font-size: 12px; line-height: 18px; font-weight: 600; color: ' + (d.tagColor || 'var(--ink-muted)') + ';',
+      toggle: () => this.setState({ on: Object.assign({}, on, { [d.id]: !on[d.id] }) })
+    }));
+
+    // Password strength (rule is OPEN for the owner: pwRule tweak previews A, B or C)
+    const pw = s.pw || '';
+    const rule = String(this.props.pwRule || 'A').charAt(0);
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+    let level = 0;
+    if (rule === 'B') {
+      if (pw.length >= 14) level = 3;
+      else if (pw.length >= 10) level = 2;
+      else if (pw.length > 0) level = 1;
+    } else if (rule === 'C') {
+      // Rough stand-in for a zxcvbn-style score (0-4), only for previewing.
+      const pool = (/[a-z]/.test(pw) ? 26 : 0) + (/[A-Z]/.test(pw) ? 26 : 0) + (/[0-9]/.test(pw) ? 10 : 0) + (/[^A-Za-z0-9]/.test(pw) ? 33 : 0);
+      const bits = pw.length * Math.log2(pool || 1);
+      const score = bits < 40 ? 1 : (bits < 60 ? 2 : (bits < 80 ? 3 : 4));
+      if (pw.length > 0) level = score >= 3 ? 3 : (score === 2 ? 2 : 1);
+    } else {
+      if (pw.length >= 12 && kinds >= 3) level = 3;
+      else if (pw.length >= 16 && kinds >= 2) level = 3;
+      else if (pw.length >= 8 && kinds >= 2) level = 2;
+      else if (pw.length > 0) level = 1;
+    }
+    const RULES = {
+      A: { name: 'A', text: 'Use 12 or more characters with 3 of these: small letters, capitals, numbers, symbols. Or use 16 or more with 2 of them. It has to reach strong.', mid: 'Getting there. Add length, numbers or symbols.' },
+      B: { name: 'B', text: 'Use 14 or more characters. Any characters count. It has to reach strong.', mid: 'Getting there. Make it longer.' },
+      C: { name: 'C', text: 'We score how hard it is to guess. It has to reach strong.', mid: 'Getting there. Make it longer or less predictable.' }
+    };
+    const R = RULES[rule] || RULES.A;
+    const SCOL = ['var(--surface-raised)', 'var(--danger)', 'var(--caution)', 'var(--escrow)'];
+    const SNAME = ['Empty', 'Weak', 'Medium', 'Strong'];
+    const SHINT = [
+      'Type a password.',
+      'Too easy to guess. Make it longer.',
+      R.mid,
+      'Good to go.'
+    ];
+    const meter = [1, 2, 3].map((i) => ({ style: 'display: block; height: 6px; border-radius: 999px; background: ' + (i <= level ? SCOL[level] : 'var(--surface-raised)') + ';' }));
+    const pwStrong = level === 3;
+
+    // Tier
+    const hasPw = !!on.pw;
+    const hard = ['passkey', 'key', 'pgp'].filter((k) => on[k]).length;
+    const seconds = hard + (on.totp ? 1 : 0);
+    // OPEN for the owner: can passwordless setups reach Armored vault? (vaultRule tweak)
+    const vaultYes = this.props.vaultRule !== 'no-needs-password';
+    let tier = 'none';
+    if (hasPw) tier = seconds >= 2 ? 'armored' : (seconds === 1 ? 'strong' : 'weak');
+    else if (hard >= 2 && vaultYes) tier = 'armored';
+    else if (hard >= 1) tier = 'strong';
+    else if (on.totp) tier = 'totp';
+    const L = { none: 0, totp: 0, weak: 1, strong: 2, armored: 3 }[tier];
+    const TCOL = { none: 'var(--danger)', totp: 'var(--danger)', weak: 'var(--caution)', strong: 'var(--escrow)', armored: 'var(--escrow)' }[tier];
+    const LABELS = ['Not allowed', 'Weak', 'Strong', 'Armored vault'];
+    const HEIGHTS = [36, 68, 100, 136];
+    const bars = LABELS.map((label, i) => {
+      const filled = tier === 'none' || tier === 'totp' ? i === 0 : i <= L;
+      const cur = i === L;
+      const vault = i === 3 && tier === 'armored';
+      return {
+        label, cur: cur ? 'true' : 'false', vault,
+        caret: 'display: flex; justify-content: center; height: 9px; color: ' + (cur ? TCOL : 'transparent') + ';',
+        bar: 'display: flex; align-items: center; justify-content: center; width: 100%; height: ' + HEIGHTS[i] + 'px; flex-shrink: 0; box-sizing: border-box; border-radius: 8px 8px 4px 4px; ' + (filled ? 'background: ' + TCOL + ';' : 'background: transparent; border: 1.5px dashed var(--line);') + (vault ? ' border: 2px solid var(--ink); color: var(--surface);' : ''),
+        labelStyle: 'font-size: 12px; line-height: 16px; text-align: center; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+      };
+    });
+    const T = {
+      none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
+      totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
+      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24-hour cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
+      strong: { title: 'Strong', lines: ['This stops simple guessing, and you can act right away.'] }
+    };
+    const t = T[tier] || T.strong;
+    let nextHint = '';
+    if (tier === 'strong') {
+      if (hasPw) nextHint = 'Add one more way above to reach Armored vault.';
+      else nextHint = vaultYes ? 'Add another passkey, security key or PGP key, or a password, to reach Armored vault.' : 'Add a password and one more way to reach Armored vault.';
+    }
+    const tierHeroStyle = 'display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + TCOL + ' 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, ' + TCOL + ' 35%, transparent);';
+    const msgStyle = 'display: flex; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface); border: 1px solid ' + TCOL + ';';
+    const extra = seconds;
+
+    const vendor = this.props.accountType === 'vendor';
+    // Screen height = header + the taller column (measured parts, night, fonts loaded) + the design-notes block under it.
+    const P = { top: 250, left: 818, pw: 266, totp: 230, vendor: 72, notes: 955, tier: { none: 675, totp: 675, weak: 749, strong: 710, strongNoPw: 710, armored: 830 } };
+    const leftH = P.left + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0);
+    const rightH = P.tier[tier === 'strong' && !hasPw ? 'strongNoPw' : tier] + (vendor ? P.vendor : 0);
+    const frameH = Math.max(800, P.top + Math.max(leftH, rightH));
+    const H = frameH + P.notes;
+    const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';
+
+    // Footer
+    const uname = (s.uname || '').trim();
+    const dname = (s.dname || '').trim();
+    let footNote = 'Next: recovery.';
+    if (!uname) footNote = 'Choose a username to continue.';
+    else if (!dname) footNote = 'Choose a display name to continue.';
+    else if (tier === 'none') footNote = 'Pick a way to log in to continue.';
+    else if (tier === 'totp') footNote = 'Add a password or another way to log in to continue.';
+    else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';
+    const canGo = footNote === 'Next: recovery.';
+
+    // Session length (owner, 2 Nov): 2, 4, 6 or 12 h for traders; 2, 6, 12 or 24 h for vendors. When it is up we ask for a
+    // passkey, security key, PGP key or the password (+ code if set up) to extend by the same time; otherwise logged out. No fixed maximum.
+    // The default is OPEN: nothing is pre-selected.
+    const IDLE = vendor ? [2, 6, 12, 24] : [2, 4, 6, 12];
+    const idleSet = IDLE.indexOf(Number(s.idle)) >= 0;
+    const idle = idleSet ? Number(s.idle) : 0;
+    const idleOpts = IDLE.map((h) => ({
+      num: String(h), pressed: idle === h ? 'true' : 'false',
+      pick: () => this.setState({ idle: h }),
+      style: 'height: 48px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: transparent;')
+    }));
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return {
+      rootStyle, frameStyle, methods, meter, bars, totpNote, yes: true,
+      tierHeroStyle, tierTone: TCOL, tierRule: 'color-mix(in srgb, ' + TCOL + ' 25%, transparent)', tierIconStyle: 'display: flex; color: ' + TCOL + ';',
+      variantName: { none: 'no way to log in', totp: 'authenticator app only', weak: 'weak', strong: 'strong', armored: 'Armored vault' }[tier] + ' tier',
+      idleTextStyle: idleSet ? "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;" : 'font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);',
+      uname: s.uname, dname: s.dname,
+      onUser: (e) => this.setState({ uname: e.target.value }),
+      onDisp: (e) => this.setState({ dname: e.target.value }),
+      showPw: hasPw, pw, onPw: (e) => this.setState({ pw: e.target.value }),
+      pwType: s.showPw ? 'text' : 'password',
+      pwToggleLabel: s.showPw ? 'Hide password' : 'Show password',
+      pwShownAria: s.showPw ? 'true' : 'false',
+      togglePw: () => this.setState({ showPw: !s.showPw }),
+      strengthName: SNAME[level], strengthHint: SHINT[level],
+      strengthStyle: 'font-weight: 600; color: ' + (level ? SCOL[level] : 'var(--ink-muted)') + ';',
+      isArmored: tier === 'armored', notArmored: tier !== 'armored',
+      tierTitle: t.title, tierLines: t.lines.map((x) => ({ text: x })),
+      hasNext: !!nextHint, nextHint,
+      msgStyle, msgIconStyle: 'display: flex; flex-shrink: 0; color: ' + TCOL + ';',
+      sealLine: hasPw ? 'Password + ' + extra + ' more' : hard + ' strong ways · no password',
+      armoredMsg: hasPw ? 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.' : hard + ' strong ways to prove it’s you, without a password. This is the strongest setup we offer.',
+      sealFooter: (uname || 'nightowl_44') + ' · sealed 01 Nov 2026, 14:05 UTC',
+      idleOpts, idleText: idleSet ? idle + ' h' : 'Not set',
+      idleDefaultName: IDLE.indexOf(parseInt(this.props.idleDefault, 10)) >= 0 ? parseInt(this.props.idleDefault, 10) + ' h' : (parseInt(this.props.idleDefault, 10) ? 'none (' + parseInt(this.props.idleDefault, 10) + ' h isn’t a choice for this account type)' : 'none (not set)'),
+      isVendor: vendor, accountTypeName: vendor ? 'vendor' : 'trader',
+      pwRuleText: R.text, pwRuleName: R.name,
+      vaultRuleName: vaultYes ? 'Yes' : 'No',
+      canGo, cantGo: !canGo, footNote
+    };
+  }
+}
+</script>
+</body>
+</html>

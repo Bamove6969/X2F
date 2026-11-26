@@ -1,0 +1,23 @@
+# Build vs boards: the gaps (8 Nov 2026)
+
+Main @ cbf8e50e against canvas v131. Three reviewers, one per area; their full lists with file:line are in `account.md`, `browse.md` and `trade.md` (about 330 one-line gaps, P1–P4). This page is the order design recommends the build team takes them in. Wording gaps (P4) are listed for the owner, not for the build to decide.
+
+## Status in one line
+
+Of 133 boards: 1 matches (CantDoThat), about 55 partial, about 60 not built. No screen uses the shared kit yet; three owner decisions are contradicted in the build.
+
+## Job order
+
+1. **Owner decisions the build contradicts (fix first, they are rules, not looks).**
+   - Q12: `payModel.ts:162-167` gates on the device escrow phase only, so "I've paid" and payment details show while confirmations are 3 of 10. Board BuyerPay: nothing says pay until the escrow is secured.
+   - G56: buyer Cancel is one tap (`BuyerPay.tsx:476-484`); the "Cancelling is final" sheet is missing. G2: SellerRefund has no nudge-first lock and still shows the dropped FinalAlert steps; the superseded PayWarning still opens (`BuyerPay.tsx:450`).
+   - Signup: `setup/Username.tsx:292-342` asks for a public username plus a private login name; the board has one private username. TOTP is offered as a backup (`BackupLogin.tsx:539-558`); the board is recovery-code only. Team: two roles (`Team.tsx:33,40-58`) instead of permission types; the chat hint names the member (`teamCopy.ts:447`) against "never which member".
+   - Profile tab (`ui/BottomNav.tsx:15`) has no route; `App.tsx:196` redirects it to /sell.
+2. **The kit, once, shared (unblocks every screen).** Trader identity (40/48 avatar, online dot, Trusted ring, Vendor / Team member / Moderator tags, three stat tiles); badge seal + chip with the 44 px button, the phone sheet and the desktop "+N" card (replaces `ui/BadgePill.tsx`); the v2 hero (tone wash, chip + key mark row, 40/44 mono number, 64 px ring); the trade stepper on phone (`TradeTimeline` only renders in the wide room); 40 px icon tiles on rows; the labelled setup stepper (`setup/kit.tsx:86-109`); login-method seals; the designed empty and done states; the chat kit (avatar, name line, bubble, lock note). Token fixes in the same job: Monero #ff6600 night (`theme/tokens.css:13-14`, from `design/design-system/tokens.json`), XMR always 6 decimals (`xmrText` strips zeros), timers as mono digits with body units (not "04:59"), screen title 28/32 Familjen 700, result headline 32/36.
+3. **Screen frame.** Phone: 44 px back, context line, title, borderless radius-16 cards, pinned footer primary (`screens.css:7-22,157-165` is a flat stack). Wide: the 240 px left rail (Trade / Post offer / Wallets / Profile / Settings / Help) and 24 px two-column grids; `DesktopShell.tsx` draws a top bar and `/trades` is unrouted.
+4. **Trade and dispute screens to the boards** (all partial): TradeFund, BuyerPay, BuyerPaidWaiting, SellerConfirm (recipient row sheet), SellerRefund, CancelRequest, Refunded, DisputeOpen (parties strip, evidence tiles), DisputeRoom (hourglass hero, chat kit), DisputeRuling (decided-by row, mod Reason card, fee row, appeal chip, File appeal footer).
+5. **Browse and offers to the boards:** Main/BuyMain (market price card, Active trades, section counts, empty state), BuyOffers/SellOffers, BuyQuote (trader card, "You receive" hero, wallet rows), PostOffer (builder step heads, up to 5 currency chips, per-currency size, preview), MyOffers (+ detail: Last edited, currencies, tiers, Open trades, Edit).
+6. **Not built, in the order users meet them:** SignupSecurity, RecoveryCode step, Settings hub, Alerts (preferences), SessionLength / SessionExtend, DeleteAccount, Profile + ProfileVisibility + Reviews/Review (`Released.tsx:134 reviewSlot` is empty), BadgeSettings, OfferAd, FlexOffer-Post / -Quote, MyOffers-Wide, MemberPermissions / MemberApproval / TeamRefusal / HoldChange / OwnerSetup / BecomeVendor, RecoveryHold / Compromised, SelfDestruct, TradeTechIssue, Lien-Notice / Ban-Notice, ProofBlur, Support / FAQ, GiftCardBrand.
+7. **Fold:** fold.ts / fold.css match Fold-Notes. Contents: Fold-Cover glance (avatar row, "+N more trades", clock tile), Fold-Trade / Tabletop chat (identity header, bubble kit), Tabletop top segment as three tiles, TriFold third pane (`OffersRoute.tsx:55-62`).
+8. **Staff app:** none exists (apps/moderation is a service). ModQueue, ModCase, StaffOverview / List / Log / Performance / Settings are a separate build.
+9. **Wording (P4):** about 90 lines, quoted both ways in the three files, go to the owner's page; the build changes none of them on its own.

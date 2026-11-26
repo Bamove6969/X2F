@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How do you want to log in?</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="SetupUsername.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="padding: 0 10px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">{{step}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{total}}</span></span>
+    </div>
+    <ol aria-label="Setup progress" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><li aria-current="{{b.cur}}" style="display: flex; flex-direction: column; gap: 6px; min-width: 0;"><span aria-hidden="true" style="{{b.style}}"></span><span style="{{b.labelStyle}}">{{b.label}}</span></li></sc-for>
+    </ol>
+    <span style="margin-top: 20px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Set up your account · Takes about 2 minutes.</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How do you want to log in?</h1>
+  </header>
+
+  <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 16px;">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Choose one for now. You can add others later in Settings.</p>
+    <div role="radiogroup" aria-label="Login method" style="display: flex; flex-direction: column; gap: 12px;">
+      <sc-for list="{{methods}}" as="m" hint-placeholder-count="4">
+        <button type="button" role="radio" aria-checked="{{m.on}}" onClick="{{m.pick}}" style="{{m.style}}">
+          <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><sc-if value="{{m.isPgp}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg></sc-if><sc-if value="{{m.isPasskey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11a7 7 0 0114 0v2"/><path d="M8.5 20a10 10 0 001.5-5v-4a2 2 0 014 0v3"/><path d="M14 18a14 14 0 01-.6 3"/><path d="M17 16.5V11a5 5 0 00-9.5-2.2"/></svg></sc-if><sc-if value="{{m.isKey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="8" rx="1.5"/><path d="M6.5 10.5h11V15a5.5 5.5 0 01-11 0z"/><path d="M12 14v2.5"/></svg></sc-if><sc-if value="{{m.isPassword}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7.5 12h.01M12 12h.01M16.5 12h.01"/></svg></sc-if></span>
+          <span style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex-grow: 1;">
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span>
+              <sc-if value="{{m.rec}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Recommended</span></sc-if>
+            </span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{m.desc}}</span>
+            <sc-if value="{{m.later}}" hint-placeholder-val="{{false}}"><span style="display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink);"><svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>{{m.later}}</span></span></sc-if>
+          </span>
+          <span aria-hidden="true" style="{{m.dot}}"></span>
+        </button>
+      </sc-for>
+    </div>
+    <a href="#" style="display: inline-flex; align-items: center; align-self: flex-start; min-height: 44px; font-size: 14px; line-height: 20px;">New to PGP? See the FAQ for recommended PGP apps.</a>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <a href="{{next}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">{{cta}}</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1193}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { pick: 'pgp' }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    // Height = measured content with the PGP card open (the longest pick); shorter picks leave the footer pinned.
+    const H = 1193;
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const STEP = 2, TOTAL = 5;
+    const pick = this.state.pick;
+    const STEP_LABELS = ['Username', 'Log in', pick === 'password' ? 'Password' : pick === 'pgp' ? 'PGP key' : 'Your key', 'Backup', 'Wallet'];
+    const bars = STEP_LABELS.map((label, i) => { const n = i + 1; const done = n < 2; const cur = n >= 2 && n <= 2;
+      return { label, cur: cur ? 'step' : 'false', style: 'display: block; height: 4px; border-radius: 999px; background: ' + (done ? 'var(--escrow);' : cur ? 'var(--ink);' : 'var(--surface-raised);'),
+        labelStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);') }; });
+    const defs = [
+      { id: 'pgp', name: 'PGP key', rec: true, next: 'SetupPgpKey.dc.html', cta: 'Continue with PGP key',
+        desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for a hacker to compromise from us.',
+        later: 'Each time you log in, X2F shows a message locked with your public key. Only your private key can unlock it, so you decrypt it in your PGP app and paste in the login code inside. Without your private key, nobody can get that code, and each one works only once.' },
+      { id: 'passkey', name: 'Passkey', next: '#', cta: 'Continue with passkey',
+        desc: 'Log in with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.' },
+      { id: 'key', name: 'Security key', next: '#', cta: 'Continue with security key',
+        desc: 'Log in by tapping a YubiKey or similar key plugged into your phone or computer.' },
+      { id: 'password', name: 'Password', next: 'SetupPassword.dc.html', cta: 'Continue with a password',
+        desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.' }
+    ];
+    // Selection is never orange: 2px ink border on surface-raised, ink radio dot.
+    const base = 'display: flex; align-items: flex-start; gap: 14px; width: 100%; box-sizing: border-box; padding: 16px; border-radius: 16px; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; ';
+    const methods = defs.map((d) => {
+      const on = pick === d.id;
+      return {
+        name: d.name, desc: d.desc, rec: !!d.rec, later: on ? (d.later || '') : '',
+        isPgp: d.id === 'pgp', isPasskey: d.id === 'passkey', isKey: d.id === 'key', isPassword: d.id === 'password',
+        on: on ? 'true' : 'false',
+        style: base + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: var(--surface);'),
+        dot: 'width: 20px; height: 20px; flex-shrink: 0; margin-top: 10px; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);'),
+        pick: () => this.setState({ pick: d.id })
+      };
+    });
+    const cur = defs.find((d) => d.id === pick);
+    return { rootStyle, bars, step: String(STEP), total: String(TOTAL), methods, cta: cur.cta, next: cur.next };
+  }
+}
+</script>
+</body>
+</html>

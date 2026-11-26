@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approve a new login (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <sc-if value="{{isExisting}}" hint-placeholder-val="{{true}}">
+    <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+      <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
+      <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Settings</a>
+    </nav>
+    <main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 16px;" aria-hidden="true">
+      <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Trades</span>
+      <span style="width: 720px; height: 56px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="width: 720px; height: 120px; border-radius: 16px; background: var(--surface);"></span>
+      <span style="width: 720px; height: 120px; border-radius: 16px; background: var(--surface);"></span>
+    </main>
+
+    <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+        <section role="dialog" aria-modal="true" aria-labelledby="la-title" style="width: 520px; box-sizing: border-box; padding: 28px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 20px;">
+
+          <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">New login · team lead account</span>
+              <h2 id="la-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Someone is logging in on Chrome, Windows. Is this you?</h2>
+            </div>
+            <dl style="margin: 0; padding: 0 14px; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column;">
+              <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 0;">
+                <dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Device</dt>
+                <dd style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">Chrome, Windows</dd>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 0; border-top: 1px solid var(--surface);">
+                <dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Time</dt>
+                <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 22px; font-weight: 500;">29 Oct 2026, 14:05 UTC</dd>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 0; border-top: 1px solid var(--surface);">
+                <dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Where</dt>
+                <dd style="margin: 0; font-size: 15px; line-height: 22px;">Not shown. X2F doesn&#39;t log IP addresses, so we can&#39;t show where.</dd>
+              </div>
+            </dl>
+            <div role="radiogroup" aria-labelledby="la-num-l" style="display: flex; flex-direction: column; gap: 8px;">
+              <span id="la-num-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">If it&#39;s you, tap the number shown on the new device</span>
+              <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+                <sc-for list="{{nums}}" as="n" hint-placeholder-count="3">
+                  <button type="button" role="radio" aria-checked="{{n.on}}" onClick="{{n.choose}}" style="{{n.style}}">{{n.label}}</button>
+                </sc-for>
+              </div>
+            </div>
+            <sc-if value="{{isFull}}" hint-placeholder-val="{{false}}">
+              <p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); color: var(--ink); font-size: 14px; line-height: 20px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--caution);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span><span>You&#39;re logged in on 3 devices, the most allowed. Next you&#39;ll choose one to log out.</span></p>
+            </sc-if>
+            <sc-if value="{{isSingle}}" hint-placeholder-val="{{false}}">
+              <p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); color: var(--ink); font-size: 14px; line-height: 20px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--caution);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span><span>One device at a time is on, so letting them in logs this device out.</span></p>
+            </sc-if>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+              <button type="button" disabled="{{noPick}}" onClick="{{yes}}" style="{{yesStyle}}">Yes, let them in</button>
+              <button type="button" onClick="{{block}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">No, block it</button>
+            </div>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">If you do nothing, the request ends in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">04:59</span> and they stay out.</p>
+          </sc-if>
+
+          <sc-if value="{{isChoose}}" hint-placeholder-val="{{false}}">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">New login · Chrome, Windows</span>
+              <h2 id="la-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Choose a device to log out</h2>
+            </div>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">You can be logged in on 3 devices at once. To let Chrome, Windows in, one of these has to be logged out.</p>
+            <div role="radiogroup" aria-label="Device to log out" style="display: flex; flex-direction: column; gap: 8px;">
+              <sc-for list="{{outs}}" as="o" hint-placeholder-count="3">
+                <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
+                  <span aria-hidden="true" style="{{o.dot}}"></span>
+                  <span style="display: flex; flex-direction: column; gap: 2px; text-align: left;">
+                    <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{o.name}}</span>
+                    <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{o.note}}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+              <button type="button" onClick="{{confirmOut}}" style="display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; padding: 8px 16px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Log it out and let them in</button>
+              <button type="button" onClick="{{block}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">No, block it</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{isApproved}}" hint-placeholder-val="{{false}}">
+            <span style="display: flex; align-self: flex-start; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
+            <h2 id="la-title" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Chrome, Windows is logged in</h2>
+            <sc-if value="{{hasOutNote}}" hint-placeholder-val="{{false}}">
+              <p style="margin: 0; font-size: 16px; line-height: 24px;">{{outNote}}</p>
+            </sc-if>
+            <sc-if value="{{selfOut}}" hint-placeholder-val="{{false}}">
+              <a href="Login-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; align-self: flex-end; min-width: 120px; height: 48px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">OK</a>
+            </sc-if>
+            <sc-if value="{{stayIn}}" hint-placeholder-val="{{true}}">
+              <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">You can see your devices and log any of them out in <a href="Devices-Wide.dc.html" style="padding: 14px 0; font-weight: 600; text-decoration: none;">Devices</a>.</p>
+              <button type="button" onClick="{{close}}" style="align-self: flex-end; min-width: 120px; height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Done</button>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{isBlocked}}" hint-placeholder-val="{{false}}">
+            <span style="display: flex; align-self: flex-start; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg></span>
+            <h2 id="la-title" role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{blockTitle}}</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">{{blockText}}</p>
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+              <h3 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Change your login method</h3>
+              <p style="margin: 0; font-size: 14px; line-height: 20px;">If you didn&#39;t try to log in, someone else may have your login details. Change how you log in now so they can&#39;t try again.</p>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 12px;">
+              <button type="button" onClick="{{close}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Not now</button>
+              <a href="SetupLogin.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Change login method</a>
+            </div>
+          </sc-if>
+
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{reopen}}" style="position: absolute; right: 48px; bottom: 32px; height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Show the request again</button>
+    </sc-if>
+  </sc-if>
+
+  <sc-if value="{{isNew}}" hint-placeholder-val="{{false}}">
+    <div style="display: flex; flex-direction: column; width: 100%;">
+    <header style="display: flex; align-items: center; padding: 24px 32px 0;">
+      <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; flex-grow: 1;">X2F</span>
+      <span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </header>
+    <main style="flex-grow: 1; display: flex; justify-content: center; align-items: flex-start; padding: 48px 32px;">
+    <div style="width: 560px; box-sizing: border-box; padding: 28px; border-radius: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 20px;">
+      <a href="Login-Wide.dc.html" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; margin: -12px 0 -12px -6px; font-size: 15px; font-weight: 600; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Log in</a>
+      <sc-if value="{{isWaiting}}" hint-placeholder-val="{{true}}">
+        <h2 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Approve this login on a device you&#39;re already using</h2>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface-raised)) 0%, var(--surface-raised) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <span id="la-your" style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Your number</span>
+          <span aria-labelledby="la-your" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 72px; line-height: 80px; font-weight: 500; letter-spacing: 0.02em;">{{num}}</span>
+          <span style="font-size: 15px; line-height: 22px; color: var(--ink-muted); text-align: center;">On your other device, tap {{num}}, then Yes, let them in.</span>
+        </div>
+        <p role="status" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px;"><span style="display: flex; color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>Waiting for approval. This ends in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">04:59</span>.</span></p>
+        <div style="border-radius: 16px; background: var(--surface-raised); padding: 0 20px;">
+          <button type="button" aria-expanded="{{stepsOn}}" aria-controls="la-steps" onClick="{{toggleSteps}}" style="display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 56px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-align: left; cursor: pointer;">Where do I approve it?<span style="{{chevron}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>
+          <sc-if value="{{stepsOpen}}" hint-placeholder-val="{{false}}">
+            <ol id="la-steps" style="margin: 0; padding: 0 0 16px 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
+              <li>Open X2F on a phone or computer where you&#39;re already logged in.</li>
+              <li>A login request pops up. Check it says Chrome, Windows.</li>
+              <li>Tap {{num}}, then Yes, let them in.</li>
+            </ol>
+          </sc-if>
+        </div>
+        <sc-if value="{{isRoom}}" hint-placeholder-val="{{true}}">
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can be logged in on up to 3 devices at once. You&#39;re on 2 now, so there&#39;s room for this one.</p>
+        </sc-if>
+        <sc-if value="{{isFull}}" hint-placeholder-val="{{false}}">
+          <p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); color: var(--ink); font-size: 14px; line-height: 20px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--caution);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span><span>You&#39;re already logged in on 3 devices, the most allowed. To let this one in, one of them will need to be logged out. You&#39;ll choose which when you approve.</span></p>
+        </sc-if>
+        <sc-if value="{{isSingle}}" hint-placeholder-val="{{false}}">
+          <p style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); color: var(--ink); font-size: 14px; line-height: 20px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--caution);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span><span>One device at a time is on. When you approve, your other device will be logged out.</span></p>
+        </sc-if>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Only team leads approve new devices. Until this one is approved, it can&#39;t log in. Nothing else changes: your other devices and your team carry on as usual.</p>
+          <div style="display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
+            <span style="font-size: 18px; line-height: 24px; font-weight: 600;">No other device with you?</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Log in with your passkey, security key or PGP key instead. Any of those proves it&#39;s you without an approval.</span>
+            <a href="Login.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Use a passkey, security key or PGP key</a>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Only have your username and password? Then your recovery code is the way in, and it starts a 24-hour hold.</span>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isNewApproved}}" hint-placeholder-val="{{false}}">
+        <span style="display: flex; align-self: flex-start; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
+        <h2 role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">You&#39;re in</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Your other device approved this login. Chrome, Windows is now one of your devices.</p>
+        <sc-if value="{{isFull}}" hint-placeholder-val="{{false}}">
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">The device you chose has been logged out, so you&#39;re still on 3 of 3.</p>
+        </sc-if>
+        <sc-if value="{{isSingle}}" hint-placeholder-val="{{false}}">
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Your other device has been logged out, because One device at a time is on.</p>
+        </sc-if>
+      </sc-if>
+
+      <sc-if value="{{isNewBlocked}}" hint-placeholder-val="{{false}}">
+        <span style="display: flex; align-self: flex-start; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg></span>
+        <h2 role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">This login was blocked</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Your other device said no, or a different number was tapped.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device can&#39;t log in until it&#39;s approved. Nobody else on your account is affected.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If it was you, try again. You&#39;ll get a new number.</p>
+      </sc-if>
+      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
+      <sc-if value="{{isWaiting}}" hint-placeholder-val="{{true}}">
+        <a href="Login-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Cancel</a>
+      </sc-if>
+      <sc-if value="{{isNewApproved}}" hint-placeholder-val="{{false}}">
+        <a href="Desktop.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Continue</a>
+      </sc-if>
+      <sc-if value="{{isNewBlocked}}" hint-placeholder-val="{{false}}">
+        <button type="button" onClick="{{tryAgain}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Try again</button>
+      </sc-if>
+      </div>
+    </div>
+    </main>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["existing","new"],"default":"existing"},"devices":{"editor":"enum","options":["2 in use","3 in use","one at a time"],"default":"2 in use"},"newView":{"editor":"enum","options":["waiting","approved","blocked"],"default":"waiting"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { stage: 'ask', pick: null, out: 'firefox', open: true, steps: false, newStage: null, num: 47 }; }
+  componentDidUpdate(prev) {
+    if (prev.side !== this.props.side || prev.devices !== this.props.devices || prev.newView !== this.props.newView) {
+      this.setState({ stage: 'ask', pick: null, out: 'firefox', open: true, newStage: null, num: 47 });
+    }
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    const s = this.state;
+    const side = this.props.side === 'new' ? 'new' : 'existing';
+    const dev = this.props.devices || '2 in use';
+    const full = dev === '3 in use';
+    const single = dev === 'one at a time';
+    const CORRECT = 47;
+    const numStyle = (on) => "display: flex; align-items: center; justify-content: center; height: 72px; box-sizing: border-box; border-radius: 12px; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; cursor: pointer; " + 'background: var(--surface-raised); border: 2px solid ' + (on ? 'var(--ink);' : 'transparent;');
+    const nums = [92, 47, 18].map((n) => ({ label: String(n), on: s.pick === n ? 'true' : 'false', style: numStyle(s.pick === n), choose: () => this.setState({ pick: n }) }));
+    const yesStyle = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (s.pick === null ? 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;');
+    const dot = (on) => 'width: 20px; height: 20px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);');
+    const card = (on) => 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; border: 2px solid ' + (on ? 'var(--ink);' : 'transparent;');
+    const devs = [
+      { id: 'pixel', name: 'Pixel 10 Pro Fold', note: 'This device · active now' },
+      { id: 'firefox', name: 'Firefox, Linux', note: 'Last active 3 days ago' },
+      { id: 'brave', name: 'Brave, macOS', note: 'Last active 12 days ago' }
+    ];
+    const outs = devs.map((d) => ({ name: d.name, note: d.note, on: s.out === d.id ? 'true' : 'false', dot: dot(s.out === d.id), style: card(s.out === d.id), pick: () => this.setState({ out: d.id }) }));
+    const outDev = devs.find((d) => d.id === s.out);
+    const selfOut = s.stage === 'approved' && (single || (full && s.out === 'pixel'));
+    let outNote = '';
+    if (single) outNote = 'This device is now logged out, because One device at a time is on.';
+    else if (full && s.out === 'pixel') outNote = 'You chose this device, so it is now logged out.';
+    else if (full) outNote = outDev.name + ' has been logged out.';
+    const wrong = s.stage === 'wrong';
+    const newStage = s.newStage || this.props.newView || 'waiting';
+    return {
+      rootStyle,
+      isExisting: side === 'existing', isNew: side === 'new',
+      open: s.open, closed: !s.open,
+      isAsk: s.stage === 'ask', isChoose: s.stage === 'choose', isApproved: s.stage === 'approved', isBlocked: s.stage === 'blocked' || wrong,
+      isRoom: !full && !single, isFull: full, isSingle: single,
+      nums, noPick: s.pick === null, yesStyle,
+      yes: () => { if (s.pick === null) return; if (s.pick !== CORRECT) this.setState({ stage: 'wrong' }); else this.setState({ stage: full ? 'choose' : 'approved' }); },
+      block: () => this.setState({ stage: 'blocked' }),
+      outs,
+      confirmOut: () => this.setState({ stage: 'approved' }),
+      hasOutNote: outNote !== '', outNote, selfOut, stayIn: !selfOut,
+      blockTitle: wrong ? 'Wrong number, so we blocked it' : 'Login blocked',
+      blockText: wrong ? "The number you tapped didn't match the one on the new device, so that login was blocked to be safe. If it was you, start again on the new device. Nobody else is affected." : 'Chrome, Windows was not let in. It can\'t log in, and nothing else changes: you and your team stay logged in.',
+      close: () => this.setState({ open: false }),
+      reopen: () => this.setState({ open: true, stage: 'ask', pick: null, out: 'firefox' }),
+      isWaiting: newStage === 'waiting', isNewApproved: newStage === 'approved', isNewBlocked: newStage === 'blocked',
+      num: String(s.num),
+      stepsOpen: s.steps, stepsOn: s.steps ? 'true' : 'false',
+      chevron: 'display: flex; color: var(--ink-muted); transform: rotate(' + (s.steps ? '180' : '0') + 'deg);',
+      toggleSteps: () => this.setState({ steps: !s.steps }),
+      tryAgain: () => this.setState({ newStage: 'waiting', num: s.num === 47 ? 63 : 47 })
+    };
+  }
+}
+</script>
+</body>
+</html>

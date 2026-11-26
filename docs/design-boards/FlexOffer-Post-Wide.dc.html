@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post a flexible offer (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+button:disabled{cursor:not-allowed}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px 20px;"><a href="#" aria-label="X2F home" style="display: flex; flex-shrink: 0; color: var(--ink); text-decoration: none;"><svg width="60" height="24" viewBox="0 0 60 24" aria-hidden="true" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 24L0 23.82L7.08 11.26L1.02 0.18L1.02 0L6.52 0L10.86 8.03L11.6 8.03L15.82 0L21.11 0L21.11 0.18L15.08 11.26L22.09 23.82L22.09 24L16.37 24L11.32 14.49L10.58 14.49L5.48 24ZM24 24L24 20.01Q26.61 18.11 28.56 16.58Q30.51 15.05 31.9 13.78Q33.98 11.91 35.03 10.4Q36.08 8.89 36.08 7.22Q36.08 5.71 35.19 4.76Q34.29 3.81 32.59 3.81Q30.67 3.81 29.7 5Q28.72 6.2 28.72 8.16L24 8.16Q24 5.71 24.98 3.87Q25.95 2.03 27.89 1.01Q29.82 0 32.69 0Q36.74 0 38.96 1.98Q41.18 3.96 41.18 7.19Q41.18 9.52 39.92 11.47Q38.66 13.42 36.18 15.57Q35.11 16.5 33.8 17.49Q32.5 18.47 31.21 19.28L31.21 20.01L42 20.01L42 24ZM44 0H60V4H49V9H52V13H49V24H44Z"/><circle fill="var(--monero)" cx="56" cy="11" r="3"/></svg></a><span style="max-width: 100%; font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--ink); overflow-wrap: break-word;">Post an offer</span></div>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+
+  <div style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+      <a href="MyOffers-Wide.dc.html" aria-label="Back to my offers" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Post an offer</h1>
+    </div>
+    <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{slotsUsed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> {{slotsKind}} offers used</span>
+    </div>
+    <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start;">
+      <main style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4a1 1 0 011-1h8l9 9-9 9z"/><path d="M7.5 7.5h.01"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span></span><h2 id="what-hw" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What you trade</h2></span></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">I want to</span>
+              <div role="radiogroup" aria-label="I want to" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                <button type="button" role="radio" aria-checked="{{sellOn}}" onClick="{{pickSell}}" style="{{sellStyle}}">Sell XMR</button>
+                <button type="button" role="radio" aria-checked="{{buyOn}}" onClick="{{pickBuy}}" style="{{buyStyle}}">Buy XMR</button>
+              </div>
+            </div>
+            <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+              <legend style="padding: 0; margin-bottom: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currencies</legend>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <button type="button" role="checkbox" aria-checked="true" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--ink); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">US</text></svg>USD</button>
+                <button type="button" role="checkbox" aria-checked="true" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--ink); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">EU</text></svg>EUR</button>
+                <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">GB</text></svg>GBP</button>
+                <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">CA</text></svg>CAD</button>
+                <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">AU</text></svg>AUD</button>
+                <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px 0 10px; gap: 8px; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">JP</text></svg>JPY</button>
+                <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; letter-spacing: 0; text-transform: none; gap: 4px;">More<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+              </div>
+              <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Pick up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span>. You set the smallest and largest trade for each one.</p>
+            </fieldset>
+          </div>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">$329.90</span> / XMR right now. Every band is market ± %; prices follow the market.</span>
+            <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span>
+        </section>
+
+        <section aria-labelledby="tiers-hw" style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V14M10 20V9M16 20V12M22 20V5"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span></span><h2 id="tiers-hw" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Price bands</h2></span><span style="flex-shrink: 0; align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{tierCount}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> for {{curCode}}</span></div>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{bandsIntro}}</span>
+          </div>
+          <div role="tablist" aria-label="Currency" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <sc-for list="{{curTabs}}" as="c" hint-placeholder-count="2">
+            <button type="button" role="tab" aria-selected="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.code}}</button>
+          </sc-for>
+          </div>
+
+          <sc-for list="{{tiers}}" as="t" hint-placeholder-count="2">
+            <fieldset style="margin: 0; padding: 20px; border: 0; border-radius: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+              <legend style="position: absolute; width: 1px; height: 1px; overflow: hidden;">{{t.label}}</legend>
+              <div style="display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 12px; align-items: start;">
+                <span aria-hidden="true" style="height: 48px; margin-top: 22px; display: flex; align-items: center; font-size: 16px; font-weight: 600;">{{t.label}}</span>
+                <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+                  <label for="{{t.fromId}}" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">From</label>
+                  <span style="position: relative; display: block;">
+                    <span aria-hidden="true" style="position: absolute; left: 14px; top: 13px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; color: var(--ink-muted);">{{symShown}}</span>
+                    <input id="{{t.fromId}}" type="text" inputmode="decimal" value="{{t.from}}" onChange="{{t.onFrom}}" aria-invalid="{{t.badFrom}}" aria-describedby="{{t.errId}}" style="{{t.fromStyle}}">
+                    <span role="radiogroup" aria-label="Unit for this offer" style="position: absolute; top: 0; right: 2px; bottom: 0; display: flex; align-items: center;"><button type="button" role="radio" aria-checked="{{unitX}}" onClick="{{pickXmr}}" style="{{unitXStyle}}">XMR</button><span aria-hidden="true" style="width: 1px; height: 20px; background: var(--line);"></span><button type="button" role="radio" aria-checked="{{unitF}}" onClick="{{pickFiat}}" style="{{unitFStyle}}">{{curCode}}</button></span>
+                  </span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{t.convPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.fromConv}}</span>{{t.convTail}}</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+                  <label for="{{t.toId}}" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">To</label>
+                  <span style="position: relative; display: block;">
+                    <span aria-hidden="true" style="position: absolute; left: 14px; top: 13px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; color: var(--ink-muted);">{{symShown}}</span>
+                    <input id="{{t.toId}}" type="text" inputmode="decimal" value="{{t.to}}" onChange="{{t.onTo}}" aria-invalid="{{t.badTo}}" aria-describedby="{{t.errId}}" style="{{t.toStyle}}">
+                    <span role="radiogroup" aria-label="Unit for this offer" style="position: absolute; top: 0; right: 2px; bottom: 0; display: flex; align-items: center;"><button type="button" role="radio" aria-checked="{{unitX}}" onClick="{{pickXmr}}" style="{{unitXStyle}}">XMR</button><span aria-hidden="true" style="width: 1px; height: 20px; background: var(--line);"></span><button type="button" role="radio" aria-checked="{{unitF}}" onClick="{{pickFiat}}" style="{{unitFStyle}}">{{curCode}}</button></span>
+                  </span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{t.convPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.toConv}}</span>{{t.convTail}}</span>
+                </div>
+                <span style="display: flex; height: 48px; margin-top: 22px; align-items: center;">
+                  <sc-if value="{{t.canRemove}}" hint-placeholder-val="{{false}}">
+                    <button type="button" aria-label="{{t.removeLabel}}" onClick="{{t.remove}}" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); cursor: pointer;">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
+                    </button>
+                  </sc-if>
+                </span>
+              </div>
+              <sc-if value="{{t.hasErr}}" hint-placeholder-val="{{false}}">
+                <span id="{{t.errId}}" role="alert" style="display: flex; gap: 6px; padding-left: 64px; font-size: 13px; line-height: 18px; color: var(--danger);">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>
+                  {{t.err}}
+                </span>
+              </sc-if>
+              <div style="display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; align-items: end; padding-left: 64px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Price</span>
+                  <div role="radiogroup" aria-label="{{t.dirLabel}}" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                    <button type="button" role="radio" aria-checked="{{t.aboveOn}}" onClick="{{t.pickAbove}}" style="{{t.aboveStyle}}">Above market</button>
+                    <button type="button" role="radio" aria-checked="{{t.belowOn}}" onClick="{{t.pickBelow}}" style="{{t.belowStyle}}">Below market</button>
+                  </div>
+                </div>
+                <label for="{{t.pctId}}" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Percent
+                  <span style="position: relative; display: block;">
+                    <input id="{{t.pctId}}" type="text" inputmode="decimal" value="{{t.pct}}" onChange="{{t.onPct}}" aria-invalid="{{t.badPctA}}" aria-describedby="{{t.pctHelpId}}" style="{{t.pctStyle}}">
+                    <span aria-hidden="true" style="position: absolute; right: 14px; top: 13px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 22px; font-weight: 400; color: var(--ink-muted);">%</span>
+                  </span>
+                </label>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 12px; padding-left: 64px;">
+                <sc-if value="{{t.pctOk}}" hint-placeholder-val="{{true}}">
+                  <span id="{{t.pctHelpId}}" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">50</span>%.</span>
+                </sc-if>
+                <sc-if value="{{t.badPct}}" hint-placeholder-val="{{false}}">
+                  <span id="{{t.pctHelpId}}" role="alert" style="display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>
+                    {{t.pctErr}}
+                  </span>
+                </sc-if>
+                <sc-if value="{{t.pctOk}}" hint-placeholder-val="{{true}}">
+                  <span style="display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 500; color: var(--ink);">{{t.priceNum}}</span><span>/ XMR at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{t.pctNum}}</span> {{t.dirWords}}</span></span>
+                </sc-if>
+              </div>
+              <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding-left: 64px; font-size: 15px; line-height: 22px;"><span>{{who}} must have completed at least</span><div role="radiogroup" aria-label="{{t.minLabel}}" style="display: flex; flex-wrap: wrap; gap: 6px;"><sc-for list="{{t.chips}}" as="c" hint-placeholder-count="5"><button type="button" role="radio" aria-checked="{{c.on}}" onClick="{{c.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{c.style}}">{{c.label}}</span></button></sc-for></div></div>
+            </fieldset>
+          </sc-for>
+
+          <sc-if value="{{canAdd}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{addTier}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px; border-radius: 16px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              Add a band
+            </button>
+          </sc-if>
+          <sc-if value="{{full}}" hint-placeholder-val="{{false}}">
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center; padding: 12px 0;">That's 3 bands, the most one currency can have.</span>
+          </sc-if>
+        </section>
+
+        <section aria-labelledby="methods-hw" style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span></span><h2 id="methods-hw" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Payment methods</h2></span><span style="flex-shrink: 0; align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{methodCount}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> picked</span></div>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick the methods you take, up to 5. Each one has its own payment instructions and can change the price by a percent.</span>
+          </div>
+          <sc-if value="{{loadOk}}" hint-placeholder-val="{{true}}"><sc-for list="{{methods}}" as="m" hint-placeholder-count="6">
+            <div style="{{m.cardStyle}}">
+              <label for="{{m.cbId}}" style="{{m.rowStyle}}">
+                <input id="{{m.cbId}}" type="checkbox" checked="{{m.on}}" disabled="{{m.locked}}" onChange="{{m.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
+            <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{m.icon}}"/></svg></span>
+                <span style="flex-grow: 1; font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span>
+                <span style="font-size: 13px; color: var(--ink-muted);">{{m.tag}}</span>
+              </label>
+              <sc-if value="{{m.on}}" hint-placeholder-val="{{false}}">
+                <div style="display: flex; flex-direction: column; gap: 16px; padding: 0 20px 20px;">
+                  <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+                    <sc-if value="{{m.gift}}" hint-placeholder-val="{{false}}">
+                  <label for="{{m.countryId}}" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Country
+                    <span style="position: relative; display: block;"><select id="{{m.countryId}}" aria-describedby="{{m.curLineId}}" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 44px 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none; appearance: none; -webkit-appearance: none;"><option value="" disabled>Choose the card's country</option><option value="US" selected>United States</option><option value="CA">Canada</option><option value="GB">United Kingdom</option></select><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; right: 12px; top: 14px; pointer-events: none; color: var(--ink-muted);"><path d="M6 9l6 6 6-6"/></svg></span>
+                  </label>
+                  <span id="{{m.curLineId}}" style="display: flex; align-items: center; gap: 8px; min-height: 24px; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span><span style="color: var(--ink);">US card</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">USD</span> only</span></span>
+                  <p style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">When trading Monero for gift cards, you accept all risks and responsibilities that come with gift cards. Buyer beware.</p>
+                  <fieldset style="margin: 0; padding: 12px 14px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; min-width: 0;">
+                    <legend style="float: left; width: 100%; padding: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Gift card terms</legend>
+                    <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Tick each one to go on.</span>
+                    <sc-for list="{{m.giftTerms}}" as="gt" hint-placeholder-count="3">
+                      <label for="{{gt.id}}" style="display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; box-sizing: border-box; font-size: 15px; line-height: 22px; cursor: pointer;"><input id="{{gt.id}}" type="checkbox" checked="{{gt.on}}" onChange="{{gt.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">{{gt.text}}</label>
+                    </sc-for>
+                  </fieldset>
+                </sc-if>
+                <sc-if value="{{m.curFree}}" hint-placeholder-val="{{false}}">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: -4px 0;">
+                    <span id="{{m.curLineId}}" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">In: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.curText}}</span></span>
+                    <button type="button" aria-expanded="{{m.curOpenA}}" aria-controls="{{m.curListId}}" aria-label="{{m.curBtnLabel}}" onClick="{{m.toggleCur}}" style="flex-shrink: 0; min-width: 44px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;">{{m.curBtn}}</button>
+                  </div>
+                  <sc-if value="{{m.curOpen}}" hint-placeholder-val="{{false}}">
+                    <fieldset id="{{m.curListId}}" style="margin: 0; padding: 8px 14px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; min-width: 0;">
+                      <legend style="float: left; width: 100%; padding: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{m.curLegend}}</legend>
+                      <sc-for list="{{m.curOpts}}" as="co" hint-placeholder-count="2">
+                        <label for="{{co.id}}" style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; line-height: 22px; cursor: pointer;"><input id="{{co.id}}" type="checkbox" checked="{{co.on}}" disabled="{{co.keep}}" onChange="{{co.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{co.code}}</span><span style="color: var(--ink-muted);">{{co.name}}</span></label>
+                      </sc-for>
+                      <span style="padding: 4px 0 10px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">A method needs at least one currency.</span>
+                    </fieldset>
+                  </sc-if>
+                </sc-if>
+                    <sc-if value="{{m.same}}" hint-placeholder-val="{{true}}">
+                      <label for="{{m.instrId}}" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{m.instrLabel}}
+                        <textarea id="{{m.instrId}}" rows="3" value="{{m.instr}}" onChange="{{m.onInstr}}" placeholder="What the other person needs to know to pay you or get paid." style="box-sizing: border-box; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0; text-transform: none; resize: none;"></textarea>
+                      </label>
+                    </sc-if>
+                    <sc-if value="{{m.split}}" hint-placeholder-val="{{false}}">
+                      <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{m.instrLabel}}</span>
+                      <sc-for list="{{m.perCur}}" as="pc" hint-placeholder-count="2">
+                        <label for="{{pc.id}}" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>For <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{pc.code}}</span></span>
+                          <textarea id="{{pc.id}}" rows="3" value="{{pc.text}}" onChange="{{pc.onChange}}" placeholder="{{pc.hint}}" style="box-sizing: border-box; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0; text-transform: none; resize: none;"></textarea>
+                        </label>
+                      </sc-for>
+                    </sc-if>
+                    <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Leave it empty and {{otherSide}} see: <span style="color: var(--ink);">Payment method chosen: {{m.name}}. Please post pertinent details in chat window.</span></span>
+                    <sc-if value="{{m.multiCur}}" hint-placeholder-val="{{true}}"><label for="{{m.sameId}}" style="display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; line-height: 22px; cursor: pointer;"><input id="{{m.sameId}}" type="checkbox" checked="{{m.same}}" onChange="{{m.toggleSame}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">Same for all currencies</label></sc-if>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; align-items: end;">
+                      <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Price with {{m.name}}</span>
+                        <div role="radiogroup" aria-label="{{m.dirLabel}}" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+                          <button type="button" role="radio" aria-checked="{{m.aboveOn}}" onClick="{{m.pickAbove}}" style="{{m.aboveStyle}}">Above market</button>
+                          <button type="button" role="radio" aria-checked="{{m.belowOn}}" onClick="{{m.pickBelow}}" style="{{m.belowStyle}}">Below market</button>
+                          <button type="button" role="radio" aria-checked="{{m.sameOn}}" onClick="{{m.pickSame}}" style="{{m.sameStyle}}">Same as band</button>
+                        </div>
+                      </div>
+                      <sc-if value="{{m.hasPct}}" hint-placeholder-val="{{false}}">
+                        <label for="{{m.pctId}}" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Percent
+                          <span style="position: relative; display: block;">
+                            <input id="{{m.pctId}}" type="text" inputmode="decimal" value="{{m.pct}}" onChange="{{m.onPct}}" aria-invalid="{{m.badPctA}}" aria-describedby="{{m.pctHelpId}}" style="{{m.pctStyle}}">
+                            <span aria-hidden="true" style="position: absolute; right: 14px; top: 13px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 22px; font-weight: 400; color: var(--ink-muted);">%</span>
+                          </span>
+                        </label>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{m.pctOk}}" hint-placeholder-val="{{false}}">
+                      <span id="{{m.pctHelpId}}" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">50</span>%.</span>
+                    </sc-if>
+                    <sc-if value="{{m.badPct}}" hint-placeholder-val="{{false}}">
+                      <span id="{{m.pctHelpId}}" role="alert" style="display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>
+                        {{m.pctErr}}
+                      </span>
+                    </sc-if>
+                    <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">With {{m.name}}: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.exA}}</span><sc-if value="{{m.exTwo}}" hint-placeholder-val="{{true}}"> to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.exB}}</span></sc-if> / XMR at today’s rate.</span>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for></sc-if>
+          <sc-if value="{{loadFailed}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: var(--surface-raised);">
+          <span role="alert" style="display: flex; gap: 6px; font-size: 14px; line-height: 20px; color: var(--danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>The payment methods didn't load.</span>
+          <button type="button" onClick="{{retryMethods}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Retry</button>
+        </div>
+      </sc-if>
+          <sc-if value="{{methodsFull}}" hint-placeholder-val="{{false}}">
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center; padding: 12px 0;">That's 5 payment types, the most one offer can have.</span>
+          </sc-if>
+        </section>
+
+        <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 28px; border-radius: 16px; background: var(--surface);">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.3-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.5 14.8c1.6.8 2.6 2.6 3 5.2"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span></span><h2 id="who-hw" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Who can trade with you</h2></span></div>
+            <span style="font-size: 15px; line-height: 22px;">Minimum completed trades</span>
+            <div role="radiogroup" aria-label="Minimum completed trades" style="display: flex; flex-wrap: wrap; gap: 6px;"><sc-for list="{{mtChips}}" as="t" hint-placeholder-count="5"><button type="button" role="radio" aria-checked="{{t.on}}" onClick="{{t.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{t.style}}">{{t.label}}</span></button></sc-for></div>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{mtHelp}}</span>
+          </div>
+          <label for="terms-w" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your terms (optional)
+            <textarea id="terms-w" rows="3" placeholder="e.g. I reply within 10 minutes, 8am to 10pm US Eastern." style="box-sizing: border-box; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0; text-transform: none; resize: none;"></textarea>
+          </label>
+        </section>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start;">
+          <sc-if value="{{ok}}" hint-placeholder-val="{{true}}">
+            <a href="MyOffers-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Post offer</a>
+          </sc-if>
+          <sc-if value="{{blocked}}" hint-placeholder-val="{{false}}">
+            <button type="button" disabled aria-describedby="post-why-w" style="height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600;">Post offer</button>
+            <span id="post-why-w" style="display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg>{{blockReason}}</span>
+          </sc-if>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% X2F fee only when a trade on this offer completes.</span>
+        </div>
+      </main>
+
+      <aside aria-label="Preview and post" style="position: sticky; top: 32px; display: flex; flex-direction: column; gap: 16px;">
+        <section style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
+          <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>How others will see it</span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{previewLine}}</span>
+          <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+            <sc-for list="{{tiers}}" as="t" hint-placeholder-count="2">
+              <div style="{{t.previewRowStyle}}">
+                <span style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 8px;"><span style="display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 20px; white-space: nowrap;"><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.previewRange}}</span> <span style="{{t.previewUnitStyle}}">{{t.previewUnit}}</span></span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{t.previewConv}}</span> <span style="{{t.previewConvUnitStyle}}">{{t.previewConvUnit}}</span></span></span><span style="margin-left: auto; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 500;">{{t.previewNum}}</span><span style="font-size: 13px; color: var(--ink-muted);"> / XMR</span></span></span>
+                <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: right;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--escrow);">{{t.previewMark}}</span> {{t.previewVs}} · {{t.previewWho}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{methodsLine}}</span>
+        </section>
+        <nav aria-label="Steps" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Steps</span>
+          <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);"><li><a href="#what-hw" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; color: var(--ink); text-decoration: none;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; width: 16px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">1</span><span style="flex-grow: 1; font-size: 14px; line-height: 20px; font-weight: 600;">What you trade</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a></li><li><a href="#tiers-hw" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border-top: 1px solid var(--surface); color: var(--ink); text-decoration: none;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; width: 16px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">2</span><span style="flex-grow: 1; font-size: 14px; line-height: 20px; font-weight: 600;">Price bands</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a></li><li><a href="#methods-hw" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border-top: 1px solid var(--surface); color: var(--ink); text-decoration: none;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; width: 16px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">3</span><span style="flex-grow: 1; font-size: 14px; line-height: 20px; font-weight: 600;">Payment methods</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a></li><li><a href="#who-hw" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border-top: 1px solid var(--surface); color: var(--ink); text-decoration: none;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; width: 16px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">4</span><span style="flex-grow: 1; font-size: 14px; line-height: 20px; font-weight: 600;">Who can trade with you</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a></li></ol>
+        </nav>
+      </aside>
+    </div>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 0 0; margin-top: 24px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: pricing, blank instructions, offer limit" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (F1, F2, F8)</span>
+      <span style="font-weight: 600;">F1: each band's price is a choice of above or below market, then a typed percent. It maxes out at 50%. F2: payment instructions are per payment type; if left blank, the other trader sees "Payment method chosen: &lt;type&gt;. Please post pertinent details in chat window." F8: up to 3 buying and 3 selling offers at a time; the builder shows how many are used.</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Band price.</strong> Above market / Below market is a two-choice control (selected = 2px ink ring), then a typed percent with "%" inside the field. The +/− stepper is gone. Over 50% shows the error under the field and blocks posting (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">margin</span> = too-high). The line under it shows the price at today's rate. <strong>Payment-type price.</strong> Each payment type now uses the same control (7 Nov): Above market / Below market / Same as band, then a typed percent with "%" inside and "Up to 50%." under it. Same as band (no change) is picked by default and hides the percent field. The +/− stepper is gone here too. Over 50% or an empty percent blocks posting, like a band. <strong>Offer count.</strong> The meta line under the title counts the side picked in "I want to".</p>
+    <aside aria-label="Decided by the owner: currency order" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q28, Q24/Q25)</span>
+      <span style="font-weight: 600;">Currencies: the six most-used first, in this order: USD, EUR, GBP, CAD, AUD, JPY. Then all the rest A to Z. Every entry has a flag.</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Currency chips.</strong> The six chips are those six, each with a flag (JPY added). "More ▾" opens every other currency A to Z, each with a flag; the More list isn't drawn here. A currency with no market rate shows there greyed, can't be picked, and carries "No rate right now", as on OfferAd (design call, 6 Nov). <strong>Flags:</strong> real flag images from a vetted flag set at build time (placeholder here).</p>
+    <aside aria-label="Decided by the owner: multi-currency offers" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">One offer covers up to 5 currencies. The vendor types the amount bands per currency; nothing is converted or rounded. Pricing is market ± % only; there are no fixed-price offers. Bands are whole units, in order, with no overlap and no gaps (200–400, then 401–600). A currency with no market rate shows greyed in the list with "No rate right now" and can't be picked until a rate is back (see above). Buyers filter by currency and method first and see prices in that currency. Payment instructions are per payment type and, where they differ, per currency (bank transfer: USD account and routing, EUR IBAN/SEPA).</span>
+    </aside>
+    <aside aria-label="Decided by the owner: band, payment type and trade limits" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q23, Q4, Q5) and 8 Nov (p11-6)</span>
+      <span style="font-weight: 600;">Q4: this board is the offer form that ships (PostOffer is retired). Q23: up to 3 amount bands per currency and up to 5 payment types per offer. Q5: the vendor picks currencies and payment types separately; X2F doesn't pair them. p11-6: during launch, one trade can be up to $5,000 (or the same in another currency).</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Limits, 9 Nov.</strong> The band counter reads "of 3"; at 3 bands "Add a band" gives way to the full line. The payment-types step counts "N of 5 picked"; at 5, the unticked rows dim and can't be ticked, and a full line shows under them (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">methods</span> = five). A band whose To amount is over $5,000 (in USD, at that band's price; other currencies converted) gets an inline error on To and blocks posting (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">cap</span> = over). Sample bands now end at 15 XMR (about $4,968) so the default stays under the cap. COPY-UNSIGNED: "Pick the methods you take, up to 5.", "That's 5 payment types, the most one offer can have.", "That's 3 bands, the most one currency can have.", the launch-cap sentence in the bands sub-line ("While X2F is new, one trade can be up to $5,000."), and the error "Up to $5,000 a trade for now. End this band at … or less."</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">New copy on this board is COPY-UNSIGNED: the Currencies helper, the bands sub-line, the contiguity error, "Same for all currencies". New 7 Nov, draft: "2 of 3 selling offers used", "Above market", "Below market", "Percent", "Up to 50%.", "Set 50% or less.", "Enter a percent.", the price line ("$332.54 / XMR at 0.8% above market"), and "Leave it empty and buyers see: Payment method chosen: Zelle. Please post pertinent details in chat window." New 7 Nov, draft: "Price with Zelle", "Same as band", and "Fix the field marked in red to post this offer." (was "…the band marked in red…").</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: guided builder. Step heads as on the phone, plus a "Steps" card under the preview that jumps to each step, so the right column has no empty band. Method rows get 40 px tiles; "With Zelle" amounts in mono. COPY-UNSIGNED: "Step N of 4", "What you trade", "Steps".</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #11 (band unit).</strong> Every From / To box has an XMR / currency switch inside its right end (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">unit</span> tweak, showing: {{unitState}}; default XMR, the left one). Selected unit 15/20 600 in --monero-ink, the other 12/16 ink-muted. One unit per offer: tapping any switch moves every band's From and To together (lead default; the owner may override). Examples: XMR <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.500000 – 1.500000</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.500001 – 25.000000</span>; USD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$501 – $2,000</span>. Under each box the other unit at that band's own price (market ± its percent). XMR bands are contiguous at 6 decimals (the next starts <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.000001</span> higher). The preview shows each band in both units with its markup. This supersedes "nothing is converted" (owner, 2 Nov) for display: the vendor still types one unit; the other is shown, converted.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #12.</strong> Minimum completed trades, for the offer and for each band, is fixed chips: Anyone (kept first, default), <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">25</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">50</span> (Q27); selected has the 2 px ink ring. Replaces the drop-down and the per-band tick box with a free number.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: the bands sub-line in both units ("…Bands are in XMR, up to 6 decimals, in order, with no gaps: one ends at 1.500000, the next starts at 1.500001. Traders also see each band in USD, converted at its price." / "…Traders also see each band in XMR, converted at its price.", replacing "Each currency has its own bands; nothing is converted."); "≈ $165.77 at this band's price (+0.8%)"-style lines; "XMR takes up to 6 decimals."; the contiguity error in XMR ("…starts at 1.500001 XMR."); "Anyone can take this offer. A band can ask for more." / "At least 10 completed trades for the whole offer. A band can ask for more."; "Anyone can trade" (preview, was "Anyone"); "Minimum completed trades for this band".</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
+    <aside aria-label="Lead ruling: currencies per payment method" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · lead, 10 Nov (msg 9; owner p11-131 asked)</span>
+      <span style="font-weight: 600;">Each payment method can take some or all of the offer's currencies; the API takes a currency list per method. A gift card takes only its card's country currency.</span>
+    </aside>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>Per-method currencies, 10 Nov</strong> (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">methodCurrency</span>: simple = every method takes every offer currency, as before; per-method = the form that ships). Under each picked method, first line of its open card: "In: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD · EUR</span>" (14/20 ink-muted, codes mono ink) with a "Change" text button at the right (15/20 600 ink, underlined, 44 px target). Change opens a small checklist under the line (1 px line border, 12 px radius, --surface): legend "Zelle takes payment in:", one 44 px tick row per offer currency (code mono 500 + name ink-muted), and "A method needs at least one currency." The last ticked currency can't be unticked; the button reads "Done" while open. The per-currency instruction boxes and "Same for all currencies" follow the method's own currencies (one currency: no "Same for all currencies"). The preview's methods line names a narrowed method's currencies: "Amazon gift card (USD)". Sample: Zelle in USD and EUR (checklist open), a US Amazon gift card in USD only.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>Gift card method.</strong> Country select (label "Country", placeholder "Choose the card's country"), then a locked line with a lock icon: "US card · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD</span> only" (no Change), then the bold warning "When trading Monero for gift cards, you accept all risks and responsibilities that come with gift cards. Buyer beware.", then "Gift card terms" / "Tick each one to go on." with the poster's own tick boxes (a sell offer's poster checks the card: 3 boxes; a buy offer's poster sends it: 4). Words from main (giftCardCopy.ts, COPY-UNSIGNED there). If the card's currency isn't one of the offer's currencies, the locked line turns --danger: "Pick the currency of the card's country." (main's words) and posting is blocked.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>From main, 10 Nov.</strong> Step 1 carries main's freshness line under the market sentence: clock icon + "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC" (13/18 ink-muted). Tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">methodsLoad</span> = failed: the method list gives way to "The payment methods didn't load." (--danger, alert icon) and a 48 px secondary "Retry". COPY-UNSIGNED (new on this board): "In:", "Change", "Done", "Zelle takes payment in:", "A method needs at least one currency.", "US card · USD only"; method price changes now read "2% more" / "0.5% less" (was "+2.0%").</p>
+    <aside aria-label="Decided by design: price wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · design ruling, 9 Nov (lead msg 11)</span>
+      <span style="font-weight: 600;">One price form everywhere: "0.4% above market", "0.5% below market", "at market" (at the start of a line: "At market"). Up to two decimals, trailing zeros trimmed (0.40 → 0.4, 0.03 stays). Replaces "+0.4%" over "Vendor markup" and "+0.40% markup".</span>
+    </aside>
+  </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["filled","overlap"],"default":"filled"},"margin":{"editor":"enum","options":["ok","too-high"],"default":"ok"},"unit":{"editor":"enum","options":["xmr","fiat"],"default":"xmr"},"methods":{"editor":"enum","options":["three","five"],"default":"three"},"cap":{"editor":"enum","options":["ok","over"],"default":"ok"},"methodCurrency":{"editor":"enum","options":["simple","per-method"],"default":"simple"},"methodsLoad":{"editor":"enum","options":["ok","failed"],"default":"ok"},"$preview":{"width":1280,"height":5659}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.seed(props.example, props.margin, props.methods, props.cap, props.methodCurrency, props.methodsLoad); }
+  seed(ex, mg, mm, cp, mc, ml) {
+    const five = mm === 'five', over = cp === 'over', pm = mc === 'per-method';
+    return {
+      side: 'sell', cur: 'USD', nextId: 5, mt: '0', loaded: ml !== 'failed',
+      tiersBy: {
+        USD: [
+          { id: 1, from: '50', to: '500', xFrom: '0.500000', xTo: '1.500000', dir: 'above', pct: mg === 'too-high' ? '60' : '0.8', req: false, min: '5' },
+          { id: 2, from: ex === 'overlap' ? '400' : '501', to: over ? '6000' : '2000', xFrom: ex === 'overlap' ? '1.200000' : '1.500001', xTo: over ? '20.000000' : '15.000000', dir: 'above', pct: '0.4', req: true, min: '10' }
+        ],
+        EUR: [
+          { id: 3, from: '50', to: '450', xFrom: '0.500000', xTo: '1.400000', dir: 'above', pct: '0.9', req: false, min: '5' },
+          { id: 4, from: '451', to: '1800', xFrom: '1.400001', xTo: '15.000000', dir: 'above', pct: '0.5', req: true, min: '10' }
+        ]
+      },
+      methods: [
+        { id: 'zelle', name: 'Zelle', on: true, curs: ['USD', 'EUR'], curOpen: pm, dir: 'same', pct: '', same: true, instr: 'Send by Zelle to the phone number in the trade room. Put the trade code in the memo.', by: { USD: '', EUR: '' } },
+        { id: 'paypal', name: 'PayPal', on: !pm, dir: 'above', pct: '2', same: true, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.', by: { USD: '', EUR: '' } },
+        { id: 'ach', name: 'Bank transfer', on: !pm, dir: 'same', pct: '', same: false, instr: '', by: { USD: 'ACH to the account and routing number in the trade room. Put the trade code in the memo.', EUR: 'SEPA to the IBAN and BIC in the trade room. Put the trade code in the reference.' } },
+        { id: 'cashapp', name: 'Cash App', on: five, dir: 'same', pct: '', same: true, instr: '', by: { USD: '', EUR: '' } },
+        { id: 'mail', name: 'Cash by mail', on: five, dir: 'same', pct: '', same: true, instr: '', by: { USD: '', EUR: '' } },
+        { id: 'custom', name: 'Custom method', on: false, dir: 'same', pct: '', same: false, instr: '', by: { USD: '', EUR: '' } }
+      ].concat(pm ? [
+        // p11-131 sample: a US Amazon card, so USD only (a gift card takes its country's currency).
+        { id: 'amazon', name: 'Amazon gift card', on: true, gift: true, country: 'US', curs: ['USD'], dir: 'same', pct: '', same: true, instr: '', by: { USD: '' }, ticks: {} }
+      ] : [])
+    };
+  }
+  componentDidUpdate(prev) {
+    if (prev.example !== this.props.example || prev.margin !== this.props.margin || prev.methods !== this.props.methods || prev.cap !== this.props.cap || prev.methodCurrency !== this.props.methodCurrency || prev.methodsLoad !== this.props.methodsLoad) this.setState(this.seed(this.props.example, this.props.margin, this.props.methods, this.props.cap, this.props.methodCurrency, this.props.methodsLoad));
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const FRESH_H = 546, PM_H = 70, FAIL_H = -1594; // 10 Nov: freshness line + new design notes; methodCurrency = per-method; methodsLoad = failed
+    const MIN_H = { filled: { 'ok': [5113, 5113], 'too-high': [5047, 5047] }, overlap: { 'ok': [5187, 5169], 'too-high': [5095, 5077] } }[this.props.example === 'overlap' ? 'overlap' : 'filled'][this.props.margin === 'too-high' ? 'too-high' : 'ok'][(this.state.unit || this.props.unit) === 'fiat' ? 1 : 0] + (this.props.methods === 'five' ? 776 : 0) + (this.props.cap === 'over' && this.props.example !== 'overlap' && this.props.margin !== 'too-high' ? 56 : 0) + FRESH_H + (this.props.methodCurrency === 'per-method' ? PM_H : 0) + (this.props.methodsLoad === 'failed' ? FAIL_H : 0);
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: " + MIN_H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+
+    const MARKET = 329.90, MAX_TIERS = 3, MAX_PCT = 50, MAX_METHODS = 5, CAP_USD = 5000; // Q23: 3 bands, 5 payment types. p11-6: $5,000 a trade during launch.
+    const s = this.state;
+    const market = true;
+    const CURS = ['USD', 'EUR'];
+    const SYM = { USD: '$', EUR: '€' };
+    const sym = SYM[s.cur];
+
+    // Offer unit (owner #11, 8 Nov): one unit for the whole offer, min and max switch together. Default XMR.
+    const unit = this.state.unit == null ? (this.props.unit === 'fiat' ? 'fiat' : 'xmr') : this.state.unit;
+    const UBTN = 'display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 46px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-family: inherit; cursor: pointer; ';
+    const uOn = UBTN + 'font-size: 15px; line-height: 20px; font-weight: 600; color: var(--monero-ink);';
+    const uOff = UBTN + 'font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-muted);';
+    const unitVals = {
+      unitState: unit, unitX: unit === 'xmr' ? 'true' : 'false', unitF: unit === 'fiat' ? 'true' : 'false',
+      unitXStyle: unit === 'xmr' ? uOn : uOff, unitFStyle: unit === 'fiat' ? uOn : uOff,
+      pickXmr: () => this.setState({ unit: 'xmr' }), pickFiat: () => this.setState({ unit: 'fiat' })
+    };
+    const fmtFiat = (sym, n, cents) => sym + n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+    // Price wording (lead msg 11, 9 Nov): "0.4% above market" / "0.5% below market" / "at market"; up to 2 decimals, trailing zeros trimmed.
+    const pctR = (m) => Math.round(Math.abs(m) * 100) / 100;
+    const pctTxt = (m) => pctR(m) === 0 ? 'at market' : pctR(m) + '% ' + (m > 0 ? 'above' : 'below') + ' market';
+    // A box: value in the offer's unit; under it the other unit at the poster's price (markup applied).
+    const rangeBox = (id, label, sym, xmrVal, fiatVal, rate, m) => ({
+      id, label,
+      value: unit === 'xmr' ? xmrVal.toFixed(6) : fmtFiat(sym, fiatVal, false),
+      convNum: unit === 'xmr' ? fmtFiat(sym, xmrVal * rate, true) : (fiatVal / rate).toFixed(6),
+      convTail: (unit === 'xmr' ? '' : ' XMR') + ' at your price (' + pctTxt(m) + ')'
+    });
+
+    // Minimum completed trades (owner #12, 8 Nov): fixed choices; "Anyone" (no minimum) first and default.
+    const MT_OPTS = [['0', 'Anyone'], ['5', '5'], ['10', '10'], ['25', '25'], ['50', '50']];
+    const mtChip = (cur, set) => MT_OPTS.map(([v, label]) => ({
+      label, on: cur === v ? 'true' : 'false',
+      style: 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 52px; height: 36px; padding: 0 14px; border-radius: 999px; font-size: 15px; ' + (v === '0' ? 'font-family: inherit; ' : "font-family: 'Atkinson Hyperlegible Mono', monospace; ") + (cur === v
+        ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;'
+        : 'border: 1px solid var(--line); background: transparent; color: var(--ink); font-weight: 400;'),
+      pick: () => set(v)
+    }));
+    const xm = unit === 'xmr';
+    const RATE = { USD: 329.90, EUR: 304.10 }[s.cur]; // EUR: example rate
+    const decs = (v) => { const m = String(v).match(/\.(\d*)/); return m ? m[1].length : 0; };
+    const x6 = (n) => n.toFixed(6);
+    const curTiers = s.tiersBy[s.cur];
+    const who = s.side === 'sell' ? 'Buyer' : 'Seller';
+    const num = (v) => { const n = parseFloat(String(v).replace(/[^0-9.]/g, '')); return isNaN(n) ? NaN : n; };
+    const money = (n) => sym + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+    const usd = (n) => '$' + n.toFixed(2);
+    // A payment method's own change to the band price: "2% more" / "0.5% less".
+    const pct = (m) => pctR(m) + '%' + (m > 0 ? ' more' : m < 0 ? ' less' : '');
+    const setTiers = (list) => this.setState({ tiersBy: { ...this.state.tiersBy, [this.state.cur]: list } });
+    const setTier = (id, patch) => setTiers(this.state.tiersBy[this.state.cur].map((t) => t.id === id ? { ...t, ...patch } : t));
+    const setMethod = (id, patch) => this.setState({ methods: this.state.methods.map((m) => m.id === id ? { ...m, ...patch } : m) });
+    const choice = (on) => 'height: 48px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; ' + (on
+      ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink);'
+      : 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted);');
+    const field = (bad) => "box-sizing: border-box; width: 100%; height: 48px; padding: 0 108px 0 " + (xm ? '14px' : '30px') + "; border-radius: 6px; border: " + (bad ? '2px solid var(--danger)' : '1px solid var(--line)') + "; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;";
+
+    const parsed = curTiers.map((t) => ({ f: num(xm ? t.xFrom : t.from), to: num(xm ? t.xTo : t.to) }));
+    let errors = 0;
+    const prices = [];
+    const tiers = curTiers.map((t, i) => {
+      const p = parsed[i];
+      let err = '', badFrom = false, badTo = false;
+      if (isNaN(p.f) || isNaN(p.to)) {
+        err = 'Enter both amounts.'; badFrom = isNaN(p.f); badTo = isNaN(p.to);
+      } else if (p.f > p.to) {
+        err = 'The From amount must be lower than the To amount.'; badFrom = true; badTo = true;
+      } else if (xm ? (decs(t.xFrom) > 6 || decs(t.xTo) > 6) : (p.f !== Math.floor(p.f) || p.to !== Math.floor(p.to))) {
+        err = xm ? 'XMR takes up to 6 decimals.' : 'Whole units only, no cents.'; badFrom = xm ? decs(t.xFrom) > 6 : p.f !== Math.floor(p.f); badTo = xm ? decs(t.xTo) > 6 : p.to !== Math.floor(p.to);
+      } else if (i > 0 && !isNaN(parsed[i - 1].to) && Math.abs(p.f - (parsed[i - 1].to + (xm ? 0.000001 : 1))) > 1e-9) {
+        const want = parsed[i - 1].to + (xm ? 0.000001 : 1);
+        err = (p.f <= parsed[i - 1].to ? 'This band overlaps band ' + i + '. ' : 'This band leaves a gap after band ' + i + '. ') + 'Bands must be contiguous: the next band starts at ' + (xm ? x6(want) + ' XMR' : money(want)) + '.';
+        badFrom = true;
+      }
+      // Launch cap (p11-6): the top of a band, at this band's price and in USD, can't pass $5,000.
+      const capM = (() => { const v = num(t.pct); return isNaN(v) ? 0 : (t.dir === 'below' ? -v : v); })();
+      const toUsd = xm ? p.to * 329.90 * (1 + capM / 100) : p.to * (329.90 / RATE);
+      if (!err && !isNaN(p.to) && toUsd > CAP_USD + 1e-6) {
+        const capTo = xm ? x6(Math.floor(CAP_USD / (329.90 * (1 + capM / 100)) * 1e6) / 1e6) + ' XMR' : money(Math.floor(CAP_USD * RATE / 329.90));
+        err = 'Up to $5,000 a trade for now. End this band at ' + capTo + ' or less.'; badTo = true;
+      }
+      if (err) errors++;
+      const pv = num(t.pct);
+      const pctErr = String(t.pct).trim() === '' || isNaN(pv) ? 'Enter a percent.' : (pv > MAX_PCT ? 'Set 50% or less.' : '');
+      if (pctErr) errors++;
+      const margin = pctErr ? 0 : (t.dir === 'below' ? -pv : pv);
+      const price = MARKET * (1 + margin / 100);
+      if (!pctErr) prices.push(price);
+      const n = i + 1;
+      const above = t.dir !== 'below';
+      return {
+        id: t.id, label: 'Band ' + n,
+        from: xm ? t.xFrom : t.from, to: xm ? t.xTo : t.to,
+        convPre: (isNaN(p.f) || isNaN(p.to) || pctErr) ? '' : '≈ ',
+        fromConv: (isNaN(p.f) || pctErr) ? '' : (xm ? fmtFiat(sym, p.f * RATE * (1 + margin / 100), true) : x6(p.f / (RATE * (1 + margin / 100)))),
+        toConv: (isNaN(p.to) || pctErr) ? '' : (xm ? fmtFiat(sym, p.to * RATE * (1 + margin / 100), true) : x6(p.to / (RATE * (1 + margin / 100)))),
+        convTail: (isNaN(p.f) || isNaN(p.to) || pctErr) ? '' : (xm ? '' : ' XMR') + ' at this band\'s price (' + pctTxt(margin) + ')',
+        chips: mtChip(t.req ? (t.min || '0') : '0', (v) => setTier(t.id, v === '0' ? { req: false } : { req: true, min: v })),
+        previewUnit: xm ? 'XMR' : s.cur, previewUnitStyle: 'font-size: 13px; font-weight: 600; color: ' + (xm ? 'var(--monero-ink);' : 'var(--ink-muted);'),
+        previewConv: (isNaN(p.f) || isNaN(p.to) || pctErr) ? '' : '≈ ' + (xm ? fmtFiat(sym, p.f * RATE * (1 + margin / 100), true) + ' – ' + fmtFiat(sym, p.to * RATE * (1 + margin / 100), true) : x6(p.f / (RATE * (1 + margin / 100))) + ' – ' + x6(p.to / (RATE * (1 + margin / 100)))),
+        previewConvUnit: xm ? s.cur : 'XMR', previewConvUnitStyle: 'font-size: 13px; font-weight: 600; color: ' + (xm ? 'var(--ink-muted);' : 'var(--monero-ink);'),
+        previewMark: pctErr || pctR(margin) === 0 ? '' : pctR(margin) + '%',
+        previewVs: pctErr ? '' : (pctR(margin) === 0 ? 'At market' : (margin > 0 ? 'above market' : 'below market')),
+        fromId: 'from-' + t.id, toId: 'to-' + t.id, reqId: 'req-' + t.id, errId: 'err-' + t.id,
+        fromStyle: field(badFrom), toStyle: field(badTo),
+        badFrom: badFrom ? 'true' : 'false', badTo: badTo ? 'true' : 'false',
+        hasErr: !!err, err,
+        onFrom: (e) => setTier(t.id, xm ? { xFrom: e.target.value } : { from: e.target.value }),
+        onTo: (e) => setTier(t.id, xm ? { xTo: e.target.value } : { to: e.target.value }),
+        dirLabel: 'Band ' + n + ' price compared with market',
+        aboveOn: above ? 'true' : 'false', belowOn: above ? 'false' : 'true',
+        aboveStyle: choice(above), belowStyle: choice(!above),
+        pickAbove: () => setTier(t.id, { dir: 'above' }), pickBelow: () => setTier(t.id, { dir: 'below' }),
+        pctId: 'pct-' + t.id, pctHelpId: 'pcth-' + t.id, pct: t.pct,
+        onPct: (e) => setTier(t.id, { pct: e.target.value.replace(/[^0-9.]/g, '') }),
+        pctOk: !pctErr, badPct: !!pctErr, badPctA: pctErr ? 'true' : 'false', pctErr,
+        pctStyle: "box-sizing: border-box; width: 100%; height: 48px; padding: 0 36px 0 14px; border-radius: 6px; border: " + (pctErr ? '2px solid var(--danger)' : '1px solid var(--line)') + "; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;",
+        priceNum: usd(price), pctNum: pctR(pv) === 0 ? '' : pctR(pv) + '%',
+        dirWords: pctR(pv) === 0 ? 'market' : (above ? 'above market' : 'below market'),
+        req: t.req, noReq: !t.req, min: t.min,
+        minLabel: 'Minimum completed trades for band ' + n,
+        minStyle: "box-sizing: border-box; width: 64px; height: 44px; padding: 0 8px; text-align: center; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;" + (t.req ? '' : ' opacity: 0.5;'),
+        tailStyle: t.req ? 'color: var(--ink);' : 'color: var(--ink-muted);',
+        toggleReq: () => setTier(t.id, { req: !t.req }),
+        setMin: (e) => setTier(t.id, { min: e.target.value.replace(/[^0-9]/g, '') }),
+        canRemove: curTiers.length > 1, removeLabel: 'Remove band ' + n,
+        remove: () => setTiers(this.state.tiersBy[this.state.cur].filter((x) => x.id !== t.id)),
+        previewRange: (isNaN(p.f) || isNaN(p.to)) ? 'Band ' + n : (xm ? x6(p.f) + ' – ' + x6(p.to) : money(p.f) + ' – ' + money(p.to)),
+        previewPrice: usd(price) + ' / XMR',
+        previewNum: pctErr ? '—' : usd(price),
+        previewRowStyle: 'display: flex; flex-direction: column; gap: 2px; min-height: 48px; padding: 10px 14px; box-sizing: border-box;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : ''),
+        previewWho: t.req ? (t.min || '0') + '+ completed trades' : 'Anyone can trade'
+      };
+    });
+
+    const addTier = () => {
+      const ts = this.state.tiersBy[this.state.cur];
+      if (ts.length >= MAX_TIERS) return;
+      const last = ts[ts.length - 1];
+      const lt = num(last.to);
+      this.setState({
+        nextId: this.state.nextId + 1,
+        tiersBy: { ...this.state.tiersBy, [this.state.cur]: ts.concat([{ id: this.state.nextId, from: isNaN(lt) ? '' : String(lt + 1), to: isNaN(lt) ? '' : String(lt * 2), xFrom: isNaN(num(last.xTo)) ? '' : x6(num(last.xTo) + 0.000001), xTo: isNaN(num(last.xTo)) ? '' : x6(num(last.xTo) * 2), dir: last.dir, pct: last.pct, req: last.req, min: last.min }]) }
+      });
+    };
+    const tab = (on) => 'height: 40px; padding: 0 16px; border-radius: 999px; font-family: inherit; font-size: 15px; cursor: pointer; ' + (on
+      ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;'
+      : 'border: 1px solid var(--line); background: transparent; color: var(--ink); font-weight: 400;');
+    const curTabs = CURS.map((c) => ({ code: c, on: c === s.cur ? 'true' : 'false', style: tab(c === s.cur), pick: () => this.setState({ cur: c }) }));
+
+    if (!prices.length) prices.push(MARKET);
+    const lo = Math.min.apply(null, prices), hi = Math.max.apply(null, prices);
+    // Per-method price: Above / Below market + typed percent (like the bands), or Same as band (default).
+    const segBtn = (on) => 'min-height: 48px; padding: 4px 6px; border-radius: 12px; font-family: inherit; font-size: 14px; line-height: 18px; font-weight: 600; cursor: pointer; ' + (on
+      ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink);'
+      : 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted);');
+    const picked = s.loaded === false ? [] : s.methods.filter((m) => m.on); // methodsLoad = failed: nothing to pick yet
+    const perMethod = this.props.methodCurrency === 'per-method';
+    const CUR_NAME = { USD: 'US dollar', EUR: 'Euro' };
+    // Gift-card terms as on main (giftCardCopy.ts, COPY-UNSIGNED there): a sell offer's poster checks the card, a buy offer's poster sends it.
+    const GIFT_CHECKER = ['I check the card within 45 minutes of getting its details.', "I check the card's balance myself before I release.", "The card is from this offer's country, in that country's currency."];
+    const GIFT_SENDER = ['The card was bought in the last 30 days.', 'The card holds the full value written on it. A range card, like a Visa 200 to 500, may hold part of its range, and then I send a video of me logging in to it.', "The card is from this offer's country, in that country's currency.", 'The other trader has 45 minutes to check the card once I hand over its details.'];
+    const methodsFull = picked.length >= MAX_METHODS;
+    const methods = s.methods.map((m) => {
+      const isSame = m.dir === 'same';
+      const mpv = num(m.pct);
+      const mErr = isSame || !m.on ? '' : (String(m.pct).trim() === '' || isNaN(mpv) ? 'Enter a percent.' : (mpv > MAX_PCT ? 'Set 50% or less.' : ''));
+      if (mErr) errors++;
+      m = Object.assign({}, m, { adj: isSame || mErr ? 0 : (m.dir === 'below' ? -mpv : mpv) });
+      const mCurs = perMethod ? (m.curs || CURS) : CURS;
+      const a = lo * (1 + m.adj / 100), b = hi * (1 + m.adj / 100);
+      return {
+        id: m.id, name: m.name, on: m.on,
+        cbId: 'm-' + m.id, instrId: 'mi-' + m.id,
+        // Method-group icon for the row's 40 icon tile (same glyphs as Main's method list).
+        icon: ({ zelle: 'M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2', paypal: 'M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2', ach: 'M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18', cashapp: 'M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2', mail: 'M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2zM12 9.5a2.5 2.5 0 110 5 2.5 2.5 0 010-5z', custom: 'M5 12a1 1 0 102 0 1 1 0 10-2 0M11 12a1 1 0 102 0 1 1 0 10-2 0M17 12a1 1 0 102 0 1 1 0 10-2 0', amazon: 'M3 9h18v3H3zM5 12h14v8H5zM12 9v11M12 9c-1.5-3-5-4-5-1.5S10 9 12 9c2 0 5 .5 5-1.5S13.5 6 12 9' })[m.id] || 'M5 12a1 1 0 102 0 1 1 0 10-2 0M11 12a1 1 0 102 0 1 1 0 10-2 0M17 12a1 1 0 102 0 1 1 0 10-2 0',
+        instr: m.instr, instrLabel: 'Payment instructions for ' + m.name,
+        same: m.same, split: !m.same, sameId: 'same-' + m.id,
+        toggleSame: () => setMethod(m.id, { same: !m.same }),
+        perCur: mCurs.map((c) => ({
+          code: c, id: 'mi-' + m.id + '-' + c.toLowerCase(), text: m.by[c],
+          hint: 'What the other person needs to know to pay you in ' + c + '.',
+          onChange: (e) => setMethod(m.id, { by: { ...m.by, [c]: e.target.value } })
+        })),
+        tag: m.on ? (m.adj === 0 ? 'Band price' : pct(m.adj)) : '',
+        // p11-131 (per-method currencies): under each picked method, "In: USD · EUR" + Change opens a checklist of the offer's currencies.
+        // A gift card is held to its card's country currency: locked line, no Change.
+        gift: perMethod && !!m.gift, curFree: perMethod && !m.gift,
+        curText: mCurs.join(' · '), curOpen: perMethod && !m.gift && !!m.curOpen, curOpenA: m.curOpen ? 'true' : 'false',
+        curBtn: m.curOpen ? 'Done' : 'Change', curBtnLabel: (m.curOpen ? 'Done choosing currencies for ' : 'Change currencies for ') + m.name,
+        curLineId: 'mcl-' + m.id, curListId: 'mcc-' + m.id, countryId: 'mco-' + m.id,
+        curLegend: m.name + ' takes payment in:',
+        toggleCur: () => setMethod(m.id, { curOpen: !m.curOpen }),
+        curOpts: CURS.map((c) => ({ code: c, name: CUR_NAME[c], id: 'mc-' + m.id + '-' + c.toLowerCase(), on: mCurs.indexOf(c) >= 0,
+          keep: mCurs.length === 1 && mCurs[0] === c,
+          toggle: () => { const now = mCurs.indexOf(c) >= 0 ? mCurs.filter((x) => x !== c) : CURS.filter((x) => x === c || mCurs.indexOf(x) >= 0); if (now.length) setMethod(m.id, { curs: now }); } })),
+        giftTerms: (s.side === 'sell' ? GIFT_CHECKER : GIFT_SENDER).map((t, i) => ({ id: 'gt-' + m.id + '-' + i, text: t, on: !!(m.ticks || {})[i], toggle: () => setMethod(m.id, { ticks: Object.assign({}, m.ticks, { [i]: !(m.ticks || {})[i] }) }) })),
+        multiCur: mCurs.length > 1,
+        example: 'With ' + m.name + ': ' + (a === b ? usd(a) : usd(Math.min(a, b)) + ' to ' + usd(Math.max(a, b))) + ' / XMR at today’s rate.',
+        exA: usd(Math.min(a, b)), exB: usd(Math.max(a, b)), exTwo: a !== b,
+        // Ticked method = 2px ink ring on --surface-raised (selection is never orange).
+        cardStyle: 'display: flex; flex-direction: column; border-radius: 16px; ' + (m.on ? 'background: var(--surface-raised); border: 2px solid var(--ink);' : 'background: var(--surface); border: 2px solid transparent;'),
+        toggle: () => { if (!m.on && this.state.methods.filter((x) => x.on).length >= MAX_METHODS) return; setMethod(m.id, { on: !m.on }); },
+        // Q23: at 5 picked, the unticked rows dim and can't be ticked.
+        locked: methodsFull && !m.on,
+        rowStyle: 'display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 20px; ' + (methodsFull && !m.on ? 'cursor: not-allowed; opacity: 0.5;' : 'cursor: pointer;'),
+        onInstr: (e) => setMethod(m.id, { instr: e.target.value }),
+        dirLabel: m.name + ' price compared with market',
+        aboveOn: m.dir === 'above' ? 'true' : 'false', belowOn: m.dir === 'below' ? 'true' : 'false', sameOn: isSame ? 'true' : 'false',
+        aboveStyle: segBtn(m.dir === 'above'), belowStyle: segBtn(m.dir === 'below'), sameStyle: segBtn(isSame),
+        pickAbove: () => setMethod(m.id, { dir: 'above' }), pickBelow: () => setMethod(m.id, { dir: 'below' }), pickSame: () => setMethod(m.id, { dir: 'same' }),
+        hasPct: !isSame, pctOk: !isSame && !mErr, badPct: !!mErr, badPctA: mErr ? 'true' : 'false', pctErr: mErr,
+        pctId: 'mp-' + m.id, pctHelpId: 'mph-' + m.id, pct: m.pct,
+        onPct: (e) => setMethod(m.id, { pct: e.target.value.replace(/[^0-9.]/g, '') }),
+        pctStyle: "box-sizing: border-box; width: 100%; height: 48px; padding: 0 36px 0 14px; border-radius: 6px; border: " + (mErr ? '2px solid var(--danger)' : '1px solid var(--line)') + "; background: var(--surface); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;"
+      };
+    });
+    const noMethods = picked.length === 0;
+    const blocked = errors > 0 || noMethods;
+
+    return {
+      rootStyle, who, tiers,
+      loadOk: s.loaded !== false, loadFailed: s.loaded === false, retryMethods: () => this.setState({ loaded: true }),
+      slotsUsed: s.side === 'sell' ? 2 : 1, slotsKind: s.side === 'sell' ? 'selling' : 'buying',
+      otherSide: s.side === 'sell' ? 'buyers' : 'sellers', methods, addTier,
+      sellOn: s.side === 'sell' ? 'true' : 'false', buyOn: s.side === 'buy' ? 'true' : 'false',
+      sellStyle: choice(s.side === 'sell'), buyStyle: choice(s.side === 'buy'),
+      pickSell: () => this.setState({ side: 'sell' }), pickBuy: () => this.setState({ side: 'buy' }),
+      curTabs, curCode: s.cur, sym, symShown: xm ? '' : sym, ...unitVals,
+      mtChips: mtChip(s.mt, (v) => this.setState({ mt: v })),
+      mtHelp: s.mt === '0' ? 'Anyone can take this offer. A band can ask for more.' : 'At least ' + s.mt + ' completed trades for the whole offer. A band can ask for more.',
+      bandsIntro: (xm ? 'Set a different price for different trade sizes. Bands are in XMR, up to 6 decimals, in order, with no gaps: one ends at 1.500000, the next starts at 1.500001. Traders also see each band in ' + s.cur + ', converted at its price.' : 'Set a different price for different trade sizes. Bands are whole units, in order, with no gaps: one ends at 500, the next starts at 501. Traders also see each band in XMR, converted at its price.') + ' While X2F is new, one trade can be up to $5,000' + (s.cur === 'USD' ? '.' : ' (about ' + money(Math.floor(CAP_USD * RATE / 329.90)) + ').'),
+      tierCount: curTiers.length, canAdd: curTiers.length < MAX_TIERS, full: curTiers.length >= MAX_TIERS,
+      methodCount: picked.length, methodsFull,
+      methodsLine: noMethods ? 'No payment method picked yet' : picked.map((m) => { const v = num(m.pct); return m.name + (m.dir !== 'same' && !isNaN(v) && v > 0 && v <= MAX_PCT ? ' ' + pct(m.dir === 'below' ? -v : v) : '') + (perMethod && m.curs && m.curs.length < CURS.length ? ' (' + m.curs.join(', ') + ')' : ''); }).join(' · '),
+      previewLine: (s.side === 'sell' ? 'Selling XMR' : 'Buying XMR') + ' · ' + s.cur + ' · you · follows the market',
+      ok: !blocked, blocked,
+      blockReason: errors > 0 ? 'Fix the field marked in red to post this offer.' : 'Pick at least one payment method to post this offer.'
+    };
+  }
+}
+</script>
+</body>
+</html>
