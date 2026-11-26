@@ -198,6 +198,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // Owner 26 Nov: the payroll wallet's send of a clock-out payout (its id, amount and tx id; never the address).
+  'pay.sent': { ref: 'id', atomic: 'amount', txHash: 'hex64' },
+  'pay.send-failed': { ref: 'id', reason: 'id' },
   // D-041: a staff member's own pre-approved payout addresses (the id only, never the address).
   'pay.address-added': { addressId: 'id' },
   'pay.address-removed': { addressId: 'id' },

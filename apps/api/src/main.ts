@@ -29,6 +29,7 @@ import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { moneroTxProofCheck } from './disputes/txProof.js';
 import { txProofStoppedAlert, txProofStuckAlert } from './disputes/comply.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
+import { checkPayrollWallet, moneroPayrollWallet, payrollWalletFromEnv } from './staff/payrollWallet.js';
 import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
 import { endMemberSessionsOutsideHours } from './team/limits.js';
@@ -79,6 +80,14 @@ const prices = createMarketPrices({
   onAlert: (a) => onAlert(a),
   log: { error: (obj, msg) => alertLog?.error(obj, msg) },
 });
+// Owner 26 Nov 2026: the hot payroll wallet pays staff at clock-out and sweeps its excess to the fee
+// wallet. It must be the wallet every app pays half of each 1% to (X2F_PAYROLL_WALLET), or the API
+// refuses to start; a wallet-rpc that does not answer at start is refused too.
+const payrollConfig = payrollWalletFromEnv(process.env);
+if (payrollConfig !== null && config.feeWallet == null) throw new Error('config: X2F_FEE_WALLET is required with X2F_PAYROLL_WALLET_RPC_URL (the sweep\'s only destination)');
+const payrollWallet = payrollConfig === null ? null : moneroPayrollWallet(payrollConfig);
+if (payrollWallet !== null) await checkPayrollWallet(payrollWallet, payrollConfig!.address);
+
 const deps: Deps = {
   config,
   db,
@@ -98,6 +107,8 @@ const deps: Deps = {
   ...(config.xmpp && config.jabberKeys
     ? { jabberSender: xmppSender(config.xmpp, omemoEncryptor(db, config.jabberKeys, clock, (e) => alertLog?.info(e, 'jabber omemo'))) }
     : {}),
+  // Owner 26 Nov 2026: the hot payroll wallet (X2F_PAYROLL_WALLET_RPC_URL); unset, none.
+  ...(payrollWallet ? { payrollWallet } : {}),
 };
 
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.

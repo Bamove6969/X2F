@@ -192,6 +192,9 @@ function sentence(
     case 'shift.abandoned': return 'A shift ended without a clock-out';
     case 'pay.paid': return 'Pay recorded';
     case 'pay.clawback': return 'Pay taken back for an overruled decision';
+    // COPY-UNSIGNED (owner 26 Nov: the payroll wallet pays at clock-out).
+    case 'pay.sent': return 'Pay sent from the payroll wallet';
+    case 'pay.send-failed': return 'Pay not sent from the payroll wallet';
     case 'pay.address-added': return 'Added a payout address';
     case 'pay.address-removed': return 'Removed a payout address';
     // The owner, settings, the site.

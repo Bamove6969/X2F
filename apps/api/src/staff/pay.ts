@@ -11,6 +11,7 @@ import { appendLog } from '../log/append.js';
 import type { MarketPrices } from '../price/market.js';
 import { requireStaff, type StaffContext } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { runPayrollPayouts } from './payrollSend.js';
 
 /**
  * Plan 4 Task 33 / J-12 (D-041..D-045): shifts, clock-out pay, payout addresses and the owner's pay
@@ -25,44 +26,14 @@ import { consumeKeyTap } from './keyTap.js';
  *   price; the large-trade shares and clawbacks are already in XMR. A net debt (clawbacks bigger
  *   than what was earned since) is not paid: it stays, carried to the next clock-out, and is shown
  *   to the owner as owed (clawback option A);
- * - the money itself does not move yet: the payout is recorded `waiting-send` until Plan 6 wires a
- *   payroll wallet (NEEDS_PLAN_6_PAYROLL_WALLET).
+ * - the payout is recorded `waiting-send`; the hot payroll wallet (owner 26 Nov 2026: half of every
+ *   1% goes to it) sends it right after the clock-out commits and on every payroll pass
+ *   (`payrollSend.ts`), to the pre-approved address only, after re-checking that address's tap.
  */
 
 export const XMR_ATOMIC = 1_000_000_000_000n;
 /** Lead default: at most this many live payout addresses per staff member. */
 export const MAX_PAYOUT_ADDRESSES = 5;
-
-// ---------------------------------------------------------------------------------------------
-// The payroll wallet tripwire
-
-export const NEEDS_PLAN_6_PAYROLL_WALLET = 'NEEDS_PLAN_6_PAYROLL_WALLET';
-
-export class PayrollWalletNotWiredError extends Error {
-  readonly code = NEEDS_PLAN_6_PAYROLL_WALLET;
-  constructor() {
-    super(`${NEEDS_PLAN_6_PAYROLL_WALLET}: the payroll wallet's send is Plan 6's (key handling); nothing has moved`);
-    this.name = 'PayrollWalletNotWiredError';
-  }
-}
-
-/**
- * NEEDS_PLAN_6_PAYROLL_WALLET: the Monero send of one recorded payout (`staff_payouts`,
- * `waiting-send`) to its pre-approved address. Plan 4 Task 33 notes the fee wallet's spending key
- * stays offline (spec 6.6 Earnings), so the owner funds a payroll wallet whose key handling is the
- * lead's and Plan 6's. Until then this always throws and moves nothing. When it lands: send exactly
- * `amountAtomic` to the payout's stored address only, record the tx hash (`sent`) or `failed` in a
- * second transaction (the fee sweep's pending/settled pattern), and delete this tripwire with its
- * test (test/staff/pay.test.ts).
- *
- * Security review 12 Nov M2: before sending, the send must also re-check that the payout's address
- * is still the one its tap approved (`staff_payout_addresses.tap_id` -> `key_taps.intent`, whose
- * `address` must equal the stored address exactly) and that the address is still live
- * (`removed_at is null`); otherwise it marks the payout `failed` and sends nothing.
- */
-export async function sendStaffPayout(_a: { address: string; amountAtomic: bigint }): Promise<{ txHash: string }> {
-  throw new PayrollWalletNotWiredError();
-}
 
 // ---------------------------------------------------------------------------------------------
 // The owner's pay settings
@@ -474,6 +445,12 @@ export function staffPayRoutes(app: FastifyInstance): void {
     const quote = openQuote(config, body.quote, req.staff.accountId, req.auth.sessionId, clock());
     const result = await withTx(db, (c) => clockOut(c, req.staff, req.auth.sessionId, body.addressId, quote, clock()));
     req.server.events.closeSession(req.staff.accountId, req.auth.sessionId);
+    // Owner 26 Nov: paid automatically at clock-out, from the payroll wallet (best effort here; the
+    // payroll pass retries a payout the wallet could not pay yet).
+    const wallet = req.server.deps.payrollWallet;
+    if (result.payout !== null && wallet !== undefined) {
+      void runPayrollPayouts({ db, clock, wallet, push: req.server.push }).catch((err: unknown) => req.log.error({ err }, 'payroll send failed'));
+    }
     void reply.clearCookie(realmOf(req).cookie, COOKIE_ATTRS);
     return result;
   });

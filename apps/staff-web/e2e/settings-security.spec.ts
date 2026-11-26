@@ -165,14 +165,14 @@ test('Settings: links save without a tap; the fee sweep is turned on with a tap;
   ]);
   expect(s.taps).toEqual([]);
 
-  const fee = page.getByRole('region', { name: 'Fee wallet' });
-  await expect(fee.locator('[data-part="fee-sweep-state"]')).toHaveText('The sweep is off.');
-  await fee.getByRole('textbox', { name: 'Move fees at' }).fill('10');
-  await fee.getByRole('textbox', { name: 'Keep in the fee wallet' }).fill('1.25');
-  await fee.getByRole('textbox', { name: 'Your offline wallet address' }).fill(COLD);
-  await fee.getByRole('button', { name: 'Save fee wallet' }).click();
+  const fee = page.getByRole('region', { name: 'Payroll wallet' });
+  await expect(fee.locator('[data-part="fee-sweep-state"]')).toHaveText('Moving the extra to the fee wallet is off.');
+  await fee.getByRole('textbox', { name: 'Cap' }).fill('10');
+  await fee.getByRole('textbox', { name: 'Keep in the payroll wallet' }).fill('1.25');
+  await fee.getByRole('textbox', { name: 'Fee wallet address' }).fill(COLD);
+  await fee.getByRole('button', { name: 'Save payroll wallet' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Tap security key' }).click();
-  await expect(fee.locator('[data-part="fee-sweep-state"]')).toHaveText('The sweep is on.');
+  await expect(fee.locator('[data-part="fee-sweep-state"]')).toHaveText('Moving the extra to the fee wallet is on.');
   expect(s.taps).toEqual([{ kind: 'fee-sweep', thresholdAtomic: '10000000000000', floatAtomic: '1250000000000', coldAddress: COLD }]);
 
   const pay = page.getByRole('table', { name: 'Pay owed per person' });

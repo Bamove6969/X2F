@@ -3,6 +3,7 @@ import type { KeyRefusal } from '@x2f/accounts';
 /** Every error code the API answers with, for all plans. Plan 3 appends its codes here. */
 export type ApiErrorCode =
   | 'bad-request'
+  | 'not-fee-wallet'
   | 'not-found'
   | 'unsupported-media-type'
   | 'internal'
