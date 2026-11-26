@@ -29,6 +29,12 @@ export const PIDS_FILE = join(DEMO_DIR, 'pids.json');
 export const ENV_FILE = join(SECRETS_DIR, 'env.json');
 /** The demo's web build (its own for an offset demo: the running one's API serves the other). */
 export const WEB_DIST = join(ROOT, PORT_OFFSET === 0 ? 'apps/web/dist-demo' : `apps/web/dist-demo-${PORT_OFFSET}`);
+/** The demo's staff-web build, served by the staff API on the staff origin (its own for an offset demo). */
+export const STAFF_WEB_DIST = join(ROOT, PORT_OFFSET === 0 ? 'apps/staff-web/dist-demo' : `apps/staff-web/dist-demo-${PORT_OFFSET}`);
+/** The seeded staff accounts' soft security keys, passkeys and PGP keys (0600; the staff gateway logs them in). */
+export const STAFF_FILE = join(SECRETS_DIR, 'staff.json');
+/** The demo's FIDO metadata: the repo's snapshot plus the demo's own test key (staff-mds.ts). */
+export const DEMO_MDS_DIR = join(STATE_DIR, 'fido-mds');
 
 export const HOST = '127.0.0.1';
 
@@ -40,6 +46,8 @@ export const PORTS = {
   /** The node proxy's own origin (monero-ts drops any path in a daemon URI). */
   gatewayNode: at(4401),
   gatewayNodeTls: at(4444),
+  /** The staff gateway: staff-web and the staff API on their own origin, never the trader one's. */
+  staffGateway: at(4402),
   api: at(18080),
   apiInternal: at(18081),
   staff: at(18082),

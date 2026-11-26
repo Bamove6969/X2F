@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { migrate } from '../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
-import { DEMO_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_CONTAINER_FILE, PG_IMAGE, PORT_OFFSET, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
+import { DEMO_DIR, DEMO_MDS_DIR, ENV_FILE, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_CONTAINER_FILE, PG_IMAGE, PORT_OFFSET, PORTS, ROOT, SECRETS_DIR, STAFF_WEB_DIST, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
 import { demoOrigins, quickTunnelUrl } from './origins.js';
 import { pushEnabled } from './notes-push.js';
@@ -22,7 +22,8 @@ import { phoneIp } from './phone.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
 import { SELF_HTTP, SELF_WS } from './self-origin.js';
 import { makeSecrets } from './secrets.js';
-import { buildWeb } from './web-build.js';
+import { makeDemoMds } from './staff-mds.js';
+import { buildStaffWeb, buildWeb } from './web-build.js';
 
 assertDemoFlag(process.env);
 const step = (s: string): void => console.log(`demo: ${s}`);
@@ -67,11 +68,12 @@ async function main(): Promise<void> {
   const originEnv: Record<string, string | undefined> = { ...process.env };
   if (process.env.DEMO_TUNNEL === 'cloudflared') {
     const bin = process.env.DEMO_CLOUDFLARED || 'cloudflared';
-    for (const [name, port] of [['tunnel-web', PORTS.gateway], ['tunnel-node', PORTS.gatewayNode]] as const) {
+    for (const [name, port] of [['tunnel-web', PORTS.gateway], ['tunnel-node', PORTS.gatewayNode], ['tunnel-staff', PORTS.staffGateway]] as const) {
       startDetached(name, bin, ['tunnel', '--no-autoupdate', '--url', `http://${HOST}:${port}`], {});
     }
     const urlOf = (name: string) => quickTunnelUrl(existsSync(join(LOG_DIR, `${name}.log`)) ? readFileSync(join(LOG_DIR, `${name}.log`), 'utf8') : '');
-    await waitFor('the cloudflared quick tunnels', async () => urlOf('tunnel-web') !== null && urlOf('tunnel-node') !== null, 60_000);
+    await waitFor('the cloudflared quick tunnels', async () => urlOf('tunnel-web') !== null && urlOf('tunnel-node') !== null && urlOf('tunnel-staff') !== null, 60_000);
+    originEnv.DEMO_PUBLIC_STAFF_ORIGIN = urlOf('tunnel-staff')!;
     originEnv.DEMO_PUBLIC_ORIGIN = urlOf('tunnel-web')!;
     originEnv.DEMO_PUBLIC_NODE_ORIGIN = urlOf('tunnel-node')!;
     step(`public tunnels up: ${originEnv.DEMO_PUBLIC_ORIGIN} (node ${originEnv.DEMO_PUBLIC_NODE_ORIGIN})`);
@@ -143,6 +145,13 @@ async function main(): Promise<void> {
   // ── the web build ───────────────────────────────────────────────────────────
   step('building apps/web for this demo (regtest, demo moderation key)');
   buildWeb(WEB_DIST, s);
+  // The staff app, its production build as the e2e stack makes it (only the moderation key pinned).
+  step('building apps/staff-web for the staff origin');
+  buildStaffWeb(STAFF_WEB_DIST, s);
+  // The repo's FIDO metadata plus the demo's own throwaway key (staff-mds.ts), so the seeded staff
+  // hold software security keys; the CA's private key is the seed's alone (.demo/secrets, 0600).
+  const staffCaFile = join(SECRETS_DIR, 'staff-ca.json');
+  writeFileSync(staffCaFile, JSON.stringify(await makeDemoMds(DEMO_MDS_DIR)), { mode: 0o600 });
 
   // ── services ────────────────────────────────────────────────────────────────
   const origins = o.allowed;
@@ -162,7 +171,8 @@ async function main(): Promise<void> {
     DATABASE_URL: pgUrl('x2f'),
     X2F_LEAKED_LIST_PATH: s.leakedListPath,
     X2F_SERVER_KEY: s.serverKey,
-    X2F_ATTESTATION_DIR: join(ROOT, 'apps/api/data/fido-mds'),
+    // The repo's snapshot plus the demo's software key (staff-mds.ts); real keys register as before.
+    X2F_ATTESTATION_DIR: DEMO_MDS_DIR,
     // Regtest uses the mainnet address format; the node itself is --regtest --offline.
     X2F_MONERO_NETWORK: 'mainnet',
     X2F_TERMS_VERSION: TERMS_TEXT_VERSION,
@@ -185,10 +195,13 @@ async function main(): Promise<void> {
     X2F_INTERNAL_HOST: HOST,
     X2F_INTERNAL_PORT: String(PORTS.apiInternal),
     X2F_MONEROD_URL: MONEROD_RESTRICTED,
-    // The staff API on its own loopback origin (Plan 4 Task 4).
-    X2F_STAFF_ORIGIN: `http://${HOST}:${PORTS.staff}`,
+    // The staff API on its own loopback listener (Plan 4 Task 4); its origin is the staff gateway's
+    // (4402, or DEMO_PUBLIC_STAFF_ORIGIN), never the trader one, and it serves the staff-web build.
+    X2F_STAFF_ORIGIN: o.staff,
+    X2F_STAFF_RP_ID: o.staffRpId,
     X2F_STAFF_HOST: HOST,
     X2F_STAFF_PORT: String(PORTS.staff),
+    X2F_STAFF_WEB_ROOT: STAFF_WEB_DIST,
     ...(process.env.PRICE_SOURCES ? { PRICE_SOURCES: process.env.PRICE_SOURCES } : {}),
     ...(process.env.FX_SOURCES ? { FX_SOURCES: process.env.FX_SOURCES } : {}),
   };
@@ -222,7 +235,13 @@ async function main(): Promise<void> {
     // DEMO_NOTES_FILE / DEMO_NOTES_SEED from the shell: the gateway's environment is otherwise clean.
     ...gatewayNotesEnv(process.env),
   });
+  startTs('staff-gateway', 'tools/demo/staff-gateway.ts', {
+    ...demo,
+    DEMO_STAFF_API_PORT: String(PORTS.staff), DEMO_STAFF_GATEWAY_PORT: String(PORTS.staffGateway),
+    DEMO_STAFF_ORIGIN: o.staff, DEMO_STAFF_RP_ID: o.staffRpId, DEMO_STAFF_ORIGINS: o.staffAllowed.join(','), DEMO_MONEROD_RPC: MONEROD_RPC,
+  });
   await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
+  await waitFor('the staff gateway', httpUp(`http://${HOST}:${PORTS.staffGateway}/healthz`));
   await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
   await waitFor('the gateway node port', httpUp(`http://${HOST}:${PORTS.gatewayNode}/get_info`));
 
@@ -232,17 +251,35 @@ async function main(): Promise<void> {
     stdio: 'inherit',
     env: { ...process.env, ...demo, DEMO_ORIGIN: LOCAL_ORIGIN, DATABASE_URL: pgUrl('x2f'), MONERO_DAEMON_URI: MONEROD_RPC },
   });
+  step('seeding the staff: the owner, a senior moderator, two moderators, news, a case taken');
+  // A failed staff seed leaves the trader demo running (the staff app then has no accounts and the
+  // guide says it is not seeded); it is never a reason to stop the whole demo.
+  try {
+    execFileSync(process.execPath, ['--import', 'tsx', join(ROOT, 'tools/demo/staff-seed.ts')], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: {
+        ...process.env, ...demo, MONERO_DAEMON_URI: MONEROD_RPC,
+        DEMO_STAFF_API: `http://${HOST}:${PORTS.staff}`, DEMO_STAFF_ORIGIN: o.staff, DEMO_STAFF_RP_ID: o.staffRpId,
+        DEMO_API_LOG: join(LOG_DIR, 'api.log'), DEMO_STAFF_CA: staffCaFile,
+      },
+    });
+  } catch {
+    console.log('demo: the staff seed failed (see above); the trader demo runs on, the staff app has no seeded accounts');
+  }
 
   const info = {
     web: LOCAL_ORIGIN,
     ...(PUBLIC_ORIGIN ? { public: PUBLIC_ORIGIN } : {}),
     ...(TS_ORIGIN ? { tailnet: TS_ORIGIN } : {}),
+    staff: o.staff,
     logs: LOG_DIR,
   };
   writeFileSync(join(DEMO_DIR, 'urls.json'), JSON.stringify(info, null, 2));
   console.log('\nX2F demo is running (regtest, fake money). Stop it with: npm run demo:stop');
   console.log(`  Open:     ${LOCAL_ORIGIN}`);
   if (PUBLIC_ORIGIN) console.log(`  Public:   ${PUBLIC_ORIGIN}  (anyone with this URL can open it; fake money only)`);
+  console.log(`  Staff:    ${o.staff}/__demo/staff (the staff app, its own origin; one-tap login as the owner or a moderator)${o.staff.startsWith('https:') ? `; locally http://localhost:${PORTS.staffGateway}` : ''}`);
   if (TS_ORIGIN) console.log(`  Tailnet:  ${TS_ORIGIN}  (self-signed certificate; your tailnet only)`);
   else console.log('  Tailnet:  not available (tailscale is not installed on this machine)');
   if (phone) {

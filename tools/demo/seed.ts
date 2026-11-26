@@ -17,6 +17,8 @@ import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.j
 import { NEW_NAME_MIN, checkDisplayName, checkLoginName } from '../../packages/accounts/src/index.js';
 import { loginTag } from '../../apps/api/src/accounts.js';
 import { loadConfig } from '../../apps/api/src/config.js';
+import { applyEvent } from '../../apps/api/src/trades/store.js';
+import { newPgp, pgpCode } from '../regtest/e2e/staffClient.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
 await assertDemo(process.env, process.env.MONERO_DAEMON_URI ?? '');
@@ -216,7 +218,26 @@ for (const p of [...CAST, ...OWNER]) {
  */
 interface SeededTrade { code: string; buyer: string; seller: string; offer: string; fiat: string; state: string; at: string }
 const trades: SeededTrade[] = [];
-async function seedTrade(takerLogin: string, posterLogin: string, label: string, methodId: string, currency: string, fiatWhole: number, cancel: boolean): Promise<void> {
+/**
+ * DEMO ONLY (the staff panel's queue): a trade the seller disputes. The escrow lives in a browser,
+ * so the seed moves the trade from setup to secured with the system events the moderation
+ * service's chain watcher would report (setup-done, then the chain), through the API's own store
+ * on its throwaway database, with a throwaway escrow address no wallet watches (the moderation
+ * service never attested these trades, so it ignores them). The seller then opens the dispute
+ * through the real API, as the trade room's Dispute button does.
+ */
+async function disputeTrade(code: string, seller: DemoClient, reason: 'silent' | 'other', note: string): Promise<void> {
+  const deps = { db: tradePool, clock: () => new Date() };
+  const t = await applyEvent(deps, code, { type: 'setup-done', escrowAddress: await throwawayAddress() }, 'system');
+  const funds = t.sellerFundsAtomic;
+  await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: 0n, confirmations: 1 }, 'system');
+  await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system');
+  await seller.ok('POST', `/v1/trades/${code}/dispute`, { reason, note });
+}
+const tradePool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+
+async function seedTrade(takerLogin: string, posterLogin: string, label: string, methodId: string, currency: string, fiatWhole: number, then: 'open' | 'cancel' | { reason: 'silent' | 'other'; note: string }): Promise<void> {
+  const cancel = then === 'cancel';
   const what = `${takerLogin} takes ${posterLogin} ${label}`;
   // The taker buys: the poster's sell offer.
   const offerId = posted.get(`${posterLogin} sell ${label}`);
@@ -240,19 +261,73 @@ async function seedTrade(takerLogin: string, posterLogin: string, label: string,
     if (res.status >= 300) throw new Error(`take → ${res.status} ${JSON.stringify(res.body)}`);
     const code = (res.body as { code: string }).code;
     if (cancel) await c.ok('POST', `/v1/trades/${code}/events`, { type: 'buyer-cancel' });
-    trades.push({ code, buyer: takerLogin, seller: posterLogin, offer: `${label} ${fiatWhole}`, fiat: `${fiatWhole} ${currency}`, state: cancel ? 'cancelled' : 'setup', at: new Date().toISOString() });
-    console.log(`demo seed: trade ${code} (${what}, ${cancel ? 'cancelled' : 'open'})`);
+    if (typeof then === 'object') await disputeTrade(code, clients.get(posterLogin)!, then.reason, then.note);
+    const state = cancel ? 'cancelled' : typeof then === 'object' ? 'disputed' : 'setup';
+    trades.push({ code, buyer: takerLogin, seller: posterLogin, offer: `${label} ${fiatWhole}`, fiat: `${fiatWhole} ${currency}`, state, at: new Date().toISOString() });
+    console.log(`demo seed: trade ${code} (${what}, ${state})`);
   } catch (e) {
     failures.push(`trade ${what}: ${(e as Error).message}`);
   }
 }
 // The cancelled one first: a buyer may have only so many trades waiting on setup at once.
-await seedTrade('lowtide-login', 'mira-login', 'INTERAC_E_TRANSFER CAD', 'INTERAC_E_TRANSFER', 'CAD', 50, true);
-await seedTrade('lowtide-login', 'satoshi-login', 'CASH_APP USD', 'CASH_APP', 'USD', 40, false);
+await seedTrade('lowtide-login', 'mira-login', 'INTERAC_E_TRANSFER CAD', 'INTERAC_E_TRANSFER', 'CAD', 50, 'cancel');
+await seedTrade('lowtide-login', 'satoshi-login', 'CASH_APP USD', 'CASH_APP', 'USD', 40, 'open');
+// Two open disputes for the staff panel's queue (staff-seed.ts has the senior moderator take one).
+await seedTrade('nightowl-login', 'satoshi-login', 'ZELLE USD', 'ZELLE', 'USD', 60, { reason: 'silent', note: 'The buyer stopped answering after the escrow was secured.' });
+await seedTrade('mira-login', 'lowtide-login', 'SEPA_INSTANT EUR', 'SEPA_INSTANT', 'EUR', 45, { reason: 'other', note: 'The buyer asked me to send the euros to a different name than on the account.' });
+await tradePool.end();
+
+/**
+ * DEMO ONLY (the Teams features): demo_ana's team, two members invited and joined through the real
+ * routes. An invite needs a strong session and a confirm (password and authenticator code), so
+ * ana logs in again with password + code (a strong login on the browser she signed up on) and
+ * confirms each invite; each code works once, so the seed waits for the next 30-second code each
+ * time. Each member joins with two throwaway PGP keys (a member's login is PGP plus a second
+ * method); their keys are not kept, the members are there to be seen on the team page.
+ */
+const TEAM = [
+  { displayName: 'ana_desk', loginName: 'ana-desk-login', roles: ['trades'] },
+  { displayName: 'ana_nights', loginName: 'ana-nights-login', roles: ['offers'] },
+];
+const team: Array<{ shown: string; login: string; roles: string[] }> = [];
+let lastStep = 0;
+/** The next authenticator code for `login` that no earlier step of the seed has used. */
+async function freshCode(login: string): Promise<string> {
+  while (stepOf(Date.now()) <= lastStep) await new Promise((r) => setTimeout(r, 1_000));
+  lastStep = stepOf(Date.now());
+  return totpCode(totp[login]!, lastStep);
+}
+try {
+  const ana = clients.get('ana-demo')!;
+  lastStep = stepOf(Date.now());
+  await ana.ok('POST', '/v1/logout');
+  const pw = await ana.ok<{ pendingId?: string }>('POST', '/v1/login/password', { loginName: 'ana-demo', password: DEMO_PASSWORD, deviceLabel: 'Demo seed' });
+  if (!pw.pendingId) throw new Error(`login answered ${JSON.stringify(pw)}`);
+  await ana.ok('POST', '/v1/login/second-factor', { pendingId: pw.pendingId, code: await freshCode('ana-demo'), deviceLabel: 'Demo seed' });
+  for (const m of TEAM) {
+    const action = { kind: 'team-invite', name: m.displayName, roles: m.roles.join(',') };
+    const { confirmToken } = await ana.ok<{ confirmToken: string }>('POST', '/v1/confirm/password', { password: DEMO_PASSWORD, totp: await freshCode('ana-demo'), action });
+    const inv = await ana.ok<{ invite: string }>('POST', '/v1/team/invites', { displayName: m.displayName, roles: m.roles, confirmToken });
+    const member = new DemoClient(ORIGIN);
+    await member.ok('POST', '/v1/team/invite', { invite: inv.invite });
+    const first = await newPgp(m.displayName);
+    const s1 = await member.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/team/join/start', { invite: inv.invite, loginName: m.loginName, publicKey: first.publicKey, acceptedTerms: TERMS_TEXT_VERSION });
+    const joined = await member.ok<{ setupId: string }>('POST', '/v1/team/join/finish', { challengeId: s1.challengeId, code: await pgpCode(s1.encryptedMessage, first), termsSignature: { kind: 'typed', name: m.displayName } });
+    const second = await newPgp(`${m.displayName} spare`);
+    const s2 = await member.ok<{ challengeId: string; encryptedMessage: string }>('POST', '/v1/team/join/second/pgp/start', { setupId: joined.setupId, publicKey: second.publicKey });
+    await member.ok('POST', '/v1/team/join/second/pgp/finish', { setupId: joined.setupId, challengeId: s2.challengeId, code: await pgpCode(s2.encryptedMessage, second), deviceLabel: 'Demo seed' });
+    await member.call('POST', '/v1/logout');
+    team.push({ shown: m.displayName, login: m.loginName, roles: m.roles });
+    console.log(`demo seed: team member ${m.displayName} (demo_ana's team, ${m.roles.join(', ')})`);
+  }
+} catch (e) {
+  failures.push(`team: ${(e as Error).message}`);
+}
 
 // Logged out again: a login while the account has an open session elsewhere waits for that
 // device's approval (Plan 2 Task 16), and nobody holds the seed's sessions.
-for (const c of clients.values()) await c.ok('POST', '/v1/logout');
+// call, not ok: a client the team step logged out and could not log in again holds no session.
+for (const c of clients.values()) await c.call('POST', '/v1/logout');
 for (const f of failures) console.log(`demo seed: refused: ${f}`);
 
 const logins = [
@@ -264,6 +339,9 @@ const logins = [
   '',
   'The cast (offers already posted):',
   ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
+  '',
+  ...(team.length > 0 ? [`demo_ana's team (Settings, Team on ana-demo): ${team.map((m) => `${m.shown} (${m.roles.join(', ')})`).join(', ')}`] : []),
+  ...(trades.some((t) => t.state === 'disputed') ? [`Open disputes (the staff queue): ${trades.filter((t) => t.state === 'disputed').map((t) => `${t.code} (${t.buyer} buys from ${t.seller})`).join(', ')}`] : []),
 ];
 writeFileSync(TOTP_FILE, JSON.stringify(totp, null, 2), { mode: 0o600 });
 // What the seed made, for the demo guide page (/__demo/guide, guide-page.ts). No secrets in it.
@@ -271,6 +349,7 @@ writeFileSync(SEED_SUMMARY_FILE, JSON.stringify({
   owner: OWNER.map((p) => ({ login: p.loginName, shown: p.displayName, vendor: p.vendor })),
   cast: CAST.map((p) => ({ login: p.loginName, shown: p.displayName, offers: p.offers.map(offerLabel) })),
   trades,
+  team,
   failures,
 }, null, 2));
 // The accounts the gateway's door lets in from a fresh browser (door.ts).

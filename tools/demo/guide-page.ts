@@ -19,6 +19,8 @@ import { DEMO_PASSWORD, ROOT, STATE_DIR } from './config.js';
 import { demoPageCsp, NOTES_TAG } from './page-csp.js';
 import { forwardedHttps } from './self-origin.js';
 import { ROUND, roundSteps, type GuideStep, type NewStep } from './guide-round.js';
+import { STAFF_CAST } from './staff-accounts.js';
+import { readStaffSummary, type StaffSummary } from './staff-summary.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
 
 export type { NewStep };
@@ -30,6 +32,8 @@ export interface SeedSummary {
   owner: Array<{ login: string; shown: string; vendor: boolean }>;
   cast: Array<{ login: string; shown: string; offers: string[] }>;
   trades: Array<{ code: string; buyer: string; seller: string; offer: string; fiat: string; state: string; at: string }>;
+  /** demo_ana's team members (seeded through the real invite and join). */
+  team?: Array<{ shown: string; login: string; roles: string[] }>;
   failures: string[];
 }
 
@@ -66,8 +70,20 @@ function bcTime(iso: string): string {
 
 type Step = GuideStep;
 
+const ROLE_NAME: Record<string, string> = { owner: 'the owner', senior: 'a senior moderator', mod: 'a moderator' };
+
+/** Which staff screens each role sees (packages/staff NAV), for the Staff screens step: the cast's own lines (staff-accounts.ts). */
+export const STAFF_SCREENS: Readonly<Record<'owner' | 'senior' | 'mod', string>> = {
+  owner: STAFF_CAST.find((p) => p.role === 'owner')!.sees,
+  senior: STAFF_CAST.find((p) => p.role === 'senior')!.sees,
+  mod: STAFF_CAST.find((p) => p.role === 'mod')!.sees,
+};
+
 /** The checklist, in the order one would walk it. */
-export function guideSteps(s: SeedSummary | null): Step[] {
+export function guideSteps(s: SeedSummary | null, staff: StaffSummary | null = null): Step[] {
+  const staffAt = (path: string, text?: string): string => (staff ? link(`${staff.origin}${path}`, text ?? `${staff.origin}${path}`) : esc(text ?? path));
+  const disputes = s?.trades.filter((t) => t.state === 'disputed') ?? [];
+  const team = s?.team ?? [];
   const open = s?.trades.find((t) => t.state === 'setup');
   const closed = s?.trades.find((t) => t.state === 'cancelled');
   const tradeLinks = [open, closed].filter((t) => t !== undefined).map((t) => link(`/trade/${t.code}`, `/trade/${t.code}`));
@@ -135,8 +151,8 @@ export function guideSteps(s: SeedSummary | null): Step[] {
     {
       title: '11. Team members',
       links: [link('/settings/team')],
-      who: `${login('ana-demo')} (vendors have teams).`,
-      todo: ['Invite a member, set their boxes; open the invite (/team/join) in another browser.'],
+      who: `${login('ana-demo')} (vendors have teams).${team.length > 0 ? ` Seeded: ${team.map((m) => `${esc(m.shown)} (${esc(m.roles.join(', '))})`).join(' and ')}, already joined.` : ''}`,
+      todo: ['See the members, their boxes and limits; the team log.', 'Invite a member, set their boxes; open the invite (/team/join) in another browser.'],
     },
     {
       title: '12. Profile and badges',
@@ -164,15 +180,25 @@ export function guideSteps(s: SeedSummary | null): Step[] {
     },
     {
       title: '16. A dispute',
-      links: [link('/help/disputes')],
-      who: 'The buyer or seller of your own trade, once the escrow is secured.',
-      todo: ['In the room, open a dispute (it opens /trade/<code>/dispute): reason, evidence, the waiting screen.', 'Not seeded: the demo has no staff screens (see below), so nobody can take or rule the case here.'],
+      links: [link('/help/disputes'), ...disputes.map((t) => link(`/trade/${t.code}`, `/trade/${t.code}`))],
+      who: disputes.length > 0
+        ? `Seeded: ${disputes.map((t) => `${login(t.code)} (${login(t.seller)} disputed, ${login(t.buyer)} buying)`).join('; ')}. Or one of your own trades, once the escrow is secured.`
+        : 'The buyer or seller of your own trade, once the escrow is secured.',
+      todo: ['In the room, open a dispute (it opens /trade/<code>/dispute): reason, evidence, the waiting screen.', 'The seeded ones are in the staff queue (step 17): a moderator takes a case and writes to both traders.'],
     },
     {
       title: '17. Staff screens',
-      links: [],
-      who: 'Not in this demo.',
-      todo: ['staff-web is not started by npm run demo, and the staff API listens on 127.0.0.1 only, so moderator and admin screens (case queue, rulings, bans) cannot be shown here.'],
+      links: staff ? [staffAt('/__demo/staff', 'Staff login (one tap)'), staffAt('/', 'the staff app')] : [],
+      who: staff
+        ? `The staff app is its own origin, ${esc(staff.origin)}. Log in at /__demo/staff there: ${staff.people.map((p) => `${login(p.login)} (${ROLE_NAME[p.role] ?? p.role})`).join(', ')}.`
+        : 'Not seeded (is the demo still starting?).',
+      todo: [
+        `Owner (lumen-demo) sees ${STAFF_SCREENS.owner}.`,
+        `Senior moderator (vale-demo) sees ${STAFF_SCREENS.senior}.`,
+        `Moderators (kestrel-demo, wren-demo) see ${STAFF_SCREENS.mod}.`,
+        `Seeded: ${staff && staff.disputes.length > 0 ? `${staff.disputes.length} open disputes in the queue${staff.taken.length > 0 ? ` (${staff.taken.join(', ')} taken by vale-demo)` : ''}` : 'no disputes'}, the staff hires, setup and dispute entries in the Activity log, and a News item ("${staff?.news ?? 'none'}").`,
+        'Not in the demo: anything that needs a key tap in the browser (approving a ruling, invites, settings, site controls, bans, publishing News): the browser holds none of the demo\'s throwaway keys. A case\'s chat needs the moderation process\'s internal socket, which the demo does not run, so the case says the chat is unavailable. Training has no closed cases yet.',
+      ],
     },
   ];
 }
@@ -186,7 +212,7 @@ export function newSteps(): NewStep[] {
 const noteList = (n: number[]): string => `Owner notes: ${n.map((x) => `#${x}`).join(', ')}`;
 
 /** The page for this seed summary. */
-export function guidePage(s: SeedSummary | null): string {
+export function guidePage(s: SeedSummary | null, staff: StaffSummary | null = null): string {
   const fresh = newSteps()
     .map(
       (st) =>
@@ -198,7 +224,7 @@ export function guidePage(s: SeedSummary | null): string {
         `<ul>${st.todo.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`,
     )
     .join('');
-  const steps = guideSteps(s)
+  const steps = guideSteps(s, staff)
     .map(
       (st) =>
         `<section data-screen="guide-step-${esc(/^\d+/.exec(st.title)?.[0] ?? 'x')}" id="step-${esc(/^\d+/.exec(st.title)?.[0] ?? 'x')}">` +
@@ -351,8 +377,9 @@ function readLegal(file = LEGAL_REVIEW_FILE): string | null {
   }
 }
 
-export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => SeedSummary | null; legal?: () => string | null }): (req: IncomingMessage, res: ServerResponse) => void {
+export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => SeedSummary | null; staff?: () => StaffSummary | null; legal?: () => string | null }): (req: IncomingMessage, res: ServerResponse) => void {
   const legal = cfg.legal ?? (() => readLegal());
+  const staff = cfg.staff ?? (() => readStaffSummary());
   const hosts = new Set([...cfg.origins].map((o) => new URL(o).host));
   const summary = cfg.summary ?? (() => readSeedSummary());
   return (req, res) => {
@@ -370,6 +397,6 @@ export function createGuideHandler(cfg: { origins: Set<string>; summary?: () => 
     if (!hosts.has(req.headers.host ?? '') && !forwardedHttps(req.headers)) return send(403, 'application/json', '{"error":"demo-guide-host"}');
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, 'application/json', '{"error":"demo-guide-method"}');
     const path = (req.url ?? '').split(/[?#]/, 1)[0];
-    send(200, 'text/html; charset=utf-8', path === LEGAL_PATH ? legalPage(legal()) : guidePage(summary()));
+    send(200, 'text/html; charset=utf-8', path === LEGAL_PATH ? legalPage(legal()) : guidePage(summary(), staff()));
   };
 }

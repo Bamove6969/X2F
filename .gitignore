@@ -16,6 +16,7 @@ design/x2f-app/support.js
 .demo/
 .demo-*/
 apps/web/dist-demo*/
+apps/staff-web/dist-demo*/
 
 # TypeScript incremental build state (review P-m3)
 *.tsbuildinfo

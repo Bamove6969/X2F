@@ -26,6 +26,7 @@ What runs, all bound to 127.0.0.1:
 | --- | --- |
 | Gateway: the web app, the API and `/relay` on one origin | **http://localhost:4400** |
 | Gateway: the node proxy's origin (the wallets in the browser sync through it) | http://localhost:4401 |
+| Staff gateway: the staff app (staff-web) and the staff API, on their own origin | **http://localhost:4402** |
 | API (public) / internal listener / staff API | 18080 / 18081 / 18082 |
 | Relay / relay admin | 18787 / 18788 |
 | Node proxy (to monerod's restricted RPC) | 18789 |
@@ -41,10 +42,8 @@ worktree. The container a demo started is kept in its folder's `pg-container`, s
 `npm run demo:stop` (with the same `DEMO_PORT_OFFSET`) removes that one and never the other's. For a check that should leave the owner's comments
 alone, also set `DEMO_NOTES_PUSH=0` and `DEMO_NOTES_FILE` to a scratch file.
 
-On a demo round's branch the guide (`/__demo/guide`) opens with "New in this demo": each new or
-fixed screen with the owner's demo note numbers it answers. That list is the only round-specific
-part of the kit and lives in `tools/demo/guide-round.ts` alone (empty on main, so main's guide
-has no such part). `/__demo/guide/legal` shows
+The guide (`/__demo/guide`) opens with "New in this demo": each new or fixed screen with the
+owner's demo note numbers it answers; `/__demo/guide/legal` shows
 `docs/terms-legal-review-2026-11-23.md` as a page. The guide, the legal page and `/__demo/codes`
 carry the same Comment button as the app (same numbering, same push to comms). Each guide item
 and each legal proposal is its own section with a `data-screen` (`guide-new-A`, `guide-step-5`,
@@ -114,8 +113,70 @@ at once (Completed, `cancelled`) and one left open in `setup` (Open). The escrow
 browser, so the seed never sets up an escrow: the open one is cancelled by the API's timer 60
 minutes after the seed and then moves to Completed. No XMR or fiat moves for either. A released
 trade, a rating and a dispute need the escrow and are done by hand (the guide below). The demo
-runs no staff-web: the staff API listens on 127.0.0.1 only, so there are no moderator screens and
-nobody can take a dispute here.
+also opens two disputes for the staff queue (below): `nightowl-login` buys from `satoshi-login`
+(Zelle, USD 60) and `mira-login` buys from `lowtide-login` (SEPA Instant, EUR 45). The escrow lives
+in a browser, so for these two the seed moves the trade from setup to secured with the system
+events the moderation service's watcher would report (`setup-done`, `chain`; through the API's own
+store, on the demo's throwaway database, with a throwaway escrow address that no wallet watches),
+and the seller then opens the dispute through the real API. No XMR moves.
+
+**demo_ana's team.** `ana-demo` has a team of two members, invited and joined through the real
+routes: `ana_desk` (Trades) and `ana_nights` (Offers). An invite needs a strong session and a
+confirm, so the seed logs `ana-demo` in again with password and authenticator code and confirms
+each invite, waiting for a fresh 30-second code each time (about a minute of the start). Each
+member joined with two throwaway PGP keys, which are not kept: they are there to be seen on
+Settings, Team.
+
+## The staff app (staff-web)
+
+The staff side (moderators, the owner panel, staff, the activity log...) runs on **its own origin**,
+never the trader one: the staff gateway on **http://localhost:4402** (`tools/demo/staff-gateway.ts`,
+`tools/demo/staff-gateway-core.ts`), and publicly on `DEMO_PUBLIC_STAFF_ORIGIN` (below). It passes
+everything to the staff API's own listener (18082, `X2F_STAFF_*`), which serves the production
+staff-web build (`apps/staff-web/dist-demo`, built at start with only the moderation key pinned, as
+the regtest e2e stack builds it) with `STAFF_CSP`, `no-store` and the security headers, byte for
+byte: no comment layer, no placeholders, nothing injected. The staff API accepts exactly one origin
+(`X2F_STAFF_ORIGIN`): the gateway passes the other staff origins (localhost, 127.0.0.1, the
+request's own https origin behind a front) on as that one, and any other Origin unchanged, so the
+API refuses it. One host's cookies go to every port, so the trader gateway never passes the staff
+session cookie (`__Host-x2f_staff`) to the trader side, and the staff gateway never passes the
+trader one (`__Host-x2f_session`) to the staff API.
+
+**Staff logins.** Staff log in with two methods, a security key and a PGP key; there is no staff
+password or authenticator code. The demo has no hardware, so the staff seed (`tools/demo/staff-seed.ts`)
+gives each staff account software keys, as the regtest e2e stack does: security keys attested by
+the demo's own throwaway CA, whose test key is added to a copy of the repo's FIDO metadata
+(`tools/demo/staff-mds.ts`, `.demo/state/fido-mds`; real keys still register), and a PGP key, all
+in `.demo/secrets/staff.json` (0600). Open **`<staff origin>/__demo/staff`** and tap an account: the
+staff gateway does the real two-step staff login with that account's keys (the API checks the
+signature and the PGP code as in production) and hands your browser the session cookie.
+
+| Login name | Shown as | Role | Sees |
+| --- | --- | --- | --- |
+| `lumen-demo` | Lumen_Prime | owner | everything: Overview (site controls, News, planned maintenance), Disputes, Past reputation, Staff (invites, grants), Performance, Prices, Training, Activity log, Feedback, Settings, Alerts |
+| `vale-demo` | Vale_Hartley | senior moderator | Disputes (and approving rulings), Past reputation, Training, Activity log, Feedback |
+| `kestrel-demo` | Kestrel_Ash | moderator | Disputes (the queue and a case), Past reputation, Training, Activity log |
+| `wren-demo` | Wren_Calloway | moderator | the same as `kestrel-demo` |
+
+The owner is set up through the real first-run setup (the one-time code the API prints to
+`.demo/logs/api.log`, two keys, a PGP key); the others are hired through the owner's tapped invites
+(each with a security key, a passkey and a PGP key). Seeded with them: the two open disputes in the
+queue, one taken by `vale-demo`; a News item published with the owner's tap; and the activity log
+entries all of that writes (setup, invites, joins, disputes opened, the case taken).
+
+What does not work in the demo, and why:
+- **Key taps in the browser.** Approving a ruling, invites, settings, site controls, bans and
+  publishing News each ask the browser's security key to sign the action (`KeyTapDialog`); the
+  demo's keys are in Node, not in your browser, so these stop at the tap. A real YubiKey cannot be
+  added to a seeded account from the browser either (adding a key is itself a tapped action).
+- **A case's chat and proofs.** The staff API reads them only through the moderation process's
+  internal socket and ruling gate (`MOD_INTERNAL_SOCKET`, `init-gate`, `pin-owner`), which the
+  demo does not run, so the case page says the chat is unavailable.
+- **Training** shows closed cases only, and the demo has none (a case closes with a ruling, which
+  needs the gate).
+
+`npm run demo:web` rebuilds and swaps the staff build too (`apps/staff-web/dist-demo`), in the same
+API restart as the web build. A demo started before the staff origin existed gets the web app only.
 
 **The guide.** `GET /__demo/guide` on the gateway is a plain checklist of every screen, with a link
 to each and the seeded account to use (`tools/demo/guide-page.ts`, `tools/test/demo-guide.test.ts`).
@@ -250,10 +311,17 @@ send in the browser (regtest only); keep each trader's page open from take to se
   `tailscale funnel --bg --https=8443 http://127.0.0.1:4400`, `tailscale funnel --bg --https=10000
   http://127.0.0.1:4401`, then `DEMO_PUBLIC_ORIGIN=https://<host>.ts.net:8443
   DEMO_PUBLIC_NODE_ORIGIN=https://<host>.ts.net:10000 npm run demo` (a funnel is public too; turn
-  each off with `tailscale funnel --https=8443 off`). The web
+  each off with `tailscale funnel --https=8443 off`). The staff app takes a third origin of its
+  own, `DEMO_PUBLIC_STAFF_ORIGIN` (it must differ from both: another port is enough), e.g.
+  `tailscale funnel --bg --https=443 http://127.0.0.1:4402` and
+  `DEMO_PUBLIC_STAFF_ORIGIN=https://<host>.ts.net`; the staff API then accepts that origin
+  (`X2F_STAFF_ORIGIN`) and its WebAuthn RP ID is that host (`X2F_STAFF_RP_ID`; an RP ID carries no
+  port, so on one Funnel host it is the trader one's). `DEMO_TUNNEL=cloudflared` opens a third quick
+  tunnel for it. The web
   build, the relay's wss URL, the node proxy URL, the allowed origins and the CSP then use them
   (`tools/demo/origins.ts`, `tools/test/demo-origins.test.ts`); localhost keeps working. **A quick
-  tunnel is public: anyone who has the URL can open the demo and sign up.** It is fake money only
+  tunnel is public: anyone who has the URL can open the demo and sign up, and anyone who has the
+  staff URL can log in as the demo's staff owner at `/__demo/staff`.** It is fake money only
   (regtest), and the tunnels end with `npm run demo:stop`. Passkeys are made for the tunnel's host
   name; password logins work everywhere.
 - **Any one https origin (a preview pane, a tunnel).** The demo's web build is made with
