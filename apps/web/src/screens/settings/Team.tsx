@@ -32,11 +32,11 @@ import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
 import { StagedNote } from './HoldChanges.js';
 import { AbilityPicker } from './AbilityPicker.js';
+import { MyAccess } from './MyAccess.js';
+import { MemberSessions } from './MemberSessions.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
 import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
 import { TEAM_LOG_COPY, TEAM_LOG_PATH } from './teamLogCopy.js';
-import { memberAbilities } from '../../session/member.js';
-import { useSession } from '../../session/useSession.js';
 import '../screens.css';
 import { hasSpace, spaceProblem } from '../setup/names.js';
 
@@ -186,7 +186,6 @@ function cantDoOf(e: unknown): CantDo | null {
 }
 
 export function Team() {
-  const session = useSession();
   const { prove, confirmUi, open } = useConfirm();
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const [max, setMax] = useState(3);
@@ -213,8 +212,8 @@ export function Team() {
   // The activity log's member filter ('' = every member; review e2e area 8).
   const [logMember, setLogMember] = useState('');
   const [logWho, setLogWho] = useState<{ id: string; name: string }[]>([]);
-  // J-20 review F8: a member's own band and hours (null: not a member, or the API sends none).
-  const [mine, setMine] = useState<{ band: TradeBand | null; hours: WorkingHours } | null>(null);
+  // A team member (refused here) is shown their own access instead (MyAccess.tsx).
+  const [mine, setMine] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -235,8 +234,8 @@ export function Team() {
       if (c !== null) {
         setCantDo(c);
         setState('ready');
-        // J-20 review F8: a team member (refused here) is shown their own limits when the API sends them.
-        authApi.me().then((me) => setMine(me.member?.limits ?? null), () => undefined);
+        // J-20 review F8: a team member (refused here) is shown their own access (boxes, limits, lead).
+        setMine(true);
       } else setState(e instanceof AuthApiError && e.status === 401 ? 'signed-out' : 'load-failed');
     }
   }, []);
@@ -393,21 +392,7 @@ export function Team() {
           <p className="x2f-note">{C.firstLoginNote}</p>
         </section>
 
-        {mine !== null ? (
-          <section className="x2f-card" data-part="my-limits" aria-labelledby="team-my-limits-h">
-            <h2 className="x2f-card__title" id="team-my-limits-h">
-              {C.myLimitsTitle}
-            </h2>
-            <p className="x2f-note">{C.myLimitsNote}</p>
-            <p className="x2f-note">{C.limits(mine.band, mine.hours)}</p>
-            {/* Team audit v2: a member with "See the team log" opens their own entries. */}
-            {memberAbilities(session).includes('team-see-log') ? (
-              <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="my-team-log-link">
-                {TEAM_LOG_COPY.title}
-              </Link>
-            ) : null}
-          </section>
-        ) : null}
+        {mine ? <MyAccess /> : null}
 
         {error !== null ? (
           <p className="x2f-error" role="alert">
@@ -493,6 +478,7 @@ export function Team() {
                   <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.displayName)} onClick={() => void remove(m)} data-part="remove-member">
                     {C.remove}
                   </Button>
+                  {m.status === 'active' ? <MemberSessions member={m} /> : null}
                 </li>
               ))}
             </ul>

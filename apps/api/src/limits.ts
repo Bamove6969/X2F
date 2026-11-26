@@ -222,6 +222,18 @@ export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
  */
 export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
 
+/**
+ * `GET /v1/team/log/integrity` per account (review of team audit v2): each check walks and rehashes
+ * the account's whole chain, so 30 at once and 30 an hour. The Team log screen checks once when it
+ * opens and when asked; a loop runs dry. Every try counts, refused ones too.
+ */
+export const TEAM_LOG_INTEGRITY_BUCKET: BucketSize = { capacity: 30, perMinute: 30 / 60 };
+/**
+ * `GET /v1/team/log/export` per account (same review): each download reads every matching row and
+ * walks the whole chain as well, so 10 at once and 10 an hour.
+ */
+export const TEAM_LOG_EXPORT_BUCKET: BucketSize = { capacity: 10, perMinute: 10 / 60 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
@@ -259,6 +271,10 @@ export interface Budgets {
   accountLookup: KeyedBuckets;
   /** Per session: refused S-085 proofs (review S2, re-verify R2). */
   sessionProof: KeyedBuckets;
+  /** Per account: `GET /v1/team/log/integrity`. */
+  teamLogIntegrity: KeyedBuckets;
+  /** Per account: `GET /v1/team/log/export`. */
+  teamLogExport: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -282,5 +298,7 @@ export function newBudgets(clock: () => Date): Budgets {
     keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
     accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
     sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
+    teamLogIntegrity: new KeyedBuckets(TEAM_LOG_INTEGRITY_BUCKET, clock),
+    teamLogExport: new KeyedBuckets(TEAM_LOG_EXPORT_BUCKET, clock),
   };
 }

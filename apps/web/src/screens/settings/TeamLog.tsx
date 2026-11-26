@@ -13,6 +13,9 @@
  * - Each entry opens to its details (amount, offer terms, boxes added and removed, limits before and
  *   after, the device, what was refused and why) and its fingerprint.
  * - Download CSV or JSON of what the filters match (the JSON carries every seal, to re-check offline).
+ *   The file is fetched through the app's client with the session (`teamLogExport`) and saved from
+ *   an object URL. The check and the download each have an hourly budget per account (429
+ *   `slow-down` with `retryAfterSeconds`, shown as the time to try again).
  *
  * A member holding "See the team log" sees only their own entries here, with no integrity, summary
  * or download (the API enforces it). Kit parts and existing classes only (NEEDS_DESIGN_TEAM).
@@ -20,8 +23,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
-  AuthApiError,
   teamLogExportPath,
+  AuthApiError,
   type TeamLogCategory,
   type TeamLogEntry,
   type TeamLogFilter,
@@ -70,6 +73,13 @@ export function filterOfDraft(d: Draft): TeamLogFilter | null {
     ...(d.from !== '' ? { from: day(d.from, 0) } : {}),
     ...(d.to !== '' ? { to: day(d.to, 86_400_000) } : {}),
   };
+}
+
+/** For a 429 `slow-down`: the moment to try again (ISO), else null. */
+export function retryAt(e: unknown, now: Date): string | null {
+  if (!(e instanceof AuthApiError) || e.status !== 429) return null;
+  const s = typeof e.retryAfterSeconds === 'number' && e.retryAfterSeconds > 0 ? e.retryAfterSeconds : 60;
+  return new Date(now.getTime() + s * 1000).toISOString();
 }
 
 /** "#12:ab…" as the owner pasted it, or null. */
@@ -181,8 +191,9 @@ export function TeamLog() {
     try {
       const r = await authApi.teamLogIntegrity(fp);
       setKeptResult(r.fingerprint?.matches === true ? C.matches : C.noMatch);
-    } catch {
-      setKeptResult(C.loadFailed);
+    } catch (e) {
+      const at = retryAt(e, new Date());
+      setKeptResult(at === null ? C.loadFailed : C.slowDown(at));
     }
   };
 
@@ -395,6 +406,7 @@ export function TeamLog() {
             {C.exportTitle}
           </h2>
           <p className="x2f-note">{C.exportIntro}</p>
+          {/* Plain links: the browser sends the session cookie and saves the attachment itself (no Blob URL: proof-render tripwire). */}
           <a className="x2f-button x2f-button--secondary" href={teamLogExportPath(filter, 'csv')} download data-part="export-csv">
             {C.exportCsv}
           </a>

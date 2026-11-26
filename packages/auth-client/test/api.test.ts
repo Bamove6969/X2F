@@ -301,3 +301,28 @@ describe('password-login misses (owner, 2026-10-23)', () => {
     expect(PASSWORD_LOGIN_MISMATCH).toBe("That login name and password don't match");
   });
 });
+
+describe('teamLogExport (team audit v2 follow-up)', () => {
+  it('fetches the file with the session like any call and hands back its bytes and the server-given name', async () => {
+    const { sent, fetch } = recorder(
+      () => new Response('"id"\r\n"1"\r\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="x2f-team-log-2026-11-26.csv"' } }),
+    );
+    const out = await createAuthApi({ fetch }).teamLogExport({ members: ['m1'], before: '9', limit: 5 }, 'csv');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.url).toBe('/v1/team/log/export?member=m1&format=csv');
+    expect(sent[0]!.init).toMatchObject({ method: 'GET', credentials: 'same-origin', redirect: 'error' });
+    expect(headersOf(sent[0]!).get('accept')).toBe('text/csv');
+    expect(out.filename).toBe('x2f-team-log-2026-11-26.csv');
+    expect(await out.blob.text()).toBe('"id"\r\n"1"\r\n');
+  });
+
+  it('falls back to a plain name, and refuses like any call (429 slow-down with retryAfterSeconds)', async () => {
+    const plain = recorder(() => new Response('{}', { status: 200, headers: { 'content-disposition': 'attachment; filename="../x"' } }));
+    expect((await createAuthApi({ fetch: plain.fetch }).teamLogExport({}, 'json')).filename).toBe('x2f-team-log.json');
+    expect(headersOf(plain.sent[0]!).get('accept')).toBe('application/json');
+    const slow = recorder(() => Response.json({ error: 'slow-down', retryAfterSeconds: 360 }, { status: 429 }));
+    const e = await createAuthApi({ fetch: slow.fetch }).teamLogExport({}, 'csv').catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(AuthApiError);
+    expect(e).toMatchObject({ status: 429, code: 'slow-down', retryAfterSeconds: 360 });
+  });
+});
