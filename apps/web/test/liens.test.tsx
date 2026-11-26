@@ -10,7 +10,7 @@ import { render } from './render.js';
 const XMR = 1_000_000_000_000n;
 const OWES = {
   id: 'l1', status: 'active', amountAtomic: (2n * XMR).toString(), feeAtomic: '0', recoveredAtomic: (XMR / 2n).toString(),
-  remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 5000, defaultRateBps: 5000, fromCode: 'AB12-CD34-EF56-GH78', createdAt: '2026-11-16T12:00:00.000Z',
+  remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 10000, defaultRateBps: 10000, fromCode: 'AB12-CD34-EF56-GH78', createdAt: '2026-11-16T12:00:00.000Z',
 };
 
 const OWED_TO = {
@@ -21,7 +21,7 @@ const OWED_TO = {
 describe('parseLiens', () => {
   it('reads what is owed both ways; owed to me is totals only (review M4) and whether a recovery address is set (Q2)', () => {
     const r = parseLiens({ owes: [OWES], owedTo: [OWED_TO] });
-    expect(r.owes[0]).toMatchObject({ amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, rateBps: 5000 });
+    expect(r.owes[0]).toMatchObject({ amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, rateBps: 10000 });
     expect(r.owedTo[0]).toEqual({ id: 'l2', status: 'active', amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, fromCode: 'AB12-CD34-EF56-GH78', recoveryAddressSet: false });
     expect(() => parseLiens({ owes: [], owedTo: [{ ...OWED_TO, recoveryAddressSet: 'no' }] })).toThrow(LiensShapeError);
   });
@@ -31,8 +31,14 @@ describe('parseLiens', () => {
     expect(() => parseLiens({ owes: {}, owedTo: [] })).toThrow(LiensShapeError);
   });
   it('shows the rate as a percentage', () => {
+    expect(pctOf(10000)).toBe('100%');
     expect(pctOf(5000)).toBe('50%');
     expect(pctOf(2550)).toBe('25.5%');
+  });
+  it('owner 26 Nov 2026: at the 100% default the notice says all of it goes, less the network fee; a lower approved rate names its share', () => {
+    expect(LIENS_COPY.owesIntro('100%')).toContain('all of it goes to them');
+    expect(LIENS_COPY.owesIntro('100%')).toContain('network fee');
+    expect(LIENS_COPY.owesIntro('25.5%')).toContain('25.5% of what you receive goes to them');
   });
 });
 
@@ -50,7 +56,8 @@ describe('the Liens screen', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     const text = host.textContent ?? '';
-    expect(text).toContain(LIENS_COPY.owesIntro('50%'));
+    expect(text).toContain(LIENS_COPY.owesIntro('100%'));
+    expect(text).toContain('100%');
     expect(text).toContain('2.000000 XMR');
     expect(text).toContain('0.500000 XMR');
     expect(text).toContain('1.500000 XMR');

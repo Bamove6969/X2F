@@ -1624,6 +1624,8 @@ describe('lien recovery at take', () => {
          creditor_address, creditor_address_statement, creditor_address_sig)
        values ($1, $2, $3, $4, coalesce($8, gen_random_uuid()::text), 1, 1, 'restitution', $5, $5, $6, $7::text,
          case when $7::text is null then null else '{}'::jsonb end, case when $7::text is null then null else repeat('0', 128) end) returning id::text`,
+      // 5000 unless `rate` says otherwise: a lower rate a senior approved (the default is 100% since
+      // migration 890), so these tests' figures stay readable halves.
       [debtor.id, creditor.id, amountAtomic.toString(), (over.fee ?? 0n).toString(), deps.clock(), over.rate ?? 5000, address, over.fromCode ?? null],
     );
     return rows[0]!.id;
@@ -1812,29 +1814,31 @@ describe('lien recovery at take', () => {
     expect((await seller.browser.get(`/v1/trades/${code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
   });
 
-  it('Q1 (provisional): an approved rate is at most 90% (SQL refuses more); at 90% a 1 XMR purchase reserves 0.9 XMR', async () => {
+  it('Q1 (owner, 26 Nov 2026): a rate is at most 100% (SQL refuses more) and 100% by default; a 1 XMR purchase reserves all of it but the buyer\'s floor', async () => {
     const debtor = await person();
     const creditor = await person();
-    await expect(lienOn(debtor, creditor, 100n * XMR, { rate: 9001 })).rejects.toThrow(/check/);
-    await lienOn(debtor, creditor, 100n * XMR, { rate: 9000 });
+    await expect(lienOn(debtor, creditor, 100n * XMR, { rate: LIEN_RECOVERY_MAX_BPS + 1 })).rejects.toThrow(/check/);
+    const lien = await lienOn(debtor, creditor, 100n * XMR);
+    // The column's own default (migration 890), not the 5000 these tests write for readable halves.
+    await deps.db.query('update liens set recovery_rate_bps = default where id = $1', [lien]);
+    expect((await deps.db.query<{ r: number }>('select recovery_rate_bps as r from liens where id = $1', [lien])).rows[0]!.r).toBe(LIEN_RECOVERY_MAX_BPS);
     const res = await take(debtor, await postOffer(await person()), body(debtor, XMR));
     expect(res.statusCode, res.body).toBe(200);
-    expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe(((XMR * 9n) / 10n).toString());
-    expect(lienRecoveryCap(XMR)).toBe((XMR * 9n) / 10n);
+    expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((XMR - LIEN_BUYER_KEEPS_ATOMIC).toString());
+    expect(lienRecoveryCap(XMR)).toBe(XMR - LIEN_BUYER_KEEPS_ATOMIC);
   });
 
-  it('PROBE-B3 (review): a high rate on a small purchase is reduced so the buyer keeps MAX_NETWORK_FEE + 0.01 XMR; nothing at all when it would not fit', async () => {
+  it('PROBE-B3 (review): at 100% a small purchase still leaves the buyer MAX_NETWORK_FEE + 1 atomic unit; nothing at all when under 0.01 XMR would fit', async () => {
     const debtor = await person();
     const creditor = await person();
-    await lienOn(debtor, creditor, 100n * XMR, { rate: 9000 });
-    // 0.1 XMR: 90% would leave the buyer 0.01 XMR; reduced to leave exactly 0.02 XMR (the floor).
+    await lienOn(debtor, creditor, 100n * XMR, { rate: LIEN_RECOVERY_MAX_BPS });
     const small = XMR / 10n;
     const res = await take(debtor, await postOffer(await person()), body(debtor, small));
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((small - LIEN_BUYER_KEEPS_ATOMIC).toString());
-    // 0.025 XMR: 0.005 XMR would fit above the floor, under the 0.01 XMR minimum (Q5): nothing reserved, carried forward.
-    const tiny = (XMR * 25n) / 1000n;
-    const res2 = await take(debtor, await postOffer(await person(), { minFiatCents: '500' }), body(debtor, tiny));
+    // 0.015 XMR: 0.004999999999 XMR would fit above the floor, under the 0.01 XMR minimum (Q5): nothing reserved, carried forward.
+    const tiny = (XMR * 15n) / 1000n;
+    const res2 = await take(debtor, await postOffer(await person(), { minFiatCents: '100' }), body(debtor, tiny));
     expect(res2.statusCode, res2.body).toBe(200);
     expect((res2.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
   });

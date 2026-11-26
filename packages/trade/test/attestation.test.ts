@@ -615,14 +615,15 @@ describe('attested lien recovery', () => {
   });
 });
 
-// Review B1 and B3 (2026-11-16), provisional owner answers Q1/Q5 (17 Nov): neither device accepts
-// signed terms whose recovery could not be paid by an honest release: above 90% of the buyer's
-// proceeds, leaving the buyer less than the largest network fee + 0.01 XMR, under 0.01 XMR, or to
-// one of the trade's own addresses.
+// Review B1 and B3 (2026-11-16), owner answer Q1 (26 Nov: 100%) and Q5: neither device accepts
+// signed terms whose recovery could not be paid by an honest release: above `lienRecoveryCap` (all
+// of the buyer's proceeds but the largest network fee + 1 atomic unit), under 0.01 XMR, or to one of
+// the trade's own addresses.
 describe('attested lien recovery limits (review B1, B3)', () => {
   const CREDITOR = '4'.padEnd(95, 'C');
-  // TERMS: a seller's ad of 0.25 XMR, so the buyer's proceeds are 0.25 XMR and the cap 90%: 0.225 XMR.
-  const CAP = 225_000_000_000n;
+  // TERMS: a seller's ad of 0.25 XMR, so the buyer's proceeds are 0.25 XMR and the cap all of it
+  // but MAX_NETWORK_FEE (0.01 XMR) + 1 atomic unit: 0.239999999999 XMR.
+  const CAP = 239_999_999_999n;
   const signed = async (amountAtomic: bigint, address = CREDITOR) => {
     const t = await buildTrade();
     const a: Attestation = { ...t.attestation, terms: { ...TERMS, lienRecovery: { address, amountAtomic: amountAtomic.toString() } } };
