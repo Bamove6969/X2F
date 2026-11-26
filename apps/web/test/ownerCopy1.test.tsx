@@ -116,11 +116,13 @@ describe('/setup/welcome: the review minors', () => {
     expect(WELCOME_COPY.notDone).toBe('Not done yet');
   });
 
-  it('C2: the ticks use a kit token, not hard-coded greens (the tokens have no green yet)', () => {
+  // C2 used the escrow teal while the tokens had no green; the `good` token (goodToken.test) is that
+  // green now, so the ticks are green as the owner asked (12 Nov #34; wip/agy-layout).
+  it('C2: the ticks use the kit green token, not hard-coded greens', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/setup/setup.css'), 'utf8');
     expect(css).not.toMatch(/#3ccf7a|#1a7f45|--x2f-welcome-done/i);
     const tick = /\.x2f-welcome__tick\s*\{([^}]*)\}/.exec(css)![1]!;
-    expect(tick).toContain('background: var(--x2f-escrow);');
+    expect(tick).toContain('background: var(--x2f-good);');
   });
 
   it('C3: Welcome no longer exports the fee sentence it stopped showing (PostOffer keeps its own)', () => {

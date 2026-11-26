@@ -2756,12 +2756,11 @@
   font-weight: 600;
 }
 
-/* Owner demo notes 12 Nov #42 (DESIGNER-REVIEW): the help links under /login and /session-length; each a 44 px target. */
+/* Owner demo notes 12 Nov #42 (DESIGNER-REVIEW): the help links under /login and /session-length; a 2x2 grid of 44 px surface cards. */
 .x2f-help-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  column-gap: var(--x2f-space-4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
   margin-top: var(--x2f-space-6);
 }
 
@@ -2771,6 +2770,17 @@
   justify-content: center;
   min-width: 44px;
   min-height: 44px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  text-decoration: none;
+}
+
+.x2f-help-links__link:hover {
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
 }
 
 /* The trade header's wrapper (the brand row and the board's header), one block for the tabletop rule. */

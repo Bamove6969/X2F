@@ -80,7 +80,9 @@ export function PgpChallenge() {
     setError(null);
     try {
       await registerPgpFinish(challenge.challengeId, code.trim(), state.terms!);
-      update({ registered: true });
+      // Marking 'pgp' done at Verify (instead of waiting for Continue) prevents /setup/pgp-key
+      // before() guard from redirecting to itself in an infinite loop if the user presses Back.
+      update({ registered: true, done: state.done.includes('pgp') ? state.done : [...state.done, 'pgp'] });
       refreshSession();
     } catch (e) {
       if (termsChanged(e)) {

@@ -23,6 +23,7 @@ const MORE: [RegExp, string][] = [
   // Owner 25 Nov 2026 (in chat, after demo note #194): "Create account" on every sign-up step, replacing
   // demo notes #79's, #147's and #194's per-step names; the account exists by Welcome, which keeps its name.
   // COPY-UNSIGNED
+  [/^\/welcome\/?$/, 'Welcome'],
   [/^\/setup\/welcome\/?$/, 'Welcome'],
   [/^\/setup(\/|$)/, 'Create account'],
   [/^\/terms\/?$/, 'Terms'],
@@ -35,6 +36,7 @@ const MORE: [RegExp, string][] = [
   [/^\/settings\/changes(\/|$)/, 'Account changes'],
   [/^\/settings\/jabber\/events(\/|$)/, 'Jabber notices'],
   [/^\/settings\/jabber(\/|$)/, 'Jabber'],
+  [/^\/settings\/idle-reminder(\/|$)/, 'Idle reminder'],
   [/^\/settings\/account-type(\/|$)/, 'Account type'],
   [/^\/settings\/badges(\/|$)/, 'Your badges'],
   [/^\/settings\/record(\/|$)/, 'Signed record'],

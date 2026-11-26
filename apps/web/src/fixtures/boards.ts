@@ -146,7 +146,7 @@ export const BOARD_BUY_LIVE_USD = [
   { id: 'PAYPAL', name: 'PayPal', group: 'Payment apps', giftCard: false, offers: 8, bestRate: '33770' },
   { id: 'TRANSFERWISE', name: 'Wise', group: 'Payment apps', giftCard: false, offers: 7, bestRate: '33130' },
   { id: 'F2F', name: 'Cash in person (face to face)', group: 'Cash & money orders', giftCard: false, offers: 6, bestRate: '33620' },
-  { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', group: 'Gift cards & vouchers', giftCard: false, offers: 5, bestRate: '35320' },
+  { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', group: 'Gift cards & vouchers', giftCard: true, offers: 5, bestRate: '35320' },
   { id: 'REVOLUT', name: 'Revolut', group: 'Payment apps', giftCard: false, offers: 5, bestRate: '33160' },
   { id: 'CASH_DEPOSIT', name: 'Cash deposit at bank', group: 'Cash & money orders', giftCard: false, offers: 3, bestRate: '33460' },
   { id: 'DOMESTIC_WIRE_TRANSFER', name: 'Domestic wire transfer (US)', group: 'Bank transfers', giftCard: false, offers: 3, bestRate: '33080' },

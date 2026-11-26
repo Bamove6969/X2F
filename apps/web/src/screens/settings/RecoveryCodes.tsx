@@ -1,6 +1,7 @@
 /**
- * Recovery codes (Task 30, spec §6.2): making a set needs confirm-it's-you, and the codes are
- * shown once and never again. Making a new set replaces any old one.
+ * Recovery code (Task 30, spec §6.2; singular per owner demo note #28, 12 Nov 2026): making a new
+ * code needs confirm-it's-you, and the code is shown once and never again. Making a new code
+ * replaces any old one.
  */
 import { useState } from 'react';
 import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
@@ -26,7 +27,8 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
       setCodes(result.codes);
       setStaged(result.status === 'staged');
     } catch (e) {
-      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
+      // COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026)
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not make your recovery code. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -35,7 +37,8 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
   if (codes !== null) {
     return (
       <div className="x2f-field" data-part="recovery-codes">
-        <p className="x2f-note">Save these now. Each works once, and you will not see them again.</p>
+        {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
+        <p className="x2f-note">Save this now. It works once, and you will not see it again.</p>
         {staged ? <StagedNote /> : null}
         <ul className="x2f-codes" data-part="code-list">
           {codes.map((c) => (
@@ -44,8 +47,9 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
             </li>
           ))}
         </ul>
+        {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
         <Button variant={primary} onClick={onDone} data-part="recovery-done">
-          I have saved them
+          I have saved it
         </Button>
       </div>
     );
@@ -58,8 +62,9 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
           {error}
         </p>
       ) : null}
+      {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
       <Button variant={primary} disabled={busy} onClick={() => void make()} data-part="recovery-make">
-        Show my recovery codes
+        Show my recovery code
       </Button>
     </div>
   );

@@ -351,3 +351,68 @@ test('leaving sign-up before the recovery code is saved leads back to it (m-2)',
   }
   expect(s.calls).not.toContain('wallets');
 });
+
+// Owner demo notes 12 Nov 2026 (#27 a8b080ad, #30 4a8a6e47): ticking all five security options
+// walks through every ticked method in SIGNUP_ORDER (pgp -> security-key -> passkey -> password ->
+// authenticator), prevents skipping ahead to /setup/backup before all chosen options are handled,
+// and opens the recovery code screen only after all selected options are complete.
+test('ticking all five security options walks through every chosen method in order before the recovery code screen (#27, #30)', async ({ page }) => {
+  await setPhone(page, VIEWPORTS[1]);
+  const s = await stubApi(page);
+  await page.goto('/setup?returnTo=%2Fpost');
+  await acceptTerms(page);
+  await pickNames(page);
+
+  await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();
+  for (const id of ['security-key', 'passkey', 'password', 'totp']) {
+    await page.click(`[data-method="${id}"]`);
+    await expect(tick(page, id)).toBeChecked();
+  }
+  await page.click('[data-part="method-continue"]');
+
+  // 1. PGP key & code
+  await expect(page).toHaveURL(/\/setup\/pgp-key\?/);
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
+  await expect(page).toHaveURL(/\/setup\/pgp-code\?/);
+  await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
+  await page.click('[data-part="pgp-verify"]');
+  await page.click('[data-part="pgp-continue"]');
+
+  // 2. Security key (and cannot skip ahead to /setup/backup or /sell before finishing remaining methods)
+  await expect(page).toHaveURL(/\/setup\/security-key\?/);
+  await expect(page.locator('[data-screen="setup-security-key"]')).toBeVisible();
+  for (const skipTo of ['/setup/backup', '/setup/password', '/sell']) {
+    await page.goto(skipTo);
+    await expect(page).toHaveURL(/\/setup\/security-key/);
+    await expect(page.locator('[data-screen="setup-security-key"]')).toBeVisible();
+  }
+  await page.click('[data-part="method-later"]');
+
+  // 3. Passkey
+  await expect(page).toHaveURL(/\/setup\/passkey\?/);
+  await expect(page.locator('[data-screen="setup-passkey"]')).toBeVisible();
+  await page.click('[data-part="method-later"]');
+
+  // 4. Password
+  await expect(page).toHaveURL(/\/setup\/password\?/);
+  await expect(page.locator('[data-screen="setup-password"]')).toBeVisible();
+  await page.fill('#pw', 'Quiet-harbour-58');
+  await page.fill('#pw2', 'Quiet-harbour-58');
+  await page.click('[data-part="password-set"]');
+
+  // 5. Authenticator app (OTP)
+  await expect(page).toHaveURL(/\/setup\/authenticator\?/);
+  await expect(page.locator('[data-screen="setup-authenticator"]')).toBeVisible();
+  await page.click('[data-part="totp-start"]');
+  await page.fill('#totp-code', '123456');
+  await page.click('[data-part="totp-finish"]');
+  await expect(page.locator('[data-part="totp-success"]')).toBeVisible();
+  await page.click('[data-part="totp-continue"]');
+
+  // 6. Recovery code screen comes only after all chosen methods are done
+  await expect(page).toHaveURL(/\/setup\/backup\?/);
+  await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
+  expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'set-password', 'totp-start', 'totp-finish']);
+});

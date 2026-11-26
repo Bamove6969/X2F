@@ -53,7 +53,8 @@ const LABELS: Record<MethodType, string> = {
   'security-key': 'Security key',
   password: 'Password',
   totp: 'Authenticator app',
-  'recovery-codes': 'Recovery codes',
+  // COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026)
+  'recovery-codes': 'Recovery code',
 };
 
 
@@ -237,8 +238,9 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
             Add an authenticator app
           </Button>
         ) : null}
+        {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
         <Button variant="secondary" disabled={busy} onClick={() => setAdding('recovery-codes')} data-add="recovery-codes">
-          Create recovery codes
+          Create recovery code
         </Button>
       </div>
 
