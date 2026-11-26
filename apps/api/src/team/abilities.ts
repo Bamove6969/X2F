@@ -153,7 +153,7 @@ const ROWS: readonly Row[] = [
   [43, 'wallets-repay-lien', 'wallets', 'Repay a lien', 'Start the repayment trade that lifts a lien', 'high', 'not-built', false, null, 0, 0, 0],
   // B7. Team administration
   [44, 'team-see', 'team', 'See the team', 'See who is on the team and what each may do', 'low', 'not-built', false, null, 1, 1, 0],
-  [45, 'team-see-log', 'team', 'See the team log', 'See their own entries in the team log', 'low', 'grantable', false, 'Start set', 1, 1, 1],
+  [45, 'team-see-log', 'team', 'See the team log', 'See who did what, and when', 'low', 'not-built', false, 'Start set', 1, 1, 1],
   [49, 'team-invite', 'team', 'Invite members', 'Send a team invite', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [50, 'team-remove', 'team', 'Remove members', 'Kick a member out', 'high', 'owner-only', true, 'Lead only (G57)', 0, 0, 0],
   [51, 'team-change-abilities', 'team', 'Change abilities', "Tick or untick another member's boxes", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],

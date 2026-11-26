@@ -170,12 +170,12 @@ describe('the screen', () => {
     expect(retryAt(new Error('x'), now)).toBeNull();
   });
 
-  it('a member sees only the list: no integrity, summary, member filter or download', async () => {
+  it('a member, even with "See the team log" ticked, gets the owner-only refusal and no call is made', async () => {
     meMember = { name: 'Aurora', roles: [], abilities: ['team-see-log'] };
     const { host } = render(<MemoryRouter><TeamLog /></MemoryRouter>);
     await settle();
-    expect(host.querySelectorAll('[data-part="team-log-entries"] > li').length).toBeGreaterThan(0);
-    for (const part of ['team-log-integrity', 'team-log-summary', 'filter-member', 'team-log-export']) expect(byPart(host, part), part).toBeNull();
-    expect(calls.some((c) => c.startsWith('/v1/team/log/integrity') || c.startsWith('/v1/team/log/summary'))).toBe(false);
+    expect(host.querySelector('[data-screen="team-log"][data-owner-only]')).not.toBeNull();
+    expect(byPart(host, 'team-log-entries')).toBeNull();
+    expect(calls.some((c) => c.startsWith('/v1/team/log'))).toBe(false);
   });
 });

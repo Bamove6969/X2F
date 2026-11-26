@@ -37,7 +37,7 @@ import { Disclosure } from '../../ui/Disclosure.js';
 import { Facts } from '../../ui/Facts.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { authApi } from '../auth/authApi.js';
-import { memberOf } from '../../session/member.js';
+import { OwnerOnly } from './OwnerOnly.js';
 import { useSession } from '../../session/useSession.js';
 import { fetchCatalogue, type Catalogue } from './teamApi.js';
 import { TEAM_PATH } from './teamCopy.js';
@@ -88,9 +88,17 @@ export function parseFingerprint(s: string): { id: string; hash: string } | null
   return m === null ? null : { id: m[1]!, hash: m[2]!.toLowerCase() };
 }
 
+/** The account owner's alone (owner's choice, 26 Nov 2026): a member gets the owner-only refusal. */
 export function TeamLog() {
+  return (
+    <OwnerOnly screen="team-log">
+      <OwnersTeamLog />
+    </OwnerOnly>
+  );
+}
+
+function OwnersTeamLog() {
   const session = useSession();
-  const isMember = memberOf(session) !== null;
   const ready = session.status === 'signed-in';
   const [entries, setEntries] = useState<TeamLogEntry[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
@@ -133,10 +141,10 @@ export function TeamLog() {
 
   // The owner's cards: the chain check and the 30-day summary. A member gets neither.
   useEffect(() => {
-    if (!ready || isMember) return;
+    if (!ready) return;
     authApi.teamLogIntegrity().then(setIntegrity, () => undefined);
     authApi.teamLogSummary(30).then((s) => setSummary(s.members), () => undefined);
-  }, [ready, isMember]);
+  }, [ready]);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -207,7 +215,7 @@ export function TeamLog() {
         {C.back}
       </Link>
       <h1 className="x2f-screen__title">{C.title}</h1>
-      <p className="x2f-note">{isMember ? C.memberIntro : C.intro}</p>
+      <p className="x2f-note">{C.intro}</p>
 
       {state === 'signed-out' ? <p className="x2f-note">{C.loadFailed}</p> : null}
       {state === 'refused' ? (
@@ -221,7 +229,7 @@ export function TeamLog() {
         </p>
       ) : null}
 
-      {!isMember && integrity !== null ? (
+      {integrity !== null ? (
         <section className="x2f-card" data-part="team-log-integrity" aria-labelledby="team-log-integrity-h">
           <h2 className="x2f-card__title" id="team-log-integrity-h">
             {C.integrityTitle}
@@ -265,7 +273,7 @@ export function TeamLog() {
         </section>
       ) : null}
 
-      {!isMember && summary !== null ? (
+      {summary !== null ? (
         <section className="x2f-card" data-part="team-log-summary" aria-labelledby="team-log-summary-h">
           <h2 className="x2f-card__title" id="team-log-summary-h">
             {C.summaryTitle}
@@ -294,7 +302,6 @@ export function TeamLog() {
         <h2 className="x2f-card__title" id="team-log-filters-h">
           {C.filtersTitle}
         </h2>
-        {!isMember ? (
           <div className="x2f-field">
             <label className="x2f-label" htmlFor="team-log-who">
               {C.who}
@@ -308,7 +315,6 @@ export function TeamLog() {
               ))}
             </select>
           </div>
-        ) : null}
         <fieldset className="x2f-field">
           <legend className="x2f-label">{C.kinds}</legend>
           {CATEGORIES.map((c) => (
@@ -400,7 +406,6 @@ export function TeamLog() {
         ) : null}
       </section>
 
-      {!isMember ? (
         <section className="x2f-card" data-part="team-log-export" aria-labelledby="team-log-export-h">
           <h2 className="x2f-card__title" id="team-log-export-h">
             {C.exportTitle}
@@ -414,7 +419,6 @@ export function TeamLog() {
             {C.exportJson}
           </a>
         </section>
-      ) : null}
     </main>
   );
 }
