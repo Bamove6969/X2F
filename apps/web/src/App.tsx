@@ -54,6 +54,7 @@ import { HelpSettings, Security } from './screens/settings/Security.js';
 import { AccountSettings, AlertsSettings } from './screens/settings/SettingsTabs.js';
 import { ACCOUNT_PATH, ALERTS_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
 import { Team } from './screens/settings/Team.js';
+import { TeamLog } from './screens/settings/TeamLog.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
@@ -333,6 +334,7 @@ export function App() {
             {/* W-021: which events send a Jabber notice. */}
             <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />
             <Route path="/settings/team" element={<Team />} />
+            <Route path="/settings/team/log" element={<TeamLog />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />
             {/* Plan 5 Task 12: badge visibility and the signed reputation record. */}

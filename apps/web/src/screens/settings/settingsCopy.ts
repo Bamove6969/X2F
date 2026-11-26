@@ -35,7 +35,7 @@ export const SETTINGS_TABS: readonly { id: SettingsTab; to: string }[] = [
 const OWNED: readonly [RegExp, SettingsTab][] = [
   [/^\/settings\/(?:security|changes|devices|idle-reminder)\/?$/, 'security'],
   [/^\/settings\/(?:alerts|jabber|jabber\/events)\/?$/, 'alerts'],
-  [/^\/settings\/(?:account|account-type|team|blocked)\/?$/, 'account'],
+  [/^\/settings\/(?:account|account-type|team|team\/log|blocked)\/?$/, 'account'],
   [/^\/settings\/help\/?$/, 'help'],
 ];
 
