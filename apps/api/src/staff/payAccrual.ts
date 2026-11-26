@@ -26,7 +26,8 @@ import { appendLog } from '../log/append.js';
  *   dispute opening) is below it, or nothing (a full refund takes no fee), the `dispute` item pays
  *   the minimum and no share is set aside; otherwise the share alone pays and the `dispute` item
  *   carries no amount. With no share set, pay is the cents per dispute as before. Logged `pay.earned`;
- * - the appeal's own ruling (round 2) earns nothing (owner question, not ruled);
+ * - owner 26 Nov 2026: the appeal's own ruling (round 2) earns its decider their pay the same way
+ *   (their share of the final fee, flat amount, minimum); it is never clawed back (owner question, not ruled);
  * - clawback option A: when round 2 is final and differs from round 1 ("Decision overruled"),
  *   every item round 1 earned is reversed by a negative item of the same amount, taken from future
  *   pay. "Decision stands" changes nothing.
@@ -48,21 +49,26 @@ interface PayRow {
   large_trade_bonus_threshold_usd: number | null;
   pay_mod_fee_bp: number | null;
   pay_senior_fee_bp: number | null;
+  pay_mod_flat_usd_cents: string | null;
+  pay_senior_flat_usd_cents: string | null;
 }
 
 /**
- * The dispute pay for one ruling (pure): the share of the fee in XMR and in US cents at the trade's
- * value at opening, and which of share and minimum pays. `feeBp` null = no share set (minimum only).
+ * The dispute pay for one ruling (pure). The share of the fee (`feeBp`, basis points of the 1%) in
+ * XMR, plus the flat amount in US cents; when the minimum is set and the share (in dollars at the
+ * trade's value at opening) plus the flat amount is below it, the minimum alone pays instead. No fee
+ * charged (a full refund) means no share. `usdCents` null = no dollar amount.
  */
-export function disputePay(a: { feeBp: number | null; minUsdCents: bigint | null; feeAtomic: bigint; feeCharged: boolean; tradeUsdCents: bigint }):
-  { shareAtomic: bigint; usdCents: bigint | null; minimum: boolean } {
-  if (a.feeBp === null) return { shareAtomic: 0n, usdCents: a.minUsdCents, minimum: false };
-  const bp = BigInt(a.feeBp);
+export function disputePay(a: {
+  feeBp: number | null; flatUsdCents: bigint | null; minUsdCents: bigint | null; feeAtomic: bigint; feeCharged: boolean; tradeUsdCents: bigint;
+}): { shareAtomic: bigint; usdCents: bigint | null; minimum: boolean } {
+  const bp = a.feeBp === null ? 0n : BigInt(a.feeBp);
   const shareAtomic = a.feeCharged ? (a.feeAtomic * bp) / 10_000n : 0n;
   // X2F's fee is 1% of the trade (X2F_FEE_BPS), so the share in cents is value * 1% * bp / 10000.
-  const shareCents = a.feeCharged ? (a.tradeUsdCents * bp) / 1_000_000n : 0n;
-  if (a.minUsdCents !== null && (shareAtomic <= 0n || shareCents < a.minUsdCents)) return { shareAtomic: 0n, usdCents: a.minUsdCents, minimum: true };
-  return { shareAtomic, usdCents: null, minimum: false };
+  const shareCents = shareAtomic > 0n ? (a.tradeUsdCents * bp) / 1_000_000n : 0n;
+  const flat = a.flatUsdCents ?? 0n;
+  if (a.minUsdCents !== null && shareCents + flat < a.minUsdCents) return { shareAtomic: 0n, usdCents: a.minUsdCents, minimum: true };
+  return { shareAtomic, usdCents: a.flatUsdCents, minimum: false };
 }
 
 async function roleOf(client: pg.PoolClient, id: string | null): Promise<string | null> {
@@ -71,46 +77,52 @@ async function roleOf(client: pg.PoolClient, id: string | null): Promise<string 
   return rows[0]?.role ?? null;
 }
 
-async function earn(client: pg.PoolClient, d: Dispute, r: RulingDraft, now: Date): Promise<void> {
+/**
+ * What `r`'s proposer earns for deciding round `round` of `d`. `feeCharged`: whether the ruling
+ * makes the poster pay X2F's 1% (round 1: its own outcome; round 2: the final fee of the dispute).
+ */
+async function earn(client: pg.PoolClient, d: Dispute, r: RulingDraft, round: 1 | 2, feeCharged: boolean, now: Date): Promise<void> {
   // Already earned (the usual case on a later save): nothing to read or write.
-  const done = await client.query("select 1 from staff_pay_items where kind = 'dispute' and trade_code = $1 and seq = $2", [d.code, d.seq]);
+  const done = await client.query("select 1 from staff_pay_items where kind = 'dispute' and trade_code = $1 and seq = $2 and round = $3", [d.code, d.seq, round]);
   if ((done.rowCount ?? 0) > 0) return;
   const proposerRole = await roleOf(client, r.proposer);
   if (proposerRole !== 'mod' && proposerRole !== 'senior') return;
   const s = (await client.query<PayRow>(
     `select pay_mod_dispute_usd_cents::text, pay_senior_dispute_usd_cents::text, senior_large_trade_bp, large_trade_bonus_threshold_usd,
-            pay_mod_fee_bp, pay_senior_fee_bp
+            pay_mod_fee_bp, pay_senior_fee_bp, pay_mod_flat_usd_cents::text, pay_senior_flat_usd_cents::text
        from settings where id = 1`,
   )).rows[0];
   const rate = proposerRole === 'senior' ? s?.pay_senior_dispute_usd_cents : s?.pay_mod_dispute_usd_cents;
   const own = (await client.query<{ pay_fee_bp: number | null }>('select pay_fee_bp from staff_members where account_id::text = $1', [r.proposer.toLowerCase()])).rows[0];
   const feeBp = own?.pay_fee_bp ?? (proposerRole === 'senior' ? s?.pay_senior_fee_bp : s?.pay_mod_fee_bp) ?? null;
-  const posterPays = rulingFee({ status: 'published', round: 1, ruling: r, round1: null }) === 'poster-pays';
+  const flat = proposerRole === 'senior' ? s?.pay_senior_flat_usd_cents : s?.pay_mod_flat_usd_cents;
   const tradeFee = (await client.query<{ fee_atomic: string }>('select fee_atomic::text from trades where code = $1', [d.code])).rows[0];
+  const big = (v: string | null | undefined) => (v === null || v === undefined ? null : BigInt(v));
   const pay = disputePay({
-    feeBp, minUsdCents: rate === null || rate === undefined ? null : BigInt(rate),
-    feeAtomic: tradeFee ? BigInt(tradeFee.fee_atomic) : 0n, feeCharged: posterPays && tradeFee !== undefined, tradeUsdCents: d.usdCents,
+    feeBp, flatUsdCents: big(flat), minUsdCents: big(rate),
+    feeAtomic: tradeFee ? BigInt(tradeFee.fee_atomic) : 0n, feeCharged: feeCharged && tradeFee !== undefined, tradeUsdCents: d.usdCents,
   });
   await client.query(
-    `insert into staff_pay_items (staff_id, kind, trade_code, seq, usd_cents, earned_at)
-     values ($1, 'dispute', $2, $3, $4, $5) on conflict do nothing`,
-    [r.proposer, d.code, d.seq, pay.usdCents?.toString() ?? null, now],
+    `insert into staff_pay_items (staff_id, kind, trade_code, seq, round, usd_cents, earned_at)
+     values ($1, 'dispute', $2, $3, $4, $5, $6) on conflict do nothing`,
+    [r.proposer, d.code, d.seq, round, pay.usdCents?.toString() ?? null, now],
   );
   if (pay.shareAtomic > 0n) {
     await client.query(
-      `insert into staff_pay_items (staff_id, kind, trade_code, seq, atomic, earned_at)
-       values ($1, 'fee-share', $2, $3, $4, $5) on conflict do nothing`,
-      [r.proposer, d.code, d.seq, pay.shareAtomic.toString(), now],
+      `insert into staff_pay_items (staff_id, kind, trade_code, seq, round, atomic, earned_at)
+       values ($1, 'fee-share', $2, $3, $4, $5, $6) on conflict do nothing`,
+      [r.proposer, d.code, d.seq, round, pay.shareAtomic.toString(), now],
     );
   }
-  if (feeBp !== null) {
-    const detail: Record<string, string | number | boolean> = { staffId: r.proposer.toLowerCase(), feeBp, minimum: pay.minimum };
+  if (feeBp !== null || flat !== null) {
+    const detail: Record<string, string | number | boolean | null> = { staffId: r.proposer.toLowerCase(), feeBp, minimum: pay.minimum, round };
     if (pay.shareAtomic > 0n) detail.atomic = pay.shareAtomic.toString();
     if (pay.usdCents !== null) detail.usdCents = pay.usdCents.toString();
     await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: null, action: 'pay.earned', detail });
   }
 
-  // The senior moderators' large-trade share (D-043).
+  // The senior moderators' large-trade share (D-043): round 1 only.
+  if (round !== 1) return;
   const bp = s?.senior_large_trade_bp ?? null;
   const threshold = s?.large_trade_bonus_threshold_usd ?? null;
   if (bp === null || bp === 0 || threshold === null) return;
@@ -134,7 +146,7 @@ async function clawBack(client: pg.PoolClient, d: Dispute, rulingId: string, now
     `insert into staff_pay_items (staff_id, kind, trade_code, seq, usd_cents, atomic, earned_at, source_item)
      select i.staff_id, 'clawback', i.trade_code, i.seq, -i.usd_cents, -i.atomic, $3, i.id
        from staff_pay_items i
-      where i.trade_code = $1 and i.seq = $2 and i.kind <> 'clawback'
+      where i.trade_code = $1 and i.seq = $2 and i.round = 1 and i.kind <> 'clawback'
         and not exists (select 1 from staff_pay_items c where c.source_item = i.id)
      returning id, staff_id::text, usd_cents::text, atomic::text`,
     [d.code, d.seq, now],
@@ -151,8 +163,10 @@ async function clawBack(client: pg.PoolClient, d: Dispute, rulingId: string, now
 export async function accrueDisputePay(client: pg.PoolClient, d: Dispute, now: Date): Promise<void> {
   const r1 = round1Ruling(d);
   if (r1 === null) return;
-  await earn(client, d, r1, now);
-  if (d.round === 2 && d.overturned === true && ROUND2_DONE.has(d.status) && d.ruling !== null) {
-    await clawBack(client, d, d.ruling.id, now);
+  await earn(client, d, r1, 1, rulingFee({ status: 'published', round: 1, ruling: r1, round1: null }) === 'poster-pays', now);
+  if (d.round === 2 && ROUND2_DONE.has(d.status) && d.ruling !== null) {
+    // Owner 26 Nov 2026: whoever decides the appeal earns their pay for it too, on the dispute's final fee.
+    await earn(client, d, d.ruling, 2, rulingFee(d) === 'poster-pays', now);
+    if (d.overturned === true) await clawBack(client, d, d.ruling.id, now);
   }
 }

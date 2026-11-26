@@ -17,7 +17,7 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 const H = 3_600_000;
 const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: 'https://matrix.to/#/#x2f:matrix.org', communityTelegramUrl: null };
-const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null };
+const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
 const STARTER = { ...STARTER_DEFAULTS, updatedAt: null as string | null };
 const COLD = `4${'A'.repeat(94)}`;
 const SWEEP = { thresholdAtomic: null, floatAtomic: null, coldAddress: null, on: false, walletWired: false, lastSweep: null };
@@ -218,9 +218,9 @@ describe('Staff pay owed', () => {
     await open();
     const rows = [...document.querySelectorAll('table[aria-label="Pay owed per person"] tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
     expect(rows).toEqual([
-      ['sarah.v', 'Senior moderator', 'Active', '75%', '$2,500.00', '1.50', 'Due at clock-out'],
-      ['dmitri_k', 'Moderator', 'Switched off', '40% (role default)', '-$12.50', '0.00', 'Owes X2F'],
-      ['tobi.w', 'Helper', 'Active', '', '$0.00', '0.00', 'Nothing due'],
+      ['sarah.v', 'Senior moderator', 'Active', '75%', '$2,500.00', '1.50', 'Due at clock-out', 'Work and hours'],
+      ['dmitri_k', 'Moderator', 'Switched off', '40% (role default)', '-$12.50', '0.00', 'Owes X2F', 'Work and hours'],
+      ['tobi.w', 'Helper', 'Active', '', '$0.00', '0.00', 'Nothing due', 'Work and hours'],
     ]);
     expect(centsText('5')).toBe('$0.05');
   });

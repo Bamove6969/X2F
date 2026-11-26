@@ -36,6 +36,8 @@ const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> =
   paySeniorFeeBp: { name: "a senior moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
   payModDisputeUsdCents: { name: "a moderator's minimum per dispute", unit: 'US cents' },
   paySeniorDisputeUsdCents: { name: "a senior moderator's minimum per dispute", unit: 'US cents' },
+  payModFlatUsdCents: { name: "a moderator's flat amount per dispute", unit: 'US cents' },
+  paySeniorFlatUsdCents: { name: "a senior moderator's flat amount per dispute", unit: 'US cents' },
 };
 
 const groups = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');

@@ -482,6 +482,9 @@ export interface PaySettings {
   /** Owner 26 Nov 2026: each role's default share of X2F's 1% fee per dispute, basis points of the fee. */
   modFeeBp: number | null;
   seniorFeeBp: number | null;
+  /** Owner 26 Nov 2026: a flat amount per dispute on top of the share, US cents. */
+  modFlatUsdCents: number | null;
+  seniorFlatUsdCents: number | null;
 }
 export const paySettings = () => staffApi<PaySettings>('/staff/v1/pay/settings');
 export const putPaySettings = (next: PaySettings, tapId: string) => staffApi<PaySettings>('/staff/v1/pay/settings', { method: 'PUT', body: { ...next, tapId } });
@@ -532,6 +535,35 @@ export interface StaffPayRow {
   effectiveFeeBp: number | null;
 }
 export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pay/staff');
+/** Owner 26 Nov 2026: one staff member's work and hours (`GET /staff/v1/pay/staff/:id/audit`, the owner). */
+export interface StaffAuditItem {
+  kind: string;
+  code: string | null;
+  seq: number | null;
+  round: number;
+  usdCents: string | null;
+  atomic: string | null;
+  earnedAt: string;
+  status: 'unpaid' | 'waiting-send' | 'paid' | 'failed';
+  paidAt: string | null;
+}
+export interface StaffAudit {
+  staffId: string;
+  displayName: string;
+  role: StaffRole;
+  switchedOff: boolean;
+  feeBp: number | null;
+  days: number;
+  totals: {
+    minutes: number; shifts: number; clockOuts: number; disputes: number; appeals: number;
+    earnedUsdCents: string; earnedAtomic: string; clawedBackUsdCents: string; clawedBackAtomic: string;
+  };
+  shifts: Array<{ clockedInAt: string; endedAt: string | null; ended: string | null; minutes: number }>;
+  items: StaffAuditItem[];
+  payouts: Array<{ at: string; amountAtomic: string; status: string }>;
+}
+export const staffAudit = (staffId: string, days: number) =>
+  staffApi<StaffAudit>(`/staff/v1/pay/staff/${encodeURIComponent(staffId)}/audit?days=${days}`);
 /** Owner 26 Nov 2026: one person's share of the fee (tap `staff-pay` bound to the person and value). */
 export const putStaffPay = (staffId: string, feeBp: number | null, tapId: string) =>
   staffApi<{ feeBp: number | null }>(`/staff/v1/pay/staff/${encodeURIComponent(staffId)}`, { method: 'PUT', body: { feeBp, tapId } });

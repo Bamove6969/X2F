@@ -22,3 +22,37 @@ alter table staff_members
 alter table staff_pay_items drop constraint staff_pay_items_kind_check;
 alter table staff_pay_items add constraint staff_pay_items_kind_check check (kind in ('dispute', 'large-trade', 'fee-share', 'clawback'));
 alter table staff_pay_items add constraint staff_pay_items_fee_share_check check (kind <> 'fee-share' or (usd_cents is null and atomic > 0));
+
+-- Owner 26 Nov 2026: the senior moderator (or the owner) who decides an appeal is paid too, so a
+-- dispute's items carry the round that earned them. Round 1's are reversed when the appeal
+-- overrules it; round 2's never are. One item of each kind per dispute round.
+alter table staff_pay_items add column round smallint not null default 1 check (round in (1, 2));
+drop index staff_pay_items_once;
+create unique index staff_pay_items_once on staff_pay_items (kind, trade_code, seq, round) where kind <> 'clawback';
+
+create or replace function staff_pay_items_settle_only() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+begin
+  -- DELETE and TRUNCATE (the statement trigger has no row) are refused before any row is read.
+  if tg_op <> 'UPDATE' then
+    raise exception 'staff_pay_items: an item is only ever settled, never changed or deleted' using errcode = 'insufficient_privilege';
+  end if;
+  if new.id = old.id and new.staff_id = old.staff_id and new.kind = old.kind
+     and new.seq is not distinct from old.seq and new.round = old.round
+     and new.usd_cents is not distinct from old.usd_cents and new.atomic is not distinct from old.atomic
+     and new.earned_at = old.earned_at and new.source_item is not distinct from old.source_item
+     and (new.trade_code is not distinct from old.trade_code or new.trade_code is null)
+     and (new.payout_id is not distinct from old.payout_id or old.payout_id is null) then
+    return new;
+  end if;
+  raise exception 'staff_pay_items: an item is only ever settled, never changed or deleted' using errcode = 'insufficient_privilege';
+end
+$$;
+
+-- Owner 26 Nov 2026: a flat amount per dispute for each role, US cents, paid on top of the share of
+-- the fee (the minimum still applies to the total). Unset = none.
+alter table settings
+  add column pay_mod_flat_usd_cents bigint check (pay_mod_flat_usd_cents between 0 and 10000000),
+  add column pay_senior_flat_usd_cents bigint check (pay_senior_flat_usd_cents between 0 and 10000000);

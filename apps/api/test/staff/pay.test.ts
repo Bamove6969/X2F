@@ -140,8 +140,10 @@ interface PaySettingsBody {
   largeTradeThresholdUsd: number | null;
   modFeeBp?: number | null;
   seniorFeeBp?: number | null;
+  modFlatUsdCents?: number | null;
+  seniorFlatUsdCents?: number | null;
 }
-const UNSET = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null };
+const UNSET = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
 
 /** The owner signs in again (a staff session lasts 2 hours idle; these tests move the clock by days). */
 async function ownerLogin(): Promise<void> {
@@ -149,7 +151,7 @@ async function ownerLogin(): Promise<void> {
 }
 
 async function setPay(given: PaySettingsBody): Promise<void> {
-  const v = { modFeeBp: null, seniorFeeBp: null, ...given };
+  const v = { modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null, ...given };
   await ownerLogin();
   const tapId = await seedTap(deps, ownerId, { kind: 'pay-settings', ...v });
   const res = await owner.send('PUT', '/staff/v1/pay/settings', { ...v, tapId });
@@ -200,7 +202,7 @@ describe('the owner pay settings (D-042, D-043: owner numbers, no default)', () 
       expect((await b.send('PUT', '/staff/v1/pay/settings', { ...UNSET, tapId: randomUUID() })).statusCode).toBe(403);
     }
 
-    const values = { modDisputeUsdCents: 500, seniorDisputeUsdCents: 800, seniorLargeTradeBp: 1000, largeTradeThresholdUsd: 400, modFeeBp: 4000, seniorFeeBp: 6000 };
+    const values = { modDisputeUsdCents: 500, seniorDisputeUsdCents: 800, seniorLargeTradeBp: 1000, largeTradeThresholdUsd: 400, modFeeBp: 4000, seniorFeeBp: 6000, modFlatUsdCents: 150, seniorFlatUsdCents: null };
     expect(errorOf(await owner.send('PUT', '/staff/v1/pay/settings', { ...values, tapId: randomUUID() }))).toBe('tap-invalid');
     const wrong = await seedTap(deps, ownerId, { kind: 'pay-settings', ...values, modDisputeUsdCents: 501 });
     expect(errorOf(await owner.send('PUT', '/staff/v1/pay/settings', { ...values, tapId: wrong }))).toBe('tap-invalid');
@@ -216,6 +218,7 @@ describe('the owner pay settings (D-042, D-043: owner numbers, no default)', () 
       { field: 'largeTradeBonusThresholdUsd', from: null, to: 400 },
       { field: 'payModFeeBp', from: null, to: 4000 },
       { field: 'paySeniorFeeBp', from: null, to: 6000 },
+      { field: 'payModFlatUsdCents', from: null, to: 150 },
     ]);
     await setPay(UNSET);
   });
@@ -347,9 +350,9 @@ describe('the share of the fee (owner 26 Nov 2026: 0-100% of the 1% fee, with a 
     expect(items).toHaveLength(4);
     const earned = (await logEntries(deps, 'pay.earned')).map((r) => JSON.parse(r.detail) as Record<string, unknown>).filter((d) => d.staffId === mod.id);
     expect(earned).toEqual([
-      { staffId: mod.id, feeBp: 4000, minimum: false, atomic: pct(4000n) },
-      { staffId: mod.id, feeBp: 4000, minimum: true, usdCents: '100' },
-      { staffId: mod.id, feeBp: 4000, minimum: true, usdCents: '200' },
+      { staffId: mod.id, feeBp: 4000, minimum: false, round: 1, atomic: pct(4000n) },
+      { staffId: mod.id, feeBp: 4000, minimum: true, round: 1, usdCents: '100' },
+      { staffId: mod.id, feeBp: 4000, minimum: true, round: 1, usdCents: '200' },
     ]);
     await setPay(UNSET);
   });
@@ -395,6 +398,91 @@ describe('the share of the fee (owner 26 Nov 2026: 0-100% of the 1% fee, with a 
     await ownerLogin();
     const back = await seedTap(deps, ownerId, { kind: 'staff-pay', accountId: senior.id, feeBp: null });
     expect((await put(senior.id, null, back)).json()).toEqual({ feeBp: null });
+    await setPay(UNSET);
+  });
+
+  it('a flat amount is paid on top of the share; the minimum applies to the total', async () => {
+    // 20% of the $4.125 fee is $0.825 (rounded down to 82 cents for the comparison).
+    await setPay({ modDisputeUsdCents: 300, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: 2000, modFlatUsdCents: 250 });
+    const mod = await member('mod');
+    const above = await disputed();
+    await rule(above, mod);
+    await setPay({ modDisputeUsdCents: 400, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: 2000, modFlatUsdCents: 250 });
+    const below = await disputed();
+    await rule(below, mod);
+    await mod.login();
+    const items = (await myPay(mod)).unpaid.items.map((i) => [i.kind, i.code, i.usdCents, i.atomic]);
+    expect(items).toEqual(expect.arrayContaining([
+      ['dispute', above, '250', null],
+      ['fee-share', above, null, pct(2000n)],
+      ['dispute', below, '400', null],
+    ]));
+    expect(items).toHaveLength(3);
+    await setPay(UNSET);
+  });
+
+  it("the appeal's decider earns their share too; an upheld appeal pays both, an overruled one claws back only round 1", async () => {
+    await setPay({ modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: 2000, seniorFeeBp: 3000 });
+    const mod = await member('mod');
+    const reviewer = await member('senior');
+    const upheld = await disputed();
+    await rule(upheld, mod);
+    await decideAppeal(upheld, reviewer, 'release-to-buyer');
+    const overruled = await disputed();
+    await rule(overruled, mod);
+    await decideAppeal(overruled, reviewer, 'refund-to-seller');
+    await mod.login();
+    await reviewer.login();
+    const modItems = (await myPay(mod)).unpaid.items.filter((i) => i.atomic !== null).map((i) => [i.kind, i.code, i.atomic]);
+    expect(modItems).toEqual(expect.arrayContaining([
+      ['fee-share', upheld, pct(2000n)],
+      ['fee-share', overruled, pct(2000n)],
+      ['clawback', overruled, `-${pct(2000n)}`],
+    ]));
+    expect(modItems).toHaveLength(3);
+    // Upheld: 30% of the fee. Overruled to a full refund: X2F takes no fee, so no share (no minimum set).
+    const revItems = (await myPay(reviewer)).unpaid.items.map((i) => [i.kind, i.code, i.atomic]);
+    expect(revItems).toEqual(expect.arrayContaining([['dispute', upheld, null], ['fee-share', upheld, pct(3000n)], ['dispute', overruled, null]]));
+    expect(revItems).toHaveLength(3);
+    await setPay(UNSET);
+  });
+
+  it('a lien on the trade does not hold the pay (owner 26 Nov 2026): it is paid at the next clock-out', async () => {
+    await setPay({ modDisputeUsdCents: 1000, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null });
+    const mod = await member('mod');
+    const code = await disputed();
+    await rule(code, mod);
+    const { rows } = await deps.db.query<{ buyer_id: string; seller_id: string }>('select buyer_account_id::text as buyer_id, seller_account_id::text as seller_id from trades where code = $1', [code]);
+    const t = rows[0]!;
+    await deps.db.query(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
+       values ($1, $2, 1000, $3, 1, 1, 'restitution', $4, $4)`,
+      [t.buyer_id, t.seller_id, code, deps.clock()],
+    );
+    await mod.login();
+    expect((await myPay(mod)).unpaid.usdCents).toBe('1000');
+    await setPay(UNSET);
+  });
+
+  it("the owner's audit of one person: shifts and minutes, each item and where it stands, totals; owner only", async () => {
+    await setPay({ modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: 4000 });
+    const mod = await member('mod');
+    later(90 * 60_000);
+    const code = await disputed();
+    await rule(code, mod);
+    await ownerLogin();
+    const res = await owner.get(`/staff/v1/pay/staff/${mod.id}/audit?days=7`);
+    expect(res.statusCode, res.body).toBe(200);
+    const a = res.json() as { role: string; totals: { minutes: number; shifts: number; disputes: number; earnedAtomic: string }; items: Array<{ kind: string; code: string; status: string; round: number }>; shifts: Array<{ minutes: number }> };
+    expect(a.role).toBe('mod');
+    expect(a.totals.shifts).toBe(1);
+    expect(a.totals.minutes).toBeGreaterThanOrEqual(90);
+    expect(a.totals.disputes).toBe(1);
+    expect(a.totals.earnedAtomic).toBe(pct(4000n));
+    expect(a.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'fee-share', code, status: 'unpaid', round: 1 })]));
+    expect(errorOf(await owner.get(`/staff/v1/pay/staff/${mod.id}/audit?days=3`))).toBe('bad-request');
+    expect((await owner.get(`/staff/v1/pay/staff/${randomUUID()}/audit`)).statusCode).toBe(404);
+    expect((await mod.b.get(`/staff/v1/pay/staff/${mod.id}/audit`)).statusCode).toBe(403);
     await setPay(UNSET);
   });
 
@@ -538,8 +626,12 @@ describe('clawback option A (D-044)', () => {
       ['clawback', overruled, null, (-(FEE / 10n)).toString()],
     ]));
     expect(v.unpaid.items).toHaveLength(2);
-    // The appeal reviewer earns nothing for round 2 (owner question).
-    expect((await myPay(reviewer)).unpaid.items).toEqual([]);
+    // Owner 26 Nov 2026: the appeal's decider earns for round 2 too (no share set: the senior minimum).
+    await reviewer.login();
+    expect((await myPay(reviewer)).unpaid.items.map((i) => [i.kind, i.code, i.usdCents])).toEqual(expect.arrayContaining([
+      ['dispute', overruled, '3300'], ['dispute', stands, '3300'],
+    ]));
+    expect((await myPay(reviewer)).unpaid.items).toHaveLength(2);
 
     // The debt is bigger than nothing earned since: owed, no payout, carried over.
     expect((await senior.b.get('/staff/v1/pay/clock-out')).json()).toMatchObject({ due: 'owed', clawbacks: 2 });
@@ -791,7 +883,7 @@ describe('the two new tap intents', () => {
     for (const bad of [{ kind: 'payout-address' }, { kind: 'payout-address', address: 'short' }, { kind: 'payout-address', address, extra: 1 }]) {
       expect(() => parseKeyTapIntent(bad), JSON.stringify(bad)).toThrow();
     }
-    const v = { kind: 'pay-settings', modDisputeUsdCents: 500, seniorDisputeUsdCents: null, seniorLargeTradeBp: 1000, largeTradeThresholdUsd: null, modFeeBp: 2500, seniorFeeBp: null } as const;
+    const v = { kind: 'pay-settings', modDisputeUsdCents: 500, seniorDisputeUsdCents: null, seniorLargeTradeBp: 1000, largeTradeThresholdUsd: null, modFeeBp: 2500, seniorFeeBp: null, modFlatUsdCents: 100, seniorFlatUsdCents: null } as const;
     expect(parseKeyTapIntent(v)).toEqual(v);
     expect(tapPermOf(v)).toBe('settings.write');
     for (const bad of [{ ...v, modDisputeUsdCents: 1.5 }, { ...v, modDisputeUsdCents: -1 }, { ...v, seniorLargeTradeBp: '1000' }, { kind: 'pay-settings', modDisputeUsdCents: 1 }]) {

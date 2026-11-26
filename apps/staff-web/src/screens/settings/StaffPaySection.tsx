@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { putStaffPay, staffPay, type StaffPayRow } from '../../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../../refusals.js';
 import { Button, CantDoThat, Notice } from '../../ui/kit.js';
@@ -22,7 +23,8 @@ const C = {
   title: 'Staff pay owed',
   lead: 'Unpaid pay since each person last clocked out correctly. Dispute pay is in US dollars, paid in XMR at the clock-out price; large-trade shares and clawbacks are in XMR.',
   label: 'Pay owed per person',
-  cols: { name: 'Name', role: 'Role', status: 'Status', share: 'Share of the fee', usd: 'Unpaid, USD', xmr: 'Unpaid, XMR', owes: 'Balance' },
+  cols: { name: 'Name', role: 'Role', status: 'Status', share: 'Share of the fee', usd: 'Unpaid, USD', xmr: 'Unpaid, XMR', owes: 'Balance', work: 'Audit' },
+  work: 'Work and hours',
   roleDefault: 'role default',
   notSet: 'Not set',
   change: 'Change',
@@ -87,6 +89,7 @@ const COLUMNS: readonly Column<StaffPayRow>[] = [
     title: C.cols.owes,
     cell: (r) => (r.owed ? <strong data-part="pay-owed">{C.owes}</strong> : BigInt(r.unpaidUsdCents) === 0n && BigInt(r.unpaidAtomic) === 0n ? C.none : C.due),
   },
+  { title: C.cols.work, cell: (r) => <Link to={`/performance/${encodeURIComponent(r.staffId)}/work`}>{C.work}</Link> },
 ];
 
 /** One person's share, typed and saved with a tap. */

@@ -464,7 +464,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'address']);
       return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
     case 'pay-settings': {
-      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp']);
+      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp', 'modFlatUsdCents', 'seniorFlatUsdCents']);
       const opt = (key: string): number | null => (r[key] === null ? null : amount(r, key, { integer: true }));
       return {
         kind: 'pay-settings',
@@ -474,6 +474,8 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
         modFeeBp: opt('modFeeBp'),
         seniorFeeBp: opt('seniorFeeBp'),
+        modFlatUsdCents: opt('modFlatUsdCents'),
+        seniorFlatUsdCents: opt('seniorFlatUsdCents'),
       };
     }
     case 'staff-pay': {

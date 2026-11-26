@@ -208,7 +208,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/pay/addresses', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'DELETE', url: '/staff/v1/pay/addresses/:id', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
-  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'GET', url: '/staff/v1/pay/staff/:id/audit', perm: 'earnings.read', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/pay/staff/:id', perm: 'settings.write', allowed: OWNER, body: { feeBp: null, tapId: '00000000-0000-4000-8000-000000000000' } },
   { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
   // Plan 4 Task 19: the Activity log page (the staff scope for moderators and senior moderators, all

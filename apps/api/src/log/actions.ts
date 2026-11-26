@@ -202,7 +202,7 @@ export const LOG_ACTIONS = {
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
   // Owner 26 Nov 2026: a dispute's pay as earned, for the audit: the share of the fee used (basis
   // points), the XMR it came to, and whether the role's minimum paid instead.
-  'pay.earned': { staffId: 'uuid', feeBp: 'setting', atomic: 'amount', usdCents: 'amount', minimum: 'bool' },
+  'pay.earned': { staffId: 'uuid', feeBp: 'setting', atomic: 'amount', usdCents: 'amount', minimum: 'bool', round: 'number' },
   // D-041: a staff member's own pre-approved payout addresses (the id only, never the address).
   'pay.address-added': { addressId: 'id' },
   'pay.address-removed': { addressId: 'id' },

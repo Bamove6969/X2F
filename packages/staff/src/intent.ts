@@ -128,6 +128,9 @@ export type KeyTapIntent =
       // points of the fee (10000 = 100%); the US-cent amounts above are then the minimum per dispute.
       modFeeBp: number | null;
       seniorFeeBp: number | null;
+      // Owner 26 Nov 2026: a flat amount per dispute for each role, US cents, on top of the share.
+      modFlatUsdCents: number | null;
+      seniorFlatUsdCents: number | null;
     }
   // Owner 26 Nov 2026: one moderator's or senior moderator's own share of the fee (basis points of
   // the fee, 0-10000), overriding their role's default; null = back to the role's default.
