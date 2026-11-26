@@ -8,7 +8,7 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { atomicOf } from '../src/screens/settings/FeeSweepSection.js';
-import { centsText } from '../src/screens/settings/StaffPaySection.js';
+import { bpOf, centsText } from '../src/screens/settings/StaffPaySection.js';
 import { button, click, fakeApi, field, honestTapStart, refused, render, settle, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
@@ -17,7 +17,7 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 const H = 3_600_000;
 const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: 'https://matrix.to/#/#x2f:matrix.org', communityTelegramUrl: null };
-const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null };
+const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
 const STARTER = { ...STARTER_DEFAULTS, updatedAt: null as string | null };
 const COLD = `4${'A'.repeat(94)}`;
 const SWEEP = { thresholdAtomic: null, floatAtomic: null, coldAddress: null, on: false, walletWired: false, lastSweep: null };
@@ -208,9 +208,9 @@ describe('Staff pay owed', () => {
       'GET /staff/v1/pay/staff': {
         body: {
           members: [
-            { staffId: 's-1', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false },
-            { staffId: 'm-1', displayName: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true },
-            { staffId: 'h-1', displayName: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false },
+            { staffId: 's-1', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false, feeBp: 7500, effectiveFeeBp: 7500 },
+            { staffId: 'm-1', displayName: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true, feeBp: null, effectiveFeeBp: 4000 },
+            { staffId: 'h-1', displayName: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: null },
           ],
         },
       },
@@ -218,10 +218,34 @@ describe('Staff pay owed', () => {
     await open();
     const rows = [...document.querySelectorAll('table[aria-label="Pay owed per person"] tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
     expect(rows).toEqual([
-      ['sarah.v', 'Senior moderator', 'Active', '$2,500.00', '1.50', 'Due at clock-out'],
-      ['dmitri_k', 'Moderator', 'Switched off', '-$12.50', '0.00', 'Owes X2F'],
-      ['tobi.w', 'Helper', 'Active', '$0.00', '0.00', 'Nothing due'],
+      ['sarah.v', 'Senior moderator', 'Active', '75%', '$2,500.00', '1.50', 'Due at clock-out', 'Work and hours'],
+      ['dmitri_k', 'Moderator', 'Switched off', '40% (role default)', '-$12.50', '0.00', 'Owes X2F', 'Work and hours'],
+      ['tobi.w', 'Helper', 'Active', '', '$0.00', '0.00', 'Nothing due', 'Work and hours'],
     ]);
     expect(centsText('5')).toBe('$0.05');
+  });
+
+  it("changes one person's share of the fee with a staff-pay tap bound to them and the value", async () => {
+    const member = { staffId: '11111111-1111-4111-8111-111111111111', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: 2000 };
+    const c = api({
+      'GET /staff/v1/pay/staff': { body: { members: [member] } },
+      [`PUT /staff/v1/pay/staff/${member.staffId}`]: (b) => ({ body: { feeBp: (b as { feeBp: number | null }).feeBp } }),
+    });
+    await open();
+    await click(button('Change: sarah.v'));
+    const s = document.querySelector(`[data-share-of="${member.staffId}"]`)!;
+    const input = s.querySelector('[data-part="share-input"]') as HTMLInputElement;
+    typeInto(input, '101');
+    await settle();
+    expect(s.querySelector('[data-part="share-bad"]')).not.toBeNull();
+    typeInto(input, '62.5');
+    await settle();
+    await click(button('Save'));
+    await click(button('Tap security key'));
+    expect(taps(c.calls)).toEqual([{ kind: 'staff-pay', accountId: member.staffId, feeBp: 6250 }]);
+    expect(puts(c.calls, `/staff/v1/pay/staff/${member.staffId}`)[0]!.body).toEqual({ feeBp: 6250, tapId: 'tap-1' });
+    expect(bpOf('')).toBeNull();
+    expect(bpOf('100')).toBe(10_000);
+    expect(bpOf('12.345')).toBeUndefined();
   });
 });

@@ -86,7 +86,7 @@ async function stub(page: Page, me: object, credId: string): Promise<Stub> {
       links = { ...links, ...body };
       return json({ largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, ...links })(route);
     }
-    if (key === 'GET /staff/v1/pay/settings') return json({ modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null })(route);
+    if (key === 'GET /staff/v1/pay/settings') return json({ modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null })(route);
     if (key === 'GET /staff/v1/starter-limits') return json(starter)(route);
     if (key === 'PUT /staff/v1/starter-limits') {
       if (typeof body.tapId !== 'string') return json({ error: 'tap-invalid' }, 403)(route);

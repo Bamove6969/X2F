@@ -14,6 +14,7 @@ import { Revenue } from './screens/Revenue.js';
 import { StaffList } from './screens/StaffList.js';
 import { StaffOverview } from './screens/StaffOverview.js';
 import { StaffPerformance } from './screens/StaffPerformance.js';
+import { StaffWork } from './screens/StaffWork.js';
 import { StaffSettings } from './screens/StaffSettings.js';
 import { StaffLog } from './screens/StaffLog.js';
 import { Training } from './screens/Training.js';
@@ -36,7 +37,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, accounts: <Accounts />, staff: <StaffList />, performance: <StaffPerformance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, tickets: <Tickets />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, accounts: <Accounts />, staff: <StaffList />, performance: <Performance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, tickets: <Tickets />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
     </Routes>
   );
 }
@@ -51,6 +52,16 @@ function Overview() {
       <Route index element={<StaffOverview />} />
       <Route path="news" element={<NewsEditor />} />
       <Route path="revenue" element={<Revenue />} />
+    </Routes>
+  );
+}
+
+/** Performance (Task 20) and, under it, one person's work and hours (owner 26 Nov 2026, the owner's audit). */
+function Performance() {
+  return (
+    <Routes>
+      <Route index element={<StaffPerformance />} />
+      <Route path=":id/work" element={<StaffWork />} />
     </Routes>
   );
 }
