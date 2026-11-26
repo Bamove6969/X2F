@@ -392,9 +392,10 @@ describe('the chain watcher', () => {
     expect(net.reports.filter((r) => r.trade === code && r.kind !== 'setup-done' && r.kind !== 'chain')).toEqual([]);
     expect(net.reports.filter((r) => r.trade === code && r.kind === 'chain')).toHaveLength(1);
     // In a block.
-    p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }] };
+    // The wallet's record of the tx carries its network fee: the report passes it on for the books (owner 16 Nov).
+    p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR, feeAtomic: 30_720_000n }] };
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null }]);
+    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null, networkFeeAtomic: '30720000' }]);
     expect(net.closed.sort()).toEqual([await channelFor(code, 'escrow'), await channelFor(code, 'signals')].sort());
     net.states.set(code, 'released');
     await m.handle.watch();
@@ -647,8 +648,8 @@ describe('the chain watcher', () => {
         txHash: hash('b'),
         txKey: KEY,
         minimums: [
-          { address: TERMS.buyerPayout, amountAtomic: 250_000_000_000n },
-          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n) },
+          { address: TERMS.buyerPayout, amountAtomic: 250_000_000_000n, bearsNetworkFee: true },
+          { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n), bearsNetworkFee: true },
         ],
       }]);
       expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);

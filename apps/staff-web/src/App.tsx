@@ -10,6 +10,7 @@ import { OwnerAlerts } from './screens/OwnerAlerts.js';
 import { OwnerSetup } from './screens/OwnerSetup.js';
 import { PastRep } from './screens/PastRep.js';
 import { Prices } from './screens/Prices.js';
+import { Revenue } from './screens/Revenue.js';
 import { StaffList } from './screens/StaffList.js';
 import { StaffOverview } from './screens/StaffOverview.js';
 import { StaffPerformance } from './screens/StaffPerformance.js';
@@ -49,6 +50,7 @@ function Overview() {
     <Routes>
       <Route index element={<StaffOverview />} />
       <Route path="news" element={<NewsEditor />} />
+      <Route path="revenue" element={<Revenue />} />
     </Routes>
   );
 }

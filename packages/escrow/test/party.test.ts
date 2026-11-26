@@ -263,6 +263,45 @@ describe('party runner over the relay on regtest', () => {
     });
   }
 
+  it('a release wallet2 can never build (an output below its fee share) gives up at once, and the party can still settle the refund (re-verify N2)', async () => {
+    // Re-verify 17 Nov, N2: a 0.02 XMR trade. Regtest's 2-output payout fee is about 0.0017952 XMR,
+    // so the X2F fee output (0.0002 XMR) is below its share and wallet2 refuses the marked set
+    // ("destination amount is zero"). That is permanent: the builder must not spend its attempts
+    // on it as a retryable not-ready, and the party must stay alive for the one-output refund.
+    const t = await newTrade();
+    const amount = 20_000_000_000n; // 0.02 XMR
+    await readyAndFund(t, amount);
+    const [buyerW, feeW, sellerW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    try {
+      const fee = feeFor(amount);
+      const to = [
+        { address: await buyerW.getPrimaryAddress(), amountAtomic: amount - fee, bearsNetworkFee: true },
+        { address: await feeW.getPrimaryAddress(), amountAtomic: fee, bearsNetworkFee: true },
+      ];
+      const release: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
+      void t.parties.buyer.settle(release).catch(() => undefined); // the co-signer never gets a set
+      const refused = await t.parties.seller.settle(release).then(() => null, (e: unknown) => e as Error);
+      expect(refused?.message).toMatch(/used up/); // the app's attempts-exhausted refusal
+      expect(refused?.message).toMatch(/destination amount is zero/);
+      expect(ignoredBy.seller.filter((r) => r.startsWith('build-'))).toEqual([]); // no silent retries
+      expect(t.stores.seller.current()?.release).toMatchObject({ phase: 'exhausted', attempt: 1 });
+
+      // Still alive: the full reversal to the seller (the seller-win ruling's one output) builds and lands.
+      const refund: Outcome = { kind: 'release', to: [{ address: await sellerW.getPrimaryAddress(), amountAtomic: amount }], builder: 'mod', cosigner: 'seller' };
+      const [, s] = await mining(Promise.all([t.parties.mod.settle(refund), t.parties.seller.settle(refund)]));
+      expect(s).toMatch(/^[0-9a-f]{64}$/);
+      await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
+      const got = await balanceOf(sellerW);
+      expect(got).toBeLessThan(amount);
+      expect(got).toBeGreaterThan(amount - MAX_NET_FEE);
+      expect(await balanceOf(feeW)).toBe(0n);
+    } finally {
+      await buyerW.close();
+      await feeW.close();
+      await sellerW.close();
+    }
+  });
+
   it('ignores a validly shaped message from an outsider and a replayed message', async () => {
     const t = await newTrade();
     const outsider = await generateIdentity();

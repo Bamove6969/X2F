@@ -116,7 +116,16 @@ export function Released({
             </div>
           </dl>
         ) : null}
-        {buyer ? <span className="x2f-released__note">Before the Monero network fee, which comes off your payout.</span> : null}
+        {/* COPY-UNSIGNED (owner 16 Nov: each receiving output pays the network fee for itself). Only the
+            poster sees the X2F fee (Global Constraints), so the sentence about its 1% is the poster
+            buyer's only (review B1, 16 Nov); a taker buyer reads the first sentence alone. */}
+        {buyer ? (
+          <span className="x2f-released__note">
+            {trade.fee // the API sends `fee` to the ad poster only (release/view.ts)
+              ? 'Before the network fee for your payout. X2F pays the network fee for its own 1%.'
+              : 'Before the network fee for your payout.'}
+          </span>
+        ) : null}
 
         <div className="x2f-released__confirm">
           <div className="x2f-released__confirm-row">

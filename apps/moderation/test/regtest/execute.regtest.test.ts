@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ROLES, type Role } from '@x2f/core';
+import { ROLES, networkFeeShares, type Role } from '@x2f/core';
 import { MoneroMultisigEngine, runParty, type PartyHandle, type PartyState, type PartyStore } from '@x2f/escrow';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
@@ -182,7 +182,11 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     await expect.poll(pass, { timeout: 120_000, interval: 2000 }).toBe('handed');
     const ex = store.state.executions[code]!;
     expect(ex).toMatchObject({ rulingId: c.ruling.id, winner, settledAt: null });
-    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic) }));
+    // A buyer ruling: the winner's app co-signs the list `payoutsFor('dispute-buyer')` gives (apps/web
+    // policy.ts), the gate's own: both outputs bear the network fee (owner 16 Nov), and the mark is in
+    // the outcome digest, so the buyer's outcome carries it as the moderator's does. A seller ruling's
+    // one refund output is unmarked and bears all of it, as before.
+    const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic), ...(buyerWins ? { bearsNetworkFee: true } : {}) }));
     if (buyerWins) expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
     else expect(to).toEqual([{ address: terms.sellerRefund, amountAtomic: BALANCE }]);
 
@@ -200,10 +204,14 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     await mining(expect.poll(() => store.state.executions[code]?.settledAt ?? null, { timeout: 120_000, interval: 1000 }).not.toBeNull());
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
     if (buyerWins) {
-      expect(await balanceOf(feeW)).toBe(to[1]!.amountAtomic);
-      const got = await balanceOf(buyerW);
-      expect(got).toBeLessThan(to[0]!.amountAtomic);
-      expect(got).toBeGreaterThan(to[0]!.amountAtomic - MAX_NET_FEE);
+      // Owner 16 Nov: the buyer's output and the fee output share the network fee, wallet2's split
+      // (`networkFeeShares`: the buyer, first in pay order, takes an odd unit).
+      const feeShort = to[1]!.amountAtomic - (await balanceOf(feeW));
+      const buyerShort = to[0]!.amountAtomic - (await balanceOf(buyerW));
+      const networkFee = buyerShort + feeShort;
+      expect(networkFee).toBeGreaterThan(0n);
+      expect(networkFee).toBeLessThan(MAX_NET_FEE);
+      expect([buyerShort, feeShort]).toEqual(networkFeeShares(networkFee, [true, true]));
       expect(await balanceOf(sellerW)).toBe(0n);
     } else {
       // A full reversal: nothing to the fee wallet or the buyer; the seller gets the balance less the network fee.

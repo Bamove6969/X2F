@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { normalizeTradeCode } from '@x2f/core';
+import { MAX_NETWORK_FEE, normalizeTradeCode } from '@x2f/core';
 import { RULING_REFUSALS } from '@x2f/staff';
 import {
   attestationBytes,
@@ -35,6 +35,7 @@ import { recordRulingExecution } from '../disputes/execution.js';
 import { acceptGrant, noticeCandidates, pendingGrants, refuseGrant, storeNotice } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
+import { bookSettlementNetworkFee } from '../staff/revenue.js';
 
 /**
  * The API's private internal listener: a SEPARATE Fastify instance, bound to a private interface
@@ -314,6 +315,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     let event: TradeEvent | null = null;
     /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3), or a ruling's (R-M2). */
     let claimedKind: SettleKind | RulingKind | null = null;
+    /** `settled`: the sweep's whole network fee, when the watcher knows it. */
+    let networkFee: bigint | null = null;
     switch (body.kind) {
       case 'setup-done':
         if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
@@ -328,7 +331,16 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         break;
       }
       case 'settled':
-        if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
+        // `networkFeeAtomic` (optional, owner 16 Nov books): the sweep tx's whole network fee as the
+        // moderator's wallet records it, a decimal string; X2F's share of it is booked with the 1%.
+        if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) && !keysAre(body, ['kind', 'trade', 'txHash', 'settleKind', 'networkFeeAtomic'])) break;
+        if (typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
+        if ('networkFeeAtomic' in body) {
+          if (typeof body.networkFeeAtomic !== 'string' || !ATOMIC.test(body.networkFeeAtomic)) break;
+          networkFee = BigInt(body.networkFeeAtomic);
+          // Review M2: over the co-signer bound, so not what X2F's output paid; booked capped (staff/revenue.ts).
+          if (networkFee > MAX_NETWORK_FEE) log({ reason: 'internal-settled-network-fee-over-cap' });
+        }
         if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind) && !isRulingKind(body.settleKind)) break;
         claimedKind = body.settleKind as SettleKind | RulingKind | null;
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
@@ -376,10 +388,15 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       }
       const kind = claimedKind;
       const txHash = body.txHash as string;
+      const fee = networkFee;
       event = { type: 'settled', kind, txHash };
-      within = async (c, _prev, _next, at) => {
+      within = async (c, _prev, next, at) => {
         const r = await recordRulingExecution(c, code, kind, txHash, at);
         if (r !== 'ok') throw new Refused(409, r);
+        // C1 / NF-1 (lead 18 Nov): a buyer ruling's payout has X2F's fee output as a release's does
+        // (payoutsFor), so its share of the network fee is booked with the 1% the store booked in this
+        // same transaction, as on the release path. A seller ruling (full reversal) has no fee output.
+        if (kind === 'dispute-buyer' && fee !== null && next.state === 'released') await bookSettlementNetworkFee(c, code, fee);
       };
       closedCase = { code, txHash };
     } else if (event.type === 'settled') {
@@ -389,8 +406,12 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
       event = { ...event, kind: claimedKind };
       const claimed = claimedKind;
+      const fee = networkFee;
       within = async (c, prev, next, at) => {
         if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+        // Owner 16 Nov: X2F's fee output paid its share of the payout's network fee; the books
+        // record it with the 1% the store booked in this same transaction (staff/revenue.ts).
+        if (fee !== null && next.state === 'released') await bookSettlementNetworkFee(c, code, fee);
         // Review I1 (8 Nov): the seller's cancel refund landed on a trade disputed meanwhile (the
         // machine keeps it `disputed` and records the tx). The escrow is empty now, so a dispute
         // still `open` (no ruling proposed) becomes after-refund in this same transaction: its ruling

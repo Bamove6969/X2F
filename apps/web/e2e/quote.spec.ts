@@ -167,7 +167,7 @@ test.describe('BuyQuote', () => {
     await expect(card(page)).not.toContainText('X2F');
     await expect(page.locator('body')).not.toContainText('1%');
     await expect(page.locator('body')).not.toContainText(/deposit/i);
-    await expect(card(page)).toContainText('about 0.0001 XMR, taken from the payout');
+    await expect(card(page)).toContainText('about 0.00005 XMR for your payout, taken from it');
     // The only fee words are the board's footer: taking an offer is free.
     expect(((await page.locator('#root').innerText()).match(/X2F fee/g) ?? []).length).toBe(1);
   });

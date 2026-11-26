@@ -1324,8 +1324,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.state).toBe('secured');
     // Any remainder below one more atomic unit of trade is dust for the seller.
     const ps = facts(t, received);
-    expect(ps[0]).toEqual({ address: 'B', amountAtomic: grown });
-    expect(ps[1]).toEqual({ address: 'F', amountAtomic: feeFor(grown) });
+    expect(ps[0]).toEqual({ address: 'B', amountAtomic: grown, bearsNetworkFee: true });
+    expect(ps[1]).toEqual({ address: 'F', amountAtomic: feeFor(grown), bearsNetworkFee: true });
     const dust = received - grown - feeFor(grown);
     expect(ps.slice(2)).toEqual(dust > 0n ? [{ address: 'S', amountAtomic: dust }] : []);
   });
@@ -1338,8 +1338,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.feeAtomic).toBe(13_000_000_000n);
     expect(t.fiatCents).toBe(42900n);
     expect(facts(t, received)).toEqual([
-      { address: 'B', amountAtomic: received - 13_000_000_000n },
-      { address: 'F', amountAtomic: 13_000_000_000n },
+      { address: 'B', amountAtomic: received - 13_000_000_000n, bearsNetworkFee: true },
+      { address: 'F', amountAtomic: 13_000_000_000n, bearsNetworkFee: true },
     ]);
   });
 
@@ -1385,8 +1385,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     const st = apply(marked, { type: 'release-started' }, 'seller', at(57));
     expect(st.state).toBe('settling');
     expect(payoutsFor({ kind: 'release', amountAtomic: st.amountAtomic, feeAtomic: st.feeAtomic, poster: st.poster, sellerFundsAtomic: st.sellerFundsAtomic, balanceAtomic: FUNDS, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' })).toEqual([
-      { address: 'B', amountAtomic: AMOUNT },
-      { address: 'F', amountAtomic: feeFor(AMOUNT) },
+      { address: 'B', amountAtomic: AMOUNT, bearsNetworkFee: true },
+      { address: 'F', amountAtomic: feeFor(AMOUNT), bearsNetworkFee: true },
     ]);
   });
 
@@ -1437,8 +1437,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.fiatCents).toBe(41250n);
     expect(t.grown).toBeNull();
     expect(facts(t, received)).toEqual([
-      { address: 'B', amountAtomic: AMOUNT - 12_500_000_000n },
-      { address: 'F', amountAtomic: 12_500_000_000n },
+      { address: 'B', amountAtomic: AMOUNT - 12_500_000_000n, bearsNetworkFee: true },
+      { address: 'F', amountAtomic: 12_500_000_000n, bearsNetworkFee: true },
       { address: 'S', amountAtomic: received - AMOUNT },
     ]);
   });

@@ -1,7 +1,14 @@
-/** One output of a release: an address and an amount in atomic units. */
+/**
+ * One output of a release: an address and an amount in atomic units. `bearsNetworkFee` marks the
+ * outputs the tx's network fee comes off (Monero's subtract_fee_from_outputs), split among them as
+ * wallet2 splits it (`networkFeeShares`). A list with no output marked keeps the original rule:
+ * payout 0 bears all of it (every refund). Owner 16 Nov: a completed trade marks the buyer's output
+ * and the X2F fee output (the receivers pay), never a surplus returned to the seller.
+ */
 export interface Payout {
   address: string;
   amountAtomic: bigint;
+  bearsNetworkFee?: boolean;
 }
 
 export type EscrowErrorCode =
@@ -20,6 +27,14 @@ export type EscrowErrorCode =
    * No address is given.
    */
   | 'bad-multisig';
+
+/**
+ * wallet2's refusal of a set in which an output marked to bear the network fee cannot bear its share
+ * (amount <= share). The amounts and the fee are the same on every attempt, so it is permanent for
+ * that set: the Monero engine reports it as `build-failed`, and the party gives up on that outcome
+ * at once (re-verify 17 Nov, N2).
+ */
+export const UNBUILDABLE = /destination amount is zero/i;
 
 /** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
 export const DAEMON_TIMEOUT_MS = 15_000;
@@ -50,6 +65,8 @@ export interface Outgoing {
   height: number | null;
   /** Everything it spent: the payouts plus the network fee. */
   spentAtomic: bigint;
+  /** The tx's network fee as the wallet records it, when it does (owner 16 Nov books). */
+  feeAtomic?: bigint;
 }
 
 /** Where the daemon has a transaction: nowhere, in the pool, or in a block. */
@@ -114,7 +131,7 @@ export interface EscrowSession {
    * the pool. Null when the key does not fit the tx or the tx is unknown. Unlike proveTx it says
    * nothing about the inputs: the caller pairs it with spentBy (this wallet's own view of the
    * escrow spent by that tx in a block). `feeAtomic` is the tx's own network fee, from the daemon's
-   * copy of the tx (review N-m1: payout 0 may be short by exactly that); with `knownFeeAtomic` (the
+   * copy of the tx (review N-m1: the fee bearers may be short by their shares of exactly that); with `knownFeeAtomic` (the
    * fee the builder saved from buildRelease, review r-m1) that one is returned and the daemon is not
    * asked for it. Review M1/m4 (20 Nov). 'unavailable' when wallet2 could not
    * read the tx from its daemon (a network error, or a node proxy that refused the read): nothing was
@@ -126,7 +143,8 @@ export interface EscrowSession {
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
   /**
-   * Sweep the whole escrow to `payouts`; the network fee comes off payouts[0]. `txKey` (hex) is the
+   * Sweep the whole escrow to `payouts`; the network fee comes off the outputs marked
+   * `bearsNetworkFee` (payouts[0] when none is), split as `networkFeeShares`. `txKey` (hex) is the
    * tx's secret key when the engine gives it: the builder's wallet does not store it (only the
    * submitter's does), so the party keeps it to prove the payment later (review I1).
    */

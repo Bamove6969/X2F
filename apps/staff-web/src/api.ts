@@ -592,14 +592,36 @@ export const announcePlannedMaintenance = (b: { startsAt: string; endsAt: string
   staffApi<StaffSite>('/staff/v1/site/maintenance/planned', { method: 'PUT', body: b });
 export const removePlannedMaintenance = () => staffApi<unknown>('/staff/v1/site/maintenance/planned', { method: 'DELETE' });
 
+/**
+ * Mirrors apps/api `RevenueBucket` / `RevenueReport`. Owner 16 Nov: every bucket has the network
+ * fees X2F's fee outputs paid and the total after them. Amounts are atomic units (decimal strings).
+ */
 export interface RevenueBucket {
   period: string;
   trades: number;
+  feeAtomic: string;
+  owedCollectedAtomic: string;
+  owedCollections: number;
   totalAtomic: string;
   usdEstimateCents: string;
+  networkFeeAtomic: string;
+  netAtomic: string;
 }
-export const revenue = (q: { by: 'day' | 'month'; from: string; to: string }) =>
-  staffApi<{ buckets: RevenueBucket[]; total: RevenueBucket }>(`/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
+export interface RevenueReport {
+  by: 'day' | 'month';
+  from: string;
+  to: string;
+  buckets: RevenueBucket[];
+  total: RevenueBucket;
+  byCurrency: RevenueBucket[];
+  /** Every day ever booked, whatever the range (`period` is `to-date`). */
+  toDate: RevenueBucket;
+  treasuryNetworkFeesRecorded: boolean;
+  owedOutstandingAtomic: string | null;
+}
+/** Without a range, by month over the API's default range (the twelve months to today). */
+export const revenue = (q?: { by: 'day' | 'month'; from: string; to: string }) =>
+  staffApi<RevenueReport>(q === undefined ? '/staff/v1/revenue?by=month' : `/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
 
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)

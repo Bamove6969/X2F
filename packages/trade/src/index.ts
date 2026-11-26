@@ -79,6 +79,7 @@ export {
   attestedRecovery,
   buyerProceeds,
   expectedRecovery,
+  feeWalletNetworkFee,
   isRulingKind,
   lienRecoveryCap,
   payoutsFor,

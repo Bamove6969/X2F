@@ -10,6 +10,7 @@ import {
 import {
   DAEMON_TIMEOUT_MS,
   EscrowError,
+  UNBUILDABLE,
   type EscrowEngine,
   type EscrowSession,
   type Incoming,
@@ -20,7 +21,7 @@ import {
 } from './engine.js';
 import { fromBase64, toBase64 } from './base64.js';
 import { useFetchForInProcessWallets } from './inProcessHttp.js';
-import { checkPayouts, checkTxSet, feeCeiling, parseFeeEstimate, sumPayouts, type DescribedTx, type FeeEstimate } from './verify.js';
+import { checkPayouts, checkTxSet, feeBearers, feeCeiling, feeSplitLayout, parseFeeEstimate, sumPayouts, type DescribedTx, type FeeEstimate } from './verify.js';
 
 export type EscrowNetwork = 'regtest' | 'stagenet' | 'mainnet';
 
@@ -269,10 +270,12 @@ export class MoneroMultisigSession implements EscrowSession {
       const txHash = tx.getHash();
       if (!TX_HASH.test(txHash) || tx.getIsOutgoing() !== true) continue;
       const height = tx.getHeight();
+      const fee = tx.getFee();
       out.push({
         txHash,
         height: typeof height === 'number' && tx.getIsConfirmed() === true ? height : null,
-        spentAtomic: (tx.getOutgoingAmount() ?? 0n) + (tx.getFee() ?? 0n),
+        spentAtomic: (tx.getOutgoingAmount() ?? 0n) + (fee ?? 0n),
+        ...(typeof fee === 'bigint' && fee >= 0n ? { feeAtomic: fee } : {}),
       });
     }
     return out;
@@ -445,15 +448,22 @@ export class MoneroMultisigSession implements EscrowSession {
     let txs: MoneroTxWallet[];
     try {
       // A timeout here is a refused attempt (not-ready): the next attempt exports afresh.
+      // The receivers marked bearsNetworkFee pay the network fee (owner 16 Nov), else payout 0. The
+      // list goes to the wallet in the order where wallet2's pay order and monero-ts agree on which
+      // outputs those are (feeSplitLayout); checkTxSet matches outputs by address.
+      const layout = feeSplitLayout(feeBearers(payouts));
       txs = await timed(this.wallet.createTxs(new MoneroTxConfig({
         accountIndex: 0,
-        destinations: payouts.map((p) => new MoneroDestination(p.address, p.amountAtomic)),
-        subtractFeeFrom: [0],
+        destinations: layout.order.map((i) => new MoneroDestination(payouts[i]!.address, payouts[i]!.amountAtomic)),
+        subtractFeeFrom: layout.subtractFrom,
         relay: false,
       })), 'build', 'not-ready');
     } catch (e) {
+      const why = e instanceof Error ? e.message.slice(0, 120) : 'error';
+      // A fee-bearing output below its share (UNBUILDABLE): no attempt can build this set. Nothing was signed.
+      if (UNBUILDABLE.test(why)) throw new EscrowError('build-failed', `could not build: ${why}`);
       // e.g. multisig state not yet imported: a fresh attempt can recover.
-      throw new EscrowError('not-ready', `could not build: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+      throw new EscrowError('not-ready', `could not build: ${why}`);
     }
     if (txs.length !== 1) throw new EscrowError('build-failed', `expected 1 transaction, got ${txs.length}`);
     const txSet = txs[0]!.getTxSet()?.getMultisigTxHex();

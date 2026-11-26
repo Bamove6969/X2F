@@ -210,6 +210,11 @@ describe('POST /internal/v1/reports: watcher reports', () => {
       // Security review 7 Nov, finding 3: the watcher names the kind it counted the sweep for.
       { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64) },
       { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'nope' },
+      // The sweep's network fee (owner 16 Nov books) is a strict decimal string when sent.
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: 30720000 },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: '030720000' },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: '-1' },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'release', networkFeeAtomic: null },
       { kind: 'setup-done', trade: t.code, escrowAddress: '' },
       { kind: 'late-funds', trade: t.code, kindOf: 'x' },
       { kind: 'spend-unshown', trade: t.code, txHash: 'a'.repeat(64) },
@@ -230,6 +235,28 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release' });
     expect(res.statusCode).toBe(201);
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+  });
+
+  it('settled with the sweep\'s network fee books X2F\'s share of it with the trade\'s 1% (owner 16 Nov)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release', networkFeeAtomic: '30720001' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    const { rows } = await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [t.code]);
+    expect(rows).toEqual([{ network_fee_atomic: '15360000' }]);
+  });
+
+  it('settled with a network fee over the 0.01 XMR bound books X2F\'s share of the bound only (review M2, 16 Nov)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release', networkFeeAtomic: '500000000000' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    const { rows } = await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [t.code]);
+    expect(rows).toEqual([{ network_fee_atomic: '5000000000' }]);
   });
 
   it('settled naming another kind than the trade\'s is refused 409 settle-kind-changed (security review 7 Nov, finding 3)', async () => {
@@ -484,6 +511,65 @@ describe('a ruling\'s payout reported by the watcher (Plan 4 Task 14, R-M2)', ()
     const other = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-buyer' });
     expect([other.statusCode, other.json()]).toEqual([409, { error: 'wrong-state' }]);
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+  });
+
+  // C1 / NF-1 (lead 18 Nov): a buyer ruling's payout has a fee output like a release (owner 16 Nov
+  // books), so the watcher's networkFeeAtomic books X2F's share exactly as the release path does.
+  const bookedFee = async (code: string) =>
+    (await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [code])).rows;
+  const ledgerFee = async (code: string): Promise<bigint> => {
+    const { rows } = await deps.db.query<{ n: string }>(
+      `select coalesce(sum(l.network_fee_atomic), 0)::text as n from revenue_ledger l, trades t
+        where t.code = $1 and l.currency = t.locked_currency and l.kind = 'fee' and l.day = ($2::timestamptz at time zone 'UTC')::date`,
+      [code, NOW],
+    );
+    return BigInt(rows[0]!.n);
+  };
+
+  it('release to the buyer with the sweep\'s network fee books X2F\'s share once; a replay books nothing more (C1 / NF-1)', async () => {
+    const { t } = await ruled('release-to-buyer');
+    const txHash = randomBytes(32).toString('hex');
+    const before = await ledgerFee(t.code);
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer', networkFeeAtomic: '30720001' });
+    expect([res.statusCode, res.json()]).toEqual([201, { ok: true }]);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+    expect(await bookedFee(t.code)).toEqual([{ network_fee_atomic: '15360000' }]);
+    expect((await ledgerFee(t.code)) - before).toBe(15_360_000n);
+    // The watcher retries until a pass is saved: the same report, even with another fee, books nothing more.
+    for (const fee of ['30720001', '99000000']) {
+      const again = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'dispute-buyer', networkFeeAtomic: fee });
+      expect(again.statusCode).toBe(201);
+    }
+    expect(await bookedFee(t.code)).toEqual([{ network_fee_atomic: '15360000' }]);
+    expect((await ledgerFee(t.code)) - before).toBe(15_360_000n);
+    expect(await executedLog(t.code)).toHaveLength(1);
+  });
+
+  it('release to the buyer with a network fee over the 0.01 XMR bound books the share of the bound only (review M2, C1)', async () => {
+    const { t } = await ruled('release-to-buyer');
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-buyer', networkFeeAtomic: '500000000000' });
+    expect(res.statusCode).toBe(201);
+    expect(await bookedFee(t.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+  });
+
+  it('refund to the seller with a network fee books nothing (no fee output, owner g63; C1)', async () => {
+    const { t } = await ruled('refund-to-seller');
+    const before = await ledgerFee(t.code);
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-seller', networkFeeAtomic: '30720001' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'refunded' });
+    expect(await bookedFee(t.code)).toEqual([]);
+    expect((await ledgerFee(t.code)) - before).toBe(0n);
+  });
+
+  it('a ruling\'s report with a malformed network fee is refused 400 as a release\'s is, and nothing changes (C1)', async () => {
+    const { t } = await ruled('release-to-buyer');
+    for (const networkFeeAtomic of [30720000, '030720000', '-1', null, '1.5', '']) {
+      const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'dispute-buyer', networkFeeAtomic });
+      expect(res.statusCode, String(networkFeeAtomic)).toBe(400);
+    }
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash: null });
+    expect(await bookedFee(t.code)).toEqual([]);
   });
 
   it('a kind that does not match the published ruling\'s payouts is refused, and nothing changes', async () => {
