@@ -49,6 +49,7 @@ import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
 import type { JabberSender } from './jabber/sender.js';
 import { noteRoutes } from './team/notes.js';
+import { escrowSyncRoutes } from './escrowSync/routes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { proofRoutes } from './proofs/routes.js';
@@ -386,6 +387,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   jabberRoutes(app);
   // Job 1c (J-10, S-094): notes on traders.
   noteRoutes(app);
+  // Plan 3 Task 42, first part (owner 26 Nov 2026, migration 860): the end-to-end encrypted escrow-key copies.
+  escrowSyncRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
   // Plan 4, Task 30: a trader's support tickets to X2F staff (the staff side is staffTicketRoutes).

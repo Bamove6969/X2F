@@ -24,9 +24,9 @@ import {
 const byNo = (n: number) => ABILITIES.find((a) => a.no === n)!;
 
 describe('the abilities catalogue', () => {
-  it('has the 63 abilities of section B, numbered 1..66 without 46-48 (the hold boxes, gone with the holds on 26 Nov 2026), in 9 groups, each id unique', () => {
-    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 66 }, (_, i) => i + 1).filter((n) => n < 46 || n > 48));
-    expect(new Set(ABILITY_IDS).size).toBe(63);
+  it('has the 64 abilities of section B, numbered 1..67 without 46-48 (the hold boxes, gone with the holds on 26 Nov 2026; 67 is trades-escrow-keys, migration 860), in 9 groups, each id unique', () => {
+    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 67 }, (_, i) => i + 1).filter((n) => n < 46 || n > 48));
+    expect(new Set(ABILITY_IDS).size).toBe(64);
     expect(ABILITY_GROUPS.map((g) => g.id)).toEqual(['offers', 'trades', 'chat', 'proof', 'disputes', 'wallets', 'team', 'security', 'account']);
     for (const a of ABILITIES) {
       expect(ABILITY_GROUPS.map((g) => g.id), a.id).toContain(a.group);

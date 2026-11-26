@@ -281,7 +281,14 @@ export type ApiErrorCode =
   // TICKET_OPEN_AT_ONCE tickets not closed (409); another staff member has taken the ticket (409).
   | 'ticket-closed'
   | 'too-many-tickets'
-  | 'ticket-taken';
+  | 'ticket-taken'
+  // Escrow-key sync (migration 860): an unlock method that makes no key (an authenticator code, or
+  // anything but prf / pgp); a trade copy without the holder's own wrap; a wrap to a reader the
+  // holder did not assign; a copy older than the stored one (409 { version }).
+  | 'unlock-method-not-allowed'
+  | 'holder-wrap-missing'
+  | 'reader-not-assigned'
+  | 'stale-version';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

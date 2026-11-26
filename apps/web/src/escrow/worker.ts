@@ -12,6 +12,7 @@ import { generateBoxKeyPair, generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
 import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
+import { httpKeySyncApi, withKeySync } from './keySync.js';
 import { openEscrowStore } from './store.js';
 import type { RecoveryAddressStatement } from '@x2f/trade';
 import { createAckKeeper } from '../chat/ack.js';
@@ -192,7 +193,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
     });
     return createEscrowRuntime({
       api: httpEscrowApi(),
-      store: await openEscrowStore(),
+      // Escrow-key sync (migration 860): each write also refreshes the end-to-end encrypted server copy.
+      store: withKeySync(await openEscrowStore(), httpKeySyncApi()),
       config,
       engine: new MoneroMultisigEngine({ network }),
       newIdentity: generateIdentity,

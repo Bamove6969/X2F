@@ -294,7 +294,8 @@ export function TradeRoom() {
 }
 
 /**
- * A team member's trade room until Plan 3 Task 42 (NEEDS_PLAN3_TASK42_MEMBER_KEY): no escrow on
+ * A team member's trade room until the owner answers 'trades-release' (escrow-key sync, keySync.ts, gives an
+ * assigned member an encrypted copy of the keys to read, never to sign): no escrow on
  * this device, so no funding, check words or release here. Kit parts only (NEEDS_DESIGN_TEAM).
  *
  * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),

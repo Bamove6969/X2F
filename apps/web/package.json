@@ -34,6 +34,7 @@
     "@x2f/reputation": "0.0.0",
     "@x2f/trade": "0.0.0",
     "libsodium-wrappers": "0.8.4",
+    "openpgp": "6.3.2",
     "qrcode-generator": "2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",

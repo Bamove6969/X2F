@@ -203,6 +203,11 @@ export interface EscrowStore {
   password(code: string): Promise<string | null>;
   /** Make (once) and store the trade's wallet password; a second call returns the first one. */
   createPassword(code: string): Promise<string>;
+  /**
+   * Escrow-key sync (keySync.ts): stores a restored wallet password for a trade that has none on
+   * this device yet (a new device after unlock). Never replaces one: a second call keeps the first.
+   */
+  importPassword(code: string, password: string): Promise<void>;
   /** Deletes the trade's record and its wallet password together. */
   delete(code: string): Promise<void>;
   close(): void;
@@ -230,7 +235,8 @@ function unhex(s: string): Uint8Array {
   return out;
 }
 
-function encode(v: unknown): Uint8Array<ArrayBuffer> {
+/** The store's encoding (tagged bigint and bytes); escrow-key sync (keySync.ts) encrypts the same bytes. */
+export function encode(v: unknown): Uint8Array<ArrayBuffer> {
   const json = JSON.stringify(v, function (this: Record<string, unknown>, k: string, val: unknown) {
     const raw = this[k];
     if (typeof raw === 'bigint') return { $b: raw.toString() };
@@ -240,7 +246,7 @@ function encode(v: unknown): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(json);
 }
 
-function decode(bytes: ArrayBuffer): unknown {
+export function decode(bytes: ArrayBuffer): unknown {
   return JSON.parse(new TextDecoder().decode(bytes), (_k, val: unknown) => {
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
       const keys = Object.keys(val);
@@ -434,6 +440,17 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
       const stored = await store.password(code);
       if (stored === null) throw new EscrowStoreError('unavailable');
       return stored;
+    },
+    async importPassword(code, password) {
+      if (!/^[0-9a-f]{64}$/.test(password)) throw new EscrowStoreError('bad-record');
+      const w = await wrap(SECRETS, code, { password });
+      const { db } = await conn();
+      const tx = db.transaction(SECRETS, 'readwrite');
+      const added = tx.objectStore(SECRETS).add(w, code);
+      added.onerror = (e) => {
+        e.preventDefault();
+      };
+      await done(tx).catch(() => undefined);
     },
     async delete(code) {
       const { db } = await conn();

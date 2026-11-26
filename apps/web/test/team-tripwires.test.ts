@@ -23,12 +23,19 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     expect(existsSync(`${ROOT}apps/web/src/screens/settings/team.css`)).toBe(false);
   });
 
-  it('NEEDS_PLAN3_TASK42_MEMBER_KEY: a member device never starts an escrow step until the member key scheme lands', () => {
-    // The API refuses a member's release and trade identity (403 member-cannot-sign, R44); the web
-    // shows it through CantDoThat (teamCantDoText). Plan 3 Task 42 owns the trade side for members
-    // (chat label "<lead display name> Assistant N", owner p11-25 / S-105, from GET /v1/team and /v1/account/me `chatLabel`; proof; release with a per-member
-    // key). When its key scheme lands (apps/web/src/escrow/memberKey.ts), wire the member's device
-    // into the escrow there, drop the 'member-cannot-sign' words if no longer reachable, and delete this.
-    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`), 'Task 42 member keys landed: wire them in').toBe(false);
+  it('Task 42 escrow-key sync: the keys are copied end to end, and a member device still never starts an escrow step (owner question trades-release open)', () => {
+    // NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (apps/web/src/escrow/keySync.ts,
+    // API escrowSync/routes.ts, migration 860): the holder's escrow worker keeps an end-to-end
+    // encrypted server copy of each trade's keys for itself and the members it assigned ("Hold trade
+    // keys"), and a new device of the holder restores them after a passkey/security-key PRF or PGP
+    // unlock. Conservative default while the owner's 'trades-release' question is open: an assigned
+    // member's device holds a copy to read, never imports it into an escrow store, and never runs the
+    // escrow (MemberRoom; the API's member-cannot-sign stays). When the owner answers yes, wire the
+    // member's device into the escrow (the chat label "<lead display name> Assistant N", proof,
+    // release), drop the 'member-cannot-sign' words if no longer reachable, and change this check.
+    expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
+    expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);
+    expect(readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8')).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);
+    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`), 'member signing landed: wire it in and change this check').toBe(false);
   });
 });

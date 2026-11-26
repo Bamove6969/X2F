@@ -53,6 +53,11 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/badges': "my own earned badges, their levels and my next milestones (Plan 5 Task 5); the account owner only",
   'GET /v1/account/ban': "my own account's bans in force (kind, general reason code, end), my own unfinished trades under a site ban, and the moderator contact links; never the rule, the note or anyone else's ban (Task 27)",
   'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
+  // Escrow-key sync (migration 860): ciphertext the API cannot open, each reader its own wrap only.
+  'GET /v1/escrow-keys/reader': "my own reader key's public half and my own unlock envelopes (ciphertext the API cannot open); the holder, or a member the holder assigned",
+  'GET /v1/escrow-keys/readers': "the public reader keys my own trades' escrow copies may be sealed to: mine and my assigned members' (the account holder only)",
+  'GET /v1/escrow-keys/trades': "which of my own account's trades have an encrypted escrow copy sealed to my reader key",
+  'GET /v1/escrow-keys/trades/:code': "one of my own account's encrypted escrow copies and the content key sealed to my own reader key only (ciphertext the API cannot open)",
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",
   'GET /v1/account/liens': "my own account's liens, both ways: what I owe (owed, recovered, left, rate) and the totals recovered and left on liens owed to me; no account ids, no addresses, never the debtor's purchases",
@@ -149,6 +154,10 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/session/proof/challenge': "a proof challenge for my own session's browser key; answers the challenge only",
   'POST /v1/account/session/proof': "renews my own session's bound cookie with my own browser key; answers its end only",
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
+  // Escrow-key sync (migration 860).
+  'PUT /v1/escrow-keys/reader': "stores my own reader key's public half and my own unlock envelopes (ciphertext); answers its id",
+  'PUT /v1/escrow-keys/trades/:code': "stores the encrypted escrow copy of one of my own trades and its sealed content keys (the account holder only); answers its version",
+  'DELETE /v1/escrow-keys/trades/:code': "deletes the encrypted escrow copy of one of my own trades (the account holder only); no data back",
   'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
   'DELETE /v1/account/chat-keys/:id': "marks one of my own account's chat-key envelopes collected; no data back",
   // The replaced recovery code.
