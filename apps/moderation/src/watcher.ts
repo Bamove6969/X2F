@@ -237,7 +237,7 @@ export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepConte
     .filter((o) => !state.sweepTxs.includes(o.txHash))
     .sort((a, b) => (a.height ?? Number.MAX_SAFE_INTEGER) - (b.height ?? Number.MAX_SAFE_INTEGER));
   for (const o of fresh) {
-    const evidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic };
+    const evidence: SpendEvidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic, ...(typeof o.feeAtomic === 'bigint' && o.feeAtomic >= 0n ? { networkFeeAtomic: o.feeAtomic } : {}) };
     const own = (f.ownTxs ?? []).includes(o.txHash);
     if (!own && !(o.height !== null && (await proven(o, f, ctx)))) {
       ctx.log({ reason: 'sweep-unproven' });
@@ -308,7 +308,10 @@ const reportBody = (trade: string, r: WatchReport, settledKind: SettleKind | Rul
   if (r.kind === 'chain') {
     return { kind: 'chain', trade, receivedAtomic: r.receivedAtomic.toString(), unlockedAtomic: r.unlockedAtomic.toString(), confirmations: r.confirmations };
   }
-  if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash, settleKind: settledKind };
+  if (r.kind === 'settled') {
+    // Owner 16 Nov: the sweep's network fee, when known, so the books record X2F's share of it.
+    return { kind: 'settled', trade, txHash: r.txHash, settleKind: settledKind, ...(r.networkFeeAtomic !== undefined ? { networkFeeAtomic: r.networkFeeAtomic.toString() } : {}) };
+  }
   if (r.kind === 'spend-unshown') return { kind: 'spend-unshown', trade };
   if (r.kind === 'release-claimed') return { kind: 'release-claimed', trade };
   return { kind: 'late-funds', trade };

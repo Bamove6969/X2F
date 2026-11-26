@@ -11,7 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { bookOwedFeeCollected, bookTradeRevenue, feeOutputAtomic, parseRevenueQuery, usdEstimateCents } from '../../src/staff/revenue.js';
+import { bookOwedFeeCollected, bookSettlementNetworkFee, bookTradeRevenue, feeOutputAtomic, parseRevenueQuery, usdEstimateCents } from '../../src/staff/revenue.js';
 import { applyEvent } from '../../src/trades/store.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { StaffBrowser, errorOf, insertSession, seedStaff, staffApps, uniqueName } from '../helpers/staffApp.js';
@@ -203,7 +203,8 @@ describe('retention: the ledger keeps amounts, not codes', () => {
     const cols = (await deps.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns where table_name = 'revenue_ledger' order by ordinal_position`,
     )).rows.map((r) => r.column_name);
-    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents']);
+    // network_fee_atomic (migration 820) is an amount too, so the retention property holds.
+    expect(cols).toEqual(['day', 'currency', 'kind', 'trades', 'fee_atomic', 'usd_estimate_cents', 'network_fee_atomic']);
     const fk = await deps.db.query<{ confdeltype: string }>(
       `select confdeltype from pg_constraint where conrelid = 'revenue_booked'::regclass and contype = 'f'`,
     );
@@ -314,5 +315,93 @@ describe('owed fees collected (the Task 12 seam, review F5)', () => {
     await expect(withClient((c) => bookOwedFeeCollected(c, { code: refunded.code, debtId: 'debt-d', collectedAtomic: XMR / 100n, at }))).rejects.toThrow(/not released/);
     expect(await booked(open.code)).toEqual([]);
     expect(await booked(refunded.code)).toEqual([]);
+  });
+});
+
+// Owner 16 Nov: each receiver pays the network fee for its own payout output; X2F's fee output pays its wallet2 share.
+// The books show the network fees X2F paid and the total after them.
+describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migration 820)', () => {
+  const netDay = async (day: string) =>
+    (await deps.db.query<{ kind: string; fee_atomic: string; network_fee_atomic: string }>(
+      'select kind, fee_atomic::text, network_fee_atomic::text from revenue_ledger where day = $1 order by kind, currency', [day],
+    )).rows;
+  const bookedNet = async (code: string) =>
+    (await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [code])).rows;
+
+  it('a released trade books the fee output\'s share of the tx fee (the odd unit is the buyer\'s), once', async () => {
+    setNow(new Date('2026-05-02T10:00:00Z'));
+    const t = await trade({ to: 'released' });
+    const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: null }]);
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 30_720_001n))).toBe(true);
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '15360000' }]);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '15360000' }]);
+    // Again (a replayed report, or another fee): nothing more.
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 30_720_001n))).toBe(false);
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 99_000_000n))).toBe(false);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '15360000' }]);
+    // A second trade the same day adds to the same row.
+    const t2 = await trade({ to: 'released', poster: 'buyer' });
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t2.code, 20_000_000n))).toBe(true);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: (2n * fee).toString(), network_fee_atomic: '25360000' }]);
+  });
+
+  it('a refunded trade, an open trade and a bad fee book nothing', async () => {
+    setNow(new Date('2026-05-03T10:00:00Z'));
+    const refunded = await trade();
+    await applyEvent(deps, refunded.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    expect(await withClient((c) => bookSettlementNetworkFee(c, refunded.code, 30_720_000n))).toBe(false);
+    const open = await trade();
+    expect(await withClient((c) => bookSettlementNetworkFee(c, open.code, 30_720_000n))).toBe(false);
+    const released = await trade({ to: 'released' });
+    await expect(withClient((c) => bookSettlementNetworkFee(c, released.code, -1n))).rejects.toThrow(RangeError);
+    expect(await withClient((c) => bookSettlementNetworkFee(c, released.code, 0n))).toBe(false);
+    expect(await bookedNet(released.code)).toEqual([{ network_fee_atomic: null }]);
+    expect(await netDay('2026-05-03')).toEqual([{ kind: 'fee', fee_atomic: escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic.toString(), network_fee_atomic: '0' }]);
+  });
+
+  it('a reported fee over the co-signer bound (0.01 XMR) is booked as the share of the bound, never more (review M2, 16 Nov)', async () => {
+    setNow(new Date('2026-05-04T10:00:00Z'));
+    const t = await trade({ to: 'released' });
+    const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
+    // 0.5 XMR reported: X2F's fee output lost at most its share of 0.01 XMR, so 0.005 XMR is booked.
+    expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 500_000_000_000n))).toBe(true);
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+    expect(await netDay('2026-05-04')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '5000000000' }]);
+    // Exactly the bound books its share; one unit over books the same.
+    const atBound = await trade({ to: 'released' });
+    expect(await withClient((c) => bookSettlementNetworkFee(c, atBound.code, 10_000_000_001n))).toBe(true);
+    expect(await bookedNet(atBound.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+  });
+
+  it('the ledger\'s network fees are add-only too', async () => {
+    await expect(deps.db.query("update revenue_ledger set network_fee_atomic = 0 where day = '2026-05-02'")).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('GET /staff/v1/revenue: per period and per market, gross, network fees paid and net; and the totals to date', async () => {
+    const owner = await asOwner();
+    const res = await owner.get('/staff/v1/revenue?by=day&from=2026-05-02&to=2026-05-03');
+    expect(res.statusCode, res.body).toBe(200);
+    const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
+    const body = res.json() as {
+      buckets: Array<{ period: string; totalAtomic: string; networkFeeAtomic: string; netAtomic: string }>;
+      total: { totalAtomic: string; networkFeeAtomic: string; netAtomic: string };
+      byCurrency: Array<{ period: string; networkFeeAtomic: string; netAtomic: string }>;
+      toDate: { period: string; totalAtomic: string; networkFeeAtomic: string; netAtomic: string };
+      treasuryNetworkFeesRecorded: boolean;
+    };
+    expect(body.buckets).toMatchObject([
+      { period: '2026-05-02', totalAtomic: (2n * fee).toString(), networkFeeAtomic: '25360000', netAtomic: (2n * fee - 25_360_000n).toString() },
+      { period: '2026-05-03', totalAtomic: fee.toString(), networkFeeAtomic: '0', netAtomic: fee.toString() },
+    ]);
+    expect(body.total).toMatchObject({ totalAtomic: (3n * fee).toString(), networkFeeAtomic: '25360000', netAtomic: (3n * fee - 25_360_000n).toString() });
+    expect(body.byCurrency).toMatchObject([{ period: 'USD', networkFeeAtomic: '25360000' }]);
+    // To date: every day ever booked, whatever the range asked.
+    expect(body.toDate.period).toBe('to-date');
+    expect(BigInt(body.toDate.networkFeeAtomic)).toBeGreaterThanOrEqual(25_360_000n);
+    expect(BigInt(body.toDate.netAtomic)).toBe(BigInt(body.toDate.totalAtomic) - BigInt(body.toDate.networkFeeAtomic));
+    expect(BigInt(body.toDate.totalAtomic)).toBeGreaterThan(BigInt(body.total.totalAtomic));
+    // The treasury's own sends (fee sweep, payroll) record no network fee yet (Plan 6 wires them).
+    expect(body.treasuryNetworkFeesRecorded).toBe(false);
   });
 });

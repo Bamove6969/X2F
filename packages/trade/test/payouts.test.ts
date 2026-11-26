@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
+import { feeFor, networkFeeShares } from '@x2f/core';
+import { escrowPlan, feeWalletNetworkFee, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -31,15 +31,15 @@ const sum = (ps: { amountAtomic: bigint }[]) => ps.reduce((s, p) => s + p.amount
 describe('payoutsFor: exact funding', () => {
   test('release, poster buyer: the buyer receives amount − fee', () => {
     expect(payoutsFor(args('release', 'buyer', AMOUNT))).toEqual([
-      { address: BUYER, amountAtomic: 1_237_500_000_000n },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: 1_237_500_000_000n, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
     ]);
   });
 
   test('release, poster seller: the buyer receives the amount, the fee is separate', () => {
     expect(payoutsFor(args('release', 'seller', 1_262_500_000_000n))).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
     ]);
   });
 
@@ -57,16 +57,16 @@ describe('payoutsFor: exact funding', () => {
 describe('payoutsFor: a surplus the trade did not grow into goes to the seller (spec 11.1, 2026-10-20)', () => {
   test('release, poster seller, balance 1.2626: surplus is its own output to the seller', () => {
     expect(payoutsFor(args('release', 'seller', 1_262_600_000_000n))).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
       { address: SELLER, amountAtomic: 100_000_000n },
     ]);
   });
 
   test('release, poster buyer, balance 1.2501: surplus is its own output to the seller, not the buyer-poster', () => {
     expect(payoutsFor(args('release', 'buyer', 1_250_100_000_000n))).toEqual([
-      { address: BUYER, amountAtomic: 1_237_500_000_000n },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: 1_237_500_000_000n, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
       { address: SELLER, amountAtomic: 100_000_000n },
     ]);
   });
@@ -83,7 +83,9 @@ describe('payoutsFor: a surplus the trade did not grow into goes to the seller (
         const balance = sellerFundsAtomic + extra;
         const rel = payoutsFor(args('release', poster, balance));
         expect(sum(rel)).toBe(balance);
-        expect(rel.filter((p) => p.address === FEE)).toEqual([{ address: FEE, amountAtomic: feeFor(AMOUNT) }]);
+        expect(rel.filter((p) => p.address === FEE)).toEqual([{ address: FEE, amountAtomic: feeFor(AMOUNT), bearsNetworkFee: true }]);
+        // Owner 16 Nov: the receivers (buyer and X2F) bear the network fee; a surplus to the seller never does.
+        expect(rel.filter((p) => p.bearsNetworkFee).map((p) => p.address)).toEqual([BUYER, FEE]);
         expect(rel[0]?.address).toBe(BUYER);
         expect(rel.find((p) => p.address === BUYER)?.amountAtomic).toBe(poster === 'seller' ? AMOUNT : AMOUNT - FEE_AMOUNT);
         const mc = payoutsFor(args('mutual-cancel', poster, balance));
@@ -100,6 +102,8 @@ describe('payoutsFor: every refund pays only the seller refund address', () => {
         const { sellerFundsAtomic } = escrowPlan({ amountAtomic: AMOUNT, poster });
         for (const balance of [1n, sellerFundsAtomic - 1n, sellerFundsAtomic, sellerFundsAtomic + 100_000_000n]) {
           expect(payoutsFor(args(kind, poster, balance))).toEqual([{ address: SELLER, amountAtomic: balance }]);
+          // Unmarked: the one output to the seller bears the network fee, as before (owner 16 Nov).
+          expect(payoutsFor(args(kind, poster, balance))[0]).not.toHaveProperty('bearsNetworkFee');
         }
       });
     }
@@ -123,7 +127,7 @@ describe('payoutsFor: no zero outputs', () => {
   });
 
   test('a tiny trade whose fee floors to zero has no fee output', () => {
-    expect(payoutsFor(args('release', 'seller', 99n, 99n))).toEqual([{ address: BUYER, amountAtomic: 99n }]);
+    expect(payoutsFor(args('release', 'seller', 99n, 99n))).toEqual([{ address: BUYER, amountAtomic: 99n, bearsNetworkFee: true }]);
   });
 
   test('an empty escrow has nothing to pay', () => {
@@ -206,12 +210,12 @@ describe('sweepMinimums: what a sweep shown only through an import must provably
 
   test('release: at least the take-time buyer payout (fee off it on a buyer ad) and the take-time fee, to the signed addresses', () => {
     expect(sweepMinimums({ kind: 'release', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 5n * AMOUNT })).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
     ]);
     expect(sweepMinimums({ kind: 'release', terms: terms('buyer'), feeWallet: FEE, sweptAtomic: AMOUNT })).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: FEE_AMOUNT, bearsNetworkFee: true },
     ]);
   });
 
@@ -239,5 +243,37 @@ describe('sweepMinimums: what a sweep shown only through an import must provably
     expect(() => sweepMinimums({ kind: 'release', terms: { ...terms('seller'), buyerPayout: FEE }, feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
     expect(() => sweepMinimums({ kind: 'mutual-cancel', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 0n })).toThrow(RangeError);
     expect(() => sweepMinimums({ kind: 'nope' as SettleKind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
+  });
+});
+
+describe('feeWalletNetworkFee: X2F\'s part of a settlement\'s network fee (owner 16 Nov)', () => {
+  test('a completed trade: the fee output\'s wallet2 share, floor(fee / 2) (the odd unit is the buyer\'s)', () => {
+    for (const kind of ['release', 'dispute-buyer'] as const) {
+      expect(feeWalletNetworkFee(kind, 30_720_000n)).toBe(15_360_000n);
+      expect(feeWalletNetworkFee(kind, 30_720_001n)).toBe(15_360_000n);
+      expect(feeWalletNetworkFee(kind, 1n)).toBe(0n);
+    }
+  });
+
+  test('matches the payout set: the share of the fee wallet\'s output among the marked bearers, surplus or not', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const funds = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic;
+      for (const extra of [0n, 5n]) {
+        const set = payoutsFor(args('release', poster, funds + extra));
+        const bearers = set.map((p) => p.bearsNetworkFee === true);
+        for (const fee of [30_720_000n, 30_720_001n, 7n]) {
+          const shares = networkFeeShares(fee, bearers);
+          expect(feeWalletNetworkFee('release', fee)).toBe(shares[set.findIndex((p) => p.address === FEE)]);
+        }
+      }
+    }
+  });
+
+  test('a refund or a full reversal pays X2F nothing, so none of the fee', () => {
+    for (const kind of [...REFUNDS, 'dispute-seller'] as const) expect(feeWalletNetworkFee(kind, 30_720_000n)).toBe(0n);
+  });
+
+  test('a negative fee is refused', () => {
+    expect(() => feeWalletNetworkFee('release', -1n)).toThrow(RangeError);
   });
 });

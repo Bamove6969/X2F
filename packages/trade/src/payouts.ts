@@ -4,8 +4,15 @@
  * Every party derives the same list from the same trade facts and the escrow's
  * observed balance, taken only when balance == unlocked, so the payouts sweep
  * the whole escrow (Plan 1: no change output). Index 0 is always the party
- * receiving the trade's XMR and bears the network fee; the X2F fee output is
- * always exactly feeFor(amount).
+ * receiving the trade's XMR. Who pays the payout's network fee (owner, 16 Nov:
+ * "paid by the person who is set to receive it ... We should also pay for our
+ * fees"): the payout's network fee is shared by its receiving outputs, one
+ * equal share per output. On a completed trade (release, dispute-buyer) the
+ * buyer's output and the X2F fee output are marked `bearsNetworkFee` and each
+ * pays its share as wallet2 splits it (@x2f/core `networkFeeShares`: any odd
+ * atomic unit off the buyer's), so the fee output is feeFor(amount) before its
+ * share of the network fee; a surplus returned to the seller pays none of it. A refund's one
+ * output to the seller is unmarked and bears all of it, as before.
  *
  * Extra XMR: a trade funded above its amount before "I've paid" grows, once releasable, to the
  * funded amount within the offer's limits (the state machine does that, so the
@@ -15,6 +22,7 @@
  * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
  * (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1% only when the trade completes).
  */
+import { networkFeeShares } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
 import type { AttestedTerms } from './attestation.js';
 import { escrowPlan } from './money.js';
@@ -77,8 +85,8 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
       const surplus = balance - f.sellerFundsAtomic;
       const toBuyer = f.poster === 'seller' ? f.amountAtomic : f.amountAtomic - f.feeAtomic;
       return out([
-        { address: f.buyerPayout, amountAtomic: toBuyer },
-        { address: f.feeWallet, amountAtomic: f.feeAtomic },
+        { address: f.buyerPayout, amountAtomic: toBuyer, bearsNetworkFee: true },
+        { address: f.feeWallet, amountAtomic: f.feeAtomic, bearsNetworkFee: true },
         { address: f.sellerRefund, amountAtomic: surplus },
       ]);
     }
@@ -112,7 +120,8 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
  *   everything the sweep spent.
  * - `auto-refund`, `buyer-cancel`: the moderator co-signs these, so its own wallet shows them; null
  *   (an import never shows one).
- * Payout 0 bears the network fee: the check allows it to be short by exactly the tx's fee.
+ * The buyer's and the fee wallet's minimums are marked `bearsNetworkFee` as in payoutsFor: the check
+ * (PartyHandle.proveSweep) allows each to be short by exactly its wallet2 share of the tx's fee.
  */
 export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWallet: string; sweptAtomic: bigint }): Payout[] | null {
   const { terms, feeWallet } = a;
@@ -125,8 +134,8 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
       const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster });
       const toBuyer = terms.deal.poster === 'seller' ? take : take - plan.feeAtomic;
       return out([
-        { address: terms.buyerPayout, amountAtomic: toBuyer },
-        { address: feeWallet, amountAtomic: plan.feeAtomic },
+        { address: terms.buyerPayout, amountAtomic: toBuyer, bearsNetworkFee: true },
+        { address: feeWallet, amountAtomic: plan.feeAtomic, bearsNetworkFee: true },
       ]);
     }
     case 'lapse-refund':
@@ -139,4 +148,18 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
     default:
       throw new RangeError('unknown settle kind');
   }
+}
+
+/**
+ * Owner 16 Nov 2026: what X2F's fee output paid of a settlement's network fee `txFeeAtomic`, for
+ * the books (the API's revenue ledger). The payout's network fee is shared by its receiving outputs,
+ * one equal share per output: a completed trade (`release`, `dispute-buyer`) marks the buyer's
+ * output (index 0) and the fee output (index 1) in payoutsFor, so the fee output pays its wallet2
+ * share, floor(fee / 2) (the odd unit is the buyer's). Every other kind has no fee output: none.
+ * For a set that has a fee output (a fee of zero has none; book nothing then).
+ */
+export function feeWalletNetworkFee(kind: SettleKind | RulingKind, txFeeAtomic: bigint): bigint {
+  if (typeof txFeeAtomic !== 'bigint' || txFeeAtomic < 0n) throw new RangeError('network fee must not be negative');
+  if (kind !== 'release' && kind !== 'dispute-buyer') return 0n;
+  return networkFeeShares(txFeeAtomic, [true, true])[1]!;
 }

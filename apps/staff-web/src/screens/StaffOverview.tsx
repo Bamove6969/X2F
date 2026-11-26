@@ -235,6 +235,13 @@ export function StaffOverview() {
         </div>
         {/* COPY-UNSIGNED, OWNER-Q: replaces the board's wallet-end and view-only-key sentence (see the header). */}
         <p className="x2f-staff-hint">The 1% fee from each completed trade and each settled dispute goes to X2F's fee wallet. These figures come from X2F's own record of every fee paid.</p>
+        {/* NEEDS_DESIGN_REVENUE: no board places the owner's books (network fees paid and the net, owner
+            16 Nov); a plain link to the minimal Revenue page until design draws it. COPY-UNSIGNED */}
+        <p className="x2f-staff-page__lead">
+          <Link className="x2f-link" to="/overview/revenue">
+            Revenue
+          </Link>
+        </p>
       </section>
 
       <section aria-label="Announcement banner" className="x2f-staff-card x2f-stack" data-part="banner">

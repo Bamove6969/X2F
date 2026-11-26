@@ -1,4 +1,5 @@
-import type { RulingKind, SettleKind } from '@x2f/trade';
+import { MAX_NETWORK_FEE } from '@x2f/core';
+import { feeWalletNetworkFee, type RulingKind, type SettleKind } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -19,6 +20,13 @@ import { requireStaff } from './guard.js';
  * The ledger books exactly what the settlement's payout set sends to the fee wallet
  * (`feeOutputAtomic`, the same rule as @x2f/trade's `payoutsFor`), so it can be checked against the
  * fee wallet (Task 9) and never counts a fee that was not paid.
+ *
+ * Owner 16 Nov 2026 (migration 820): the payout's network fee is shared by its receiving outputs,
+ * one equal share per output, so X2F's fee output arrives short by its share. `fee_atomic` stays
+ * the gross 1% (what the payout set names); `network_fee_atomic` is what the fee outputs paid of the
+ * network fee (`bookSettlementNetworkFee`, from the settled tx's fee), so net = gross − network fees.
+ * X2F's own treasury sends (the fee sweep, payroll payouts) are not wired yet (Plan 6) and record
+ * no network fee, so they are not in these figures (`treasuryNetworkFeesRecorded: false`).
  *
  * Retention (R6, the 30-day and 90-day purges): `revenue_ledger` holds day, market, counts and
  * amounts only. The per-trade marker `revenue_booked` (code and amount, no account) is what makes
@@ -151,6 +159,45 @@ export async function bookOwedFeeCollected(q: Queryable, a: { code: string; debt
   });
 }
 
+/**
+ * Owner 16 Nov 2026: books the network fee X2F's fee output paid on a settled trade, from the
+ * settlement tx's whole network fee `txFeeAtomic` (the moderation watcher's `settled` report, read
+ * from its wallet's record of the tx): the fee output's equal share (@x2f/trade
+ * `feeWalletNetworkFee`, wallet2's split). Only on a trade whose own 1% is booked (released, a fee
+ * output paid); once per trade (a replayed report, or another fee, books nothing); added to that
+ * booking's ledger row (the trade's close day and market). Returns whether it booked.
+ *
+ * Review M2 (16 Nov): the fee is capped at MAX_NETWORK_FEE (0.01 XMR) before the share is taken.
+ * No co-signer accepts more, and a sweep the watcher counts lets the fee output be short by at most
+ * its share of the capped fee (proveSweep), so a higher report (a modified app, two old app
+ * versions) can never book more than X2F's output could have lost. The route logs such a report.
+ */
+export async function bookSettlementNetworkFee(q: Queryable, code: string, txFeeAtomic: bigint): Promise<boolean> {
+  if (typeof txFeeAtomic !== 'bigint' || txFeeAtomic < 0n) throw new RangeError('network fee must not be negative');
+  const t = await loadFacts(q, code);
+  if (!t || t.closed_at === null || t.state !== 'released') return false;
+  const kind = (t.settling ?? 'release') as FeeOutputKind;
+  if (feeOutputAtomic(kind, t.poster, BigInt(t.fee_atomic)) <= 0n) return false;
+  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic);
+  if (share <= 0n) return false;
+  const { rows } = await q.query<{ booked: boolean }>(
+    `with mark as (
+       update revenue_booked set network_fee_atomic = $2
+        where trade_code = $1 and kind = 'fee' and debt_id = '' and network_fee_atomic is null
+       returning booked_at
+     ), add as (
+       insert into revenue_ledger (day, currency, kind, network_fee_atomic)
+       select (booked_at at time zone 'UTC')::date, $3, 'fee', $2 from mark
+       on conflict (day, currency, kind) do update set
+         network_fee_atomic = revenue_ledger.network_fee_atomic + excluded.network_fee_atomic
+       returning 1
+     )
+     select exists (select 1 from add) as booked`,
+    [code, share.toString(), t.locked_currency],
+  );
+  return rows[0]?.booked === true;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The owner's totals
 
@@ -170,6 +217,10 @@ export interface RevenueBucket {
   totalAtomic: string;
   /** The USD estimate of the total, cents (each fee at its trade's take-time value). */
   usdEstimateCents: string;
+  /** Monero network fees X2F's fee outputs paid (owner 16 Nov: its share of each payout's fee). */
+  networkFeeAtomic: string;
+  /** totalAtomic − networkFeeAtomic: the total after every recorded Monero network fee. */
+  netAtomic: string;
 }
 
 export interface RevenueReport {
@@ -182,6 +233,13 @@ export interface RevenueReport {
   total: RevenueBucket;
   /** The range per fiat market (`period` is the currency code), largest total first. */
   byCurrency: RevenueBucket[];
+  /** Every day ever booked, whatever the range (`period` is `to-date`): the owner's totals to date. */
+  toDate: RevenueBucket;
+  /**
+   * Whether X2F's own treasury sends (the fee sweep to cold storage, payroll payouts) record their
+   * network fee in these figures. False: they are not wired yet (Plan 6) and record none.
+   */
+  treasuryNetworkFeesRecorded: boolean;
   /**
    * Owed fees not yet collected, atomic units, whatever the range: the sum of `amount_atomic -
    * collected_atomic` over the unsettled `fees_owed` rows (migration 400, J-06).
@@ -196,6 +254,7 @@ interface SumRow {
   owed_n: string;
   owed_atomic: string;
   usd: string;
+  net_fee: string;
 }
 
 const bucketOf = (r: SumRow): RevenueBucket => ({
@@ -206,13 +265,16 @@ const bucketOf = (r: SumRow): RevenueBucket => ({
   owedCollections: Number(r.owed_n),
   totalAtomic: (BigInt(r.fee_atomic) + BigInt(r.owed_atomic)).toString(),
   usdEstimateCents: r.usd,
+  networkFeeAtomic: r.net_fee,
+  netAtomic: (BigInt(r.fee_atomic) + BigInt(r.owed_atomic) - BigInt(r.net_fee)).toString(),
 });
 
 const SUMS = `coalesce(sum(trades) filter (where kind = 'fee'), 0)::text as fee_trades,
               coalesce(sum(fee_atomic) filter (where kind = 'fee'), 0)::text as fee_atomic,
               coalesce(sum(trades) filter (where kind = 'owed'), 0)::text as owed_n,
               coalesce(sum(fee_atomic) filter (where kind = 'owed'), 0)::text as owed_atomic,
-              coalesce(sum(usd_estimate_cents), 0)::text as usd`;
+              coalesce(sum(usd_estimate_cents), 0)::text as usd,
+              coalesce(sum(network_fee_atomic), 0)::text as net_fee`;
 
 /** The ledger between two UTC days inclusive (`YYYY-MM-DD`), by day or by month. */
 export async function revenueReport(q: Queryable, r: { from: string; to: string; by: RevenuePeriod }): Promise<RevenueReport> {
@@ -227,10 +289,11 @@ export async function revenueReport(q: Queryable, r: { from: string; to: string;
       const d = BigInt(b.totalAtomic) - BigInt(a.totalAtomic);
       return d > 0n ? 1 : d < 0n ? -1 : a.period.localeCompare(b.period);
     });
+  const toDate = bucketOf({ ...(await q.query<SumRow>(`select ${SUMS} from revenue_ledger`)).rows[0]!, key: 'to-date' });
   const outstanding = (
     await q.query<{ n: string }>('select coalesce(sum(amount_atomic - collected_atomic), 0)::text as n from fees_owed where settled_at is null')
   ).rows[0]!.n;
-  return { by: r.by, from: r.from, to: r.to, buckets, total, byCurrency, owedOutstandingAtomic: outstanding };
+  return { by: r.by, from: r.from, to: r.to, buckets, total, byCurrency, toDate, treasuryNetworkFeesRecorded: false, owedOutstandingAtomic: outstanding };
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -276,7 +339,8 @@ export function parseRevenueQuery(query: unknown, now: Date): { from: string; to
  * The owner's revenue totals on the staff API: `GET /staff/v1/revenue` (perm `earnings.read`, the
  * owner's alone: no role but the owner holds it and it cannot be granted) → `RevenueReport`.
  * NEEDS_DESIGN_REVENUE: the staff web page that shows it (StaffOverview's revenue card, growth and
- * the payroll and treasury views) is Claude Design's to draw; apps/staff-web is not on this line yet.
+ * the payroll and treasury views) is Claude Design's to draw; until then apps/staff-web's minimal
+ * Revenue page (screens/Revenue.tsx, under the owner's Overview) shows the to-date and monthly totals.
  */
 export function staffRevenueRoutes(app: FastifyInstance): void {
   const perm = 'earnings.read' as const;
