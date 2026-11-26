@@ -130,15 +130,14 @@ test('the owner completes setup with two soft keys; a reload shows the page as l
 });
 
 /**
- * The board's step 4 calls the PGP key optional, for alerts and signing rulings. The built page
- * follows A9 (the owner logs in with the PGP key together with a security key, so it is required)
- * and marks that sentence OWNER-Q in OwnerSetup.tsx: these three board lines are the known
- * difference until design redraws step 4. Any other difference fails.
+ * The board's step 4 (redrawn in b427426e) makes the PGP key required: "Required: the owner logs in
+ * with this key. It also receives encrypted staff alerts and signs important rulings." The built
+ * page follows A9 with its own sentence ("Add your PGP public key. The owner logs in with it
+ * together with a security key."), marked OWNER-Q in OwnerSetup.tsx: the owner owns that copy, so
+ * this board line is the known difference until he picks one. Any other difference fails.
  */
 const KNOWN_A9 = [
-  'board copy missing: "4. PGP key (optional)"',
-  'board copy missing: "(optional)"',
-  'board copy missing: "Add your PGP public key to receive encrypted staff alerts and to sign important rulings."',
+  'board copy missing: "Required: the owner logs in with this key. It also receives encrypted staff alerts and signs important rulings."',
 ];
 
 test('OwnerSetup parity at the board size, the code and username inputs masked', async ({ page }) => {

@@ -237,37 +237,246 @@ export async function assertLiveMember(
   await assertInsideBand(q, bandOf(live.band_min_atomic, live.band_max_atomic), on);
 }
 
+// ---- Reading the log (team audit v2, migration 855) ----
+
+/** What a row is about: a member's work, the team's own changes, or access (logins, sessions, refused attempts). */
+export type AuditCategory = 'work' | 'team' | 'access';
+export const AUDIT_CATEGORIES: readonly AuditCategory[] = ['work', 'team', 'access'];
+export type ActorKind = 'member' | 'lead' | 'system';
+
+/** Actions the database writes itself (migration 855's triggers) and the API's refused-attempt row. */
+export const TEAM_ACTIONS = ['member-invited', 'member-joined', 'abilities-changed', 'limits-changed', 'member-removed', 'invite-closed'] as const;
+export const ACCESS_ACTIONS = ['member-login', 'session-ended', 'attempt-refused', 'attempts-throttled'] as const;
+
 export interface AuditEntry {
   id: string;
   at: string;
-  /** Null for the account owner's own row (`auditLead`). */
+  /** Who acted: a member (memberId set), the account owner, or X2F itself. */
+  actorKind: ActorKind;
+  /** The member who acted, or null for the account owner or X2F. */
   memberId: string | null;
   memberName: string | null;
+  /** True for the account owner's own row (kept for older clients). */
   byLead: boolean;
+  /** The member the row is about (the actor for their own work; the member changed, logged in or refused). */
+  subjectId: string | null;
+  subjectName: string | null;
+  category: AuditCategory;
   action: string;
   tradeCode: string | null;
   detail: unknown;
+  /** The chain link (hex): SHA-256(prevHash || line). */
+  hash: string;
+  prevHash: string | null;
 }
 
 export const AUDIT_PAGE = 200;
+/** At most this many rows in one export; a bigger log is exported in date ranges. */
+export const AUDIT_EXPORT_MAX = 20_000;
 
-/** The account's log, newest first, at most `AUDIT_PAGE` rows, optionally within [from, to) and for one member. */
-export async function listAudit(
-  q: Queryable,
-  accountId: string,
-  f: { from?: Date; to?: Date; memberId?: string } = {},
-): Promise<AuditEntry[]> {
-  const { rows } = await q.query<{ id: string; at: Date; member_id: string | null; display_name: string | null; action: string; trade_code: string | null; detail: unknown }>(
-    `select l.id::text as id, l.at, l.member_id, m.display_name, l.action, l.trade_code, l.detail
-       from team_audit l left join team_members m on m.id = l.member_id
-      where l.account_id = $1
-        and ($2::timestamptz is null or l.at >= $2) and ($3::timestamptz is null or l.at < $3)
-        and ($4::uuid is null or l.member_id = $4)
-      order by l.at desc, l.id desc limit ${AUDIT_PAGE}`,
-    [accountId, f.from ?? null, f.to ?? null, f.memberId ?? null],
+export interface AuditFilter {
+  from?: Date;
+  to?: Date;
+  /** Rows a member acted in or is the subject of (any of these). */
+  members?: readonly string[];
+  categories?: readonly AuditCategory[];
+  actions?: readonly string[];
+  tradeCode?: string;
+  /** Paging: only rows with a smaller id (the previous page's `next`). */
+  before?: string;
+  /** A member reading their own log (the `team-see-log` box): only rows they acted in or are about. */
+  onlyMember?: string;
+  limit?: number;
+}
+
+interface RawRow {
+  id: string;
+  at: Date;
+  actor_kind: ActorKind;
+  member_id: string | null;
+  actor_name: string | null;
+  subject_id: string | null;
+  subject_name: string | null;
+  category: AuditCategory;
+  action: string;
+  trade_code: string | null;
+  detail: unknown;
+  hash: Buffer;
+  prev_hash: Buffer | null;
+  line?: string;
+}
+
+function where(accountId: string, f: AuditFilter): { sql: string; params: unknown[] } {
+  const params: unknown[] = [accountId];
+  const parts = ['l.account_id = $1'];
+  const add = (sql: (n: string) => string, v: unknown) => {
+    params.push(v);
+    parts.push(sql(`$${params.length}`));
+  };
+  if (f.from) add((n) => `l.at >= ${n}`, f.from);
+  if (f.to) add((n) => `l.at < ${n}`, f.to);
+  if (f.members && f.members.length > 0) add((n) => `(l.member_id = any(${n}::uuid[]) or l.subject_id = any(${n}::uuid[]))`, f.members);
+  if (f.onlyMember) add((n) => `(l.member_id = ${n}::uuid or l.subject_id = ${n}::uuid)`, f.onlyMember);
+  if (f.categories && f.categories.length > 0) add((n) => `l.category = any(${n}::text[])`, f.categories);
+  if (f.actions && f.actions.length > 0) add((n) => `l.action = any(${n}::text[])`, f.actions);
+  if (f.tradeCode) add((n) => `l.trade_commit = sha256(convert_to(${n}::text, 'UTF8'))`, f.tradeCode);
+  if (f.before) add((n) => `l.id < ${n}::bigint`, f.before);
+  return { sql: parts.join(' and '), params };
+}
+
+const SELECT = `select l.id::text as id, l.at, l.actor_kind, l.member_id, am.display_name as actor_name,
+                       l.subject_id, sm.display_name as subject_name, l.category, l.action, l.trade_code, l.detail,
+                       l.hash, l.prev_hash`;
+const FROM = `from team_audit l
+          left join team_members am on am.id = l.member_id
+          left join team_members sm on sm.id = l.subject_id`;
+
+function entryOf(r: RawRow): AuditEntry {
+  return {
+    id: r.id, at: r.at.toISOString(), actorKind: r.actor_kind, memberId: r.member_id, memberName: r.actor_name,
+    byLead: r.actor_kind === 'lead', subjectId: r.subject_id, subjectName: r.subject_name, category: r.category,
+    action: r.action, tradeCode: r.trade_code, detail: r.detail, hash: r.hash.toString('hex'), prevHash: r.prev_hash?.toString('hex') ?? null,
+  };
+}
+
+/** One page of the account's log, newest first, with the id to pass as `before` for the next page (null at the end). */
+export async function listAudit(q: Queryable, accountId: string, f: AuditFilter = {}): Promise<{ entries: AuditEntry[]; next: string | null }> {
+  const limit = Math.min(Math.max(f.limit ?? AUDIT_PAGE, 1), AUDIT_PAGE);
+  const w = where(accountId, f);
+  const { rows } = await q.query<RawRow>(`${SELECT} ${FROM} where ${w.sql} order by l.id desc limit ${limit + 1}`, w.params);
+  const page = rows.slice(0, limit).map(entryOf);
+  return { entries: page, next: rows.length > limit ? (page[page.length - 1]?.id ?? null) : null };
+}
+
+/** An export row: the entry and the exact text its hash covers, so the chain can be re-checked offline. */
+export interface ExportRow extends AuditEntry {
+  line: string;
+}
+
+/** Every row the filter matches, oldest first (at most `AUDIT_EXPORT_MAX`; `truncated` says when there were more). */
+export async function exportAudit(q: Queryable, accountId: string, f: AuditFilter = {}): Promise<{ rows: ExportRow[]; truncated: boolean }> {
+  const { before: _paging, ...all } = f;
+  const w = where(accountId, all);
+  const { rows } = await q.query<RawRow>(
+    `${SELECT}, team_audit_line(l) as line ${FROM} where ${w.sql} order by l.id asc limit ${AUDIT_EXPORT_MAX + 1}`,
+    w.params,
+  );
+  return { rows: rows.slice(0, AUDIT_EXPORT_MAX).map((r) => ({ ...entryOf(r), line: r.line ?? '' })), truncated: rows.length > AUDIT_EXPORT_MAX };
+}
+
+/** A fingerprint the owner kept: an entry id and its hash (hex). */
+export interface Fingerprint {
+  id: string;
+  hash: string;
+}
+
+export interface AuditIntegrity {
+  /** The whole chain re-computes and links. */
+  ok: boolean;
+  entries: number;
+  /** The first row that fails, when not ok. */
+  brokenAt: string | null;
+  /** The last good row: the fingerprint to keep. */
+  head: Fingerprint | null;
+  /** When a fingerprint was given: it is still in the chain with the same hash (and the chain is ok up to it). */
+  fingerprint?: { id: string; matches: boolean };
+}
+
+/** Re-computes the account's chain (`team_audit_verify`) and, if given, checks a kept fingerprint against it. */
+export async function verifyAudit(q: Queryable, accountId: string, kept?: Fingerprint): Promise<AuditIntegrity> {
+  const { rows } = await q.query<{ ok: boolean; entries: string; broken_at: string | null; head_id: string | null; head_hash: Buffer | null }>(
+    'select ok, entries::text, broken_at::text, head_id::text, head_hash from team_audit_verify($1)',
+    [accountId],
+  );
+  const v = rows[0]!;
+  const out: AuditIntegrity = {
+    ok: v.ok, entries: Number(v.entries), brokenAt: v.broken_at,
+    head: v.head_id !== null && v.head_hash !== null ? { id: v.head_id, hash: v.head_hash.toString('hex') } : null,
+  };
+  if (kept) {
+    const { rows: k } = await q.query<{ hash: Buffer }>('select hash from team_audit where account_id = $1 and id = $2::bigint', [accountId, kept.id]);
+    const stored = k[0]?.hash.toString('hex');
+    // A kept row past the first broken one cannot be vouched for, even if its stored hash matches.
+    const before = v.ok || (v.broken_at !== null && BigInt(kept.id) < BigInt(v.broken_at));
+    out.fingerprint = { id: kept.id, matches: stored !== undefined && stored === kept.hash.toLowerCase() && before };
+  }
+  return out;
+}
+
+export interface MemberSummary {
+  memberId: string;
+  name: string;
+  status: 'invited' | 'active' | 'removed';
+  /** Rows the member acted in, by category, in the window. */
+  work: number;
+  logins: number;
+  refused: number;
+  /** Rows about the member written by the account owner (box and limit changes) in the window. */
+  changes: number;
+  lastActionAt: string | null;
+  lastLoginAt: string | null;
+}
+
+/** Per member, what the log holds for them since `since` (the screen's overview cards). */
+export async function summariseAudit(q: Queryable, accountId: string, since: Date): Promise<MemberSummary[]> {
+  const { rows } = await q.query<{
+    id: string; display_name: string; joined_at: Date | null; removed_at: Date | null;
+    work: string; logins: string; refused: string; changes: string; last_action_at: Date | null; last_login_at: Date | null;
+  }>(
+    `select m.id, m.display_name, m.joined_at, m.removed_at,
+            count(*) filter (where l.category = 'work' and l.member_id = m.id)::text as work,
+            count(*) filter (where l.action = 'member-login')::text as logins,
+            count(*) filter (where l.action = 'attempt-refused')::text as refused,
+            count(*) filter (where l.category = 'team' and l.actor_kind = 'lead')::text as changes,
+            max(l.at) filter (where l.member_id = m.id and l.category = 'work') as last_action_at,
+            max(l.at) filter (where l.action = 'member-login') as last_login_at
+       from team_members m
+       left join team_audit l on l.account_id = m.account_id and l.subject_id = m.id and l.at >= $2
+      where m.account_id = $1
+      group by m.id
+      order by (m.removed_at is not null), m.created_at`,
+    [accountId, since],
   );
   return rows.map((r) => ({
-    id: r.id, at: r.at.toISOString(), memberId: r.member_id, memberName: r.display_name, byLead: r.member_id === null,
-    action: r.action, tradeCode: r.trade_code, detail: r.detail,
+    memberId: r.id, name: r.display_name,
+    status: r.removed_at !== null ? 'removed' : r.joined_at !== null ? 'active' : 'invited',
+    work: Number(r.work), logins: Number(r.logins), refused: Number(r.refused), changes: Number(r.changes),
+    lastActionAt: r.last_action_at?.toISOString() ?? null, lastLoginAt: r.last_login_at?.toISOString() ?? null,
   }));
+}
+
+// ---- Refused attempts (category 'access') ----
+
+/** The refusals that say a member reached past what they may do, and so belong in the log. */
+export const REFUSAL_CODES: ReadonlySet<string> = new Set(['owner-only', 'forbidden', 'outside-trade-band', 'outside-login-hours', 'member-cannot-sign']);
+/** At most this many refused-attempt rows per member per hour, so a looping client cannot flood the log; one more row says so. */
+export const REFUSALS_PER_HOUR = 30;
+
+/**
+ * Logs one refused request by a member: the route pattern (never the URL with its ids or query),
+ * the method and the refusal code. Its own statement, after the refused request rolled back.
+ */
+export async function auditRefusal(
+  q: Queryable,
+  who: { accountId: string; memberId: string },
+  r: { method: string; route: string; code: string },
+  now: Date,
+): Promise<void> {
+  const { rows } = await q.query<{ n: number }>(
+    `select count(*)::int as n from team_audit
+      where account_id = $1 and subject_id = $2 and action in ('attempt-refused', 'attempts-throttled') and at > $3`,
+    [who.accountId, who.memberId, new Date(now.getTime() - 3_600_000)],
+  );
+  const n = rows[0]?.n ?? 0;
+  if (n > REFUSALS_PER_HOUR) return;
+  const throttled = n === REFUSALS_PER_HOUR;
+  await q.query(
+    `insert into team_audit (account_id, member_id, actor_kind, subject_id, category, at, action, detail)
+     select $1, $2, 'member', $2, 'access', $3, $4, $5
+      where exists (select 1 from team_members where id = $2 and account_id = $1)`,
+    [
+      who.accountId, who.memberId, now, throttled ? 'attempts-throttled' : 'attempt-refused',
+      JSON.stringify(throttled ? { perHour: REFUSALS_PER_HOUR } : { method: r.method, route: r.route.slice(0, 120), reason: r.code }),
+    ],
+  );
 }

@@ -7,6 +7,7 @@ import { chatPurgeDue, type ChatRetentionFacts } from '@x2f/trade';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import type { RetentionJob } from '../retention.js';
+import { LIEN_FACTS_SQL } from '../chat/retention.js';
 import { PURGE_ROLE } from '../trades/purge.js';
 
 /** P5-A25: payment proofs per side per trade. */
@@ -87,11 +88,14 @@ interface FactRow {
   disputes: number;
   disputes_open: number;
   dispute_closed_at: Date | null;
+  lien_open: boolean;
+  lien_ended: Date | null;
 }
 
-// The chat's facts for a trade (chat/retention.ts), for trades that hold proofs.
+// The chat's facts for a trade (chat/retention.ts), for trades that hold proofs, the lien's included.
 const FACTS = `select t.code, t.closed_at, t.taken_at, t.state, t.dispute_by,
-                      d.total as disputes, d.still_open as disputes_open, d.last_closed as dispute_closed_at
+                      d.total as disputes, d.still_open as disputes_open, d.last_closed as dispute_closed_at,
+                      ${LIEN_FACTS_SQL('t.code')}
                  from trades t
                  left join lateral (select count(*)::int as total,
                                            (count(*) filter (where x.status <> 'closed'))::int as still_open,
@@ -106,12 +110,16 @@ const factsOf = (r: FactRow): ChatRetentionFacts => ({
   disputeClosedAt: r.dispute_closed_at,
   createdAt: r.taken_at,
   lastMessageAt: null,
+  // Owner 26 Nov 2026: an unpaid lien from the trade keeps its proofs; an ended one, 90 days more.
+  lienOpen: r.lien_open,
+  lienEndedAt: r.lien_ended,
 });
 
 /**
  * Deletes the proofs of every trade whose chat would be deleted now (`chatPurgeDue`, owner revision
  * 2026-10-29: 30 days after an undisputed trade ends, 90 days after its dispute closes, never while
- * one is open). Runs as x2f_purge; the delete re-checks the open-dispute rule itself, so a dispute
+ * one is open; owner 26 Nov 2026: never while a lien from the trade is unpaid, then 90 days after
+ * it ends). Runs as x2f_purge; the delete re-checks the open-dispute rule itself, so a dispute
  * opened since the scan keeps them. The trades are locked `for share` first, in code order, as
  * purgeChats does (review M2): opening a dispute holds the trade's row lock, so a dispute not yet
  * committed makes the delete wait for it and then see it. The lock comes before the switch to the
@@ -131,12 +139,24 @@ export async function purgeProofs(
     await client.query('begin');
     try {
       await client.query('select 1 from trades where code = any($1) order by code for share', [doomed]);
+      // Owner 26 Nov 2026: a trade with an unpaid lien keeps its proofs. Checked again under the
+      // trade's lock and before the role switch (x2f_purge may not read liens): a lien only comes
+      // from a dispute, which the delete itself re-checks, so this is the belt to that check.
+      const { rows: free } = await client.query<{ code: string }>(
+        `select c.code from unnest($1::text[]) c (code)
+          where not exists (select 1 from liens l where l.from_code = c.code and l.status in ('active', 'suspended'))`,
+        [doomed],
+      );
+      if (free.length === 0) {
+        await client.query('commit');
+        return 0;
+      }
       await client.query(`set local role ${PURGE_ROLE}`);
       const r = await client.query(
         `delete from trade_proofs p where p.trade_code = any($1)
            and not exists (select 1 from trades t where t.code = p.trade_code and t.state = 'disputed')
            and not exists (select 1 from disputes d where d.code = p.trade_code and d.status <> 'closed')`,
-        [doomed],
+        [free.map((f) => f.code)],
       );
       await client.query('commit');
       return r.rowCount ?? 0;

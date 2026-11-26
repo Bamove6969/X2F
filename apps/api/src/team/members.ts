@@ -300,6 +300,9 @@ export async function removeMember(
  * 404 `not-found` when the member was removed meanwhile (a waiting removal is then dropped).
  */
 export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
+  // Review 26 Nov (finding 3): lock the member's sessions before the team_members write, whose
+  // trigger takes the team log's lock; a logout locks its session row and then waits on that lock.
+  await c.query('select 1 from sessions where member_id = $1 and revoked_at is null order by id for update', [memberId]);
   const { rows } = await c.query<{ member_account_id: string | null }>(
     `update team_members set removed_at = $3, invite_hash = null
       where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
