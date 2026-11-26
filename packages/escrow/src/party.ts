@@ -844,8 +844,8 @@ export function runParty(a: PartyArgs): PartyHandle {
    * The tx secret key `key` (the builder's own, saved at build) fits `h` and `h` pays each payout
    * of `o`, out of the pool: every payout receives something (review N-m1: wallet2's check_tx_key
    * answers "good" with 0 received for a key of another tx, so on a dust payout a fee allowance alone
-   * proved nothing), and payout 0 is short by at most the tx's own network fee (which buildRelease
-   * takes off it; as the moderator's sweepMinimums), itself at most MAX_NETWORK_FEE. A key fits only
+   * proved nothing), and each fee bearer is short by at most its `networkFeeShares` share of the tx's
+   * own network fee (which buildRelease takes off the bearers; as proveSweep), itself at most MAX_NETWORK_FEE. A key fits only
    * the tx built with it, so this names "the tx this builder built"; the callers pair it with
    * `spentBy` + `txSeen` (this wallet's escrow spent by `h` in a block, and the daemon has it).
    * Through the wallet's own daemon connection only (txKeyPays, not proveTx: that one reads the
@@ -862,7 +862,10 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (r === null || r.inPool || r.received.length !== o.to.length) return false;
     const fee = stored ?? r.feeAtomic;
     if (fee < 0n || fee > MAX_NETWORK_FEE) return false;
-    return o.to.every((p, i) => r.received[i]! > 0n && r.received[i]! + (i === 0 ? fee : 0n) >= p.amountAtomic);
+    // Owner 16 Nov split: each fee bearer (the marked payouts, else payout 0, as buildRelease takes
+    // it) may be short by exactly its wallet2 share of the fee, never more (as proveSweep).
+    const shares = networkFeeShares(fee, feeBearers(o.to));
+    return o.to.every((p, i) => r.received[i]! > 0n && r.received[i]! + shares[i]! >= p.amountAtomic);
   };
   const provenByKey = async (rel: ReleaseState, o: Outcome, h: string): Promise<boolean> => (await keyProof(rel, o, h)) === true;
   /**

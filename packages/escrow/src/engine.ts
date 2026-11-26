@@ -131,7 +131,7 @@ export interface EscrowSession {
    * the pool. Null when the key does not fit the tx or the tx is unknown. Unlike proveTx it says
    * nothing about the inputs: the caller pairs it with spentBy (this wallet's own view of the
    * escrow spent by that tx in a block). `feeAtomic` is the tx's own network fee, from the daemon's
-   * copy of the tx (review N-m1: payout 0 may be short by exactly that); with `knownFeeAtomic` (the
+   * copy of the tx (review N-m1: the fee bearers may be short by their shares of exactly that); with `knownFeeAtomic` (the
    * fee the builder saved from buildRelease, review r-m1) that one is returned and the daemon is not
    * asked for it. Review M1/m4 (20 Nov). 'unavailable' when wallet2 could not
    * read the tx from its daemon (a network error, or a node proxy that refused the read): nothing was
