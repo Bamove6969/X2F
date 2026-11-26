@@ -10,7 +10,7 @@ import { LIEN_RECOVERY_MAX_BPS } from './payouts.js';
  * - `LienStatement`, signed by the moderation service (MOD_SIGNING_SECRET) once it has checked a lien
  *   against its own records: the lien's source trade (one it attested), that a ruling its gate
  *   verified makes `creditorSide` a creditor there, the amount (that trade's XMR) and the rate (the
- *   50% default, or a rate a senior moderator's key tap approved, verified by its gate). The
+ *   100% default, or a lower rate a senior moderator's key tap approved, verified by its gate). The
  *   account ids are the API's word, pinned on first sight: the service never signs a later statement
  *   for the same lien with other parties. It keeps the statement, and the sum it has signed into
  *   trades' terms for the lien, in its own database (apps/moderation migration 023).

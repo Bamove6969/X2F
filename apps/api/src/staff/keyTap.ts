@@ -544,7 +544,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       return { kind: 'lien-uncollectible', lienId: match(r, 'lienId', UUID).toLowerCase() };
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
-      // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
+      // Q1 (owner, 26 Nov 2026, OQ1): at most 100% (@x2f/trade LIEN_RECOVERY_MAX_BPS). The moderation service verifies this tap itself before it signs a recovery at the rate.
       if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) throw badRequest();
       return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
