@@ -217,6 +217,7 @@ export function methodOf(view: Pick<TradeView, 'methodId' | 'profile'>): { name:
 }
 
 /** POST /v1/trades/:code/events (Task 6); answers the new view, or throws ApiCallError (409 with the rule code). */
-export function postTradeEvent(code: string, event: { type: string; fiatCents?: bigint }): Promise<TradeView> {
+/** `confirmToken`: a team member's confirm-it's-you token for a fund or a release (screens/trade/memberActs.ts). */
+export function postTradeEvent(code: string, event: { type: string; fiatCents?: bigint; confirmToken?: string }): Promise<TradeView> {
   return api<TradeView>(`/v1/trades/${encodeURIComponent(code)}/events`, { method: 'POST', body: event });
 }

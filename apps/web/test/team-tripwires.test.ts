@@ -23,19 +23,31 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     expect(existsSync(`${ROOT}apps/web/src/screens/settings/team.css`)).toBe(false);
   });
 
-  it('Task 42 escrow-key sync: the keys are copied end to end, and a member device still never starts an escrow step (owner question trades-release open)', () => {
-    // NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (apps/web/src/escrow/keySync.ts,
-    // API escrowSync/routes.ts, migration 860): the holder's escrow worker keeps an end-to-end
-    // encrypted server copy of each trade's keys for itself and the members it assigned ("Hold trade
-    // keys"), and a new device of the holder restores them after a passkey/security-key PRF or PGP
-    // unlock. Conservative default while the owner's 'trades-release' question is open: an assigned
-    // member's device holds a copy to read, never imports it into an escrow store, and never runs the
-    // escrow (MemberRoom; the API's member-cannot-sign stays). When the owner answers yes, wire the
-    // member's device into the escrow (the chat label "<lead Trade Tag> Assistant N", proof,
-    // release), drop the 'member-cannot-sign' words if no longer reachable, and change this check.
+  it('Task 42 member keys: a member acts in a trade only with the matching box, and only with the keys loaded by their own key', () => {
+    // The escrow-key sync (apps/web/src/escrow/keySync.ts, API escrowSync/routes.ts, migration 860)
+    // keeps an end-to-end encrypted copy of each trade's keys for the holder and the members it
+    // assigned ("Hold trade keys"). Owner Jess, 26 Nov 2026 (the 'trades-release' answer): a member
+    // acts in the account's trades with separate boxes, `trades-fund`, `trades-release`,
+    // `trades-upload-proof` and `trades-mark-paid`, each also needing `trades-escrow-keys`; their
+    // device loads the keys (escrow/memberKey.ts, unlocked with the member's own passkey, security
+    // key or PGP key) and runs the escrow only for such a step. A box missing: the action is not
+    // shown. Fund and release take a `fund-trade` / `release-trade` confirm. If a box is added,
+    // removed or renamed, change memberActs.ts and this check together.
     expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
     expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);
-    expect(readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8')).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);
-    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`), 'member signing landed: wire it in and change this check').toBe(false);
+    const room = readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8');
+    expect(room).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);
+    // The member's step comes from their boxes only, never from the session's roles.
+    expect(room).toMatch(/const step = boxes === null \? null : memberStep\(view, acts\)/);
+    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`)).toBe(true);
+    const acts = readFileSync(`${ROOT}apps/web/src/screens/trade/memberActs.ts`, 'utf8');
+    for (const box of ['trades-fund', 'trades-release', 'trades-upload-proof', 'trades-mark-paid']) expect(acts, box).toContain(`'${box}'`);
+    // Every act needs Hold trade keys: without it, none.
+    expect(acts).toMatch(/if \(!keys\) return NO_ACTS;/);
+    // The release goes through the member's confirm, never the owner's bare post.
+    expect(readFileSync(`${ROOT}apps/web/src/screens/trade/SellerConfirm.tsx`, 'utf8')).toMatch(/confirmedEvent\(escrowCode, 'release-trade', 'release-started', member\.prove\)/);
+    // Never an authenticator code or a recovery code: the confirm sheet offers neither.
+    const sheet = readFileSync(`${ROOT}apps/web/src/screens/auth/ConfirmSheet.tsx`, 'utf8');
+    expect(sheet).not.toMatch(/methods\.includes\('totp'\)|methods\.includes\('recovery-codes'\)/);
   });
 });

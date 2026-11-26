@@ -19,6 +19,8 @@ import { payMethodOf, postPayEvent, proofStateOf } from './paySeams.js';
 import { NoProofSheet } from './NoProofSheet.js';
 import type { TradeEscrow, TradeView } from './payTypes.js';
 import { errorSentence } from './SetupStatus.js';
+import { useMemberActs } from './memberActs.js';
+import { isCantDoCode } from '../../ui/cantDoCodes.js';
 
 /** The parts of the room's escrow handle the paid step reads. */
 export type PaidFlowEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'amountAtomic' | 'deal' | 'markPaid'>;
@@ -106,6 +108,8 @@ export interface PaidFlowSheetProps {
 
 export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlowSheetProps) {
   const [grew, setGrew] = useState(false);
+  /** A team member's room (memberActs.ts): a team refusal is the room's CantDoThat. */
+  const member = useMemberActs();
   /**
    * Owner p7-2: this user ticked "Do not show me this warning again", so an opening marks paid at
    * once with this device's total ('direct'); anything but a clean yes ('ask') shows the sheet.
@@ -164,6 +168,12 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
         // Moved on, or an earlier mark-paid landed and its answer was lost: re-read, and the screen for the new state takes over.
         close();
         await refresh();
+        return { ok: true };
+      }
+      // A team member refused (403 `forbidden`: no "Mark I've paid" box): the room's CantDoThat.
+      if (member !== null && e instanceof ApiCallError && isCantDoCode(e.code)) {
+        close();
+        member.refused(e.code);
         return { ok: true };
       }
       return { ok: false, reason: 'error', message: e instanceof ApiCallError ? (REFUSALS[e.code] ?? "That didn't go through. Try again.") : "That didn't go through. Check your connection and try again." };

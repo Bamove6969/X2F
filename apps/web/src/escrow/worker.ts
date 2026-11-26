@@ -14,6 +14,7 @@ import { installMoneroWorker } from './moneroWorker.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { httpKeySyncApi, restoreTrades, withKeySync } from './keySync.js';
 import { openEscrowStore } from './store.js';
+import { storeHolds } from './memberKey.js';
 import type { RecoveryAddressStatement } from '@x2f/trade';
 import { createAckKeeper } from '../chat/ack.js';
 import { createChatEngine, type ChatEngine } from '../chat/engine.js';
@@ -33,14 +34,18 @@ export type ToWorker =
   | { t: 'sign-recovery-address'; id: number; code: string; address: string; issuedAt: string }
   // Escrow-key sync (keySync.ts restoreTrades): the holder's reader key, unlocked on the page (WebAuthn
   // PRF or the PGP paste happen there); the trade copies are opened and stored here, in this worker's store.
-  | { t: 'restore-trades'; id: number; boxPublic: string; boxSecret: Uint8Array };
+  | { t: 'restore-trades'; id: number; boxPublic: string; boxSecret: Uint8Array }
+  // Team members' trade boxes (memberKey.ts): whether this device's store holds a trade's record.
+  | { t: 'holds-trade'; id: number; code: string };
 
 export type FromWorker =
   | { t: 'status'; code: string; status: EscrowStatus }
   | { t: 'acted'; id: number; ok: boolean }
   | { t: 'signed-recovery-address'; id: number; signed: { statement: RecoveryAddressStatement; sig: string } | null }
   /** The codes restored, or null when the restore failed. Only codes cross back, never a secret. */
-  | { t: 'restored-trades'; id: number; codes: string[] | null };
+  | { t: 'restored-trades'; id: number; codes: string[] | null }
+  /** Whether the store holds the trade (false on any failure). Only a yes or no crosses back. */
+  | { t: 'holds-trade'; id: number; held: boolean };
 
 export interface Port {
   postMessage(m: FromWorker): void;
@@ -85,6 +90,7 @@ export function serveEscrow(
   port: Port,
   makeRuntime: (onStatus: (code: string, s: EscrowStatus) => void) => Promise<EscrowRuntime>,
   restore?: (reader: BoxKeyPair) => Promise<string[]>,
+  holds?: (code: string) => Promise<boolean>,
 ): void {
   const runtime = (async () => makeRuntime((code, status) => port.postMessage({ t: 'status', code, status })))();
   runtime.catch(() => undefined);
@@ -100,6 +106,17 @@ export function serveEscrow(
       void restore({ boxPublic: m.boxPublic as string, boxSecret: m.boxSecret as Uint8Array }).then(
         (codes) => port.postMessage({ t: 'restored-trades', id, codes }),
         () => port.postMessage({ t: 'restored-trades', id, codes: null }),
+      );
+      return;
+    }
+    if (m.t === 'holds-trade') {
+      // Needs no runtime either: a read of the store's codes.
+      if (typeof m.id !== 'number') return;
+      const id = m.id;
+      if (typeof m.code !== 'string' || holds === undefined) return port.postMessage({ t: 'holds-trade', id, held: false });
+      void holds(m.code).then(
+        (held) => port.postMessage({ t: 'holds-trade', id, held: held === true }),
+        () => port.postMessage({ t: 'holds-trade', id, held: false }),
       );
       return;
     }
@@ -232,6 +249,13 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
     const store = await openEscrowStore();
     try {
       return await restoreTrades(store, httpKeySyncApi(), reader);
+    } finally {
+      store.close();
+    }
+  }, async (code) => {
+    const store = await openEscrowStore();
+    try {
+      return await storeHolds(store, code);
     } finally {
       store.close();
     }

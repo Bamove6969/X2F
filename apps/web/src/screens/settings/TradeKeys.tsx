@@ -7,7 +7,8 @@
  *
  * A member holding "Hold trade keys" sets up their own reader key here too (without one, the
  * holder's device has nothing to seal to them); a member without it gets a 403 and sees nothing.
- * Restore is the holder's only: a member's device never imports a trade into an escrow store.
+ * "Restore on this device" here is the holder's; a member loads a trade's keys from its trade room,
+ * for a step their boxes allow (screens/trade/MemberKeys.tsx, with this file's Unlocker).
  * No confirm-it's-you step: the API asks none for the reader key (it opens nothing by itself).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -282,9 +283,10 @@ function ChoiceList({ choices, lead, busy, onPick, onCancel }: { choices: KeyCho
 /**
  * Unlocks the reader secret with one of the ways the backup has: a passkey or security key (asked
  * for its PRF output), or a PGP key (the person decrypts the message in their own tool and pastes
- * the text back; keySync.ts finds the 64 hex in it).
+ * the text back; keySync.ts finds the 64 hex in it). Also a team member's trade room's key
+ * loader (screens/trade/MemberKeys.tsx).
  */
-function Unlocker({
+export function Unlocker({
   lead,
   reader,
   options,
