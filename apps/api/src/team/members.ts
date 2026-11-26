@@ -233,11 +233,7 @@ export async function createInvite(
   try {
     const out = await inTransaction(deps.db, async (c) => {
       await ownerWriteGate(c, caller, now, stage ? { strong: false, vendor: true } : { strong: true });
-      await c.query(
-        `update team_members set removed_at = $2, invite_hash = null
-          where account_id = $1 and removed_at is null and joined_at is null and invite_expires_at <= $2`,
-        [accountId, now],
-      );
+      await closeExpiredInvites(c, now, accountId);
       const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
       if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
       const { rows } = await c.query<{ id: string }>(
@@ -416,6 +412,26 @@ export async function liveMember(c: Queryable, accountId: string, memberId: stri
 }
 
 /**
+ * X2F's own sweep of unused invites past their time (of one account, or all): marked removed, the
+ * code dies. The statement runs under the transaction-local `x2f.team_actor` = 'system', so the
+ * team log records these closures as X2F's (migration 857); any other removal, the owner's
+ * cancelling of an invite included, is logged as the owner's. Returns the rows closed.
+ */
+export async function closeExpiredInvites(c: Queryable, now: Date, accountId?: string): Promise<number> {
+  await c.query("select set_config('x2f.team_actor', 'system', true)");
+  const closed = await c.query(
+    `update team_members set removed_at = $1, invite_hash = null
+      where removed_at is null and joined_at is null and invite_expires_at <= $1
+        and ($2::uuid is null or account_id = $2::uuid)`,
+    [now, accountId ?? null],
+  );
+  // Cleared again at once, so nothing later in the transaction is taken for X2F's doing. (A failed
+  // update aborts the transaction, and the setting goes with it.)
+  await c.query("select set_config('x2f.team_actor', '', true)");
+  return closed.rowCount ?? 0;
+}
+
+/**
  * Retention (review M6), every 10 minutes with the other jobs: closes sign-ups that ran out before
  * the member finished (and invites past their time), and deletes every member login account that no
  * live member uses: a removed member's (normally already gone at removal), an expired sign-up's,
@@ -425,16 +441,12 @@ export const purgeTeamLeftovers: RetentionJob = {
   name: 'purgeTeamLeftovers',
   async run(db: pg.Pool, now: Date): Promise<number> {
     return inTransaction(db, async (c) => {
-      const closed = await c.query(
-        `update team_members set removed_at = $1, invite_hash = null
-          where removed_at is null and joined_at is null and invite_expires_at <= $1`,
-        [now],
-      );
+      const closed = await closeExpiredInvites(c, now);
       const gone = await c.query(
         `delete from accounts a where a.kind = 'member'
           and not exists (select 1 from team_members tm where tm.member_account_id = a.id and tm.removed_at is null)`,
       );
-      return (closed.rowCount ?? 0) + (gone.rowCount ?? 0);
+      return closed + (gone.rowCount ?? 0);
     });
   },
 };

@@ -87,8 +87,6 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/price',
   'GET /v1/reviews/pending',
   'GET /v1/site',
-  // Team audit v2: a download, opened as a plain link (teamLogExportPath), not a JSON call.
-  'GET /v1/team/log/export',
   'GET /v1/team/permissions',
   // Plan 4 Tasks 30-31: support tickets, apps/web/src/screens/support/tickets-model.ts.
   'GET /v1/tickets',

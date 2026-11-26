@@ -7,6 +7,8 @@
  * are cleared by the database itself when the trade is deleted (R36; migration 199's trigger on
  * `trades`), so no purge can forget it.
  */
+import type pg from 'pg';
+import { withTx } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
@@ -457,26 +459,31 @@ export const REFUSALS_PER_HOUR = 30;
  * the method and the refusal code. Its own statement, after the refused request rolled back.
  */
 export async function auditRefusal(
-  q: Queryable,
+  pool: pg.Pool,
   who: { accountId: string; memberId: string },
   r: { method: string; route: string; code: string },
   now: Date,
 ): Promise<void> {
-  const { rows } = await q.query<{ n: number }>(
-    `select count(*)::int as n from team_audit
-      where account_id = $1 and subject_id = $2 and action in ('attempt-refused', 'attempts-throttled') and at > $3`,
-    [who.accountId, who.memberId, new Date(now.getTime() - 3_600_000)],
-  );
-  const n = rows[0]?.n ?? 0;
-  if (n > REFUSALS_PER_HOUR) return;
-  const throttled = n === REFUSALS_PER_HOUR;
-  await q.query(
-    `insert into team_audit (account_id, member_id, actor_kind, subject_id, category, at, action, detail)
-     select $1, $2, 'member', $2, 'access', $3, $4, $5
-      where exists (select 1 from team_members where id = $2 and account_id = $1)`,
-    [
-      who.accountId, who.memberId, now, throttled ? 'attempts-throttled' : 'attempt-refused',
-      JSON.stringify(throttled ? { perHour: REFUSALS_PER_HOUR } : { method: r.method, route: r.route.slice(0, 120), reason: r.code }),
-    ],
-  );
+  // Count and insert under the account's chain lock (the one team_audit_chain takes), so two refusals
+  // at once cannot both see 30 and write two attempts-throttled rows.
+  await withTx(pool, async (q) => {
+    await q.query('select pg_advisory_xact_lock(7240002, hashtext($1::text))', [who.accountId]);
+    const { rows } = await q.query<{ n: number }>(
+      `select count(*)::int as n from team_audit
+        where account_id = $1 and subject_id = $2 and action in ('attempt-refused', 'attempts-throttled') and at > $3`,
+      [who.accountId, who.memberId, new Date(now.getTime() - 3_600_000)],
+    );
+    const n = rows[0]?.n ?? 0;
+    if (n > REFUSALS_PER_HOUR) return;
+    const throttled = n === REFUSALS_PER_HOUR;
+    await q.query(
+      `insert into team_audit (account_id, member_id, actor_kind, subject_id, category, at, action, detail)
+       select $1, $2, 'member', $2, 'access', $3, $4, $5
+        where exists (select 1 from team_members where id = $2 and account_id = $1)`,
+      [
+        who.accountId, who.memberId, now, throttled ? 'attempts-throttled' : 'attempt-refused',
+        JSON.stringify(throttled ? { perHour: REFUSALS_PER_HOUR } : { method: r.method, route: r.route.slice(0, 120), reason: r.code }),
+      ],
+    );
+  });
 }

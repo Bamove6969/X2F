@@ -3,9 +3,9 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { teamLogExportPath, teamLogQuery, type TeamLogEntry } from '@x2f/auth-client';
+import { AuthApiError, teamLogExportPath, teamLogQuery, type TeamLogEntry } from '@x2f/auth-client';
 import { catalogueView } from '../../api/src/team/abilities.js';
-import { TeamLog, filterOfDraft, parseFingerprint } from '../src/screens/settings/TeamLog.js';
+import { TeamLog, filterOfDraft, parseFingerprint, retryAt } from '../src/screens/settings/TeamLog.js';
 import { logFacts, logSentence } from '../src/screens/settings/teamLogCopy.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { fire, render } from './render.js';
@@ -20,6 +20,8 @@ function entry(e: Partial<TeamLogEntry>): TeamLogEntry {
 }
 
 let calls: string[];
+let inits: Record<string, RequestInit | undefined>;
+let exportAnswer: () => Response;
 let meMember: unknown;
 let pages: Record<string, { entries: TeamLogEntry[]; next: string | null }>;
 
@@ -29,6 +31,8 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   calls = [];
+  inits = {};
+  exportAnswer = () => new Response('"id"\r\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="x2f-team-log-2026-11-26.csv"' } });
   meMember = null;
   pages = {
     '/v1/team/log': {
@@ -41,8 +45,10 @@ beforeEach(() => {
     '/v1/team/log?before=2': { entries: [entry({ id: '1' })], next: null },
     '/v1/team/log?member=m1': { entries: [entry({ id: '1' })], next: null },
   };
-  vi.stubGlobal('fetch', async (input: string) => {
+  vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
     calls.push(input);
+    inits[input] = init;
+    if (input.startsWith('/v1/team/log/export')) return exportAnswer();
     if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: meMember });
     if (input in pages) return json(200, pages[input]);
     if (input === '/v1/team/log/integrity') return json(200, { ok: true, entries: 3, brokenAt: null, head: { id: '3', hash: H } });
@@ -56,6 +62,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   refreshSession();
 });
@@ -79,6 +86,8 @@ describe('helpers', () => {
     expect(logSentence(entry({}))).toBe('Aurora marked the payment sent');
     expect(logSentence(entry({ actorKind: 'lead', memberName: null, action: 'member-removed' }))).toBe('You removed Aurora');
     expect(logSentence(entry({ actorKind: 'system', memberName: null, action: 'session-ended' }))).toBe('X2F ended a session of Aurora');
+    // Migration 859: the owner ending a member's session from the Team screen.
+    expect(logSentence(entry({ actorKind: 'lead', memberName: null, action: 'session-ended' }))).toBe('You ended a session of Aurora');
     expect(logSentence(entry({ action: 'something-new' }))).toBe('Aurora something-new');
   });
 
@@ -125,7 +134,6 @@ describe('the screen', () => {
     await settle();
     expect(host.querySelectorAll('[data-part="team-log-entries"] > li')).toHaveLength(3);
     expect(byPart(host, 'team-log-more')).toBeNull();
-    expect(byPart(host, 'export-csv')?.getAttribute('href')).toBe('/v1/team/log/export?format=csv');
     // A saved fingerprint is checked against the chain.
     type(host.querySelector('#team-log-kept') as HTMLInputElement, `#3:${H}`);
     fire(byPart(host, 'check-fingerprint')!, new MouseEvent('click', { bubbles: true }));
@@ -140,7 +148,26 @@ describe('the screen', () => {
     await settle();
     expect(calls).toContain('/v1/team/log?member=m1');
     expect(host.querySelectorAll('[data-part="team-log-entries"] > li')).toHaveLength(1);
+    // The download carries the filter too.
     expect(byPart(host, 'export-json')?.getAttribute('href')).toBe('/v1/team/log/export?member=m1&format=json');
+  });
+
+  it('the downloads are plain links the browser saves itself: no Blob URL (proof-render tripwire)', async () => {
+    const { host } = render(<MemoryRouter><TeamLog /></MemoryRouter>);
+    await settle();
+    for (const f of ['csv', 'json']) {
+      const a = byPart(host, `export-${f}`)!;
+      expect(a.tagName).toBe('A');
+      expect(a.getAttribute('href')).toBe(`/v1/team/log/export?format=${f}`);
+      expect(a.hasAttribute('download')).toBe(true);
+    }
+  });
+
+  it('retryAt reads a 429 only', () => {
+    const now = new Date('2026-11-26T10:00:00Z');
+    expect(retryAt(new AuthApiError(429, 'slow-down', { retryAfterSeconds: 90 }), now)).toBe('2026-11-26T10:01:30.000Z');
+    expect(retryAt(new AuthApiError(500, 'internal'), now)).toBeNull();
+    expect(retryAt(new Error('x'), now)).toBeNull();
   });
 
   it('a member sees only the list: no integrity, summary, member filter or download', async () => {

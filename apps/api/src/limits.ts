@@ -235,6 +235,17 @@ export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
  * still recorded but locks nothing, and the owner is alerted.
  */
 export const COMPROMISED_BUCKET: BucketSize = { capacity: 300, perMinute: 120 };
+/**
+ * `GET /v1/team/log/integrity` per account (review of team audit v2): each check walks and rehashes
+ * the account's whole chain, so 30 at once and 30 an hour. The Team log screen checks once when it
+ * opens and when asked; a loop runs dry. Every try counts, refused ones too.
+ */
+export const TEAM_LOG_INTEGRITY_BUCKET: BucketSize = { capacity: 30, perMinute: 30 / 60 };
+/**
+ * `GET /v1/team/log/export` per account (same review): each download reads every matching row and
+ * walks the whole chain as well, so 10 at once and 10 an hour.
+ */
+export const TEAM_LOG_EXPORT_BUCKET: BucketSize = { capacity: 10, perMinute: 10 / 60 };
 
 export interface Budgets {
   register: TokenBucket;
@@ -275,6 +286,10 @@ export interface Budgets {
   sessionProof: KeyedBuckets;
   /** Site wide: `POST /v1/tickets/compromised` (D-059, J-14 review J5). */
   compromised: TokenBucket;
+  /** Per account: `GET /v1/team/log/integrity`. */
+  teamLogIntegrity: KeyedBuckets;
+  /** Per account: `GET /v1/team/log/export`. */
+  teamLogExport: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -299,5 +314,7 @@ export function newBudgets(clock: () => Date): Budgets {
     accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
     sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
     compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
+    teamLogIntegrity: new KeyedBuckets(TEAM_LOG_INTEGRITY_BUCKET, clock),
+    teamLogExport: new KeyedBuckets(TEAM_LOG_EXPORT_BUCKET, clock),
   };
 }

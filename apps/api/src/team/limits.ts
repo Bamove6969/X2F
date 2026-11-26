@@ -57,9 +57,10 @@ export interface MemberLimitsView {
 
 /**
  * OWNER QUESTION p11-136 (review F8 / Q4): does a member see their own band and hours? The lead's
- * recommendation is yes, so this is on: `GET /v1/account/me`'s `member.limits` carries them and the
- * web's Team screen shows a member "Your limits". Off: `/me` leaves `limits` out (the web then
- * shows nothing; a member learns a limit only from a refusal). Enforcement is the same either way.
+ * recommendation is yes, so this is on: `GET /v1/account/me`'s `member.limits` and `GET /v1/team/me`'s
+ * `limits` (team/access.ts) carry them and the web shows a member "Your access" (MyAccess.tsx). Off:
+ * both leave `limits` out (the web then shows none; a member learns a limit only from a refusal).
+ * Enforcement is the same either way.
  */
 export const MEMBER_SEES_OWN_LIMITS: boolean = true;
 

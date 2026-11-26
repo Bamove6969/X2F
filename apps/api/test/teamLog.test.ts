@@ -3,12 +3,15 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { csvField, filterOf } from '../src/routes/teamAudit.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
+import { TEAM_LOG_EXPORT_BUCKET, TEAM_LOG_INTEGRITY_BUCKET } from '../src/limits.js';
 import { REFUSALS_PER_HOUR } from '../src/team/audit.js';
+import { applyMemberRemoval, closeExpiredInvites, purgeTeamLeftovers } from '../src/team/members.js';
 import { rolesToAbilities, ROLE_ABILITIES } from '../src/team/abilities.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { flexBody } from './helpers/offers.js';
-import { Browser } from './helpers/totp.js';
+import { Browser, ORIGIN } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -22,6 +25,7 @@ const DAY = 86_400_000;
 let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+let setNow: (d: Date) => void;
 let n = 0;
 
 function quote(currency: string): MarketQuote | null {
@@ -38,7 +42,7 @@ const prices: MarketPrices = {
 };
 
 beforeAll(async () => {
-  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 8 }) }));
+  ({ app, deps, trader, setNow } = await tradeApp({}, { prices, db: await testDb({ max: 8 }) }));
 });
 afterAll(async () => {
   await app.close();
@@ -79,6 +83,11 @@ async function member(teamId: string, abilities: string[]): Promise<{ id: string
 }
 
 interface Entry { id: string; action: string; category: string; actorKind: string; memberId: string | null; subjectId: string | null; subjectName: string | null; tradeCode: string | null; detail: Record<string, unknown>; hash: string; prevHash: string | null }
+
+async function sessionId(b: Browser): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string }>("select id from sessions where token_hash = sha256(convert_to($1, 'utf8'))", [b.cookies['__Host-x2f_session']]);
+  return rows[0]!.id;
+}
 
 async function log(b: Browser, qs = ''): Promise<{ entries: Entry[]; next: string | null }> {
   const res = await b.get(`/v1/team/log${qs}`);
@@ -339,5 +348,97 @@ describe('the export', () => {
     expect(csvField('-1')).toBe(`"'-1"`);
     expect(csvField(null)).toBe('""');
     expect((await owner.browser.get('/v1/team/log/export?format=xml')).statusCode).toBe(400);
+  });
+});
+
+describe('who closed an unused invite (migration 857)', () => {
+  async function expiredInvite(accountId: string, q: Pick<Deps['db'], 'query'> = deps.db): Promise<string> {
+    const name = `Expired${String(++n).padStart(4, '0')}`;
+    const past = new Date(deps.clock().getTime() - DAY);
+    const { rows } = await q.query<{ id: string }>(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_hash, invite_expires_at, created_at)
+       values ($1, $2, $3, '{offers-see}', $4, $5, $5) returning id`,
+      [accountId, name, name.toLowerCase(), createHash('sha256').update(name).digest(), past],
+    );
+    return rows[0]!.id;
+  }
+  const closedBy = async (subjectId: string) =>
+    (await deps.db.query<{ actor_kind: string }>(`select actor_kind from team_audit where subject_id = $1 and action = 'invite-closed'`, [subjectId])).rows.map((r) => r.actor_kind);
+
+  it('the owner cancelling an invite that already ran out is the owner (lead), not X2F', async () => {
+    const owner = await team();
+    const id = await expiredInvite(owner.id);
+    const action = { kind: 'team-remove' as const, memberId: id };
+    const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
+    const del = await app.inject({
+      method: 'DELETE', url: `/v1/team/members/${id}`, headers: { origin: ORIGIN }, cookies: owner.browser.cookies, payload: { confirmToken },
+    });
+    expect(del.statusCode, del.body).toBe(204);
+    expect(await closedBy(id)).toEqual(['lead']);
+    const row = (await log(owner.browser, '?action=invite-closed')).entries.find((e) => e.subjectId === id);
+    expect(row).toMatchObject({ actorKind: 'lead', memberId: null });
+  });
+
+  it("X2F's own sweeps are X2F (system): the leftovers job, and the sweep before a new invite", async () => {
+    const owner = await team();
+    const swept = await expiredInvite(owner.id);
+    await purgeTeamLeftovers.run(deps.db, deps.clock());
+    expect(await closedBy(swept)).toEqual(['system']);
+    // In one transaction: the sweep's mark is cleared at once, so the owner's removal after it is still the owner's.
+    const second = await expiredInvite(owner.id);
+    const c = await deps.db.connect();
+    let cancelled = '';
+    try {
+      await c.query('begin');
+      expect(await closeExpiredInvites(c, deps.clock(), owner.id)).toBe(1);
+      // Written on the same connection: the sweep holds the account's log lock until commit.
+      cancelled = await expiredInvite(owner.id, c);
+      await applyMemberRemoval(c, owner.id, cancelled, deps.clock());
+      await c.query('commit');
+    } finally {
+      c.release();
+    }
+    expect(await closedBy(second)).toEqual(['system']);
+    expect(await closedBy(cancelled)).toEqual(['lead']);
+    expect(((await owner.browser.get('/v1/team/log/integrity')).json() as { ok: boolean }).ok).toBe(true);
+  });
+});
+
+describe('per-account budgets on the chain walks', () => {
+  it(`integrity: ${TEAM_LOG_INTEGRITY_BUCKET.capacity} an hour, then 429 slow-down with retryAfterSeconds; other accounts are unaffected`, async () => {
+    const owner = await team();
+    const other = await team();
+    for (let i = 0; i < TEAM_LOG_INTEGRITY_BUCKET.capacity; i++) expect((await owner.browser.get('/v1/team/log/integrity')).statusCode, `try ${i}`).toBe(200);
+    const refused = await owner.browser.get('/v1/team/log/integrity');
+    expect(refused.statusCode).toBe(429);
+    const body = refused.json() as { error: string; retryAfterSeconds: number };
+    expect(body).toEqual({ error: 'slow-down', retryAfterSeconds: Math.ceil(60 / TEAM_LOG_INTEGRITY_BUCKET.perMinute) });
+    expect((await other.browser.get('/v1/team/log/integrity')).statusCode).toBe(200);
+    // The summary and the list are not budgeted.
+    expect((await owner.browser.get('/v1/team/log/summary')).statusCode).toBe(200);
+    expect((await owner.browser.get('/v1/team/log')).statusCode).toBe(200);
+    setNow(new Date(deps.clock().getTime() + body.retryAfterSeconds * 1000));
+    expect((await owner.browser.get('/v1/team/log/integrity')).statusCode).toBe(200);
+    expect((await owner.browser.get('/v1/team/log/integrity')).statusCode).toBe(429);
+  });
+
+  it(`export: ${TEAM_LOG_EXPORT_BUCKET.capacity} an hour across both formats, then 429 slow-down`, async () => {
+    const owner = await team();
+    for (let i = 0; i < TEAM_LOG_EXPORT_BUCKET.capacity; i++) {
+      expect((await owner.browser.get(`/v1/team/log/export?format=${i % 2 === 0 ? 'json' : 'csv'}`)).statusCode, `try ${i}`).toBe(200);
+    }
+    const refused = await owner.browser.get('/v1/team/log/export?format=csv');
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json()).toEqual({ error: 'slow-down', retryAfterSeconds: Math.ceil(60 / TEAM_LOG_EXPORT_BUCKET.perMinute) });
+    // The export's budget is its own: the integrity check still answers, and another account still downloads.
+    expect((await owner.browser.get('/v1/team/log/integrity')).statusCode).toBe(200);
+    expect((await (await team()).browser.get('/v1/team/log/export')).statusCode).toBe(200);
+  });
+
+  it('a member is refused (403) before the budget is touched', async () => {
+    const owner = await team();
+    const reader = await member(owner.id, ['team-see-log']);
+    for (let i = 0; i <= TEAM_LOG_EXPORT_BUCKET.capacity; i++) expect((await reader.browser.get('/v1/team/log/export')).statusCode).toBe(403);
+    expect((await owner.browser.get('/v1/team/log/export')).statusCode).toBe(200);
   });
 });

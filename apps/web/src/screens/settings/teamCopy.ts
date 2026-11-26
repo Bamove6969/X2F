@@ -68,10 +68,10 @@ export function atomicOf(xmr: string): string | null {
 }
 
 // J-20 (owner p7-4, p7-11). COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN).
-function bandText(b: TradeBand | null | undefined): string {
+export function bandText(b: TradeBand | null | undefined): string {
   return b === null || b === undefined ? 'Any trade size' : `Trades of ${xmrOf(b.minAtomic)} to ${xmrOf(b.maxAtomic)} XMR`;
 }
-function hoursText(h: WorkingHours | null | undefined): string {
+export function hoursText(h: WorkingHours | null | undefined): string {
   if (h === undefined || h === 'any') return 'Any time';
   if (h === null) return 'Working hours unreadable: no logins until you set them again';
   return `${h.days.join(', ')} ${h.start} to ${h.end} (${h.tz})`;
@@ -158,9 +158,6 @@ export const TEAM_COPY = {
   badBand: 'Enter the smallest and largest trade in XMR, the largest above zero and not below the smallest.',
   badHours: 'Pick at least one day, and a start and end that differ.',
   firstLoginNote: 'A new member needs no approval to log in. You are told when they log in for the first time.',
-  // J-20 review F8 (owner question p11-136, lead default: a member sees their own limits). COPY-UNSIGNED // DESIGN: wording
-  myLimitsTitle: 'Your limits',
-  myLimitsNote: 'The account owner set these for you.',
 } as const;
 
 export const JOIN_COPY = {
@@ -276,4 +273,29 @@ export const NOTES_COPY = {
   empty: 'Write something first.', // COPY-UNSIGNED
   tooLong: (max: number) => `Keep it to ${max} characters.`, // COPY-UNSIGNED
   retry: 'Try again', // COPY-UNSIGNED
+} as const;
+
+/**
+ * A team member's own access, read only (MyAccess.tsx, `GET /v1/team/me`): the boxes their lead
+ * ticked (in the catalogue's own words), their trade size and working hours, and who their lead is.
+ * COPY-UNSIGNED // DESIGN: wording (no board yet: NOT DRAWN)
+ */
+export const MY_ACCESS_COPY = {
+  title: 'Your access',
+  intro: 'Your team lead set all of this for you. Only they can change it.',
+  lead: (name: string) => `Team lead: ${name}`,
+  you: (name: string) => `Your name in the team: ${name}`,
+  chatLabel: (label: string) => `In trade chats you show as ${label}`,
+  boxesTitle: 'What you can do',
+  noBoxes: 'Your team lead has not ticked any boxes for you yet.',
+  always: 'Every member has this.',
+  notReady: 'Ticked for you, but X2F does not offer this yet.',
+  bandTitle: 'Trade size',
+  hoursTitle: 'Working hours',
+  anyTime: 'You can work at any time.',
+  insideUntil: 'You are inside your working hours now. They end at',
+  outside: 'You are outside your working hours now.',
+  loading: 'Loading your access…',
+  loadFailed: 'Could not load your access. Try again.',
+  retry: 'Try again',
 } as const;
