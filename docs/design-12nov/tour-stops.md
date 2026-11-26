@@ -88,7 +88,7 @@ How it differs from the shell in §1:
 - **Count:** "n of 17" across the whole tour, not per page. The page bars count the 6 screens: Find a trade, Offers, Quote, Fund, Check and release, Released.
 - **No title** on the cards: the body is the whole card.
 - The last stop reads **Done**. There is no separate "You're all set" card, because stop 17 is the end card.
-- "Next screen" is not used. A stop that is on a new screen pushes that screen in first.
+- ~~"Next screen" is not used.~~ Owner note #47, confirmed 26 Nov: Next reads "Next screen" on the last stop of each screen. A stop that is on a new screen pushes that screen in first.
 - **Motion and actions:** see tour-motion.md §4–5.
 - **Prototype:** `tour-art/x2f-intro-prototype.html` (`?view=tour&stop=N`).
 
