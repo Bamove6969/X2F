@@ -35,14 +35,17 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     // When that lands (escrow/memberKey.ts or MemberRoom running the escrow), change this check.
     const confirm = readFileSync(`${ROOT}packages/accounts/src/confirmAction.ts`, 'utf8');
     expect(confirm).toMatch(/STRONG_ONLY_ACTIONS[^=]*= \[[^\]]*'release-trade'/);
-    expect(readFileSync(`${ROOT}apps/api/src/team/perms.ts`, 'utf8')).toMatch(/MEMBER_SIGNING_EVENTS_LIST: readonly string\[\] = \['fund-started'\]/);
+    expect(confirm).toMatch(/STRONG_ONLY_ACTIONS[^=]*= \[[^\]]*'fund-trade'/);
+    // Owner 26 Nov 2026 18:41 UTC: funding left the signing list too (Fund the escrow, a fund-trade key confirm).
+    expect(readFileSync(`${ROOT}apps/api/src/team/perms.ts`, 'utf8')).toMatch(/MEMBER_SIGNING_EVENTS_LIST: readonly string\[\] = \[\]/);
     // NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (apps/web/src/escrow/keySync.ts,
     // API escrowSync/routes.ts, migration 860): the holder's escrow worker keeps an end-to-end
     // encrypted server copy of each trade's keys for itself and the members it assigned ("Hold trade
     // keys"), and a new device of the holder restores them after a passkey/security-key PRF or PGP
     // unlock. Until the member device is wired (above): an assigned member's device holds a copy to
     // read, never imports it into an escrow store, and never runs the escrow (MemberRoom). The API's
-    // member-cannot-sign stays for funding, taking, accepting and the trade identity.
+    // member-cannot-sign stays for taking, accepting and the trade identity; funding and release
+    // are boxes with a key confirm (apps/api/src/team/memberTrade.ts has the contract).
     expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
     expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);
     expect(readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8')).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);

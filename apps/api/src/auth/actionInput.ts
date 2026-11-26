@@ -52,6 +52,8 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'become-vendor': {},
   // Owner question trades-release: one trade's code, exactly as stored (normalized).
   'release-trade': { tradeCode: (v) => normalizeTradeCode(v) === v },
+  // Owner 26 Nov 2026 18:41 UTC: a member's funding, bound the same way.
+  'fund-trade': { tradeCode: (v) => normalizeTradeCode(v) === v },
   // Review L1 (#94): the key test; confirmed only by a passkey or security key, and no token is issued.
   'key-test': {},
 };

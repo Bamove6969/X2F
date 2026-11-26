@@ -89,8 +89,8 @@ export const TEAM_COPY = {
   // method. Not built yet (lead report 2026-11-08: the join, member logins and their strength need
   // rules first); this line says what the join enforces today, so it changes with the build.
   twoFactors: 'Each member logs in with their own two factors: a PGP key plus a security key, a passkey or a second PGP key.',
-  // Plan 3 Task 42 (R44): members cannot release yet.
-  releaseNote: 'Releasing or securing coins still happens on your own device.',
+  // Owner 26 Nov 2026 (trades-release; Jess 18:41 UTC for funding): only members you give the box. COPY-UNSIGNED
+  releaseNote: 'Funding the escrow and releasing coins stay with you, unless you give a member Fund the escrow or Release coins together with Hold trade keys. Each time, they confirm with a passkey, security key or PGP key.',
   membersTitle: 'Members',
   none: 'No team members yet.',
   count: (n: number, max: number) => `${n} of ${max} members`,
@@ -224,6 +224,8 @@ export const PICKER_COPY = {
   } as const,
   // Owner question trades-release (26 Nov 2026): under Release coins, while Hold trade keys is not ticked. COPY-UNSIGNED
   releaseNeedsKeys: 'Release coins works only with Hold trade keys: tick that box too. Each release asks the member for a passkey, security key or PGP key and goes in the team log.', // COPY-UNSIGNED
+  // Owner 26 Nov 2026 18:41 UTC: under Fund the escrow, while Hold trade keys is not ticked. COPY-UNSIGNED
+  fundNeedsKeys: 'Fund the escrow works only with Hold trade keys: tick that box too. Each funding asks the member for a passkey, security key or PGP key and goes in the team log.', // COPY-UNSIGNED
   loadFailed: 'The permission boxes did not load. Reload the page to try again.', // COPY-UNSIGNED
   pickBox: 'Tick at least one box.', // COPY-UNSIGNED
   // COPY-UNSIGNED: a member's row, by the preset their boxes match.

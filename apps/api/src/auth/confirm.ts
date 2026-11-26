@@ -101,6 +101,8 @@ export const MEMBER_CONFIRM_ACTIONS: ReadonlySet<ConfirmAction['kind']> = new Se
   'extend-session',
   // Owner question trades-release (26 Nov 2026): a member's release, with the member's own key.
   'release-trade',
+  // Owner 26 Nov 2026 18:41 UTC: a member's escrow funding, with the member's own key.
+  'fund-trade',
 ]);
 
 /**

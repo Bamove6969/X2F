@@ -207,6 +207,34 @@ describe('AbilityPicker', () => {
     // In no preset.
     for (const p of c.presets) expect(presetBoxes(c, p.id), p.id).not.toContain('trades-release');
   });
+
+  it('owner 26 Nov 2026 18:41 UTC: Fund the escrow, Upload payment proof and Mark "I\'ve paid" are separate boxes the lead may tick, in no preset; Fund the escrow says it needs Hold trade keys', async () => {
+    const c = real();
+    const all = allAbilities(c);
+    expect(all).toHaveLength(65);
+    for (const id of ['trades-fund', 'trades-upload-proof', 'trades-mark-paid', 'trades-release']) {
+      expect(isTickable(all.find((a) => a.id === id)!), id).toBe(true);
+    }
+    for (const id of ['trades-fund', 'trades-upload-proof']) for (const p of c.presets) expect(presetBoxes(c, p.id), `${p.id} ${id}`).not.toContain(id);
+    const seen: string[][] = [];
+    const alone = render(<Harness catalogue={c} start={['trades-fund']} onChange={(v) => seen.push(v)} />);
+    openAll(alone.host);
+    await settle();
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-fund"]')!.checked).toBe(true);
+    expect(byPart(alone.host, 'fund-needs-keys')?.textContent).toContain('Hold trade keys');
+    expect(byPart(alone.host, 'release-needs-keys')).toBeNull();
+    const both = render(<Harness catalogue={c} start={['trades-fund', 'trades-escrow-keys']} onChange={(v) => seen.push(v)} />);
+    openAll(both.host);
+    await settle();
+    expect(byPart(both.host, 'fund-needs-keys')).toBeNull();
+    // Ticking Upload payment proof ticks nothing else (Mark "I've paid" stays its own box).
+    const proof = render(<Harness catalogue={c} start={[]} onChange={(v) => seen.push(v)} />);
+    openAll(proof.host);
+    await settle();
+    click(proof.host.querySelector('input[data-box="trades-upload-proof"]')!);
+    await settle();
+    expect(seen.at(-1)).toEqual(['trades-upload-proof']);
+  });
 });
 
 describe('Team: editing a member', () => {

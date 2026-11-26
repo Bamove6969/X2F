@@ -700,19 +700,24 @@ const ENTRIES: readonly Entry[] = [
     topic: 'teams',
     q: 'What do team members never do?',
     // Owner question trades-release (26 Nov 2026): releasing is a box now. COPY-UNSIGNED
-    a: 'Confirm a payment arrived, add or remove wallets, invite or remove members, change members\' permissions, change the account\'s security or delete the account. Opening a dispute is also the account owner\'s. Releasing coins is the account owner\'s too, unless the lead gives a member both Release coins and Hold trade keys; then each release needs the member\'s passkey, security key or PGP key, and is in the team log under their name.',
+    // Owner 26 Nov 2026 18:41 UTC: funding is a box too, apart from release. COPY-UNSIGNED
+    a: 'Confirm a payment arrived, add or remove wallets, invite or remove members, change members\' permissions, change the account\'s security or delete the account. Opening a dispute is also the account owner\'s. Funding the escrow and releasing coins are the account owner\'s too, unless the lead gives a member Fund the escrow or Release coins, each together with Hold trade keys; then each funding or release needs the member\'s passkey, security key or PGP key, and is in the team log under their name.',
     sources: ['apps/api/src/team/abilities.ts:13-18 Members never confirm payment received',
       "apps/api/src/team/abilities.ts:121 [22, 'trades-release', 'trades', 'Release coins'",
-      "apps/api/src/team/abilities.ts:251-253 'trades-release': ['trades-escrow-keys']",
+      "apps/api/src/team/abilities.ts:266 'trades-release': ['trades-escrow-keys']",
+      "apps/api/src/team/abilities.ts:129 [23, 'trades-fund', 'trades', 'Fund the escrow'",
+      "apps/api/src/team/abilities.ts:267 'trades-fund': ['trades-escrow-keys']",
+      "packages/accounts/src/confirmAction.ts:63 { kind: 'fund-trade'; tradeCode: string }",
       "packages/accounts/src/confirmAction.ts:69 'release-trade'",
-      "apps/api/src/trades/routes.ts:190 kind: 'release-trade'", 'apps/api/src/team/abilities.ts:146-148 team-invite', 'apps/api/src/team/abilities.ts:165 account-delete'],
+      "apps/api/src/trades/routes.ts:192 { kind: confirmKind, tradeCode: row.code }", 'apps/api/src/team/abilities.ts:146-148 team-invite', 'apps/api/src/team/abilities.ts:165 account-delete'],
   },
   {
     id: 'member-chat',
     topic: 'teams',
     q: 'Can team members chat with traders?',
-    a: 'Not yet. Trade chats and payment proof stay with the account owner until team members get their own chat keys. Taking or accepting trades and funding the escrow also wait for member keys.',
-    sources: ['apps/api/src/team/abilities.ts:35-38 waits-member-keys', 'apps/api/src/team/abilities.ts:118 chat-read', 'apps/api/src/team/abilities.ts:104-105 trades-accept', 'apps/api/src/team/abilities.ts:115 trades-fund'],
+    // Owner 26 Nov 2026 18:41 UTC: the buyer's payment proof is its own box (Upload payment proof). COPY-UNSIGNED
+    a: 'Not yet. Trade chats and seeing the partner\'s proof stay with the account owner until team members get their own chat keys. A member the lead gives Upload payment proof can attach the payment proof when the account buys. Taking or accepting trades also waits for member keys.',
+    sources: ['apps/api/src/team/abilities.ts:35-38 waits-member-keys', 'apps/api/src/team/abilities.ts:131 chat-read', 'apps/api/src/team/abilities.ts:104-105 trades-accept', "apps/api/src/team/abilities.ts:187 [68, 'trades-upload-proof', 'trades', 'Upload payment proof'", "apps/api/src/proofs/routes.ts:92 throw new ApiError(403, 'owner-only')"],
   },
 
   // ---- Privacy ---------------------------------------------------------------------------------

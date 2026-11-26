@@ -67,6 +67,8 @@ export const CANT_DO_CODES = [
   'member-cannot-sign',
   // Owner question trades-release (26 Nov 2026): Release coins ticked without Hold trade keys.
   'release-needs-trade-keys',
+  // Owner 26 Nov 2026 18:41 UTC: Fund the escrow ticked without Hold trade keys.
+  'fund-needs-trade-keys',
   // J-20 (owner p7-4, p7-11; review S-m4): a member outside their trade-size band, and a session
   // end past their working hours.
   'outside-trade-band',
@@ -723,10 +725,14 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       // Owner question trades-release: releasing is no longer in this list (a member with Release coins may).
-      return "Starting or accepting a trade, and securing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+      // Owner 26 Nov 2026 18:41 UTC: funding left it too (a member with Fund the escrow may).
+      return "Starting or accepting a trade stays on the account owner's device for now. Ask the account owner to do this step.";
     // Owner question trades-release (26 Nov 2026). COPY-UNSIGNED // DESIGN: wording
     case 'release-needs-trade-keys':
       return 'Release coins only works together with Hold trade keys. Tick both for this member, or neither.';
+    // Owner 26 Nov 2026 18:41 UTC. COPY-UNSIGNED // DESIGN: wording
+    case 'fund-needs-trade-keys':
+      return 'Fund the escrow only works together with Hold trade keys. Tick both for this member, or neither.';
     // J-20 (owner p7-4). COPY-UNSIGNED // DESIGN: wording
     case 'outside-trade-band':
       return 'This is outside the trade sizes the account owner set for you. Ask the account owner to do this step.';

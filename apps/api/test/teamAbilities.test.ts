@@ -26,9 +26,9 @@ import {
 const byNo = (n: number) => ABILITIES.find((a) => a.no === n)!;
 
 describe('the abilities catalogue', () => {
-  it('has the 64 abilities of section B, numbered 1..67 without 46-48 (the hold boxes, gone with the holds on 26 Nov 2026; 67 is trades-escrow-keys, migration 860), in 9 groups, each id unique', () => {
-    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 67 }, (_, i) => i + 1).filter((n) => n < 46 || n > 48));
-    expect(new Set(ABILITY_IDS).size).toBe(64);
+  it('has the 65 abilities of section B, numbered 1..68 without 46-48 (the hold boxes, gone with the holds on 26 Nov 2026; 67 is trades-escrow-keys, migration 864; 68 trades-upload-proof, owner 26 Nov 18:41 UTC), in 9 groups, each id unique', () => {
+    expect(ABILITIES.map((a) => a.no)).toEqual(Array.from({ length: 68 }, (_, i) => i + 1).filter((n) => n < 46 || n > 48));
+    expect(new Set(ABILITY_IDS).size).toBe(65);
     expect(ABILITY_GROUPS.map((g) => g.id)).toEqual(['offers', 'trades', 'chat', 'proof', 'disputes', 'wallets', 'team', 'security', 'account']);
     for (const a of ABILITIES) {
       expect(ABILITY_GROUPS.map((g) => g.id), a.id).toContain(a.group);
@@ -59,6 +59,29 @@ describe('the abilities catalogue', () => {
     // A corrupt stored set holding Release coins alone never meets it.
     expect(hasAbility(['trades-release'], 'trades-release')).toBe(false);
     expect(hasAbility(['trades-release', 'trades-escrow-keys'], 'trades-release')).toBe(true);
+  });
+
+  it('owner 26 Nov 2026 18:41 UTC: Fund the escrow (23), Upload payment proof (68), Mark "I\'ve paid" (16) and Release coins (22) are four separate boxes, each off in every preset and role', () => {
+    const fund = byNo(23);
+    expect(fund).toMatchObject({ id: 'trades-fund', label: 'Fund the escrow', availability: 'grantable', hard: false, offers: false, trades: false, start: false });
+    expect(byNo(68)).toMatchObject({ id: 'trades-upload-proof', label: 'Upload payment proof', group: 'trades', availability: 'grantable', hard: false, offers: false, trades: false, start: false });
+    expect(byNo(16)).toMatchObject({ id: 'trades-mark-paid', availability: 'grantable' });
+    for (const id of ['trades-fund', 'trades-upload-proof']) {
+      expect(GRANTABLE.has(id), id).toBe(true);
+      for (const p of PRESETS) expect(p.abilities, `${p.id} ${id}`).not.toContain(id);
+      for (const r of TEAM_ROLES) expect(rolesToAbilities([r]), `${r} ${id}`).not.toContain(id);
+    }
+    // Funding needs Hold trade keys (its own error); the proof and Mark paid need nothing else, and neither implies the other.
+    expect(ABILITY_REQUIRES['trades-fund']).toEqual(['trades-escrow-keys']);
+    expect(ABILITY_REQUIRES['trades-upload-proof']).toBeUndefined();
+    expect(ABILITY_REQUIRES['trades-mark-paid']).toBeUndefined();
+    expect(() => parseAbilities(['trades-fund'])).toThrow(expect.objectContaining({ status: 400, code: 'fund-needs-trade-keys' }));
+    expect(parseAbilities(['trades-escrow-keys', 'trades-fund'])).toEqual(['trades-fund', 'trades-escrow-keys']);
+    expect(hasAbility(['trades-fund'], 'trades-fund')).toBe(false);
+    expect(hasAbility(['trades-fund', 'trades-escrow-keys'], 'trades-fund')).toBe(true);
+    expect(parseAbilities(['trades-upload-proof'])).toEqual(['trades-upload-proof']);
+    expect(hasAbility(['trades-upload-proof'], 'trades-mark-paid')).toBe(false);
+    expect(hasAbility(['trades-mark-paid'], 'trades-upload-proof')).toBe(false);
   });
 
   it('owner hard rule: payout wallets, members, account deletion and security settings are owner-only', () => {
@@ -124,7 +147,7 @@ describe('the abilities catalogue', () => {
     const trades = PRESETS.find((p) => p.id === 'trades')!.abilities;
     for (const id of rolesToAbilities(['offers'])) expect(offers, id).toContain(id);
     for (const id of rolesToAbilities(['trades'])) expect(trades, id).toContain(id);
-    // Opening a dispute left the Trades role (D-066); funding never was a member's (R44).
+    // Opening a dispute left the Trades role (D-066); funding is a box of its own, in no role (owner 26 Nov 2026).
     expect(rolesToAbilities(['trades'])).not.toContain('disputes-open');
     expect(rolesToAbilities(['trades'])).not.toContain('trades-fund');
     expect(rolesToAbilities(['offers'])).not.toContain('trades-see-active');

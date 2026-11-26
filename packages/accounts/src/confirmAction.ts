@@ -56,6 +56,12 @@ export type ConfirmAction =
    */
   | { kind: 'release-trade'; tradeCode: string }
   /**
+   * Owner 26 Nov 2026 18:41 UTC: a team member with Fund the escrow starts funding one trade's
+   * escrow (`tradeCode`, the stored code). Only a passkey, security key or PGP key of the member's
+   * own login confirms it (`STRONG_ONLY_ACTIONS`), never an authenticator or recovery code.
+   */
+  | { kind: 'fund-trade'; tradeCode: string }
+  /**
    * Owner demo note #94, security review of wip/lead-notes-all L1: "Test this key now". Only a
    * passkey or security key confirms it (`WEBAUTHN_ONLY_ACTIONS`), and the server issues no token
    * for it: the confirm ceremony is only the server's check of the key's answer.
@@ -66,7 +72,7 @@ export type ConfirmAction =
  * Actions only a passkey, security key or PGP key may confirm. Every confirm is one of those now
  * (no passwords, owner 26 Nov 2026); the list stays for the key-test split below.
  */
-export const STRONG_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['become-vendor', 'release-trade'];
+export const STRONG_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['become-vendor', 'release-trade', 'fund-trade'];
 
 export function needsStrongConfirm(a: ConfirmAction): boolean {
   return STRONG_ONLY_ACTIONS.includes(a.kind) || WEBAUTHN_ONLY_ACTIONS.includes(a.kind);
@@ -136,6 +142,9 @@ export function describeAction(a: ConfirmAction): string {
     case 'release-trade':
       // COPY-UNSIGNED
       return `release the coins on trade ${a.tradeCode}`;
+    case 'fund-trade':
+      // COPY-UNSIGNED
+      return `fund the escrow on trade ${a.tradeCode}`;
     case 'key-test':
       return 'test your security key';
   }

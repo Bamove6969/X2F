@@ -38,6 +38,9 @@ export type AuditAction =
   | 'confirm-cancel'
   // Owner question trades-release (26 Nov 2026): a member's release, under the member's own name.
   | 'release-started'
+  // Owner 26 Nov 2026 18:41 UTC: a member's escrow funding and the buyer's payment proof (team/memberTrade.ts).
+  | 'fund-started'
+  | 'proof-uploaded'
   // Owner p4-8: the lead's waiting changes, by a member the lead gave a hold box.
   | 'hold-changes-cancelled'
   | 'hold-changes-approved'
@@ -80,6 +83,8 @@ export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'walk-away': 'trades-cancel',
   'confirm-cancel': 'trades-confirm-cancel',
   'release-started': 'trades-release',
+  'fund-started': 'trades-fund',
+  'proof-uploaded': 'trades-upload-proof',
   // Hold model v3's (gone since 26 Nov 2026), kept so older log rows still read; no route writes them.
   'hold-changes-cancelled': 'hold-cancel',
   'hold-changes-approved': 'hold-end',

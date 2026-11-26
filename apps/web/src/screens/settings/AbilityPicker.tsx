@@ -18,12 +18,16 @@ import { PICKER_COPY as P } from './teamCopy.js';
 import { boxKind, isTickable, presetMatching, presetBoxes, sendable, type Catalogue } from './teamApi.js';
 
 /**
- * Owner question trades-release (26 Nov 2026): Release coins needs Hold trade keys (the API's
- * ABILITY_REQUIRES; it refuses one without the other, 400 release-needs-trade-keys). Ticking one
- * never ticks the other for the lead: the box says so, and the save is refused until both or neither.
+ * Owner question trades-release (26 Nov 2026), and Jess 18:41 UTC for funding: Release coins and
+ * Fund the escrow each need Hold trade keys (the API's ABILITY_REQUIRES; it refuses one without the
+ * other, 400 release-needs-trade-keys / fund-needs-trade-keys). Ticking one never ticks the other
+ * for the lead: the box says so, and the save is refused until both or neither.
  */
-const RELEASE_BOX = 'trades-release';
-const RELEASE_NEEDS = 'trades-escrow-keys';
+const KEYS_BOX = 'trades-escrow-keys';
+const NEEDS_KEYS: Readonly<Record<string, { part: string; text: string }>> = {
+  'trades-release': { part: 'release-needs-keys', text: P.releaseNeedsKeys },
+  'trades-fund': { part: 'fund-needs-keys', text: P.fundNeedsKeys },
+};
 
 export function AbilityPicker({ catalogue, value, onChange, idPrefix }: { catalogue: Catalogue; value: readonly string[]; onChange: (next: string[]) => void; idPrefix: string }) {
   const picked = sendable(catalogue, value);
@@ -74,9 +78,9 @@ export function AbilityPicker({ catalogue, value, onChange, idPrefix }: { catalo
                           </span>
                         </span>
                       </label>
-                      {a.id === RELEASE_BOX && has.has(RELEASE_BOX) && !has.has(RELEASE_NEEDS) ? (
-                        <p className="x2f-note" data-part="release-needs-keys">
-                          {P.releaseNeedsKeys}
+                      {NEEDS_KEYS[a.id] !== undefined && has.has(a.id) && !has.has(KEYS_BOX) ? (
+                        <p className="x2f-note" data-part={NEEDS_KEYS[a.id]!.part}>
+                          {NEEDS_KEYS[a.id]!.text}
                         </p>
                       ) : null}
                     </li>

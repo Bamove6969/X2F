@@ -136,9 +136,9 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
 
   app.post('/v1/trades/:code/events', { preHandler: sendEvent }, async (req) => {
     const e = clientEvent(req.body);
-    // Task 18 (R44): no team member funds escrow; a member releases only with Release coins and
-    // Hold trade keys and a key confirm (owner question trades-release, checked in the event's
-    // transaction below); then the event's own box (Job 1c), and a box that
+    // Task 18 (R44): a member funds or releases only with Fund the escrow / Release coins and Hold
+    // trade keys and a key confirm (owner 26 Nov 2026, checked in the event's transaction below;
+    // team/memberTrade.ts); then the event's own box (Job 1c), and a box that
     // reads the trade it acts on (review 2026-11-09 m1: no acting on a trade one cannot see).
     assertMemberMaySend(req.auth.memberId, e.type);
     assertMemberMay(req.auth, eventAbility(e.type));
@@ -178,16 +178,18 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         e,
         by,
         async (client, _prev, _next, now) => {
-          // Owner question trades-release (26 Nov 2026): a member's release spends a `release-trade`
-          // confirm token for this trade, earned with the member's own passkey, security key or PGP
-          // key (never an authenticator code; a recovery-code window does not count either). In the
-          // event's transaction, so a refused confirm writes nothing and a refused event spends no token.
+          // Owner question trades-release and Jess 26 Nov 2026 18:41 UTC: a member's release or
+          // funding spends a `release-trade` / `fund-trade` confirm token for this trade, earned with
+          // the member's own passkey, security key or PGP key (never an authenticator code; a
+          // recovery-code window does not count either). In the event's transaction, so a refused
+          // confirm writes nothing and a refused event spends no token (team/memberTrade.ts).
           let detail: Record<string, string> | undefined;
-          if (req.auth.memberId !== null && MEMBER_CONFIRMED_EVENTS.has(e.type)) {
+          const confirmKind = req.auth.memberId !== null ? MEMBER_CONFIRMED_EVENTS.get(e.type) : undefined;
+          if (confirmKind !== undefined) {
             const raw = (req.body as { confirmToken?: unknown }).confirmToken;
             const token = raw === undefined ? undefined : typeof raw === 'string' ? raw : '';
-            if (token === undefined) throw new ApiError(403, 'confirm-required', { action: 'release-trade' });
-            const method = await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'release-trade', tradeCode: row.code }, token);
+            if (token === undefined) throw new ApiError(403, 'confirm-required', { action: confirmKind });
+            const method = await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: confirmKind, tradeCode: row.code }, token);
             if (!STRONG_CONFIRM_METHODS.includes(method)) throw new ApiError(403, 'method-not-allowed');
             detail = { confirmedWith: method };
           }

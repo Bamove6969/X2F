@@ -10,7 +10,8 @@
 //
 // Ids are used once (a re-used id is 409 proof-exists, even after its proof is gone), at most
 // PROOF_MAX_PER_SIDE proofs per side per trade, owner-only like the chat (members have no chat keys
-// yet: proof-upload and proof-see-partner are waits-member-chat-key), and the proofs go with the
+// yet: proof-upload and proof-see-partner are waits-member-chat-key; one exception, owner 26 Nov
+// 2026: a member with Upload payment proof PUTs the buyer's `proof`), and the proofs go with the
 // trade and on the chat's retention.
 import { PROOF_MAX_CIPHERTEXT, newProofId } from '@x2f/proof';
 import type { FastifyInstance } from 'fastify';
@@ -87,6 +88,20 @@ async function openDispute(code: string, side: 'buyer' | 'seller' = 'buyer') {
 async function requestUnblurred(code: string, side: 'buyer' | 'seller', when = deps.clock()) {
   // As the staff route: a new request also clears the time the last copy went.
   await deps.db.query(`update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = 'Mod Ana', proof_request_sent_at = null where code = $1`, [code, side, when]);
+}
+
+let members = 0;
+/** A joined team member of `teamId` holding exactly `abilities`, signed in. */
+async function memberOf(teamId: string, abilities: string[]): Promise<{ browser: Browser; memberId: string }> {
+  const loginId = await seedAccount(deps, { loginName: `mproof${++members}x${Date.now()}`, tradeTag: `m-proof-${members}`, kind: 'member' });
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+     values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
+    [teamId, `Proofer${members}`, `proofer${members}`, abilities, deps.clock(), loginId],
+  );
+  const browser = new Browser(app);
+  expect((await browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+  return { browser, memberId: rows[0]!.id };
 }
 
 const stored = async (id: string) =>
@@ -264,24 +279,61 @@ describe('PUT /v1/trades/:code/proofs/:id: the payment proof', () => {
     expect(errorOf(await put(buyer, code, id, 'proof'))).toBe('proof-exists');
   });
 
-  it('a team member is refused (owner-only, as the chat: members have no chat keys yet)', async () => {
+  it('a team member without Upload payment proof is refused (forbidden), and no member reads a proof (owner-only: members have no chat keys yet)', async () => {
     const { buyer, code } = await tradeIn('secured');
     const id = newProofId();
     expect((await put(buyer, code, id, 'proof')).statusCode).toBe(204);
-    const loginId = await seedAccount(deps, { loginName: `mproof${Date.now()}x`, tradeTag: 'm-proof-placeholder', kind: 'member' });
-    await deps.db.query(
-      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Proofer', 'proofer', $2, $3, $4, $3, $3)`,
-      [buyer.id, ['proof-upload', 'proof-see-partner', 'trades-mark-paid'], deps.clock(), loginId],
-    );
-    const m = { browser: new Browser(app) };
-    expect((await m.browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    const m = await memberOf(buyer.id, ['proof-upload', 'proof-see-partner', 'trades-mark-paid', 'trades-see-active']);
     const up = await put(m, code, newProofId(), 'proof');
     expect(up.statusCode).toBe(403);
-    expect(errorOf(up)).toBe('owner-only');
+    expect(errorOf(up)).toBe('forbidden');
     const read = await get(m, code, id);
     expect(read.statusCode).toBe(403);
     expect(errorOf(read)).toBe('owner-only');
+  });
+
+  it('owner 26 Nov 2026 18:41 UTC: a member with Upload payment proof uploads the buyer\'s proof on a trade they can see, logged under their name; it is not Mark "I\'ve paid"', async () => {
+    const { buyer, seller, code } = await tradeIn('secured');
+    const m = await memberOf(buyer.id, ['trades-see-active', 'trades-upload-proof']);
+    const id = newProofId();
+    const ok = await put(m, code, id, 'proof');
+    expect(ok.statusCode, ok.body).toBe(204);
+    expect(await stored(id)).toMatchObject({ trade_code: code, uploader_role: 'buyer', kind: 'proof' });
+    const log = await deps.db.query<{ action: string; member_id: string; actor_kind: string; trade_code: string; detail: Record<string, unknown> }>(
+      'select action, member_id, actor_kind, trade_code, detail from team_audit where account_id = $1 and category = $2 order by id',
+      [buyer.id, 'work'],
+    );
+    expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]).toMatchObject({ action: 'proof-uploaded', member_id: m.memberId, actor_kind: 'member', trade_code: code });
+    expect(JSON.stringify(log.rows[0]!.detail)).not.toContain(id);
+    // Only the payment proof: dispute evidence and the unblurred copy stay the owner's.
+    expect(errorOf(await put(m, code, newProofId(), 'evidence'))).toBe('owner-only');
+    expect(errorOf(await put(m, code, newProofId(), 'unblurred'))).toBe('owner-only');
+    // A separate box from Mark "I've paid".
+    const t = (await loadTrade(deps.db, code))!;
+    const paid = await m.browser.post(`/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: t.fiatCents.toString() });
+    expect(paid.statusCode).toBe(403);
+    expect(errorOf(paid)).toBe('forbidden');
+    // Without the box that reads the trade: forbidden, nothing stored.
+    const blind = await memberOf(buyer.id, ['trades-upload-proof']);
+    const none = newProofId();
+    expect(errorOf(await put(blind, code, none, 'proof'))).toBe('forbidden');
+    expect(await stored(none)).toBeUndefined();
+    // On the account's sell side it is the seller's proof: wrong-party, as for the owner.
+    const sellerMember = await memberOf(seller.id, ['trades-see-active', 'trades-upload-proof']);
+    expect(errorOf(await put(sellerMember, code, newProofId(), 'proof'))).toBe('wrong-party');
+  });
+
+  it('owner 26 Nov 2026: a member with Mark "I\'ve paid" alone marks paid end to end, logged, and cannot upload a proof', async () => {
+    const { buyer, code } = await tradeIn('secured');
+    const m = await memberOf(buyer.id, ['trades-see-active', 'trades-mark-paid']);
+    expect(errorOf(await put(m, code, newProofId(), 'proof'))).toBe('forbidden');
+    const t = (await loadTrade(deps.db, code))!;
+    const paid = await m.browser.post(`/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: t.fiatCents.toString() });
+    expect(paid.statusCode, paid.body).toBe(200);
+    expect((await loadTrade(deps.db, code))!.state).toBe('paid');
+    const log = await deps.db.query<{ action: string; member_id: string }>("select action, member_id from team_audit where account_id = $1 and category = 'work'", [buyer.id]);
+    expect(log.rows).toEqual([{ action: 'mark-paid', member_id: m.memberId }]);
   });
 });
 
