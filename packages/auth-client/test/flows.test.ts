@@ -54,6 +54,7 @@ const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/notes/:tradeTag|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
+  'DELETE /v1/escrow-keys/trades/:code', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'GET /.well-known/x2f-signing-key.asc',
   'GET /v1/account/badges',
   // Plan 4 Task 27: the ban notice's own read, apps/web/src/screens/account/AccountBanned.tsx.
@@ -74,6 +75,10 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/chats/:chat/envelopes',
   'GET /v1/chats/:chat/key',
   'GET /v1/currencies',
+  'GET /v1/escrow-keys/reader', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
+  'GET /v1/escrow-keys/readers', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
+  'GET /v1/escrow-keys/trades', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
+  'GET /v1/escrow-keys/trades/:code', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',
@@ -140,6 +145,8 @@ const NOT_AUTH_CLIENT = [
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
   'PUT /v1/account/record/public',
+  'PUT /v1/escrow-keys/reader', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
+  'PUT /v1/escrow-keys/trades/:code', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'PUT /v1/trades/:code/proofs/:id|:proofId',
   // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
 ] as const;
