@@ -134,7 +134,7 @@ export function PgpKey() {
     setBusy(true);
     setError(null);
     try {
-      const challenge = await registerPgpStart({ displayName: state.displayName, loginName: state.loginName }, key.trim());
+      const challenge = await registerPgpStart({ tradeTag: state.tradeTag, loginName: state.loginName }, key.trim());
       update({ publicKey: key.trim(), challenge });
       go('pgp-code');
     } catch (e) {

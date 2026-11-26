@@ -71,7 +71,7 @@ describe('Feedback screen', () => {
             kind: 'trader',
             level: 'full',
             termsCurrent: true,
-            displayName: 'trader_alice',
+            tradeTag: 'trader_alice',
           });
         }
         if (input === '/v1/feedback/form') {

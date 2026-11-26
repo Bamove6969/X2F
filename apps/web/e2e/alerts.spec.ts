@@ -10,7 +10,7 @@ import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-const ME = { displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
+const ME = { tradeTag: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
 const JABBER_ON = { available: true, state: 'on', address: 'n•••@xmpp.example.org', pendingAddress: null, lastSentAt: '2026-11-10T09:00:00.000Z' };
 const JABBER_OFF = { available: true, state: 'off', address: null, pendingAddress: null, lastSentAt: null };
 

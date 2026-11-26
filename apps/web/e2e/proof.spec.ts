@@ -112,7 +112,7 @@ async function stub(page: Page): Promise<World> {
     const path = url.pathname.replace(`/v1/chats/${CHAT}`, '');
     const method = r.request().method();
     if (path === '' && method === 'GET') {
-      return json({ chat: CHAT, role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: PAY_SECURED.counterparty }, tradeCode: CODE, disputeOpen: false, tradeSecuredAt: PAY_SECURED.securedAt, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
+      return json({ chat: CHAT, role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: PAY_SECURED.counterparty }, tradeCode: CODE, disputeOpen: false, tradeSecuredAt: PAY_SECURED.securedAt, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
     }
     if (path === '/identity' && method === 'POST') {
       const body = r.request().postDataJSON() as (typeof registered)[number];

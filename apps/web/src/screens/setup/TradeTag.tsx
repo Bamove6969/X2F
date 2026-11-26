@@ -1,18 +1,18 @@
 /**
  * Setup step 2 (owner demo note #199, 25 Nov 2026: it was "Step 1 of 5", the same as the username; owner G6 and G14: every account has "a unique username and also a
- * unique display name"; design gaps SignupSecurity's "Your names" card): the public display name,
+ * unique Trade Tag"; design gaps SignupSecurity's "Your names" card): the public Trade Tag,
  * shown to traders exactly as typed. It must differ from the private username picked just before.
- * A taken display name is found when the account is made (409 `display-name-taken`, before any
+ * A taken Trade Tag is found when the account is made (409 `trade-tag-taken`, before any
  * hashing), with a link back here.
  *
  * Owner demo notes #199 and #200 (25 Nov 2026): a live trader card preview under the field (since
  * note #220, an established trader's example card with the name as typed: `TraderPreview`), 2-3 suggestion chips with a refresh chip (randomName.ts), the note
- * that a display name is permanent (no API route changes it), and Continue straight under the
+ * that a Trade Tag is permanent (no API route changes it), and Continue straight under the
  * card rather than pinned to the bottom (SetupFrame `footerInline`), in thumb reach above a phone
  * keyboard.
  *
  * Owner demo note #219 (25 Nov 2026): Continue is disabled (the dimmed primary) until the name
- * passes `checkNames` (the display-name rules, and not the Login ID). What is wrong is said under
+ * passes `checkNames` (the trade-tag rules, and not the Login ID). What is wrong is said under
  * the field as quiet help once the person has typed: a reserved word or the Login ID at once, a
  * wrong length or character once they leave the field. A taken name is still only the server's to
  * know (409 at register, RegisterError links back here).
@@ -24,8 +24,8 @@ import { BADGE_SET, BadgeSeal } from '../../ui/Badges.js';
 import { IdentityRow, StatTiles, traderStats } from '../../ui/Identity.js';
 import { PROFILE_COPY } from '../profile/profileCopy.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { DISPLAY_SYMBOLS, checkNames, checkNewDisplayName, hasSpace, namesProblem, spaceProblem } from './names.js';
-import { suggestDisplayNames } from './randomName.js';
+import { DISPLAY_SYMBOLS, checkNames, checkNewTradeTag, hasSpace, namesProblem, spaceProblem } from './names.js';
+import { suggestTradeTags } from './randomName.js';
 
 /** How many suggestion chips the step shows (owner demo note #200: "2-3"). */
 export const SUGGESTIONS = 3;
@@ -41,7 +41,7 @@ export const SUGGESTIONS = 3;
  * - badge seals of real badges (ui/Badges.tsx BADGE_SET), each with its name; the record below
  *   earns every one (Trusted: 200+ trades and 98%+; Veteran: over a year; 100 trades);
  * - the profile's lines: typical payment time, "Disputes: none", "Account protected with PGP".
- * The name is the one typed while it passes checkNewDisplayName, else the example name.
+ * The name is the one typed while it passes checkNewTradeTag, else the example name.
  */
 export const EXAMPLE_TRADER = {
   // COPY-UNSIGNED (owner demo note #220: the example name while the field is empty or invalid;
@@ -56,7 +56,7 @@ export const EXAMPLE_TRADER = {
 } as const;
 
 function TraderPreview({ name }: { name: string }) {
-  // `name` is '' until what is typed passes checkNewDisplayName.
+  // `name` is '' until what is typed passes checkNewTradeTag.
   const example = name === '';
   const shown = example ? EXAMPLE_TRADER.name : name;
   const t = EXAMPLE_TRADER;
@@ -104,33 +104,33 @@ function TraderPreview({ name }: { name: string }) {
   );
 }
 
-export function DisplayName() {
+export function TradeTag() {
   const { state, update, go, path } = useSetup();
-  const [displayName, setDisplayName] = useState(state.displayName);
+  const [tradeTag, setTradeTag] = useState(state.tradeTag);
   // Owner demo note #219: the field has been left once, so a length or character problem may be said.
   const [left, setLeft] = useState(false);
-  // Owner demo note #108: no spaces in a new display name.
-  const spaced = hasSpace(displayName.trim());
-  const valid = checkNewDisplayName(displayName);
+  // Owner demo note #108: no spaces in a new Trade Tag.
+  const spaced = hasSpace(tradeTag.trim());
+  const valid = checkNewTradeTag(tradeTag);
   const previewName = valid.ok ? valid.name : '';
-  const [suggestions, setSuggestions] = useState(() => suggestDisplayNames(SUGGESTIONS, state.loginName));
+  const [suggestions, setSuggestions] = useState(() => suggestTradeTags(SUGGESTIONS, state.loginName));
 
   // Owner demo note #219: Continue is disabled until the names pass; the click is a no-op otherwise.
-  const names = checkNames(displayName, state.loginName);
+  const names = checkNames(tradeTag, state.loginName);
   const problem =
-    names.ok || spaced || displayName.trim() === '' || !(left || names.reason === 'reserved' || names.reason === 'same') ? null : namesProblem(names);
-  const describedBy = [spaced ? 'display-name-space' : '', problem !== null ? 'display-name-problem' : '', 'display-name-help'].filter((id) => id !== '');
+    names.ok || spaced || tradeTag.trim() === '' || !(left || names.reason === 'reserved' || names.reason === 'same') ? null : namesProblem(names);
+  const describedBy = [spaced ? 'trade-tag-space' : '', problem !== null ? 'trade-tag-problem' : '', 'trade-tag-help'].filter((id) => id !== '');
 
   const next = () => {
     const r = names;
     if (!r.ok) return;
-    update({ displayName: r.display.name, challenge: null });
+    update({ tradeTag: r.display.name, challenge: null });
     go('login');
   };
 
   return (
     <SetupFrame
-      screen="setup-display-name"
+      screen="setup-trade-tag"
       // Owner demo note #199 (25 Nov): the second screen is step 2 of 5 (the login methods are step 3).
       step={2}
       back={path('name')}
@@ -143,15 +143,15 @@ export function DisplayName() {
       }
     >
       {/* Owner demo note #199 (25 Nov): "It must be different from your Login ID". COPY-UNSIGNED. */}
-      <SetupIntro title="Pick a display name">This is how traders see you. It must be different from your Login ID.</SetupIntro>
+      <SetupIntro title="Pick a Trade Tag">This is how traders see you. It must be different from your Login ID.</SetupIntro>
       <div className="x2f-field">
         {/* Owner demo note #197: the same strong field label as the private login ID. */}
-        <label className="x2f-label x2f-start__field-label" htmlFor="display-name">
-          Display name
+        <label className="x2f-label x2f-start__field-label" htmlFor="trade-tag">
+          Trade Tag
         </label>
         <input
           className="x2f-input x2f-start__name"
-          id="display-name"
+          id="trade-tag"
           type="text"
           autoComplete="off"
           autoCapitalize="none"
@@ -160,36 +160,36 @@ export function DisplayName() {
           maxLength={64}
           aria-describedby={describedBy.join(' ')}
           aria-invalid={spaced || problem !== null ? true : undefined}
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
+          value={tradeTag}
+          onChange={(e) => setTradeTag(e.target.value)}
           onBlur={() => setLeft(true)}
         />
         {spaced ? (
-          <p className="x2f-error" id="display-name-space" data-part="display-space">
-            {spaceProblem('display name')}
+          <p className="x2f-error" id="trade-tag-space" data-part="display-space">
+            {spaceProblem('Trade Tag')}
           </p>
         ) : null}
         {/* Owner demo note #219: why Continue is still dimmed, once there is something to say (namesProblem's sentences). */}
         <div aria-live="polite">
           {problem !== null ? (
-            <p className="x2f-start__help" id="display-name-problem" data-part="display-problem">
+            <p className="x2f-start__help" id="trade-tag-problem" data-part="display-problem">
               {problem}
             </p>
           ) : null}
         </div>
-        <p className="x2f-start__help" id="display-name-help">
-          {/* COPY-UNSIGNED (signup round 3: the display name's wider set; owner demo note #108: no spaces; #127: 8 to 20) */}
+        <p className="x2f-start__help" id="trade-tag-help">
+          {/* COPY-UNSIGNED (signup round 3: the Trade Tag's wider set; owner demo note #108: no spaces; #127: 8 to 20) */}
           8 to 20 characters: letters, numbers and common symbols such as {DISPLAY_SYMBOLS}, with no spaces.
         </p>
         {/* Owner demo note #200: tappable suggestions and a refresh chip; a tap fills the box. */}
-        <div className="x2f-start__chips" role="group" aria-label="Suggested display names" data-part="display-suggestions">
+        <div className="x2f-start__chips" role="group" aria-label="Suggested Trade Tags" data-part="display-suggestions">
           {suggestions.map((n) => (
             <button
               key={n}
               type="button"
               className="x2f-start__chip"
               data-part="display-suggestion"
-              onClick={() => setDisplayName(n)}
+              onClick={() => setTradeTag(n)}
             >
               <span data-username="">{n}</span>
             </button>
@@ -200,17 +200,17 @@ export function DisplayName() {
             data-part="display-suggestions-refresh"
             // COPY-UNSIGNED (owner demo note #200: the refresh chip)
             aria-label="More suggestions"
-            onClick={() => setSuggestions(suggestDisplayNames(SUGGESTIONS, state.loginName))}
+            onClick={() => setSuggestions(suggestTradeTags(SUGGESTIONS, state.loginName))}
           >
             <span aria-hidden="true">↻</span>
           </button>
         </div>
       </div>
-      {/* The typed name only while it passes the display-name rules; else the neutral one (review). */}
+      {/* The typed name only while it passes the trade-tag rules; else the neutral one (review). */}
       <TraderPreview name={previewName} />
-      {/* COPY-UNSIGNED: owner demo note #199, his sentence (verified 25 Nov 2026: no API route changes a display name). */}
+      {/* COPY-UNSIGNED: owner demo note #199, his sentence (verified 25 Nov 2026: no API route changes a Trade Tag). */}
       <p className="x2f-start__warn" data-part="display-permanent">
-        Your display name is permanent—pick a handle you'll be happy building your trading reputation under.
+        Your Trade Tag is permanent—pick a handle you'll be happy building your trading reputation under.
       </p>
     </SetupFrame>
   );

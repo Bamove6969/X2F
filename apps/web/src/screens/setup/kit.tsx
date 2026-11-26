@@ -27,7 +27,7 @@ export type BackupChoice = 'security-key' | 'pgp' | 'recovery-codes';
 export type Step =
   | ''
   | 'name'
-  | 'display-name'
+  | 'trade-tag'
   | 'login'
   | 'pgp-key'
   | 'pgp-code'
@@ -44,7 +44,7 @@ export interface SetupState {
    * (no signature since owner demo note #187, 25 Nov 2026).
    */
   terms: TermsAcceptance | null;
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   /** The method the account was made with (the first ticked one in SIGNUP_ORDER). */
   method: LoginMethod;
@@ -73,7 +73,7 @@ export interface SetupState {
 
 export const INITIAL: SetupState = {
   terms: null,
-  displayName: '',
+  tradeTag: '',
   loginName: '',
   method: 'pgp',
   methods: ['pgp', 'passkey'],
@@ -136,7 +136,7 @@ export function stepPath(step: Step, returnTo: string): string {
  * The frame every setup board shares: the back arrow, "Set up your account", "Step N of 5", the
  * five-part progress bar and "Takes about 2 minutes.", then the screen, then its buttons at the
  * bottom. `fit` keeps the whole frame in the viewport (the middle scrolls; the Terms have no box of their own since owner demo note #187).
- * `footerInline` (owner demo note #199, the display-name step only for now) puts the buttons in the
+ * `footerInline` (owner demo note #199, the trade-tag step only for now) puts the buttons in the
  * flow, right under the screen's last part, instead of in the bar pinned to the bottom.
  */
 export function SetupFrame({
@@ -204,7 +204,7 @@ export function SetupIntro({ title, children }: { title: ReactNode; children?: R
 
 /**
  * A refused register call. A name problem links back to the screen of the name to change (review
- * F8: a display-name refusal to the display-name screen, any other to the username; what they typed is kept);
+ * F8: a trade-tag refusal to the trade-tag screen, any other to the username; what they typed is kept);
  * a key already on another account links back to the key screen and to Log in (review I1); a
  * refused key (key-unavailable) links back to the key screen only.
  */

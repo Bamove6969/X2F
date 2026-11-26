@@ -38,7 +38,7 @@ const stopped = (page: Page) => page.locator('[data-part="trading-stopped"]');
 /** The BuyQuote board's offer, price and wallets, as quote.spec.ts stubs them (src/fixtures/quoteBoard.ts). */
 async function quoteApi(page: Page): Promise<void> {
   await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { tradeTag: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: Q.method.id, name: Q.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: Q.marketCentsPerXmr }], all: [] } }),
   );

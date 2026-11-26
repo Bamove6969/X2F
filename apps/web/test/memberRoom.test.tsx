@@ -20,7 +20,7 @@ import { render } from './render.js';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const MIN = 60_000;
 const iso = (offsetMin: number) => new Date(Date.parse(SERVER_NOW) + offsetMin * MIN).toISOString();
-const MEMBER_ME = { kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
+const MEMBER_ME = { kind: 'trader', level: 'full', tradeTag: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
 
 /** The seller's view while the buyer still has time to pay (SellerWaiting's slot). */
 const waiting = (over: Partial<TradeView> = {}): TradeView => sellerView({ payBy: iso(25), nextDeadline: iso(25), ...over }) as TradeView;

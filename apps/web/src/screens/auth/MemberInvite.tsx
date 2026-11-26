@@ -224,7 +224,7 @@ export function MemberInvite() {
         <>
           <section className="x2f-card" data-part="invite">
             <p className="x2f-sheet__body" data-part="invite-who">
-              {C.invited(invite.displayName, invite.roles)}
+              {C.invited(invite.tradeTag, invite.roles)}
             </p>
             <p className="x2f-note">{C.twoFactors}</p>
           </section>

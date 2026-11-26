@@ -29,7 +29,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', async (input: string) => {
     const url = String(input).split('?')[0]!;
     if (url === '/v1/account/me') {
-      return json(200, { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['pgp'], hasBackup: false, suggestions: [], member: null, setupOnly });
+      return json(200, { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['pgp'], hasBackup: false, suggestions: [], member: null, setupOnly });
     }
     if (url === '/v1/account/onboarding/end') {
       ends.push(1);

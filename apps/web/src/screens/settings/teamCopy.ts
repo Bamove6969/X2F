@@ -112,7 +112,7 @@ export const TEAM_COPY = {
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
   // Owner p11-25 (S-105, 9 Nov 2026, replacing R44's "Team <name> member: <member>"): chats show a
-  // member as "<your display name> Assistant 1", "Assistant 2"; the member's name stays inside the
+  // member as "<your Trade Tag> Assistant 1", "Assistant 2"; the member's name stays inside the
   // team (this list and the activity log). COPY-UNSIGNED
   nameLabel: 'Their name on your team',
   nameHint: 'Only you and your team see it. Chats show them as "<your name> Assistant 1", "Assistant 2" and so on.',

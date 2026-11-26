@@ -34,8 +34,8 @@ beforeEach(() => {
   teamStatus = 200;
   meMember = null;
   members = [
-    { id: 'm1', displayName: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
-    { id: 'm2', displayName: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+    { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    { id: 'm2', tradeTag: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
   ];
   audit = [{ id: '1', at: '2026-10-30T08:00:00.000Z', memberId: 'm1', memberName: 'Aurora', action: 'mark-paid', tradeCode: 'AAAA-BBBB-CCCC-DDDD', detail: {} }];
   inviteReply = { status: 201, body: { id: 'm3', invite: CODE, expiresAt: '2026-10-31T10:00:00.000Z' } };
@@ -43,13 +43,13 @@ beforeEach(() => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: meMember });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: meMember });
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
     if (input === '/v1/team/members/m1/limits' && method === 'PUT') return json(200, { ...(members[0] as object), band: body?.band, hours: body?.hours });
-    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
+    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { tradeTag: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
     if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
     if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
     if (input === '/v1/team/join/finish') return json(201, { setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: '2026-10-31T10:00:00.000Z' });
@@ -110,7 +110,7 @@ describe('Team (settings)', () => {
 
   it('a member whose boxes no role describes reads "Custom", not a role (review 2026-11-09 m3)', async () => {
     members = [
-      { id: 'm4', displayName: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm4', tradeTag: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -120,8 +120,8 @@ describe('Team (settings)', () => {
 
   it('S-105 (owner p11-25): each member shows how chats label them, the lead\'s name and a number, never their own name', async () => {
     members = [
-      { id: 'm1', displayName: 'Aurora', chatLabel: 'Calcium Assistant 1', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
-      { id: 'm2', displayName: 'Basil', chatLabel: 'Calcium Assistant 2', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+      { id: 'm1', tradeTag: 'Aurora', chatLabel: 'Calcium Assistant 1', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm2', tradeTag: 'Basil', chatLabel: 'Calcium Assistant 2', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -133,7 +133,7 @@ describe('Team (settings)', () => {
 
   it('S-104: a member with no boxes yet says so instead of an empty role list', async () => {
     members = [
-      { id: 'm5', displayName: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+      { id: 'm5', tradeTag: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -178,7 +178,7 @@ describe('Team (settings)', () => {
     await settle();
     const start = [...catalogueView().presets.find((p) => p.id === 'start')!.abilities];
     expect(start.length).toBeGreaterThan(0);
-    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { displayName: 'Cosmo', abilities: start } });
+    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { tradeTag: 'Cosmo', abilities: start } });
     expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
   });
 
@@ -231,7 +231,7 @@ describe('Team (settings)', () => {
   it('a full team: Make an invite link is disabled with the board note, and tapping it opens nothing', async () => {
     members = [
       ...members,
-      { id: 'm3', displayName: 'Cedric', roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm3', tradeTag: 'Cedric', roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();

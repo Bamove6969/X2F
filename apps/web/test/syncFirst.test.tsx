@@ -416,7 +416,7 @@ describe('SyncGate without a PointerEvent constructor (review info)', () => {
 
 describe('the trade room pulls its trade on resume', () => {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-  const ME = { kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
+  const ME = { kind: 'trader', level: 'full', tradeTag: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
   let reads: number;
   let down: boolean;
   const v = sellerView({ payBy: new Date(Date.parse(SERVER_NOW) + 25 * 60_000).toISOString() }) as TradeView;

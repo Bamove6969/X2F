@@ -67,8 +67,8 @@ describe('trade-room slots', () => {
 });
 
 describe('publicName', () => {
-  it('reads the display name only (FU-A)', () => {
-    expect(publicName({ displayName: 'Mira.K_' })).toBe('Mira.K_');
+  it('reads the Trade Tag only (FU-A)', () => {
+    expect(publicName({ tradeTag: 'Mira.K_' })).toBe('Mira.K_');
   });
 });
 

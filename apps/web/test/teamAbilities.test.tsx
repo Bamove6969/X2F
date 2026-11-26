@@ -41,7 +41,7 @@ beforeEach(() => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: null });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: null });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team' && method === 'GET') return json(200, { members, max: 3 });
     if (input === '/v1/team/audit') return json(200, []);
@@ -192,7 +192,7 @@ describe('Team: editing a member', () => {
   it('a member moved from the old Offers role shows its boxes; saving keeps the stored "Coming later" ones', async () => {
     const legacy = [...ROLE_ABILITIES.offers];
     expect(legacy).toContain('offers-edit-prices');
-    members = [{ id: 'm1', displayName: 'Aurora', roles: ['offers'], abilities: legacy, preset: null, custom: false, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' }];
+    members = [{ id: 'm1', tradeTag: 'Aurora', roles: ['offers'], abilities: legacy, preset: null, custom: false, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' }];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     expect(host.querySelector('[data-member="Aurora"]')?.textContent).toContain('Offers · Active');
@@ -243,7 +243,7 @@ describe('notesAccessOf', () => {
 
 describe('TraderNotes', () => {
   it('asks nothing until opened; then lists the notes, signed, newest first', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     await settle();
     expect(calls.length).toBe(0);
     click(byPart(host, 'notes-open')!);
@@ -256,7 +256,7 @@ describe('TraderNotes', () => {
   });
 
   it('adds a note for that trader and shows it first', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     typeText(host.querySelector<HTMLTextAreaElement>('[data-part="note-input"]')!, '  Asked to move off-site.  ');
@@ -268,7 +268,7 @@ describe('TraderNotes', () => {
   });
 
   it('a blank note sends nothing', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     typeText(host.querySelector<HTMLTextAreaElement>('[data-part="note-input"]')!, '   ');
@@ -279,7 +279,7 @@ describe('TraderNotes', () => {
   });
 
   it('the owner deletes a note after a second tap', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     click(host.querySelector(`[data-note="${NOTE_B.id}"] [data-part="note-delete"]`)!);
@@ -292,7 +292,7 @@ describe('TraderNotes', () => {
   });
 
   it('a member with View only reads, with no add box and no Delete', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: false, remove: false }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: false, remove: false }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     expect(host.querySelectorAll('[data-part="notes-list"] li').length).toBe(2);
@@ -301,13 +301,13 @@ describe('TraderNotes', () => {
   });
 
   it('a member with Add only adds without reading the list; with neither box there is no panel', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: false, add: true, remove: false }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: false, add: true, remove: false }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     expect(calls.some((c) => c.method === 'GET')).toBe(false);
     expect(byPart(host, 'notes-list')).toBeNull();
     expect(byPart(host, 'note-add')).not.toBeNull();
-    const none = render(<TraderNotes displayName="nightowl_44" access={{ view: false, add: false, remove: false }} />);
+    const none = render(<TraderNotes tradeTag="nightowl_44" access={{ view: false, add: false, remove: false }} />);
     expect(none.host.querySelector('[data-part="trader-notes"]')).toBeNull();
   });
 
@@ -315,7 +315,7 @@ describe('TraderNotes', () => {
     noteReply = { status: 409, body: { error: 'too-many-notes', max: 500 } };
     const { host } = render(
       <MemoryRouter>
-        <TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />
+        <TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />
       </MemoryRouter>,
     );
     click(byPart(host, 'notes-open')!);

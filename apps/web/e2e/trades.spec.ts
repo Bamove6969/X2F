@@ -10,17 +10,17 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { sellerView } from './refundViews.js';
 
-const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
+const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 type Row = Record<string, unknown>;
 const row = (code: string, over: Row = {}): Row => ({
   code, role: 'buyer', state: 'secured', amountAtomic: '1250000000000', fiatCents: '41250', currency: 'USD',
-  counterparty: { displayName: 'Calcium' }, takenAt: '2026-11-10T09:00:00.000Z', closedAt: null, ...over,
+  counterparty: { tradeTag: 'Calcium' }, takenAt: '2026-11-10T09:00:00.000Z', closedAt: null, ...over,
 });
 
-const OPEN_1 = [row('K7M2-9QXA-4FTR-8WPN'), row('AB2C-3DEF-4GHJ-5KMN', { role: 'seller', state: 'paid', amountAtomic: '500000000000', fiatCents: '15000', currency: 'EUR', counterparty: { displayName: 'aurora_9' } })];
-const OPEN_2 = [row('P8MD-2NCE-7HJK-3QRS', { state: 'funding', counterparty: { displayName: 'quietfox' } })];
+const OPEN_1 = [row('K7M2-9QXA-4FTR-8WPN'), row('AB2C-3DEF-4GHJ-5KMN', { role: 'seller', state: 'paid', amountAtomic: '500000000000', fiatCents: '15000', currency: 'EUR', counterparty: { tradeTag: 'aurora_9' } })];
+const OPEN_2 = [row('P8MD-2NCE-7HJK-3QRS', { state: 'funding', counterparty: { tradeTag: 'quietfox' } })];
 const DONE = [
   row('T5HJ-6YVM-8WQZ-2ABC', { state: 'released', closedAt: '2026-11-08T12:15:00.000Z' }),
   row('W2KS-8QFN-4RTX-9DEF', { role: 'seller', state: 'refunded', closedAt: '2026-11-07T10:00:00.000Z' }),

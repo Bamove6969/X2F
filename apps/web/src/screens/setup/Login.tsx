@@ -161,7 +161,7 @@ export function Login() {
     setBusy(true);
     setError(null);
     try {
-      const { credentialId } = await registerWebAuthn({ displayName: state.displayName, loginName: state.loginName }, first, state.terms!);
+      const { credentialId } = await registerWebAuthn({ tradeTag: state.tradeTag, loginName: state.loginName }, first, state.terms!);
       // Owner 25 Nov security-key report: the key is saved, so say so and ask for its name
       // (FirstKeySaved, shown in this step's place by SetupFlow) before going on.
       update({ registered: true, done: [first], keySaved: { kind: first, credentialId } });
@@ -184,11 +184,11 @@ export function Login() {
   return (
     <SetupFrame
       screen="setup-login"
-      // Owner demo note #199: the display name is step 2 now, so choosing and setting up the login
+      // Owner demo note #199: the Trade Tag is step 2 now, so choosing and setting up the login
       // methods is step 3 together (the method screens were already 3), and "of 5" stays true.
       step={3}
-      // Review F8: the screen before this one is the display name.
-      back={path('display-name')}
+      // Review F8: the screen before this one is the Trade Tag.
+      back={path('trade-tag')}
       footer={
         <Button variant="primary" disabled={busy || current === null} onClick={() => void next()} data-part="method-continue">
           {current?.cta ?? 'Continue'}

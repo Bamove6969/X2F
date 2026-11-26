@@ -22,7 +22,7 @@ import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
-import { displayNameOf, useSession } from '../session/useSession.js';
+import { tradeTagOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
 import { CheckRow } from '../ui/CheckRow.js';
@@ -79,7 +79,7 @@ export function Feedback() {
   const session = useSession();
   // The signed-in account's public name, or null while signed out or loading; a draft another
   // account wrote is never shown (round-2 review N-M6).
-  const owner = session.status === 'signed-in' ? displayNameOf(session.me) || null : null;
+  const owner = session.status === 'signed-in' ? tradeTagOf(session.me) || null : null;
   const [draft, setDraft] = useState(() => loadFeedbackDraft(null));
   // The board has no kind choice: a draft keeps the kind it had, a new message is feedback.
   const [kind, setKind] = useState<FeedbackKind>(draft?.kind ?? 'feedback');

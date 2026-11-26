@@ -180,7 +180,7 @@ function Badges({ offer }: { offer: Offer }) {
           {open ? (
             <span role="tooltip" className="x2f-offer__tip">
               <span className="x2f-offer__tip-title">
-                All of <span data-username>{offer.poster.displayName}</span>'s badges
+                All of <span data-username>{offer.poster.tradeTag}</span>'s badges
               </span>
               {all.map((b) => (
                 <span key={b.label}>
@@ -242,7 +242,7 @@ export function RangeRowsView({ rows, currency, className = 'x2f-offer__range' }
 }
 
 export function OfferCard({ offer, currency, copy, primary, now, market = null, withMarkup = false, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
-  const name = offer.poster.displayName;
+  const name = offer.poster.tradeTag;
   const closed = offer.opensAt !== undefined;
   const markup = markupOf(offer, copy);
   const rows = cardRows(offer, currency, market, withMarkup);

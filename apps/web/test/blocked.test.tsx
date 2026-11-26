@@ -16,7 +16,7 @@ interface Call {
 }
 
 let calls: Call[];
-let blocks: { displayName: string; blockedAt: string; note?: string | null }[];
+let blocks: { tradeTag: string; blockedAt: string; note?: string | null }[];
 let signedIn: boolean;
 let failNext: number | null;
 
@@ -29,15 +29,15 @@ beforeEach(() => {
   signedIn = true;
   failNext = null;
   blocks = [
-    { displayName: 'mira.k', blockedAt: '2026-10-29T10:00:00.000Z', note: null },
-    { displayName: 'Bob', blockedAt: '2026-10-28T10:00:00.000Z', note: 'Asked for my phone number.' },
+    { tradeTag: 'mira.k', blockedAt: '2026-10-29T10:00:00.000Z', note: null },
+    { tradeTag: 'Bob', blockedAt: '2026-10-28T10:00:00.000Z', note: 'Asked for my phone number.' },
   ];
   refreshSession();
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return signedIn ? json(200, { kind: 'trader', level: 'full', displayName: 'me' }) : json(401, { error: 'unauthorized' });
+    if (input === '/v1/account/me') return signedIn ? json(200, { kind: 'trader', level: 'full', tradeTag: 'me' }) : json(401, { error: 'unauthorized' });
     if (failNext !== null) {
       const s = failNext;
       failNext = null;
@@ -46,20 +46,20 @@ beforeEach(() => {
     if (input === '/v1/account/blocks' && method === 'GET') return json(200, blocks);
     if (input === '/v1/account/blocks' && method === 'POST') {
       // As the server: a new block row, with no note and its own time.
-      const name = (body as { displayName: string }).displayName;
-      if (!blocks.some((b) => b.displayName === name)) blocks = [{ displayName: name, blockedAt: '2026-11-12T08:30:00.000Z', note: null }, ...blocks];
+      const name = (body as { tradeTag: string }).tradeTag;
+      if (!blocks.some((b) => b.tradeTag === name)) blocks = [{ tradeTag: name, blockedAt: '2026-11-12T08:30:00.000Z', note: null }, ...blocks];
       return json(204, null);
     }
     const n = /^\/v1\/account\/blocks\/(.+)\/note$/.exec(input);
     if (n && method === 'PUT') {
       const raw = (body as { note: string | null }).note;
       const note = raw === null || raw.trim() === '' ? null : raw.trim();
-      blocks = blocks.map((b) => (b.displayName === decodeURIComponent(n[1]!) ? { ...b, note } : b));
+      blocks = blocks.map((b) => (b.tradeTag === decodeURIComponent(n[1]!) ? { ...b, note } : b));
       return json(200, { note });
     }
     const m = /^\/v1\/account\/blocks\/(.+)$/.exec(input);
     if (m && method === 'DELETE') {
-      blocks = blocks.filter((b) => b.displayName !== decodeURIComponent(m[1]!));
+      blocks = blocks.filter((b) => b.tradeTag !== decodeURIComponent(m[1]!));
       return json(204, null);
     }
     return json(500, { error: 'internal' });
@@ -107,7 +107,7 @@ describe('Blocked (settings)', () => {
     // Undo blocks again.
     fire(again, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(calls.at(-2)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
+    expect(calls.at(-2)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { tradeTag: 'mira.k' } });
     // Review M1: then the list is read again, so the row shows the new block as the server holds it.
     expect(calls.at(-1)).toMatchObject({ url: '/v1/account/blocks', method: 'GET' });
     expect(byPart(host, 'blocked-said')?.textContent).toBe('Blocked mira.k again.');
@@ -128,7 +128,7 @@ describe('Blocked (settings)', () => {
     expect(host.querySelectorAll('[data-username]').length).toBe(2);
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('Could not unblock mira.k. Try again.');
     // 404 and the server no longer lists mira.k (the account was closed): the row goes.
-    blocks = blocks.filter((b) => b.displayName !== 'mira.k');
+    blocks = blocks.filter((b) => b.tradeTag !== 'mira.k');
     failNext = 404;
     fire(host.querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
     await settle();
@@ -160,11 +160,11 @@ describe('Blocked (settings)', () => {
 
   it('parses the list strictly', () => {
     expect(() => parseBlocked({})).toThrow();
-    expect(() => parseBlocked([{ displayName: 'x' }])).toThrow();
+    expect(() => parseBlocked([{ tradeTag: 'x' }])).toThrow();
     // S-093: the note is optional (an older API sends none) and a string or null; anything else fails loudly.
-    expect(parseBlocked([{ displayName: 'x', blockedAt: 't', extra: 1 }])).toEqual([{ displayName: 'x', blockedAt: 't', note: null }]);
-    expect(parseBlocked([{ displayName: 'x', blockedAt: 't', note: 'n' }])).toEqual([{ displayName: 'x', blockedAt: 't', note: 'n' }]);
-    expect(() => parseBlocked([{ displayName: 'x', blockedAt: 't', note: 3 }])).toThrow();
+    expect(parseBlocked([{ tradeTag: 'x', blockedAt: 't', extra: 1 }])).toEqual([{ tradeTag: 'x', blockedAt: 't', note: null }]);
+    expect(parseBlocked([{ tradeTag: 'x', blockedAt: 't', note: 'n' }])).toEqual([{ tradeTag: 'x', blockedAt: 't', note: 'n' }]);
+    expect(() => parseBlocked([{ tradeTag: 'x', blockedAt: 't', note: 3 }])).toThrow();
   });
 
   it('S-093: each row shows my private note; I add, change and clear it in place (saved by name, at most 500 characters)', async () => {
@@ -255,7 +255,7 @@ describe('Blocked (settings)', () => {
 describe('BlockAction', () => {
   it('asks first (silent, open trades finish), then blocks by public name; focus follows each step', async () => {
     const onBlocked = vi.fn();
-    const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" onBlocked={onBlocked} /></MemoryRouter>);
+    const { host } = render(<MemoryRouter><BlockAction tradeTag="mira.k" onBlocked={onBlocked} /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     // The Block board's confirm sheet (portalled into the body; design review 64).
     const ask = byPart(document.body, 'block-ask')!;
@@ -270,7 +270,7 @@ describe('BlockAction', () => {
     expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
     fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
+    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { tradeTag: 'mira.k' } });
     expect(onBlocked).toHaveBeenCalledOnce();
     const done = byPart(host, 'block-done')!;
     expect(done.querySelector('a')?.getAttribute('href')).toBe('/settings/blocked');
@@ -282,7 +282,7 @@ describe('BlockAction', () => {
     const held = new Promise<Response>((r) => (release = r));
     const inner = globalThis.fetch;
     vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => ((init.method ?? 'GET') === 'POST' ? held : inner(input, init)));
-    const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
+    const { host } = render(<MemoryRouter><BlockAction tradeTag="mira.k" /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     const sheet = () => byPart(document.body, 'block-ask')?.closest('[role="dialog"]') ?? null;
@@ -296,7 +296,7 @@ describe('BlockAction', () => {
   });
 
   it('Cancel blocks nobody; a refusal opens CantDoThat, a failure stays inline', async () => {
-    const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
+    const { host } = render(<MemoryRouter><BlockAction tradeTag="mira.k" /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire([...document.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!, new MouseEvent('click', { bubbles: true }));
     expect(byPart(host, 'block-open')).not.toBeNull();

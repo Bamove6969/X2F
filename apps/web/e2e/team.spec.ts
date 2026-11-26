@@ -22,16 +22,16 @@ const LATER = '2099-01-01T00:00:00.000Z';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], member: null };
+const OWNER_ME = { tradeTag: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], member: null };
 const memberMe = (roles: string[], abilities?: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles, ...(abilities ? { abilities } : {}) } });
 
 /** Job 1c: the API's own catalogue (`GET /v1/team/permissions`), and a preset's boxes. */
 const CATALOGUE = catalogueView();
 const presetBoxes = (id: string) => [...CATALOGUE.presets.find((p) => p.id === id)!.abilities];
 
-type Member = { id: string; displayName: string; roles: string[]; abilities?: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
-const member = (id: string, displayName: string, roles: string[], status = 'active'): Member => ({
-  id, displayName, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
+type Member = { id: string; tradeTag: string; roles: string[]; abilities?: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
+const member = (id: string, tradeTag: string, roles: string[], status = 'active'): Member => ({
+  id, tradeTag, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
 });
 
 /** The owner's side of the API: me, the team, its log, invites, roles, removal and the PGP confirm. */
@@ -58,7 +58,7 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
     if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: body.abilities !== undefined ? 'team-invite-abilities' : 'team-invite' }, 403)(r);
     const a = s.inviteAnswer?.(body);
     if (a) return json(a.body, a.status)(r);
-    s.members = [...s.members, { ...member(`m${s.members.length + 1}`, String(body.displayName), (body.roles as string[] | undefined) ?? [], 'invited'), abilities: body.abilities as string[] }];
+    s.members = [...s.members, { ...member(`m${s.members.length + 1}`, String(body.tradeTag), (body.roles as string[] | undefined) ?? [], 'invited'), abilities: body.abilities as string[] }];
     return json({ id: `m${s.members.length}`, invite: CODE, expiresAt: LATER }, 201)(r);
   });
   await page.route('**/v1/team/members/*', (r) => {
@@ -143,7 +143,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     const [before] = (await url.innerText()).split('#');
     expect(before).not.toContain(CODE);
     expect(seen.confirms[0]!.action).toEqual({ kind: 'team-invite-abilities', name: 'Aurora.K', abilities: trades.join(',') });
-    expect(seen.invites.at(-1)).toEqual({ displayName: 'Aurora.K', abilities: trades, confirmToken: 'tok-1' });
+    expect(seen.invites.at(-1)).toEqual({ tradeTag: 'Aurora.K', abilities: trades, confirmToken: 'tok-1' });
     expect(trades).toContain('trades-accept');
     await page.locator('[data-part="copy-invite"]').click();
     await expect(page.locator('[data-part="copy-invite"]')).toHaveText('Copied');
@@ -225,7 +225,7 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
   await page.route('**/v1/account/me', (r) => (signedIn ? json(memberMe(['trades']))(r) : json({ error: 'not-authenticated' }, 401)(r)));
   await page.route('**/v1/team/invite', (r) => {
     record(r);
-    const a = o.invite ?? { status: 200, body: { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER } };
+    const a = o.invite ?? { status: 200, body: { tradeTag: 'Aurora', roles: ['trades'], expiresAt: LATER } };
     return json(a.body, a.status)(r);
   });
   await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
@@ -777,7 +777,7 @@ test('the activity log lists member actions newest first, and filters by member'
 // ---- 9. Notes on traders (Job 1c; owner S-094, p7-8) -------------------------------------------------
 
 const traderProfile = (name: string) => ({
-  displayName: name,
+  tradeTag: name,
   self: false,
   memberSince: '2025-03',
   online: true,

@@ -29,7 +29,7 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   calls = [];
-  me = { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp', 'password'], accountType: 'trader', member: null, termsCurrent: true };
+  me = { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp', 'password'], accountType: 'trader', member: null, termsCurrent: true };
   typeReply = { status: 403, body: { error: 'confirm-required', action: 'become-vendor' } };
   refreshSession();
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {

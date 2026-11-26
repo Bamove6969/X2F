@@ -16,7 +16,7 @@
  *   refused, and so is any package while the reader's trade is not secured (`payAllowed`, owner
  *   Q12), so no client can push details to the buyer early.
  * - Or `{ text, notice }` for a fixed notice (P-020, notices.ts): `text` must be exactly that
- *   notice's wording and the reader keeps its own copy; only a trader sends one. Messages carry no names: the UI shows each role's display name (never a login name)
+ *   notice's wording and the reader keeps its own copy; only a trader sends one. Messages carry no names: the UI shows each role's Trade Tag (never a login name)
  *   from its own records.
  * - Every message is sealed to buyer, seller and the chat's mod identity (spec 6.6: a moderator
  *   can read the chat once a dispute opens), including the sender, so it can re-read its own.
@@ -109,7 +109,7 @@ export interface ChatState {
 }
 
 export interface ChatMessage {
-  /** The verified sender role; the UI maps it to that side's display name. */
+  /** The verified sender role; the UI maps it to that side's Trade Tag. */
   from: Role;
   seq: number;
   /** The plain line; for a package, the rendering of its boxes (`renderPayDetailsText`). */

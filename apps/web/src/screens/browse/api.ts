@@ -48,8 +48,8 @@ export interface Price {
 }
 
 export interface TraderSummary {
-  /** The public display name (FU-A); the private login name is never sent. */
-  displayName: string;
+  /** The public Trade Tag (FU-A); the private login name is never sent. */
+  tradeTag: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -221,7 +221,7 @@ export function parsePrice(v: unknown): Price {
 function parsePoster(v: unknown, at: string): TraderSummary {
   const o = obj(v, at);
   return {
-    displayName: str(o, 'displayName', at),
+    tradeTag: str(o, 'tradeTag', at),
     completedTrades: num(o, 'completedTrades', at),
     online: bool(o, 'online', at),
     lastSeenAt: orNull(o, 'lastSeenAt', at, str),

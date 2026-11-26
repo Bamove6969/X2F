@@ -5,7 +5,7 @@
 // sign-up session and goes to Log in (keeping `returnTo`); the login asks the session length, then
 // goes on. Every Setup board is checked with the parity harness at the board's
 // phone size (390x844) and at a small Android size (360x800) (owner 2026-10-25: mobile ready at
-// launch). The API is stubbed per test with page.route, in FU-A's shapes (display name + private
+// launch). The API is stubbed per test with page.route, in FU-A's shapes (Trade Tag + private
 // login name), as FU-A's API defines them (on the main line since 2026-10-28).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import * as openpgp from 'openpgp';
@@ -52,7 +52,7 @@ async function addAuthenticator(page: Page): Promise<void> {
   await page.click('[data-part="totp-continue"]');
 }
 
-const TERMS_VERSION = '2026-11-26';
+const TERMS_VERSION = '2026-11-26b';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -73,7 +73,7 @@ interface Stub {
   /** Logged in again after sign-up (G25): `me` then carries the session with its length question. */
   loggedIn: boolean;
   lengthHours: number | null;
-  displayName: string;
+  tradeTag: string;
   methods: string[];
   wallets: Record<string, unknown>[];
   termsCurrent: boolean;
@@ -87,7 +87,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     registered: o.signedIn ?? false,
     loggedIn: false,
     lengthHours: null,
-    displayName: 'nightowl',
+    tradeTag: 'nightowl',
     methods: o.methods ?? [],
     wallets: o.wallets ?? [],
     termsCurrent: true,
@@ -104,7 +104,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   await page.route('**/v1/account/me', (r) =>
     s.registered
       ? json({
-          displayName: s.displayName,
+          tradeTag: s.tradeTag,
           loginNameSet: true,
           kind: 'trader',
           level: 'full',
@@ -146,19 +146,19 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   });
   await page.route('**/v1/register/pgp/finish', (r) => {
     record('pgp-finish', r);
-    const b = s.bodies['pgp-start']?.at(-1) as { displayName: string };
+    const b = s.bodies['pgp-start']?.at(-1) as { tradeTag: string };
     s.registered = true;
-    s.displayName = b.displayName;
+    s.tradeTag = b.tradeTag;
     s.methods = ['pgp'];
-    return json({ displayName: b.displayName }, 201)(r);
+    return json({ tradeTag: b.tradeTag }, 201)(r);
   });
   await page.route('**/v1/register/password', (r) => {
     record('password', r);
-    const b = JSON.parse(r.request().postData() ?? '{}') as { displayName: string };
+    const b = JSON.parse(r.request().postData() ?? '{}') as { tradeTag: string };
     s.registered = true;
-    s.displayName = b.displayName;
+    s.tradeTag = b.tradeTag;
     s.methods = ['password'];
-    return json({ displayName: b.displayName }, 201)(r);
+    return json({ tradeTag: b.tradeTag }, 201)(r);
   });
   await page.route('**/v1/account/recovery-codes', (r) => {
     record('recovery-codes', r);
@@ -220,13 +220,13 @@ async function acceptTerms(page: Page): Promise<void> {
   await page.click('[data-part="terms-accept"]');
 }
 
-/** Step 1: the private username (with its tick), then the public display name on its own screen. */
+/** Step 1: the private username (with its tick), then the public Trade Tag on its own screen. */
 async function pickNames(page: Page, display: string, login: string): Promise<void> {
   await page.fill('#uname', login);
   await expect(page.locator('[data-part="name-status"]')).toHaveText(`${login} is available`);
   await page.click('[data-part="names-continue"]');
-  await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
-  await page.fill('#display-name', display);
+  await expect(page.locator('[data-screen="setup-trade-tag"]')).toBeVisible();
+  await page.fill('#trade-tag', display);
   await page.click('[data-part="display-continue"]');
 }
 
@@ -306,7 +306,7 @@ for (const v of PHONES) {
     expect(s.requests).toContain('POST /v1/logout');
 
     // The register calls carry both names (FU-A) and the accepted Terms version, no signature (owner demo note #187).
-    expect(s.bodies['pgp-start']).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
+    expect(s.bodies['pgp-start']).toEqual([{ tradeTag: 'lumen.kai', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
     expect(s.bodies['pgp-finish']).toEqual([
       expect.objectContaining({ challengeId: 'c1', code: '1234-5678-9ABC', acceptedTerms: TERMS_VERSION }),
     ]);
@@ -327,7 +327,7 @@ for (const v of PHONES) {
       if (tries === 1) return json({ error: 'password-leaked' }, 400)(r);
       s.registered = true;
       s.methods = ['password'];
-      return json({ displayName: 'lumen.kai' }, 201)(r);
+      return json({ tradeTag: 'lumen.kai' }, 201)(r);
     });
 
     await page.goto('/setup');
@@ -357,7 +357,7 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/backup\?/);
 
     expect(s.bodies.password?.at(-1)).toMatchObject({
-      displayName: 'lumen.kai',
+      tradeTag: 'lumen.kai',
       loginName: 'lumen-login-7',
       password: 'Quiet-harbour-58',
       acceptedTerms: TERMS_VERSION,
@@ -497,7 +497,7 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   await expect(page.locator('[data-method="recovery-codes"] [data-part="mark-set"]')).toHaveCount(1);
   // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
   await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
-  expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.Kay_', loginName: 'mira-signin-01' });
+  expect(s.bodies.password?.[0]).toMatchObject({ tradeTag: 'Mira.Kay_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
   // Owner G25: Log in next, then on to the post.
@@ -511,7 +511,7 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   expect(stored).not.toContain('mira-signin');
 });
 
-test('the username and display name are checked before going on (8-20, owner notes #126 and #127; allowed characters, free, different)', async ({ page }) => {
+test('the username and Trade Tag are checked before going on (8-20, owner notes #126 and #127; allowed characters, free, different)', async ({ page }) => {
   const s = await stubApi(page);
   await page.goto('/setup');
   await acceptTerms(page);
@@ -546,23 +546,23 @@ test('the username and display name are checked before going on (8-20, owner not
   await page.fill('#uname', 'login-name-1');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('login-name-1 is available');
   await go.click();
-  await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
-  // Owner demo note #219: Continue is disabled until the display name passes, with the reason as help.
+  await expect(page.locator('[data-screen="setup-trade-tag"]')).toBeVisible();
+  // Owner demo note #219: Continue is disabled until the Trade Tag passes, with the reason as help.
   const display = page.locator('[data-part="display-continue"]');
   await expect(display).toBeDisabled();
-  await page.fill('#display-name', 'login-NAME-1');
+  await page.fill('#trade-tag', 'login-NAME-1');
   await expect(display).toBeDisabled();
-  await expect(page.locator('[data-part="display-problem"]')).toHaveText('Your display name must be different from your Login ID.');
-  await expect(page).toHaveURL(/\/setup\/display-name/);
-  await page.fill('#display-name', 'Lumen.Kai');
+  await expect(page.locator('[data-part="display-problem"]')).toHaveText('Your Trade Tag must be different from your Login ID.');
+  await expect(page).toHaveURL(/\/setup\/trade-tag/);
+  await page.fill('#trade-tag', 'Lumen.Kai');
   await expect(display).toBeEnabled();
   await expect(page.locator('[data-part="display-problem"]')).toHaveCount(0);
 });
 
-test('a taken display name at register sends the person back to change their names, both kept', async ({ page }) => {
+test('a taken Trade Tag at register sends the person back to change their names, both kept', async ({ page }) => {
   await stubApi(page);
   await page.unroute('**/v1/register/password');
-  await page.route('**/v1/register/password', json({ error: 'display-name-taken' }, 409));
+  await page.route('**/v1/register/password', json({ error: 'trade-tag-taken' }, 409));
   await page.goto('/setup');
   await acceptTerms(page);
   await pickNames(page, 'lumen.kai', 'lumen-login-7');
@@ -571,11 +571,11 @@ test('a taken display name at register sends the person back to change their nam
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
-  await expect(page.locator('[data-part="register-error"]')).toContainText('That display name is taken.');
-  // Review F8: "Change your names" opens the screen of the name that was refused (the display name).
+  await expect(page.locator('[data-part="register-error"]')).toContainText('That Trade Tag is taken.');
+  // Review F8: "Change your names" opens the screen of the name that was refused (the Trade Tag).
   await page.click('[data-part="change-names"]');
-  await expect(page).toHaveURL(/\/setup\/display-name\?/);
-  await expect(page.locator('#display-name')).toHaveValue('lumen.kai');
+  await expect(page).toHaveURL(/\/setup\/trade-tag\?/);
+  await expect(page.locator('#trade-tag')).toHaveValue('lumen.kai');
   await page.click('[aria-label="Back"]');
   await expect(page).toHaveURL(/\/setup\/name\?/);
   await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
@@ -626,8 +626,8 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await at('setup-name');
   await page.fill('#uname', 'lumen-login-7');
   await page.click('[data-part="names-continue"]');
-  await at('setup-display-name');
-  await page.fill('#display-name', 'lumen.kai');
+  await at('setup-trade-tag');
+  await page.fill('#trade-tag', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
   await at('setup-login');
   await page.click('[data-part="method-continue"]');
@@ -671,13 +671,13 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
 
   // No more screens than the Setup boards (SetupPassword is the other branch of the login step),
   // plus G25's Log in and session length.
-  // The display name has its own screen after SetupUsername (design real-app review item 6: the
+  // The Trade Tag has its own screen after SetupUsername (design real-app review item 6: the
   // board's one private username, then the second name on its own step; its fields are on
   // SignupSecurity's "Your names" card), so it counts as one more board.
-  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'display name', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
+  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'Trade Tag', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
   const G25 = ['Login', 'SessionLength'];
   expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1 + G25.length);
-  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-display-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
+  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-trade-tag', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
   expect(s.requests).toContain('POST /v1/logout');
   expect(s.bodies['session-length']).toEqual([{ hours: 4 }]);
   expect(s.registered).toBe(true);
@@ -742,7 +742,7 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
   await page.route('**/v1/account/me', (r) =>
     accepted === null
       ? json({ error: 'terms-required', version: TERMS_VERSION }, 403)(r)
-      : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
+      : json({ tradeTag: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
   );
   await page.route('**/v1/account/terms', (r) => {
     accepted = JSON.parse(r.request().postData() ?? 'null');
@@ -998,7 +998,7 @@ test.describe('review fix round', () => {
       (s.bodies['webauthn-finish'] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
       s.registered = true;
       s.methods = ['passkey'];
-      return json({ displayName: 'lumen.kai' }, 201)(r);
+      return json({ tradeTag: 'lumen.kai' }, 201)(r);
     });
     await page.goto(`http://localhost:${process.env.X2F_E2E_PORT ?? 4317}/setup?returnTo=%2Fpost`);
     const cdp = await page.context().newCDPSession(page);
@@ -1024,7 +1024,7 @@ test.describe('review fix round', () => {
     await page.click('[data-part="key-continue"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(labels).toHaveLength(1);
-    expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', kind: 'passkey' }]);
+    expect(s.bodies['webauthn-start']).toEqual([{ tradeTag: 'lumen.kai', loginName: 'lumen-login-7', kind: 'passkey' }]);
     const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; deviceLabel: string; challengeId: string };
     expect(finish.challengeId).toBe('w1');
     expect(finish.acceptedTerms).toBe(TERMS_VERSION);
@@ -1055,18 +1055,18 @@ test.describe('review fix round', () => {
       if (tries === 1) return json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r);
       s.registered = true;
       s.methods = ['password'];
-      return json({ displayName: 'lumen.kai' }, 201)(r);
+      return json({ tradeTag: 'lumen.kai' }, 201)(r);
     });
     await toPassword(page);
     await page.click('[data-part="password-set"]');
     await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
     await acceptTerms(page);
-    // The names are kept (the private username, then the display name on its own screen); the
+    // The names are kept (the private username, then the Trade Tag on its own screen); the
     // person picks the method again.
     await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
     await page.click('[data-part="names-continue"]');
-    await expect(page.locator('#display-name')).toHaveValue('lumen.kai');
+    await expect(page.locator('#trade-tag')).toHaveValue('lumen.kai');
     await page.click('[data-part="display-continue"]');
     await chooseOnly(page, 'password');
     await page.click('[data-part=\"method-continue\"]');
@@ -1088,7 +1088,7 @@ test.describe('review fix round', () => {
       gets += 1;
       return json({ version: TERMS_VERSION })(r);
     });
-    await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
+    await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
     await page.route('**/v1/account/terms', (r) => {
       posts.push(JSON.parse(r.request().postData() ?? 'null'));
       return posts.length === 1 ? json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r) : r.fulfill({ status: 204 });
@@ -1124,7 +1124,7 @@ test.describe('review fix round', () => {
       return r.fulfill({ response: res, body });
     });
     await page.route('**/v1/terms', (r) => json({ version: serverVersion })(r));
-    await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
+    await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
     await page.route('**/v1/account/terms', (r) => {
       const body = JSON.parse(r.request().postData() ?? 'null') as { version?: string };
       posts.push(body);
@@ -1204,8 +1204,8 @@ test.describe('review fix round', () => {
     await page.fill('#uname', 'lumen-login-7');
     await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
     await page.click('[data-part="names-continue"]');
-    await described('display-name', 'display-name-help');
-    await page.fill('#display-name', 'lumen.kai');
+    await described('trade-tag', 'trade-tag-help');
+    await page.fill('#trade-tag', 'lumen.kai');
     await page.click('[data-part="display-continue"]');
     // Owner demo notes (12 Nov 2026): the login methods are checkboxes now, each its own tab stop,
     // ticked with Space, each linked to its description.

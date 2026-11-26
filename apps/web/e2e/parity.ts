@@ -298,7 +298,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'Step 2 of 5',
-      why: 'Owner demo note #199 (25 Nov 2026): the display-name screen after the username is "Step 2 of 5", so choosing the login methods reads "Step 3 of 5", one step with setting them up (the PGP, password and key boards already say "Step 3 of 5"); backup stays 4 and wallet 5. The board predates the display-name screen.',
+      why: 'Owner demo note #199 (25 Nov 2026): the trade-tag screen after the username is "Step 2 of 5", so choosing the login methods reads "Step 3 of 5", one step with setting them up (the PGP, password and key boards already say "Step 3 of 5"); backup stays 4 and wallet 5. The board predates the trade-tag screen.',
     },
     {
       text: 'Choose one for now. You can add others later in Settings.',
@@ -354,7 +354,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
   ],
   // Design real-app review item 6 (766747ea, owner Q54): this step now asks for the ONE private
-  // username, and the public display name has its own screen after it (DisplayName.tsx). The board
+  // username, and the public Trade Tag has its own screen after it (TradeTag.tsx). The board
   // still draws the old public username; it is not updated yet (the page's copy is for design).
   SetupUsername: [
     {
@@ -367,11 +367,11 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     {
       text: 'This is how traders see you. No email or phone number needed, now or ever.',
-      why: 'Item 6: the username here is private (owner notes #124 and #195: "You\'ll use this private username to sign in—nobody else will ever see it. …"); "This is how traders see you" moved to the display-name screen. The board predates item 6.',
+      why: 'Item 6: the username here is private (owner notes #124 and #195: "You\'ll use this private username to sign in—nobody else will ever see it. …"); "This is how traders see you" moved to the trade-tag screen. The board predates item 6.',
     },
     {
       text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
-      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6. Owner demo note #126 (23 Nov 2026, on /setup/name: "I want username changed to minimum of 8 characters"): the page says 8 to 20. Owner demo note #196 (25 Nov 2026, the advice he pasted): the rules are a live checklist ("8–20 characters", "Letters, numbers, dots, dashes and underscores only", "No spaces") and "Pick something that isn\'t your real name or used elsewhere." is plain help on its own.',
+      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the trade-tag screen, the name traders see. The board predates item 6. Owner demo note #126 (23 Nov 2026, on /setup/name: "I want username changed to minimum of 8 characters"): the page says 8 to 20. Owner demo note #196 (25 Nov 2026, the advice he pasted): the rules are a live checklist ("8–20 characters", "Letters, numbers, dots, dashes and underscores only", "No spaces") and "Pick something that isn\'t your real name or used elsewhere." is plain help on its own.',
     },
     {
       text: 'Username',

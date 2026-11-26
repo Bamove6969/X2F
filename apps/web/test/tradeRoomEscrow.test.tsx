@@ -158,7 +158,7 @@ describe('a team member’s device (Plan 2 Task 18, review I1/I2)', () => {
     storeConfirmed(CODE, STORED);
     vi.stubGlobal('fetch', vi.fn(async (url: string) =>
       url === '/v1/account/me'
-        ? jsonResponse({ kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } })
+        ? jsonResponse({ kind: 'trader', level: 'full', tradeTag: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } })
         : jsonResponse({ ...sellerView(), code: CODE })));
     refreshSession();
     try {

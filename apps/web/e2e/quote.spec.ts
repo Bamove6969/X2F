@@ -50,7 +50,7 @@ interface Seen {
 
 /** 50% above the market, the furthest an offer goes (owner F1); there are no fixed-price offers (owner Q1). */
 const ABOVE = { ...B.offer, id: 'offer-above', pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' };
-const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
+const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, tradeTag: 'mira.k' } };
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
@@ -60,7 +60,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
   await page.route('**/v1/account/me', (r) =>
     s.signedIn
-      ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'], ...(s.securityRating ? { securityRating: s.securityRating } : {}) } })
+      ? r.fulfill({ json: { tradeTag: 'viewer_1', ...INSIDE, methods: ['pgp'], ...(s.securityRating ? { securityRating: s.securityRating } : {}) } })
       : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
@@ -460,7 +460,7 @@ test.describe("the offer's bands on the quote", () => {
     const offerCard = page.locator('article.x2f-offer').first();
     // Batch 2's card has a row per unit; the poster's own (fiat here) is the band's range.
     const range = (await offerCard.locator('[data-part="range-fiat"] .x2f-offer__figures').innerText()).trim();
-    await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.displayName}` }).click();
+    await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.tradeTag}` }).click();
     await expect(page).toHaveURL(new RegExp(`/buy/${B.method.id}/${B.offer.id}`));
 
     // Right under "What you get".

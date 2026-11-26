@@ -31,8 +31,8 @@ export interface QuoteOffer {
   id: string;
   side: AdSide;
   currency: string;
-  /** Public fields only: the poster's display name (spec 6.1) and stage. */
-  poster: { displayName: string; stage: Stage };
+  /** Public fields only: the poster's Trade Tag (spec 6.1) and stage. */
+  poster: { tradeTag: string; stage: Stage };
   pricing: Pricing;
   /**
    * The range in the unit the poster set (owner, 8 Nov): that pair is exact and is the one the take

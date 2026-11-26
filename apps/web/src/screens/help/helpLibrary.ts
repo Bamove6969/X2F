@@ -107,7 +107,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'How do I create an account?',
     // Owner demo note #187 (25 Nov 2026): agreeing is a tick, no signature.
-    a: 'Tick the box to agree to the Terms, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
+    a: 'Tick the box to agree to the Terms, then choose a private username and a public Trade Tag. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
     sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:291 I have read and agree to the`],
   },
   {
@@ -115,19 +115,19 @@ const ENTRIES: readonly Entry[] = [
     topic: 'getting-started',
     q: 'Do I need to give my name, email or phone number?',
     // Owner demo note #187 (25 Nov 2026): no signature or name to agree to the Terms, just a tick.
-    a: 'X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your display name is shown to other traders, so pick one that does not identify you.',
+    a: 'X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your Trade Tag is shown to other traders, so pick one that does not identify you.',
     sources: [
       `${WEB}/setup/Terms.tsx:291 I have read and agree to the`,
       'apps/api/src/accounts.ts:342 absent → `null`',
-      `${SPEC}:215 The display name is separate and public`,
+      `${SPEC}:215 The Trade Tag is separate and public`,
     ],
   },
   {
-    id: 'username-display-name',
+    id: 'username-trade-tag',
     topic: 'getting-started',
-    q: 'What is the difference between my username and my display name?',
-    a: 'Your username is private: you use it to log in, and other traders never see it. Your display name is the public name other traders see on offers and trades.',
-    sources: [`${WEB}/setup/SetupFlow.tsx:5-6 the private username`, `${SPEC}:215 The display name is separate and public`],
+    q: 'What is the difference between my username and my Trade Tag?',
+    a: 'Your username is private: you use it to log in, and other traders never see it. Your Trade Tag is the public name other traders see on offers and trades.',
+    sources: [`${WEB}/setup/SetupFlow.tsx:5-6 the private username`, `${SPEC}:215 The Trade Tag is separate and public`],
   },
   {
     id: 'login-methods',
@@ -716,7 +716,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'privacy',
     q: 'What does X2F keep about me?',
     // Owner demo note #187 (25 Nov 2026): a trader gives no signature for the Terms, only the tick.
-    a: 'Your display name, your username stored only as a one-way code, and which version of the Terms you agreed to and when. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, and other public keys. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.',
+    a: 'Your Trade Tag, your username stored only as a one-way code, and which version of the Terms you agreed to and when. Your login methods: PGP keys kept whole as you gave them, whose user IDs may hold a name and email, and other public keys. Your trades with their payout addresses and your chats in encrypted form, until the trade self-destructs. X2F asks for no email or phone number.',
     sources: [
       `${SPEC}:215 Stored only as HMAC-SHA-256`,
       'apps/api/src/accounts.ts:342 absent → `null`',
@@ -806,7 +806,7 @@ const ENTRIES: readonly Entry[] = [
     id: 'who-sees-profile',
     topic: 'privacy',
     q: 'Who can see my profile?',
-    a: 'Anyone signed in to X2F can open your profile at /u/ followed by your display name, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.',
+    a: 'Anyone signed in to X2F can open your profile at /u/ followed by your Trade Tag, except a trader you blocked. It shows when you joined and whether you are online, your completed trades, your typical payment time, disputes won and lost, how much XMR you have traded if you chose to show it, your reviews with only their month and year and never who left them, the badges you show, and "Account protected with PGP" unless you hide that badge. You can also make a signed record of your trades under Settings: it stays private unless you show it on your profile, and only a copy you save can carry your PGP fingerprint, if you tick it.',
     sources: [
       'apps/web/src/App.tsx:288 path="/u/:name"',
       'apps/api/src/reputation/profile.ts:16-17 only a set-up trader (or a member of',
@@ -840,7 +840,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'privacy',
     q: 'What happens to my details when my account closes after 60 days?',
     // Owner demo note #187 (25 Nov 2026): the Terms signature sentence went with the trader's signature.
-    a: 'Your PGP keys are deleted, so you can use the same key on a new account. Your username and display name stay taken.',
+    a: 'Your PGP keys are deleted, so you can use the same key on a new account. Your username and Trade Tag stay taken.',
     sources: ['apps/api/src/accountInactivity.ts:24-25 keys are deleted so the person can reuse one', 'apps/api/src/accountInactivity.ts:36 INACTIVE_MS'],
     facts: ['inactiveDays'],
   },

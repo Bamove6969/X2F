@@ -22,7 +22,7 @@ export interface PublicReview {
 }
 
 export interface TraderProfile {
-  displayName: string;
+  tradeTag: string;
   self: boolean;
   /** "YYYY-MM". */
   memberSince: string;
@@ -76,7 +76,7 @@ function parseReview(r: unknown): PublicReview {
 
 export function parseProfile(raw: unknown): TraderProfile {
   const p = raw;
-  if (!isObj(p) || typeof p.displayName !== 'string' || typeof p.self !== 'boolean' || typeof p.memberSince !== 'string') fail('profile');
+  if (!isObj(p) || typeof p.tradeTag !== 'string' || typeof p.self !== 'boolean' || typeof p.memberSince !== 'string') fail('profile');
   if (typeof p.online !== 'boolean' || !(p.lastSeenAt === null || typeof p.lastSeenAt === 'string')) fail('presence');
   const s = p.stats;
   if (!isObj(s) || !isNum(s.completedTrades) || !numOrNull(s.positivePct) || !isNum(s.ratedReviews) || !isNum(s.reviewCount) || !numOrNull(s.typicalMinutes)) fail('stats');
@@ -88,7 +88,7 @@ export function parseProfile(raw: unknown): TraderProfile {
   if (!Array.isArray(p.imported) || !p.imported.every((l) => isObj(l) && typeof l.site === 'string' && isNum(l.overUsd))) fail('imported');
   if (!Array.isArray(p.reviews)) fail('reviews');
   return {
-    displayName: p.displayName,
+    tradeTag: p.tradeTag,
     self: p.self,
     memberSince: p.memberSince,
     online: p.online,

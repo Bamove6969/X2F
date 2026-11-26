@@ -8,7 +8,7 @@ import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 type Overview = Record<string, unknown>;
 function overview(over: Overview = {}): Overview {
   return {
-    displayName: 'nightowl',
+    tradeTag: 'nightowl',
     kind: 'trader',
     level: 'full',
     methods: ['totp'],

@@ -65,7 +65,7 @@ export class ApiClient {
 }
 
 export interface Trader {
-  displayName: string;
+  tradeTag: string;
   api: ApiClient;
   /** The trader's own payout wallet (a regtest wallet whose keys the spec holds). */
   wallet: Wallet;
@@ -89,11 +89,11 @@ export async function sql<T extends pg.QueryResultRow = pg.QueryResultRow>(text:
 export async function signUp(prefix: string, o: { vendor?: boolean } = {}): Promise<Trader> {
   const s = stack();
   const tag = randomBytes(3).toString('hex');
-  const displayName = `${prefix}_${tag}`;
+  const tradeTag = `${prefix}_${tag}`;
   const api = new ApiClient(s.origin);
   await api.ok('GET', '/v1/site');
   await api.ok('POST', '/v1/register/password', {
-    displayName,
+    tradeTag,
     loginName: `${prefix}-login-${tag}`,
     password: PASSWORD,
     deviceLabel: 'e2e',
@@ -104,10 +104,10 @@ export async function signUp(prefix: string, o: { vendor?: boolean } = {}): Prom
   const address = await wallet.getPrimaryAddress();
   await api.ok('POST', '/v1/wallets', { app: 'cake', label: 'Regtest wallet', address });
   if (o.vendor) {
-    const rows = await sql("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader' returning id", [displayName]);
-    if (rows.length !== 1) throw new Error(`could not make ${displayName} a vendor`);
+    const rows = await sql("update accounts set account_type = 'vendor', vendor_since = now() where trade_tag = $1 and account_type = 'trader' returning id", [tradeTag]);
+    if (rows.length !== 1) throw new Error(`could not make ${tradeTag} a vendor`);
   }
-  return { displayName, api, wallet, address };
+  return { tradeTag, api, wallet, address };
 }
 
 /** A browser context at `size` that is logged in as `t` (the sign-up's session cookie). */
@@ -125,7 +125,7 @@ export async function contextFor(browser: Browser, t: Trader, size: Size): Promi
   const page = await context.newPage();
   // X2F_E2E_DIAG=1: every console line (the escrow workers' too) and every node-proxy call, for debugging a run.
   if (process.env.X2F_E2E_DIAG) {
-    const who = t.displayName;
+    const who = t.tradeTag;
     page.on('console', (m) => console.log(`[${who} ${m.type()}] ${m.text().slice(0, 300)}`));
     page.on('pageerror', (e) => console.log(`[${who} pageerror] ${e.message.slice(0, 300)}`));
     context.on('request', (r) => {

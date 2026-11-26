@@ -61,10 +61,10 @@ describe('groupFingerprint', () => {
 
 describe('register errors', () => {
   it("maps FU-A's name refusals from the typed client and nothing else", () => {
-    // Owner Q54: the private login name is the "username", the public one the "display name".
-    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That display name is taken. Pick another.');
+    // Owner Q54: the private login name is the "username", the public one the "Trade Tag".
+    expect(nameError(new AuthApiError(409, 'trade-tag-taken'))).toBe('That Trade Tag is taken. Pick another.');
     expect(nameError(new AuthApiError(400, 'login-name-invalid'))).toBe('That username cannot be used. Pick another.');
-    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your display name must be different from your username.');
+    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your Trade Tag must be different from your username.');
     expect(nameError(new AuthApiError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
     expect(nameError(new ApiCallError(409, 'username-taken'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'password-weak'))).toBeNull();
@@ -120,7 +120,7 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     expect(setupError(new AuthApiError(503, 'busy'), fallback).text).toBe('X2F is busy right now. Try again in 1 minute.');
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });
+    expect(setupError(new AuthApiError(409, 'trade-tag-taken'), fallback)).toEqual({ text: 'That Trade Tag is taken. Pick another.', names: 'trade-tag' });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
   });
 });

@@ -178,7 +178,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   }, [refreshMarket]);
   const { signedIn, state, take } = useTake(offerId, onTakeRefused);
   const session = useSession();
-  const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
+  const myName = session.status === 'signed-in' ? ((session.me as { tradeTag?: string }).tradeTag ?? null) : null;
   // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
   // highly secure account (owner 17 Nov) is offered the new-address sheet; the API decides what an add does either way.
   const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
@@ -323,7 +323,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
     );
   }
 
-  const poster = o.poster.displayName;
+  const poster = o.poster.tradeTag;
   const posterName = <span data-username="">{poster}</span>;
   // Every fiat figure below is in the currency's minor units with its exponent (whole yen, 3-place dinars).
   const exponent = quoteExponent(o, marketNow);
@@ -590,7 +590,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         <WhatApplies role={copy.adSide === 'sell' ? 'buyer-taker' : 'seller-taker'} />
         {giftCard ? <GiftCardTerms role={giftRole} ticked={giftTicked} onChange={setGiftTicked} /> : null}
         {signedIn === true && myName !== null && myName !== poster ? (
-          <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
+          <BlockAction tradeTag={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
       </Main>
 

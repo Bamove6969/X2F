@@ -14,7 +14,7 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 
 const WINDOW_END = '2099-01-02T15:00:00.000Z';
 const me = (over: Record<string, unknown> = {}) => ({
-  displayName: 'nightowl', kind: 'trader', level: 'full', recoveryUntil: null, methods: ['passkey', 'pgp'], hasBackup: true, suggestions: [], termsCurrent: true, ...over,
+  tradeTag: 'nightowl', kind: 'trader', level: 'full', recoveryUntil: null, methods: ['passkey', 'pgp'], hasBackup: true, suggestions: [], termsCurrent: true, ...over,
 });
 const BURNED_TITLE = 'Your recovery code is now burned';
 const BURNED_BODY = 'The recovery code you just used will never work again. Go to Security settings for a new recovery code.';

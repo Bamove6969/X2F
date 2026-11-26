@@ -259,7 +259,7 @@ function view(): ReleaseTrade {
     role: 'seller',
     poster: 'seller',
     state: 'paid',
-    counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW.toISOString(), typicalMinutes: null, positivePct: null, badges: [], stage: 'building' },
+    counterparty: { tradeTag: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW.toISOString(), typicalMinutes: null, positivePct: null, badges: [], stage: 'building' },
     methodId: 'ZELLE',
     profile: PROFILE,
     amountAtomic: '1250000000000',

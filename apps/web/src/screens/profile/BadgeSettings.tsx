@@ -9,7 +9,7 @@
  * only write is a badge's visibility, and the screen shows what the server answered.
  */
 import { useEffect, useState } from 'react';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { BadgeChips, BadgeSeal, badgeFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
 import { chooseBadge, fetchBadgeSettings, type BadgeSettings as Settings, type Visibility } from './api.js';
@@ -21,7 +21,7 @@ const LEVELS: readonly Visibility[] = ['featured', 'hover', 'hidden'];
 
 export function BadgeSettings() {
   const session = useSession();
-  const name = session.status === 'signed-in' ? displayNameOf(session.me) : '';
+  const name = session.status === 'signed-in' ? tradeTagOf(session.me) : '';
   const [settings, setSettings] = useState<Settings | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

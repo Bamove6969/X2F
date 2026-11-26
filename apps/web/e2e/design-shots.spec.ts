@@ -87,7 +87,7 @@ const noEvents = (page: Page) => page.route('**/v1/events', (r) => r.fulfill({ s
 
 // ---- 01-13 New-device approval and the 24-hour hold (Plan 2 Tasks 16-17) ----------------------------
 
-const TRADER_ME = { displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true };
+const TRADER_ME = { tradeTag: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true };
 
 async function passwordLogin(page: Page): Promise<void> {
   await page.click('[data-method="password"]');
@@ -250,11 +250,11 @@ test('13 a change from a username-and-password login is staged: "Saved as a draf
 const CODE = 'Tq9vX2fInviteCodeAAAAAAAAAAAAAAAAAAAAAAA_-Z';
 const PGP_MESSAGE = '-----BEGIN PGP MESSAGE-----\n\nwcBMA0team\n-----END PGP MESSAGE-----\n';
 const FAKE_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEteam\n-----END PGP PUBLIC KEY BLOCK-----\n';
-const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
+const OWNER_ME = { tradeTag: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
 const memberMe = (roles: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles } });
-type Member = { id: string; displayName: string; roles: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
-const member = (id: string, displayName: string, roles: string[], status = 'active'): Member => ({
-  id, displayName, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
+type Member = { id: string; tradeTag: string; roles: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
+const member = (id: string, tradeTag: string, roles: string[], status = 'active'): Member => ({
+  id, tradeTag, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
 });
 const AUDIT = [
   { id: '4', at: '2026-10-30T10:03:00.000Z', memberId: 'm2', memberName: 'Basil', action: 'mark-paid', tradeCode: 'K7M2-9QXA-4FTR-8WPN', detail: {} },
@@ -278,7 +278,7 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
     const body = r.request().postDataJSON() as Record<string, unknown>;
     if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: body.abilities !== undefined ? 'team-invite-abilities' : 'team-invite' }, 403)(r);
     if (s.inviteAnswer) return json(s.inviteAnswer.body, s.inviteAnswer.status)(r);
-    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.displayName), (body.roles as string[] | undefined) ?? [], 'invited')];
+    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.tradeTag), (body.roles as string[] | undefined) ?? [], 'invited')];
     return json({ id: `m${s.members.length}`, invite: CODE, expiresAt: LATER }, 201)(r);
   });
 }
@@ -332,7 +332,7 @@ test('20 an invite from a one-proof login is refused (CantDoThat weak-session)',
 
 async function joinApi(page: Page, invite?: { status: number; body: unknown }): Promise<void> {
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
-  await page.route('**/v1/team/invite', json(invite?.body ?? { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/team/invite', json(invite?.body ?? { tradeTag: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
   await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER }));
   await page.route('**/v1/team/join/finish', json({ setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: LATER }, 201));
@@ -423,7 +423,7 @@ test("28-29 a member's trade room: waiting for the owner's device; a standing pr
 
 test("30 the owner's Devices list names a member's session", async ({ page }) => {
   await securityApi(page, {
-    me: { displayName: 'Calcium', member: null },
+    me: { tradeTag: 'Calcium', member: null },
     sessions: [
       { id: 's-own', deviceLabel: 'Pixel 8', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: true, member: null },
       { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
@@ -447,7 +447,7 @@ const myOffers = (): Offer[] => [
 ];
 
 async function myOffersApi(page: Page, s: { offers: Offer[]; refuseOn?: string }): Promise<void> {
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route('**/v1/account/offers', (r) => json(s.offers)(r));
   await page.route('**/v1/account/offers/status', (r) => {
     const body = r.request().postDataJSON() as { ids: string[]; status: 'live' | 'paused' };
@@ -551,7 +551,7 @@ async function stubChat(
     const path = url.pathname.replace(`/v1/chats/${chatId}`, '');
     const method = r.request().method();
     if (path === '' && method === 'GET') {
-      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: other }, tradeCode, disputeOpen: o.disputeOpen ?? false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
+      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: other }, tradeCode, disputeOpen: o.disputeOpen ?? false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
     }
     if (path === '/identity' && method === 'POST') {
       const body = r.request().postDataJSON() as { signPublic: string; boxPublic: string; proof: string };
@@ -617,7 +617,7 @@ async function openRoom(
   o: { warned?: boolean; chat?: string[]; me?: Record<string, unknown>; confirmations?: unknown; dispute?: unknown; url?: string } = {},
 ): Promise<Room> {
   const s: Room = { view };
-  await page.route('**/v1/account/me', json(o.me ?? { displayName: view.role === 'buyer' ? 'mira.k' : 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json(o.me ?? { tradeTag: view.role === 'buyer' ? 'mira.k' : 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/trades\/[^/]+(\/events)?$/, async (route) => {
     const req = route.request();
     if (req.method() === 'POST') {
@@ -629,7 +629,7 @@ async function openRoom(
   await page.route(/\/v1\/trades\/[^/]+\/confirmations$/, json(o.confirmations ?? { confirmations: 12, target: 10, payoutEnd: 'k3Fz' }));
   await page.route(/\/v1\/trades\/[^/]+\/dispute$/, o.dispute === undefined ? json({ error: 'not-found' }, 404) : json(o.dispute));
   await noEvents(page);
-  if (o.chat) await stubChat(page, view.code, view.role, view.counterparty.displayName, o.chat);
+  if (o.chat) await stubChat(page, view.code, view.role, view.counterparty.tradeTag, o.chat);
   await page.addInitScript(
     (f) => {
       window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic: f.amountAtomic, fiatCents: f.fiatCents, deal: { poster: 'seller', takeAmountAtomic: f.amountAtomic } };
@@ -649,7 +649,7 @@ async function openRoom(
 }
 
 const roomState = (page: Page, state: string) => expect(page.locator('main[data-screen="trade"]')).toHaveAttribute('data-trade-state', state);
-const SELLER_SECURED: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+const SELLER_SECURED: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, tradeTag: 'mira.k' } };
 const CHAT_LINES = ['Hi! Sending the Zelle payment now.', 'Memo has the trade code.'];
 
 test('36 BuyerPay while the escrow secures', async ({ page }) => {
@@ -764,7 +764,7 @@ test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async
   // The buyer's view of satoshi_ghost's trade (review 48: not mira.k), with the time-ran-out timeline in order.
   const ago = (min: number) => new Date(Date.parse(SERVER_NOW) - min * 60_000).toISOString();
   const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), closedAt: ago(600), txHash: 'ab'.repeat(32) });
-  const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
+  const v = { ...base, counterparty: { ...base.counterparty, tradeTag: 'satoshi_ghost' } };
   await openRoom(page, v);
   await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toBeVisible();
   await shot(page, '48-trade-buyer-refunded');
@@ -784,7 +784,7 @@ test('50 Task 20: the chat open on another device of the account', async ({ page
   const other = identity();
   const code = encodeURIComponent(PAY_SECURED.code);
   await page.route(`**/v1/trades/${code}/chat`, json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer' }));
-  await page.context().route('**/v1/chats/C7AT-2M9Q-XA4F-TR8W', json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: 'satoshi_ghost' }, tradeCode: PAY_SECURED.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-31T12:00:00.000Z', lastMessageAt: null }));
+  await page.context().route('**/v1/chats/C7AT-2M9Q-XA4F-TR8W', json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: 'satoshi_ghost' }, tradeCode: PAY_SECURED.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-31T12:00:00.000Z', lastMessageAt: null }));
   await page.addInitScript(() => {
     window.__x2fRealChat = true;
   });
@@ -865,7 +865,7 @@ const disputeTrade = (o: Record<string, unknown> = {}) => ({
   role: 'buyer',
   poster: 'seller',
   state: 'paid',
-  counterparty: { displayName: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+  counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
   paidAt: T('08:02'),
   confirmBy: T('09:32'),
   confirmWindowMin: 90,
@@ -889,7 +889,7 @@ const RULING = {
 };
 
 async function disputeApi(page: Page, trade: unknown, dispute?: unknown): Promise<void> {
-  await page.route('**/v1/account/me', json({ displayName: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 3, bestRate: null }] }));
   await page.route(`**/v1/trades/${BOARD.code}`, json(trade));
   await page.route(new RegExp(`/v1/trades/${BOARD.code}/(dispute|appeal)$`), dispute === undefined ? json({ error: 'not-found' }, 404) : json(dispute));
@@ -947,7 +947,7 @@ test('60 News', async ({ page }) => {
 });
 
 test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({ page }) => {
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
   await page.route('**/v1/offers?*', json([]));
   await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
@@ -973,30 +973,30 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
 
 async function blockApi(page: Page): Promise<void> {
   let blocks: string[] = [];
-  await page.route('**/v1/account/me', json({ displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] }));
   await page.route('**/v1/events', json({ error: 'not-authenticated' }, 401));
   await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
   await page.route('**/v1/price?*', (r) => {
     const currency = new URL(r.request().url()).searchParams.get('currency');
     return json({ currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr })(r);
   });
-  await page.route('**/v1/offers?*', (r) => json(blocks.includes(B.offer.poster.displayName) ? [] : [B.offer])(r));
+  await page.route('**/v1/offers?*', (r) => json(blocks.includes(B.offer.poster.tradeTag) ? [] : [B.offer])(r));
   await page.route('**/v1/wallets', json([...B.wallets]));
   await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
   await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0' }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
-      blocks = [(r.request().postDataJSON() as { displayName: string }).displayName, ...blocks];
+      blocks = [(r.request().postDataJSON() as { tradeTag: string }).tradeTag, ...blocks];
       return r.fulfill({ status: 204 });
     }
-    return json(blocks.map((displayName) => ({ displayName, blockedAt: '2026-10-29T10:00:00.000Z' })))(r);
+    return json(blocks.map((tradeTag) => ({ tradeTag, blockedAt: '2026-10-29T10:00:00.000Z' })))(r);
   });
 }
 
 test('64-65 block a trader from the quote; Blocked traders', async ({ page }) => {
   await blockApi(page);
   await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
-  await page.getByRole('button', { name: `Block ${B.offer.poster.displayName}` }).click();
+  await page.getByRole('button', { name: `Block ${B.offer.poster.tradeTag}` }).click();
   await expect(page.locator('[data-part="block-ask"]')).toBeVisible();
   await shot(page, '64-block-ask-on-quote');
   await page.locator('[data-part="block-confirm"]').click();
@@ -1035,13 +1035,13 @@ test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
  * listed under side=buy, as quote.spec.ts's MIRA_BUYS. The buyer quote uses the BuyQuote board's
  * sell ad (BOARD_BUY_QUOTE) as it is.
  */
-const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
+const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, tradeTag: 'mira.k' } };
 
 /** Every /v1 call PostOffer and the shell make, stubbed (a call nobody named answers 404). */
 async function postApi(page: Page): Promise<void> {
   await page.route('**/v1/**', json({ error: 'not-found' }, 404));
   await noEvents(page);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
   await page.route('**/v1/offers?*', json([]));
   await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));

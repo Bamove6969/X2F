@@ -2,8 +2,8 @@
 // name from crypto.getRandomValues that passes checkNewLoginName and trips no reserved-word or
 // look-alike rule in @x2f/accounts.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkNewDisplayName, checkNewLoginName } from '../src/screens/setup/names.js';
-import { ADJECTIVES, ANIMALS, randomBelow, randomLoginName, suggestDisplayNames, tracesBack } from '../src/screens/setup/randomName.js';
+import { checkNewTradeTag, checkNewLoginName } from '../src/screens/setup/names.js';
+import { ADJECTIVES, ANIMALS, randomBelow, randomLoginName, suggestTradeTags, tracesBack } from '../src/screens/setup/randomName.js';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -13,7 +13,7 @@ describe('randomLoginName (owner demo note #196)', () => {
     for (let i = 0; i < 1000; i++) {
       const name = randomLoginName();
       expect(checkNewLoginName(name).ok, name).toBe(true);
-      expect(checkNewDisplayName(name).ok, name).toBe(true);
+      expect(checkNewTradeTag(name).ok, name).toBe(true);
       expect(name.length).toBeGreaterThanOrEqual(8);
       expect(name.length).toBeLessThanOrEqual(20);
       expect(name).toMatch(/^[a-z]+_[a-z]+_[1-9][0-9]$/);
@@ -31,7 +31,7 @@ describe('randomLoginName (owner demo note #196)', () => {
       for (const b of ANIMALS)
         for (const n of [10, 99]) {
           const name = `${a}_${b}_${n}`;
-          expect(checkNewLoginName(name).ok && checkNewDisplayName(name).ok, name).toBe(true);
+          expect(checkNewLoginName(name).ok && checkNewTradeTag(name).ok, name).toBe(true);
         }
   });
 
@@ -53,14 +53,14 @@ describe('randomLoginName (owner demo note #196)', () => {
   });
 });
 
-describe('suggestDisplayNames (owner demo note #200)', () => {
-  it('gives distinct names that pass checkNewDisplayName (the reserved-word rule included) and differ from the login name', () => {
+describe('suggestTradeTags (owner demo note #200)', () => {
+  it('gives distinct names that pass checkNewTradeTag (the reserved-word rule included) and differ from the login name', () => {
     for (let i = 0; i < 300; i++) {
-      const out = suggestDisplayNames(3, 'midnight_otter_42');
+      const out = suggestTradeTags(3, 'midnight_otter_42');
       expect(out).toHaveLength(3);
       expect(new Set(out).size).toBe(3);
       for (const n of out) {
-        expect(checkNewDisplayName(n).ok, n).toBe(true);
+        expect(checkNewTradeTag(n).ok, n).toBe(true);
         expect(n.toLowerCase()).not.toBe('midnight_otter_42');
       }
     }
@@ -70,7 +70,7 @@ describe('suggestDisplayNames (owner demo note #200)', () => {
     for (const login of ['amber_otter_42', 'Amber_Otter_42', 'midnight_heron_10']) {
       const [adj, animal] = login.toLowerCase().split('_');
       for (let i = 0; i < 200; i++) {
-        for (const n of suggestDisplayNames(3, login)) {
+        for (const n of suggestTradeTags(3, login)) {
           const [a, b] = n.split('_');
           expect(a, `${login} -> ${n}`).not.toBe(adj);
           expect(b, `${login} -> ${n}`).not.toBe(animal);
@@ -100,6 +100,6 @@ describe('suggestDisplayNames (owner demo note #200)', () => {
       a[0] = seq[i++ % seq.length]!;
       return a;
     };
-    expect(suggestDisplayNames(1, 'Midnight_Otter_42', fake)).toEqual(['amber_badger_10']);
+    expect(suggestTradeTags(1, 'Midnight_Otter_42', fake)).toEqual(['amber_badger_10']);
   });
 });

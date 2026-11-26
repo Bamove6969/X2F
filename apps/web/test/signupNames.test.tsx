@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
 // Sign-up names (design real-app review item 6; design gaps Job 1; owner Q54, G6, G14): step 1
 // asks for ONE private username (the login name) with a live "is available" tick; the public
-// display name follows on its own screen. Against a stubbed API.
+// Trade Tag follows on its own screen. Against a stubbed API.
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECK_DELAY_MS } from '../src/screens/setup/availability.js';
-import { DisplayName } from '../src/screens/setup/DisplayName.js';
+import { TradeTag } from '../src/screens/setup/TradeTag.js';
 import { INITIAL, SetupContext, type SetupApi, type SetupState } from '../src/screens/setup/kit.js';
-import { checkNewDisplayName } from '../src/screens/setup/names.js';
+import { checkNewTradeTag } from '../src/screens/setup/names.js';
 import { tracesBack } from '../src/screens/setup/randomName.js';
 import { Username } from '../src/screens/setup/Username.js';
 import { fire, render } from './render.js';
@@ -70,7 +70,7 @@ function setup(state: Partial<SetupState> = {}) {
 function show(screen: 'username' | 'display', api: SetupApi) {
   return render(
     <MemoryRouter>
-      <SetupContext.Provider value={api}>{screen === 'username' ? <Username /> : <DisplayName />}</SetupContext.Provider>
+      <SetupContext.Provider value={api}>{screen === 'username' ? <Username /> : <TradeTag />}</SetupContext.Provider>
     </MemoryRouter>,
   ).host;
 }
@@ -146,7 +146,7 @@ describe('step 1: one private username with a live tick', () => {
       expect(byPart(host, 'name-status')?.textContent).toBe("We'll check it when you finish.");
       expect(byPart(host, 'name-status')?.getAttribute('data-tone')).toBe('neutral');
       fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
-      expect(api.go).toHaveBeenCalledWith('display-name');
+      expect(api.go).toHaveBeenCalledWith('trade-tag');
     }
   });
 
@@ -165,14 +165,14 @@ describe('step 1: one private username with a live tick', () => {
     expect(byPart(host, 'name-status')?.textContent).toBe('second.name is available');
   });
 
-  it('Continue keeps the private username and goes to the display name step', async () => {
+  it('Continue keeps the private username and goes to the Trade Tag step', async () => {
     const api = setup();
     const host = show('username', api);
     type(host.querySelector<HTMLInputElement>('#uname')!, 'Juniper.Oak');
     await wait(CHECK_DELAY_MS + 10);
     fire(byPart(host, 'names-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.update).toHaveBeenCalledWith({ loginName: 'Juniper.Oak', challenge: null });
-    expect(api.go).toHaveBeenCalledWith('display-name');
+    expect(api.go).toHaveBeenCalledWith('trade-tag');
   });
 
   it('Continue is disabled until the name passes the rules (owner demo note #196)', () => {
@@ -193,25 +193,25 @@ describe('step 1: one private username with a live tick', () => {
   });
 });
 
-describe('the display name step', () => {
+describe('the Trade Tag step', () => {
   it('previews what traders see and saves the public name', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
     expect(host.querySelectorAll('input').length).toBe(1);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, 'Lumen.Kai');
     expect(host.querySelector('[data-part="trader-preview"] .x2f-ident__name')?.textContent).toBe('Lumen.Kai');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
+    expect(api.update).toHaveBeenCalledWith({ tradeTag: 'Lumen.Kai', challenge: null });
     expect(api.go).toHaveBeenCalledWith('login');
   });
 
   it('must differ from the private username, ignoring case', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Juniper.Oak');
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, 'Juniper.Oak');
     // Owner demo note #219: Continue is disabled and the reason is said at once, as quiet help.
     expect(byPart<HTMLButtonElement>(host, 'display-continue')!.disabled).toBe(true);
-    expect(byPart(host, 'display-problem')?.textContent).toBe('Your display name must be different from your Login ID.');
+    expect(byPart(host, 'display-problem')?.textContent).toBe('Your Trade Tag must be different from your Login ID.');
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.go).not.toHaveBeenCalled();
   });
@@ -219,18 +219,18 @@ describe('the display name step', () => {
   it('refuses reserved words and wrong shapes in the board words', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    const input = host.querySelector<HTMLInputElement>('#display-name')!;
+    const input = host.querySelector<HTMLInputElement>('#trade-tag')!;
     const go = byPart<HTMLButtonElement>(host, 'display-continue')!;
     type(input, 'x2f-support');
     expect(go.disabled).toBe(true);
-    expect(byPart(host, 'display-problem')?.textContent).toBe('That display name is kept for X2F. Pick another.');
+    expect(byPart(host, 'display-problem')?.textContent).toBe('That Trade Tag is kept for X2F. Pick another.');
     // A length problem waits until the field is left (owner demo note #219: no nagging mid-word).
     type(input, 'ab');
     expect(go.disabled).toBe(true);
     expect(byPart(host, 'display-problem')).toBeNull();
     fire(input, new FocusEvent('focusout', { bubbles: true }));
-    expect(byPart(host, 'display-problem')?.textContent).toBe('Your display name needs 8 to 20 characters.');
-    expect(input.getAttribute('aria-describedby')).toContain('display-name-problem');
+    expect(byPart(host, 'display-problem')?.textContent).toBe('Your Trade Tag needs 8 to 20 characters.');
+    expect(input.getAttribute('aria-describedby')).toContain('trade-tag-problem');
     type(input, 'Lumen.Kai');
     expect(go.disabled).toBe(false);
     expect(byPart(host, 'display-problem')).toBeNull();
@@ -243,13 +243,13 @@ describe('the display name step', () => {
     const go = byPart<HTMLButtonElement>(host, 'display-continue')!;
     expect(go.disabled).toBe(true);
     expect(byPart(host, 'display-problem')).toBeNull();
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, 'Lumen.Kai');
     expect(go.disabled).toBe(false);
   });
 
-  it('makes no availability request (display names are checked when the account is made)', () => {
+  it('makes no availability request (Trade Tags are checked when the account is made)', () => {
     const host = show('display', setup({ loginName: 'juniper.oak' }));
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai');
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, 'Lumen.Kai');
     expect(checks()).toEqual([]);
   });
 });
@@ -275,28 +275,28 @@ describe('note #108: no spaces in the names', () => {
     expect(byPart(host, 'name-space')).toBeNull();
   });
 
-  it('the display name step says so inline, shows no preview, and does not continue', () => {
+  it('the Trade Tag step says so inline, shows no preview, and does not continue', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    const input = host.querySelector<HTMLInputElement>('#display-name')!;
+    const input = host.querySelector<HTMLInputElement>('#trade-tag')!;
     type(input, 'Lumen K');
-    expect(byPart(host, 'display-space')?.textContent).toBe('Remove the spaces. A display name has no spaces.');
+    expect(byPart(host, 'display-space')?.textContent).toBe('Remove the spaces. A Trade Tag has no spaces.');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(byPart(host, 'display-space')).not.toBeNull();
     // Owner demo note #219: Continue is disabled, so the click does nothing.
     expect(byPart<HTMLButtonElement>(host, 'display-continue')!.disabled).toBe(true);
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
     expect(api.go).not.toHaveBeenCalled();
-    expect(host.querySelector('#display-name-help')?.textContent).toContain('with no spaces');
+    expect(host.querySelector('#trade-tag-help')?.textContent).toContain('with no spaces');
   });
 
   it('spaces at the ends are trimmed as before, not refused', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
-    type(host.querySelector<HTMLInputElement>('#display-name')!, '  Lumen.Kai  ');
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, '  Lumen.Kai  ');
     expect(byPart(host, 'display-space')).toBeNull();
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(api.update).toHaveBeenCalledWith({ displayName: 'Lumen.Kai', challenge: null });
+    expect(api.update).toHaveBeenCalledWith({ tradeTag: 'Lumen.Kai', challenge: null });
   });
 });
 
@@ -367,16 +367,16 @@ describe('notes #196 and #197: the private login ID step', () => {
     expect(input.getAttribute('placeholder')).toBe('e.g. midnight_otter_42');
   });
 
-  it('the display name step uses the same strong label, still reading "Display name"', () => {
-    const label = show('display', setup({ loginName: 'juniper.oak' })).querySelector('label[for="display-name"]')!;
-    expect(label.textContent).toBe('Display name');
+  it('the Trade Tag step uses the same strong label, still reading "Trade Tag"', () => {
+    const label = show('display', setup({ loginName: 'juniper.oak' })).querySelector('label[for="trade-tag"]')!;
+    expect(label.textContent).toBe('Trade Tag');
     expect(label.classList.contains('x2f-start__field-label')).toBe(true);
   });
 });
 
-// Owner demo note #199 (25 Nov 2026): the display-name screen is the second step, and it calls the
+// Owner demo note #199 (25 Nov 2026): the trade-tag screen is the second step, and it calls the
 // private name "your Login ID".
-describe('note #199: the display-name step', () => {
+describe('note #199: the trade-tag step', () => {
   it('says "Step 2 of 5" with two bar segments lit; the username step stays step 1', () => {
     const host = show('display', setup({ loginName: 'juniper.oak' }));
     expect(host.querySelector('.x2f-start__step')?.textContent).toBe('Step 2 of 5');
@@ -410,11 +410,11 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     expect(name().textContent).toBe('nightowl_44');
     expect(card.getAttribute('data-example-name')).toBe('true');
     for (const bad of ['Lumen', 'Lumen Kai12', 'x2f-support']) {
-      type(host.querySelector<HTMLInputElement>('#display-name')!, bad);
+      type(host.querySelector<HTMLInputElement>('#trade-tag')!, bad);
       expect(name().textContent, bad).toBe('nightowl_44');
     }
-    // Exactly as typed once it passes the display-name rules.
-    type(host.querySelector<HTMLInputElement>('#display-name')!, 'Lumen.Kai$');
+    // Exactly as typed once it passes the trade-tag rules.
+    type(host.querySelector<HTMLInputElement>('#trade-tag')!, 'Lumen.Kai$');
     expect(name().textContent).toBe('Lumen.Kai$');
     expect(name().hasAttribute('data-username')).toBe(true);
     expect(card.hasAttribute('data-example-name')).toBe(false);
@@ -442,7 +442,7 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     ]);
   });
 
-  it('offers 3 suggestions that pass the display-name rules and differ from the Login ID; a tap fills the box; ↻ draws new ones', () => {
+  it('offers 3 suggestions that pass the trade-tag rules and differ from the Login ID; a tap fills the box; ↻ draws new ones', () => {
     const api = setup({ loginName: 'juniper.oak' });
     const host = show('display', api);
     const chips = () => [...host.querySelectorAll<HTMLButtonElement>('[data-part="display-suggestion"]')];
@@ -450,13 +450,13 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     expect(first).toHaveLength(3);
     expect(new Set(first).size).toBe(3);
     for (const n of first) {
-      expect(checkNewDisplayName(n).ok, n).toBe(true);
+      expect(checkNewTradeTag(n).ok, n).toBe(true);
       expect(n.toLowerCase()).not.toBe('juniper.oak');
       expect(tracesBack(n, 'juniper.oak'), n).toBe(false);
     }
     for (const c of chips()) expect(c.hasAttribute('data-primary')).toBe(false);
     fire(chips()[1]!, new MouseEvent('click', { bubbles: true }));
-    expect(host.querySelector<HTMLInputElement>('#display-name')!.value).toBe(first[1]);
+    expect(host.querySelector<HTMLInputElement>('#trade-tag')!.value).toBe(first[1]);
     expect(host.querySelector('[data-part="trader-preview"] .x2f-ident__name')?.textContent).toBe(first[1]);
     const refresh = byPart(host, 'display-suggestions-refresh')!;
     expect(refresh.getAttribute('aria-label')).toBe('More suggestions');
@@ -464,13 +464,13 @@ describe('notes #199 and #200: preview, suggestions, permanence, inline Continue
     fire(refresh, new MouseEvent('click', { bubbles: true }));
     expect(chips()).toHaveLength(3);
     fire(byPart(host, 'display-continue')!, new MouseEvent('click', { bubbles: true }));
-    expect(api.update).toHaveBeenCalledWith({ displayName: first[1], challenge: null });
+    expect(api.update).toHaveBeenCalledWith({ tradeTag: first[1], challenge: null });
   });
 
-  it('says the display name is permanent, in the owner\'s sentence, under the preview', () => {
+  it('says the Trade Tag is permanent, in the owner\'s sentence, under the preview', () => {
     const host = show('display', setup({ loginName: 'juniper.oak' }));
     const note = byPart(host, 'display-permanent')!;
-    expect(note.textContent).toBe("Your display name is permanent—pick a handle you'll be happy building your trading reputation under.");
+    expect(note.textContent).toBe("Your Trade Tag is permanent—pick a handle you'll be happy building your trading reputation under.");
     expect(byPart(host, 'trader-preview')!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

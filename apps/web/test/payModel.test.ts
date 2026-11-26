@@ -11,7 +11,7 @@ const view = (over: Partial<TradeView> = {}): TradeView =>
     role: 'buyer',
     poster: 'seller',
     state: 'securing',
-    counterparty: { displayName: 'satoshi_ghost', completedTrades: 412, online: true, lastSeenAt: null, typicalMinutes: 6, positivePct: 99, badges: [] },
+    counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 412, online: true, lastSeenAt: null, typicalMinutes: 6, positivePct: 99, badges: [] },
     receivedAtomic: '1250000000000',
     confirmations: 3,
     releasable: false,

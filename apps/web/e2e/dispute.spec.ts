@@ -1,8 +1,8 @@
 // Trader-side disputes (Plan 3 Task 27; boards DisputeOpen, DisputeRoom, DisputeRuling). The API is
 // stubbed per test with page.route, in the shapes of apps/api/src/trades/view.ts (TradeView) and
 // apps/api/src/disputes/routes.ts (the dispute view). Times are the boards' (Thursday 15 October
-// 2026, shown in UTC). Display names only: the counterparty and the moderator are the names the
-// API sends, which are public display names.
+// 2026, shown in UTC). Trade Tags only: the counterparty and the moderator are the names the
+// API sends, which are public Trade Tags.
 import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
@@ -21,7 +21,7 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     role,
     poster: 'seller',
     state: 'paid',
-    counterparty: { displayName: role === 'buyer' ? 'satoshi_ghost' : 'mira.k', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { tradeTag: role === 'buyer' ? 'satoshi_ghost' : 'mira.k', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: 'ZELLE',
     profile: { id: 'ZELLE', whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' },
     amountAtomic: '1250000000000',
@@ -102,7 +102,7 @@ interface Stubs {
 
 async function stub(page: Page, s: Stubs): Promise<Request[]> {
   const posts: Request[] = [];
-  await page.route('**/v1/account/me', json({ displayName: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 3, bestRate: null }] }));
   await page.route(`**/v1/trades/${CODE}`, json(s.trade));
   await page.route(new RegExp(`/v1/trades/${CODE}/(dispute|appeal)$`), (r) => {
@@ -330,7 +330,7 @@ for (const viewport of PHONE_VIEWPORTS) {
         await a.scrollIntoViewIfNeeded();
         await expect(a).toBeInViewport({ ratio: 1 });
       }
-      // Display names are shown exactly as set.
+      // Trade Tags are shown exactly as set.
       for (const n of await page.locator('[data-username]').allTextContents()) expect(['satoshi_ghost', 'mira.k']).toContain(n);
     });
   }

@@ -32,7 +32,7 @@ test.afterAll(async () => {
   await server?.close();
 });
 
-const ME = { displayName: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
+const ME = { tradeTag: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
 const ZELLE = {
   id: 'ZELLE',
   name: 'Zelle',
@@ -50,7 +50,7 @@ const VIEW = {
   role: 'seller',
   poster: 'seller',
   state: 'paid',
-  counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+  counterparty: { tradeTag: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
   methodId: 'ZELLE',
   profile: ZELLE,
   amountAtomic: '1250000000000',

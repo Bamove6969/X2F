@@ -131,7 +131,7 @@ describe('Feedback form', () => {
     globalThis.fetch = realFetch;
   });
 
-  const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
+  const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 
   async function open(path: string, answer: { status: number; json: unknown }, o: { signedIn?: boolean } = {}) {
     const sent: unknown[] = [];

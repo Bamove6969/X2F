@@ -15,11 +15,11 @@ import { SUGGESTED_WALLETS, WALLET_COPY, Wallet } from '../src/screens/setup/Wal
 import { RATING_WORDS, WELCOME_COPY, WELCOME_LINKS, Welcome, leavePath, methodRows, securityRating, startTradingPath } from '../src/screens/setup/Welcome.js';
 import { render } from './render.js';
 
-const me = vi.hoisted(() => ({ current: { displayName: 'Lumen.K', methods: ['pgp'] } as Record<string, unknown> }));
+const me = vi.hoisted(() => ({ current: { tradeTag: 'Lumen.K', methods: ['pgp'] } as Record<string, unknown> }));
 vi.mock('../src/session/useSession.js', () => ({
   useSession: () => ({ status: 'signed-in', me: me.current }),
   refreshSession: () => undefined,
-  displayNameOf: (m: { displayName?: string } | null) => m?.displayName ?? '',
+  tradeTagOf: (m: { tradeTag?: string } | null) => m?.tradeTag ?? '',
 }));
 
 const ADDRESS = `4${'9'.repeat(90)}k3Fz`;
@@ -179,7 +179,7 @@ describe('/setup/welcome (owner #97)', () => {
 
   let posts: string[] = [];
   async function showWelcome(methods: string[], wallets: WalletEntry[], state: Partial<SetupState> = {}, securityRating?: string) {
-    me.current = { displayName: 'Lumen.K', methods, ...(securityRating !== undefined ? { securityRating } : {}) };
+    me.current = { tradeTag: 'Lumen.K', methods, ...(securityRating !== undefined ? { securityRating } : {}) };
     posts = [];
     vi.stubGlobal('fetch', async (u: string, init?: RequestInit) => {
       if (init?.method === 'POST') {

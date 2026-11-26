@@ -33,11 +33,11 @@ export type Party = 'buyer' | 'seller';
 
 /**
  * The other trader as the API shows them (apps/api/src/traders/summary.ts `TraderSummary`, Task 4). The name
- * is the PUBLIC display name (FU-A); the private login name is never sent. Read it only through
+ * is the PUBLIC Trade Tag (FU-A); the private login name is never sent. Read it only through
  * `publicName`.
  */
 export interface TraderSummary {
-  displayName: string;
+  tradeTag: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -56,9 +56,9 @@ export interface TraderSummary {
   disputes?: { won: number; lost: number };
 }
 
-/** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
-export function publicName(t: Pick<TraderSummary, 'displayName'>): string {
-  return t.displayName;
+/** The counterparty's public Trade Tag; the one way screens read it (a login name is never sent or shown). */
+export function publicName(t: Pick<TraderSummary, 'tradeTag'>): string {
+  return t.tradeTag;
 }
 
 /**

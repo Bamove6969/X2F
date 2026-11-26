@@ -4,12 +4,12 @@
  * built-in lists of neutral words. The randomness is crypto.getRandomValues, never Math.random.
  *
  * Every pick is 8-20 characters (the longest adjective is 8 letters and the longest animal 7, so at
- * most 19) and is checked against `checkNewLoginName`; it is also kept clear of the display name's
- * reserved words and their look-alikes (`checkNewDisplayName`), though a login name has none, so a
+ * most 19) and is checked against `checkNewLoginName`; it is also kept clear of the Trade Tag's
+ * reserved words and their look-alikes (`checkNewTradeTag`), though a login name has none, so a
  * pick can never read as staff. A pick that fails either is drawn again. The usual availability
  * check then runs on it like on a typed name.
  */
-import { checkNewDisplayName, checkNewLoginName } from './names.js';
+import { checkNewTradeTag, checkNewLoginName } from './names.js';
 
 export const ADJECTIVES = [
   'amber', 'autumn', 'bold', 'brave', 'bright', 'calm', 'clever', 'cobalt', 'coral', 'crisp',
@@ -39,7 +39,7 @@ export function randomBelow(n: number, random: RandomFill = (a) => crypto.getRan
 
 /** Whether a generated name may be offered: a valid new login name that reads as nothing reserved. */
 export function acceptableRandomName(name: string): boolean {
-  return checkNewLoginName(name).ok && checkNewDisplayName(name).ok;
+  return checkNewLoginName(name).ok && checkNewTradeTag(name).ok;
 }
 
 /** One random login name, "adjective_animal_NN" with NN from 10 to 99, drawn again until acceptable. */
@@ -54,20 +54,20 @@ export function randomLoginName(random?: RandomFill): string {
 
 /**
  * Display-name suggestions (owner demo note #200, 25 Nov 2026): `count` different picks from the
- * same lists that pass the display-name rules (`checkNewDisplayName`, which holds the reserved-word
+ * same lists that pass the trade-tag rules (`checkNewTradeTag`, which holds the reserved-word
  * and look-alike rule `isReservedNewName` of @x2f/accounts) and differ, ignoring case, from the
  * private login name (`avoid`), as checkNames requires. The API still checks the staff names and
  * whether a name is taken when the account is made.
  *
- * The display name "cannot be traced back to your login username" (owner demo note #195), so a
+ * The Trade Tag "cannot be traced back to your login username" (owner demo note #195), so a
  * suggestion that shares a word with the login name is skipped (`tracesBack`): amber_otter_42 must
  * never be offered amber_otter_43, nor amber_heron_17.
  */
-export function suggestDisplayNames(count: number, avoid: string, random?: RandomFill): string[] {
+export function suggestTradeTags(count: number, avoid: string, random?: RandomFill): string[] {
   const out: string[] = [];
   while (out.length < count) {
     const name = randomLoginName(random);
-    if (!tracesBack(name, avoid) && !out.includes(name) && checkNewDisplayName(name).ok) out.push(name);
+    if (!tracesBack(name, avoid) && !out.includes(name) && checkNewTradeTag(name).ok) out.push(name);
   }
   return out;
 }
@@ -78,7 +78,7 @@ function wordsOf(name: string): string[] {
 }
 
 /**
- * Whether a suggested display name would point back at the login name: the same name ignoring
+ * Whether a suggested Trade Tag would point back at the login name: the same name ignoring
  * case, a word in common (the adjective or the animal of a generated login name, or any letter run
  * of a typed one), or the login name's longest letter run anywhere inside it (from 3 letters, so
  * "otter" in "otters" counts, but a lone "a" or "jo" does not empty the lists).

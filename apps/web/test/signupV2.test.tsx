@@ -59,7 +59,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function setup(state: Partial<SetupState> = {}): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'Lumen.K', loginName: 'juniper.oak', ...state },
+    state: { ...INITIAL, terms: { version: 'v1' }, tradeTag: 'Lumen.K', loginName: 'juniper.oak', ...state },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),

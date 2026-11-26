@@ -47,7 +47,7 @@ import { Name } from './TradeTimeline.js';
  */
 export function glanceWarning(
   view: Pick<TradeScreenProps['view'], 'role' | 'state' | 'paidAt' | 'fiatCents' | 'amountAtomic'> & {
-    counterparty: Pick<TradeScreenProps['view']['counterparty'], 'displayName'>;
+    counterparty: Pick<TradeScreenProps['view']['counterparty'], 'tradeTag'>;
   },
   escrow: Pick<TradeScreenProps['escrow'], 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'amountAtomic'>,
 ): string | null {

@@ -20,7 +20,7 @@ interface Call {
 }
 
 const PROFILE: TraderProfile = {
-  displayName: 'mira.k',
+  tradeTag: 'mira.k',
   self: false,
   memberSince: '2025-03',
   online: true,
@@ -48,7 +48,7 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   calls = [];
-  profiles = { 'mira.k': PROFILE, me: { ...PROFILE, displayName: 'me', self: true, recordPublic: false, pgpProtected: false } };
+  profiles = { 'mira.k': PROFILE, me: { ...PROFILE, tradeTag: 'me', self: true, recordPublic: false, pgpProtected: false } };
   badges = {
     earned: [{ id: 'new', level: 'featured' }, { id: 'veteran-1', level: 'featured' }, { id: 'pgp', level: 'hover' }],
     featured: ['new', 'veteran-1'],
@@ -60,7 +60,7 @@ beforeEach(() => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'me' });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'me' });
     const m = /^\/v1\/traders\/([^/]+)$/.exec(input);
     if (m) {
       const p = profiles[decodeURIComponent(m[1]!)];
@@ -137,7 +137,7 @@ describe('Profile', () => {
     expect(host.querySelectorAll('[data-primary]')).toHaveLength(0);
   });
 
-  it('my own profile (the Profile tab) uses my display name and links to badges, my offers and the record', async () => {
+  it('my own profile (the Profile tab) uses my Trade Tag and links to badges, my offers and the record', async () => {
     const { host } = at('/profile');
     await settle();
     expect(calls.map((c) => c.url)).toContain('/v1/traders/me');
@@ -155,7 +155,7 @@ describe('Profile', () => {
     const { host } = at('/u/nobody');
     await settle();
     expect(host.textContent).toContain('No trader has that name.');
-    profiles.quiet = { ...PROFILE, displayName: 'quiet', stats: { ...PROFILE.stats, positivePct: null, typicalMinutes: null, disputes: { won: 0, lost: 0 } } };
+    profiles.quiet = { ...PROFILE, tradeTag: 'quiet', stats: { ...PROFILE.stats, positivePct: null, typicalMinutes: null, disputes: { won: 0, lost: 0 } } };
     const q = at('/u/quiet');
     await settle();
     expect(part(q.host, 'disputes')?.textContent).toBe('Disputes: none');

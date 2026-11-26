@@ -13,7 +13,7 @@ type CatalogEntry = { id: string; name: string; group: string; legalReview?: str
 const ROWS = (JSON.parse(readFileSync(`${ROOT}data/payment-methods.json`, 'utf8')) as { methods: CatalogEntry[] }).methods
   .filter((m) => m.legalReview === undefined)
   .map((m) => ({ id: m.id, name: m.name, group: m.group, giftCard: false, offers: 0, bestRate: null }));
-const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
+const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 const THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

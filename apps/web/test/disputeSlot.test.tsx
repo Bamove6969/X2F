@@ -78,7 +78,7 @@ describe('Task 27 registers its slots in the trade room', () => {
 });
 
 describe('DisputeSlot', () => {
-  it('shows the dispute room from GET …/dispute only, with the public display name, never fetching the trade', async () => {
+  it('shows the dispute room from GET …/dispute only, with the public Trade Tag, never fetching the trade', async () => {
     const { host } = render(
       <MemoryRouter>
         <DisputeSlot {...props(disputedView())} />
@@ -86,7 +86,7 @@ describe('DisputeSlot', () => {
     );
     await settle();
     expect(host.textContent).toContain('In dispute');
-    expect(host.querySelector('[data-username]')?.textContent).toBe(sellerView().counterparty.displayName);
+    expect(host.querySelector('[data-username]')?.textContent).toBe(sellerView().counterparty.tradeTag);
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
     expect(urls.length).toBeGreaterThan(0);
     // The dispute record, and the room's chat (Task 20's POST /v1/trades/:code/chat); never the trade itself.
@@ -106,7 +106,7 @@ describe('DisputeSlot', () => {
       </MemoryRouter>,
     );
     await settle();
-    const name = v.counterparty.displayName;
+    const name = v.counterparty.tradeTag;
     const paid = [...host.querySelectorAll('button')].find((b) => b.textContent === "I've paid");
     expect(paid?.disabled).toBe(true);
     // Design's words (ea2a9ca8), COPY-UNSIGNED.
@@ -395,7 +395,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(keys.at(-1)).toBe(`Refund sent to ${S}`);
     // The result never names them (the trade header's "Buying from …" is the room's title, not the result).
     for (const part of ['refunded-hero', 'refunded-what', 'refunded-dispute']) {
-      expect(host.querySelector(`[data-part="${part}"]`)?.textContent, part).not.toContain(sellerView().counterparty.displayName);
+      expect(host.querySelector(`[data-part="${part}"]`)?.textContent, part).not.toContain(sellerView().counterparty.tradeTag);
     }
     // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
     for (const [k, val] of facts) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
@@ -444,7 +444,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   });
 
   it('the buyer\'s own cancel, done: board Refunded variant=buyer-cancelled (a neutral CANCELLED chip, "You cancelled this trade"), never "Refunded"', () => {
-    const counterparty = { ...sellerView().counterparty, displayName: 'satoshi_ghost' };
+    const counterparty = { ...sellerView().counterparty, tradeTag: 'satoshi_ghost' };
     const { host } = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded({ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY), counterparty }))} />

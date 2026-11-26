@@ -32,7 +32,7 @@ beforeEach(() => {
           kind: 'trader',
           level: 'full',
           termsCurrent: true,
-          displayName: 'Calcium',
+          tradeTag: 'Calcium',
           methods: ['pgp', 'passkey'],
           accountType: 'vendor',
           member: isMember ? { name: 'Aurora', roles: ['trades'] } : null,

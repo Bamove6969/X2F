@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * The events `GET /v1/events` sends (apps/api/src/events/bus.ts). Names are public display names.
+ * The events `GET /v1/events` sends (apps/api/src/events/bus.ts). Names are public Trade Tags.
  */
 export type LiveEvent =
   | { type: 'trade'; code: string; state: string }

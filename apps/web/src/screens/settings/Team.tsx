@@ -208,7 +208,7 @@ export function Team() {
       setLogMember('');
       // Everyone who can be in the log: current members and anyone already in it (a removed member stays).
       const who = new Map<string, string>();
-      for (const m of t.members) who.set(m.id, m.displayName);
+      for (const m of t.members) who.set(m.id, m.tradeTag);
       for (const e of l) if (!who.has(e.memberId)) who.set(e.memberId, e.memberName);
       setLogWho([...who].map(([id, name]) => ({ id, name })));
       setState('ready');
@@ -239,8 +239,8 @@ export function Team() {
     if (isConfirmAbort(e)) return;
     const c = cantDoOf(e);
     if (c !== null) setCantDo(c);
-    else if (e instanceof AuthApiError && (e.code === 'display-name-invalid' || e.code === 'display-name-reserved')) setError(C.nameInvalid);
-    else if (e instanceof AuthApiError && e.code === 'display-name-taken') setError(C.nameTaken);
+    else if (e instanceof AuthApiError && (e.code === 'trade-tag-invalid' || e.code === 'trade-tag-reserved')) setError(C.nameInvalid);
+    else if (e instanceof AuthApiError && e.code === 'trade-tag-taken') setError(C.nameTaken);
     else setError(C.saveFailed);
   };
 
@@ -266,13 +266,13 @@ export function Team() {
         setError(P.pickBox);
         return;
       }
-      const displayName = name.trim();
+      const tradeTag = name.trim();
       const r = await withConfirm(
-        teamInviteAbilitiesAction(displayName, abilities),
-        (confirmToken) => authApi.inviteMember({ displayName, abilities, confirmToken }),
+        teamInviteAbilitiesAction(tradeTag, abilities),
+        (confirmToken) => authApi.inviteMember({ tradeTag, abilities, confirmToken }),
         prove,
       );
-      setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
+      setLink({ name: tradeTag, url: inviteLink(window.location.origin, r.invite) });
       setCopied(false);
       setName('');
       await load();
@@ -288,7 +288,7 @@ export function Team() {
       }
       await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
       setEditing(null);
-      setSaid(P.boxesSaved(m.displayName));
+      setSaid(P.boxesSaved(m.tradeTag));
       await load();
     });
 
@@ -301,14 +301,14 @@ export function Team() {
       }
       await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
       setLimits(null);
-      setSaid(C.limitsSaved(m.displayName));
+      setSaid(C.limitsSaved(m.tradeTag));
       await load();
     });
 
   const remove = (m: TeamMember) =>
     run(async () => {
       await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
-      setSaid(C.removed(m.displayName));
+      setSaid(C.removed(m.tradeTag));
       await load();
     });
 
@@ -402,9 +402,9 @@ export function Team() {
             ) : null}
             <ul className="x2f-list" data-part="member-list">
               {members.map((m) => (
-                <li className="x2f-list__row" key={m.id} data-member={m.displayName} data-status={m.status}>
+                <li className="x2f-list__row" key={m.id} data-member={m.tradeTag} data-status={m.status}>
                   <span className="x2f-list__label">
-                    <span data-username="">{m.displayName}</span>
+                    <span data-username="">{m.tradeTag}</span>
                     <br />
                     <span className="x2f-list__time">
                       {boxesLine(m, cat)} · {C.status[m.status]}
@@ -436,7 +436,7 @@ export function Team() {
                   ) : (
                     <Button
                       variant="quiet"
-                      aria-label={P.changeBoxes(m.displayName)}
+                      aria-label={P.changeBoxes(m.tradeTag)}
                       aria-disabled={cat === null}
                       // Job 1c: the member's stored boxes as the API sends them (a member moved from the
                       // old roles holds what migration 360 mapped them to, `ROLE_ABILITIES`).
@@ -454,11 +454,11 @@ export function Team() {
                       </Button>
                     </div>
                   ) : (
-                    <Button variant="quiet" aria-label={C.changeLimits(m.displayName)} onClick={() => setLimits(draftOf(m))} data-part="edit-limits">
+                    <Button variant="quiet" aria-label={C.changeLimits(m.tradeTag)} onClick={() => setLimits(draftOf(m))} data-part="edit-limits">
                       {C.limitsButton}
                     </Button>
                   )}
-                  <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.displayName)} onClick={() => void remove(m)} data-part="remove-member">
+                  <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.tradeTag)} onClick={() => void remove(m)} data-part="remove-member">
                     {C.remove}
                   </Button>
                 </li>
@@ -499,10 +499,10 @@ export function Team() {
                 aria-invalid={nameSpaced ? true : undefined}
                 onChange={(e) => setName(e.target.value)}
               />
-              {/* Owner demo note #108: a member's display name holds no spaces (the API refuses one too). */}
+              {/* Owner demo note #108: a member's Trade Tag holds no spaces (the API refuses one too). */}
               {nameSpaced ? (
                 <p className="x2f-error" id="team-name-space" data-part="team-name-space">
-                  {spaceProblem('display name')}
+                  {spaceProblem('Trade Tag')}
                 </p>
               ) : null}
               <p className="x2f-note" id="team-name-hint">

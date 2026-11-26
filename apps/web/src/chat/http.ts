@@ -13,7 +13,7 @@ const ID = /^(0|[1-9][0-9]{0,17})$/;
 /** Reads `GET /v1/chats/:chat` (the fields the engine needs). */
 export function parseChatView(v: unknown): ChatApiView | null {
   if (!isRecord(v) || (v.role !== 'buyer' && v.role !== 'seller')) return null;
-  const cp = isRecord(v.counterparty) && typeof v.counterparty.displayName === 'string' ? v.counterparty.displayName : null;
+  const cp = isRecord(v.counterparty) && typeof v.counterparty.tradeTag === 'string' ? v.counterparty.tradeTag : null;
   return {
     role: v.role,
     counterparty: cp,

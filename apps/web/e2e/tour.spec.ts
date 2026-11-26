@@ -337,7 +337,7 @@ test('a computer screen (1239x675, demo note #99): each stop scrolls its target 
 
 test('Settings, Help: "Take the tour again", reading "Carry on the tour" once left half done; and the welcome screen', async ({ page }) => {
   await page.route('**/v1/account/me', (r) =>
-    r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], member: null } }),
+    r.fulfill({ json: { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], member: null } }),
   );
   await page.route('**/v1/account/methods', (r) => r.fulfill({ json: [] }));
   await page.route('**/v1/account/sessions', (r) => r.fulfill({ json: [] }));

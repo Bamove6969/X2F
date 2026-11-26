@@ -76,7 +76,7 @@ export function boardSellOffers(now: Date = new Date()) {
     {
       id: 'offer-mira',
       poster: {
-        displayName: 'mira.k',
+        tradeTag: 'mira.k',
         completedTrades: 212,
         online: true,
         lastSeenAt: now.toISOString(),
@@ -94,7 +94,7 @@ export function boardSellOffers(now: Date = new Date()) {
     {
       id: 'offer-nightowl',
       poster: {
-        displayName: 'nightowl_44',
+        tradeTag: 'nightowl_44',
         completedTrades: 58,
         online: false,
         lastSeenAt: new Date(now.getTime() - 2 * HOUR_MS - 5 * 60_000).toISOString(),
@@ -112,7 +112,7 @@ export function boardSellOffers(now: Date = new Date()) {
     {
       id: 'offer-first',
       poster: {
-        displayName: 'first_trade_ty',
+        tradeTag: 'first_trade_ty',
         completedTrades: 0,
         online: true,
         lastSeenAt: now.toISOString(),
@@ -178,7 +178,7 @@ export function boardBuyOffers(now: Date = new Date()) {
     {
       id: 'offer-satoshi',
       poster: {
-        displayName: 'satoshi_ghost',
+        tradeTag: 'satoshi_ghost',
         completedTrades: 340,
         online: true,
         lastSeenAt: now.toISOString(),
@@ -196,7 +196,7 @@ export function boardBuyOffers(now: Date = new Date()) {
     {
       id: 'offer-kettle',
       poster: {
-        displayName: 'kettle.moss',
+        tradeTag: 'kettle.moss',
         completedTrades: 96,
         online: false,
         lastSeenAt: new Date(now.getTime() - 40 * 60_000 - 20_000).toISOString(),
@@ -214,7 +214,7 @@ export function boardBuyOffers(now: Date = new Date()) {
     {
       id: 'offer-lowtide',
       poster: {
-        displayName: 'lowtide_rx',
+        tradeTag: 'lowtide_rx',
         completedTrades: 12,
         online: true,
         lastSeenAt: now.toISOString(),

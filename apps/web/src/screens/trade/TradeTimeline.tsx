@@ -8,7 +8,7 @@ import { counterpartyLine, timelineSteps, type StepKey } from './payModel.js';
 import { publicName, type TradeView } from './payTypes.js';
 import './pay.css';
 
-/** The other trader's public display name, marked for parity (never text-transformed). */
+/** The other trader's public Trade Tag, marked for parity (never text-transformed). */
 export function Name({ view }: { view: Pick<TradeView, 'counterparty'> }) {
   return <span data-username="">{publicName(view.counterparty)}</span>;
 }

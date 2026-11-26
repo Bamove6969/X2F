@@ -31,7 +31,7 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     // unlock. Conservative default while the owner's 'trades-release' question is open: an assigned
     // member's device holds a copy to read, never imports it into an escrow store, and never runs the
     // escrow (MemberRoom; the API's member-cannot-sign stays). When the owner answers yes, wire the
-    // member's device into the escrow (the chat label "<lead display name> Assistant N", proof,
+    // member's device into the escrow (the chat label "<lead Trade Tag> Assistant N", proof,
     // release), drop the 'member-cannot-sign' words if no longer reachable, and change this check.
     expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
     expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);

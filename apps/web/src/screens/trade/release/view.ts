@@ -5,7 +5,7 @@ import type { UseEscrow } from '../../../escrow/useEscrow.js';
 /**
  * The fields of Task 22's `TradeView` (`GET /v1/trades/:code`, apps/web/src/api/trade.ts) that
  * SellerConfirm and Released read. `fee` exists only in the ad poster's view; the other trader is
- * shown only through `publicName(counterparty)`, the PUBLIC display name (FU-A).
+ * shown only through `publicName(counterparty)`, the PUBLIC Trade Tag (FU-A).
  */
 export type ReleaseTrade = Pick<
   TradeView,

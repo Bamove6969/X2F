@@ -94,7 +94,7 @@ import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type T
 import { memberOf } from '../../session/member.js';
 import { SessionTraderNotes } from '../settings/TraderNotes.js';
 import { useResumeSync } from '../../session/syncFirst.js';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { CourtesySheet } from '../quote/CourtesySheet.js';
@@ -253,7 +253,7 @@ export function TradeRoom() {
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
   // Owner p7-2: "Do not show me this warning again" belongs to the signed-in user (confirmSkip.ts).
-  const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  const confirmUser = session.status === 'signed-in' ? tradeTagOf(session.me) : null;
   useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
   if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
@@ -332,7 +332,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         {view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
       </div>
       {/* Job 1c (owner S-094, p7-8): the account's notes on the counterparty, as the member's boxes allow. */}
-      <SessionTraderNotes displayName={publicName(view.counterparty)} />
+      <SessionTraderNotes tradeTag={publicName(view.counterparty)} />
     </main>
   );
 }
@@ -415,7 +415,7 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
             {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
             {broken ? null : <SelfDestructNotice view={view} />}
             {/* Job 1c (owner S-094, p7-8): the account's private notes on the counterparty. */}
-            {broken ? null : <SessionTraderNotes displayName={publicName(view.counterparty)} />}
+            {broken ? null : <SessionTraderNotes tradeTag={publicName(view.counterparty)} />}
           </>
         }
         side={

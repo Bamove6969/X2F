@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', async (url: string) => {
     if (url === '/v1/account/me') {
       return json(200, {
-        displayName: 'Lumen.K',
+        tradeTag: 'Lumen.K',
         loginNameSet: true,
         kind: 'trader',
         level: 'full',
@@ -59,7 +59,7 @@ function mountAt(initialEntry: string) {
 describe('setup flow multi-method checklist order (#27, #30)', () => {
   it('redirects /setup/backup, /setup/wallet, /setup/welcome and later method steps to the next ticked method until all chosen methods are done', async () => {
     writePendingSignup({
-      displayName: 'Lumen.K',
+      tradeTag: 'Lumen.K',
       method: 'pgp',
       methods: ['pgp', 'security-key', 'passkey', 'totp'],
       done: ['pgp'],
@@ -83,7 +83,7 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
 
     for (const { done, expectedScreen } of steps) {
       writePendingSignup({
-        displayName: 'Lumen.K',
+        tradeTag: 'Lumen.K',
         method: 'pgp',
         methods: ['pgp', 'security-key', 'passkey', 'totp'],
         done,
@@ -97,11 +97,11 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
 
   it('marks pgp done when PgpChallenge verify succeeds so nextStep advances to the next ticked method before Continue (prevents /setup/pgp-key Back redirect loop)', async () => {
     vi.stubGlobal('fetch', async (url: string) => {
-      if (url === '/v1/register/pgp/finish') return json(201, { displayName: 'Lumen.K' });
+      if (url === '/v1/register/pgp/finish') return json(201, { tradeTag: 'Lumen.K' });
       if (url === '/v1/pgp/signing-key') return json(200, { fingerprint: '3f2a9c417b0ed5a261c80e4b92d71f6ac3b80d15', publicKey: '' });
       if (url === '/v1/account/me') {
         return json(200, {
-          displayName: 'Lumen.K',
+          tradeTag: 'Lumen.K',
           loginNameSet: true,
           kind: 'trader',
           level: 'full',
@@ -117,7 +117,7 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
     let current: SetupState = {
       ...INITIAL,
       terms: { version: 'v1' },
-      displayName: 'Lumen.K',
+      tradeTag: 'Lumen.K',
       loginName: 'juniper.oak',
       method: 'pgp',
       methods: ['pgp', 'security-key', 'totp'],

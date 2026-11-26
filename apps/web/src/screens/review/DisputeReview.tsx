@@ -11,7 +11,7 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { fetchProfile, type PublicReview } from '../profile/api.js';
 import { PROFILE_COPY } from '../profile/profileCopy.js';
@@ -46,7 +46,7 @@ function ReviewSummary({ review }: { review: PublicReview }) {
 export function DisputeReview({ send = disputeReview }: { send?: (id: string, reason: string) => Promise<void> }) {
   const { id = '' } = useParams();
   const session = useSession();
-  const name = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  const name = session.status === 'signed-in' ? tradeTagOf(session.me) : null;
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);

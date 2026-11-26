@@ -47,7 +47,7 @@ describe('OwnerOnly screen guard', () => {
               kind: 'trader',
               level: 'full',
               termsCurrent: true,
-              displayName: 'lead_owner',
+              tradeTag: 'lead_owner',
               member: null,
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
@@ -85,7 +85,7 @@ describe('OwnerOnly screen guard', () => {
               kind: 'trader',
               level: 'full',
               termsCurrent: true,
-              displayName: 'team_account',
+              tradeTag: 'team_account',
               member: {
                 name: 'helper_bob',
                 roles: ['trades'],

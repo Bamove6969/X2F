@@ -24,7 +24,7 @@ function json(status: number, body: unknown): Response {
 
 // The tab pages wait for the session to know whether this is the owner or a team member (main's
 // order #2 B1 / M3, kept through the tabs): an owner's session here; securityMember.test.tsx has the member's.
-const ME = { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['password'], accountType: 'vendor', pendingChanges: null, member: null };
+const ME = { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['password'], accountType: 'vendor', pendingChanges: null, member: null };
 
 beforeEach(() => {
   refreshSession();

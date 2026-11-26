@@ -17,7 +17,7 @@ async function stubApi(page: Page, o: { signedIn: boolean }): Promise<Seen> {
   const seen: Seen = { blocks: [], posts: [], deletes: [] };
   await page.route('**/v1/account/me', (r) =>
     o.signedIn
-      ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] } })
+      ? r.fulfill({ json: { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] } })
       : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/events', (r) => r.fulfill({ status: 401, json: { error: 'not-authenticated' } }));
@@ -29,18 +29,18 @@ async function stubApi(page: Page, o: { signedIn: boolean }): Promise<Seen> {
     return r.fulfill({ json: { currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr } });
   });
   // The real API leaves out a blocked poster's offers (apps/api/test/blocks.test.ts).
-  await page.route('**/v1/offers?*', (r) => r.fulfill({ json: seen.blocks.includes(B.offer.poster.displayName) ? [] : [B.offer] }));
+  await page.route('**/v1/offers?*', (r) => r.fulfill({ json: seen.blocks.includes(B.offer.poster.tradeTag) ? [] : [B.offer] }));
   await page.route('**/v1/wallets', (r) => (o.signedIn ? r.fulfill({ json: [...B.wallets] }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } })));
   await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
   await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
-      const body = r.request().postDataJSON() as { displayName: string };
+      const body = r.request().postDataJSON() as { tradeTag: string };
       seen.posts.push(body);
-      seen.blocks = [body.displayName, ...seen.blocks.filter((n) => n !== body.displayName)];
+      seen.blocks = [body.tradeTag, ...seen.blocks.filter((n) => n !== body.tradeTag)];
       return r.fulfill({ status: 204 });
     }
-    return r.fulfill({ json: seen.blocks.map((displayName) => ({ displayName, blockedAt: '2026-10-29T10:00:00.000Z' })) });
+    return r.fulfill({ json: seen.blocks.map((tradeTag) => ({ tradeTag, blockedAt: '2026-10-29T10:00:00.000Z' })) });
   });
   await page.route('**/v1/account/blocks/*', (r) => {
     const name = decodeURIComponent(new URL(r.request().url()).pathname.split('/').pop()!);
@@ -52,7 +52,7 @@ async function stubApi(page: Page, o: { signedIn: boolean }): Promise<Seen> {
 }
 
 const BUY = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}`;
-const poster = B.offer.poster.displayName;
+const poster = B.offer.poster.tradeTag;
 
 for (const viewport of PHONE_VIEWPORTS) {
   test.describe(`block on a ${viewport} phone`, () => {
@@ -76,7 +76,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       expect(await page.locator('[data-primary]').count()).toBe(1);
       await page.locator('[data-part="block-confirm"]').click();
       await expect(page.locator('[data-part="block-done"]')).toContainText(`You blocked ${poster}.`);
-      expect(seen.posts).toEqual([{ displayName: poster }]);
+      expect(seen.posts).toEqual([{ tradeTag: poster }]);
       // The offer is gone for them: Trade is off.
       await expect(page.locator('[data-primary]')).toBeDisabled();
 

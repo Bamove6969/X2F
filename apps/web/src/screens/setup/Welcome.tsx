@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
-import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
+import { tradeTagOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { Logo } from '../../ui/Logo.js';
@@ -322,7 +322,7 @@ export function Welcome() {
     );
   }
 
-  const name = displayNameOf(me) || state.displayName;
+  const name = tradeTagOf(me) || state.tradeTag;
   const c = checklist(me, wallets, state);
   const rating = securityRating(me, state);
   const rows = methodRows(me, state);

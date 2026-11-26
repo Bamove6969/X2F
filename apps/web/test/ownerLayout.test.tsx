@@ -49,7 +49,7 @@ describe('screenName: the name beside the logo, one per route', () => {
       ['/login', 'Log in'], ['/login/backup', 'Use a backup'], ['/session-length', 'Session length'],
       ['/setup', 'Create account'], ['/setup/pgp-key', 'Create account'],
       // Owner demo note #147 (23 Nov 2026): every sign-up step has its own name (COPY-UNSIGNED).
-      ['/setup/name', 'Create account'], ['/setup/display-name', 'Create account'], ['/setup/login', 'Create account'],
+      ['/setup/name', 'Create account'], ['/setup/trade-tag', 'Create account'], ['/setup/login', 'Create account'],
       ['/setup/pgp-code', 'Create account'], ['/setup/password', 'Create account'], ['/setup/authenticator', 'Create account'],
       ['/setup/security-key', 'Create account'], ['/setup/passkey', 'Create account'], ['/setup/backup', 'Create account'],
       ['/setup/wallet', 'Create account'], ['/setup/welcome', 'Welcome'], ['/setup/nowhere', 'Create account'], ['/terms', 'Terms'], ['/team/join', 'Join a team'],
@@ -166,7 +166,7 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
   // Review 12 Nov, L4: the same page is read logged out and logged in, so it says the right thing to
   // each, and only a signed-in reader gets links behind the door. A team member has member-level
   // Settings (alarm and idle reminder), so it gets the Settings link too (rail-members r3 review, M1).
-  const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
+  const FULL = { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
   const page = (path: string) =>
     render(
       <MemoryRouter initialEntries={[path]}>

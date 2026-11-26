@@ -42,7 +42,7 @@ test('logged out, News never opens: the front door (the Landing board) takes the
 
 test('newest first with dates, all new, then seen on the next visit', async ({ page }) => {
   const s = await stubNews(page, ITEMS);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   // The heading shows before the list loads (failed once under load): wait for the items.
@@ -65,7 +65,7 @@ test('newest first with dates, all new, then seen on the next visit', async ({ p
 
 test('after login, unseen news opens first and Continue goes on', async ({ page }) => {
   await stubNews(page, ITEMS);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
   await page.route('**/v1/login/password', json({ status: 'ok' }));
   await page.goto('/login?returnTo=%2Fwallets');
   await page.click('[data-method="password"]');

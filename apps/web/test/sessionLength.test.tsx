@@ -42,7 +42,7 @@ const T0 = Date.parse('2026-11-02T12:00:00Z');
 const info = (o: Partial<SessionInfo> = {}): SessionInfo => ({
   lengthHours: 4, choices: [2, 4, 8, 12], expiresAt: new Date(T0 + 4 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(T0).toISOString(), ...o,
 });
-const ME = { displayName: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true };
+const ME = { tradeTag: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true };
 
 beforeEach(() => {
   calls = [];

@@ -34,7 +34,7 @@ beforeEach(() => {
       const url = String(input).split('?')[0]!;
       if (url === '/v1/account/me') {
         return json(200, {
-          kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['pgp', 'totp'], accountType: 'vendor',
+          kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['pgp', 'totp'], accountType: 'vendor',
           member: { name: 'Aurora', chatLabel: 'Calcium Assistant 1', abilities, preset: null, roles: rolesOf() },
         });
       }

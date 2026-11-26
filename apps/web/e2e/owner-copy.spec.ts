@@ -12,7 +12,7 @@ test.use({ viewport: { width: 443, height: 794 } });
 async function stub(page: Page, o: { methods: string[]; session: boolean }) {
   const now = Date.now();
   await page.route('**/v1/account/me', json({
-    displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: o.methods, hasBackup: true, suggestions: [], termsCurrent: true,
+    tradeTag: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: o.methods, hasBackup: true, suggestions: [], termsCurrent: true,
     ...(o.session ? { session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: new Date(now + 2 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(now).toISOString() } } : {}),
   }));
   await page.route('**/v1/wallets', json([{ id: 'w', app: 'cake', label: 'Wallet 1', address: ADDRESS, addressEnd: 'k3Fz', usableFrom: '2026-10-25T00:00:00.000Z', usable: true }]));

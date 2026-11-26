@@ -1,7 +1,7 @@
 // Job 1c (J-10; spec 6.7; owner S-094, p7-8): the team's permission catalogue and the account's
 // notes on traders, as the web calls them. The catalogue (`GET /v1/team/permissions`,
 // apps/api/src/team/abilities.ts `catalogueView`) is the only list of boxes the web knows: nothing
-// here copies it. Notes: `GET /v1/account/notes/:displayName`, `POST /v1/account/notes`,
+// here copies it. Notes: `GET /v1/account/notes/:tradeTag`, `POST /v1/account/notes`,
 // `DELETE /v1/account/notes/:id` (apps/api/src/team/notes.ts). Both are parsed strictly, so a
 // renamed field fails loudly instead of showing a wrong box.
 import { api } from '../../api/client.js';
@@ -166,8 +166,8 @@ export function parseNote(raw: unknown): TraderNote {
   return { id: r.id, text: r.text, by: r.by, byLead: r.byLead, at: r.at };
 }
 
-export async function fetchNotes(displayName: string, signal?: AbortSignal): Promise<TraderNote[]> {
-  const raw = await api<unknown>(`/v1/account/notes/${encodeURIComponent(displayName)}`, signal ? { signal } : {});
+export async function fetchNotes(tradeTag: string, signal?: AbortSignal): Promise<TraderNote[]> {
+  const raw = await api<unknown>(`/v1/account/notes/${encodeURIComponent(tradeTag)}`, signal ? { signal } : {});
   if (!Array.isArray(raw)) throw new Error('notes: not a list');
   return raw.map(parseNote);
 }

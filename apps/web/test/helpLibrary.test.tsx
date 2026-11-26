@@ -376,7 +376,7 @@ describe('the help library content', () => {
     expect(QUESTIONS.find((q) => q.id === 'member-chat')!.a).toMatch(/^Not yet\./);
     // The per-payment-method pay windows are placeholders (owner p11-29): no 90 minutes, 3 hours or the like.
     expect(all).not.toMatch(/\b90 minutes\b|\b3 hours\b/);
-    // Review B1: X2F keeps names (the display name, PGP user IDs), so no answer says it keeps no name.
+    // Review B1: X2F keeps names (the Trade Tag, PGP user IDs), so no answer says it keeps no name.
     expect(all).not.toMatch(/keeps no name|asks for no name|no name, email/i);
     // Review B2: the receiver of the trade's XMR pays the network fee, so nobody gets "the full trade amount".
     expect(all).not.toMatch(/full trade amount/i);
@@ -606,7 +606,7 @@ describe('the help page', () => {
   it('logged in or out, the library is the same and nothing on it is a primary action', () => {
     const out = at('/help');
     expect(out.querySelectorAll('[data-primary]')).toHaveLength(0);
-    state.session = { status: 'signed-in', me: { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null } };
+    state.session = { status: 'signed-in', me: { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null } };
     const inside = at('/help');
     expect(shownIds(inside)).toEqual(shownIds(out));
     expect(inside.querySelector('[data-part="help-back"]')!.getAttribute('href')).toBe('/sell');

@@ -1,6 +1,6 @@
 /**
  * The sign-up calls of Getting started (spec 6.1, Plan 2 register routes with FU-A's names). Every
- * register call takes the public `displayName` and the private `loginName` (they must differ) and
+ * register call takes the public `tradeTag` and the private `loginName` (they must differ) and
  * carries the Terms version the person accepted on the first screen (`acceptedTerms`, Plan 2 R10).
  * No signature: a trader agrees with the tick alone (owner demo note #187, 25 Nov 2026).
  * All of them go through the typed client (`authApi`).
@@ -11,7 +11,7 @@ import { authApi, deviceLabel } from '../auth/authApi.js';
 import { KEY_UNAVAILABLE, refusalText } from '../auth/refusals.js';
 
 export interface Names {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
 }
 
@@ -23,7 +23,7 @@ export interface TermsAcceptance {
 }
 
 export function registerPgpStart(names: Names, publicKey: string): Promise<RegisterPgpStart> {
-  return authApi.registerPgpStart({ displayName: names.displayName, loginName: names.loginName, publicKey });
+  return authApi.registerPgpStart({ tradeTag: names.tradeTag, loginName: names.loginName, publicKey });
 }
 
 export async function registerPgpFinish(challengeId: string, code: string, terms: TermsAcceptance): Promise<void> {
@@ -32,7 +32,7 @@ export async function registerPgpFinish(challengeId: string, code: string, terms
 
 /** A passkey or security key: the browser's ceremony between the start and the finish. Answers the new credential's id (to name it). */
 export async function registerWebAuthn(names: Names, kind: WebAuthnKind, terms: TermsAcceptance): Promise<{ credentialId: string }> {
-  const { credentialId } = await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), terms.version);
+  const { credentialId } = await registerWithWebAuthn(authApi, { tradeTag: names.tradeTag, loginName: names.loginName }, kind, deviceLabel(), terms.version);
   return { credentialId };
 }
 
@@ -43,15 +43,15 @@ export function errorCode(e: unknown): string | null {
 }
 
 /** Codes that mean the names must change (FU-A's register refusals): back to the names screen. */
-// Owner Q54: the private login name is the "username"; the public one is the "display name".
+// Owner Q54: the private login name is the "username"; the public one is the "Trade Tag".
 const NAME_ERRORS: Record<string, string> = {
-  'display-name-taken': 'That display name is taken. Pick another.',
-  'display-name-reserved': 'That display name is kept for X2F. Pick another.',
+  'trade-tag-taken': 'That Trade Tag is taken. Pick another.',
+  'trade-tag-reserved': 'That Trade Tag is kept for X2F. Pick another.',
   // not-a-refusal: an input check on the names typed
-  'display-name-invalid': 'That display name cannot be used. Pick another.',
+  'trade-tag-invalid': 'That Trade Tag cannot be used. Pick another.',
   'login-name-invalid': 'That username cannot be used. Pick another.', // not-a-refusal: an input check
   'names-unavailable': 'Those names cannot be used. Pick others.', // not-a-refusal: an input check
-  'names-same': 'Your display name must be different from your username.',
+  'names-same': 'Your Trade Tag must be different from your username.',
 };
 
 /** The sentence for a refused name, or `null` when the error is not about the names. */
@@ -71,8 +71,8 @@ export const KEY_IN_USE = 'That key is already used by another X2F account. Use 
 /** A refused setup call as the screen shows it; `names` and `keyInUse` add their links (RegisterError). */
 export interface SetupError {
   text: string;
-  /** The step whose name to change: the display name's own screen, or the username's (review F8). */
-  names?: 'name' | 'display-name';
+  /** The step whose name to change: the Trade Tag's own screen, or the username's (review F8). */
+  names?: 'name' | 'trade-tag';
   keyInUse?: true;
   /** 409 `key-unavailable` at the finish (a key on the ban list, never named as such): link to the key screen only. */
   keyRefused?: true;
@@ -92,7 +92,7 @@ function minutes(seconds: number | undefined): string {
 export function setupError(e: unknown, fallback: string, o: { expired?: string } = {}): SetupError {
   const names = nameError(e);
   const code = errorCode(e);
-  if (names !== null) return { text: names, names: code !== null && code.startsWith('display-name-') ? 'display-name' : 'name' };
+  if (names !== null) return { text: names, names: code !== null && code.startsWith('trade-tag-') ? 'trade-tag' : 'name' };
   if (code === 'key-in-use') return { text: KEY_IN_USE, keyInUse: true };
   if (code === 'key-unavailable') return { text: KEY_UNAVAILABLE, keyRefused: true };
   if (e instanceof AuthApiError || e instanceof ApiCallError) {
