@@ -1,3 +1,4 @@
+import type { PayrollWallet } from './staff/payrollWallet.js';
 import fastifyCookie from '@fastify/cookie';
 import { accountLienRoutes } from './disputes/lienRoutes.js';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
@@ -110,6 +111,12 @@ export interface Deps {
    * Without it a proof is answered 503 `node-unavailable`, never accepted.
    */
   txProof?: TxProofCheck;
+  /**
+   * Owner 26 Nov 2026: X2F's hot payroll wallet (staff/payrollWallet.ts, `X2F_PAYROLL_WALLET_RPC_URL`).
+   * It pays staff at clock-out and sweeps its excess to the fee wallet. Without it payouts wait
+   * `waiting-send` and a due sweep moves nothing.
+   */
+  payrollWallet?: PayrollWallet;
 }
 
 declare module 'fastify' {

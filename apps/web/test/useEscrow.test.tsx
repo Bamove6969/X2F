@@ -133,8 +133,8 @@ describe('worker protocol', () => {
   });
 
   it('the worker config fails closed when a value is missing', () => {
-    const env = { VITE_MONERO_NETWORK: 'stagenet', VITE_MOD_SIGNING_PUBLIC: 'ab'.repeat(32), VITE_FEE_WALLET: '5Fee', VITE_RELAY_URL: 'wss://r', VITE_NODE_PROXY_URL: 'https://n' };
-    expect(workerConfig(env)).toMatchObject({ network: 'stagenet', feeWallet: '5Fee' });
+    const env = { VITE_MONERO_NETWORK: 'stagenet', VITE_MOD_SIGNING_PUBLIC: 'ab'.repeat(32), VITE_FEE_WALLET: '5Fee', VITE_PAYROLL_WALLET: '5Payroll', VITE_RELAY_URL: 'wss://r', VITE_NODE_PROXY_URL: 'https://n' };
+    expect(workerConfig(env)).toMatchObject({ network: 'stagenet', feeWallet: '5Fee', payrollWallet: '5Payroll' });
     for (const k of Object.keys(env)) expect(() => workerConfig({ ...env, [k]: '' })).toThrow();
     expect(() => workerConfig({ ...env, VITE_MONERO_NETWORK: 'testnet' })).toThrow();
   });

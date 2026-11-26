@@ -308,9 +308,13 @@ describe('GET /v1/trades/:code/dispute', () => {
       ruledAt: at(2 * 60 * MIN).toISOString(),
       appealUntil: at(50 * 60 * MIN).toISOString(),
       destination: { walletApp: 'cake', addressEnd: sides.buyerPayout!.slice(-6) },
+      executedAt: null,
     });
     const theirs = (await seller.browser.get(dispute(t.code))).json() as { ruling: Record<string, unknown> };
     expect(theirs.ruling.destination).toBeNull();
+    // Owner 26 Nov: once the payout ran, both sides see when ("Sent to …").
+    await deps.db.query('update disputes set executed_at = $2, executed_round = 1 where code = $1', [t.code, at(3 * 60 * MIN)]);
+    for (const b of [buyer, seller]) expect(((await b.browser.get(dispute(t.code))).json() as { ruling: Record<string, unknown> }).ruling.executedAt).toBe(at(3 * 60 * MIN).toISOString());
     for (const body of [mine, theirs]) {
       expect(JSON.stringify(body)).not.toContain(sides.buyerPayout!);
       expect(JSON.stringify(body)).not.toContain(sides.sellerRefund!);

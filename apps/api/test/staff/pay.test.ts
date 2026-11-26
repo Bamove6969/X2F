@@ -9,8 +9,6 @@
 //   of large trades (threshold and % are the owner's numbers: settings with no default);
 // - clawback A: pay goes out at clock-out; an overruled decision reduces future pay (owed if they leave).
 // MONEY. Real Postgres.
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { applyDispute, type Actor, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -22,7 +20,6 @@ import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { startDispute, withDispute } from '../../src/disputes/store.js';
 import type { MarketPrices } from '../../src/price/market.js';
 import { parseKeyTapIntent, tapPermOf } from '../../src/staff/keyTap.js';
-import { NEEDS_PLAN_6_PAYROLL_WALLET, PayrollWalletNotWiredError, sendStaffPayout } from '../../src/staff/pay.js';
 import { endSessionForHours } from '../../src/staff/sweeper.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { appealDirect } from '../helpers/disputes.js';
@@ -889,18 +886,6 @@ describe('the two new tap intents', () => {
     for (const bad of [{ ...v, modDisputeUsdCents: 1.5 }, { ...v, modDisputeUsdCents: -1 }, { ...v, seniorLargeTradeBp: '1000' }, { kind: 'pay-settings', modDisputeUsdCents: 1 }]) {
       expect(() => parseKeyTapIntent(bad), JSON.stringify(bad)).toThrow();
     }
-  });
-});
-
-describe('TRIPWIRE NEEDS_PLAN_6_PAYROLL_WALLET', () => {
-  it('a recorded payout moves nothing until Plan 6 wires a payroll wallet, and nothing starts the send', async () => {
-    // When Plan 6 lands: wire sendStaffPayout to the payroll wallet (see its comment), run it for
-    // every `waiting-send` payout, and delete this test.
-    const err = await sendStaffPayout({ address: fakeAddress(), amountAtomic: XMR }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(PayrollWalletNotWiredError);
-    expect((err as PayrollWalletNotWiredError).code).toBe(NEEDS_PLAN_6_PAYROLL_WALLET);
-    const main = readFileSync(fileURLToPath(new URL('../../src/main.ts', import.meta.url)), 'utf8');
-    expect(main.includes('sendStaffPayout'), 'main.ts sends staff pay: Plan 6 landed? see this test').toBe(false);
   });
 });
 

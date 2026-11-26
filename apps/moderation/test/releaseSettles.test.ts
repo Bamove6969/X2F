@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { escrowStore } from '../src/main.js';
 import { spendEvidence } from '../src/watcher.js';
 import { fakeChain, memoryRelay, SWEEP_HASH, type FakeChain } from './chain.js';
-import { FEE_WALLET, makeCtx, TERMS, type Ctx } from './harness.js';
+import { FEE_WALLET, PAYROLL_WALLET, makeCtx, TERMS, type Ctx } from './harness.js';
 
 const running: PartyHandle[] = [];
 const ctxs: Ctx[] = [];
@@ -77,7 +77,7 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
   return { parties, ignored, saved, modStore, restartMod, argsFor };
 }
 
-const minimums = sweepMinimums({ kind: 'release', terms: TERMS, feeWallet: FEE_WALLET, sweptAtomic: 1n })!;
+const minimums = sweepMinimums({ kind: 'release', terms: TERMS, feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET, sweptAtomic: 1n })!;
 const release: Outcome = { kind: 'release', to: minimums, builder: 'seller', cosigner: 'buyer' };
 
 /** The watcher's proof of the sweep over the real mod party's funds (null: `sweep-unproven`). */
@@ -86,6 +86,7 @@ async function proof(mod: PartyHandle, logs: string[]) {
     settleKind: 'release',
     terms: TERMS,
     feeWallet: FEE_WALLET,
+    payrollWallet: PAYROLL_WALLET,
     prove: (h, k, m) => mod.proveSweep!(h, k, m),
     log: (e) => logs.push(e.reason),
   });

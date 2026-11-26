@@ -141,6 +141,7 @@ export function workerConfig(env: Record<string, string | undefined>): RuntimeDe
   return {
     modSigningPublic: need('VITE_MOD_SIGNING_PUBLIC'),
     feeWallet: need('VITE_FEE_WALLET'),
+    payrollWallet: need('VITE_PAYROLL_WALLET'),
     relayUrl: need('VITE_RELAY_URL'),
     daemonUri: need('VITE_NODE_PROXY_URL'),
     network,
@@ -187,6 +188,7 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       VITE_MONERO_NETWORK: import.meta.env.VITE_MONERO_NETWORK as string | undefined,
       VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined,
       VITE_FEE_WALLET: import.meta.env.VITE_FEE_WALLET as string | undefined,
+      VITE_PAYROLL_WALLET: import.meta.env.VITE_PAYROLL_WALLET as string | undefined,
       VITE_RELAY_URL: import.meta.env.VITE_RELAY_URL as string | undefined,
       VITE_NODE_PROXY_URL: import.meta.env.VITE_NODE_PROXY_URL as string | undefined,
     });

@@ -138,3 +138,27 @@ describe('peerRelease: what the moderator heard from a trader about settling (re
     await p.stop();
   });
 });
+
+// Owner 26 Nov: either trader co-signs a ruling's payout. The moderation process reads the party's
+// saved release (`currentRelease`) to keep the co-signer after a restart, and switches an
+// uncommitted settle to the other trader once that trader's export for the same set came.
+describe('currentRelease: the outcome the party settles now (read only)', () => {
+  it('names the saved release by its tag, its counterpart and whether it is committed', async () => {
+    const { p } = await modParty();
+    await expect.poll(() => p.currentRelease!()).toEqual({ tag: releaseTag(RULING), counterpart: 'buyer', committed: false });
+    await p.stop();
+  });
+
+  it('the same payouts with the loser the co-signer: the loser\'s export first counts elsewhere by that set\'s tag; settle() switches the uncommitted release to it', async () => {
+    const { p, ids, participants, push } = await modParty();
+    const alt: Outcome = { ...RULING, cosigner: 'seller' };
+    expect(releaseTag(alt)).not.toBe(releaseTag(RULING));
+    push(await frame('seller', ids, participants, `state.export:${releaseTag(alt)}.1`, { hex: 'seller-export' }));
+    await expect.poll(() => p.peerRelease!('seller')?.elsewhere?.tag ?? null).toBe(releaseTag(alt));
+    const settling = p.settle(alt).catch(() => null);
+    await expect.poll(() => p.currentRelease!()?.tag ?? null).toBe(releaseTag(alt));
+    expect(p.currentRelease!()).toMatchObject({ counterpart: 'seller', committed: false });
+    await p.stop();
+    await settling;
+  });
+});

@@ -20,7 +20,7 @@ export const MODERATION_STUB: ModerationClient = NO_MODERATION;
 export async function staffApps(
   overrides: Partial<Deps> = {},
   staffOptions: { pushTransport?: PushTransport; webRoot?: string } = {},
-  staffDeps: { tradePublish?: TradePublisher } = {},
+  staffDeps: { tradePublish?: TradePublisher; config?: Partial<Deps['config']> } = {},
 ): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;
@@ -32,9 +32,10 @@ export async function staffApps(
   const t = await testApp(overrides);
   const { stream, logs } = captureLogs();
   const { webRoot, ...options } = staffOptions;
+  const { config: configOver, ...staffRest } = staffDeps;
   const app = await buildStaffApi(
     // The trader app's bus, as main.ts passes it (a site ban ends the trader's streams, review S2).
-    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, traderEvents: t.app.events, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}), ...staffDeps },
+    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, traderEvents: t.app.events, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}), ...staffRest, ...(configOver !== undefined ? { config: { ...t.deps.config, ...configOver } } : {}) },
     { logStream: stream, ...options },
   );
   return {

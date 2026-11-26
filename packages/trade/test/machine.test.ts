@@ -1308,7 +1308,7 @@ describe('states are all reachable', () => {
 describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
   const fundingFor = (poster: 'seller' | 'buyer') => run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1]], taken(poster));
   const facts = (t: Trade, balanceAtomic: bigint, kind: 'release' | 'buyer-cancel' = 'release') =>
-    payoutsFor({ kind, amountAtomic: t.amountAtomic, feeAtomic: t.feeAtomic, poster: t.poster, sellerFundsAtomic: t.sellerFundsAtomic, balanceAtomic, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' });
+    payoutsFor({ kind, amountAtomic: t.amountAtomic, feeAtomic: t.feeAtomic, poster: t.poster, sellerFundsAtomic: t.sellerFundsAtomic, balanceAtomic, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F', payrollWallet: 'P' });
 
   test('seller-poster: before I have paid and within the offer max, the trade grows to what was funded', () => {
     const received = 1_313_131_313_131n;
@@ -1325,9 +1325,11 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     // Any remainder below one more atomic unit of trade is dust for the seller.
     const ps = facts(t, received);
     expect(ps[0]).toEqual({ address: 'B', amountAtomic: grown, bearsNetworkFee: true });
-    expect(ps[1]).toEqual({ address: 'F', amountAtomic: feeFor(grown), bearsNetworkFee: true });
+    // Owner 26 Nov: the 1% in two halves (fee wallet, payroll wallet).
+    expect(ps[1]).toEqual({ address: 'F', amountAtomic: feeFor(grown) - feeFor(grown) / 2n, bearsNetworkFee: true });
+    expect(ps[2]).toEqual({ address: 'P', amountAtomic: feeFor(grown) / 2n, bearsNetworkFee: true });
     const dust = received - grown - feeFor(grown);
-    expect(ps.slice(2)).toEqual(dust > 0n ? [{ address: 'S', amountAtomic: dust }] : []);
+    expect(ps.slice(3)).toEqual(dust > 0n ? [{ address: 'S', amountAtomic: dust }] : []);
   });
 
   test('buyer-poster: the trade grows to exactly what was funded', () => {
@@ -1339,7 +1341,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.fiatCents).toBe(42900n);
     expect(facts(t, received)).toEqual([
       { address: 'B', amountAtomic: received - 13_000_000_000n, bearsNetworkFee: true },
-      { address: 'F', amountAtomic: 13_000_000_000n, bearsNetworkFee: true },
+      { address: 'F', amountAtomic: 6_500_000_000n, bearsNetworkFee: true },
+      { address: 'P', amountAtomic: 6_500_000_000n, bearsNetworkFee: true },
     ]);
   });
 
@@ -1384,9 +1387,10 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     const marked = apply(dropped, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(56));
     const st = apply(marked, { type: 'release-started' }, 'seller', at(57));
     expect(st.state).toBe('settling');
-    expect(payoutsFor({ kind: 'release', amountAtomic: st.amountAtomic, feeAtomic: st.feeAtomic, poster: st.poster, sellerFundsAtomic: st.sellerFundsAtomic, balanceAtomic: FUNDS, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' })).toEqual([
+    expect(payoutsFor({ kind: 'release', amountAtomic: st.amountAtomic, feeAtomic: st.feeAtomic, poster: st.poster, sellerFundsAtomic: st.sellerFundsAtomic, balanceAtomic: FUNDS, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F', payrollWallet: 'P' })).toEqual([
       { address: 'B', amountAtomic: AMOUNT, bearsNetworkFee: true },
-      { address: 'F', amountAtomic: feeFor(AMOUNT), bearsNetworkFee: true },
+      { address: 'F', amountAtomic: feeFor(AMOUNT) - feeFor(AMOUNT) / 2n, bearsNetworkFee: true },
+      { address: 'P', amountAtomic: feeFor(AMOUNT) / 2n, bearsNetworkFee: true },
     ]);
   });
 
@@ -1438,7 +1442,8 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.grown).toBeNull();
     expect(facts(t, received)).toEqual([
       { address: 'B', amountAtomic: AMOUNT - 12_500_000_000n, bearsNetworkFee: true },
-      { address: 'F', amountAtomic: 12_500_000_000n, bearsNetworkFee: true },
+      { address: 'F', amountAtomic: 6_250_000_000n, bearsNetworkFee: true },
+      { address: 'P', amountAtomic: 6_250_000_000n, bearsNetworkFee: true },
       { address: 'S', amountAtomic: received - AMOUNT },
     ]);
   });
@@ -1474,7 +1479,7 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.amountAtomic).toBe(AMOUNT);
     expect(t.fiatCents).toBe(41250n);
     expect(t.grown).toBeNull();
-    expect(facts(t, FUNDS + 100_000_000n)[2]).toEqual({ address: 'S', amountAtomic: 100_000_000n });
+    expect(facts(t, FUNDS + 100_000_000n)[3]).toEqual({ address: 'S', amountAtomic: 100_000_000n });
   });
 
   test('no growth once a refund or settlement has started', () => {

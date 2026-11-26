@@ -146,6 +146,8 @@ export interface ModerationOptions {
   /** MOD_SIGNING_SECRET: the 64-byte Ed25519 secret key. */
   signingSecret: Uint8Array;
   feeWallet: string;
+  /** X2F_PAYROLL_WALLET: the hot payroll wallet, paid the other half of every 1% (owner 26 Nov). */
+  payrollWallet: string;
   /** RELAY_URL: the relay's public WebSocket URL, which the moderator party joins (Task 9). */
   relayUrl: string;
   /** MONERO_NETWORK: the escrow wallets' network. */
@@ -411,6 +413,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
               db: o.db,
               args: a,
               feeWallet: o.feeWallet,
+              payrollWallet: o.payrollWallet,
               transport: await signalsTransport({ channel: await channelFor(a.trade, 'signals'), me: a.me }),
               link,
               now,
@@ -464,7 +467,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
     // Review B1: a lien recovery is signed only when this service's own records back it.
     await checkWork({ ...w, trade: code });
-    const recovery = await checkLienRecovery({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, rulings: lienRulingsDep, rates: lienRatesDep });
+    const recovery = await checkLienRecovery({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, payrollWallet: o.payrollWallet, rulings: lienRulingsDep, rates: lienRatesDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
@@ -549,6 +552,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
             password: await walletPassword(o.db, o.keystoreKey, code),
             daemonUri: o.daemonUri,
             feeWallet: o.feeWallet,
+            payrollWallet: o.payrollWallet,
             // What this service signed (signed_terms), never the work item's or a later API read.
             terms,
           });
@@ -857,7 +861,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       try {
         const { rows } = await o.db.query<{ attestation: Attestation }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
         const terms = rows[0]?.attestation.terms;
-        const recorded = terms === undefined ? null : recordedFor({ terms, feeWallet: o.feeWallet } as ModPartyArgs, await deskShadow(o.db, code), log);
+        const recorded = terms === undefined ? null : recordedFor({ terms, feeWallet: o.feeWallet, payrollWallet: o.payrollWallet } as ModPartyArgs, await deskShadow(o.db, code), log);
         const r = await ar.signer.step({
           code,
           stored: await ar.stored(code),
@@ -1171,6 +1175,7 @@ export function recordedFor(args: ModPartyArgs, shadow: Trade | null, log: (e: {
       terms: args.terms,
       trade: { amountAtomic: shadow.amountAtomic, feeAtomic: shadow.feeAtomic, sellerFundsAtomic: shadow.sellerFundsAtomic, poster: shadow.poster },
       feeWallet: args.feeWallet,
+      payrollWallet: args.payrollWallet,
     });
   } catch {
     log({ reason: 'ruling-terms-unavailable' });
@@ -1191,6 +1196,7 @@ async function partyArgsFor(o: ModerationOptions, code: string): Promise<ModPart
     password: await walletPassword(o.db, o.keystoreKey, code),
     daemonUri: o.daemonUri,
     feeWallet: o.feeWallet,
+    payrollWallet: o.payrollWallet,
     terms,
   };
 }
@@ -1207,6 +1213,18 @@ function envBytes(env: Record<string, string | undefined>, name: string, len: nu
 function envString(env: Record<string, string | undefined>, name: string): string {
   const v = env[name];
   if (!v) throw new Error(`moderation: ${name} is missing`);
+  return v;
+}
+
+/**
+ * Owner 26 Nov 2026: `X2F_PAYROLL_WALLET`, the hot payroll wallet's standard address, paid half of
+ * every 1% (the other half goes to `X2F_FEE_WALLET`). Required, a Monero address, and never the fee
+ * wallet itself (payoutsFor refuses a duplicate address, so a copy would block every release).
+ */
+function payrollWalletFromEnv(env: Record<string, string | undefined>): string {
+  const v = envString(env, 'X2F_PAYROLL_WALLET').trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{95,106}$/.test(v)) throw new Error('moderation: X2F_PAYROLL_WALLET is malformed (a Monero address)');
+  if (v === env.X2F_FEE_WALLET?.trim()) throw new Error('moderation: X2F_PAYROLL_WALLET must not be X2F_FEE_WALLET');
   return v;
 }
 
@@ -1306,6 +1324,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
       signingSecret,
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
+      payrollWallet: payrollWalletFromEnv(env),
       relayUrl: envString(env, 'RELAY_URL'),
       network: envNetwork(env),
       lienRecovery: lienRecoveryFromEnv(env),

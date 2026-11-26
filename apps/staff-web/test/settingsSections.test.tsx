@@ -60,9 +60,9 @@ describe('Settings sections', () => {
   it('every section is on the page, the page keeps its one primary action, and each Save starts disabled', async () => {
     api();
     await open();
-    for (const name of ['Rulings', 'Staff pay', 'Starter limits', 'Contact and community links', 'Fee wallet', 'Staff pay owed']) expect(region(name), name).not.toBeNull();
+    for (const name of ['Rulings', 'Staff pay', 'Starter limits', 'Contact and community links', 'Payroll wallet', 'Staff pay owed']) expect(region(name), name).not.toBeNull();
     expect(document.querySelectorAll('[data-screen="staff-settings"] [data-primary]')).toHaveLength(1);
-    for (const label of ['Save starter limits', 'Save links', 'Save fee wallet']) expect(button(label)!.disabled, label).toBe(true);
+    for (const label of ['Save starter limits', 'Save links', 'Save payroll wallet']) expect(button(label)!.disabled, label).toBe(true);
   });
 });
 
@@ -154,7 +154,7 @@ describe('Contact and community links', () => {
   });
 });
 
-describe('Fee wallet', () => {
+describe('Payroll wallet', () => {
   it('reads atomic units from XMR as typed', () => {
     expect(atomicOf('')).toBeNull();
     expect(atomicOf('1.5')).toBe('1500000000000');
@@ -166,39 +166,50 @@ describe('Fee wallet', () => {
   it('says the sweep is off and the wallet is not connected; turning it on taps the three values', async () => {
     const c = api({ 'PUT /staff/v1/fee-sweep': (b) => ({ body: { ...SWEEP, ...(b as object), on: true } }) });
     await open();
-    const s = region('Fee wallet');
-    expect(s.querySelector('[data-part="fee-sweep-state"]')?.textContent).toBe('The sweep is off.');
+    const s = region('Payroll wallet');
+    expect(s.querySelector('[data-part="fee-sweep-state"]')?.textContent).toBe('Moving the extra to the fee wallet is off.');
     expect(s.querySelector('[data-part="fee-sweep-not-wired"]')).not.toBeNull();
-    typeInto(field('Move fees at', s), '5');
+    typeInto(field('Cap', s), '5');
     await settle();
-    // A threshold needs the float and the address.
-    expect(s.querySelector('[data-part="fee-sweep-invalid"]')?.textContent).toContain('Keep in the fee wallet and the offline address');
-    expect(button('Save fee wallet')!.disabled).toBe(true);
-    typeInto(field('Keep in the fee wallet', s), '6');
-    typeInto(field('Your offline wallet address', s), COLD);
+    // A cap needs the amount to keep and the address.
+    expect(s.querySelector('[data-part="fee-sweep-invalid"]')?.textContent).toContain('Keep in the payroll wallet and the fee wallet address');
+    expect(button('Save payroll wallet')!.disabled).toBe(true);
+    typeInto(field('Keep in the payroll wallet', s), '6');
+    typeInto(field('Fee wallet address', s), COLD);
     await settle();
     // Above the float only.
-    expect(button('Save fee wallet')!.disabled).toBe(true);
-    typeInto(field('Keep in the fee wallet', s), '0.75');
+    expect(button('Save payroll wallet')!.disabled).toBe(true);
+    typeInto(field('Keep in the payroll wallet', s), '0.75');
     await settle();
-    await click(button('Save fee wallet'));
+    await click(button('Save payroll wallet'));
     await click(button('Tap security key'));
     const next = { thresholdAtomic: '5000000000000', floatAtomic: '750000000000', coldAddress: COLD };
     expect(taps(c.calls)).toEqual([{ kind: 'fee-sweep', ...next }]);
     expect(puts(c.calls, '/staff/v1/fee-sweep')[0]!.body).toEqual({ ...next, tapId: 'tap-1' });
-    expect(s.querySelector('[data-part="fee-sweep-state"]')?.textContent).toBe('The sweep is on.');
-    expect((field('Keep in the fee wallet', s) as HTMLInputElement).value).toBe('0.75');
+    expect(s.querySelector('[data-part="fee-sweep-state"]')?.textContent).toBe('Moving the extra to the fee wallet is on.');
+    expect((field('Keep in the payroll wallet', s) as HTMLInputElement).value).toBe('0.75');
   });
 
   it('an address the API reads as invalid on its network is said plainly', async () => {
     api({ 'PUT /staff/v1/fee-sweep': refused(400, 'address-invalid') });
     await open();
-    const s = region('Fee wallet');
-    typeInto(field('Your offline wallet address', s), COLD);
+    const s = region('Payroll wallet');
+    typeInto(field('Fee wallet address', s), COLD);
     await settle();
-    await click(button('Save fee wallet'));
+    await click(button('Save payroll wallet'));
     await click(button('Tap security key'));
     expect(s.querySelector('[data-part="fee-sweep-fault"]')?.textContent).toBe('That is not a valid Monero address on this network. Check it and try again.');
+  });
+
+  it('an address that is not X2F\'s fee wallet is said plainly', async () => {
+    api({ 'PUT /staff/v1/fee-sweep': refused(400, 'not-fee-wallet') });
+    await open();
+    const s = region('Payroll wallet');
+    typeInto(field('Fee wallet address', s), COLD);
+    await settle();
+    await click(button('Save payroll wallet'));
+    await click(button('Tap security key'));
+    expect(s.querySelector('[data-part="fee-sweep-fault"]')?.textContent).toBe("That is not X2F's fee wallet. Only the fee wallet's address can be saved here.");
   });
 });
 

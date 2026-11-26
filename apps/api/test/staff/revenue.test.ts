@@ -69,11 +69,12 @@ describe('the fee each settlement pays to the fee wallet (feeOutputAtomic, as pa
       it(`${kind}, ${poster}'s ad: the ledger books exactly the payout set's fee output`, () => {
         const plan = escrowPlan({ amountAtomic: amount, poster });
         const feeWallet = fakeAddress();
+        const payrollWallet = fakeAddress();
         const outs = payoutsFor({
           kind, amountAtomic: amount, feeAtomic: plan.feeAtomic, poster, sellerFundsAtomic: plan.sellerFundsAtomic,
-          balanceAtomic: plan.sellerFundsAtomic, buyerPayout: fakeAddress(), sellerRefund: fakeAddress(), feeWallet,
+          balanceAtomic: plan.sellerFundsAtomic, buyerPayout: fakeAddress(), sellerRefund: fakeAddress(), feeWallet, payrollWallet,
         });
-        const paid = outs.filter((p) => p.address === feeWallet).reduce((s, p) => s + p.amountAtomic, 0n);
+        const paid = outs.filter((p) => p.address === feeWallet || p.address === payrollWallet).reduce((s, p) => s + p.amountAtomic, 0n);
         expect(feeOutputAtomic(kind, poster, plan.feeAtomic)).toBe(paid);
       });
     }
@@ -328,22 +329,22 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
   const bookedNet = async (code: string) =>
     (await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [code])).rows;
 
-  it('a released trade books the fee output\'s share of the tx fee (the odd unit is the buyer\'s), once', async () => {
+  it('a released trade books the fee and payroll outputs\' shares of the tx fee (owner 26 Nov; the odd unit is the buyer\'s), once', async () => {
     setNow(new Date('2026-05-02T10:00:00Z'));
     const t = await trade({ to: 'released' });
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
     expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: null }]);
     expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 30_720_001n))).toBe(true);
-    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '15360000' }]);
-    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '15360000' }]);
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '20480000' }]);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '20480000' }]);
     // Again (a replayed report, or another fee): nothing more.
     expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 30_720_001n))).toBe(false);
     expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 99_000_000n))).toBe(false);
-    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '15360000' }]);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '20480000' }]);
     // A second trade the same day adds to the same row.
     const t2 = await trade({ to: 'released', poster: 'buyer' });
     expect(await withClient((c) => bookSettlementNetworkFee(c, t2.code, 20_000_000n))).toBe(true);
-    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: (2n * fee).toString(), network_fee_atomic: '25360000' }]);
+    expect(await netDay('2026-05-02')).toEqual([{ kind: 'fee', fee_atomic: (2n * fee).toString(), network_fee_atomic: '33813333' }]);
   });
 
   it('a refunded trade, an open trade and a bad fee book nothing', async () => {
@@ -364,14 +365,14 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
     setNow(new Date('2026-05-04T10:00:00Z'));
     const t = await trade({ to: 'released' });
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
-    // 0.5 XMR reported: X2F's fee output lost at most its share of 0.01 XMR, so 0.005 XMR is booked.
+    // 0.5 XMR reported: X2F's two fee outputs lost at most their shares of 0.01 XMR (two thirds), so that is booked.
     expect(await withClient((c) => bookSettlementNetworkFee(c, t.code, 500_000_000_000n))).toBe(true);
-    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
-    expect(await netDay('2026-05-04')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '5000000000' }]);
+    expect(await bookedNet(t.code)).toEqual([{ network_fee_atomic: '6666666666' }]);
+    expect(await netDay('2026-05-04')).toEqual([{ kind: 'fee', fee_atomic: fee.toString(), network_fee_atomic: '6666666666' }]);
     // Exactly the bound books its share; one unit over books the same.
     const atBound = await trade({ to: 'released' });
     expect(await withClient((c) => bookSettlementNetworkFee(c, atBound.code, 10_000_000_001n))).toBe(true);
-    expect(await bookedNet(atBound.code)).toEqual([{ network_fee_atomic: '5000000000' }]);
+    expect(await bookedNet(atBound.code)).toEqual([{ network_fee_atomic: '6666666666' }]);
   });
 
   it('the ledger\'s network fees are add-only too', async () => {
@@ -391,14 +392,14 @@ describe('the network fee X2F\'s fee output paid (bookSettlementNetworkFee, migr
       treasuryNetworkFeesRecorded: boolean;
     };
     expect(body.buckets).toMatchObject([
-      { period: '2026-05-02', totalAtomic: (2n * fee).toString(), networkFeeAtomic: '25360000', netAtomic: (2n * fee - 25_360_000n).toString() },
+      { period: '2026-05-02', totalAtomic: (2n * fee).toString(), networkFeeAtomic: '33813333', netAtomic: (2n * fee - 33_813_333n).toString() },
       { period: '2026-05-03', totalAtomic: fee.toString(), networkFeeAtomic: '0', netAtomic: fee.toString() },
     ]);
-    expect(body.total).toMatchObject({ totalAtomic: (3n * fee).toString(), networkFeeAtomic: '25360000', netAtomic: (3n * fee - 25_360_000n).toString() });
-    expect(body.byCurrency).toMatchObject([{ period: 'USD', networkFeeAtomic: '25360000' }]);
+    expect(body.total).toMatchObject({ totalAtomic: (3n * fee).toString(), networkFeeAtomic: '33813333', netAtomic: (3n * fee - 33_813_333n).toString() });
+    expect(body.byCurrency).toMatchObject([{ period: 'USD', networkFeeAtomic: '33813333' }]);
     // To date: every day ever booked, whatever the range asked.
     expect(body.toDate.period).toBe('to-date');
-    expect(BigInt(body.toDate.networkFeeAtomic)).toBeGreaterThanOrEqual(25_360_000n);
+    expect(BigInt(body.toDate.networkFeeAtomic)).toBeGreaterThanOrEqual(33_813_333n);
     expect(BigInt(body.toDate.netAtomic)).toBe(BigInt(body.toDate.totalAtomic) - BigInt(body.toDate.networkFeeAtomic));
     expect(BigInt(body.toDate.totalAtomic)).toBeGreaterThan(BigInt(body.total.totalAtomic));
     // The treasury's own sends (fee sweep, payroll) record no network fee yet (Plan 6 wires them).

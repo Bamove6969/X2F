@@ -238,6 +238,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     db: req.server.deps.db,
     clock: req.server.deps.clock,
     ...(o.traderEvents ? { events: o.traderEvents } : {}),
+    // Owner 26 Nov: both traders are alerted when a ruling is published (the push names no trade).
+    push: req.server.push,
   });
 
   app.post('/staff/v1/disputes/:code/rulings', handle, async (req) => {

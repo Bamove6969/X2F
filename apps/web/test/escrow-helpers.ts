@@ -11,6 +11,8 @@ import { openEscrowStore, type EscrowStore } from '../src/escrow/store.js';
 export const CODE = 'K7Q2-M9XA-3PRT-W8DN';
 export const AMOUNT = 1_250_000_000_000n;
 export const FEE_WALLET = '4FeeWalletAddress';
+/** Owner 26 Nov: the payroll wallet, paid the other half of the 1%. */
+export const PAYROLL_WALLET = '4PayrollWalletAddress';
 export const ADDR = { buyer: '4BuyerPayout', seller: '4SellerRefund' } as const;
 export const ESCROW_ADDRESS = '5EscrowMultisigAddress';
 /** The payment instructions locked at take; the attestation carries their SHA-256 (Task 34 review I1, restored after J-16). */
@@ -400,7 +402,7 @@ export async function device(
   const runtime = createEscrowRuntime({
     api,
     store,
-    config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
+    config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
     engine,
     newIdentity: testIdentity,
     runParty: o.parties.runParty,

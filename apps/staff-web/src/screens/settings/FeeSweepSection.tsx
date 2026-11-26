@@ -8,35 +8,38 @@ import { utcMinuteText } from '../staffFormat.js';
 import { failureOf, SectionFoot, SettingField, SettingsCard } from './sectionKit.js';
 
 /**
- * B-006 / Plan 4 Task 9 (owner 2026-10-29 q7): the fee wallet's automatic sweep to the owner's cold
- * wallet (`GET`/`PUT /staff/v1/fee-sweep`, apps/api/src/staff/feeSweep.ts). The three values are
- * saved together with a `fee-sweep` tap bound to exactly them; an empty threshold turns the sweep
- * off. The checks mirror `parseFeeSweepChange`: amounts in XMR to the atomic unit, a threshold
- * needs the float and the cold address and must be above the float; the API checks the address is
- * a valid standard address on its network (400 `address-invalid`). The send itself waits on Plan 6
- * (`walletWired` false), which the section says. NEEDS_DESIGN_FEE_WALLET: no board draws it.
- * Words: COPY-UNSIGNED (all of C).
+ * B-006 / Plan 4 Task 9, reworked by the owner on 26 Nov 2026: half of every 1% goes to the hot
+ * payroll wallet, which pays staff automatically at clock-out; anything it holds over the owner's
+ * cap moves to the watch-only fee wallet, whose spend key stays offline (`GET`/`PUT
+ * /staff/v1/fee-sweep`, apps/api/src/staff/feeSweep.ts). The three values are saved together with a
+ * `fee-sweep` tap bound to exactly them; an empty cap turns the sweep off. The checks mirror
+ * `parseFeeSweepChange`: amounts in XMR to the atomic unit, a cap needs the amount to keep and the
+ * fee wallet's address and must be above the amount to keep; the API checks the address is a valid
+ * standard address on its network (400 `address-invalid`) and is X2F's fee wallet (400
+ * `not-fee-wallet`). Without a connected payroll wallet (`walletWired` false) the section says so.
+ * NEEDS_DESIGN_FEE_WALLET: no board draws it. Words: COPY-UNSIGNED (all of C).
  */
 const C = {
-  title: 'Fee wallet',
-  lead: "X2F's fees collect in the online fee wallet. At the threshold, everything above the amount to keep moves to your offline wallet, and you get a notification.",
-  threshold: { label: 'Move fees at', unit: 'XMR', help: 'When the fee wallet holds this much, the sweep runs. Leave it empty to turn the sweep off.', problem: 'Move fees at (an XMR amount above the amount to keep, up to 12 decimals)' },
-  float: { label: 'Keep in the fee wallet', unit: 'XMR', help: 'One day plus one night of staff pay stays online.', problem: 'Keep in the fee wallet (an XMR amount, up to 12 decimals)' },
-  cold: { label: 'Your offline wallet address', help: 'A standard Monero address (starting with 4). Only the address is stored here; its keys stay with you.', problem: 'Your offline wallet address (95 characters)' },
-  needsBoth: 'Keep in the fee wallet and the offline address (both are needed while the sweep is on)',
-  on: 'The sweep is on.',
-  off: 'The sweep is off.',
-  notWired: 'The fee wallet is not connected yet. When the threshold is reached you get a notification, and nothing moves until it is.',
+  title: 'Payroll wallet',
+  lead: 'Half of every 1% fee goes to the online payroll wallet, which pays staff when they clock out. When it holds the cap, everything above the amount to keep moves to the fee wallet, and you get a notification.',
+  threshold: { label: 'Cap', unit: 'XMR', help: 'When the payroll wallet holds this much, the extra moves to the fee wallet. Leave it empty to turn this off.', problem: 'Cap (an XMR amount above the amount to keep, up to 12 decimals)' },
+  float: { label: 'Keep in the payroll wallet', unit: 'XMR', help: 'Enough for staff pay until the next sweep, for example one day plus one night.', problem: 'Keep in the payroll wallet (an XMR amount, up to 12 decimals)' },
+  cold: { label: 'Fee wallet address', help: "X2F's fee wallet (starting with 4). Its keys stay offline with you; only the address is stored here.", problem: 'Fee wallet address (95 characters)' },
+  needsBoth: 'Keep in the payroll wallet and the fee wallet address (both are needed while the cap is on)',
+  on: 'Moving the extra to the fee wallet is on.',
+  off: 'Moving the extra to the fee wallet is off.',
+  notWired: 'The payroll wallet is not connected yet. Staff pay waits, and when the cap is reached you get a notification and nothing moves.',
   last: (at: string, amount: string, outcome: 'pending' | 'sent' | 'failed') =>
-    `Last sweep ${utcMinuteText(at)}: ${amount} XMR, ${outcome === 'sent' ? 'sent' : outcome === 'failed' ? 'did not go through' : 'result not recorded yet'}.`,
+    `Last move ${utcMinuteText(at)}: ${amount} XMR, ${outcome === 'sent' ? 'sent' : outcome === 'failed' ? 'did not go through' : 'result not recorded yet'}.`,
   offPlaceholder: 'Off',
   notSet: 'Not set',
-  save: 'Save fee wallet',
-  tapTitle: 'Change the fee wallet sweep',
+  save: 'Save payroll wallet',
+  tapTitle: 'Change the payroll wallet cap',
   tapBody: "This decides where X2F's fees go. Tap your security key to save it.",
   addressInvalid: 'That is not a valid Monero address on this network. Check it and try again.',
-  loadFault: 'X2F could not load the fee wallet settings just now. Reload to try again.',
-  saveFault: 'The fee wallet settings were not saved. Try again.',
+  notFeeWallet: "That is not X2F's fee wallet. Only the fee wallet's address can be saved here.",
+  loadFault: 'X2F could not load the payroll wallet settings just now. Reload to try again.',
+  saveFault: 'The payroll wallet settings were not saved. Try again.',
 } as const;
 
 const COLD = /^[1-9A-HJ-NP-Za-km-z]{95}$/;
@@ -91,6 +94,7 @@ export function FeeSweepSection() {
     } catch (e) {
       // not-a-refusal: the API's address check, an input check shown as a fault.
       if (codeOf(e) === 'address-invalid') setFault(C.addressInvalid);
+      else if (codeOf(e) === 'not-fee-wallet') setFault(C.notFeeWallet);
       else {
         const f = failureOf(e, C.saveFault);
         if ('refusal' in f) setRefusal(f.refusal);

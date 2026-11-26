@@ -162,9 +162,9 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
 
     // This process's own recorded terms: the attested deal and the traders' addresses.
-    const [buyerW, sellerW, feeW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
-    wallets.push(buyerW, sellerW, feeW);
-    const terms = { ...recorded(o.removedRound1 ? 41_250n : 200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress() };
+    const [buyerW, sellerW, feeW, payrollW] = [await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri), await newTestWallet(node.rpcUri)];
+    wallets.push(buyerW, sellerW, feeW, payrollW);
+    const terms = { ...recorded(o.removedRound1 ? 41_250n : 200_000n), buyerPayout: await buyerW.getPrimaryAddress(), sellerRefund: await sellerW.getPrimaryAddress(), feeWallet: await feeW.getPrimaryAddress(), payrollWallet: await payrollW.getPrimaryAddress() };
 
     // The executor's pass, on the funds the moderator's own party reads, until it hands the payout.
     // Haveno review finding 2: the moderation signing key signs the statement the winner's app verifies.
@@ -187,7 +187,7 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     // the outcome digest, so the buyer's outcome carries it as the moderator's does. A seller ruling's
     // one refund output is unmarked and bears all of it, as before.
     const to = ex.payouts.map((p) => ({ address: p.address, amountAtomic: BigInt(p.amountAtomic), ...(buyerWins ? { bearsNetworkFee: true } : {}) }));
-    if (buyerWins) expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet]);
+    if (buyerWins) expect(to.map((p) => p.address)).toEqual([terms.buyerPayout, terms.feeWallet, terms.payrollWallet]);
     else expect(to).toEqual([{ address: terms.sellerRefund, amountAtomic: BALANCE }]);
 
     // The winner's app checks the signed statement against its own trade, escrow and payouts first.
@@ -206,16 +206,19 @@ describe('a ruling paid out on regtest (Plan 4 Task 14)', () => {
     if (buyerWins) {
       // Owner 16 Nov: the buyer's output and the fee output share the network fee, wallet2's split
       // (`networkFeeShares`: the buyer, first in pay order, takes an odd unit).
+      // Owner 26 Nov: the 1% in two halves, the fee wallet's and the payroll wallet's; all three share it.
       const feeShort = to[1]!.amountAtomic - (await balanceOf(feeW));
+      const payrollShort = to[2]!.amountAtomic - (await balanceOf(payrollW));
       const buyerShort = to[0]!.amountAtomic - (await balanceOf(buyerW));
-      const networkFee = buyerShort + feeShort;
+      const networkFee = buyerShort + feeShort + payrollShort;
       expect(networkFee).toBeGreaterThan(0n);
       expect(networkFee).toBeLessThan(MAX_NET_FEE);
-      expect([buyerShort, feeShort]).toEqual(networkFeeShares(networkFee, [true, true]));
+      expect([buyerShort, feeShort, payrollShort]).toEqual(networkFeeShares(networkFee, [true, true, true]));
       expect(await balanceOf(sellerW)).toBe(0n);
     } else {
       // A full reversal: nothing to the fee wallet or the buyer; the seller gets the balance less the network fee.
       expect(await balanceOf(feeW)).toBe(0n);
+      expect(await balanceOf(payrollW)).toBe(0n);
       expect(await balanceOf(buyerW)).toBe(0n);
       const got = await balanceOf(sellerW);
       expect(got).toBeLessThan(BALANCE);

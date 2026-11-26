@@ -23,6 +23,8 @@ export interface ModPartyArgs {
   password: string;
   daemonUri: string;
   feeWallet: string;
+  /** X2F's payroll wallet (`X2F_PAYROLL_WALLET`): the other half of every 1% (owner 26 Nov). */
+  payrollWallet: string;
   /**
    * The terms this service attested (review M5): from its own `signed_terms` record, never a later
    * API read. The watcher and the settle checks (e.g. the mod's derived refund payout) use these.

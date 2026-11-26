@@ -249,6 +249,11 @@ export async function openSystemDispute(client: pg.PoolClient, t: Trade, now: Da
 export interface DisputeDeps extends Pick<Deps, 'db' | 'clock'> {
   /** Live events to the traders' own streams; omitted, nothing is published. */
   events?: Pick<EventBus, 'publish'>;
+  /**
+   * Owner 26 Nov: both traders are alerted when a ruling is published. A side with no open stream
+   * gets the phone push `trade` (it names no trade); omitted, no push is sent.
+   */
+  push?: { send(accountId: string, kind: 'trade'): Promise<boolean> };
 }
 
 /**
@@ -270,6 +275,7 @@ export async function withDispute(
   const client = await deps.db.connect();
   let next: Dispute;
   let parties: { seller: string; buyer: string; state: string; closed: boolean } | undefined;
+  let before: Dispute | undefined;
   try {
     await client.query('begin');
     try {
@@ -294,6 +300,7 @@ export async function withDispute(
       );
       await client.query('select 1 from liens where from_code = $1 and dispute_seq = $2 order by id for update', [rec.dispute.code, rec.dispute.seq]);
       const now = deps.clock();
+      before = rec.dispute;
       next = await fn(rec.dispute, client, now, rec);
       if (next === rec.dispute) {
         await client.query('commit');
@@ -316,14 +323,18 @@ export async function withDispute(
   } finally {
     client.release();
   }
-  if (deps.events && parties) {
+  // Owner 26 Nov: a ruling just published (a new one, or round 2's) alerts both traders.
+  const published = next.publishedAt !== null && next.publishedAt.getTime() !== (before?.publishedAt?.getTime() ?? null);
+  if (parties && (deps.events || (published && deps.push))) {
     const ev = { type: 'trade' as const, code: target.code, state: parties.state };
     for (const id of [parties.seller, parties.buyer]) {
+      let streamed = 0;
       try {
-        deps.events.publish(id, ev, { closed: parties.closed });
+        streamed = deps.events?.publish(id, ev, { closed: parties.closed }) ?? 0;
       } catch {
         // Best effort: the change is committed and apps re-read the trade.
       }
+      if (published && streamed === 0 && deps.push) await deps.push.send(id, 'trade').catch(() => false);
     }
   }
   return next;

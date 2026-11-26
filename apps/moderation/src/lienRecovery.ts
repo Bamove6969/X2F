@@ -132,13 +132,14 @@ export interface LienCheckDeps {
   enabled: boolean;
   db: Pick<pg.Pool, 'query'>;
   feeWallet: string;
+  payrollWallet: string;
   rulings: LienRulings | null;
   /** Absent or null: only the default rate is ever signed. */
   rates?: LienRates | null;
 }
 
 /** The source trade's terms as this service signed and posted them, and its recorded terms (its own shadow trade when it has one). */
-async function sourceFacts(db: Pick<pg.Pool, 'query'>, code: string, feeWallet: string): Promise<{ terms: AttestedTerms; recorded: RecordedTerms; participants: Participants } | null> {
+async function sourceFacts(db: Pick<pg.Pool, 'query'>, code: string, feeWallet: string, payrollWallet: string): Promise<{ terms: AttestedTerms; recorded: RecordedTerms; participants: Participants } | null> {
   const { rows } = await db.query<{ attestation: { terms?: AttestedTerms; participants?: Participants } }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
   const terms = rows[0]?.attestation.terms;
   const participants = rows[0]?.attestation.participants;
@@ -166,7 +167,7 @@ async function sourceFacts(db: Pick<pg.Pool, 'query'>, code: string, feeWallet: 
     trade = { amountAtomic: take, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: terms.deal.poster };
   }
   try {
-    return { terms, recorded: recordedTerms({ terms, trade, feeWallet }), participants };
+    return { terms, recorded: recordedTerms({ terms, trade, feeWallet, payrollWallet }), participants };
   } catch {
     return null;
   }
@@ -216,7 +217,7 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   // The shared limits every co-signer applies (B1, B3, Q1, Q5); the exact figure comes later.
   if (amount < LIEN_RECOVERY_MIN_ATOMIC || amount > lienRecoveryCap(proceeds)) throw new LienRefused('over-rate');
   if (d.rulings === null) throw new LienRefused('no-authority');
-  const facts = await sourceFacts(d.db, fromCode, d.feeWallet);
+  const facts = await sourceFacts(d.db, fromCode, d.feeWallet, d.payrollWallet);
   if (facts === null) throw new LienRefused('source-unknown');
   // Rule 3 (Q2, B2): the creditor's own signed address, checked against its identity in the source
   // trade as this service attested it; never one of this trade's addresses or the fee wallet.
@@ -226,7 +227,7 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   await sodium.ready;
   if (
     !recoveryAddressValid(st, a.sig, signer) || st.fromCode !== fromCode || st.creditorSide !== creditor || st.address !== rec.address ||
-    rec.address === w.terms.buyerPayout || rec.address === w.terms.sellerRefund || rec.address === d.feeWallet
+    rec.address === w.terms.buyerPayout || rec.address === w.terms.sellerRefund || rec.address === d.feeWallet || rec.address === d.payrollWallet
   ) {
     throw new LienRefused('wrong-address');
   }

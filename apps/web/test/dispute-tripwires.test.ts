@@ -14,7 +14,8 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     // The regtest e2e (Plan 4 Task 21) found no ruling ever paid out: context() carried no `ruling`
     // and nothing called getRulingStatement. Now, while the trade is disputed, the runtime reads
     // GET /v1/trades/:code/ruling-statement, keeps it once it verifies for this trade, its own
-    // derived escrow address and this side as the winner, and puts it in the PolicyContext with the
+    // derived escrow address (with the winner it names: owner 26 Nov, either side co-signs the
+    // winner's exact set), and puts it in the PolicyContext with the
     // pinned modSigningPublic; the set comes from policy.ts rulingOutcomeFor (worked out on the
     // device, never the statement's own list), saved as the `ruling` intent before the hand-over.
     // Behaviour: test/attestation-flow.test.ts "Plan 4 rulings", test/policy.test.ts rulingOutcomeFor.
@@ -24,7 +25,7 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(runtime).toMatch(/deps\.api\.getRulingStatement\(/);
     expect(runtime).toMatch(/verifyRulingStatement\(/);
     expect(runtime).toMatch(/modSigningPublic: deps\.config\.modSigningPublic, statement:/);
-    expect(runtime).toMatch(/rulingOutcomeFor\(ctx\)/);
+    expect(runtime).toMatch(/rulingOutcomeFor\(ctx, ruling\.winner\)/);
     // Every hand-over still goes through settle(), the one place cosignPolicy runs.
     expect(runtime.match(/this\.party\.settle\(/g)?.length).toBe(1);
     expect(readFileSync(ROOT + 'apps/web/src/escrow/adapters.ts', 'utf8')).toMatch(/\/ruling-statement/);
@@ -46,16 +47,13 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(runtime).toMatch(/this\.context\(sumOf\(o\.to\), refundShaped, o\.builder === 'mod'\)/);
   });
 
-  it('NEEDS_PLAN_4_RULING_PAYOUT: the ruling page says where the XMR goes until the API reports the payout executed', () => {
-    // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c) and owner Q37 (6 Nov): the
-    // coins move at the ruling. rulingAllowsCosign (screens/dispute/rules.ts) allows the co-sign from
-    // the ruling on (Task 15), but nothing executes a ruling's payout yet, so DisputeRuling says
-    // "Goes to …" and the appeal line does not say the XMR has moved. Plan 4's execution task adds an
-    // executed flag on the dispute view. When the view reports the payout executed: show the board's
-    // "Sent to …" once it is, and delete this check.
-    const view = readFileSync(ROOT + 'apps/web/src/screens/dispute/api.ts', 'utf8');
+  it('PLAN_4_RULING_PAYOUT LANDED (owner 26 Nov): the dispute view reports the payout executed and the ruling page flips to "Sent to …"', () => {
+    // Either trader's app co-signs the ruling's fixed payout (whichever opens first); the API reports
+    // it executed (`ruling.executedAt`), and DisputeRuling says "Sent to …" and, after an appeal,
+    // "The XMR has already moved". Behaviour: test/dispute.test.tsx "once the payout executed".
     const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
-    expect(/executed|payoutTx|paidOutAt/i.test(view + routes), 'the dispute view reports the payout executed: flip the ruling copy to "Sent to …"').toBe(false);
+    expect(routes).toMatch(/executedAt: d\.executedAt\?\.toISOString\(\) \?\? null/);
+    expect(readFileSync(ROOT + 'apps/web/src/screens/dispute/DisputeRuling.tsx', 'utf8')).toMatch(/copy\.sent \? 'Sent to' : 'Goes to'/);
   });
 
   it('PLAN_4_TASK_23 LANDED: dispute records go with their trade, 90 days after the dispute closes (R36)', () => {

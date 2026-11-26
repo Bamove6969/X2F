@@ -34,7 +34,7 @@ import '../ui/staff.css';
  * - earnings: this month, last month and all time from the internal revenue ledger (Task 32,
  *   `GET /staff/v1/revenue`; perm earnings.read). The board's fee-wallet sentence names the
  *   wallet's last characters and a view-only key: the staff API has neither (the fee wallet's
- *   address lives only in the moderation process, NEEDS_PLAN_6_FEE_WALLET), so the sentence here
+ *   address is not in the staff API's revenue view, and its view key stays with the owner), so the sentence here
  *   is draft copy that says where the figures come from. COPY-UNSIGNED OWNER-Q
  * - the banner editor: message, Information/Warning, the live preview, the 140-character counter,
  *   "Show to everyone" / "Remove banner";

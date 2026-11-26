@@ -7,6 +7,8 @@ import { buildStaffApi, type ModerationClient } from './app.js';
 import { ensureSetupCode, setupCodeLine } from './ownerSetup.js';
 import type { TradePublisher } from '../trades/store.js';
 import { startHoursSweeper } from './sweeper.js';
+import { runFeeSweep } from './feeSweep.js';
+import { PAYROLL_PASS_MS, runPayrollPayouts } from './payrollSend.js';
 
 /** The staff listener's settings; `null` when `X2F_STAFF_ORIGIN` is unset (no staff app on this host). */
 export interface StaffListen {
@@ -96,12 +98,49 @@ export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions 
   );
   if (code !== null) (o.stderr ?? ((line: string) => void process.stderr.write(line)))(setupCodeLine(code));
   const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (err) => app.log.error({ err }, 'staff hours sweep failed'));
+  // Owner 26 Nov: with a payroll wallet, every minute: the payouts waiting to be sent, then the sweep of
+  // anything over the owner's cap to the fee wallet.
+  const payroll = deps.payrollWallet ? startPayrollPasses(deps, app) : null;
   await app.listen({ ...LISTEN_OPTIONS, host: s.host, port: s.port });
   return {
     app,
     async close() {
+      await payroll?.stop();
       await sweeper.stop();
       await app.close();
+    },
+  };
+}
+
+/**
+ * Owner 26 Nov 2026: the payroll wallet's pass every PAYROLL_PASS_MS: first the clock-out payouts
+ * waiting to be sent (`runPayrollPayouts`), then the sweep of the excess over the owner's cap to the
+ * fee wallet (`runFeeSweep`), one after the other so they never spend the same coins at once. A
+ * failing pass is logged and the next one runs as usual.
+ */
+export function startPayrollPasses(deps: Deps, app: FastifyInstance, everyMs = PAYROLL_PASS_MS): { stop(): Promise<void> } {
+  const wallet = deps.payrollWallet!;
+  let running: Promise<void> | null = null;
+  const pass = async (): Promise<void> => {
+    try {
+      await runPayrollPayouts({ db: deps.db, clock: deps.clock, wallet, push: app.push });
+    } catch (err) {
+      app.log.error({ err }, 'payroll payouts failed');
+    }
+    try {
+      await runFeeSweep({ db: deps.db, clock: deps.clock, wallet, feeWallet: deps.config.feeWallet ?? null, push: app.push });
+    } catch (err) {
+      app.log.error({ err }, 'payroll sweep failed');
+    }
+  };
+  const timer = setInterval(() => {
+    if (running === null) running = pass().finally(() => (running = null));
+  }, everyMs);
+  timer.unref();
+  return {
+    async stop() {
+      clearInterval(timer);
+      await running;
     },
   };
 }
