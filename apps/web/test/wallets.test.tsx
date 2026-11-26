@@ -4,7 +4,7 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
-import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
+import { CONFIRM_INVALID_WALLETS, Wallets } from '../src/screens/Wallets.js';
 import type { WalletView } from '../src/screens/wallets-model.js';
 import { KEEP_FOR, RENAME } from '../src/screens/walletsCopy.js';
 import { NEW_ADDRESS } from '../src/screens/quote/addressCopy.js';
@@ -24,8 +24,8 @@ const READY: WalletView = {
   usable: true,
 };
 
-const RULE_PASSWORD_ONLY: WalletRule = { firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 };
-const RULE_FIRST: WalletRule = { firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 };
+const RULE_NOT_FIRST: WalletRule = { firstWallet: false, strongMethods: ['pgp'] };
+const RULE_FIRST: WalletRule = { firstWallet: true, strongMethods: ['pgp'] };
 
 interface Call {
   url: string;
@@ -39,8 +39,6 @@ interface Stub {
   /** Answers POST /v1/wallets; `n` counts from 1. */
   onPost: (body: Record<string, unknown>, n: number) => { status: number; json: unknown };
   calls: Call[];
-  /** Owner p5-7: a removal from a username-and-password login answers 202 staged. */
-  removeStaged?: boolean;
 }
 
 let stub: Stub;
@@ -60,7 +58,7 @@ beforeEach(() => {
   forgetTypedAddresses();
   stub = {
     wallets: [READY],
-    rule: RULE_PASSWORD_ONLY,
+    rule: RULE_NOT_FIRST,
     onPost: () => ({ status: 500, json: { error: 'internal' } }),
     calls: [],
   };
@@ -81,9 +79,10 @@ beforeEach(() => {
       if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(204, null);
       // Owner demo note #226: renaming a wallet.
       if (url.startsWith('/v1/wallets/') && url.endsWith('/label') && method === 'PUT') return json(204, null);
-      if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
-      if (url === '/v1/account/me') return json(200, { methods: ['password'] });
-      if (url === '/v1/confirm/password') return json(200, { confirmToken: 'tok-1' });
+      if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(204, null);
+      if (url === '/v1/account/me') return json(200, { methods: ['pgp'] });
+      if (url === '/v1/confirm/pgp/start') return json(200, { challengeId: 'ch-1', encryptedMessage: '-----BEGIN PGP MESSAGE-----' });
+      if (url === '/v1/confirm/pgp/finish') return json(200, { confirmToken: 'tok-1' });
       return json(404, { error: 'not-found' });
     }),
   );
@@ -166,6 +165,15 @@ async function save(answered: () => boolean): Promise<void> {
 
 const confirmShown = () => dialog("Confirm it's you") !== null;
 
+/** Confirms in the open sheet with the PGP key: asks for the message, pastes the code, taps Confirm. */
+async function confirmWithPgp(): Promise<void> {
+  const sheet = dialog("Confirm it's you")!;
+  fire(sheet.querySelector('[data-method="pgp"]')!, new MouseEvent('click', { bubbles: true }));
+  await until(() => document.querySelector('[data-method="pgp-code"]') !== null);
+  type('[data-method="pgp-code"] input[aria-label="Login code"]', '123456');
+  await click('Confirm', document.querySelector('[data-method="pgp-code"]')!);
+}
+
 /** Opens Add a wallet from the list and gets past the rule popup. */
 async function startAdding(): Promise<void> {
   await click('Add a wallet');
@@ -185,25 +193,15 @@ describe('Your wallets', () => {
 
     const sheet = dialog("Confirm it's you");
     expect(sheet).not.toBeNull();
-    type('#confirm-password', 'Correct-Horse-9!');
-    await click('Confirm', sheet!.querySelector('[data-method="password"]')!);
+    await confirmWithPgp();
 
-    const confirm = stub.calls.find((c) => c.url === '/v1/confirm/password');
+    const confirm = stub.calls.find((c) => c.url === '/v1/confirm/pgp/start');
     expect(confirm?.body?.action).toEqual(await walletsAction([ADDR_C]));
     const posts = stub.calls.filter((c) => c.url === '/v1/wallets' && c.method === 'POST');
     expect(posts).toHaveLength(2);
     expect(posts[0]!.body).not.toHaveProperty('confirmToken');
     expect(posts[1]!.body).toMatchObject({ wallets: [{ address: ADDR_C }], confirmToken: 'tok-1' });
     expect(dialog("Confirm it's you")).toBeNull();
-  });
-
-  it('owner p5-7: a removal staged (202) keeps the wallet listed and says it is a draft to submit', async () => {
-    stub.removeStaged = true;
-    await mount();
-    await click(`Remove ${READY.label}`);
-    expect(stub.calls.some((c) => c.method === 'DELETE' && c.url === `/v1/wallets/${READY.id}`)).toBe(true);
-    expect(document.querySelector('[data-part="staged-note"]')).not.toBeNull();
-    expect(button(`Remove ${READY.label}`)).toBeTruthy();
   });
 
   it('a removal that applies (204) takes the wallet off the list', async () => {
@@ -223,8 +221,7 @@ describe('Your wallets', () => {
       await click('Continue', dialog('Before you add a wallet')!);
       type('#wallet-address', ADDR_C);
       await save(confirmShown);
-      type('#confirm-password', 'Correct-Horse-9!');
-      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+      await confirmWithPgp();
 
       // Not bounced back to the take (which would answer no-wallet again and loop).
       expect(where).toBe('/wallets?add=1&returnTo=%2Fbuy');
@@ -263,6 +260,10 @@ describe('Your wallets', () => {
     type('#wallet-address', ADDR_C);
     await save(confirmShown);
     expect(dialog("Confirm it's you")).not.toBeNull();
+    // The footer's Save wallet steps down; the sheet's PGP step brings its own Confirm.
+    expect(primaries()).toEqual([]);
+    fire(dialog("Confirm it's you")!.querySelector('[data-method="pgp"]')!, new MouseEvent('click', { bubbles: true }));
+    await until(() => document.querySelector('[data-method="pgp-code"]') !== null);
     expect(primaries()).toEqual(['Confirm']);
   });
 
@@ -278,15 +279,6 @@ describe('Your wallets', () => {
       return document.querySelector('[data-part="cant-do-message"], [role="alert"]')?.textContent ?? '';
     }
 
-    it('a backup-login session is told it cannot add wallets, not to check the addresses', async () => {
-      stub.onPost = () => ({ status: 403, json: { error: 'recovery-session' } });
-      await mount();
-      await startAdding();
-      type('#wallet-address', ADDR_C);
-      await save(() => alertText() !== '');
-      expect(alertText()).toBe(RECOVERY_SESSION_WALLETS);
-    });
-
     it('a confirm that ran out before the save asks to save and confirm again', async () => {
       stub.onPost = (_b, n) =>
         n === 1 ? { status: 403, json: { error: 'confirm-required', action: 'add-wallets' } } : { status: 403, json: { error: 'confirm-invalid' } };
@@ -294,8 +286,7 @@ describe('Your wallets', () => {
       await startAdding();
       type('#wallet-address', ADDR_C);
       await save(confirmShown);
-      type('#confirm-password', 'Correct-Horse-9!');
-      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+      await confirmWithPgp();
       expect(alertText()).toBe(CONFIRM_INVALID_WALLETS);
     });
 
@@ -473,26 +464,6 @@ describe('a new id whose address ends like one typed on this device is marked to
     const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
     expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, false, true]);
     expect(rows.map((r) => [...r.querySelectorAll('button')].some((b) => b.textContent === 'Make default'))).toEqual([false, true, false]);
-  });
-
-  it('O3: an add staged for review (202) records the typed address, so a look-alike listed later is marked', async () => {
-    stub.onPost = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
-    await mount();
-    await startAdding();
-    type('#wallet-address', ADDR_C);
-    await save(() => document.querySelector('[data-part="staged-note"]') !== null || confirmShown());
-    if (confirmShown()) {
-      type('#confirm-password', 'Correct-Horse-9!');
-      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
-      await until(() => document.querySelector('[data-part="staged-note"]') !== null);
-    }
-    expect(document.querySelector('[data-part="staged-note"]')).not.toBeNull();
-    document.body.innerHTML = '';
-    const lookalike: WalletView = { ...READY, id: 'w-evil', label: 'New', address: address('Z', 'AAAAA1'), addressEnd: 'AAAAA1', isDefault: false };
-    stub.wallets = [{ ...READY, isDefault: true }, lookalike];
-    await mount();
-    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
-    expect(rows.map((r) => r.querySelector('[data-part="not-matching"]') !== null)).toEqual([false, true]);
   });
 });
 

@@ -1,9 +1,9 @@
-// Task 30 re-review (items 2 and 3): one wording for a held backup session, a wait after too many
+// Task 30 re-review (items 2 and 3): one wording for a wait after too many
 // tries, a refused PGP key and an expired step, whichever client the error came from.
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, holdSentence, isExpired, momentText, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
+import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, isExpired, momentText, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
 
 const NOW = new Date('2026-10-26T15:00:00Z');
 const FALLBACK = 'Could not do that. Try again.';
@@ -24,32 +24,12 @@ describe('waitSentence', () => {
   });
 });
 
-describe('holdSentence', () => {
-  it('names the local time the hold ends, what still works and what ends it (Plan 2 Task 17)', () => {
-    const t = holdSentence('2026-10-27T15:00:00Z');
-    expect(t).toContain(`wait until ${momentText(new Date('2026-10-27T15:00:00Z'))}.`);
-    // Lead review 8 Nov: held trades are paused for the held account's own sessions too.
-    expect(t).not.toContain('can still be finished');
-    expect(t).toContain('Your open trades are paused until the hold ends or a moderator decides.');
-    // Hold model v3 (owner 2 Nov 2026) and Q81 (6 Nov): a passkey, security key or PGP key held
-    // before ends the hold; an authenticator code does not.
-    expect(t).toContain('a passkey, a security key or a PGP key you had before the hold ends it');
-    expect(t).not.toContain('authenticator');
-  });
-
-  it('without a time (or a broken one) says a day', () => {
-    expect(holdSentence(null)).toContain('wait for a day.');
-    expect(holdSentence('not a date')).toContain('wait for a day.');
-  });
-});
-
 describe('refusalText', () => {
   for (const [name, make] of [
     ['AuthApiError', (status: number, code: string, extra: Record<string, unknown> = {}) => new AuthApiError(status, code as never, extra)],
     ['ApiCallError', (status: number, code: string, extra: Record<string, unknown> = {}) => new ApiCallError(status, code, extra)],
   ] as const) {
     it(`reads a ${name} the same way`, () => {
-      expect(refusalText(make(403, 'recovery-hold', { holdUntil: '2026-10-27T15:00:00Z' }), FALLBACK)).toBe(holdSentence('2026-10-27T15:00:00Z'));
       expect(refusalText(make(429, 'slow-down', { retryAfterSeconds: 300 }), FALLBACK)).toBe('Too many tries. Try again in 5 minutes.');
       expect(refusalText(make(429, 'locked', { retryAfterSeconds: 120 }), FALLBACK)).toBe('Too many tries. Try again in 2 minutes.');
       expect(refusalText(make(400, 'key-expired'), FALLBACK)).toBe(KEY_EXPIRED);
@@ -76,7 +56,7 @@ describe('isOnlyLogin (item 7: refused before any confirm)', () => {
   it('a sole login method is refused; a backup method never counts as one', async () => {
     const { isOnlyLogin } = await import('../src/screens/settings/Methods.js');
     expect(isOnlyLogin(e('passkey'), [e('passkey'), e('totp'), e('recovery-codes')])).toBe(true);
-    expect(isOnlyLogin(e('passkey'), [e('passkey'), e('password')])).toBe(false);
+    expect(isOnlyLogin(e('passkey'), [e('passkey'), e('security-key')])).toBe(false);
     expect(isOnlyLogin(e('totp'), [e('passkey'), e('totp')])).toBe(false);
     expect(isOnlyLogin(e('pgp', 'a'), [e('pgp', 'a'), e('pgp', 'b')])).toBe(false);
     // A cold import of the Methods screen takes 4-8 s under a full parallel run.

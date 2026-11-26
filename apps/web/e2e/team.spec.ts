@@ -22,7 +22,7 @@ const LATER = '2099-01-01T00:00:00.000Z';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
+const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], member: null };
 const memberMe = (roles: string[], abilities?: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles, ...(abilities ? { abilities } : {}) } });
 
 /** Job 1c: the API's own catalogue (`GET /v1/team/permissions`), and a preset's boxes. */
@@ -34,14 +34,15 @@ const member = (id: string, displayName: string, roles: string[], status = 'acti
   id, displayName, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
 });
 
-/** The owner's side of the API: me, the team, its log, invites, roles, removal and the password confirm. */
+/** The owner's side of the API: me, the team, its log, invites, roles, removal and the PGP confirm. */
 async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; inviteAnswer?: (body: Record<string, unknown>) => { status: number; body: unknown } }) {
   const seen = { confirms: [] as Record<string, unknown>[], invites: [] as Record<string, unknown>[], audits: [] as string[], patches: [] as unknown[], deletes: [] as string[] };
   await page.route('**/v1/account/me', json(OWNER_ME));
-  await page.route('**/v1/confirm/password', (r) => {
+  await page.route('**/v1/confirm/pgp/start', (r) => {
     seen.confirms.push(r.request().postDataJSON() as Record<string, unknown>);
-    return json({ confirmToken: `tok-${seen.confirms.length}` })(r);
+    return json({ challengeId: `ch-${seen.confirms.length}`, encryptedMessage: '-----BEGIN PGP MESSAGE-----' })(r);
   });
+  await page.route('**/v1/confirm/pgp/finish', (r) => json({ confirmToken: `tok-${seen.confirms.length}` })(r));
   await page.route('**/v1/team', (r) => json({ members: s.members, max: 3 })(r));
   await page.route('**/v1/team/permissions', json(CATALOGUE));
   await page.route('**/v1/team/audit*', (r) => {
@@ -79,11 +80,12 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
   return seen;
 }
 
-async function confirmWithPassword(page: Page, says: string | RegExp): Promise<void> {
+async function confirmWithPgp(page: Page, says: string | RegExp): Promise<void> {
   const sheet = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText(says);
-  await sheet.getByLabel('Your password').fill('Correct-Horse-9!');
+  await sheet.getByRole('button', { name: 'Use your PGP key' }).click();
+  await sheet.getByLabel('Login code').fill('123456');
   await sheet.getByRole('button', { name: 'Confirm' }).click();
 }
 
@@ -135,7 +137,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expectPhoneLayout(page);
     await page.locator('[data-part="invite"]').click();
     // Review M9(a): the confirm is for this one named member and these boxes.
-    await confirmWithPassword(page, `invite Aurora.K as a team member (${trades.length} abilities)`);
+    await confirmWithPgp(page, `invite Aurora.K as a team member (${trades.length} abilities)`);
     const url = page.locator('[data-part="invite-url"]');
     await expect(url).toHaveText(`${new URL(page.url()).origin}/team/join#${CODE}`);
     const [before] = (await url.innerText()).split('#');
@@ -184,7 +186,7 @@ test('a 4th member is refused through CantDoThat (too-many-members), from the se
   await page.goto('/settings/team');
   await page.getByLabel('Their name on your team').fill('Cedric');
   await page.locator('[data-part="invite"]').click();
-  await confirmWithPassword(page, `invite Cedric as a team member (${presetBoxes('start').length} abilities)`);
+  await confirmWithPgp(page, `invite Cedric as a team member (${presetBoxes('start').length} abilities)`);
   const popup = page.locator('[data-part="cant-do-that"]');
   await expect(popup).toHaveAttribute('data-from', 'too-many-members');
   await expect(popup).toContainText('A team can have at most 3 members.');
@@ -678,7 +680,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await page.locator('[data-part="hours-any"]').uncheck();
     await expectPhoneLayout(page);
     await page.locator('[data-part="save-limits"]').click();
-    await confirmWithPassword(page, "set a team member's trade size to 0.1 to 2 XMR and working hours to Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)");
+    await confirmWithPgp(page, "set a team member's trade size to 0.1 to 2 XMR and working hours to Mon, Tue, Wed, Thu, Fri 08:00 to 18:00 (UTC)");
     await expect(page.locator('[data-part="team-said"]')).toHaveText('Limits saved for Aurora.');
     expect(puts).toEqual([{
       band: { minAtomic: '100000000000', maxAtomic: '2000000000000' },
@@ -703,7 +705,7 @@ test('the owner changes boxes and removes a member; the member is then signed ou
   await page.locator('[data-part="save-boxes"]').click();
   // The old roles' "Coming later" boxes (edit prices, accept a trade, ...) are kept, not dropped.
   const want = rolesToAbilities(['offers', 'trades']).filter((id) => id !== 'offers-post');
-  await confirmWithPassword(page, `change a team member's abilities (${want.length} abilities)`);
+  await confirmWithPgp(page, `change a team member's abilities (${want.length} abilities)`);
   await expect(page.locator('[data-part="team-said"]')).toHaveText('Boxes saved for Aurora.');
   expect(seen.patches).toEqual([{ abilities: want, confirmToken: 'tok-1' }]);
   expect(want).toContain('offers-edit-prices');
@@ -719,7 +721,7 @@ test('the owner changes boxes and removes a member; the member is then signed ou
     await expect(m.page.locator('[data-part="cant-do-that"]')).toHaveAttribute('data-from', 'owner-only');
 
     await page.getByRole('button', { name: 'Remove Aurora' }).click();
-    await confirmWithPassword(page, 'remove a team member');
+    await confirmWithPgp(page, 'remove a team member');
     await expect(page.locator('[data-part="team-said"]')).toHaveText('Aurora was removed. Their sessions have ended.');
     expect(seen.deletes).toEqual(['m1']);
     removed = true;

@@ -87,17 +87,20 @@ describe('/setup/name (owner, 12 Nov 2026)', () => {
 });
 
 describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)', () => {
-  it('offers PGP, security key, passkey, authenticator app and password as checkboxes, PGP ticked first', () => {
+  it('offers PGP, security key, passkey and the authenticator app as checkboxes, no password; PGP and the passkey ticked', () => {
     const host = show(<Login />, setup());
     const ids = [...host.querySelectorAll('[data-method]')].map((e) => e.getAttribute('data-method'));
-    expect(ids).toEqual(['pgp', 'security-key', 'passkey', 'totp', 'password']);
+    expect(ids).toEqual(['pgp', 'security-key', 'passkey', 'totp']);
     expect(host.querySelector('[role="radio"]')).toBeNull();
     for (const id of ids) expect(box(host, id!)).not.toBeNull();
     expect(box(host, 'pgp').checked).toBe(true);
-    expect(box(host, 'password').checked).toBe(false);
+    expect(box(host, 'passkey').checked).toBe(true);
+    expect(box(host, 'totp').checked).toBe(false);
+    expect(host.querySelector('[data-method="password"]')).toBeNull();
+    expect(host.textContent).not.toContain('RATED-WEAK');
   });
 
-  it('labels PGP, the security key and the passkey Recommended and Strong (#134), the authenticator app Medium, the password Weak with the owner\'s warning', () => {
+  it('labels PGP, the security key and the passkey Recommended and Strong (#134), the authenticator app Medium', () => {
     const host = show(<Login />, setup());
     const chip = (id: string) => host.querySelector(`[data-method="${id}"] [data-part="strength"]`)!;
     for (const id of ['pgp', 'security-key', 'passkey']) {
@@ -106,24 +109,21 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
       expect(chip(id).getAttribute('data-strength')).toBe('strong');
     }
     expect(chip('totp').textContent).toBe('RATED-MEDIUM');
-    expect(chip('password').textContent).toBe('RATED-WEAK');
-    expect(host.querySelector('[data-method="password"]')!.textContent).toContain(
-      'It is strongly recommended you do not choose this as the only security method you use.',
-    );
+    expect(host.querySelector('[data-method="totp"] [data-part="recommended"]')).toBeNull();
     // The authenticator app is there with its explanation.
     expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/6-digit code/);
     expect(METHODS.find((m) => m.id === 'totp')!.strength).toBe('medium');
-    // Owner demo note #137: his second paragraph under the authenticator app's explanation.
+    // Owner, 26 Nov 2026: it counts as one of the two, but never logs in by itself.
     expect(host.querySelector('[data-method="totp"] [data-part="method-more"]')!.textContent).toBe(
-      'Security Level: Medium. We strongly recommend using an authenticator app alongside a strong password at a minimum, or opting for one of our stronger login methods (such as a PGP key, hardware security key, or passkey) for maximum account protection.',
+      'Security Level: Medium. It counts as one of your two ways in, but it never logs you in by itself, so tick a PGP key, security key or passkey with it. You can add one authenticator app.',
     );
   });
 
-  it('Learn About lists the five methods down the middle and opens one write-up at a time (owner demo note #221)', () => {
+  it('Learn About lists the four methods down the middle and opens one write-up at a time (owner demo note #221)', () => {
     const host = show(<Login />, setup());
     const learn = byPart(host, 'learn-about')!;
     expect(learn.querySelector('h2')!.textContent).toBe('Learn About');
-    expect([...learn.querySelectorAll('li > button')].map((b) => b.textContent)).toEqual(['PGP', 'Security Key', 'Passkey', 'OTP', 'Password']);
+    expect([...learn.querySelectorAll('li > button')].map((b) => b.textContent)).toEqual(['PGP', 'Security Key', 'Passkey', 'OTP']);
     click(byPart(host, 'learn-passkey'));
     expect(byPart(host, 'learn-passkey-text')!.textContent).toMatch(/fingerprint, face or device PIN/);
     expect(byPart(host, 'learn-passkey')!.getAttribute('aria-expanded')).toBe('true');
@@ -144,82 +144,58 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     expect(t).toContain('PGPony (com.pgpony.android on F-Droid, our top Android pick)');
   });
 
-  // Owner decision, 16 Nov 2026 (to-lead.log 17:38): the authenticator app is the password login's
-  // second factor, so it is offered only with a password. It reverses signup round 3 behaviour 1
-  // (TOTP with PGP, a passkey or a security key and no password) and the M3 sentence that went with it.
-  it('the authenticator app goes with a password: it can be ticked only with Password, and unticks with it', () => {
-    const host = show(<Login />, setup());
-    // PGP is ticked by default; PGP, a security key or a passkey alone never enable it.
-    expect(box(host, 'totp').disabled).toBe(true);
-    for (const other of ['security-key', 'passkey']) {
-      click(box(host, other));
-      expect(box(host, 'totp').disabled).toBe(true);
-    }
-    expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/Goes with a password: tick Password to add it\./);
-    click(box(host, 'password'));
-    expect(box(host, 'totp').disabled).toBe(false);
-    click(box(host, 'totp'));
-    expect(box(host, 'totp').checked).toBe(true);
-    click(box(host, 'password'));
-    expect(box(host, 'totp').checked).toBe(false);
-    expect(box(host, 'totp').disabled).toBe(true);
-  });
-
   it('the authenticator card no longer says the code is asked for only with a password (M3 sentence removed)', () => {
     const host = show(<Login />, setup());
     expect(byPart(host, 'totp-no-password')).toBeNull();
     expect(host.textContent).not.toMatch(/only when you log in with a password/i);
   });
 
-  it('PGP and the authenticator app, no password: the authenticator app is not stored', () => {
-    const api = setup();
-    const host = show(<Login />, api);
-    click(box(host, 'totp'));
-    click(byPart(host, 'method-continue'));
-    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp'], done: [], method: 'pgp' });
-  });
-
-  // Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
-  // needs the authenticator app or another way to log in (the server refuses finishing sign-up
-  // otherwise, 409 password-alone).
-  it('Password alone cannot continue: it needs the authenticator app or another way to log in', () => {
-    const api = setup();
-    const host = show(<Login />, api);
-    click(box(host, 'pgp'));
-    click(box(host, 'password'));
-    expect(disabled(byPart(host, 'method-continue'))).toBe(true);
-    expect(byPart(host, 'password-partner')).not.toBeNull();
-    click(box(host, 'totp'));
+  // Owner, 26 Nov 2026 (no passwords): at least two kinds; the authenticator app counts as one, but
+  // never alone, since it never logs in (the server refuses finishing sign-up otherwise, 409
+  // two-methods-required).
+  it('Continue needs two kinds: one key alone or the authenticator app alone cannot continue', () => {
+    const host = show(<Login />, setup());
     expect(disabled(byPart(host, 'method-continue'))).toBe(false);
-    expect(byPart(host, 'password-partner')).toBeNull();
-    click(box(host, 'totp'));
     click(box(host, 'passkey'));
+    expect(disabled(byPart(host, 'method-continue'))).toBe(true);
+    expect(byPart(host, 'method-none')!.textContent).toBe('Tick at least two ways to log in.');
+    click(box(host, 'totp'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(false);
-    expect(byPart(host, 'password-partner')).toBeNull();
-  });
-
-  it('Continue needs at least one way to log in, and stores every ticked one in setup order', () => {
-    const api = setup();
-    const host = show(<Login />, api);
+    expect(byPart(host, 'method-none')).toBeNull();
     click(box(host, 'pgp'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(true);
-    click(box(host, 'password'));
-    click(box(host, 'totp'));
-    click(box(host, 'pgp'));
+    click(box(host, 'security-key'));
     expect(disabled(byPart(host, 'method-continue'))).toBe(false);
+    expect(byPart(host, 'method-continue')!.textContent).toBe('Continue with security key');
+  });
+
+  it('PGP and the authenticator app are stored together, in setup order', () => {
+    const api = setup();
+    const host = show(<Login />, api);
+    click(box(host, 'passkey'));
+    click(box(host, 'totp'));
     click(byPart(host, 'method-continue'));
-    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp', 'password', 'totp'], done: [], method: 'pgp' });
+    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp', 'totp'], done: [], method: 'pgp' });
+    expect(api.go).toHaveBeenCalledWith('pgp-key');
+  });
+
+  it('stores every ticked one in setup order', () => {
+    const api = setup();
+    const host = show(<Login />, api);
+    click(box(host, 'totp'));
+    click(box(host, 'security-key'));
+    click(byPart(host, 'method-continue'));
+    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp', 'security-key', 'passkey', 'totp'], done: [], method: 'pgp' });
     expect(api.go).toHaveBeenCalledWith('pgp-key');
   });
 
   it('after one is set up, the next ticked one comes; the recovery code comes after all of them', () => {
-    expect(SIGNUP_ORDER).toEqual(['pgp', 'security-key', 'passkey', 'password', 'totp']);
-    const s = { ...INITIAL, methods: ['pgp', 'security-key', 'password', 'totp'] as SetupState['methods'] };
+    expect(SIGNUP_ORDER).toEqual(['pgp', 'security-key', 'passkey', 'totp']);
+    const s = { ...INITIAL, methods: ['pgp', 'security-key', 'totp'] as SetupState['methods'] };
     expect(nextStep({ ...s, done: [] })).toBe('pgp-key');
     expect(nextStep({ ...s, done: ['pgp'] })).toBe('security-key');
-    expect(nextStep({ ...s, done: ['pgp', 'security-key'] })).toBe('password');
-    expect(nextStep({ ...s, done: ['pgp', 'security-key', 'password'] })).toBe('authenticator');
-    expect(nextStep({ ...s, done: ['pgp', 'security-key', 'password', 'totp'] })).toBe('backup');
+    expect(nextStep({ ...s, done: ['pgp', 'security-key'] })).toBe('authenticator');
+    expect(nextStep({ ...s, done: ['pgp', 'security-key', 'totp'] })).toBe('backup');
     expect(nextStep({ ...INITIAL, methods: ['passkey'], done: ['passkey'] })).toBe('backup');
   });
 });
@@ -228,6 +204,7 @@ describe('/setup/backup: one long recovery code, written down, then typed back u
   async function shown(api = setup({ registered: true })) {
     const host = show(<Backup />, api);
     expect(byPart(host, 'backup-skip')).toBeNull();
+    click(byPart(host, 'recovery-understood'));
     click(byPart(host, 'recovery-make'));
     await flush();
     return { host, api };
@@ -237,6 +214,7 @@ describe('/setup/backup: one long recovery code, written down, then typed back u
     const host = show(<Backup />, setup({ registered: true }));
     expect(host.textContent).toContain('recovery code');
     expect(host.textContent).not.toMatch(/recovery codes/i);
+    click(byPart(host, 'recovery-understood'));
     click(byPart(host, 'recovery-make'));
     await flush();
     expect(host.textContent).not.toMatch(/recovery codes|these now|each works/i);
@@ -317,6 +295,7 @@ describe('lead calls, 12 Nov 2026', () => {
   it('no "Add another backup" step: the recovery code goes straight on to the wallet', async () => {
     const api = setup({ registered: true });
     const host = show(<Backup />, api);
+    click(byPart(host, 'recovery-understood'));
     click(byPart(host, 'recovery-make'));
     await flush();
     click(byPart(host, 'recovery-written'));
@@ -380,36 +359,30 @@ describe('note #219: the PGP code step waits for a whole code', () => {
   });
 });
 
-// Owner decision, 16 Nov 2026: the authenticator step follows the password; without one it is skipped
-// (the server refuses the enrolment, 409 totp-needs-password), and the M3 sentence is gone.
-describe('/setup/authenticator goes with a password (owner, 16 Nov 2026)', () => {
-  it('with no password among the methods (a stale round-3 tab), it goes straight on and offers no enrolment', async () => {
-    const api = setup({ registered: true, methods: ['pgp', 'totp'], done: ['pgp'] });
-    const host = show(<AuthenticatorStep />, api);
-    await flush();
-    expect(byPart(host, 'totp-start')).toBeNull();
-    expect(byPart(host, 'totp-no-password')).toBeNull();
-    expect(api.update).toHaveBeenCalledWith({ done: ['pgp', 'totp'] });
-    expect(api.go).toHaveBeenCalledWith('backup', { replace: true });
-  });
-
-  it('with a password as the only way to log in, the authenticator app cannot be left for later', async () => {
-    const host = show(<AuthenticatorStep />, setup({ registered: true, methods: ['password', 'totp'], done: ['password'] }));
+// Owner, 26 Nov 2026 (no passwords): the authenticator app counts as one of the two kinds, so its
+// step can be left for later only when the other ticked methods are two kinds already.
+describe('/setup/authenticator: one of the two kinds (owner, 26 Nov 2026)', () => {
+  it('with one key besides it, the authenticator app cannot be left for later', async () => {
+    const host = show(<AuthenticatorStep />, setup({ registered: true, methods: ['pgp', 'totp'], done: ['pgp'] }));
     await flush();
     expect(byPart(host, 'totp-start')).not.toBeNull();
     expect(byPart(host, 'method-later')).toBeNull();
   });
 
-  it('with a password and another way to log in, it can be left for later', async () => {
-    const host = show(<AuthenticatorStep />, setup({ registered: true, methods: ['pgp', 'password', 'totp'], done: ['pgp', 'password'] }));
+  it('with two other kinds, it can be left for later, and later drops it from the methods', async () => {
+    const api = setup({ registered: true, methods: ['pgp', 'passkey', 'totp'], done: ['pgp', 'passkey'] });
+    const host = show(<AuthenticatorStep />, api);
     await flush();
-    expect(byPart(host, 'method-later')).not.toBeNull();
+    click(byPart(host, 'method-later'));
+    expect(api.update).toHaveBeenCalledWith({ methods: ['pgp', 'passkey'], done: ['pgp', 'passkey', 'totp'] });
+    expect(api.go).toHaveBeenCalledWith('backup', { replace: true });
   });
 
-  it('with a password, it keeps the plain lead', async () => {
-    const host = show(<AuthenticatorStep />, setup({ methods: ['pgp', 'password', 'totp'], done: ['pgp', 'password'] }));
+  it('says it never logs in by itself, and nothing about a password', async () => {
+    const host = show(<AuthenticatorStep />, setup({ methods: ['pgp', 'totp'], done: ['pgp'] }));
     await flush();
-    expect(byPart(host, 'totp-no-password')).toBeNull();
-    expect(host.querySelector('h1')!.parentElement!.textContent).toMatch(/Each time you log in with your password/);
+    const lead = host.querySelector('h1')!.parentElement!.textContent!;
+    expect(lead).toContain('it never logs you in by itself');
+    expect(lead).not.toMatch(/password/i);
   });
 });

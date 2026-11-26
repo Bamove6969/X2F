@@ -131,18 +131,6 @@ describe('Team (settings)', () => {
     expect(host.querySelector('#team-name-hint')?.textContent).toContain('Assistant');
   });
 
-  it('S-104 (owner p11-21): an invite from a username-and-password login shows the link and says its boxes wait as a draft', async () => {
-    inviteReply = { status: 201, body: { id: 'm3', invite: CODE, expiresAt: '2026-10-31T10:00:00.000Z', status: 'staged', changeId: 'ch1' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
-    expect(byPart(host, 'staged-note')).not.toBeNull();
-  });
-
   it('S-104: a member with no boxes yet says so instead of an empty role list', async () => {
     members = [
       { id: 'm5', displayName: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
@@ -266,36 +254,6 @@ describe('Team (settings)', () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     expect(byPart(host, 'team-full')).toBeNull();
-  });
-
-  it("during the account's 24-hour hold a team change opens CantDoThat with the hold's sentence (owner 2026-10-30)", async () => {
-    inviteReply = { status: 403, body: { error: 'recovery-hold', holdUntil: '2026-10-31T10:00:00.000Z' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    const popup = byPart(document, 'cant-do-that');
-    expect(popup?.getAttribute('data-from')).toBe('recovery-hold');
-    expect(popup?.textContent).toContain('Your account is on a 24-hour hold');
-    expect(byPart(host, 'invite-url')).toBeNull();
-  });
-
-  it('a weak session inviting opens CantDoThat saying team changes need a stronger login (owner 1 Nov 2026)', async () => {
-    inviteReply = { status: 403, body: { error: 'weak-session' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    const popup = byPart(document, 'cant-do-that');
-    expect(popup?.getAttribute('data-from')).toBe('weak-session');
-    expect(popup?.textContent).toContain("can't invite team members");
-    // Lead review 8 Nov: role changes and removals from such a device wait 24 hours; they are not refused.
-    expect(popup?.textContent).not.toContain('change their roles');
-    expect(byPart(host, 'invite-url')).toBeNull();
   });
 
   it('a team member opening the screen gets owner-only through CantDoThat', async () => {

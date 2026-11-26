@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { expectParity } from './parity.js';
 import { takeableWallets, type WalletRule, type WalletView } from '../src/screens/wallets-model.js';
-import { INSIDE, screenStatus } from './session.js';
+import { INSIDE } from './session.js';
 import { DB_NAME as ESCROW_DB, KEYS, SECRETS, TRADES } from '../src/escrow/store.js';
 
 /** A 95-character standard address ending in `end` (the API's `addressEnd` is its last 6 characters). */
@@ -27,23 +27,17 @@ const WAITING: WalletView = {
 };
 
 // GET /v1/wallets/rule fixtures, same shape as the lead's FU-B (`WalletRule` in @x2f/auth-client).
-const RULE_FIRST: WalletRule = { firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 };
-const RULE_KEY: WalletRule = { firstWallet: false, strongMethods: ['security-key'], password: 'none', waitHours: 24 };
-const RULE_KEY_AND_PASSWORD: WalletRule = {
-  firstWallet: false,
-  strongMethods: ['passkey', 'pgp'],
-  password: 'waits',
-  waitHours: 24,
-};
-const RULE_PASSWORD_ONLY: WalletRule = { firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 };
+const RULE_FIRST: WalletRule = { firstWallet: true, strongMethods: ['pgp'] };
+const RULE_KEY: WalletRule = { firstWallet: false, strongMethods: ['security-key'] };
+const RULE_TWO_KEYS: WalletRule = { firstWallet: false, strongMethods: ['passkey', 'pgp'] };
 
 interface Stub {
   posts: Record<string, unknown>[];
 }
 
 /**
- * Stubs `me` (a password account, so Task 30's ConfirmSheet offers the password), its password
- * confirm, the wallet list and the account's wallet rule. Each POST body is recorded; `onPost`
+ * Stubs `me` (a PGP account, so Task 30's ConfirmSheet offers the PGP key), its PGP confirm, the
+ * wallet list and the account's wallet rule. Each POST body is recorded; `onPost`
  * answers it (default 500).
  */
 async function stub(
@@ -53,8 +47,9 @@ async function stub(
   onPost?: (body: Record<string, unknown>, n: number, route: Route) => Promise<void> | void,
 ): Promise<Stub> {
   const s: Stub = { posts: [] };
-  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: { ...INSIDE, methods: ['password'] } }));
-  await page.route('**/v1/confirm/password', (route) => route.fulfill({ status: 200, json: { confirmToken: 'tok-1' } }));
+  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: { ...INSIDE, methods: ['pgp'] } }));
+  await page.route('**/v1/confirm/pgp/start', (route) => route.fulfill({ status: 200, json: { challengeId: 'ch-1', encryptedMessage: '-----BEGIN PGP MESSAGE-----' } }));
+  await page.route('**/v1/confirm/pgp/finish', (route) => route.fulfill({ status: 200, json: { confirmToken: 'tok-1' } }));
   await page.route('**/v1/wallets/rule', (route) => route.fulfill({ status: 200, json: rule }));
   await page.route('**/v1/wallets', async (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ status: 200, json: wallets });
@@ -134,11 +129,12 @@ async function startAdding(page: Page): Promise<void> {
   await expect(popup).toHaveCount(0);
 }
 
-/** Confirms it's you in Task 30's ConfirmSheet with the account's password. */
-async function confirmWithPassword(page: Page): Promise<void> {
+/** Confirms it's you in Task 30's ConfirmSheet with the account's PGP key. */
+async function confirmWithPgp(page: Page): Promise<void> {
   const sheet = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(sheet).toBeVisible();
-  await sheet.getByLabel('Your password').fill('Correct-Horse-9!');
+  await sheet.getByRole('button', { name: 'Use your PGP key' }).click();
+  await sheet.getByLabel('Login code').fill('123456');
   await sheet.getByRole('button', { name: 'Confirm' }).click();
 }
 
@@ -213,22 +209,10 @@ test.describe('the rule popup explains what adding does for this account', () =>
       never: [/24 hours/, /password/i],
     },
     {
-      name: 'strong methods and a password',
-      rule: RULE_KEY_AND_PASSWORD,
-      says: [
-        /You use a passkey and a PGP key: confirm with one of them and your new wallets work at once\./,
-        /If you confirm with your password instead, they work 24 hours after you add them\./,
-      ],
-      never: [],
-    },
-    {
-      name: 'username and password, nothing stronger',
-      rule: RULE_PASSWORD_ONLY,
-      says: [
-        /You have no passkey, security key or PGP key yet: new wallets will work 24 hours after you add them\./,
-        /Add one first to skip the wait\./,
-      ],
-      never: [],
+      name: 'two keys',
+      rule: RULE_TWO_KEYS,
+      says: [/You use a passkey and a PGP key: confirm with one of them and your new wallets work at once\./],
+      never: [/24 hours/, /password/i],
     },
   ];
   for (const c of cases) {
@@ -276,7 +260,7 @@ test("/wallets?add=1&returnTo=… returns to returnTo after confirm-it's-you whe
   await popup.getByRole('button', { name: 'Continue' }).click();
   await fillWallet(page, address('C', 'AAAAA1'));
   await page.getByRole('button', { name: 'Save wallet' }).click();
-  await confirmWithPassword(page);
+  await confirmWithPgp(page);
   await expect(page).toHaveURL(/\/buy\?resume=n1$/);
   expect(s.posts).toHaveLength(2);
   expect(s.posts[1]!.confirmToken).toBe('tok-1');
@@ -315,7 +299,7 @@ test('several wallets are added under one confirm', async ({ page }) => {
   const confirm = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(confirm).toBeVisible();
   await expect(confirm).toContainText('3 payout wallets');
-  await confirmWithPassword(page);
+  await confirmWithPgp(page);
   await expect(page.getByRole('listitem').filter({ hasText: 'Wallet 4' })).toBeVisible();
   await expect(confirm).toHaveCount(0);
   // Exactly one confirm: one refused request, then one retry with the token, for the same three wallets in order.
@@ -325,32 +309,6 @@ test('several wallets are added under one confirm', async ({ page }) => {
   expect(addrs(s.posts[1]!)).toEqual(addrs(s.posts[0]!));
   expect(s.posts[0]).not.toHaveProperty('confirmToken');
   expect(s.posts[1]!.confirmToken).toBe('tok-1');
-});
-
-test('a batch that waits shows one shared wait for all of its wallets', async ({ page }) => {
-  const later = '2099-01-01T12:00:00.000Z';
-  await stub(page, [READY], RULE_PASSWORD_ONLY, (body, n, route) =>
-    n === 1
-      ? route.fulfill({ status: 403, json: { error: 'confirm-required', action: 'add-wallets' } })
-      : route.fulfill({ status: 201, json: created(body, later, false) }),
-  );
-  await page.goto('/wallets');
-  await startAdding(page);
-  await fillWallet(page, address('C', 'AAAAA1'), 'Wallet 2');
-  await page.getByRole('button', { name: 'Add another' }).click();
-  await fillWallet(page, address('D', 'BBBBB2'), 'Wallet 3');
-  await page.getByRole('button', { name: 'Save 2 wallets' }).click();
-  await confirmWithPassword(page);
-  const status = screenStatus(page);
-  await expect(status).toContainText('Your 2 new wallets can be paid from');
-  await expect(status).toContainText('one wait for all of them');
-  for (const name of ['Wallet 2', 'Wallet 3']) {
-    await expect(page.getByRole('listitem').filter({ hasText: name }).getByText('Waiting')).toBeVisible();
-  }
-  // The same "until" on both rows: one clock.
-  const notes = await page.getByRole('listitem').filter({ hasText: 'Waiting' }).getByText(/^Until /).allInnerTexts();
-  expect(notes).toHaveLength(2);
-  expect(new Set(notes).size).toBe(1);
 });
 
 test('labels: neutral names are suggested and the screen warns against naming where money came from', async ({ page }) => {
@@ -430,19 +388,6 @@ test('security review of wip/lead-note-226: a name that could pass for a wallet 
   await sheet.getByLabel('Wallet name').fill('Default');
   await expect(sheet.getByRole('button', { name: 'Save name' })).toBeDisabled();
   await expect(sheet.locator('[data-part="wallet-rename-invalid"]')).toContainText('Default, Ready, Usable');
-});
-
-test('security review of wip/lead-note-226: a rename from a username-and-password login is refused in the CantDoThat popup', async ({ page }) => {
-  await stub(page, [READY]);
-  await page.route('**/v1/wallets/*/label', (route) => route.fulfill({ status: 403, json: { error: 'weak-session' } }));
-  await page.goto('/wallets');
-  await page.getByRole('button', { name: 'Rename Savings' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Rename wallet' });
-  await sheet.getByLabel('Wallet name').fill('Rent money');
-  await sheet.getByRole('button', { name: 'Save name' }).click();
-  await expect(sheet).toHaveCount(0);
-  await expect(page.getByText("This device logged in with just a username and password, so it can't rename wallets.", { exact: false })).toBeVisible();
-  await expect(page.locator('.x2f-wallet-row__name').first()).toHaveText('Savings');
 });
 
 test('the Save footer stays pinned on a 390x844 phone while the add form scrolls (review item 8)', async ({ page }) => {

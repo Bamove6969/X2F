@@ -42,7 +42,6 @@ describe('RecoveryCodes screen component', () => {
     const fakeCodes = ['ABCD-1234', 'EFGH-5678', 'IJKL-9012'];
 
     vi.spyOn(authApi, 'newRecoveryCodes').mockResolvedValue({
-      status: 'applied',
       codes: fakeCodes,
     } as any);
 
@@ -55,9 +54,6 @@ describe('RecoveryCodes screen component', () => {
 
     // Verification notice
     expect(host.querySelector('.x2f-note')?.textContent).toBe('Save this now. It works once, and you will not see it again.');
-
-    // Not staged
-    expect(host.querySelector('.x2f-note--staged')).toBeNull();
 
     // Codes list
     const list = host.querySelector('[data-part="code-list"]');
@@ -73,30 +69,6 @@ describe('RecoveryCodes screen component', () => {
       fire(doneBtn, new MouseEvent('click', { bubbles: true }));
     });
     expect(onDone).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders StagedNote when recovery codes status is staged', async () => {
-    const prove = vi.fn().mockResolvedValue('confirm-token-123');
-    const onDone = vi.fn();
-    const fakeCodes = ['STAGED-1', 'STAGED-2'];
-
-    vi.spyOn(authApi, 'newRecoveryCodes').mockResolvedValue({
-      status: 'staged',
-      codes: fakeCodes,
-    } as any);
-
-    const { host } = mount(<RecoveryCodes prove={prove} onDone={onDone} />);
-    const makeBtn = host.querySelector('[data-part="recovery-make"]')!;
-
-    await act(async () => {
-      fire(makeBtn, new MouseEvent('click', { bubbles: true }));
-    });
-
-    const items = [...host.querySelectorAll('[data-part="code-list"] li')].map((li) => li.textContent);
-    expect(items).toEqual(fakeCodes);
-
-    // Staged draft note should be present
-    expect(host.textContent).toContain('Saved as a draft. Nothing changes until you submit it.');
   });
 
   it('displays error message when generation fails', async () => {

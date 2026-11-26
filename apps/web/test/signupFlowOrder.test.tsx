@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Owner demo notes 12 Nov 2026 (#27 a8b080ad, #30 4a8a6e47): when multiple login methods are
 // ticked on /setup/login, the setup flow walks through every ticked method in SIGNUP_ORDER
-// (pgp -> security-key -> passkey -> password -> totp) and opens the recovery-code screen
+// (pgp -> security-key -> passkey -> totp) and opens the recovery-code screen
 // (/setup/backup) only after all chosen methods have been set up.
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -24,7 +24,6 @@ beforeEach(() => {
         loginNameSet: true,
         kind: 'trader',
         level: 'full',
-        holdUntil: null,
         methods: ['pgp'],
         hasBackup: false,
         suggestions: [],
@@ -62,11 +61,11 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
     writePendingSignup({
       displayName: 'Lumen.K',
       method: 'pgp',
-      methods: ['pgp', 'security-key', 'passkey', 'password', 'totp'],
+      methods: ['pgp', 'security-key', 'passkey', 'totp'],
       done: ['pgp'],
     });
 
-    for (const path of ['/setup/backup', '/setup/wallet', '/setup/welcome', '/setup/password', '/setup/authenticator']) {
+    for (const path of ['/setup/backup', '/setup/wallet', '/setup/welcome', '/setup/passkey', '/setup/authenticator']) {
       const { host, unmount } = mountAt(path);
       await flush();
       expect(host.querySelector('[data-screen]')?.getAttribute('data-screen'), path).toBe('setup-security-key');
@@ -75,19 +74,18 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
   });
 
   it('walks through each remaining ticked method in SIGNUP_ORDER and reaches /setup/backup only after all are done', async () => {
-    const steps: Array<{ done: ('pgp' | 'security-key' | 'passkey' | 'password' | 'totp')[]; expectedScreen: string }> = [
+    const steps: Array<{ done: ('pgp' | 'security-key' | 'passkey' | 'totp')[]; expectedScreen: string }> = [
       { done: ['pgp'], expectedScreen: 'setup-security-key' },
       { done: ['pgp', 'security-key'], expectedScreen: 'setup-passkey' },
-      { done: ['pgp', 'security-key', 'passkey'], expectedScreen: 'setup-password' },
-      { done: ['pgp', 'security-key', 'passkey', 'password'], expectedScreen: 'setup-authenticator' },
-      { done: ['pgp', 'security-key', 'passkey', 'password', 'totp'], expectedScreen: 'setup-backup' },
+      { done: ['pgp', 'security-key', 'passkey'], expectedScreen: 'setup-authenticator' },
+      { done: ['pgp', 'security-key', 'passkey', 'totp'], expectedScreen: 'setup-backup' },
     ];
 
     for (const { done, expectedScreen } of steps) {
       writePendingSignup({
         displayName: 'Lumen.K',
         method: 'pgp',
-        methods: ['pgp', 'security-key', 'passkey', 'password', 'totp'],
+        methods: ['pgp', 'security-key', 'passkey', 'totp'],
         done,
       });
       const { host, unmount } = mountAt('/setup/backup');
@@ -107,8 +105,7 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
           loginNameSet: true,
           kind: 'trader',
           level: 'full',
-          holdUntil: null,
-          methods: ['pgp'],
+            methods: ['pgp'],
           hasBackup: false,
           suggestions: [],
           termsCurrent: true,
@@ -123,7 +120,7 @@ describe('setup flow multi-method checklist order (#27, #30)', () => {
       displayName: 'Lumen.K',
       loginName: 'juniper.oak',
       method: 'pgp',
-      methods: ['pgp', 'security-key', 'password'],
+      methods: ['pgp', 'security-key', 'totp'],
       done: [],
       challenge: {
         challengeId: 'c1',

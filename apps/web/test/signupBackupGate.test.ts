@@ -6,7 +6,7 @@ import { needsBackup, restoredState } from '../src/screens/setup/SetupFlow.js';
 import { INITIAL } from '../src/screens/setup/kit.js';
 import { backupRedirect, clearPendingSignup, readPendingSignup, writePendingSignup } from '../src/screens/setup/signupPending.js';
 
-const pending = { displayName: 'Satoshi Fan', method: 'pgp' as const, methods: ['pgp' as const, 'password' as const], done: ['pgp' as const] };
+const pending = { displayName: 'Satoshi Fan', method: 'pgp' as const, methods: ['pgp' as const, 'totp' as const], done: ['pgp' as const] };
 
 afterEach(() => {
   clearPendingSignup();
@@ -36,7 +36,7 @@ describe('signup backup gate (m-2)', () => {
     const s = restoredState();
     expect(s.registered).toBe(true);
     expect(needsBackup(s)).toBe(true);
-    expect(s.methods).toEqual(['pgp', 'password']);
+    expect(s.methods).toEqual(['pgp', 'totp']);
     expect(s.done).toEqual(['pgp']);
   });
 

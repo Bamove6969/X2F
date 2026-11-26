@@ -42,7 +42,7 @@ const T0 = Date.parse('2026-11-02T12:00:00Z');
 const info = (o: Partial<SessionInfo> = {}): SessionInfo => ({
   lengthHours: 4, choices: [2, 4, 8, 12], expiresAt: new Date(T0 + 4 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(T0).toISOString(), ...o,
 });
-const ME = { displayName: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
+const ME = { displayName: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true };
 
 beforeEach(() => {
   calls = [];
@@ -92,6 +92,23 @@ function type(input: Element | null, value: string) {
   });
 }
 
+/** Confirms it's you in the open prompt with the PGP key: asks for the message, pastes the code, taps Confirm. */
+async function confirmWithPgp(): Promise<void> {
+  click(document.querySelector('[data-method="pgp"]'));
+  await settle();
+  type(document.querySelector('[data-method="pgp-code"] input[aria-label="Login code"]'), '123456');
+  const confirm = [...document.querySelectorAll('[data-method="pgp-code"] button')].find((b) => b.textContent === 'Confirm')!;
+  click(confirm);
+  await settle();
+}
+
+/** The PGP confirm's two steps, answered. */
+function pgpConfirm(url: string, init: RequestInit | undefined): Response | undefined {
+  if (url === '/v1/confirm/pgp/start' && init?.method === 'POST') return json(200, { challengeId: 'ch', encryptedMessage: '-----BEGIN PGP MESSAGE-----' });
+  if (url === '/v1/confirm/pgp/finish' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+  return undefined;
+}
+
 function Where() {
   const l = useLocation();
   return <span data-part="where">{l.pathname + l.search}</span>;
@@ -109,10 +126,10 @@ describe('after login: the session length comes first', () => {
     const session = info();
     handler = (url) =>
       url === '/v1/account/me'
-        ? json(200, { ...ME, methods: ['password', 'passkey'], idleReminderMinutes: 30, session })
+        ? json(200, { ...ME, methods: ['pgp', 'passkey'], idleReminderMinutes: 30, session })
         : url.startsWith('/v1/news') ? json(200, []) : undefined;
     await afterLogin(() => undefined, '/wallets');
-    expect(currentSessionWatch()).toEqual({ info: session, methods: ['password', 'passkey'] });
+    expect(currentSessionWatch()).toEqual({ info: session, methods: ['pgp', 'passkey'] });
     expect(currentIdleReminder()).toBe(30);
   });
 
@@ -178,14 +195,15 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     vi.advanceTimersByTime(ms);
   });
 
-  it(`warns ${SESSION_PROMPT_MS / 60_000} minutes before the end (owner Q73) and extends with the password through a confirm token`, async () => {
+  it(`warns ${SESSION_PROMPT_MS / 60_000} minutes before the end (owner Q73) and extends with a login method through a confirm token`, async () => {
     handler = (url, init) => {
-      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      const confirm = pgpConfirm(url, init);
+      if (confirm) return confirm;
       if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }));
       return undefined;
     };
     const { host } = render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    act(() => publishSessionWatch({ info: info(), methods: ['pgp'] }));
     expect(SESSION_PROMPT_MS).toBe(5 * 60_000);
     tick(4 * 3_600_000 - SESSION_PROMPT_MS - 2_000);
     expect(document.body.textContent).not.toContain('Stay logged in?');
@@ -200,11 +218,10 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     const select = document.querySelector('[data-part="session-extend"] [data-part="session-length-select"]') as HTMLSelectElement;
     expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['2', '4', '8', '12']);
     expect(select.value).toBe('4');
-    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
-    click(document.querySelector('[data-part="confirm-password"]'));
-    await settle();
+    await confirmWithPgp();
     expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
-      ['POST', '/v1/confirm/password', { password: 'Correct-Horse-9', action: { kind: 'extend-session' } }],
+      ['POST', '/v1/confirm/pgp/start', { action: { kind: 'extend-session' } }],
+      ['POST', '/v1/confirm/pgp/finish', { challengeId: 'ch', code: '123456' }],
       ['POST', '/v1/account/session/extend', { confirmToken: 'tok', hours: 4 }],
     ]);
     expect(document.body.textContent).toContain("You're logged in for another 4 h.");
@@ -218,16 +235,15 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     // The server sets the new session cookie on the extend's answer; the browser swaps it. The page
     // keeps no token of its own, so it only has to watch the new end: nothing at the old one.
     handler = (url, init) => {
-      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      const confirm = pgpConfirm(url, init);
+      if (confirm) return confirm;
       if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }));
       return undefined;
     };
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    act(() => publishSessionWatch({ info: info(), methods: ['pgp'] }));
     tick(4 * 3_600_000 - 60_000);
-    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
-    click(document.querySelector('[data-part="confirm-password"]'));
-    await settle();
+    await confirmWithPgp();
     const sent = calls.length;
     // Past the old end (4 h): no logout, no "You're logged out", no call at all.
     tick(2 * 60_000);
@@ -239,19 +255,18 @@ describe('SessionExtend board: "Stay logged in?"', () => {
 
   it('extends for another of the login choices when the person picks one', async () => {
     handler = (url, init) => {
-      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      const confirm = pgpConfirm(url, init);
+      if (confirm) return confirm;
       if (url === '/v1/account/session/extend' && init?.method === 'POST') {
         return json(200, info({ lengthHours: 12, expiresAt: new Date(T0 + 16 * 3_600_000).toISOString() }));
       }
       return undefined;
     };
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    act(() => publishSessionWatch({ info: info(), methods: ['pgp'] }));
     tick(4 * 3_600_000 - 60_000);
     choose(document.querySelector('[data-part="session-extend"] [data-part="session-length-select"]'), '12');
-    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
-    click(document.querySelector('[data-part="confirm-password"]'));
-    await settle();
+    await confirmWithPgp();
     expect(calls.at(-1)).toEqual({ url: '/v1/account/session/extend', method: 'POST', body: { confirmToken: 'tok', hours: 12 } });
     expect(document.body.textContent).toContain("You're logged in for another 12 h.");
   });
@@ -263,7 +278,8 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     act(() => publishSessionWatch({ info: info(), methods: ['pgp', 'security-key'] }));
     tick(4 * 3_600_000 - 60_000);
     expect(document.body.textContent).toContain('Stay logged in?');
-    expect(document.querySelector('#confirm-password')).toBeNull();
+    expect(document.querySelector('[data-method="pgp"]')).not.toBeNull();
+    expect(document.querySelector('[data-method="security-key"]')).not.toBeNull();
   });
 
   it('with no answer the person is logged out when the time is up', async () => {
@@ -306,12 +322,13 @@ describe('SessionExtend board: "Stay logged in?"', () => {
 
   it('tabs share an extended end (review 2): an extend in one tab closes the prompt in the others', async () => {
     handler = (url, init) => {
-      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      const confirm = pgpConfirm(url, init);
+      if (confirm) return confirm;
       if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }));
       return undefined;
     };
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    act(() => publishSessionWatch({ info: info(), methods: ['pgp'] }));
     tick(4 * 3_600_000 - 60_000);
     expect(document.body.textContent).toContain('Stay logged in?');
     // Another tab extends: its end reaches this one, which goes back to waiting.
@@ -320,25 +337,24 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     const later = info({ expiresAt: new Date(T0 + 12 * 3_600_000).toISOString(), lengthHours: 12, serverNow: new Date(Date.now()).toISOString() });
     act(() => other.postMessage({ type: 'session-info', info: later }));
     expect(document.body.textContent).not.toContain('Stay logged in?');
-    expect(currentSessionWatch()).toEqual({ info: later, methods: ['password'] });
+    expect(currentSessionWatch()).toEqual({ info: later, methods: ['pgp'] });
     // This tab's own extend is sent to the others.
     tick(8 * 3_600_000 - 60_000);
-    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
-    click(document.querySelector('[data-part="confirm-password"]'));
-    await settle();
+    await confirmWithPgp();
     expect(other.posted).toHaveLength(1);
     expect(FakeChannel.all.size).toBe(2);
     const mine = [...FakeChannel.all].find((c) => c !== other)!;
     expect(mine.posted).toEqual([{ type: 'session-info', info: info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }) }]);
   });
 
-  it('with an authenticator app, staying logged in asks only for the password (owner G10)', async () => {
+  it('an authenticator app never confirms: staying logged in offers the login methods only (owner, 26 Nov 2026)', async () => {
     handler = () => undefined;
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info(), methods: ['password', 'totp'] }));
+    act(() => publishSessionWatch({ info: info(), methods: ['pgp', 'totp'] }));
     tick(4 * 3_600_000 - 60_000);
-    expect(document.querySelector('#confirm-password')).not.toBeNull();
+    expect(document.querySelector('[data-method="pgp"]')).not.toBeNull();
     expect(document.querySelector('#confirm-totp')).toBeNull();
+    expect(document.querySelector('[data-method="totp"]')).toBeNull();
   });
 
   it('"Log out" ends the session at once', async () => {
@@ -354,7 +370,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
   it('a session the server says cannot extend: no prompt, logged out at the end', async () => {
     handler = (url) => (url === '/v1/logout' ? json(200, { ok: true }) : undefined);
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
-    act(() => publishSessionWatch({ info: info({ canExtend: false }), methods: ['password'] }));
+    act(() => publishSessionWatch({ info: info({ canExtend: false }), methods: ['pgp'] }));
     tick(4 * 3_600_000 - 60_000);
     expect(document.body.textContent).not.toContain('Stay logged in?');
     tick(61_000);

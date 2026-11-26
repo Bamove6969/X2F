@@ -57,7 +57,7 @@ describe('the payout-address question on the quote (owner demo note #6)', () => 
       unmount();
     }
     expect(addressRuleText('weak')).toContain('Settings');
-    expect(addressRuleText('weak')).toContain('24 hours');
+    expect(addressRuleText('weak')).not.toContain('24 hours');
     expect(addressRuleText('high')).toContain('this trade only or saved for future trades');
     expect(addressRuleText('medium')).toContain('rated medium');
     expect(addressRuleText('medium')).toContain('Settings');
@@ -105,7 +105,7 @@ describe('the "?" tip for weak and medium accounts (owner, 17 Nov 2026)', () => 
       expect(tip.getAttribute('aria-expanded')).toBe('true');
       const panel = document.getElementById(panelId)!;
       expect(panel.textContent).toContain('security rating');
-      expect(panel.textContent).toContain('24 hours');
+      expect(panel.textContent).not.toContain('24 hours');
       const links = [...panel.querySelectorAll('a')].map((a) => a.getAttribute('href'));
       expect(links).toEqual(['/wallets?add=1', '/settings/security']);
       fire(tip, new MouseEvent('click', { bubbles: true }));
@@ -159,17 +159,18 @@ describe('the new-address sheet (owner demo note #6)', () => {
         const method = init?.method ?? 'GET';
         const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
         const res = (status: number, j: unknown) => new Response(JSON.stringify(j), { status, headers: { 'content-type': 'application/json' } });
-        if (url === '/v1/wallets/rule') return res(200, { firstWallet: false, strongMethods: ['passkey'], password: 'waits', waitHours: 24 });
+        if (url === '/v1/wallets/rule') return res(200, { firstWallet: false, strongMethods: ['pgp'] });
         if (url === '/v1/wallets' && method === 'POST') {
           posts.push(body!);
           const a = answer(posts.length);
           return res(a.status, a.json);
         }
-        if (url === '/v1/account/me') return res(200, { methods: ['password'] });
-        if (url === '/v1/confirm/password') {
+        if (url === '/v1/account/me') return res(200, { methods: ['pgp'] });
+        if (url === '/v1/confirm/pgp/start') {
           confirms.push(body!);
-          return res(200, { confirmToken: 'tok-1' });
+          return res(200, { challengeId: 'ch-1', encryptedMessage: '-----BEGIN PGP MESSAGE-----' });
         }
+        if (url === '/v1/confirm/pgp/finish') return res(200, { confirmToken: 'tok-1' });
         return res(404, { error: 'not-found' });
       }),
     );
@@ -213,10 +214,11 @@ describe('the new-address sheet (owner demo note #6)', () => {
     type('#new-address-label', 'Rent');
     type('#new-address-address', `  ${ADDR} `);
     clickText('Save address');
-    await until(() => document.querySelector('#confirm-password') !== null);
-    type('#confirm-password', 'Correct-Horse-9!');
-    const sheet = [...document.querySelectorAll('[role="dialog"]')].find((d) => d.textContent?.includes("Confirm it's you"))!;
-    clickText('Confirm', sheet.querySelector('[data-method="password"]')!);
+    await until(() => document.querySelector('[data-method="pgp"]') !== null);
+    fire(document.querySelector('[data-method="pgp"]')!, new MouseEvent('click', { bubbles: true }));
+    await until(() => document.querySelector('[data-method="pgp-code"]') !== null);
+    type('[data-method="pgp-code"] input[aria-label="Login code"]', '123456');
+    clickText('Confirm', document.querySelector('[data-method="pgp-code"]')!);
     await until(() => done.length > 0);
     expect(posts[0]).toEqual({ app: 'other', label: 'Rent', address: ADDR, oneTime: true });
     expect(posts[1]).toEqual({ app: 'other', label: 'Rent', address: ADDR, oneTime: true, confirmToken: 'tok-1' });
@@ -237,16 +239,6 @@ describe('the new-address sheet (owner demo note #6)', () => {
     expect(posts[0]).toEqual({ app: 'other', label: 'Trade address', address: ADDR, oneTime: false });
     expect(done[0]!.kind).toBe('waits');
     expect(document.querySelector('[data-part="new-address-waits"]')!.textContent).toContain('pick a saved address for this trade');
-  });
-
-  it('a staged add (a username-and-password login) says it waits in the changes', async () => {
-    answer = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
-    const done = await open();
-    type('#new-address-address', ADDR);
-    clickText('Save address');
-    await until(() => done.length > 0);
-    expect(done).toEqual([{ kind: 'staged' }]);
-    expect(document.querySelector('[data-part="new-address-staged"]')).not.toBeNull();
   });
 
   it('an API answer naming another address than the one typed is refused: nothing is handed back (lead 17 Nov)', async () => {

@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { INITIAL, SetupContext, type SetupApi } from '../src/screens/setup/kit.js';
 import { Wallet } from '../src/screens/setup/Wallet.js';
-import { forgetTypedAddresses, matchesRecord, typedAddressOf } from '../src/screens/walletRecord.js';
+import { forgetTypedAddresses, typedAddressOf } from '../src/screens/walletRecord.js';
 import { fire, render } from './render.js';
 
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -101,14 +101,5 @@ describe('the first wallet in setup records the address typed on this device (re
     expect(api.update).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('OTHER9');
     expect(typedAddressOf('w-first-0')).toBe(TYPED);
-  });
-
-  it('re-verify N1 (O3): a first wallet staged for review (202) is recorded by address, so a look-alike under any id does not match', async () => {
-    answer = () => ({ status: 'staged', changeId: 'c-1' });
-    const api = setup();
-    await finish(api, TYPED, () => vi.mocked(api.go).mock.calls.length > 0);
-    expect(api.go).toHaveBeenCalledWith('welcome');
-    expect(matchesRecord({ id: 'w-evil', address: address('Z', 'AAAAA1') })).toBe(false);
-    expect(matchesRecord({ id: 'w-later', address: TYPED })).toBe(true);
   });
 });

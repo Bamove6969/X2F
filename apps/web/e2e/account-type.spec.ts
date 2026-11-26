@@ -1,5 +1,5 @@
 // Settings > Account type (owner, 2 Nov 2026; owner answer Q77, 6 Nov 2026): a trader switches to a
-// vendor account with a passkey, security key or PGP key (never a password), the switch is one
+// vendor account with a passkey, security key or PGP key (never an authenticator app), the switch is one
 // way, and an unused vendor account closes after 60 days. Phone layout on every state.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { ACCOUNT_TYPE_COPY as C } from '../src/screens/settings/accountTypeCopy.js';
@@ -11,8 +11,7 @@ function overview(over: Overview = {}): Overview {
     displayName: 'nightowl',
     kind: 'trader',
     level: 'full',
-    holdUntil: null,
-    methods: ['password'],
+    methods: ['totp'],
     hasBackup: false,
     suggestions: [],
     termsCurrent: true,
@@ -39,8 +38,8 @@ test('a trader with no key: the requirement is not met, Add a key links to Secur
   await expect(page.locator('[data-part="switch-sheet"]')).toHaveCount(0);
 });
 
-test('a trader with a PGP key switches: the sheet says it is one way, the confirm offers no password, and the switch is sent with the token', async ({ page }) => {
-  let me = overview({ methods: ['password', 'pgp'] });
+test('a trader with a PGP key switches: the sheet says it is one way, the confirm offers no authenticator code, and the switch is sent with the token', async ({ page }) => {
+  let me = overview({ methods: ['totp', 'pgp'] });
   await page.route('**/v1/account/me', (r) => json(me)(r));
   await page.route('**/v1/confirm/pgp/start', json({ challengeId: 'pc1', encryptedMessage: '-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----', expiresAt: '2099-01-01T00:00:00.000Z' }));
   await page.route('**/v1/confirm/pgp/finish', json({ confirmToken: 'tok-v' }));
@@ -49,7 +48,7 @@ test('a trader with a PGP key switches: the sheet says it is one way, the confir
     const body = JSON.parse(r.request().postData() ?? '{}') as { confirmToken?: string };
     sent.push(body);
     if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'become-vendor' }, 403)(r);
-    me = overview({ methods: ['password', 'pgp'], accountType: 'vendor' });
+    me = overview({ methods: ['totp', 'pgp'], accountType: 'vendor' });
     return json({ accountType: 'vendor' })(r);
   });
 
@@ -63,7 +62,7 @@ test('a trader with a PGP key switches: the sheet says it is one way, the confir
   await page.click('[data-part="switch-confirm"]');
 
   await expect(page.locator('[role="dialog"] [data-method="pgp"]')).toBeVisible();
-  await expect(page.locator('[role="dialog"] [data-method="password"]')).toHaveCount(0);
+  await expect(page.locator('[role="dialog"] [data-method="totp"]')).toHaveCount(0);
   await page.click('[role="dialog"] [data-method="pgp"]');
   await page.fill('[data-method="pgp-code"] input', 'code-123');
   await page.click('[data-method="pgp-code"] >> text=Confirm');

@@ -13,7 +13,6 @@ import { BLOCKED_PATH } from '../src/screens/settings/BlockAction.js';
 import { TEAM_PATH } from '../src/screens/settings/teamCopy.js';
 import { ACCOUNT_TYPE_PATH } from '../src/screens/settings/accountTypeCopy.js';
 import { DEVICES_PATH } from '../src/screens/settings/devicesCopy.js';
-import { CHANGES_PATH } from '../src/screens/settings/holdCopy.js';
 import { IDLE_REMINDER_PATH } from '../src/screens/auth/sessionCopy.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
 import { refreshSession } from '../src/session/useSession.js';
@@ -58,7 +57,7 @@ describe('note #101: which tab each settings screen is under', () => {
   it('every existing settings route keeps a tab, and the tabs are the four pages', () => {
     expect(SETTINGS_TABS.map((t) => t.to)).toEqual([SECURITY_PATH, ALERTS_PATH, ACCOUNT_PATH, SETTINGS_HELP_PATH]);
     const under: [string, string][] = [
-      [SECURITY_PATH, 'security'], [CHANGES_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
+      [SECURITY_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
       [ALERTS_PATH, 'alerts'], ['/settings/jabber', 'alerts'], ['/settings/jabber/events', 'alerts'],
       [ACCOUNT_PATH, 'account'], [ACCOUNT_TYPE_PATH, 'account'], [TEAM_PATH, 'account'], [BLOCKED_PATH, 'account'],
       [SETTINGS_HELP_PATH, 'help'],

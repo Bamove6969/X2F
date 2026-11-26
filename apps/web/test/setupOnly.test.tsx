@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Security review of wip/lead-notes-all, M2 (owner 16 Nov 2026: a password alone does not finish
-// sign-up). A setup-only session (me.setupOnly: the account's only login is a password) is told on
-// Security to add a second way to log in, and sees none of the session screens it may not open;
+// Security review of wip/lead-notes-all, M2 (owner 26 Nov 2026: fewer than two kinds of login
+// method does not finish sign-up). A setup-only session (me.setupOnly: the account holds fewer than
+// two kinds) is told on Security to add another way to log in, and sees none of the session screens it may not open;
 // the sign-up's end (POST /v1/account/onboarding/end) is no longer ignored when it fails.
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -29,15 +29,15 @@ beforeEach(() => {
   vi.stubGlobal('fetch', async (input: string) => {
     const url = String(input).split('?')[0]!;
     if (url === '/v1/account/me') {
-      return json(200, { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['password'], hasBackup: false, suggestions: [], holdUntil: null, member: null, setupOnly });
+      return json(200, { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['pgp'], hasBackup: false, suggestions: [], member: null, setupOnly });
     }
     if (url === '/v1/account/onboarding/end') {
       ends.push(1);
       return endAnswer();
     }
-    if (url === '/v1/account/methods') return json(200, [{ type: 'password', id: 'password', label: '', createdAt: null, lastUsedAt: null }]);
+    if (url === '/v1/account/methods') return json(200, [{ type: 'pgp', id: 'pgp-1', label: 'PGP key', createdAt: null, lastUsedAt: null }]);
     if (url === '/v1/account/hold') return json(200, { level: 'none', count: 0, changes: [] });
-    if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
+    if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: ['pgp'] });
     return json(403, { error: 'second-method-required' });
   });
 });
@@ -106,10 +106,10 @@ describe('review M2: the end of sign-up is not ignored', () => {
     expect(host.querySelector('[data-part="end-signup-failed"]')).toBeNull();
   });
 
-  it('409 password-alone: says why, and goes on to Security to add a second way to log in', async () => {
-    endAnswer = () => json(409, { error: 'password-alone' });
+  it('409 two-methods-required: says why, and goes on to Security to add another way to log in', async () => {
+    endAnswer = () => json(409, { error: 'two-methods-required' });
     const host = welcome();
-    await waitUntil(() => (document.body.textContent ?? '').includes(SECOND_METHOD_SIGNUP), 'the password-alone message');
+    await waitUntil(() => (document.body.textContent ?? '').includes(SECOND_METHOD_SIGNUP), 'the two-methods message');
     expect(host.querySelector('[data-part="welcome-child"]')).toBeNull();
     const close = [...document.body.querySelectorAll('button')].find((b) => /close|ok|got it/i.test(b.textContent ?? ''));
     expect(close, 'a close button on the message').toBeDefined();
