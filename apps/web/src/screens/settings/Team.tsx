@@ -34,8 +34,19 @@ import { StagedNote } from './HoldChanges.js';
 import { AbilityPicker } from './AbilityPicker.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
 import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_PATH, atomicOf, xmrOf } from './teamCopy.js';
+import { TEAM_LOG_COPY, TEAM_LOG_PATH } from './teamLogCopy.js';
+import { memberAbilities } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import '../screens.css';
 import { hasSpace, spaceProblem } from '../setup/names.js';
+
+/** How many of the latest member actions this screen shows; the Team log has the rest. */
+const LOG_PREVIEW = 10;
+
+/** A member's own work rows (team audit v2 also returns the team's changes, logins and the owner's own rows). */
+function memberWork(log: readonly TeamAuditEntry[]): TeamAuditEntry[] {
+  return log.filter((e) => e.memberId !== null && ((e as { category?: string }).category ?? 'work') === 'work');
+}
 
 /** The link a new member opens: the code rides in the fragment, which browsers never send. */
 export function inviteLink(origin: string, code: string): string {
@@ -175,6 +186,7 @@ function cantDoOf(e: unknown): CantDo | null {
 }
 
 export function Team() {
+  const session = useSession();
   const { prove, confirmUi, open } = useConfirm();
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const [max, setMax] = useState(3);
@@ -214,7 +226,8 @@ export function Team() {
       // Everyone who can be in the log: current members and anyone already in it (a removed member stays).
       const who = new Map<string, string>();
       for (const m of t.members) who.set(m.id, m.displayName);
-      for (const e of l) if (!who.has(e.memberId)) who.set(e.memberId, e.memberName);
+      // Team audit v2: rows by the account owner or X2F name no member (memberId null).
+      for (const e of l) if (e.memberId !== null && !who.has(e.memberId)) who.set(e.memberId, e.memberName ?? '');
       setLogWho([...who].map(([id, name]) => ({ id, name })));
       setState('ready');
     } catch (e) {
@@ -387,6 +400,12 @@ export function Team() {
             </h2>
             <p className="x2f-note">{C.myLimitsNote}</p>
             <p className="x2f-note">{C.limits(mine.band, mine.hours)}</p>
+            {/* Team audit v2: a member with "See the team log" opens their own entries. */}
+            {memberAbilities(session).includes('team-see-log') ? (
+              <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="my-team-log-link">
+                {TEAM_LOG_COPY.title}
+              </Link>
+            ) : null}
           </section>
         ) : null}
 
@@ -573,12 +592,16 @@ export function Team() {
                 </select>
               </div>
             ) : null}
-            {log.length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}
+            {/* Team audit v2: the full log (filters, integrity check, team changes, logins, download). */}
+            <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="team-log-link">
+              {TEAM_LOG_COPY.title}
+            </Link>
+            {memberWork(log).length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}
             <ul className="x2f-list" data-part="log-list">
-              {log.map((e) => (
+              {memberWork(log).slice(0, LOG_PREVIEW).map((e) => (
                 <li className="x2f-list__row" key={e.id} data-action={e.action}>
                   <span className="x2f-list__label">
-                    {C.logRow(e.memberName, e.action)}
+                    {C.logRow(e.memberName ?? '', e.action)}
                     <br />
                     <span className="x2f-list__time">{C.logWhen(e.at, e.tradeCode)}</span>
                   </span>

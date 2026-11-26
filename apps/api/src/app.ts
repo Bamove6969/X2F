@@ -32,6 +32,7 @@ import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
+import { awayRoutes } from './offers/away.js';
 import { reviewRoutes } from './reviews/routes.js';
 import { blurCheckRoutes } from './proof/blurCheck.js';
 import { tradedTotalRoutes } from './traders/tradedTotal.js';
@@ -48,6 +49,7 @@ import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { traderBanRoutes } from './staff/bans.js';
 import { teamRoutes } from './routes/team.js';
+import { installRefusalAudit, teamAuditRoutes } from './routes/teamAudit.js';
 import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
 import type { JabberSender } from './jabber/sender.js';
@@ -239,6 +241,7 @@ export function installErrorAnswers(app: FastifyInstance): void {
 
   app.setErrorHandler((err: FastifyError | ApiError, req, reply) => {
     if (err instanceof ApiError) {
+      req.apiErrorCode = err.code;
       const retry = err.extra?.retryAfterSeconds;
       if (typeof retry === 'number') void reply.header('retry-after', String(retry));
       return reply.code(err.status).send({ ...err.extra, error: err.code });
@@ -302,6 +305,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.removeContentTypeParser('text/plain');
 
   installErrorAnswers(app);
+  // Team audit v2: a member's refused request goes in the team log (after the answer).
+  installRefusalAudit(app);
 
   // Review round 5 M1: records each route that writes with a session (registered below).
   const sessionWriteRoutes: string[] = [];
@@ -348,6 +353,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // the offers and the price) is behind the front door: requireInside (owner, 8 Nov 2026).
   methodListRoutes(app);
   offerRoutes(app);
+  // Owner 26 Nov 2026: the Away switch (pauses my live offers, then turns back on the ones it paused).
+  awayRoutes(app);
   priceRoutes(app);
   // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
   eventRoutes(app, events, options.events);
@@ -399,6 +406,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   recordRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Team audit v2 (migration 855): the team log's reading, integrity and export routes.
+  teamAuditRoutes(app);
   // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
   jabberRoutes(app);
   // Job 1c (J-10, S-094): notes on traders.

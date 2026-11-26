@@ -163,8 +163,8 @@ describe('the chat of a trade always goes no later than the trade', () => {
           disputeClosedAt: f.disputeClosedAt,
           createdAt: at(-1),
           lastMessageAt: null,
-          lienOpen: f.lienOpen,
-          lienEndedAt: f.lienEndedAt,
+          ...(f.lienOpen !== undefined ? { lienOpen: f.lienOpen } : {}),
+          ...(f.lienEndedAt !== undefined ? { lienEndedAt: f.lienEndedAt } : {}),
         },
         now,
       );

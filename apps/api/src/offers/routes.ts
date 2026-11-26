@@ -826,7 +826,7 @@ async function accountRefusal(client: Queryable, accountId: string, now: Date): 
 }
 
 /** Runs `fn` in one transaction on its own client. */
-async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promise<T>): Promise<T> {
+export async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promise<T>): Promise<T> {
   const client = await db.connect();
   let ok = false;
   try {
@@ -1060,7 +1060,7 @@ export function offerRoutes(app: FastifyInstance): void {
     if (row.account_id !== accountId) throw new ApiError(403, 'wrong-party');
     const now = deps.clock();
     const update = (q: Queryable) =>
-      q.query(`update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
+      q.query(`update offers set status = $2, updated_at = $3, paused_by_away = false where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
     if (status === 'live') {
       // Task 17: an account on its 24-hour hold cannot turn an offer on (pausing or removing one is fine).
       const until = await holdUntil(deps, accountId, req.server.events);
@@ -1335,83 +1335,116 @@ export function offerRoutes(app: FastifyInstance): void {
     else if (Array.isArray(ids) && ids.length >= 1 && ids.length <= SWITCH_MAX_IDS && ids.every((i) => typeof i === 'string' && i.length <= 64)) {
       wanted = [...new Set(ids as string[])];
     } else throw bad();
-    const accountId = req.auth!.accountId;
-    // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
-    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
-    // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
-    if (status === 'live') {
-      const until = await holdUntil(deps, accountId, req.server.events);
-      if (until !== null) throw holdRefusal(until);
-    }
-    const now = deps.clock();
-
-    const results = await inTransaction(deps.db, async (client) => {
-      await lockAccountLive(client, req.auth!, now);
-      const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
-      const caps = status === 'live' ? await loadOfferCaps(client) : null;
-      // Every live or paused offer of mine (the caps count them all), newest first as on the list.
-      // An offer's methods are in offer_methods, written once at post (never changed).
-      const { rows: mine } = await client.query<{ id: string; side: Side; amount_unit: AmountUnit; methods: string[]; status: 'live' | 'paused'; market: boolean }>(
-        `select o.id, o.side, o.amount_unit, o.status, ${MARKET_PRICED} as market,
-                array(select m.method_id from offer_methods m where m.offer_id = o.id order by m.position) as methods
-           from offers o where o.account_id = $1 and o.status <> 'removed'
-          order by o.created_at desc, o.id for update of o`,
-        [accountId],
-      );
-      // Their currencies and bands, for the launch cap (turning on only; written once at post).
-      const flex = status === 'live' ? await loadFlex(client, mine.map((o) => o.id)) : null;
-      // J-20: a team member's trade-size band (turning on only; null for the owner or no band).
-      const band = status === 'live' ? await memberBand(client, req.auth!.memberId) : null;
-      // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
-      // still count it, as assertMayPost does (J-02 leaves the caps alone).
-      const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
-      const targets = wanted === 'all' ? [...byId.keys()] : wanted;
-      const out: OfferSwitchResult[] = [];
-      const switched: string[] = [];
-      for (const id of targets) {
-        const o = byId.get(id);
-        if (!o) {
-          out.push({ id, refused: 'not-found' });
-          continue;
-        }
-        if (o.status === status) {
-          out.push({ id, status });
-          continue;
-        }
-        if (status === 'live') {
-          // PATCH's order (review N1): the methods first (every one may be offered now, as at post),
-          // then the account's guards, then the caps.
-          let refused: OfferSwitchRefusal | null = o.methods.every((m) => isAvailable(m)) ? refusedAll : 'method-unavailable';
-          if (refused === null) {
-            // As relisting counts: every other live or paused offer of mine on this side (this one left out).
-            let same = 0;
-            for (const x of mine) if (x.id !== id && x.side === o.side) same++;
-            if (same >= caps![o.side]) refused = 'too-many-offers';
-          }
-          // Then the launch cap, as relisting checks it (launch-rules review F1): every band of every
-          // currency; an unpriced currency is skipped and stays hidden (OWNER QUESTION p11-95).
-          if (refused === null) refused = offerLaunchCapRefusal(o.amount_unit, flex!.get(id)!.currencies, deps.prices, true);
-          // J-20 review F2: a member's band, per offer, so one offer outside it does not fail the batch.
-          if (refused === null && !(await offerInsideBand(client, band, id))) refused = 'outside-trade-band';
-          if (refused !== null) {
-            out.push({ id, status: o.status, refused });
-            continue;
-          }
-        }
-        switched.push(id);
-        out.push({ id, status });
-      }
-      if (switched.length > 0) {
-        await client.query(`update offers set status = $2, updated_at = $3 where account_id = $1 and id = any($4::uuid[]) and status <> 'removed'`, [
-          accountId, status, now, switched,
-        ]);
-        // Task 18: one audit row per offer a team member switched, in this transaction.
-        for (const id of switched) {
-          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', offerId: id }, now);
-        }
-      }
-      return out;
-    });
+    await assertMayTurnOn(req, status);
+    const results = await inTransaction(deps.db, async (client) => (await switchOfferStatus(client, deps, req.auth!, wanted, status, deps.clock())).results);
     return { status, results };
   });
+}
+
+/**
+ * The whole-call guards of turning offers on, outside the transaction: the current Terms (403
+ * `terms-required`) and no 24-hour hold (403 `recovery-hold`, Task 17). Turning off has none.
+ * Shared by `POST /v1/account/offers/status` and the Away switch (offers/away.ts).
+ */
+export async function assertMayTurnOn(req: FastifyRequest, status: 'live' | 'paused'): Promise<void> {
+  if (status !== 'live') return;
+  const deps = req.server.deps;
+  // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
+  await assertTermsCurrent(deps, req.auth!);
+  const until = await holdUntil(deps, req.auth!.accountId, req.server.events);
+  if (until !== null) throw holdRefusal(until);
+}
+
+/**
+ * Which offers a switch names: explicit ids, `'all'` (every market-priced offer of mine), or
+ * `'away'` (the Away switch turning off: only the paused offers Away paused, migration 856).
+ */
+export type SwitchTargets = string[] | 'all' | 'away';
+
+/**
+ * The per-offer switch of `POST /v1/account/offers/status`, inside the caller's transaction (see
+ * that route for the rules); `assertMayTurnOn` runs before it. Takes the account lock first (Task 4
+ * order) and re-checks the session under it. Every offer it switches gets `paused_by_away =
+ * byAway` (false for any switch but Away's own pause), so a later Away off never turns on an offer
+ * the trader switched by hand. Answers the per-offer results and the ids it switched.
+ */
+export async function switchOfferStatus(
+  client: Queryable,
+  deps: Deps,
+  auth: AuthContext,
+  wanted: SwitchTargets,
+  status: 'live' | 'paused',
+  now: Date,
+  byAway = false,
+): Promise<{ results: OfferSwitchResult[]; switched: string[] }> {
+  const accountId = auth.accountId;
+  await lockAccountLive(client, auth, now);
+  const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
+  const caps = status === 'live' ? await loadOfferCaps(client) : null;
+  // Every live or paused offer of mine (the caps count them all), newest first as on the list.
+  // An offer's methods are in offer_methods, written once at post (never changed).
+  const { rows: mine } = await client.query<{ id: string; side: Side; amount_unit: AmountUnit; methods: string[]; status: 'live' | 'paused'; market: boolean; paused_by_away: boolean }>(
+    `select o.id, o.side, o.amount_unit, o.status, ${MARKET_PRICED} as market, o.paused_by_away,
+            array(select m.method_id from offer_methods m where m.offer_id = o.id order by m.position) as methods
+       from offers o where o.account_id = $1 and o.status <> 'removed'
+      order by o.created_at desc, o.id for update of o`,
+    [accountId],
+  );
+  // Their currencies and bands, for the launch cap (turning on only; written once at post).
+  const flex = status === 'live' ? await loadFlex(client, mine.map((o) => o.id)) : null;
+  // J-20: a team member's trade-size band (turning on only; null for the owner or no band).
+  const band = status === 'live' ? await memberBand(client, auth.memberId) : null;
+  // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
+  // still count it, as assertMayPost does (J-02 leaves the caps alone).
+  const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
+  const targets =
+    wanted === 'all' ? [...byId.keys()]
+    : wanted === 'away' ? [...byId.values()].filter((o) => o.status === 'paused' && o.paused_by_away).map((o) => o.id)
+    : wanted;
+  const out: OfferSwitchResult[] = [];
+  const switched: string[] = [];
+  for (const id of targets) {
+    const o = byId.get(id);
+    if (!o) {
+      out.push({ id, refused: 'not-found' });
+      continue;
+    }
+    if (o.status === status) {
+      out.push({ id, status });
+      continue;
+    }
+    if (status === 'live') {
+      // PATCH's order (review N1): the methods first (every one may be offered now, as at post),
+      // then the account's guards, then the caps.
+      let refused: OfferSwitchRefusal | null = o.methods.every((m) => isAvailable(m)) ? refusedAll : 'method-unavailable';
+      if (refused === null) {
+        // As relisting counts: every other live or paused offer of mine on this side (this one left out).
+        let same = 0;
+        for (const x of mine) if (x.id !== id && x.side === o.side) same++;
+        if (same >= caps![o.side]) refused = 'too-many-offers';
+      }
+      // Then the launch cap, as relisting checks it (launch-rules review F1): every band of every
+      // currency; an unpriced currency is skipped and stays hidden (OWNER QUESTION p11-95).
+      if (refused === null) refused = offerLaunchCapRefusal(o.amount_unit, flex!.get(id)!.currencies, deps.prices, true);
+      // J-20 review F2: a member's band, per offer, so one offer outside it does not fail the batch.
+      if (refused === null && !(await offerInsideBand(client, band, id))) refused = 'outside-trade-band';
+      if (refused !== null) {
+        out.push({ id, status: o.status, refused });
+        continue;
+      }
+    }
+    switched.push(id);
+    out.push({ id, status });
+  }
+  if (switched.length > 0) {
+    await client.query(
+      `update offers set status = $2, updated_at = $3, paused_by_away = $5 where account_id = $1 and id = any($4::uuid[]) and status <> 'removed'`,
+      [accountId, status, now, switched, byAway && status === 'paused'],
+    );
+    // Task 18: one audit row per offer a team member switched, in this transaction.
+    for (const id of switched) {
+      await auditMember(client, auth, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', offerId: id }, now);
+    }
+  }
+  return { results: out, switched };
 }
