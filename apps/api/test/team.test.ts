@@ -842,6 +842,8 @@ describe('the audit log covers every member action (review M3)', () => {
       // S-085: renewing the calling session's short-lived bound cookie with its own device key.
       'POST /v1/account/session/proof/challenge': "a single-use challenge for the member's own bound session: writes the session row only, not an account action",
       'POST /v1/account/session/proof': "renews the member's own bound-session cookie with their own device key: not an account action",
+      // Escrow-key sync (migration 860): the lead's tick of "Hold trade keys" is the audited team change.
+      'PUT /v1/escrow-keys/reader': "the member's own reader public key and unlock envelopes (ciphertext the API cannot open): opens nothing by itself and changes nothing of the team account",
     };
     const found: string[] = [];
     const audited = new Set<string>();
@@ -965,26 +967,29 @@ function sources(dir: string): string[] {
 }
 
 describe('Task 18 seams', () => {
-  it('NEEDS_PLAN3_TASK42_MEMBER_KEY: members still never sign escrow until the per-member key scheme lands', () => {
-    // R44 / spec 6.7 OPEN (design): releasing needs the trade's escrow key on the member's device;
-    // today it lives only on the account owner's. Plan 3 Task 42 designs a per-member key scheme
-    // (3.1: X2F holds at most one key per trade). Until then `MEMBER_SIGNING_EVENTS` refuses
-    // release-started and trades/identity.ts refuses registering a trade identity (member-cannot-sign),
-    // so a Trades member can mark paid, cancel and dispute but the escrow steps wait for the owner's
-    // device. Review I2 (lead 2026-10-30): taking an offer and the poster's accept step (the trade's
-    // payout wallet) make the device that does them the trade's escrow party, so `ownerDeviceOnly`
-    // refuses those too (OWNER_DEVICE_ROUTES), and the web's AcceptedSheet is never offered on a
-    // member's device. When Task 42's key scheme lands (apps/api/src/team/memberKeys.ts or a
-    // `member_id` on trade_identities), lift these refusals there, with tests (a member's take,
-    // accept and room through to release), and delete this check.
+  it('Task 42 escrow-key sync (migration 860): an assigned member may hold an encrypted copy of the trade keys, and still never signs (owner question trades-release open)', () => {
+    // The tripwire NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (owner 26 Nov
+    // 2026: "accessible only to the person they are assigned to and the person who they are assigned
+    // to also assigns them to"): apps/api/src/escrowSync/routes.ts, tested in escrowSync.test.ts.
+    // The lead assigns a member by ticking "Hold trade keys" (trades-escrow-keys, row 67), and the
+    // lead's device then seals each trade's keys to that member's own reader key as well.
+    // Conservative default while the owner's question 'trades-release' is open: the copy is for
+    // reading (a new device restores, a member keeps a copy), never for signing. So every refusal
+    // below stays: `MEMBER_SIGNING_EVENTS` refuses release-started and fund-started, and
+    // `ownerDeviceOnly` refuses the take, the poster's wallet and the trade identity
+    // (member-cannot-sign); release stays a hard owner-only row. When the owner answers yes, lift
+    // these here with tests (a member's take, accept and room through to release).
     expect([...MEMBER_SIGNING_EVENTS]).toEqual(['release-started', 'fund-started']);
     expect([...OWNER_DEVICE_ROUTES]).toEqual(['POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet', 'POST /v1/trades/:code/identity']);
     expect(readFileSync(`${ROOT}apps/api/src/trades/identity.ts`, 'utf8')).toMatch(/requireSigner = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
     expect(readFileSync(`${ROOT}apps/api/src/trades/take.ts`, 'utf8')).toMatch(/requireTrader = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
-    const landed = existsSync(`${ROOT}apps/api/src/team/memberKeys.ts`) || /member_id/.test(
+    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(true);
+    expect(HARD_OWNER_ONLY.has('trades-escrow-keys')).toBe(false);
+    expect(existsSync(`${ROOT}apps/api/src/escrowSync/routes.ts`)).toBe(true);
+    // No member trade identity yet: the escrow party is still only ever the owner's device.
+    expect(/member_id/.test(
       readdirSync(`${ROOT}apps/api/migrations`).filter((f) => /identit/.test(f)).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n'),
-    );
-    expect(landed, 'Plan 3 Task 42 member keys landed: lift member-cannot-sign where the scheme allows, then delete this check').toBe(false);
+    )).toBe(false);
   });
 
   it('NEEDS_PLAN7_PURGE_AUDIT: the team log stays owner-only data until Plan 7 decides its retention and roles', () => {
@@ -1174,7 +1179,7 @@ describe('the abilities catalogue on the API (J-10)', () => {
     };
     expect(c.groups).toHaveLength(9);
     const all = c.groups.flatMap((g) => g.abilities);
-    expect(all).toHaveLength(63);
+    expect(all).toHaveLength(64);
     expect(all.find((a) => a.id === 'trades-release')).toMatchObject({ availability: 'owner-only', presets: [] });
     expect(c.presets.map((p) => p.id)).toEqual(['offers', 'trades', 'manager', 'start']);
     // A member may read it too (what they may and may not do).

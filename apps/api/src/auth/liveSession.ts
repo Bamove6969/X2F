@@ -220,6 +220,11 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
   'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
+  // Escrow-key sync (migration 860): ciphertext rows the API cannot open. They change no login,
+  // session, approval or security state and create no obligation; each takes the account lock.
+  'PUT /v1/escrow-keys/reader': "the caller's own reader public key and unlock envelopes (ciphertext only); no account, session, approval or security state, no obligation",
+  'PUT /v1/escrow-keys/trades/:code': "the holder's encrypted copy of its own trade's escrow record (ciphertext only); no account, session, approval or security state, no obligation",
+  'DELETE /v1/escrow-keys/trades/:code': "deletes the holder's encrypted copy of its own trade's escrow record; no account, session, approval or security state",
   // Job 1c (J-10, S-094): notes on traders. Social, as blocks: a note row only (the add also re-checks
   // the session under the account lock and a member's boxes live, in its transaction).
   'POST /v1/account/notes': 'social: a private note row on another trader only; no account, session, approval or security state, no obligation',

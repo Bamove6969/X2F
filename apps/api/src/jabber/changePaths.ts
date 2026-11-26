@@ -242,6 +242,10 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // Lien recovery (migration 820; lead default): the staff on a rate request; the approved rate notifies the debtor (liens.recovery_rate_bps).
   'lien_rate_requests.proposed_by': 'the moderator who proposed a lien rate (the debtor is notified when it is approved)',
   'lien_rate_requests.decided_by': 'the senior moderator who decided a lien rate request (the debtor is notified when it is approved)',
+  // Escrow-key sync (migration 860; lead default): silent, ciphertext the API cannot open; the box
+  // that makes a member a reader is a team change and notifies as one.
+  'escrow_readers.account_id': "a reader key's public half for the account's encrypted escrow copies; the team change that assigns a member notifies",
+  'escrow_blobs.account_id': "an encrypted copy of one of the account's own trade escrow records (ciphertext the API cannot open), written by the holder's own device",
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
   'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",

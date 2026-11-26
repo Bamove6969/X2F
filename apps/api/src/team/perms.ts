@@ -113,7 +113,7 @@ export function assertMemberMaySend(memberId: string | null, event: TradeEvent['
  * the device that does it the trade's escrow party (its `ConfirmedTrade`, its own payout address,
  * its trade key), and only the owner's device can be that until Plan 3 Task 42's member keys. A
  * member gets 403 `member-cannot-sign` whatever their boxes; with the boxes they still mark paid, cancel and answer a dispute on
- * the trades the owner's device set up. Tripwire: NEEDS_PLAN3_TASK42_MEMBER_KEY (test/team.test.ts).
+ * the trades the owner's device set up. Kept by the escrow-key sync (migration 860): an assigned member holds an encrypted copy of the keys but signs nothing while the owner question trades-release is open (test/team.test.ts "Task 42 escrow-key sync").
  */
 export async function ownerDeviceOnly(req: FastifyRequest): Promise<void> {
   if (req.auth.memberId !== null) throw new ApiError(403, 'member-cannot-sign');

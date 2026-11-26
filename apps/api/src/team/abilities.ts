@@ -33,7 +33,7 @@ export type Risk = 'low' | 'medium' | 'high';
  * - `not-built`: a box the lead can tick and the API stores; no member route uses it yet (the
  *   feature, or the member's way into it, is not built). Ticking it changes nothing until then.
  * - `waits-member-keys`: a box; the API still refuses it to members (`member-cannot-sign`) until
- *   Plan 3 Task 42's per-member trade keys (NEEDS_PLAN3_TASK42_MEMBER_KEY).
+ *   Plan 3 Task 42's member signing (the escrow-key sync of migration 860 gives an assigned member a copy to read, not to sign; owner question trades-release).
  * - `waits-member-chat-key`: a box; chat and proof stay hidden from members until a team-member
  *   chat key path exists (C-019, lead default): every chat route stays owner-only.
  * - `always`: every member has it; not a box.
@@ -43,7 +43,7 @@ export type Risk = 'low' | 'medium' | 'high';
 export type Availability = 'grantable' | 'not-built' | 'waits-member-keys' | 'waits-member-chat-key' | 'always' | 'owner-only';
 
 export interface Ability {
-  /** The row number in section B (1..66), for the owner's page. */
+  /** The row number in section B (1..66; 67 added 26 Nov), for the owner's page. */
   no: number;
   /** Stable id: stored in `team_members.abilities`, named by routes. Never renamed. */
   id: string;
@@ -160,6 +160,10 @@ const ROWS: readonly Row[] = [
   [64, 'alerts-settings', 'account', 'Change alert settings', "Change the account's push and Jabber alerts", 'medium', 'owner-only', false, 'Lead only (lead default)', 0, 0, 0],
   [65, 'account-type', 'account', 'Account type', 'Become or stop being a vendor', 'high', 'owner-only', false, 'Lead only (design)', 0, 0, 0],
   [66, 'account-delete', 'account', 'Delete the account', 'Close the account for good', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
+  // Owner 26 Nov 2026 (escrow-key sync, migration 860): the box IS the lead's assignment. With it the
+  // lead's device also seals each trade's escrow keys to the member's own reader key, and the member
+  // may open that copy (escrowSync/routes.ts). It grants no signing: release stays owner-only (22).
+  [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; never releases XMR", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
 ];
 
 export const ABILITIES: readonly Ability[] = ROWS.map(([no, id, group, label, does, risk, availability, hard, ruling, offers, trades, start]) => ({

@@ -22,6 +22,7 @@ import { createAccount, type NewNames } from '../accounts.js';
 import type { TermsSignature } from '../termsSignature.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
+import { ESCROW_KEYS_ABILITY, dropMemberWraps } from '../escrowSync/store.js';
 import { ApiError } from '../errors.js';
 import { requireLiveSessionInTx, type LiveSession } from '../auth/liveSession.js';
 import type { EventBus } from '../events/bus.js';
@@ -261,6 +262,8 @@ export async function applyMemberRemoval(c: Queryable, accountId: string, member
   const row = rows[0];
   if (!row) throw new ApiError(404, 'not-found');
   if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
+  // Escrow-key sync (migration 860): a removed member's reader key goes, with its unlocks and every wrap sealed to it.
+  await c.query('delete from escrow_readers where member_id = $1', [memberId]);
   const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
   return s.rows.map((r) => r.id);
 }
@@ -334,6 +337,9 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   );
   const r = rows[0];
   if (!r) return null;
+  // Escrow-key sync (migration 860): unticking "Hold trade keys" takes the member's copies away at
+  // once (the lead's device stops sealing to them; the read route checks the box too).
+  if (!hasAbility(abilities, ESCROW_KEYS_ABILITY)) await dropMemberWraps(c, memberId);
   // A stream carries the parts the boxes allowed when it opened (review trades-list I1): any change
   // to the trades boxes ends it, and the reconnect takes the new ones (or is refused without either).
   const parts = (set: readonly string[]) => Object.values(TRADE_PART_ABILITY).map((a) => hasAbility(set, a)).join();
