@@ -60,7 +60,7 @@ export {
   type AuthenticationCeremony,
   type RegistrationCeremony,
 } from './webauthn.js';
-export { becomeVendorAction, defaultDeviceLabel, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
+export { becomeVendorAction, defaultDeviceLabel, teamAbilitiesAction, teamInviteAbilitiesAction, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
 export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName, checkPassword, describeAction, formatRecoveryInput, hasPasswordSpace, inspectPublicKey, METHOD_PARTNERS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode, partnerMissing, partnerNeededBy, passwordAlone, STANDS_ALONE } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
 export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, sameKeyName, type KeyNameCheck, type KeyNameProblem } from '@x2f/accounts';

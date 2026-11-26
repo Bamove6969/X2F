@@ -53,8 +53,7 @@ export const CANT_DO_CODES = [
   // trade event refused because the partner's account has a temporary problem (no words yet).
   'approval-unavailable',
   'too-many-changes',
-  // Notes on traders (review 2026-11-09 m4): the account's note cap. API only so far, no words here
-  // (no notes screen yet).
+  // Notes on traders (review 2026-11-09 m4): the account's note cap (notesCantDoText).
   'too-many-notes',
   'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
@@ -362,6 +361,8 @@ export const CANT_DO_TITLE = {
   teamFull: 'Your team is full',
   // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
   changes: "This change can't be saved yet",
+  // Job 1c (owner S-094, p7-8): notes on traders. COPY-UNSIGNED
+  notes: "This note can't be saved",
 } as const;
 
 /**
@@ -812,6 +813,29 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return "This device logged in with just a username and password, so it can't invite team members. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
+  }
+}
+
+/**
+ * Job 1c (owner S-094, p7-8): what a refused note says. `max` is the account's note cap the API
+ * sent with `too-many-notes`. COPY-UNSIGNED // DESIGN: wording
+ */
+export function notesCantDoTitle(code: CantDoCode): string {
+  if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
+  return CANT_DO_TITLE.notes;
+}
+
+export function notesCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
+  switch (code) {
+    case 'too-many-notes':
+      return `Your account has ${o.max ?? 500} notes, the most it can keep. The account owner can delete old notes to add more.`;
+    case 'owner-only':
+      return 'Only the account owner can delete a note. Team members can add notes, as their boxes allow.';
+    case 'forbidden':
+      return "Your boxes don't include notes on traders. The account owner can tick them for you.";
+    default:
+      return teamCantDoText(code);
   }
 }
 
