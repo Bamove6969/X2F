@@ -28,7 +28,9 @@
 // 2026-11-25b also carries owner demo note #203 (25 Nov, section 1): "X2F is a meeting place." in place of
 // "X2F is a facilitator.", and note #204: "allows them to interact" for "lets them interact", note #206: "X2F is not party to your trades", note #207 (section 2): "private user ID", and note #209 (section 2): the active-trade exception, "Blockchain" lower-cased as elsewhere, note #210 (section 3): "under what conditions", and note #211 (section 3): "being lost or confused or from being taken", note #212 (section 7): the lawyer placeholder removed, note #213 (section 8): security or site policies, note #214: "protect the site and our users", note #215: the escrow-settling sentence removed from the account-closure paragraph, and note #216: the risks sentence in his words ("valuev etc.... and more" tidied to "value, and more"), note #217: "to play a role in the shaping of the future of X2F", note #218: the closing line about re-accepting removed, and note #222: the top lawyer placeholder removed; 25b was never released, so the label stays. COPY-UNSIGNED.
 // 2026-11-25c: the owner's full-length Terms, word for word (25 Nov, in chat after demo note #223). COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-25c';
+// 2026-11-26: the owner's open-items walkthrough (26 Nov): items 1-6 (review proposals 8 and 9, the change summary,
+// the custody line in place of the MSB claim, retention words matched to the code). COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-26';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
@@ -50,6 +52,21 @@ export interface TermsSection {
 /** Owner demo note #222 (25 Nov): the lawyer placeholder at the top is gone ("Get rid of this too"); empty shows nothing. */
 export const TERMS_DRAFT_NOTE = '';
 
+/**
+ * Owner 2026-11-26 (Terms section 9, "a short summary of what changed"): the summary shown on the
+ * Updated Terms screen for this version. Write a new one with every version move. COPY-UNSIGNED.
+ */
+export const TERMS_CHANGES: readonly string[] = [
+  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
+  'What X2F is: in place of "not a money services business", we now say X2F never takes custody of your funds and cannot move them on its own.',
+  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
+  'Privacy: we now say exactly what is purged after 30 and 90 days, what stays, and list what X2F does keep.',
+  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
+  'IP addresses: we now say X2F\'s servers log none, since we can\'t speak for networks outside X2F.',
+  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
+  'Changes to these Terms now come with a short summary like this one.',
+];
+
 /** The board's key points, shown above the full text. */
 export const KEY_POINTS: readonly string[] = [
   // COPY-UNSIGNED: draft one-liners for owner demo note #189 (25 Nov), replacing notes #109-#185's
@@ -57,8 +74,8 @@ export const KEY_POINTS: readonly string[] = [
   'X2F never holds your XMR: it sits in a 2-of-3 multisig escrow, and any two of the buyer, the seller and X2F must agree to move it.',
   'Whoever posts the ad pays a 1% fee when the trade completes. Taking an ad is free.',
   'Moderators step in only when asked. Opening a dispute lets that moderator decrypt the trade and its chat.',
-  'Trades without a dispute are deleted after 30 days. Disputed trades are scrubbed and deleted after 90.',
-  'We never track you: no IP addresses, email, phone numbers or device details are logged or stored.',
+  'Trade chats are erased 30 days after the trade ends; disputed chats 90 days after the dispute closes.',
+  'We never track you: X2F\'s servers log or store no IP addresses, email, phone numbers or device details.',
   'An account not signed into for 60 days or longer is closed automatically.',
 ];
 
@@ -71,7 +88,8 @@ export const TERMS: TermsSection[] = [
   {
     heading: "1. What X2F is",
     paragraphs: [
-      "X2F is a peer-to-peer marketplace where privacy-focused individuals and groups can buy and sell Monero (XMR) directly with one another using cash, bank transfers, or their preferred payment apps. X2F simply provides the venue, built-in 2-of-3 multisig escrow, and moderator dispute resolution to help trades happen safely. X2F is not a party to your trades, is not a bank, exchange, or money services business, and never holds custody of your funds.",
+      // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
+      "X2F is a peer-to-peer marketplace where privacy-focused individuals and groups can buy and sell Monero (XMR) directly with one another using cash, bank transfers, or their preferred payment apps. X2F simply provides the venue, built-in 2-of-3 multisig escrow, and moderator dispute resolution to help trades happen safely. X2F is not a party to your trades, is not a bank or exchange, never takes custody of your funds, and cannot move them on its own.",
     ],
   },
   {
@@ -115,21 +133,22 @@ export const TERMS: TermsSection[] = [
       // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "If a trade goes wrong and you cannot resolve it directly with the other party, either trader can open a dispute during the trade or within the post-trade window shown on the trade screen.",
       // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
-      "Trade chats are encrypted, and no IP addresses are logged even during a dispute. When a dispute is opened, the assigned moderator is granted temporary decryption access to the trade chat and evidence to review what happened. A moderator’s primary goal is to see valid trades completed, or to execute a full reversal if the trade cannot be salvaged.",
+      "Trade chats are encrypted, and X2F’s servers log no IP addresses, even during a dispute. When a dispute is opened, the assigned moderator is granted temporary decryption access to the trade chat and evidence to review what happened. A moderator’s primary goal is to see valid trades completed, or to execute a full reversal if the trade cannot be salvaged.",
       "If either party disagrees with a ruling, they may request one appeal. A senior moderator will review the case with the same access and issue a final, binding decision. All moderator actions are logged internally for auditing and accountability.",
     ],
   },
   {
     heading: PRIVACY_HEADING,
     paragraphs: [
-      "Completed trade records are accessible for 30 days, after which all trade data is permanently purged. Disputed trades are retained for up to 90 days after resolution—stripped of identifying details via our internal privacy-scrubbing tool for moderator training and auditing—and are permanently purged at the 90-day mark with no exceptions. X2F uses no analytics or tracking, logs no IP addresses, and automatically strips Exif and device metadata from uploaded payment proofs.",
+      "X2F gives access to a completed trade and its chat for 30 days after the trade ends. After that, the chat, its messages and the payment proofs in it are permanently purged. If there was a dispute, the trade’s chat is kept for 90 days after the dispute closes, and is then purged. The wallet addresses used in a trade are deleted 90 days after it ends. What stays is a stripped record of each trade (its code, the two accounts, the amounts and how it ended), so trade counts and reputation keep working. X2F uses no analytics or tracking, its servers log no IP addresses, and it automatically strips Exif and device metadata from uploaded payment proofs.",
+      "What we do keep: your login ID and display name, your login keys, and only a scrambled fingerprint of any password (never the password itself), which Terms version you accepted, your ads, your trades and their encrypted chats for the times above, your ratings, and a log of what our moderators do.",
     ],
   },
   {
     heading: "7. Law enforcement and legal requests",
     paragraphs: [
       // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
-      "Because X2F is engineered around privacy-by-design, we do not collect IP addresses, plaintext chat logs, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, any response is strictly limited to whatever minimal, non-identifying technical data exists on our servers at that moment. Our infrastructure and operations are based in jurisdictions with strong statutory privacy protections and strict judicial standards for cross-border requests.",
+      "Because X2F is engineered around privacy-by-design, its servers do not collect IP addresses, plaintext chat logs, or personal identifying records. We respect the rule of law and comply with valid, binding legal orders from courts with proper jurisdiction; however, any response is strictly limited to whatever minimal, non-identifying technical data exists on our servers at that moment. Our infrastructure and operations are based in jurisdictions with strong statutory privacy protections and strict judicial standards for cross-border requests.",
     ],
   },
   {
@@ -144,7 +163,7 @@ export const TERMS: TermsSection[] = [
     heading: "9. Disclaimers, changes and governing law",
     paragraphs: [
       "X2F is provided \"as is\" and \"as available.\" Peer-to-peer cryptocurrency trading carries inherent risks, including counterparty fraud and XMR price volatility—never trade more than you can afford to lose.",
-      "Because X2F is an evolving platform, we may update these Terms from time to time. When we do, we will highlight the changes and ask you to review and accept them before continuing to use the service.",
+      "Because X2F is an evolving platform, we may update these Terms from time to time. When we do, we will show you a short summary of what changed and ask you to review and accept them before continuing to use the service.",
     ],
   },
 ];

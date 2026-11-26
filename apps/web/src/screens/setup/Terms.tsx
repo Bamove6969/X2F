@@ -45,7 +45,7 @@ import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { errorCode, termsChanged } from './register.js';
 import { SignaturePad } from './SignaturePad.js';
-import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
+import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_CHANGES, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 import { TermsParagraphs } from './TermsParagraphs.js';
 
 /** Owner demo note #190 (25 Nov): the summary card's heading, his words (note #186's replaced). COPY-UNSIGNED. */
@@ -69,6 +69,7 @@ export function TermsScreen({
   sign = false,
   waiting = false,
   notice,
+  changes,
   onAccept,
 }: {
   screen: string;
@@ -88,6 +89,8 @@ export function TermsScreen({
   waiting?: boolean;
   /** A notice of the caller's own over the button (the session could not be read, with its retry). */
   notice?: ReactNode;
+  /** Owner 2026-11-26 (Terms section 9): the short "What changed" summary shown when re-asking. */
+  changes?: readonly string[];
   /** `signature` is null unless `sign`, and never null with it. */
   onAccept: (version: string, signature: TermsSignature | null) => Promise<void>;
 }) {
@@ -221,6 +224,18 @@ export function TermsScreen({
       }
     >
       <SetupIntro title="Terms of Service">{intro}</SetupIntro>
+      {changes && changes.length > 0 ? (
+        <section className="x2f-terms__glance" aria-labelledby="terms-changes-heading" data-part="terms-changes">
+          <h2 className="x2f-terms__boxhead" id="terms-changes-heading">
+            What changed
+          </h2>
+          <ul className="x2f-terms__points" aria-label="What changed">
+            {changes.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {/* Owner demo note #186 (25 Nov): each box gets a heading so the summary reads as a summary, the
           same type in both (the board's mono numbers dropped), and an amber edge marks the summary. */}
       <section className="x2f-terms__glance" aria-labelledby="terms-glance-heading" data-part="terms-glance">
@@ -311,7 +326,7 @@ export function SetupTerms() {
       // "Terms" capitalised as this document's name (owner demo notes 13 Nov, setup-terms). COPY-UNSIGNED.
       // Owner demo note #176 (25 Nov), his words, replacing the whole intro (notes #174/#175 superseded);
       // a full stop added at the end.
-      intro="Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll highlight what changed to make it easy to spot, and prompt you to review and agree before continuing."
+      intro="Please take a quick moment to review our Terms of Service before getting started. You only need to accept them once—if we ever update them down the road, we'll show you a short summary of what changed, and prompt you to review and agree before continuing."
       acceptLabel="Start creating my account"
       back={returnTo}
       after={
@@ -366,6 +381,7 @@ export function Terms() {
       // Owner demo note #190 (25 Nov 2026): no read-to-the-end gate, so the intro no longer asks for it. COPY-UNSIGNED.
       intro="The Terms of Service have changed. Read them and accept them to keep trading. The key points first:"
       sign={member}
+      changes={TERMS_CHANGES}
       waiting={unknown}
       notice={
         failed ? (

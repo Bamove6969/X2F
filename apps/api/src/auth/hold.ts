@@ -511,7 +511,13 @@ export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
  *   changeId }` is returned: the route writes nothing else and answers 202 `stagedReply`;
  * - else null: the route applies the change.
  */
-export async function gateChange(db: Queryable, req: FastifyRequest, change: PendingChange): Promise<{ changeId: string } | null> {
+export async function gateChange(
+  db: Queryable,
+  req: FastifyRequest,
+  change: PendingChange,
+  // Owner 2026-11-26 (note #161): the sign-up session's first wallet is never staged, past the 30 minutes too.
+  opts: { signup?: boolean } = {},
+): Promise<{ changeId: string } | null> {
   const deps = req.server.deps;
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
@@ -520,7 +526,7 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   if (row.kind !== 'trader') return null;
   const running = await holdInTx(db, settleOf(req), accountId, now);
   if (running !== null) throw holdRefusal(running.holdUntil);
-  const onboarding = row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime();
+  const onboarding = (opts.signup === true && row.onboarding_until !== null) || (row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime());
   // Task 9's backup session already waited its 24 hours before it could change anything (R42:
   // the change waits out the 24 hours once, not twice).
   const waited = row.level === 'recovery' && row.hold_until !== null && row.hold_until.getTime() <= now.getTime();
