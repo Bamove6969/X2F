@@ -492,7 +492,7 @@ test('a Trades-only member has no Post offer tab; an Offers member has it', asyn
   await page.unroute('**/v1/account/me');
   await page.route('**/v1/account/me', json(memberMe(['offers'])));
   await page.reload();
-  await expect(nav.getByRole('link', { name: 'Post offer' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Post offer', exact: true })).toBeVisible();
 });
 
 for (const viewport of PHONE_VIEWPORTS) {
@@ -625,7 +625,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await setPhone(page, viewport);
     const room = page.locator('[data-screen="trade"][data-member]');
     await expect(room.locator('[data-part="member-waiting"]')).toHaveText("Waiting for the account owner's device. It sets up, secures and releases this trade.");
-    await expect(room.getByRole('link', { name: 'Open dispute' })).toHaveAttribute('href', `/trade/${encodeURIComponent(TRADE)}/dispute`);
+    await expect(room.getByRole('link', { name: 'Open dispute', exact: true })).toHaveAttribute('href', `/trade/${encodeURIComponent(TRADE)}/dispute`);
     await expect(room.getByRole('button', { name: /I've paid/ })).toHaveCount(0);
     await expectPhoneLayout(page);
     // No Propose cancel while waiting (design proto review P2).
