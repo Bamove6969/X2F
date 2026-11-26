@@ -16,10 +16,13 @@
   max-width: 480px;
 }
 .x2f-hello__hero {
+  position: relative;
+  box-sizing: border-box;
   flex: 1 1 auto;
-  min-height: 132px;
+  min-height: 156px;
   max-height: 340px;
   margin: 0;
+  padding: 36px 20px 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -28,6 +31,31 @@
   background: radial-gradient(120% 90% at 50% 40%, color-mix(in srgb, var(--x2f-escrow) 10%, var(--x2f-surface)), var(--x2f-ground));
   container-type: size;
   overflow: hidden;
+}
+/* Owner demo note #47: "Welcome to" displayed diagonally from the top-left moving down-right to the big centred logo. */
+.x2f-hello__lead {
+  position: absolute;
+  top: clamp(10px, 6cqh, 20px);
+  left: clamp(16px, 6cqw, 30px);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-family: var(--x2f-font-display);
+  font-size: clamp(20px, 6cqw, 26px);
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--x2f-ink);
+  transform: rotate(8deg);
+  transform-origin: left top;
+  pointer-events: none;
+}
+.x2f-hello__lead-word {
+  display: block;
+}
+.x2f-hello__lead-word[data-part='welcome-word-2'] {
+  margin-left: clamp(36px, 11cqw, 56px);
 }
 /* min(280, 66% of the hero's width, 46% of its height x 292/122): short screens shrink the letters. */
 .x2f-mark {
@@ -102,14 +130,31 @@
   min-height: 52px;
 }
 .x2f-hello__links {
-  display: none;
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-/* The links only show when the screen is at least 760 tall (tour-motion.md §2). */
-@media (min-height: 760px) {
+/* On shorter screens (<760 px tall), compact the vertical spacing and hero box so all four links remain visible without overflowing. */
+@media (max-height: 759px) {
+  .x2f-hello {
+    padding: 8px 16px 12px;
+  }
+  .x2f-hello__col {
+    gap: 10px;
+  }
+  .x2f-hello__hero {
+    min-height: 116px;
+    padding: 28px 16px 10px;
+  }
+  .x2f-hello__text {
+    gap: 4px;
+  }
+  /* Text sizes stay as on taller screens (fonts are the owner's call; docs/agy-owner-questions-landing.md). */
+  .x2f-hello__choices {
+    gap: 8px;
+  }
   .x2f-hello__links {
-    display: grid;
+    gap: 6px;
   }
 }
 .x2f-hello__link {
@@ -131,6 +176,11 @@
 /* The text and buttons rise in once (welcome block 1250 ms, buttons 1400, links 1520; 520 ms each);
    calm: they fade in with no rise, and the full logo fades in over 600 ms. */
 @media (prefers-reduced-motion: no-preference) {
+  /* "Welcome to" slides in along its diagonal (design, front.md:61): from (-24, -9) px and opacity 0,
+     420 ms, delay 150. `translate` keeps the tilt in `transform`. Reduced motion: shown at once. */
+  .x2f-hello__lead {
+    animation: x2f-hello-lead 420ms cubic-bezier(0.2, 0.8, 0.2, 1) 150ms both;
+  }
   .x2f-hello__text {
     animation: x2f-hello-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) 1250ms both;
   }
@@ -159,6 +209,16 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+@keyframes x2f-hello-lead {
+  from {
+    opacity: 0;
+    translate: -24px -9px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
   }
 }
 @keyframes x2f-hello-fade {
