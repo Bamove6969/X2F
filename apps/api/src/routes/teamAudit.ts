@@ -36,7 +36,7 @@ declare module 'fastify' {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TRADE_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/;
-const ID = /^[1-9][0-9]{0,18}$/;
+const ID = /^[1-9][0-9]{0,17}$/;
 const HEX32 = /^[0-9a-f]{64}$/i;
 
 /** Every action the log can hold. */
@@ -164,6 +164,9 @@ export function installRefusalAudit(app: FastifyInstance): void {
     const who = req.memberAttempt;
     const code = req.apiErrorCode;
     if (who === null || code === null || (reply.statusCode !== 401 && reply.statusCode !== 403) || !REFUSAL_CODES.has(code)) return;
+    // Review 26 Nov (finding 2): only refused writes. A member's screens read owner-only data in passing
+    // (the Team screen loads the team list), which would fill the log and its hourly cap with noise.
+    if (req.method === 'GET' || req.method === 'HEAD') return;
     try {
       await auditRefusal(req.server.deps.db, who, { method: req.method, route: req.routeOptions.url ?? '', code }, req.server.deps.clock());
     } catch (err) {

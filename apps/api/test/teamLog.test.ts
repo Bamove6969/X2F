@@ -148,6 +148,31 @@ describe('the chain', () => {
     expect(found.entries.map((e) => [e.action, e.tradeCode])).toEqual([['mark-paid', null]]);
   });
 
+  it("an insert's id is drawn under the account's lock, so a waiting insert never links behind a later id (review 26 Nov, finding 1)", async () => {
+    const a = await team();
+    const b = await team();
+    const m = await member(a.id, ['offers-see']);
+    const holder = await deps.db.connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select pg_advisory_xact_lock(7240002, hashtext($1::text))', [a.id]);
+      const waiting = deps.db.query<{ id: string }>(
+        `insert into team_audit (account_id, member_id, at, action) values ($1, $2, now(), 'mark-paid') returning id::text as id`,
+        [a.id, m.id],
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      // Another account's insert meanwhile draws the next id.
+      await member(b.id, ['offers-see']);
+      const { rows: other } = await deps.db.query<{ id: string }>('select max(id)::text as id from team_audit where account_id = $1', [b.id]);
+      await holder.query('commit');
+      const late = (await waiting).rows[0]!.id;
+      expect(BigInt(late)).toBeGreaterThan(BigInt(other[0]!.id));
+    } finally {
+      holder.release();
+    }
+    expect(((await a.browser.get('/v1/team/log/integrity')).json() as { ok: boolean }).ok).toBe(true);
+  });
+
   it('two accounts have separate chains; each starts from nothing', async () => {
     const a = await team();
     const b = await team();
@@ -186,6 +211,8 @@ describe('what the log records', () => {
     const owner = await team();
     const m = await member(owner.id, ['offers-see']);
     expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(403);
+    expect((await m.browser.post('/v1/wallets', { app: 'cake', label: 'x', address: fakeAddress() })).statusCode).toBe(403);
+    // A refused read is not logged (review 26 Nov, finding 2: the member's screens read owner-only data in passing).
     expect((await m.browser.get('/v1/team')).statusCode).toBe(403);
     const refused = await until(
       async () => (await log(owner.browser, '?action=attempt-refused')).entries,
@@ -193,10 +220,12 @@ describe('what the log records', () => {
     );
     expect(refused.map((e) => e.detail).reverse()).toEqual([
       { method: 'POST', route: '/v1/offers', reason: 'forbidden' },
-      { method: 'GET', route: '/v1/team', reason: 'owner-only' },
+      { method: 'POST', route: '/v1/wallets', reason: 'owner-only' },
     ]);
     expect(refused.every((e) => e.memberId === m.id && e.category === 'access')).toBe(true);
-    for (let i = 0; i < REFUSALS_PER_HOUR + 5; i++) expect((await m.browser.get('/v1/team')).statusCode).toBe(403);
+    for (let i = 0; i < REFUSALS_PER_HOUR + 5; i++) {
+      expect((await m.browser.post('/v1/wallets', { app: 'cake', label: 'x', address: fakeAddress() })).statusCode).toBe(403);
+    }
     const all = await until(
       async () => (await log(owner.browser, '?action=attempt-refused,attempts-throttled')).entries,
       (e) => e.some((x) => x.action === 'attempts-throttled'),
@@ -266,7 +295,7 @@ describe('reading the log', () => {
     const owner = await team();
     const m = await member(owner.id, rolesToAbilities(['offers']));
     expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
-    await m.browser.get('/v1/team');
+    await m.browser.post('/v1/wallets', { app: 'cake', label: 'x', address: fakeAddress() });
     await deps.db.query(`update team_members set abilities = $2 where id = $1`, [m.id, ['offers-see']]);
     const s = await until(
       async () => ((await owner.browser.get('/v1/team/log/summary?days=7')).json() as { members: Record<string, unknown>[] }).members,

@@ -285,6 +285,9 @@ export async function assertInsideBand(q: Queryable, band: TradeBand | null, on:
  * closes their streams after the commit).
  */
 export async function applyLimits(q: Queryable, accountId: string, memberId: string, limits: MemberLimits, now: Date): Promise<string[]> {
+  // Review 26 Nov (finding 3): lock the member's sessions before the team_members write, whose
+  // trigger takes the team log's lock; a logout locks its session row and then waits on that lock.
+  await q.query('select 1 from sessions where member_id = $1 and revoked_at is null order by id for update', [memberId]);
   const { rows } = await q.query(
     `update team_members set band_min_atomic = $3, band_max_atomic = $4, hours = $5
       where id = $1 and account_id = $2 and removed_at is null and (joined_at is not null or invite_expires_at > $6) returning id`,

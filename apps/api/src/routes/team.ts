@@ -357,6 +357,8 @@ export function teamRoutes(app: FastifyInstance): void {
     const from = date(q.from);
     const to = date(q.to);
     const page = await listAudit(req.server.deps.db, req.auth.accountId, {
+      // Review 26 Nov (finding 7): this older route stays the members' work only.
+      categories: ['work'],
       ...(from ? { from } : {}), ...(to ? { to } : {}), ...(typeof member === 'string' ? { members: [member.toLowerCase()] } : {}),
     });
     return page.entries;

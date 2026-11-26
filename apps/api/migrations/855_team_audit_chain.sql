@@ -124,6 +124,10 @@ begin
   new.at := date_trunc('milliseconds', new.at);
   new.trade_commit := case when new.trade_code is null then null else sha256(convert_to(new.trade_code, 'UTF8')) end;
   perform pg_advisory_xact_lock(7240002, hashtext(new.account_id::text));
+  -- The id is taken only now, under the account's lock (review 26 Nov, finding 1): the identity
+  -- default was drawn before this trigger ran, so two concurrent inserts could commit out of id
+  -- order and link the chain backwards. Drawn here, ids follow the chain's order.
+  new.id := nextval(pg_get_serial_sequence('public.team_audit', 'id'));
   select l.hash into head from team_audit l where l.account_id = new.account_id order by l.id desc limit 1;
   new.prev_hash := head;
   new.hash := sha256(coalesce(head, ''::bytea) || convert_to(team_audit_line(new), 'UTF8'));
