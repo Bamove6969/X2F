@@ -98,6 +98,9 @@ export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Trade key backup (owner, 26 Nov 2026): the person's own key did not unlock or cannot be used; they pick another key on the same screen.
+  'no-prf': 'the chosen passkey or security key cannot make a backup key (no PRF); the person picks another key (inline on the trade key backup section)',
+  'bad-unlock': 'the key or pasted text did not open the trade key backup; the person tries again or picks another key (inline)',
   // Lien recovery (review B1, provisional owner answers 17 Nov 2026).
   'lien-recovery-changed': 'the lien recovery the quote showed moved before the take; the quote reads it again and asks for a fresh tap (inline, like price-changed)',
   'recovery-address-refused': "a creditor's recovery wallet that another account holds; they pick another wallet (inline on the liens screen)",
