@@ -185,7 +185,9 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
       expect(r.body, topic).not.toMatch(/logged in/i);
       expect(r.back, topic).toEqual(['Back to trading', '/sell']);
     }
-    expect(read1(page('/help/support')).action).toBe('/feedback');
+    // Plan 4 Task 31: the account owner opens a ticket, and finds their tickets under it.
+    expect(read1(page('/help/support')).action).toBe('/support/tickets/new');
+    expect(page('/help/support').querySelector('[data-part="help-more"]')?.getAttribute('href')).toBe('/support/tickets');
     expect(read1(page('/help/settings')).action).toBe('/settings/security');
   });
 
@@ -195,7 +197,11 @@ describe('help links on /login and /session-length (owner #38, #42)', () => {
     expect(s.action).toBe('/settings/security');
     expect(s.body).toBe(HELP_TOPICS.settings!.member);
     expect(s.body).toBe('Your alarm and idle reminder are in Settings. The account owner looks after the rest.');
-    expect(read1(page('/help/support')).action).toBe('/feedback');
+    // Tickets are the account owner's: a member keeps Feedback, and no tickets link.
+    const support = read1(page('/help/support'));
+    expect(support.action).toBe('/feedback');
+    expect(support.body).toBe(HELP_TOPICS.support!.member);
+    expect(page('/help/support').querySelector('[data-part="help-more"]')).toBeNull();
   });
 });
 

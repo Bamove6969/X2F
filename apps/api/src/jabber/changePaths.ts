@@ -233,6 +233,11 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'account_action_minutes.account_id': 'pay and release timings kept by finished trades (the Fast badge), not the account',
   'closed_account_keys.account_id': "a closed account's identifier tags kept for the ban scope, written by the close itself (closed_at notifies)",
   'feedback_form.account_id': 'feedback sent to X2F',
+  // Plan 4 Task 30: support tickets. A ticket is the trader's own question to staff, not a change to
+  // the account; who took it and which staff member wrote a line are staff-side.
+  'tickets.account_id': "a support ticket the account's owner opened to X2F staff",
+  'tickets.taken_by': 'the staff member working a ticket (staff side)',
+  'ticket_messages.staff_id': 'the staff member who wrote a ticket reply (staff side, never shown to the trader)',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.

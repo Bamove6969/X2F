@@ -22,6 +22,7 @@ import { staffDeviceRoutes } from './devices.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
@@ -194,6 +195,8 @@ export async function buildStaffApi(
   staffBanRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 30: support tickets, worked by the staff the owner granted tickets.handle.
+  staffTicketRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
   staffDisputeRoutes(app, {
     moderation: deps.moderation,

@@ -61,12 +61,12 @@ describe('StaffShell', () => {
     expect(document.body.textContent).toContain('Nothing to show for your role yet');
   });
 
-  it("the owner sees every item in the boards' order (Feedback before Settings, Plan 5 Task 4; Prices after Performance, J-21; Past reputation after Disputes, Plan 5 Task 11)", async () => {
+  it("the owner sees every item in the boards' order (Feedback before Settings, Plan 5 Task 4; Prices after Performance, J-21; Past reputation after Disputes, Plan 5 Task 11; Tickets after Feedback, Plan 4 Task 31)", async () => {
     fakeApi({ 'GET /staff/v1/me': { body: me('owner') } });
     await open('/');
-    expect(navLabels()).toEqual(['Overview', 'Disputes', 'Past reputation', 'Staff', 'Performance', 'Prices', 'Training library', 'Activity log', 'Feedback', 'Settings']);
+    expect(navLabels()).toEqual(['Overview', 'Disputes', 'Past reputation', 'Staff', 'Performance', 'Prices', 'Training library', 'Activity log', 'Feedback', 'Tickets', 'Settings']);
     expect(navLabels()).toEqual(NAV.owner.map((n) => NAV_LABELS[n]));
-    // The board's seven plus Feedback and Prices; the first item is the landing page and is marked current.
+    // The board's seven plus Feedback, Prices and Tickets; the first item is the landing page and is marked current.
     expect(document.querySelector('nav[aria-label="Staff"] a[aria-current="page"]')?.textContent).toBe('Overview');
   });
 

@@ -657,6 +657,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 5 Task 14.
   'PUT /v1/trades/:code/proofs/:id': "a participant's proof ciphertext for their own trade (R42: finishing open trades stays allowed); no account, session, approval or security state, no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  // Plan 4 Task 30: support tickets (the account owner's own question to staff).
+  'POST /v1/tickets': 'a support ticket row and its first message only; no account, session, approval or security state, no obligation',
+  'POST /v1/tickets/:id/messages': "a message on the caller's own support ticket; no account, session, approval or security state, no obligation",
+  'POST /v1/tickets/:id/close': "closes the caller's own support ticket; no account, session, approval or security state, no obligation",
   // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
   'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",

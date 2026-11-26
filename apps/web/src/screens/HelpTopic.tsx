@@ -29,6 +29,10 @@ interface TopicCopy {
   member?: string;
   /** A signed-in reader's way on from here, where there is one. */
   link?: { label: string; to: string; owner?: true };
+  /** A second way on (a quieter link), for the account owner only. */
+  more?: { label: string; to: string };
+  /** A team member's way on, where `link` is the account owner's. */
+  memberLink?: { label: string; to: string };
 }
 
 /** COPY-UNSIGNED: each topic's title, its placeholder lines, and its link. */
@@ -43,11 +47,15 @@ export const HELP_TOPICS: Record<string, TopicCopy> = {
     out: 'Creating an account, logging in and your recovery code.',
     in: 'Logging in, your sessions and your recovery code.',
   },
+  // Plan 4 Task 31: support tickets are the account owner's (a team member keeps Feedback).
   support: {
     title: 'Support',
-    out: 'Once you are logged in, Feedback in the app sends a message to X2F staff.',
-    in: 'Feedback sends a message to X2F staff.',
-    link: { label: 'Open Feedback', to: '/feedback' },
+    out: 'Once you are logged in, you can open a support ticket to ask X2F staff, or send Feedback about the app.',
+    in: 'Open a ticket to ask X2F staff, and follow their answers in Your tickets. Feedback about the app goes in Feedback.',
+    member: 'Feedback sends a message to X2F staff. Support tickets are opened by the account owner.',
+    link: { label: 'Open a ticket', to: '/support/tickets/new', owner: true },
+    more: { label: 'Your tickets', to: '/support/tickets' },
+    memberLink: { label: 'Open Feedback', to: '/feedback' },
   },
   settings: {
     title: 'Settings',
@@ -86,7 +94,8 @@ export function HelpTopic() {
     : lib !== undefined ? { title: lib.title, out: lib.intro, in: lib.intro }
     : null;
   const body = t === null ? HELP_HOME.unknown : !inside ? t.out : member ? (t.member ?? t.in) : t.in;
-  const link = inside && t?.link !== undefined && !(member && t.link.owner === true) ? t.link : null;
+  const link = !inside || t === null ? null : member && t.link?.owner === true ? (t.memberLink ?? null) : (t.link ?? null);
+  const more = inside && !member && t?.more !== undefined ? t.more : null;
   const library = t === null ? 'none' : libraryOf(topic);
   return (
     <main className="x2f-screen x2f-screen--roomy" data-screen={t === null ? 'help-unknown' : topic === '' ? 'help' : `help-${topic}`}>
@@ -98,6 +107,13 @@ export function HelpTopic() {
         <p>
           <Link className="x2f-button x2f-button--secondary" to={link.to} data-part="help-action">
             {link.label}
+          </Link>
+        </p>
+      )}
+      {more === null ? null : (
+        <p>
+          <Link className="x2f-link" to={more.to} data-part="help-more">
+            {more.label}
           </Link>
         </p>
       )}

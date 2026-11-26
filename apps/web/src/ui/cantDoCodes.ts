@@ -105,6 +105,8 @@ export const CANT_DO_CODES = [
   // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
   'site-claimed',
   'fingerprint-claimed',
+  // Plan 4 Task 30: the account already has TICKET_OPEN_AT_ONCE support tickets not closed (Tickets.tsx).
+  'too-many-tickets',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
@@ -321,6 +323,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'settled-elsewhere': 'the escrow already settled',
   stopped: 'the escrow stopped (a fault)',
   'wrong-terms': 'an escrow safety check on this device',
+  // Plan 4 Task 30: support tickets. A closed ticket is its own state (the trader opens a new one);
+  // another staff member holding a ticket is a staff answer.
+  'ticket-closed': 'the ticket was closed (its own state; TicketThread.tsx offers a new ticket)',
+  'ticket-taken': 'a staff answer: another staff member has taken the ticket (staff app only)',
 };
 
 export function isCantDoCode(code: unknown): code is CantDoCode {
@@ -769,6 +775,14 @@ export const WEAK_SESSION_TEXT =
 export function holdApproveText(when: string): string {
   return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
 }
+
+/** Plan 4 Task 30: TICKET_OPEN_AT_ONCE tickets not closed (409 `too-many-tickets`). */
+export const TOO_MANY_TICKETS_CODE = 'too-many-tickets' satisfies CantDoCode;
+/** COPY-UNSIGNED */
+export const TOO_MANY_TICKETS = {
+  title: "You can't open another ticket yet",
+  body: (n: number) => `You can have ${n} tickets open at a time. Close one you no longer need, or wait for X2F to answer.`,
+} as const;
 
 /** The member limit's code (Plan 2 Task 18). */
 export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;

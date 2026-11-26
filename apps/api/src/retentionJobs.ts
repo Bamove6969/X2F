@@ -15,6 +15,7 @@ import { closeInactiveAccounts } from './accountInactivity.js';
 import { purgeChatKeyEnvelopes } from './auth/chatKeys.js';
 import { purgeRemovedWalletAddresses } from './wallets/routes.js';
 import { purgeTradesJob } from './retention/tradePurge.js';
+import { purgeTickets } from './tickets/store.js';
 
 /**
  * Every job the one retention scheduler (`startRetention`, every 10 minutes) runs, in order (X-12):
@@ -27,6 +28,7 @@ import { purgeTradesJob } from './retention/tradePurge.js';
  * the Terms signature of a half-made staff account whose invite was cancelled or expired (owner p11-13).
  * Plan 7's purgeTrades (Task 2, with Plan 4 Task 23's dispute half) runs right after purgeChats, which
  * deletes a trade's chat no later than the trade (@x2f/trade retention.ts): it deletes a trade whole
- * 30 days after it closed, or 90 days after its last dispute closed.
+ * 30 days after it closed, or 90 days after its last dispute closed. Plan 4's purgeTickets (Task 30) runs right
+ * after purgeTrades: a support ticket goes 90 days (TICKET_KEEP_DAYS) after its last activity, or with the trade it names.
  */
-export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];
+export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeTickets, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts];

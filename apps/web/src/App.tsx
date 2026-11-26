@@ -20,6 +20,8 @@ import { PublicRecord, RecordExport } from './screens/profile/Record.js';
 import { Trades } from './screens/Trades.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { TicketNew, Tickets } from './screens/support/Tickets.js';
+import { TicketThread } from './screens/support/TicketThread.js';
 import { AccountFrozenRoute, FROZEN_PATH, FrozenWatch } from './screens/account/AccountFrozen.js';
 import { AccountBannedRoute, BANNED_PATH } from './screens/account/AccountBanned.js';
 import { PostOffer } from './screens/PostOffer.js';
@@ -339,6 +341,10 @@ export function App() {
             <Route path="/u/:name/record" element={<PublicRecord />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
+            {/* Plan 4 Task 31: support tickets, from Help, Support (the account owner's). */}
+            <Route path="/support/tickets" element={<Tickets />} />
+            <Route path="/support/tickets/new" element={<TicketNew />} />
+            <Route path="/support/tickets/:id" element={<TicketThread />} />
             {/* D-016: the frozen-account notice, from GET /v1/account/freeze (home while not frozen). */}
             <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
             {/* Plan 4 Task 27, D-020: the ban notice (api/client.ts sends a 403 banned here). */}
