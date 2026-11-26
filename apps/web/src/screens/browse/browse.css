@@ -375,6 +375,12 @@ a.x2f-method:last-of-type {
   cursor: pointer;
 }
 
+.x2f-text-button:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+  border-radius: var(--x2f-radius-sm);
+}
+
 .x2f-text-button:hover {
   color: var(--x2f-monero-ink-hover);
 }

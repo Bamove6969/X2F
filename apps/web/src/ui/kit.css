@@ -543,6 +543,7 @@
   flex-direction: column;
   gap: calc(var(--x2f-space-3) + 2px);
   width: 340px;
+  max-width: calc(100vw - 32px);
   box-sizing: border-box;
   padding: var(--x2f-space-4);
   border: 1px solid var(--x2f-line);
