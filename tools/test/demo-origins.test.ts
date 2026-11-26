@@ -24,12 +24,23 @@ describe('demo origins', () => {
     expect(demoOrigins({}, '100.70.1.2').node).toBe('https://100.70.1.2:4444');
   });
 
-  it('refuses one without the other, the same origin twice, http, paths, credentials and ports', () => {
+  it('keeps an explicit https port (a Tailscale Funnel on 8443 and 10000)', () => {
+    const o = demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://h.tail1.ts.net:8443', DEMO_PUBLIC_NODE_ORIGIN: 'https://h.tail1.ts.net:10000/' });
+    expect(o.primary).toBe('https://h.tail1.ts.net:8443');
+    expect(o.primaryWs).toBe('wss://h.tail1.ts.net:8443');
+    expect(o.node).toBe('https://h.tail1.ts.net:10000');
+    expect(o.allowed).toContain('https://h.tail1.ts.net:8443');
+    // The WebAuthn RP ID is a host name, never a port.
+    expect(o.rpId).toBe('h.tail1.ts.net');
+    expect(publicOrigin('DEMO_PUBLIC_ORIGIN', 'https://a.example:443')).toBe('https://a.example');
+  });
+
+  it('refuses one without the other, the same origin twice, http, paths and credentials', () => {
     expect(() => demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://a.example' })).toThrow(DemoOriginError);
     expect(() => demoOrigins({ DEMO_PUBLIC_NODE_ORIGIN: 'https://a.example' })).toThrow(DemoOriginError);
     // One host may carry both: the gateway routes the node's RPC paths by path.
     expect(demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://a.example', DEMO_PUBLIC_NODE_ORIGIN: 'https://a.example/' }).node).toBe('https://a.example');
-    for (const bad of ['http://a.example', 'wss://a.example', 'https://a.example/x', 'https://a.example?x=1', 'https://u:p@a.example', 'https://a.example:8443', 'not a url']) {
+    for (const bad of ['http://a.example', 'wss://a.example', 'https://a.example/x', 'https://a.example?x=1', 'https://u:p@a.example', 'http://a.example:8443', 'not a url']) {
       expect(() => publicOrigin('DEMO_PUBLIC_ORIGIN', bad)).toThrow(DemoOriginError);
     }
   });
