@@ -28,7 +28,7 @@ import { returnToFrom } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
 import { SETUP_ONLY_HOME } from '../../session/frontDoor.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
-import { PASSWORD_ALONE_CODE, SECOND_METHOD_SIGNUP, SECOND_METHOD_TITLE } from '../../ui/cantDoCodes.js';
+import { SECOND_METHOD_CODE, SECOND_METHOD_SIGNUP, SECOND_METHOD_TITLE } from '../../ui/cantDoCodes.js';
 import { authApi } from '../auth/authApi.js';
 import { Backup } from './Backup.js';
 import { DisplayName } from './DisplayName.js';
@@ -129,14 +129,14 @@ export function EndSignup({ registered, children }: { registered: boolean; child
     let live = true;
     authApi.endOnboarding().then(
       () => live && setFailed(null),
-      (e: unknown) => live && setFailed(errorCode(e) === PASSWORD_ALONE_CODE ? 'alone' : 'other'),
+      (e: unknown) => live && setFailed(errorCode(e) === SECOND_METHOD_CODE ? 'alone' : 'other'),
     );
     return () => {
       live = false;
     };
   }, [registered, tries]);
   if (failed === 'alone') {
-    return <CantDoThat title={SECOND_METHOD_TITLE} body={SECOND_METHOD_SIGNUP} from={PASSWORD_ALONE_CODE} onClose={() => void navigate(SETUP_ONLY_HOME, { replace: true })} />;
+    return <CantDoThat title={SECOND_METHOD_TITLE} body={SECOND_METHOD_SIGNUP} from={SECOND_METHOD_CODE} onClose={() => void navigate(SETUP_ONLY_HOME, { replace: true })} />;
   }
   return (
     <>

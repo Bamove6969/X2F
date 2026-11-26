@@ -14,6 +14,24 @@ export const BURNED_CODE_COPY = {
   done: 'Done',
 } as const;
 
+/**
+ * Owner, 26 Nov 2026: "use very strong language on the recovery code screen when signing up about
+ * the importance and what can be done with it if someone else were to get it". Shown on sign-up
+ * before the code is made; the tick is needed before the code is shown. COPY-UNSIGNED (owner to
+ * approve before merge).
+ */
+export const SIGNUP_CODE_WARNING = {
+  title: 'Anyone who gets this code can take your account',
+  points: [
+    'Whoever has this code can log in as you. They do not need your passkey, security key, PGP key or authenticator app.',
+    'For one hour after they use it, they can remove every one of your login methods and add their own, with no confirm and no waiting period. You could be locked out of your account for good.',
+    'Once in, they can see your open trades, chat as you and change the wallets your coins are paid to.',
+    'X2F staff will never ask for this code. Never type it into a chat or an email, and never keep it in a screenshot, a photo or a cloud note.',
+    'You have one recovery code at a time. If anyone else may have seen it, make a new one in Security settings straight away. That cancels this one.',
+  ],
+  ack: 'I understand that anyone with this code can take over my account, and I will keep it secret.',
+} as const;
+
 /** The new recovery code (RecoveryCode board, reminder and show steps; owner G32). */
 export const NEW_CODE_COPY = {
   title: 'Write down your new recovery code',

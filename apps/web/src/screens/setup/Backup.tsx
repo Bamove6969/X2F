@@ -11,8 +11,10 @@
  * settings. There is no way past this step until then; then it goes straight on to the wallet.
  * Lead call (12 Nov 2026): the optional "Add another backup" view (a security key or a second PGP
  * key) is gone: the login step's checkboxes replace it, and Settings adds more later. A recovery
- * code is the emergency way in only (owner G32): a backup login opens a held recovery session
- * (recovery.ts). While the account's sign-up window is open the server needs no confirm-it's-you
+ * code is the emergency way in only (owner G32). Owner, 26 Nov 2026: a recovery-code login may
+ * replace every login method for an hour with no hold, so the screen says plainly what someone else
+ * could do with it (`SIGNUP_CODE_WARNING`) and the person ticks that they understand before the code
+ * is shown. While the account's sign-up window is open the server needs no confirm-it's-you
  * for the code; the confirm sheet is wired in anyway, so a person who comes back later is asked to
  * confirm rather than refused.
  *
@@ -21,14 +23,14 @@
  * (the server cannot show a code again).
  */
 import { useEffect, useState } from 'react';
-import { formatRecoveryInput, isStaged, normalizeRecoveryCode, withConfirm } from '@x2f/auth-client';
+import { formatRecoveryInput, normalizeRecoveryCode, withConfirm } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
-import { HOLD_COPY, codeGroups } from '../settings/recoveryCopy.js';
+import { SIGNUP_CODE_WARNING as WARN, codeGroups } from '../settings/recoveryCopy.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 
 type Prove = ReturnType<typeof useConfirm>['prove'];
@@ -64,6 +66,17 @@ export function Backup() {
           only way back into your account to set up or update your current security methods.
         </p>
         {/* Owner demo note #153 (23 Nov): the "Your coins stay in your own wallet" box removed, so less scrolling. */}
+        {/* Owner, 26 Nov 2026: very strong words on what someone else could do with the code. COPY-UNSIGNED */}
+        <section className="x2f-start__panel" data-part="backup-warning" role="note" aria-labelledby="backup-warning-h">
+          <h2 className="x2f-start__panel-title" id="backup-warning-h">
+            <Icon name="alert" size={20} stroke={2.25} /> {WARN.title}
+          </h2>
+          <ul className="x2f-start__warn-list">
+            {WARN.points.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </section>
         <RecoveryCodeStep
           prove={prove}
           code={state.recoveryCode}
@@ -99,8 +112,8 @@ export function RecoveryCodeStep({
 }) {
   const primary = usePrimaryVariant();
   const [code, setCode] = useState<string | null>(kept);
-  // Hold model v3: a code made by a weak login is a staged change (HOLD_COPY.staged) until the hold ends.
-  const [held, setHeld] = useState<string | null>(null);
+  // Owner, 26 Nov 2026: the warning is ticked before the code is shown (a code already made in this flow skips it).
+  const [understood, setUnderstood] = useState(false);
   const [written, setWritten] = useState(false);
   const [testing, setTesting] = useState(false);
   const [typed, setTyped] = useState('');
@@ -115,8 +128,6 @@ export function RecoveryCodeStep({
       const made = result.codes[0]!;
       setCode(made);
       onMade?.(made);
-      // Hold model v3 (team-perms-port, batch 4): a weak login's code is a staged draft; the hold copy says so.
-      setHeld(isStaged(result) ? HOLD_COPY.staged : null);
     } catch (e) {
       // COPY-UNSIGNED
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make your recovery code. Try again.'));
@@ -129,8 +140,12 @@ export function RecoveryCodeStep({
     return (
       <div className="x2f-field" data-part="recovery-codes">
         <ErrorLine error={error} />
+        <label className="x2f-check x2f-check--tap">
+          <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} data-part="recovery-understood" />
+          <span>{WARN.ack}</span>
+        </label>
         {/* COPY-UNSIGNED */}
-        <Button variant={primary} className="x2f-start__reveal" disabled={busy} onClick={() => void make()} data-part="recovery-make">
+        <Button variant={primary} className="x2f-start__reveal" disabled={busy || !understood} onClick={() => void make()} data-part="recovery-make">
           Show my recovery code
         </Button>
       </div>
@@ -146,11 +161,6 @@ export function RecoveryCodeStep({
           Store it offline or in a secure vault before continuing. You will be tested on this code on the very next screen to confirm you recorded
           it.
         </p>
-        {held !== null ? (
-          <p className="x2f-note" role="status" data-part="held-note">
-            {held}
-          </p>
-        ) : null}
         <ol className="x2f-codes x2f-codes--long" data-part="recovery-code" aria-label={`Your recovery code: ${codeGroups(code).join(' ')}`}>
           {codeGroups(code).map((g, i) => (
             <li className="x2f-codes__item" key={i}>

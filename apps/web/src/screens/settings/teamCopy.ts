@@ -81,8 +81,6 @@ export const TEAM_COPY = {
   what: [
     'Offers: post, change, turn on or off and remove your offers.',
     'Trades: start trades on offers, mark payments sent, cancel and open disputes.',
-    // Owner p4-8 (MemberPermissions board; COPY-UNSIGNED).
-    'Holds and waiting changes: see your waiting changes, untick or cancel them, or end a hold. Off by default: without these, a member only sees that a hold is on.',
   ] as const,
   // The lead defaults the owner may change (spec 6.7).
   ownerKeeps: 'Payout wallets, your login methods, security settings and the team itself stay with you.',
@@ -99,8 +97,7 @@ export const TEAM_COPY = {
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
-  // Owner p11-21 (S-104): a member invited from a username-and-password login holds no box until
-  // the waiting boxes apply. COPY-UNSIGNED
+  // A member whose boxes are all off. COPY-UNSIGNED
   noBoxes: 'No roles yet',
   // Owner p11-25 (S-105): how chats show the member (the owner's words for the label itself). COPY-UNSIGNED
   chatLabel: (label: string) => `In chats: ${label}`,

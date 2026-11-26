@@ -13,7 +13,7 @@
  * already logged in, who opened setup only to add a wallet, stays logged in.
  *
  * Owner demo note 16 Nov #97: the screen also says what the account's security rating is, always
- * lists the username with the login methods ("Username and password" when there is a password), and
+ * lists the username with the login methods, and
  * each checklist item links back to the setting where it can be changed or made more secure.
  */
 import { useEffect, useState } from 'react';
@@ -60,9 +60,7 @@ export const WELCOME_COPY = {
   /** Owner #97: how to make it more secure, for an account not yet highly secure. COPY-UNSIGNED */
   ratingRaise: 'Add a passkey, a security key or a PGP key to make it highly secure.',
   ratingLink: 'Make it more secure',
-  /** Owner #97: "always add Username/Password as a bullet point". COPY-UNSIGNED */
-  usernamePassword: 'Username and password',
-  /** Every account logs in with its private username, password or not. COPY-UNSIGNED */
+  /** Owner #97: the username is always a bullet point. COPY-UNSIGNED */
   username: 'Username',
   /** Owner #97: the link back to each setting. COPY-UNSIGNED */
   change: 'Change',
@@ -93,20 +91,19 @@ export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /**
  * The login methods, best to worst (lead default, owner may reorder): a security key and a passkey
- * (phishing-proof hardware or device keys) first, then a PGP key, an authenticator app (a
- * password's second step), and a password last. The recovery codes are their own item.
+ * (phishing-proof hardware or device keys) first, then a PGP key and an authenticator app (it counts
+ * as a kind but never logs in alone). The recovery codes are their own item.
  */
 const BEST_FIRST: Array<{ id: MethodType; word: string }> = [
   { id: 'security-key', word: 'Security key' },
   { id: 'passkey', word: 'Passkey' },
   { id: 'pgp', word: 'PGP key' },
   { id: 'totp', word: 'Authenticator app' },
-  { id: 'password', word: WELCOME_COPY.usernamePassword },
 ];
 
 /**
  * Owner demo note #168: every login method X2F offers, in his order (PGP key, security key, passkey,
- * authenticator app, password), then the recovery code, each marked set up or not from the account's
+ * authenticator app), then the recovery code, each marked set up or not from the account's
  * methods as this setup leaves them.
  */
 const OFFERED: Array<{ id: MethodType; word: string }> = [
@@ -114,7 +111,6 @@ const OFFERED: Array<{ id: MethodType; word: string }> = [
   { id: 'security-key', word: 'Security key' },
   { id: 'passkey', word: 'Passkey' },
   { id: 'totp', word: 'Authenticator app' },
-  { id: 'password', word: 'Password' },
   { id: 'recovery-codes', word: WELCOME_COPY.recoveryCode },
 ];
 
@@ -136,8 +132,8 @@ export function loginMethodsBestFirst(me: Pick<Me, 'methods'>, flow: Pick<SetupS
   // A second PGP key is not visible in the methods list; the flow knows.
   const twoPgp = flow.registered && flow.method === 'pgp' && flow.backup === 'pgp';
   const words = BEST_FIRST.filter((m) => have.has(m.id)).map((m) => (m.id === 'pgp' && twoPgp ? 'PGP keys (2)' : m.word));
-  // Owner #97: the username is always a line; with a password it is "Username and password".
-  if (words.length > 0 && !have.has('password')) words.push(WELCOME_COPY.username);
+  // Owner #97: the username is always a line.
+  if (words.length > 0) words.push(WELCOME_COPY.username);
   return words;
 }
 
@@ -153,15 +149,14 @@ function methodsNow(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered'
  * The account's security rating (owner #97). The API's own rating wins when it sends one (GET
  * /v1/account/me `securityRating`, apps/api/src/auth/rating.ts on main); an API build without it
  * gets the same three rules applied to the methods here, for display only (it authorises nothing):
- * high with a PGP key, a passkey or a security key; medium with a password and an authenticator app;
- * weak otherwise.
+ * high with a PGP key, a passkey or a security key; weak otherwise (medium is never given since
+ * owner 26 Nov 2026: it was a password with an authenticator app).
  */
 export function securityRating(me: Pick<Me, 'methods'> & { securityRating?: SecurityRating | null }, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): SecurityRating {
   const sent = me.securityRating;
   if (sent === 'high' || sent === 'medium' || sent === 'weak') return sent;
   const have = methodsNow(me, flow);
   if (have.has('pgp') || have.has('passkey') || have.has('security-key')) return 'high';
-  if (have.has('password') && have.has('totp')) return 'medium';
   return 'weak';
 }
 

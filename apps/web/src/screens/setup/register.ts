@@ -22,13 +22,6 @@ export interface TermsAcceptance {
   version: string;
 }
 
-export function registerPassword(names: Names, password: string, terms: TermsAcceptance): Promise<{ displayName: string }> {
-  return authApi.registerPassword({
-    displayName: names.displayName, loginName: names.loginName, password, deviceLabel: deviceLabel(),
-    acceptedTerms: terms.version,
-  });
-}
-
 export function registerPgpStart(names: Names, publicKey: string): Promise<RegisterPgpStart> {
   return authApi.registerPgpStart({ displayName: names.displayName, loginName: names.loginName, publicKey });
 }
@@ -85,19 +78,6 @@ export interface SetupError {
   keyRefused?: true;
 }
 
-/** The password rules in the board's words, for a 400 `password-weak` `{ missing }`. */
-const PASSWORD_RULES: Record<string, string> = {
-  length: '10 characters or more',
-  // not-a-refusal: an input check on a typed password
-  'too-long': 'at most 256 characters',
-  upper: 'an upper case letter',
-  lower: 'a lower case letter',
-  number: 'a number',
-  symbol: 'a symbol',
-  // COPY-UNSIGNED (owner demo note #108)
-  space: 'no spaces',
-};
-
 function minutes(seconds: number | undefined): string {
   const s = seconds !== undefined && Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
   const min = Math.max(1, Math.ceil(s / 60));
@@ -106,8 +86,7 @@ function minutes(seconds: number | undefined): string {
 
 /**
  * What a setup screen says for a refused call (review fix round M1, M2): the names refusals (with
- * the link back to the names), a key already on another account, 503 `busy` with its wait, the
- * rules a weak password still misses, then Task 30's `refusalText` (429 waits, a refused key's
+ * the link back to the names), a key already on another account, 503 `busy` with its wait, then Task 30's `refusalText` (429 waits, a refused key's
  * reason or the server's own sentence about the key, an expired step), else `fallback`.
  */
 export function setupError(e: unknown, fallback: string, o: { expired?: string } = {}): SetupError {
@@ -118,10 +97,6 @@ export function setupError(e: unknown, fallback: string, o: { expired?: string }
   if (code === 'key-unavailable') return { text: KEY_UNAVAILABLE, keyRefused: true };
   if (e instanceof AuthApiError || e instanceof ApiCallError) {
     if (e.status === 503 && code === 'busy') return { text: `X2F is busy right now. Try again in ${minutes(e.retryAfterSeconds)}.` };
-    if (code === 'password-weak' && e instanceof AuthApiError && e.missing !== undefined && e.missing.length > 0) {
-      const needs = e.missing.map((m) => PASSWORD_RULES[m]).filter((m): m is string => m !== undefined);
-      if (needs.length > 0) return { text: `That password still needs: ${needs.join(', ')}.` };
-    }
   }
   return { text: refusalText(e, fallback, o.expired !== undefined ? { expired: o.expired } : {}) };
 }
