@@ -353,6 +353,31 @@ export interface TeamMember {
   createdAt: string;
 }
 
+/** One box a team member holds, in the catalogue's words (`GET /v1/team/me`). */
+export interface MyTeamBox {
+  id: string;
+  label: string;
+  does: string;
+  /** Always on for every member, not the lead's choice. */
+  always: boolean;
+  /** False when the box is ticked but X2F does not offer what it allows yet. */
+  ready: boolean;
+}
+
+/** A team member's own access, read only (`GET /v1/team/me`; the account owner gets 403 `forbidden`). */
+export interface MyTeamAccess {
+  name: string;
+  chatLabel: string;
+  /** The account owner the member works for. */
+  lead: { displayName: string };
+  preset: string | null;
+  /** The boxes the member holds, by catalogue group, in catalogue order. */
+  groups: { id: string; label: string; boxes: MyTeamBox[] }[];
+  /** The band (null: none) and hours, whether `serverNow` is inside them, and when the current window ends (null: any time). Absent when the API does not show a member their limits. */
+  limits?: { band: TradeBand | null; hours: WorkingHours; insideNow: boolean; workingUntil: string | null };
+  serverNow: string;
+}
+
 /**
  * Plan 2 Task 18: an invite as the person invited sees it (`POST /v1/team/invite`). It never names
  * the team account: the vendor is named only once the member is inside (review 2026-11-08 F3).
@@ -855,6 +880,8 @@ export interface AuthApi {
   removeMember(id: string, b: Token): Promise<Staged | undefined>;
   /** J-20: confirm `team-limits` (`teamLimitsAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
+  /** A team member's own access, read only: boxes, band, hours and team lead. The account owner gets 403 `forbidden`. */
+  myTeamAccess(): Promise<MyTeamAccess>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   /** Team audit v2: one page of the team log, newest first (`next` → the following page's `before`). */
@@ -1047,6 +1074,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     setMemberAbilities: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
+    myTeamAccess: () => get('/v1/team/me'),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

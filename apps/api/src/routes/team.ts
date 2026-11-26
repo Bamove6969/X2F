@@ -36,6 +36,10 @@
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  * - `GET /v1/team/permissions` (the owner and every member) → the abilities catalogue: groups,
  *   each box with its risk, availability, ruling and presets, the presets, and the hard rules.
+ * - `GET /v1/team/me` (a member only; the account owner gets 403 `forbidden`) → the member's own
+ *   access, read only: `{ name, chatLabel, lead: { displayName }, preset, groups, limits?, serverNow }`,
+ *   `groups` the boxes they hold in the catalogue's words and `limits` their band and hours with
+ *   `insideNow` and `workingUntil` (team/access.ts).
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
  * after the first is bound to the device that took it):
@@ -68,6 +72,7 @@ import { requireSession, startSession } from '../auth/sessions.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
+import { myAccess } from '../team/access.js';
 import { assertVendor, requireVendor } from './accountType.js';
 import {
   type Caller,
@@ -343,6 +348,17 @@ export function teamRoutes(app: FastifyInstance): void {
 
   // The catalogue the boxes come from: static, for the owner's screen and for a member to see what they may do.
   app.get('/v1/team/permissions', { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, touch: false, member: 'any' }) }, async () => catalogueView());
+
+  // A member's own access, read only: their boxes in the catalogue's words, their band and hours
+  // (and whether they are inside them now) and their team lead (team/access.ts). The account owner
+  // holds every permission and has no lead: 403 `forbidden`.
+  app.get('/v1/team/me', { preHandler: requireSession({ kinds: ['trader'], touch: false, member: 'any' }) }, async (req) => {
+    if (req.auth.memberId === null) throw new ApiError(403, 'forbidden');
+    const deps = req.server.deps;
+    const view = await myAccess(deps.db, req.auth.accountId, req.auth.memberId, deps.clock());
+    if (view === null) throw new ApiError(401, 'not-authenticated');
+    return view;
+  });
 
   app.get('/v1/team/audit', { preHandler: owner }, async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;

@@ -19,6 +19,7 @@ import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
+import { MyAccess } from './MyAccess.js';
 import { MovedSectionRedirect, SettingsPage, SettingsRow, useKnownMember } from './SettingsTabs.js';
 import { SETTINGS_COPY } from './settingsCopy.js';
 import { useSession } from '../../session/useSession.js';
@@ -127,6 +128,8 @@ function SecurityScreen() {
                 <p className="x2f-note">{SECOND_METHOD_MESSAGE}</p>
               </section>
             ) : null}
+            {/* A team member lands here (no Account tab): their own access, read only (MyAccess.tsx). */}
+            {member && !setupOnly ? <MyAccess /> : null}
             {!member ? (
               <>
                 <HoldBanner />

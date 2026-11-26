@@ -48,6 +48,8 @@ export {
   teamLogQuery,
   type TeamInviteView,
   type TeamMember,
+  type MyTeamAccess,
+  type MyTeamBox,
   type TradeBand,
   type WorkingHours,
   type TeamRole,

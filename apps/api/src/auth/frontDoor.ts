@@ -84,6 +84,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/team/log/export': "my own team's audit log as a download, with its hash chain (account owner only)",
   'GET /v1/team/log/integrity': "the hash-chain check of my own team's audit log (account owner only)",
   'GET /v1/team/log/summary': "per-member counts from my own team's audit log (account owner only)",
+  'GET /v1/team/me': "my own access as a team member: my boxes, my band and hours, and my team lead's display name (members only; the account owner gets 403)",
   'GET /v1/team/permissions': 'the static abilities catalogue (groups, boxes, presets, hard rules): no account data; read on stale Terms too, so a member sees what their boxes mean before agreeing',
   'GET /v1/trades': "my own account's trades (buyer or seller), newest first; members by the trades boxes per part; the other side by public name only; to the account owner only, which of its members last acted on an open trade (its own team log)",
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
