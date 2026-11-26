@@ -1,5 +1,6 @@
 import { can, type StaffRole } from '@x2f/staff';
 import { useId, useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 import { lookupAccounts, type LookedUpAccount } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, EmptyState, Notice } from '../ui/kit.js';
@@ -74,6 +75,12 @@ export function AccountsPage({ role }: { role: StaffRole }) {
             </Button>
           </form>
           <p className="x2f-staff-hint">Exact matches only. A trade code finds both of its traders.</p>
+          {/* J-14 (D-059): the reports that locked an account, and their unlock. */}
+          <p>
+            <Link className="x2f-link" to="/accounts/compromised" data-part="compromised-reports">
+              Compromised account reports
+            </Link>
+          </p>
           {fault !== null ? (
             <Notice tone="danger" data-part="lookup-fault">
               {fault}

@@ -27,3 +27,18 @@ export const TICKET_OPEN_AT_ONCE = 3;
  * a trade goes sooner if the trade itself is purged first (the trade retention rules).
  */
 export const TICKET_KEEP_DAYS = 90;
+
+/**
+ * The ways to log in a "My account has been compromised" sender may tick as still theirs (D-059:
+ * "whatever credentials they still have"). Only the kind is ever sent or kept, never a secret: the
+ * form has no login, so it must never check, store or echo a password, a code or a key.
+ */
+export const COMPROMISED_METHODS = ['passkey', 'security-key', 'pgp', 'authenticator', 'recovery-code'] as const;
+export type CompromisedMethod = (typeof COMPROMISED_METHODS)[number];
+
+/**
+ * A compromised report's number as the sender is shown it, to quote to a moderator ("CT-1001").
+ * Lead default (owner question pending on the board "Compromised": "Does the user get a ticket
+ * number? ... format TBD").
+ */
+export const compromisedTicketLabel = (n: number): string => `CT-${n}`;

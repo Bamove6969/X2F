@@ -40,6 +40,7 @@ describe('team calls', () => {
     const { sent, fetch } = recorder(() => new Response(null, { status: 204 }));
     const api = createAuthApi({ fetch });
     await api.getTeam();
+    await api.myTeamAccess();
     await api.inviteMember({ tradeTag: 'Aurora', roles: ['trades'], confirmToken: 't1' });
     await api.setMemberRoles('a b', { roles: ['offers'], confirmToken: 't2' });
     await api.removeMember('id1', { confirmToken: 't3' });
@@ -53,6 +54,7 @@ describe('team calls', () => {
     await api.joinSecondWebAuthnStart({ setupId: 's', kind: 'security-key' });
     expect(sent.map((s) => `${s.init.method} ${s.url}`)).toEqual([
       'GET /v1/team',
+      'GET /v1/team/me',
       'POST /v1/team/invites',
       'PATCH /v1/team/members/a%20b',
       'DELETE /v1/team/members/id1',
@@ -65,12 +67,12 @@ describe('team calls', () => {
       'POST /v1/team/join/second/pgp/finish',
       'POST /v1/team/join/second/webauthn/start',
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ tradeTag: 'Aurora', roles: ['trades'], confirmToken: 't1' });
-    expect(bodyOf(sent[2]!)).toEqual({ roles: ['offers'], confirmToken: 't2' });
+    expect(bodyOf(sent[2]!)).toEqual({ tradeTag: 'Aurora', roles: ['trades'], confirmToken: 't1' });
+    expect(bodyOf(sent[3]!)).toEqual({ roles: ['offers'], confirmToken: 't2' });
     // The confirm token goes in the body, never the URL (R17).
-    expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 't3' });
+    expect(bodyOf(sent[4]!)).toEqual({ confirmToken: 't3' });
     // Owner 9 Nov 2026 (p11-14): the member's signature goes with the join finish.
-    expect(bodyOf(sent[8]!)).toEqual({ challengeId: 'c', code: '123', termsSignature: { kind: 'typed', name: 'A' } });
+    expect(bodyOf(sent[9]!)).toEqual({ challengeId: 'c', code: '123', termsSignature: { kind: 'typed', name: 'A' } });
   });
 });
 

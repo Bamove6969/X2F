@@ -13,7 +13,7 @@ import { Browser } from './helpers/totp.js';
 import { seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
-// Escrow-key sync (migration 860, escrowSync/routes.ts): the API keeps ciphertext only, for the
+// Escrow-key sync (migration 864, escrowSync/routes.ts): the API keeps ciphertext only, for the
 // account holder and the members the holder assigned ("Hold trade keys"). Real Postgres, one
 // database for the file (helpers/db.ts copies the template per file).
 

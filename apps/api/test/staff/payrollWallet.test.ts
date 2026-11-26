@@ -114,6 +114,20 @@ describe('moneroPayrollWallet', () => {
     await expect(wrong.unlockedAtomic()).rejects.toBeInstanceOf(PayrollWalletRefused);
   });
 
+  it('incoming (the owner\'s earnings): the confirmed incoming transfers of account 0, big amounts exact; a bad entry fails the read', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const h = 'ef'.repeat(32);
+    const { fetchStub } = rpc((b) => (bodies.push(b), { text: `{"result":{"in":[{"txid":"${h}","amount":98765432109876543210,"timestamp":1793000000,"height":3100000,"amounts":[98765432109876543210]}]}}` }));
+    const w = moneroPayrollWallet(config, { fetch: fetchStub });
+    expect(await w.incoming!()).toEqual([{ txHash: h, at: new Date(1_793_000_000_000), atomic: 98765432109876543210n }]);
+    expect(bodies[0]).toMatchObject({ method: 'get_transfers', params: { in: true, account_index: 0 } });
+    expect(bodies[0]!.params).not.toHaveProperty('out');
+    // A wallet with nothing in yet answers without the list.
+    expect(await moneroPayrollWallet(config, { fetch: rpc(() => ({ json: { result: {} } })).fetchStub }).incoming!()).toEqual([]);
+    const bad = rpc(() => ({ json: { result: { in: [{ txid: 'nope', amount: 5, timestamp: 1 }] } } }));
+    await expect(moneroPayrollWallet(config, { fetch: bad.fetchStub }).incoming!()).rejects.toThrow(/bad transfer/);
+  });
+
   it('checkPayrollWallet refuses a wallet whose address is not X2F_PAYROLL_WALLET', async () => {
     const { fetchStub } = rpc(() => ({ json: { result: { address: DEST } } }));
     const w = moneroPayrollWallet(config, { fetch: fetchStub });

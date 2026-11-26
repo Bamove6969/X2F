@@ -1,5 +1,5 @@
 /**
- * Escrow-key sync storage helpers (migration 860; routes.ts has the whole design). Kept apart from
+ * Escrow-key sync storage helpers (migration 864; routes.ts has the whole design). Kept apart from
  * the routes so team/members.ts can drop a member's copies without importing the routes.
  */
 import type pg from 'pg';

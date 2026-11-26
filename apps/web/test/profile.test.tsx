@@ -29,6 +29,7 @@ const PROFILE: TraderProfile = {
   badges: { featured: ['trusted', 'fast'], more: ['veteran-1', 'pgp', 'trades-100'] },
   pgpProtected: true,
   recordPublic: true,
+  away: false,
   tradedOverXmr: null,
   imported: [],
   reviews: [
@@ -104,6 +105,16 @@ function at(path: string) {
 }
 
 describe('Profile', () => {
+  it('shows Away while the trader has the Away switch on (owner 26 Nov 2026), and nothing otherwise', async () => {
+    const off = at('/u/mira.k');
+    await settle();
+    expect(part(off.host, 'away')).toBeNull();
+    profiles['mira.k'] = { ...PROFILE, away: true };
+    const on = at('/u/mira.k');
+    await settle();
+    expect(part(on.host, 'away')?.textContent).toBe('Away');
+  });
+
   it("shows another trader's stats, badges and reviews as the board draws them, without the cancel tile", async () => {
     const { host } = at('/u/mira.k');
     await settle();

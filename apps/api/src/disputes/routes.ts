@@ -372,6 +372,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     let noReviewer = false;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
+        // D-059, review of feat/lockout item 5 (lead default, owner question pending): an appeal on a
+        // trade a compromised-account lock holds goes through as on any paused dispute, so the other
+        // trader never learns of the lock (the locked party is logged out and cannot appeal).
         const s = await disputeSettings(client);
         const by = { kind: 'trader' as const, side };
         // Refused here, before anything is written, when the machine would refuse it: only a

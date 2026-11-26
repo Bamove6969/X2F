@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   AFTER_REFUND_OUTCOMES,
+  can,
   ESCROW_OUTCOMES,
   DisputeRuleError,
   applyDispute,
@@ -21,6 +22,7 @@ import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, withDispute, type DisputeRecord } from './store.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
 
@@ -198,8 +200,28 @@ async function publishDecided(client: pg.PoolClient, next: Dispute, draft: Draft
  * site's maintenance switch is on, or during the emergency stop. A missing site_flags row counts as
  * both (as the offers' guard).
  */
-async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promise<void> {
+async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord, o?: { req: FastifyRequest; now: Date; step: string }): Promise<void> {
+  // D-059 (J-14 re-verify M1, ported): a compromised-account lock on either party holds the trade
+  // from the lock's commit on, before the dispute timers' next pass sets `paused_since`.
+  const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [rec.dispute.code]);
+  if (held.rows[0]?.held === true) {
+    // Review of feat/lockout, item 1 (lead default, owner question pending): a party must not stall
+    // their dispute for good by reporting their own account compromised. A trade held only by a lock
+    // (maintenance off, so `paused_since` outside maintenance is the lock's) may still be ruled on by
+    // staff with `rulings.approve` (a senior moderator or the owner), logged `dispute.lock-override`.
+    if (o !== undefined && can(o.req.staff.role, 'rulings.approve', o.req.staff.grants)) {
+      await assertSiteRunning(client);
+      await appendLog(client, { at: o.now, actor: actorOf(o.req), tradeCode: rec.dispute.code, action: 'dispute.lock-override', detail: { step: o.step } });
+      return;
+    }
+    throw new ApiError(409, 'dispute-paused');
+  }
   if (rec.pausedSince !== null) throw new ApiError(409, 'dispute-paused');
+  await assertSiteRunning(client);
+}
+
+/** Maintenance (409 `dispute-paused`) and the emergency stop (409 `trading-paused`), read `for share`. */
+async function assertSiteRunning(client: pg.PoolClient): Promise<void> {
   // Lead follow-up: the site's maintenance switch too, so nothing gets through before the timer
   // has marked the dispute paused. Both flags `for share`: a switch being set waits for this or is seen.
   const { rows } = await client.query<{ paused: boolean; maintenance: boolean }>(
@@ -261,7 +283,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'propose' });
         const amountAtomic = await tradeAmount(client, code);
         // The tap first: a tap that is not for exactly this ruling writes nothing.
         await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, round1Id: d.round1?.id ?? null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
@@ -307,7 +329,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'approve' });
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const amountAtomic = await tradeAmount(client, code);
         const r = d.ruling!;
@@ -343,7 +365,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'second-approval' });
         const r1 = d.round === 1 ? d.ruling : d.round1;
         if (typeof id !== 'string' || !UUID.test(id) || r1 === null || r1.id !== id) throw new ApiError(409, 'wrong-state');
         const refused = await latestRefusal(client, code);
@@ -403,7 +425,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 're-propose' });
         if (typeof id !== 'string' || !UUID.test(id) || d.round !== 1 || d.ruling === null || d.ruling.id !== id) throw new ApiError(409, 'wrong-state');
         const refused = await latestRefusal(client, code);
         if (refused === null || refused.rulingId !== id || refused.reason !== 'revoked') throw new ApiError(409, 'not-refused');
@@ -441,7 +463,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'send-back' });
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const next = applyDispute(d, { type: 'send-back' }, me, now, await disputeSettings(client));
         await client.query(

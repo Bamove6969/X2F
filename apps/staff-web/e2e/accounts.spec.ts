@@ -14,9 +14,9 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 const H = 3_600_000;
 const DAY = 24 * H;
 const ends = () => new Date(Date.now() + 8 * H).toISOString();
-const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: ends() };
-const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'], sessionEndsAt: ends() };
-const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], grants: [], sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: ['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback'], grants: ['accounts.ban', 'accounts.unban'], sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], grants: [], sessionEndsAt: ends() };
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const SELLER = '1b2c3d4e-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const CODE = '7RWD3MXEKQ84HN2T';

@@ -1,5 +1,5 @@
 // Lien recovery (owner rules 16 Nov 2026, docs/lien-recovery.md): partial recovery, no double
-// compensation, the per-lien rate (default 50%) and its change request.
+// compensation, the per-lien rate (default 100%, owner 26 Nov 2026) and its change request.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RECOVERY_RATE_BPS,
@@ -10,16 +10,20 @@ import {
 } from '../src/index.js';
 
 const XMR = 1_000_000_000_000n;
-/** Q1 (provisional, 17 Nov): the API passes @x2f/trade LIEN_RECOVERY_MAX_BPS (9000, owner question OQ1). */
-const MAX = 9000;
+/** Q1 (owner, 26 Nov 2026, OQ1): the API passes @x2f/trade LIEN_RECOVERY_MAX_BPS (10000, 100%). */
+const MAX = 10_000;
 
 describe('recoveryFor (rules 1 and 2)', () => {
-  it('defaults to 50%', () => {
-    expect(DEFAULT_RECOVERY_RATE_BPS).toBe(5000);
+  it('owner 26 Nov 2026: defaults to 100% (all of the debtor\'s proceeds until paid in full)', () => {
+    expect(DEFAULT_RECOVERY_RATE_BPS).toBe(10_000);
+    expect(recoveryFor({ proceedsAtomic: 1n * XMR, rateBps: DEFAULT_RECOVERY_RATE_BPS, freeAtomic: 2n * XMR })).toBe(XMR);
+    expect(recoveryFor({ proceedsAtomic: 1n * XMR, rateBps: DEFAULT_RECOVERY_RATE_BPS, freeAtomic: XMR / 4n })).toBe(XMR / 4n);
+  });
+  it('a lower rate a senior approved takes its share', () => {
     expect(recoveryFor({ proceedsAtomic: 1n * XMR, rateBps: 5000, freeAtomic: 2n * XMR })).toBe(XMR / 2n);
   });
   it('owner example: owes 2 XMR, a trade makes 0.5 XMR available, recovers 0.5 and 1.5 carries forward', () => {
-    // 1 XMR proceeds at 50% = 0.5 XMR available for recovery.
+    // 1 XMR proceeds at a 50% rate = 0.5 XMR available for recovery.
     const r = recoveryFor({ proceedsAtomic: 1n * XMR, rateBps: 5000, freeAtomic: 2n * XMR });
     expect(r).toBe(XMR / 2n);
     expect(lienRemaining(2n * XMR, [r])).toBe((3n * XMR) / 2n);
@@ -63,14 +67,17 @@ describe('rate change request (rule 3)', () => {
     expect(rateRequestRefusal({ rateBps: 12.5, reason: 'x' }, MAX)).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 3000, reason: 'x'.repeat(501) }, MAX)).toBe('reason-too-long');
   });
-  it('Q1 (provisional, 17 Nov): a rate above 90% is refused; up to 90% goes to a senior, whose key tap the moderation service verifies', () => {
+  it('Q1 (owner, 26 Nov 2026): a rate above 100% is refused; any rate up to 100% goes to a senior, whose key tap the moderation service verifies', () => {
+    expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' }, MAX)).toBeNull();
+    expect(rateRequestRefusal({ rateBps: 10001, reason: 'x' }, MAX)).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 9000, reason: 'x' }, MAX)).toBeNull();
-    expect(rateRequestRefusal({ rateBps: 9001, reason: 'x' }, MAX)).toBe('bad-rate');
-    expect(rateRequestRefusal({ rateBps: 10000, reason: 'x' }, MAX)).toBe('bad-rate');
     expect(rateRequestRefusal({ rateBps: 1, reason: 'x' }, MAX)).toBeNull();
+    // The caller's cap still binds when lower.
+    expect(rateRequestRefusal({ rateBps: 9001, reason: 'x' }, 9000)).toBe('bad-rate');
   });
-  it('going back to the default still needs a reason (any change goes to a senior)', () => {
+  it('a rate other than the 100% default needs a reason, and so does going back to it (any change goes to a senior)', () => {
     expect(rateRequestRefusal({ rateBps: 5000, reason: '' }, MAX)).toBe('reason-required');
+    expect(rateRequestRefusal({ rateBps: DEFAULT_RECOVERY_RATE_BPS, reason: '' }, MAX)).toBe('reason-required');
   });
   it('only a senior or the owner holding rulings.approve, and never the proposer, decides', () => {
     expect(canDecideRateRequest({ role: 'senior', id: 's1' }, 'm1')).toBe(true);

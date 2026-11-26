@@ -461,6 +461,8 @@ export function requireSession(
     // Task 18 review M9(c): a member's sessions are rows of the team account (`startSession`); a
     // session of a member login account itself is never valid, whatever inserted it.
     if (row.kind === 'member') throw new ApiError(401, 'not-authenticated');
+    // Team audit v2: a member's refused request is logged (routes/teamAudit.ts `installRefusalAudit`).
+    if (row.member_id !== null) req.memberAttempt = { accountId: row.account_id, memberId: row.member_id };
     const policy = sessionPolicy(row.kind, row.level);
     if (
       now.getTime() >= row.expires_at.getTime() ||

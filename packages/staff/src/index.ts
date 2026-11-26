@@ -5,7 +5,7 @@ export { canonicalJson } from './canonical.js';
 // The trade code as `tapChallenge` reads a ruling's (the staff site compares a case's code with its address, review X3-1).
 export { normalizeTradeCode } from '@x2f/core';
 // Plan 4 Task 31: the support-ticket categories and limits, for the staff web app's queue.
-export { TICKET_BODY_MAX, TICKET_CATEGORIES, type TicketCategory, type TicketStatus } from '@x2f/core';
+export { COMPROMISED_METHODS, TICKET_BODY_MAX, TICKET_CATEGORIES, compromisedTicketLabel, type CompromisedMethod, type TicketCategory, type TicketStatus } from '@x2f/core';
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,

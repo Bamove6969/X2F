@@ -163,6 +163,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/tickets/:id/messages', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   { method: 'POST', url: '/staff/v1/tickets/:id/close', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   { method: 'POST', url: '/staff/v1/tickets/:id/release', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  // D-059: "My account has been compromised" reports (accounts.freeze: senior moderators and the owner).
+  // The sample id names no report: an allowed caller gets 404.
+  { method: 'GET', url: '/staff/v1/compromised', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'GET', url: '/staff/v1/compromised/:id', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/compromised/:id/unlock', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  { method: 'POST', url: '/staff/v1/compromised/:id/close', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
@@ -194,6 +200,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'staff.manage', allowed: OWNER },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
   { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
+  // Plan 4 Task 9: what arrived in the fee wallet (view-only) and the payroll wallet, by UTC month.
+  { method: 'GET', url: '/staff/v1/earnings', perm: 'earnings.read', allowed: OWNER },
   // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).
   { method: 'GET', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER, body: { thresholdAtomic: null, floatAtomic: null, coldAddress: null, tapId: '00000000-0000-4000-8000-000000000000' } },

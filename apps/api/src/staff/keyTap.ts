@@ -405,6 +405,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'lift-ban':
       exactKeys(r, ['kind', 'accountId', 'banId']);
       return { kind: 'lift-ban', accountId: match(r, 'accountId', UUID).toLowerCase(), banId: match(r, 'banId', UUID).toLowerCase() };
+    case 'unlock-account':
+      exactKeys(r, ['kind', 'accountId', 'ticketId']);
+      return { kind: 'unlock-account', accountId: match(r, 'accountId', UUID).toLowerCase(), ticketId: match(r, 'ticketId', UUID).toLowerCase() };
     case 'reset-staff-security':
       exactKeys(r, ['kind', 'accountId', 'inviteId', 'tokenHash', 'expiresAt']);
       return {
@@ -541,7 +544,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       return { kind: 'lien-uncollectible', lienId: match(r, 'lienId', UUID).toLowerCase() };
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
-      // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
+      // Q1 (owner, 26 Nov 2026, OQ1): at most 100% (@x2f/trade LIEN_RECOVERY_MAX_BPS). The moderation service verifies this tap itself before it signs a recovery at the rate.
       if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) throw badRequest();
       return { kind: 'lien-rate', lienId: match(r, 'lienId', UUID).toLowerCase(), requestId: match(r, 'requestId', UUID).toLowerCase(), rateBps: r.rateBps };
     case 'ruling': {
@@ -616,6 +619,9 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'accounts.ban';
     case 'lift-ban':
       return 'accounts.unban';
+    // D-059: the same people who may freeze an account (a senior moderator or the owner).
+    case 'unlock-account':
+      return 'accounts.freeze';
     // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
     case 'reset-staff-security':
     case 'add-owner-key':

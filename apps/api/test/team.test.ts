@@ -129,7 +129,7 @@ async function member(teamId: string, roles: Role[] | { abilities: string[] }): 
 
 async function auditRows(teamId: string): Promise<{ action: string; member_id: string; trade_code: string | null }[]> {
   const { rows } = await deps.db.query<{ action: string; member_id: string; trade_code: string | null }>(
-    'select action, member_id, trade_code from team_audit where account_id = $1 order by id',
+    "select action, member_id, trade_code from team_audit where account_id = $1 and category = 'work' order by id",
     [teamId],
   );
   return rows;
@@ -460,7 +460,7 @@ describe('the audit log', () => {
       currencies: [{ currency: 'USD', bands: [{ min: '1000', max: '500000', marginBps: 0, minTrades: null, methodIds: null }] }],
       methods: [{ methodId: 'ZELLE', adjustBps: 0, currencies: ['USD'] }],
     };
-    const offerRows = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
+    const offerRows = await deps.db.query<{ detail: unknown }>("select detail from team_audit where account_id = $1 and category = 'work' order by id", [owner.id]);
     expect(offerRows.rows.map((r) => r.detail)).toEqual([terms, terms, terms]);
 
     const other = await team();
@@ -472,7 +472,8 @@ describe('the audit log', () => {
 
     const list = await owner.browser.get(`/v1/team/audit?member=${m.id}`);
     expect(list.statusCode).toBe(200);
-    const entries = list.json() as { action: string; memberName: string }[];
+    // Team audit v2: the member's filter also finds the team's changes about them (their invite, join, login).
+    const entries = (list.json() as { action: string; memberName: string; category: string }[]).filter((e) => e.category === 'work');
     expect(entries.map((e) => e.action)).toEqual(['mark-paid', 'offer-relisted', 'offer-paused', 'offer-posted']);
     expect(entries.every((e) => e.memberName === m.name)).toBe(true);
     // A refused action logs nothing.
@@ -488,7 +489,7 @@ describe('the audit log', () => {
     await expect(deps.db.query('delete from team_audit where account_id = $1', [owner.id])).rejects.toThrow(/append-only/);
     await expect(deps.db.query('truncate team_audit')).rejects.toThrow(/append-only/);
     await expect(deps.db.query('truncate team_members cascade')).rejects.toThrow(/append-only/);
-    expect((await deps.db.query('update team_audit set trade_code = null where account_id = $1', [owner.id])).rowCount).toBe(1);
+    expect((await deps.db.query('update team_audit set trade_code = null where account_id = $1 and trade_code is not null', [owner.id])).rowCount).toBe(1);
     expect((await auditRows(owner.id))[0]!.trade_code).toBeNull();
   });
 
@@ -842,7 +843,7 @@ describe('the audit log covers every member action (review M3)', () => {
       // S-085: renewing the calling session's short-lived bound cookie with its own device key.
       'POST /v1/account/session/proof/challenge': "a single-use challenge for the member's own bound session: writes the session row only, not an account action",
       'POST /v1/account/session/proof': "renews the member's own bound-session cookie with their own device key: not an account action",
-      // Escrow-key sync (migration 860): the lead's tick of "Hold trade keys" is the audited team change.
+      // Escrow-key sync (migration 864): the lead's tick of "Hold trade keys" is the audited team change.
       'PUT /v1/escrow-keys/reader': "the member's own reader public key and unlock envelopes (ciphertext the API cannot open): opens nothing by itself and changes nothing of the team account",
     };
     const found: string[] = [];
@@ -967,7 +968,7 @@ function sources(dir: string): string[] {
 }
 
 describe('Task 18 seams', () => {
-  it('Task 42 escrow-key sync (migration 860): an assigned member may hold an encrypted copy of the trade keys, and still never signs (owner question trades-release open)', () => {
+  it('Task 42 escrow-key sync (migration 864): an assigned member may hold an encrypted copy of the trade keys, and still never signs (owner question trades-release open)', () => {
     // The tripwire NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (owner 26 Nov
     // 2026: "accessible only to the person they are assigned to and the person who they are assigned
     // to also assigns them to"): apps/api/src/escrowSync/routes.ts, tested in escrowSync.test.ts.
@@ -1165,7 +1166,7 @@ describe('the abilities catalogue on the API (J-10)', () => {
     const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
     expect(lists[0]).toEqual([...ROLE_ABILITIES.offers]);
     expect(lists[1]).toEqual([...ROLE_ABILITIES.trades]);
-    // lists[2..4] were hold v3's three member rights (migration 016); migration 853 removed them.
+    // lists[2..4] were hold v3's three member rights (migration 016); migration 862 removed them.
     expect(new Set(lists[5])).toEqual(HARD_OWNER_ONLY);
   });
 

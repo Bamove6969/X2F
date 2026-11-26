@@ -33,7 +33,7 @@ export type Risk = 'low' | 'medium' | 'high';
  * - `not-built`: a box the lead can tick and the API stores; no member route uses it yet (the
  *   feature, or the member's way into it, is not built). Ticking it changes nothing until then.
  * - `waits-member-keys`: a box; the API still refuses it to members (`member-cannot-sign`) until
- *   Plan 3 Task 42's member signing (the escrow-key sync of migration 860 gives an assigned member a copy to read, not to sign; owner question trades-release).
+ *   Plan 3 Task 42's member signing (the escrow-key sync of migration 864 gives an assigned member a copy to read, not to sign; owner question trades-release).
  * - `waits-member-chat-key`: a box; chat and proof stay hidden from members until a team-member
  *   chat key path exists (C-019, lead default): every chat route stays owner-only.
  * - `always`: every member has it; not a box.
@@ -139,7 +139,7 @@ const ROWS: readonly Row[] = [
   [43, 'wallets-repay-lien', 'wallets', 'Repay a lien', 'Start the repayment trade that lifts a lien', 'high', 'not-built', false, null, 0, 0, 0],
   // B7. Team administration
   [44, 'team-see', 'team', 'See the team', 'See who is on the team and what each may do', 'low', 'not-built', false, null, 1, 1, 0],
-  [45, 'team-see-log', 'team', 'See the team log', 'See who did what, and when', 'low', 'not-built', false, 'Start set', 1, 1, 1],
+  [45, 'team-see-log', 'team', 'See the team log', 'See their own entries in the team log', 'low', 'grantable', false, 'Start set', 1, 1, 1],
   [49, 'team-invite', 'team', 'Invite members', 'Send a team invite', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [50, 'team-remove', 'team', 'Remove members', 'Kick a member out', 'high', 'owner-only', true, 'Lead only (G57)', 0, 0, 0],
   [51, 'team-change-abilities', 'team', 'Change abilities', "Tick or untick another member's boxes", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
@@ -153,14 +153,14 @@ const ROWS: readonly Row[] = [
   // B9. Account
   [58, 'reviews-see', 'account', 'See reviews', 'Read the reviews on your profile', 'low', 'not-built', false, 'Start set', 1, 1, 1],
   [59, 'reviews-reply', 'account', 'Reply to reviews', 'Post public replies in your name', 'medium', 'not-built', false, null, 0, 0, 0],
-  [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'not-built', false, null, 0, 0, 0],
-  [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'not-built', false, 'Q69: shared across team', 0, 0, 0],
+  [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'grantable', false, null, 0, 0, 0],
+  [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'grantable', false, 'Q69: shared across team', 0, 0, 0],
   [62, 'feedback-send', 'account', 'Send X2F feedback', 'Use "How\'s X2F doing?" (own limit)', 'low', 'grantable', false, 'Q69: per member', 1, 1, 0],
   [63, 'profile-edit', 'account', 'Edit profile', 'Change the Trade Tag or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
   [64, 'alerts-settings', 'account', 'Change alert settings', "Change the account's push and Jabber alerts", 'medium', 'owner-only', false, 'Lead only (lead default)', 0, 0, 0],
   [65, 'account-type', 'account', 'Account type', 'Become or stop being a vendor', 'high', 'owner-only', false, 'Lead only (design)', 0, 0, 0],
   [66, 'account-delete', 'account', 'Delete the account', 'Close the account for good', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
-  // Owner 26 Nov 2026 (escrow-key sync, migration 860): the box IS the lead's assignment. With it the
+  // Owner 26 Nov 2026 (escrow-key sync, migration 864): the box IS the lead's assignment. With it the
   // lead's device also seals each trade's escrow keys to the member's own reader key, and the member
   // may open that copy (escrowSync/routes.ts). It grants no signing: release stays owner-only (22).
   [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; never releases XMR", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],

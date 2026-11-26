@@ -22,6 +22,7 @@ let members: unknown[];
 let audit: unknown[];
 let teamStatus: number;
 let meMember: unknown;
+let teamMe: { status: number; body: unknown };
 let inviteReply: { status: number; body: unknown };
 let keyReaders: unknown;
 
@@ -36,6 +37,7 @@ beforeEach(() => {
   teamStatus = 200;
   meMember = null;
   keyReaders = null;
+  teamMe = { status: 403, body: { error: 'forbidden' } };
   members = [
     { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     { id: 'm2', tradeTag: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
@@ -51,6 +53,7 @@ beforeEach(() => {
     if (input === '/v1/escrow-keys/readers') return keyReaders === null ? json(500, { error: 'internal' }) : json(200, keyReaders);
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
+    if (input === '/v1/team/me') return json(teamMe.status, teamMe.body);
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
     if (input === '/v1/team/members/m1/limits' && method === 'PUT') return json(200, { ...(members[0] as object), band: body?.band, hours: body?.hours });
     if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { tradeTag: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
@@ -291,20 +294,37 @@ describe('Team (settings)', () => {
     expect(byPart(document, 'cant-do-that')?.getAttribute('data-from')).toBe('owner-only');
   });
 
-  it('J-20 F8 (p11-136, lead default): a team member sees their own trade sizes and working hours', async () => {
+  it('J-20 F8 (p11-136, lead default): a team member sees their own access: lead, boxes, trade sizes and working hours', async () => {
     teamStatus = 403;
-    meMember = {
-      name: 'Aurora', roles: ['trades'],
-      limits: { band: { minAtomic: '500000000000', maxAtomic: '2000000000000' }, hours: { days: ['Mon', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' } },
+    teamMe = {
+      status: 200,
+      body: {
+        name: 'Aurora', chatLabel: 'Calcium Assistant 1', lead: { tradeTag: 'Calcium' }, preset: null,
+        groups: [{ id: 'trades', label: 'Trades', boxes: [{ id: 'trades-see-active', label: 'See active trades', does: 'See open trades', always: false, ready: true }] }],
+        limits: {
+          band: { minAtomic: '500000000000', maxAtomic: '2000000000000' }, hours: { days: ['Mon', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' },
+          insideNow: true, workingUntil: '2026-10-30T18:00:00.000Z',
+        },
+        serverNow: '2026-10-30T12:00:00.000Z',
+      },
     };
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
-    expect(byPart(host, 'my-limits')?.textContent).toBe('Your limitsThe account owner set these for you.Trades of 0.5 to 2 XMR · Mon, Fri 08:00 to 18:00 (UTC)');
-    // No limits in the answer (an older API, or the switch off): nothing is shown.
-    meMember = { name: 'Aurora', roles: ['trades'] };
-    const again = render(<MemoryRouter><Team /></MemoryRouter>);
+    const card = byPart(host, 'my-access');
+    expect(byPart(card!, 'my-access-lead')?.textContent).toBe('Team lead: Calcium');
+    expect(card?.querySelector('[data-box="trades-see-active"]')?.textContent).toContain('See active trades');
+    expect(byPart(card!, 'my-access-band')?.textContent).toBe('Trades of 0.5 to 2 XMR');
+    expect(byPart(card!, 'my-access-hours')?.textContent).toBe('Mon, Fri 08:00 to 18:00 (UTC)');
+    expect(byPart(card!, 'my-access-now')?.textContent).toBe('You are inside your working hours now. They end at 30 Oct 2026, 18:00 UTC.');
+    // No "See the team log" box: no link to it.
+    expect(byPart(card!, 'my-team-log-link')).toBeNull();
+    // The owner (no owner-only refusal) never asks for a member's access.
+    teamStatus = 200;
+    calls = [];
+    const owner = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
-    expect(byPart(again.host, 'my-limits')).toBeNull();
+    expect(byPart(owner.host, 'my-access')).toBeNull();
+    expect(calls.some((c) => c.url === '/v1/team/me')).toBe(false);
   });
 });
 

@@ -33,6 +33,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'id', 'trade_tag', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
+      // Away (856, owner 26 Nov 2026): the person's own switch, shown on their public profile; a change.
+      'away_since',
     ],
     bookkeeping: {
       had_wallet: 'set with the first wallet, which notifies through wallets',
@@ -194,7 +196,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'login_approvals.account_id': 'a new device asking to log in (push and alert)',
   'push_subscriptions.account_id': 'a browser subscribing to pushes, renewed by the browser itself',
   'name_keys.account_id': 'kept by a trigger from accounts (which notifies)',
-  'team_audit.account_id': "the team's audit log, written with the member change (team_members notifies)",
   'offers.account_id': 'trading, not the account',
   'trades.seller_account_id': 'trading, not the account',
   'trades.buyer_account_id': 'trading, not the account',
@@ -234,9 +235,13 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'feedback_form.account_id': 'feedback sent to X2F',
   // Plan 4 Task 30: support tickets. A ticket is the trader's own question to staff, not a change to
   // the account; who took it and which staff member wrote a line are staff-side.
-  'tickets.account_id': "a support ticket the account's owner opened to X2F staff",
+  'tickets.account_id': "a support ticket the account's owner (or a team member) opened to X2F staff, or a compromised report naming it (the lock it starts sets accounts.disabled_at, which notifies)",
   'tickets.taken_by': 'the staff member working a ticket (staff side)',
   'ticket_messages.staff_id': 'the staff member who wrote a ticket reply (staff side, never shown to the trader)',
+  // D-059 (migration 860, J-14 ported; lead default, owner p11-119 pattern): the compromised-account
+  // lock record. The lock sets accounts.disabled_at and the unlock clears it, which notify.
+  'account_locks.account_id': 'the compromised-account lock record; the lock sets accounts.disabled_at and the unlock clears it, which notify',
+  'account_locks.unlocked_by': 'the staff member who lifted a lock (staff side)',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
@@ -244,7 +249,7 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // Lien recovery (migration 820; lead default): the staff on a rate request; the approved rate notifies the debtor (liens.recovery_rate_bps).
   'lien_rate_requests.proposed_by': 'the moderator who proposed a lien rate (the debtor is notified when it is approved)',
   'lien_rate_requests.decided_by': 'the senior moderator who decided a lien rate request (the debtor is notified when it is approved)',
-  // Escrow-key sync (migration 860; lead default): silent, ciphertext the API cannot open; the box
+  // Escrow-key sync (migration 864; lead default): silent, ciphertext the API cannot open; the box
   // that makes a member a reader is a team change and notifies as one.
   'escrow_readers.account_id': "a reader key's public half for the account's encrypted escrow copies; the team change that assigns a member notifies",
   'escrow_blobs.account_id': "an encrypted copy of one of the account's own trade escrow records (ciphertext the API cannot open), written by the holder's own device",

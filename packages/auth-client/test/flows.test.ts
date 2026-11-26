@@ -79,6 +79,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/escrow-keys/readers', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'GET /v1/escrow-keys/trades', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'GET /v1/escrow-keys/trades/:code', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
+  'GET /v1/escrow-keys/unlock-methods', // trade key backup (owner, 26 Nov 2026): apps/web/src/screens/settings/tradeKeys.ts
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',
@@ -129,6 +130,7 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/tickets',
   'POST /v1/tickets/:id/close',
   'POST /v1/tickets/:id/messages',
+  'POST /v1/tickets/compromised', // D-059 compromised-account report: apps/web (Compromised screen)
   'POST /v1/trades/:code/appeal',
   'POST /v1/trades/:code/blur-checks/:proofId',
   'POST /v1/trades/:code/chat',

@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TicketNew, Tickets } from '../src/screens/support/Tickets.js';
 import { TicketThread } from '../src/screens/support/TicketThread.js';
-import { CATEGORY_LABELS, CATEGORY_ORDER, STATUS_LABELS, TICKET_COPY, isTicketId } from '../src/screens/support/tickets-model.js';
+import { CATEGORY_LABELS, CATEGORY_ORDER, STATUS_LABELS, TICKET_COPY, isTicketId, whoWrote } from '../src/screens/support/tickets-model.js';
 import { TOO_MANY_TICKETS, teamCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
@@ -83,6 +83,25 @@ describe('the words', () => {
   it('a ticket id is a lower-case uuid only', () => {
     expect(isTicketId(ID)).toBe(true);
     for (const bad of ['../settings', 'ABCDEF12-1111-4111-8111-111111111111', `${ID}?x`, '', 7]) expect(isTicketId(bad)).toBe(false);
+  });
+});
+
+describe('team tickets (owner Q69): who wrote a line', () => {
+  const owner = { from: 'trader' as const, body: 'a', at: AT };
+  const mira = { from: 'trader' as const, by: 'mira', body: 'b', at: AT };
+  const staff = { from: 'staff' as const, body: 'c', at: AT };
+  it('the account owner reads their own lines as You and a member\'s by its name', () => {
+    expect([owner, mira, staff].map((m) => whoWrote(m, null))).toEqual([TICKET_COPY.you, 'mira', TICKET_COPY.staff]);
+  });
+  it('a member reads their own lines as You, another member\'s by its name, the owner\'s as Team owner', () => {
+    expect([owner, mira, staff].map((m) => whoWrote(m, 'mira'))).toEqual([TICKET_COPY.owner, TICKET_COPY.you, TICKET_COPY.staff]);
+    expect(whoWrote(mira, 'jon')).toBe('mira');
+  });
+  it('the thread shows the member who wrote a line', async () => {
+    route = (m, p) => (m === 'GET' && p === `/v1/tickets/${ID}` ? { status: 200, json: { ...THREAD, messages: [{ ...THREAD.messages[0], by: 'mira' }, THREAD.messages[1]] } } : { status: 404, json: {} });
+    const host = await at(`/support/tickets/${ID}`);
+    const who = [...host.querySelectorAll('[data-part="ticket-message"] strong')].map((e) => e.textContent);
+    expect(who).toEqual(['mira', TICKET_COPY.staff]);
   });
 });
 

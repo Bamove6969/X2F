@@ -34,6 +34,7 @@ import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
 import { acceptGrant, noticeCandidates, pendingGrants, refuseGrant, storeNotice } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 import { bookSettlementNetworkFee } from '../staff/revenue.js';
 
@@ -466,9 +467,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
   // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; lock_held: boolean }>(
       `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
-              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
+              ${tradeHeldSql('t')} as lock_held
          from trades t
          join trade_attestations a on a.code = t.code
          left join chats c on c.trade_code = t.code
@@ -482,7 +484,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
-        paused: r.paused_at !== null || r.site_paused,
+        // D-059 (J-14 J8, ported): a trade of a locked account counts as paused from the lock's
+        // commit on, before the timer loop writes its `paused_at`: the moderator decides nothing.
+        paused: r.paused_at !== null || r.site_paused || r.lock_held,
       })),
     });
   }));

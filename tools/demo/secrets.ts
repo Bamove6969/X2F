@@ -15,6 +15,8 @@ export interface DemoSecrets {
   recoveryCodeKeys: string;
   totpKeys: string;
   loginNameKeys: string;
+  /** X2F_TICKET_KEYS: seals support-ticket text (J-14 J6). */
+  ticketKeys: string;
   vapidPublic: string;
   vapidPrivate: string;
   pgpKeyPath: string;
@@ -73,6 +75,7 @@ export async function makeSecrets(): Promise<DemoSecrets> {
     recoveryCodeKeys: ring(),
     totpKeys: ring(),
     loginNameKeys: ring(),
+    ticketKeys: ring(),
     vapidPublic,
     vapidPrivate,
     pgpKeyPath,

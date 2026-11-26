@@ -200,7 +200,7 @@ test('StaffSettings parity at 1280x1240; pay amounts not set read "Not set"', as
   await stub(page, await softKey(page));
   await page.goto('/settings');
   await expect(page.getByRole('textbox', { name: 'Large-trade limit' })).toHaveValue('1000');
-  await expect(page.getByRole('textbox', { name: 'Moderator, per dispute', exact: true })).toHaveAttribute('placeholder', 'Not set');
+  await expect(page.getByRole('textbox', { name: 'Moderator, minimum per dispute', exact: true })).toHaveAttribute('placeholder', 'Not set');
   expectOnly(await parityFailures(page, 'StaffSettings', []), KNOWN_SETTINGS);
 });
 

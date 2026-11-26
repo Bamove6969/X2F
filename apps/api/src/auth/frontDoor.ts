@@ -53,7 +53,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/badges': "my own earned badges, their levels and my next milestones (Plan 5 Task 5); the account owner only",
   'GET /v1/account/ban': "my own account's bans in force (kind, general reason code, end), my own unfinished trades under a site ban, and the moderator contact links; never the rule, the note or anyone else's ban (Task 27)",
   'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
-  // Escrow-key sync (migration 860): ciphertext the API cannot open, each reader its own wrap only.
+  // Escrow-key sync (migration 864): ciphertext the API cannot open, each reader its own wrap only.
   'GET /v1/escrow-keys/reader': "my own reader key's public half and my own unlock envelopes (ciphertext the API cannot open); the holder, or a member the holder assigned",
   'GET /v1/escrow-keys/readers': "the public reader keys my own trades' escrow copies may be sealed to: mine and my assigned members' (the account holder only)",
   'GET /v1/escrow-keys/trades': "which of my own account's trades have an encrypted escrow copy sealed to my reader key",
@@ -71,6 +71,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
   'GET /v1/account/past-rep': 'my own imported past reputation',
   'GET /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'GET /v1/account/away': 'my own Away switch: whether it is on and since when (the account owner only)',
   'GET /v1/account/push': 'my own push subscription state and the VAPID public key',
   'GET /v1/account/record': "my own signed reputation record (Plan 5 Task 12); the account owner only, once a minute",
   'GET /v1/account/security/devices': 'my own trusted devices',
@@ -84,6 +85,12 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
+  'GET /v1/team/members/:id/sessions': "one member of my own team's signed-in sessions: device name, signed in at, last seen (account owner only)",
+  'GET /v1/team/log': "my own team's audit log, filtered and paged (the account owner; a member with the team-see-log box sees only their own rows)",
+  'GET /v1/team/log/export': "my own team's audit log as a download, with its hash chain (account owner only)",
+  'GET /v1/team/log/integrity': "the hash-chain check of my own team's audit log (account owner only)",
+  'GET /v1/team/log/summary': "per-member counts from my own team's audit log (account owner only)",
+  'GET /v1/team/me': "my own access as a team member: my boxes, my band and hours, and my team lead's Trade Tag (members only; the account owner gets 403)",
   'GET /v1/team/permissions': 'the static abilities catalogue (groups, boxes, presets, hard rules): no account data; read on stale Terms too, so a member sees what their boxes mean before agreeing',
   'GET /v1/trades': "my own account's trades (buyer or seller), newest first; members by the trades boxes per part; the other side by public name only; to the account owner only, which of its members last acted on an open trade (its own team log)",
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
@@ -101,8 +108,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
   // Plan 4 Task 30: my own support tickets (anyone else's id is the unknown-id 404).
-  'GET /v1/tickets': "my own account's support tickets (account owner only)",
-  'GET /v1/tickets/:id': 'one of my own support tickets and its messages (account owner only)',
+  'GET /v1/tickets': "my own account's support tickets (the account owner, or a team member with See support tickets: the team's shared tickets)",
+  'GET /v1/tickets/:id': "one of my own account's support tickets and its messages (the owner, or a member with See support tickets)",
 };
 
 /**
@@ -155,7 +162,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/session/proof/challenge': "a proof challenge for my own session's browser key; answers the challenge only",
   'POST /v1/account/session/proof': "renews my own session's bound cookie with my own browser key; answers its end only",
   // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
-  // Escrow-key sync (migration 860).
+  // Escrow-key sync (migration 864).
   'PUT /v1/escrow-keys/reader': "stores my own reader key's public half and my own unlock envelopes (ciphertext); answers its id",
   'PUT /v1/escrow-keys/trades/:code': "stores the encrypted escrow copy of one of my own trades and its sealed content keys (the account holder only); answers its version",
   'DELETE /v1/escrow-keys/trades/:code': "deletes the encrypted escrow copy of one of my own trades (the account holder only); no data back",
@@ -172,6 +179,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
   'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'PUT /v1/account/away': "my own Away switch: pauses or turns back on my own offers; answers which (the account owner only)",
   'PUT /v1/account/badges': 'one of my own earned badges\' visibility (Featured, On hover, Hidden); answers my own badge settings',
   'PUT /v1/account/record/public': 'shows or hides my own signed record on my profile; answers the setting',
   'POST /v1/account/past-rep/start': 'a past-rep challenge for my own claim',
@@ -180,7 +188,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
   'POST /v1/feedback': 'a platform-feedback row; no data back',
   'POST /v1/feedback/form': 'a feedback row; no data back',
-  // Plan 4 Task 30: support tickets (account owner only; anyone else's id is the unknown-id 404).
+  // Plan 4 Task 30: support tickets (the owner, or a member with Open support tickets; anyone else's id is the unknown-id 404).
   'POST /v1/tickets': 'opens my own support ticket (naming, at most, one of my own trades); answers its id',
   'POST /v1/tickets/:id/messages': 'a message on one of my own support tickets; answers that ticket',
   'POST /v1/tickets/:id/close': 'closes one of my own support tickets; answers that ticket',
@@ -220,6 +228,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
   'PUT /v1/team/members/:id/limits': "sets a member's trade-size band and working hours in my own team (J-20)",
+  'DELETE /v1/team/members/:id/sessions/:sessionId': "ends one signed-in session of a member of my own team",
+  'DELETE /v1/team/members/:id/sessions': "ends every signed-in session of a member of my own team; answers how many",
 };
 
 /**
@@ -240,6 +250,8 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/register/pgp/finish': 'create an account (PGP)',
   'POST /v1/register/webauthn/start': 'create an account (passkey or security key)',
   'POST /v1/register/webauthn/finish': 'create an account (passkey or security key)',
+  // D-059: the person may have lost every way in. Answers the same `{ number, moderatorUrl }` for every name.
+  'POST /v1/tickets/compromised': '"My account has been compromised": locks the named trader account at once (FULL LOCKOUT); answers the same for every name',
   'POST /v1/login/pgp/start': 'log in',
   'POST /v1/login/pgp/finish': 'log in',
   'POST /v1/login/webauthn/start': 'log in',

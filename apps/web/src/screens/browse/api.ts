@@ -8,6 +8,7 @@
 // `poster.stage` and `opensAt` as the API sends them.
 import type { AmountUnit } from '@x2f/trade';
 import { api } from '../../api/client.js';
+import { readPrefs } from '../settings/prefs.js';
 
 /** What the person browsing does with XMR. */
 export type Side = 'sell' | 'buy';
@@ -385,8 +386,15 @@ export function formatMinor(minor: bigint, currency: string, o: { whole?: boolea
 /** The currencies on the Main board's picker. */
 export const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'BRL', 'INR'] as const;
 
-/** The `currency` query value when it is one the picker offers, else USD. */
+const offered = (c: string | null | undefined): c is string => typeof c === 'string' && (CURRENCIES as readonly string[]).includes(c);
+
+/**
+ * The `currency` query value when it is one the picker offers, else the currency saved in
+ * Settings, Preferences on this device (when it is still offered), else USD.
+ */
 export function currencyFrom(search: string): string {
   const c = new URLSearchParams(search).get('currency');
-  return c !== null && (CURRENCIES as readonly string[]).includes(c) ? c : 'USD';
+  if (offered(c)) return c;
+  const preferred = readPrefs().currency;
+  return offered(preferred) ? preferred : 'USD';
 }

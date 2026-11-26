@@ -509,7 +509,7 @@ describe('migration 012 and the tag-login-names tool', () => {
         X2F_LEAKED_LIST_PATH: '/nonexistent', X2F_SERVER_KEY: b64(config.serverKey), X2F_MONERO_NETWORK: 'stagenet',
         X2F_TERMS_VERSION: TERMS, X2F_PGP_SIGNING_KEY_PATH: '/nonexistent', X2F_PGP_SIGNING_FINGERPRINT: '0'.repeat(40),
         X2F_RECOVERY_CODE_KEYS: ring(config.recoveryCodeKeys),
-        X2F_TOTP_KEYS: ring(config.totpKeys), X2F_LOGIN_NAME_KEYS: ring(config.loginNameKeys), ...VAPID_ENV,
+        X2F_TOTP_KEYS: ring(config.totpKeys), X2F_LOGIN_NAME_KEYS: ring(config.loginNameKeys), X2F_TICKET_KEYS: ring(config.ticketKeys), ...VAPID_ENV,
       };
       const run = spawnSync(join(API_DIR, '..', '..', 'node_modules', '.bin', 'tsx'), ['src/tools/tag-login-names.ts'], {
         cwd: API_DIR, env, encoding: 'utf8', timeout: 60_000,

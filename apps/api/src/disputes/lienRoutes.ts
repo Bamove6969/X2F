@@ -20,7 +20,7 @@ import { actorOf, body as bodyOf } from './staffRoutes.js';
  * - `GET /staff/v1/liens/:id` (`disputes.handle`): the lien's figures, its recoveries and rate requests.
  * - `POST /staff/v1/liens/:id/rate { rateBps, reason }` (`disputes.handle`): a moderator proposes a
  *   new rate; a reason is always required (owner: "if they change it at all"). Pending until decided;
- *   the current rate (default 50%) applies meanwhile. One pending request per lien (409 `request-pending`).
+ *   the current rate (default 100%, owner 26 Nov 2026) applies meanwhile. One pending request per lien (409 `request-pending`).
  * - `POST /staff/v1/liens/:id/rate/:req/approve { tapId }` (`rulings.approve`): a senior moderator or
  *   the owner, never the proposer (403 `forbidden`), with a `lien-rate` key tap bound to the request
  *   and rate; sets the lien's rate.

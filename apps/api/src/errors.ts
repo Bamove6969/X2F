@@ -283,13 +283,17 @@ export type ApiErrorCode =
   | 'ticket-closed'
   | 'too-many-tickets'
   | 'ticket-taken'
-  // Escrow-key sync (migration 860): an unlock method that makes no key (an authenticator code, or
+  // Escrow-key sync (migration 864): an unlock method that makes no key (an authenticator code, or
   // anything but prf / pgp); a trade copy without the holder's own wrap; a wrap to a reader the
   // holder did not assign; a copy older than the stored one (409 { version }).
   | 'unlock-method-not-allowed'
   | 'holder-wrap-missing'
   | 'reader-not-assigned'
-  | 'stale-version';
+  | 'stale-version'
+  // D-059 (J-14, ported): a trade one of whose accounts is locked by a compromised report takes no
+  // trader or moderator event (409); a compromised report does not close while its lock holds (409).
+  | 'trade-held'
+  | 'account-locked';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

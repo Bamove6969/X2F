@@ -63,7 +63,7 @@ export function statusLines(a: LookedUpAccount): string[] {
   const out: string[] = [];
   for (const b of s.bans) out.push(`${KIND_WORDS[b.kind]}, ${endText(b.until)}: ${REASON_WORDS[b.reasonCode] ?? b.reasonCode}`);
   if (s.frozen) out.push('Frozen in a dispute');
-  if (s.lien) out.push('A lien blocks all trading until the repayment trade completes');
+  if (s.lien) out.push('Lien: until it is repaid, what they receive in their trades goes to the person owed');
   return out;
 }
 

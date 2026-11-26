@@ -1,17 +1,25 @@
 /**
  * Support tickets on the trader API (Plan 4 Task 30; spec 6.6). A trader opens a ticket in a
- * category, follows its thread, writes more and closes it. Every route is the account owner's own
- * (team members get 403 `owner-only`, as every route that does not name them: their
- * `support-open` / `support-see` boxes are not built, team/abilities.ts), needs a full session on the
- * current Terms, and sees only the caller's own tickets: anyone else's id is 404, as an unknown one.
+ * category, follows its thread, writes more and closes it. Every route needs a full session on the
+ * current Terms, and sees only the caller's account's own tickets: anyone else's id is 404, as an
+ * unknown one. A compromised report (kind `compromised`, compromisedRoutes.ts) is never one of them.
+ *
+ * Team tickets (owner Q69 "keep tickets shared", J-14 ported): a team's tickets belong to the team
+ * account, so the lead and the members share them and every limit below. A member reads them with
+ * "See support tickets" (`support-see`) and opens, writes and closes them with "Open support
+ * tickets" (`support-open`); writing to or closing a thread also needs `support-see`, since the
+ * answer is the thread (lead default, owner question pending). A member's line names the member to
+ * the team (`by`); staff are never told which member wrote it. Each member write is in the team log
+ * (`ticket-opened`, `ticket-replied`, `ticket-closed`; never the text).
  *
  * - `POST /v1/tickets { category, body, tradeCode? }` → 201 `{ id }`. `category` one of
  *   TICKET_CATEGORIES (else 400); `tradeCode` optional, one of the caller's own trades (any spelling
  *   normalizeTradeCode takes; 404 `not-found` for a code that is not theirs or does not exist).
  * - `GET /v1/tickets` → `{ items: { id, category, status, tradeCode, createdAt, updatedAt, lastFrom }[] }`,
  *   last activity first.
- * - `GET /v1/tickets/:id` → the thread: `{ id, category, status, tradeCode, createdAt, updatedAt, messages: { from, body, at }[] }`.
- *   A staff message never says which staff member wrote it.
+ * - `GET /v1/tickets/:id` → the thread: `{ id, category, status, tradeCode, createdAt, updatedAt, messages: { from, by, body, at }[] }`.
+ *   A staff message never says which staff member wrote it; `by` is the team member who wrote a
+ *   trader line (left out: the account owner, or a member since removed).
  * - `POST /v1/tickets/:id/messages { body }` → the thread; the ticket is `open` again (waiting for
  *   staff). 409 `ticket-closed` on a closed ticket (the trader opens a new one).
  * - `POST /v1/tickets/:id/close` → the thread, `closed` (closing a closed ticket answers it as is).
@@ -31,6 +39,8 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { SendGap } from '../feedback/form.js';
+import { assertLiveMember, auditMember } from '../team/audit.js';
+import { hasAbility } from '../team/abilities.js';
 import { addMessage, cleanBody, loadTicket, messagesOf, ticketIdOf, type TicketRow } from './store.js';
 
 /** One write (a new ticket or a message) per this many seconds per account (in memory only). */
@@ -66,6 +76,7 @@ function daily(oldest: Date, now: Date): ApiError {
 
 /** The caller's own ticket, locked when asked; 404 for an unknown id and for anyone else's. */
 async function ownTicket(q: Queryable, req: FastifyRequest, o: { lock?: boolean } = {}): Promise<TicketRow> {
+  // A support ticket only (loadTicket's default kind): a compromised report naming this account is staff's.
   const t = await loadTicket(q, ticketIdOf(req.params), o);
   if (t === null || t.account_id !== req.auth.accountId) throw new ApiError(404, 'not-found');
   return t;
@@ -76,15 +87,17 @@ async function threadOf(q: Queryable, req: FastifyRequest, t: TicketRow) {
   return {
     id: t.id, category: t.category, status: t.status, tradeCode: t.trade_code,
     createdAt: t.created_at.toISOString(), updatedAt: t.updated_at.toISOString(),
-    // Never which staff member wrote a line (the staff id stays on the server).
-    messages: messages.map((m) => ({ from: m.from, body: m.body, at: m.at })),
+    // Never which staff member wrote a line (the staff id stays on the server); a team member's line
+    // names the member to the team (Q69).
+    messages: messages.map((m) => ({ from: m.from, ...(m.from === 'trader' && m.memberName ? { by: m.memberName } : {}), body: m.body, at: m.at })),
   };
 }
 
 export function ticketTraderRoutes(app: FastifyInstance): void {
   const gap = new SendGap(TICKET_WRITE_GAP_S * 1000);
-  // The account owner's own (no `member`: a team member gets 403 owner-only), a full session on the current Terms.
-  const trader = requireSession({ kinds: ['trader'] });
+  // A full session on the current Terms: the account owner, or a member with the box (Q69).
+  const see = requireSession({ kinds: ['trader'], member: 'support-see' });
+  const write = requireSession({ kinds: ['trader'], member: 'support-open' });
 
   /** Takes the write gap synchronously (before any await, so a parallel burst gets one), and gives it back if `fn` fails. */
   async function gapped<T>(req: FastifyRequest, fn: () => Promise<T>): Promise<T> {
@@ -97,7 +110,7 @@ export function ticketTraderRoutes(app: FastifyInstance): void {
     }
   }
 
-  app.post('/v1/tickets', { preHandler: trader }, async (req, reply) => {
+  app.post('/v1/tickets', { preHandler: write }, async (req, reply) => {
     const o = parseOpen(req.body);
     const { db, clock, config } = req.server.deps;
     const accountId = req.auth.accountId;
@@ -109,7 +122,7 @@ export function ticketTraderRoutes(app: FastifyInstance): void {
           `select count(*) filter (where status <> 'closed')::int as open,
                   count(*) filter (where created_at > $2)::int as recent,
                   min(created_at) filter (where created_at > $2) as oldest
-             from tickets where account_id = $1`,
+             from tickets where account_id = $1 and kind = 'support'`,
           [accountId, new Date(now.getTime() - DAY_MS)],
         );
         const n = rows[0]!;
@@ -124,18 +137,20 @@ export function ticketTraderRoutes(app: FastifyInstance): void {
           "insert into tickets (id, account_id, category, trade_code, status, created_at, updated_at) values ($1, $2, $3, $4, 'open', $5, $5)",
           [ticketId, accountId, o.category, o.tradeCode, now],
         );
-        await addMessage(c, config, { ticketId, sender: 'trader', staffId: null, text: o.text, at: now });
+        await addMessage(c, config, { ticketId, sender: 'trader', staffId: null, memberId: req.auth.memberId, text: o.text, at: now });
+        // A member's ticket is in the team log (the box checked again live, in this transaction).
+        await auditMember(c, req.auth, { action: 'ticket-opened', detail: { ticketId } }, now);
         return ticketId;
       }),
     );
     return reply.code(201).send({ id });
   });
 
-  app.get('/v1/tickets', { preHandler: trader }, async (req) => {
+  app.get('/v1/tickets', { preHandler: see }, async (req) => {
     const { rows } = await req.server.deps.db.query<TicketRow & { last_from: 'trader' | 'staff' }>(
       `select t.id, t.category, t.status, t.trade_code, t.created_at, t.updated_at,
               (select m.sender from ticket_messages m where m.ticket_id = t.id order by m.seq desc limit 1) as last_from
-         from tickets t where t.account_id = $1
+         from tickets t where t.account_id = $1 and t.kind = 'support'
         order by t.updated_at desc, t.id limit 100`,
       [req.auth.accountId],
     );
@@ -147,42 +162,49 @@ export function ticketTraderRoutes(app: FastifyInstance): void {
     };
   });
 
-  app.get('/v1/tickets/:id', { preHandler: trader }, async (req) => {
+  app.get('/v1/tickets/:id', { preHandler: see }, async (req) => {
     const db = req.server.deps.db;
     return threadOf(db, req, await ownTicket(db, req));
   });
 
-  app.post('/v1/tickets/:id/messages', { preHandler: trader }, async (req) => {
+  app.post('/v1/tickets/:id/messages', { preHandler: write }, async (req) => {
     const text = parseMessage(req.body);
     const { db, clock, config } = req.server.deps;
     const accountId = req.auth.accountId;
+    // Refused before the team's shared write gap is taken (checked live again in the transaction).
+    if (req.auth.memberId !== null && !hasAbility(req.auth.memberAbilities, 'support-see')) throw new ApiError(403, 'forbidden');
     return gapped(req, () =>
       withTx(db, async (c) => {
         const now = clock();
         await lockAccount(c, accountId);
+        // The answer is the thread: a member also needs "See support tickets".
+        await assertLiveMember(c, req.auth, 'support-see', now);
         const t = await ownTicket(c, req, { lock: true });
         if (t.status === 'closed') throw new ApiError(409, 'ticket-closed');
         // Every trader line after a ticket's first, across the account's tickets, in the last 24 hours.
         const { rows } = await c.query<{ n: number; oldest: Date | null }>(
           `select count(*)::int as n, min(m.at) as oldest from ticket_messages m join tickets t on t.id = m.ticket_id
-            where t.account_id = $1 and m.sender = 'trader' and m.seq > 1 and m.at > $2`,
+            where t.account_id = $1 and t.kind = 'support' and m.sender = 'trader' and m.seq > 1 and m.at > $2`,
           [accountId, new Date(now.getTime() - DAY_MS)],
         );
         if (rows[0]!.n >= TICKET_REPLIES_DAILY) throw daily(rows[0]!.oldest!, now);
-        await addMessage(c, config, { ticketId: t.id, sender: 'trader', staffId: null, text, at: now });
+        await addMessage(c, config, { ticketId: t.id, sender: 'trader', staffId: null, memberId: req.auth.memberId, text, at: now });
         await c.query("update tickets set status = 'open', updated_at = $2 where id = $1", [t.id, now]);
+        await auditMember(c, req.auth, { action: 'ticket-replied', detail: { ticketId: t.id } }, now);
         return threadOf(c, req, { ...t, status: 'open', updated_at: now });
       }),
     );
   });
 
-  app.post('/v1/tickets/:id/close', { preHandler: trader }, async (req) => {
+  app.post('/v1/tickets/:id/close', { preHandler: write }, async (req) => {
     const { db, clock } = req.server.deps;
     return withTx(db, async (c) => {
+      const now = clock();
+      await assertLiveMember(c, req.auth, 'support-see', now);
       const t = await ownTicket(c, req, { lock: true });
       if (t.status === 'closed') return threadOf(c, req, t);
-      const now = clock();
       await c.query("update tickets set status = 'closed', closed_at = $2, updated_at = $2 where id = $1", [t.id, now]);
+      await auditMember(c, req.auth, { action: 'ticket-closed', detail: { ticketId: t.id } }, now);
       return threadOf(c, req, { ...t, status: 'closed', closed_at: now, updated_at: now });
     });
   });

@@ -109,6 +109,8 @@ export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
   'POST /v1/offers',
   'PATCH /v1/offers/:id',
   'POST /v1/account/offers/status',
+  // Owner 26 Nov 2026: the Away switch pauses and turns back on offers (offers/away.ts, through switchOfferStatus).
+  'PUT /v1/account/away',
   'POST /v1/trades/:code/events',
 ];
 
@@ -134,6 +136,10 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/team/members/:id',
   // J-20: a member's trade-size band and working hours (team/limits.ts; the lock is the account's).
   'PUT /v1/team/members/:id/limits',
+  // Ending a member's signed-in sessions from the Team screen (team/memberSessions.ts; the lock is
+  // the account's, then the member's sessions, as a removal).
+  'DELETE /v1/team/members/:id/sessions/:sessionId',
+  'DELETE /v1/team/members/:id/sessions',
   // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
   'PUT /v1/account/type',
   // Showing the recovery code that replaced a used one (recovery.ts).
@@ -220,7 +226,7 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
   'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
-  // Escrow-key sync (migration 860): ciphertext rows the API cannot open. They change no login,
+  // Escrow-key sync (migration 864): ciphertext rows the API cannot open. They change no login,
   // session, approval or security state and create no obligation; each takes the account lock.
   'PUT /v1/escrow-keys/reader': "the caller's own reader public key and unlock envelopes (ciphertext only); no account, session, approval or security state, no obligation",
   'PUT /v1/escrow-keys/trades/:code': "the holder's encrypted copy of its own trade's escrow record (ciphertext only); no account, session, approval or security state, no obligation",

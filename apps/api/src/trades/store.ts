@@ -5,6 +5,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
 import { settleRecovery } from '../disputes/recovery.js';
@@ -373,6 +374,25 @@ export async function applyEvent(
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
+      // D-059 (J-14, ported): while the buyer's or the seller's account is locked by a compromised
+      // report, no trader event moves the trade (the other party's neither); system events (chain,
+      // reports, the timer's pause) still apply. Read under the trade's row lock. Nor does a system
+      // `resume`: a recovery-code hold's end (trades/held.ts) or maintenance's end resumes the trades
+      // it paused, and a trade the lock also holds must stay paused until staff unlock it (409
+      // `trade-held`, which only those system paths see).
+      // Review of feat/lockout, item 5 (lead default, owner question pending): the other trader must
+      // not learn of the lock, so a party's event is refused as on any paused trade (409
+      // `wrong-state`, the machine's answer, with the room's ordinary pause copy), and opening a
+      // dispute goes through as it does on any paused trade (owner G7: a paused trade's parties still
+      // reach a moderator); the dispute is then paused with the trade (disputes/timers.ts), and staff
+      // with `rulings.approve` may still rule on it (disputes/rulings.ts).
+      if (by !== 'system' || e.type === 'resume') {
+        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
+        if (held.rows[0]?.held === true) {
+          if (by === 'system') throw new ApiError(409, 'trade-held');
+          if (e.type !== 'open-dispute') throw new ApiError(409, 'wrong-state');
+        }
+      }
       const prev = rowToTrade(row);
       // Review of wip/third-trade-wallet 17 Nov (b), B2: a trade in setup that used up a one-time
       // wallet may give it back below (`restoreOneTimeWallets`), which locks the wallet owner's

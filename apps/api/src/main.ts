@@ -26,6 +26,7 @@ import { moneroTxProofCheck } from './disputes/txProof.js';
 import { txProofStoppedAlert, txProofStuckAlert } from './disputes/comply.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { checkPayrollWallet, moneroPayrollWallet, payrollWalletFromEnv } from './staff/payrollWallet.js';
+import { feeViewWallet, feeViewWalletFromEnv } from './staff/feeViewWallet.js';
 import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
 import { endMemberSessionsOutsideHours } from './team/limits.js';
@@ -111,6 +112,12 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 // Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
 const monerod = monerodUrlFromEnv(process.env);
+// Plan 4 Task 9: the owner's earnings see the fee wallet through its view-only key (it can see what
+// arrived, never spend), synced from the same node. The key is read once and taken out of the
+// environment, so nothing later (a child process, a dump of process.env) can see it.
+const feeView = feeViewWalletFromEnv(process.env, { feeWallet: config.feeWallet, monerod, network: config.moneroNetwork });
+delete process.env.X2F_FEE_WALLET_VIEW_KEY;
+if (feeView !== null) deps.feeWalletView = feeViewWallet(feeView);
 // Plan 4 Task 12 (A6): the seller's payment proof is checked on the same node (unset: 503, never accepted).
 // Re-review m3 follow-up: a stuck checker alerts the owner (in-app and push) once per episode; the sink is set once the app is built.
 let onTxProofStuck: () => Promise<void> = async () => undefined;

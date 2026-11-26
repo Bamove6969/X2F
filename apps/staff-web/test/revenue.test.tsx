@@ -88,6 +88,49 @@ describe('Revenue (owner; network fees paid to date and the net total)', () => {
     expect(document.querySelector('table[aria-label="Revenue to date"]')).toBeNull();
   });
 
+  it('shows what arrived in the fee and payroll wallets by UTC month, beside the books, with each wallet\'s state', async () => {
+    const month = (m: string, fee: bigint, payroll: bigint, swept: bigint, trades: number, booked: bigint, usd: string | null) => ({
+      month: m, feeWalletAtomic: fee.toString(), sweptInAtomic: swept.toString(), payrollWalletAtomic: payroll.toString(),
+      earnedAtomic: (fee + payroll).toString(), usdEstimateCents: usd, trades, bookedNetAtomic: booked.toString(),
+    });
+    const EARNINGS = {
+      feeWallet: { walletEnd: '9Fq2', state: 'ready', syncedAt: '2026-11-20T11:50:00.000Z' },
+      payrollWallet: { walletEnd: 'Xk7a', state: 'stale', syncedAt: '2026-11-20T11:40:00.000Z' },
+      usdCentsPerXmr: '16501',
+      months: [month('2026-10', 12_500_000_000n, 12_499_000_000n, 0n, 2, 24_938_560_000n, '412'), month('2026-11', 6_250_000_000n, 6_249_000_000n, 1_000_000_000n, 1, 12_469_280_000n, '206')],
+      allTime: month('all-time', 18_750_000_000n, 18_748_000_000n, 1_000_000_000n, 3, 37_407_840_000n, '618'),
+    };
+    const api = fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/revenue': { body: REPORT }, 'GET /staff/v1/earnings': { body: EARNINGS } });
+    await open('/overview/revenue');
+    expect(api.calls.filter((c) => c.path === '/staff/v1/earnings')).toHaveLength(1);
+    expect(headers('Arrived by month')).toEqual(['Month (UTC)', 'Fee wallet', 'Payroll wallet', 'Received', "USD at today's price", 'Booked, after network fees', 'Trades', 'Moved from the payroll wallet']);
+    expect(rows('Arrived by month')).toEqual([
+      ['2026-10', '0.012500000000 XMR', '0.012499000000 XMR', '0.024999000000 XMR', '$4.12', '0.024938560000 XMR', '2', '0.000000000000 XMR'],
+      ['2026-11', '0.006250000000 XMR', '0.006249000000 XMR', '0.012499000000 XMR', '$2.06', '0.012469280000 XMR', '1', '0.001000000000 XMR'],
+      ['All time', '0.018750000000 XMR', '0.018748000000 XMR', '0.037498000000 XMR', '$6.18', '0.037407840000 XMR', '3', '0.001000000000 XMR'],
+    ]);
+    expect(document.querySelector('[data-part="fee-wallet-state"]')?.textContent).toBe('Fee wallet ending 9Fq2: read at 2026-11-20 11:50 UTC.');
+    expect(document.querySelector('[data-part="payroll-wallet-state"]')?.textContent).toBe('Payroll wallet ending Xk7a: the last read failed. These figures are from 2026-11-20 11:40 UTC.');
+    // The revenue tables are still there.
+    expect(rows('Revenue by month')).toHaveLength(2);
+    expect(document.querySelector('[data-screen="revenue"]')?.textContent ?? '').not.toMatch(/half/i);
+  });
+
+  it('no wallet set up says so; nothing yet reads as such; a failed earnings read leaves the revenue in place', async () => {
+    const EMPTY = { feeWallet: null, payrollWallet: null, usdCentsPerXmr: null, months: [], allTime: { month: 'all-time', feeWalletAtomic: '0', sweptInAtomic: '0', payrollWalletAtomic: '0', earnedAtomic: '0', usdEstimateCents: null, trades: 0, bookedNetAtomic: '0' } };
+    fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/revenue': { body: REPORT }, 'GET /staff/v1/earnings': { body: EMPTY } });
+    await open('/overview/revenue');
+    expect(document.querySelector('[data-part="fee-wallet-state"]')?.textContent).toMatch(/no view-only key/);
+    expect(document.querySelector('[data-part="payroll-wallet-state"]')?.textContent).toMatch(/not connected/);
+    expect(rows('Arrived by month')).toEqual([['Nothing has arrived yet.']]);
+    document.body.innerHTML = '';
+    fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/revenue': { body: REPORT }, 'GET /staff/v1/earnings': refused(500, 'internal') });
+    await open('/overview/revenue');
+    expect(document.querySelector('[data-part="earnings-fault"]')).not.toBeNull();
+    expect(document.querySelector('[data-part="revenue-fault"]')).toBeNull();
+    expect(rows('Revenue to date')).toHaveLength(1);
+  });
+
   it('is the owner\'s alone, as the API is (earnings.read): no other role has Overview, so no way to it', async () => {
     for (const role of ['senior', 'mod', 'helper'] as const) expect(navFor(role, ['feedback.read', 'tickets.handle'])).not.toContain('overview');
     const api = fakeApi({ 'GET /staff/v1/me': { body: { ...OWNER, role: 'senior', nav: NAV.senior } }, 'GET /staff/v1/revenue': { body: REPORT } });

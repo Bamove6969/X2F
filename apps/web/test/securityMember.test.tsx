@@ -89,12 +89,12 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
       host = res.host;
     });
     await waitFor(host, '[data-part="devices-link"]');
-    await waitUntil(() => tabs(host).length === 4, 'the owner\'s four settings tabs');
+    await waitUntil(() => tabs(host).length === 5, 'the owner\'s five settings tabs');
 
     expect(host.querySelector('[data-owner-only]')).toBeNull();
     expect(host.querySelector('[data-part="session-length-link"]')).toBeNull();
     expect(host.querySelector('[data-part="idle-reminder-link"]')).not.toBeNull();
-    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Account', 'Help']);
+    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Account', 'Preferences', 'Help']);
 
     // The owner's other tabs (note #101): Account's links, Help's tour replay, Alerts' list.
     const account = await mountAt('/settings/account', <AccountSettings />, '[data-part="account-type-link"]');
@@ -122,13 +122,13 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
 
     await waitFor(host, '[data-part="idle-reminder-link"]');
-    await waitUntil(() => tabs(host).length === 3, 'the member\'s three settings tabs');
+    await waitUntil(() => tabs(host).length === 4, 'the member\'s four settings tabs');
 
     // No CantDoThat / OwnerOnly refusal
     expect(host.querySelector('[data-owner-only]')).toBeNull();
     expect(host.querySelector('.x2f-screen__title')?.textContent).toBe('Settings');
     // A member has no Account tab (account type, team and blocked are the owner's).
-    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Help']);
+    expect([...host.querySelectorAll('[data-part="settings-tabs"] a')].map((a) => a.textContent)).toEqual(['Security', 'Alerts', 'Preferences', 'Help']);
 
     // Owner sections hidden
     expect(host.querySelector('[data-part="devices-link"]')).toBeNull();

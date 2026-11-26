@@ -5,7 +5,8 @@
  *
  * A logged-out visitor sees only the front door: the Landing board (`/`, design review 2026-11-08
  * item 1), log in, create an account (the setup flow with its Terms), account recovery (the backup
- * login), the Terms text, and a team member's invite. Every other screen sends them to the Landing
+ * login), the Terms text, a team member's invite, and "My account has been compromised" (D-059).
+ * Every other screen sends them to the Landing
  * board, keeping where they were going in `returnTo` (always through safeReturnTo); its Create
  * account and Log in carry it on, and the login returns there. An account on an old Terms version goes to the Terms
  * screen first, a recovery (backup) session only reaches the screens its session may use, and while
@@ -19,7 +20,7 @@ import type { Session } from './useSession.js';
 import { useSession } from './useSession.js';
 
 /** The front door's own screens: open to anyone, signed in or not. */
-const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/, /^\/help(\/[a-z-]+)?$/];
+const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/, /^\/login\/compromised$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/, /^\/help(\/[a-z-]+)?$/];
 
 /**
  * What a recovery (backup) session may open: adding a login method (Security), finishing an open

@@ -717,6 +717,51 @@ describe('purgeChats', () => {
     expect(await exists(chat)).toBe(false);
   });
 
+  it('a lien (owner 26 Nov 2026): kept while unpaid (active or suspended); once it ends, 90 days after it ended', async () => {
+    const t0 = new Date('2026-02-03T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'refunded', closedAt: t0 } });
+    const closedAt = plusDays(t0, 3);
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt });
+    const { rows: [t] } = await deps.db.query<{ code: string; seller: string; buyer: string }>(
+      `select t.code, t.seller_account_id::text as seller, t.buyer_account_id::text as buyer
+         from chats c join trades t on t.code = c.trade_code where c.code = $1`,
+      [chat],
+    );
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at)
+       values ($1, $2, 1000, $3, 1, 1, 'restitution', 'active', $4, $4) returning id::text`,
+      [t!.seller, t!.buyer, t!.code, t0],
+    )).rows[0]!.id;
+    await purgeChats(deps.db, plusDays(closedAt, 3 * 90));
+    expect(await exists(chat)).toBe(true);
+    await deps.db.query("update liens set status = 'suspended' where id = $1", [lien]);
+    await purgeChats(deps.db, plusDays(closedAt, 3 * 90));
+    expect(await exists(chat)).toBe(true);
+    const repaid = plusDays(closedAt, 200);
+    await deps.db.query("update liens set status = 'repaid', lifted_at = $2, changed_at = $2 where id = $1", [lien, repaid]);
+    await purgeChats(deps.db, plusDays(repaid, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(repaid, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it('a lien that ended before the normal timer: the normal 90 days after the dispute closed', async () => {
+    const t0 = new Date('2026-02-05T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'refunded', closedAt: t0 } });
+    const closedAt = plusDays(t0, 3);
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt });
+    await deps.db.query(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at, lifted_at)
+       select t.seller_account_id, t.buyer_account_id, 1000, t.code, 1, 1, 'restitution', 'void', $2, $2, $2
+         from chats c join trades t on t.code = c.trade_code where c.code = $1`,
+      [chat, plusDays(t0, 1)],
+    );
+    await purgeChats(deps.db, plusDays(closedAt, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(closedAt, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
   it.each(['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying'])(
     'never while a dispute is %s, on a trade that has already closed',
     async (status) => {

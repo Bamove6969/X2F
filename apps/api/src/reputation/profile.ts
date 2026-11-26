@@ -69,6 +69,8 @@ export interface TraderProfile {
   reviews: (PublicReview & { id?: string; disputable?: boolean })[];
   /** Live offers anyone may see right now. */
   offers: number;
+  /** The trader turned on Away in Settings (migration 856): the profile shows "Away" while it is on. */
+  away: boolean;
 }
 
 /**
@@ -127,8 +129,9 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
   const f = (await traderFacts(q, [accountId], now, viewerId, undefined, new Map([[accountId, 'buyer']]))).get(accountId);
   if (!f) throw new ApiError(404, 'not-found');
   const [{ rows: extra }, reviews, offers] = await Promise.all([
-    q.query<{ record_public: boolean | null }>(
-      `select (select bp.portable_public from badge_prefs bp where bp.account_id = a.id) as record_public
+    q.query<{ record_public: boolean | null; away: boolean }>(
+      `select (select bp.portable_public from badge_prefs bp where bp.account_id = a.id) as record_public,
+              a.away_since is not null as away
          from accounts a where a.id = $1`,
       [accountId],
     ),
@@ -157,6 +160,7 @@ export async function traderProfile(q: Queryable, accountId: string, viewerId: s
     imported: s.imported,
     reviews: reviews.latest.map((r) => (viewerId === accountId ? { ...toPublicReview(r), id: r.id, disputable: !r.disputed } : toPublicReview(r))),
     offers,
+    away: extra[0]?.away === true,
   };
 }
 

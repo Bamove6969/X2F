@@ -31,6 +31,7 @@ import { MethodList } from './screens/browse/MethodList.js';
 import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Compromised } from './screens/auth/Compromised.js';
 import { Landing } from './screens/auth/Landing.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
@@ -51,8 +52,11 @@ import { AlarmListener } from './alerts/alarm.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { HelpSettings, Security } from './screens/settings/Security.js';
 import { AccountSettings, AlertsSettings } from './screens/settings/SettingsTabs.js';
-import { ACCOUNT_PATH, ALERTS_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
+import { ACCOUNT_PATH, ALERTS_PATH, PREFERENCES_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
+import { PreferencesSettings } from './screens/settings/Preferences.js';
 import { Team } from './screens/settings/Team.js';
+import { Privacy, PRIVACY_PATH } from './screens/settings/Privacy.js';
+import { TeamLog } from './screens/settings/TeamLog.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
@@ -316,11 +320,13 @@ export function App() {
             {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
             <Route path="/wallets" element={<Wallets />} />
-            {/* Owner demo note #101: Settings in tabs (Security, Alerts, Account, Help; SettingsTabs.tsx); /settings opens the first. */}
+            {/* Owner demo note #101: Settings in tabs (Security, Alerts, Account, Preferences, Help; SettingsTabs.tsx); /settings opens the first. */}
             <Route path={SETTINGS_PATH} element={<Navigate to={SECURITY_PATH} replace />} />
             <Route path={SECURITY_PATH} element={<Security />} />
             <Route path={ALERTS_PATH} element={<AlertsSettings />} />
             <Route path={ACCOUNT_PATH} element={<AccountSettings />} />
+            {/* Owner-chosen scope (26 Nov 2026): Preferences, saved on this device (prefs.ts). */}
+            <Route path={PREFERENCES_PATH} element={<PreferencesSettings />} />
             <Route path={SETTINGS_HELP_PATH} element={<HelpSettings />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
@@ -329,7 +335,10 @@ export function App() {
             {/* W-021: which events send a Jabber notice. */}
             <Route path="/settings/jabber/events" element={<JabberEventsScreen />} />
             <Route path="/settings/team" element={<Team />} />
+            <Route path="/settings/team/log" element={<TeamLog />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
+            {/* Plan 7 Task 4: Settings → Privacy, what X2F keeps and when it is deleted (from Settings → Help). */}
+            <Route path={PRIVACY_PATH} element={<Privacy />} />
             <Route path="/settings/account-type" element={<AccountType />} />
             {/* Plan 5 Task 12: badge visibility and the signed reputation record. */}
             <Route path="/settings/badges" element={<BadgeSettings />} />
@@ -358,6 +367,8 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
+          {/* J-14 (D-059): "My account has been compromised" needs no login (the person may have lost every way in). */}
+          <Route path="/login/compromised" element={<Compromised />} />
           <Route path="/team/join" element={<MemberInvite />} />
           {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
           {/* The help library (owner, 18 Nov 2026): every topic at /help, one at /help/:topic. */}

@@ -34,6 +34,6 @@ import { purgeEscrowBlobs } from './escrowSync/store.js';
  * after purgeTrades: a support ticket goes 90 days (TICKET_KEEP_DAYS) after its last activity, or with the trade it names.
  * releaseStaleRecoveryHolds (lien recovery, re-review N3; not a purge) releases a recovery hold whose trade closed without a coin
  * longer than the moderation watch ago (or was purged), so complied is not refused for ever.
- * purgeEscrowBlobs (migration 860) deletes the encrypted escrow copy of a trade purged or closed longer than the device keeps its own.
+ * purgeEscrowBlobs (migration 864) deletes the encrypted escrow copy of a trade purged or closed longer than the device keeps its own.
  */
 export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeProofsJob, purgeTradesJob, purgeTickets, purgeFeedbackForm, purgeBlurChecks, purgeFeedback, purgeJabberPending, purgeJabberPreKeys, purgeChatKeyEnvelopes, closeInactiveAccounts, releaseStaleRecoveryHoldsJob, purgeEscrowBlobs];

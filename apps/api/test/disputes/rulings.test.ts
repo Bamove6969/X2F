@@ -546,22 +546,28 @@ describe('the appeal round', () => {
 describe('maintenance and the emergency stop', () => {
   // `maintenance`: the timer has marked the dispute paused. `maintenance-before-tick` (lead follow-up
   // to Q1): the site's maintenance switch is on and the timer has not run yet, so `paused_since` is unset.
+  // `locked-before-tick` (D-059, J-14 re-verify M1 ported): the seller's account is locked ("My account
+  // has been compromised") and the timer has not run yet, so `paused_since` is unset.
   async function paused<T>(how: Pause, code: string, fn: () => Promise<T>): Promise<T> {
     if (how === 'maintenance') await deps.db.query('update disputes set paused_since = $2 where code = $1', [code, at(H)]);
     else if (how === 'maintenance-before-tick') await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(H)]);
+    else if (how === 'locked-before-tick') {
+      await deps.db.query('insert into account_locks (account_id, ticket_id, locked_at, set_disabled) select seller_account_id, null, $2, false from trades where code = $1', [code, at(H)]);
+    }
     else await deps.db.query('update site_flags set trading_paused = true, stopped_at = $1', [at(H)]);
     try {
-      if (how === 'maintenance-before-tick') expect((await deps.db.query('select paused_since from disputes where code = $1', [code])).rows).toEqual([{ paused_since: null }]);
+      if (how === 'maintenance-before-tick' || how === 'locked-before-tick') expect((await deps.db.query('select paused_since from disputes where code = $1', [code])).rows).toEqual([{ paused_since: null }]);
       return await fn();
     } finally {
+      await deps.db.query('update account_locks set unlocked_at = $2 where unlocked_at is null and account_id in (select seller_account_id from trades where code = $1)', [code, at(H)]);
       await deps.db.query('update disputes set paused_since = null where code = $1', [code]);
       await deps.db.query('update site_flags set trading_paused = false, stopped_at = null, maintenance_since = null, maintenance_kind = null');
     }
   }
-  type Pause = 'maintenance' | 'maintenance-before-tick' | 'stop';
-  const REFUSAL = { maintenance: 'dispute-paused', 'maintenance-before-tick': 'dispute-paused', stop: 'trading-paused' } as const;
+  type Pause = 'maintenance' | 'maintenance-before-tick' | 'locked-before-tick' | 'stop';
+  const REFUSAL = { maintenance: 'dispute-paused', 'maintenance-before-tick': 'dispute-paused', 'locked-before-tick': 'dispute-paused', stop: 'trading-paused' } as const;
 
-  for (const how of ['maintenance', 'maintenance-before-tick', 'stop'] as const) {
+  for (const how of ['maintenance', 'maintenance-before-tick', 'locked-before-tick', 'stop'] as const) {
     it(`${how}: a proposal is refused with 409 ${REFUSAL[how]}, nothing is written and the tap stays unused`, async () => {
       const mod = await staff('mod');
       const { code } = await disputed();
@@ -579,7 +585,8 @@ describe('maintenance and the emergency stop', () => {
       expect(after.statusCode, after.body).toBe(200);
     });
 
-    it(`${how}: an approval and a send-back are refused with 409 ${REFUSAL[how]}; the proposal still waits`, async () => {
+    // Review of feat/lockout item 1: a senior may approve on a trade held only by a lock (below).
+    if (how !== 'locked-before-tick') it(`${how}: an approval and a send-back are refused with 409 ${REFUSAL[how]}; the proposal still waits`, async () => {
       await withLimit(300, async () => {
         const mod = await staff('mod');
         const senior = await staff('senior');
@@ -602,4 +609,33 @@ describe('maintenance and the emergency stop', () => {
       });
     });
   }
+
+  // Review of feat/lockout, item 1 (lead default, owner question pending): a party cannot stall their
+  // dispute for good by reporting their own account compromised. On a trade held only by the lock, a
+  // moderator's proposal is still refused, but staff with rulings.approve propose, approve and publish,
+  // each step logged `dispute.lock-override`; maintenance still refuses them.
+  it('a lock alone: a senior approves and the ruling publishes (logged dispute.lock-override); maintenance still refuses (a moderator\'s proposal: locked-before-tick above)', async () => {
+    await withLimit(300, async () => {
+      const mod = await staff('mod');
+      const senior = await staff('senior');
+      const { code } = await disputed();
+      setNow(at(H));
+      await take(mod, code);
+      const { res, rulingId } = await propose(mod, code, { outcome: 'refund-to-seller' });
+      expect(res.statusCode, res.body).toBe(200);
+      const tapId = await seedTap(deps, senior.id, intent(code, 'approve', { rulingId, outcome: 'refund-to-seller' }));
+      await paused('locked-before-tick', code, async () => {
+        // Maintenance on too: refused, nothing logged.
+        await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(H)]);
+        const inMaintenance = await senior.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
+        expect({ status: inMaintenance.statusCode, error: errorOf(inMaintenance) }).toEqual({ status: 409, error: 'dispute-paused' });
+        await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
+        const ok = await senior.b.post(url(code, `/rulings/${rulingId}/approve`), { tapId });
+        expect(ok.statusCode, ok.body).toBe(200);
+      });
+      expect((await loadDispute(deps.db, code))!.status).not.toBe('awaiting-approval');
+      const overrides = await deps.db.query<{ actor_id: string; detail: string }>("select actor_id::text, detail from activity_log where trade_code = $1 and action = 'dispute.lock-override'", [code]);
+      expect(overrides.rows.map((r) => ({ actor: r.actor_id, detail: JSON.parse(r.detail) }))).toEqual([{ actor: senior.id, detail: { step: 'approve' } }]);
+    });
+  });
 });

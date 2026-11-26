@@ -85,7 +85,7 @@ describe('helpers', () => {
     expect(lines).toEqual([
       'Site ban, Permanent: Abuse of other traders',
       'Frozen in a dispute',
-      'A lien blocks all trading until the repayment trade completes',
+      'Lien: until it is repaid, what they receive in their trades goes to the person owed',
     ]);
   });
 });

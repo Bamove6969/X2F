@@ -200,11 +200,7 @@ export async function createInvite(
   try {
     const out = await inTransaction(deps.db, async (c) => {
       await ownerWriteGate(c, caller, now, { vendor: true });
-      await c.query(
-        `update team_members set removed_at = $2, invite_hash = null
-          where account_id = $1 and removed_at is null and joined_at is null and invite_expires_at <= $2`,
-        [accountId, now],
-      );
+      await closeExpiredInvites(c, now, accountId);
       const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
       if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
       const { rows } = await c.query<{ id: string }>(
@@ -254,6 +250,9 @@ export async function removeMember(
  * 404 `not-found` when the member was removed meanwhile.
  */
 export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
+  // Review 26 Nov (finding 3): lock the member's sessions before the team_members write, whose
+  // trigger takes the team log's lock; a logout locks its session row and then waits on that lock.
+  await c.query('select 1 from sessions where member_id = $1 and revoked_at is null order by id for update', [memberId]);
   const { rows } = await c.query<{ member_account_id: string | null }>(
     `update team_members set removed_at = $3, invite_hash = null
       where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
@@ -262,7 +261,7 @@ export async function applyMemberRemoval(c: Queryable, accountId: string, member
   const row = rows[0];
   if (!row) throw new ApiError(404, 'not-found');
   if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
-  // Escrow-key sync (migration 860): a removed member's reader key goes, with its unlocks and every wrap sealed to it.
+  // Escrow-key sync (migration 864): a removed member's reader key goes, with its unlocks and every wrap sealed to it.
   await c.query('delete from escrow_readers where member_id = $1', [memberId]);
   const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
   return s.rows.map((r) => r.id);
@@ -337,7 +336,7 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   );
   const r = rows[0];
   if (!r) return null;
-  // Escrow-key sync (migration 860): unticking "Hold trade keys" takes the member's copies away at
+  // Escrow-key sync (migration 864): unticking "Hold trade keys" takes the member's copies away at
   // once (the lead's device stops sealing to them; the read route checks the box too).
   if (!hasAbility(abilities, ESCROW_KEYS_ABILITY)) await dropMemberWraps(c, memberId);
   // A stream carries the parts the boxes allowed when it opened (review trades-list I1): any change
@@ -346,6 +345,26 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   const changed = before.rows[0] === undefined || parts(before.rows[0].abilities) !== parts(abilities);
   const s = !changed && hasAbility(abilities, STREAM_ABILITY) ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
   return { row: r, sessions: s };
+}
+
+/**
+ * X2F's own sweep of unused invites past their time (of one account, or all): marked removed, the
+ * code dies. The statement runs under the transaction-local `x2f.team_actor` = 'system', so the
+ * team log records these closures as X2F's (migration 857); any other removal, the owner's
+ * cancelling of an invite included, is logged as the owner's. Returns the rows closed.
+ */
+export async function closeExpiredInvites(c: Queryable, now: Date, accountId?: string): Promise<number> {
+  await c.query("select set_config('x2f.team_actor', 'system', true)");
+  const closed = await c.query(
+    `update team_members set removed_at = $1, invite_hash = null
+      where removed_at is null and joined_at is null and invite_expires_at <= $1
+        and ($2::uuid is null or account_id = $2::uuid)`,
+    [now, accountId ?? null],
+  );
+  // Cleared again at once, so nothing later in the transaction is taken for X2F's doing. (A failed
+  // update aborts the transaction, and the setting goes with it.)
+  await c.query("select set_config('x2f.team_actor', '', true)");
+  return closed.rowCount ?? 0;
 }
 
 /**
@@ -358,16 +377,12 @@ export const purgeTeamLeftovers: RetentionJob = {
   name: 'purgeTeamLeftovers',
   async run(db: pg.Pool, now: Date): Promise<number> {
     return inTransaction(db, async (c) => {
-      const closed = await c.query(
-        `update team_members set removed_at = $1, invite_hash = null
-          where removed_at is null and joined_at is null and invite_expires_at <= $1`,
-        [now],
-      );
+      const closed = await closeExpiredInvites(c, now);
       const gone = await c.query(
         `delete from accounts a where a.kind = 'member'
           and not exists (select 1 from team_members tm where tm.member_account_id = a.id and tm.removed_at is null)`,
       );
-      return (closed.rowCount ?? 0) + (gone.rowCount ?? 0);
+      return closed + (gone.rowCount ?? 0);
     });
   },
 };

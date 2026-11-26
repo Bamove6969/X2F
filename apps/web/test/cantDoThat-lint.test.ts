@@ -192,7 +192,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // provisional owner answer Q2, 17 Nov 2026), a wallet choice to redo on the same screen, not a rule refusal.
     // 84 -> 89 (owner open-items walkthrough, 26 Nov): termsText.ts's section 1 ("cannot move them on its
     // own") and the four TERMS_CHANGES lines, a summary of what changed in the Terms; nothing was tried and refused.
-    expect(notARefusal).toBeLessThanOrEqual(89);
+    // 89 -> 91 (team audit v2, 26 Nov): settings/teamLogCopy.ts's REFUSAL_WORDS (the reasons of past
+    // refusals, shown in the team log) and `broken` (the chain check's result); nothing is refused there.
+    expect(notARefusal).toBeLessThanOrEqual(91);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

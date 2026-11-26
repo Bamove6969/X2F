@@ -1,5 +1,5 @@
 /**
- * Escrow-key sync (Plan 3 Task 42, first part; migration 860). Owner 26 Nov 2026: "The keys should
+ * Escrow-key sync (Plan 3 Task 42, first part; migration 864). Owner 26 Nov 2026: "The keys should
  * be stored on our servers but encrypted and accessible only to the person they are assigned to
  * and the person who they are assigned to also assigns them to."
  *
@@ -73,7 +73,7 @@ export const UNLOCK_METHODS = ['prf', 'pgp'] as const;
 export type UnlockMethod = (typeof UNLOCK_METHODS)[number];
 /** Engineering default: unlock envelopes per reader (one per passkey, key or PGP key). */
 export const MAX_UNLOCKS = 10;
-/** Engineering defaults matching migration 860's checks. */
+/** Engineering defaults matching migration 864's checks. */
 export const CIPHERTEXT_MAX_BYTES = 262_144;
 export const ENVELOPE_MAX_BYTES = 16_384;
 /** The holder's readers: itself and up to MAX_TEAM_MEMBERS members; a little room on top. */
