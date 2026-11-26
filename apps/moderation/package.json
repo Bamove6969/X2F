@@ -13,7 +13,7 @@
     "init-gate": "tsx src/cli/init-gate.ts"
   },
   "dependencies": {
-    "@simplewebauthn/server": "14.1.0",
+    "@simplewebauthn/server": "14.0.3",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",
     "@x2f/logchain": "0.0.0",

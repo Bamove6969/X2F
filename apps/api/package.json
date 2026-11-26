@@ -16,9 +16,9 @@
     "news": "tsx src/tools/news.ts"
   },
   "dependencies": {
-    "@fastify/cookie": "11.1.5",
+    "@fastify/cookie": "11.1.2",
     "@fastify/static": "10.1.10",
-    "@simplewebauthn/server": "14.1.0",
+    "@simplewebauthn/server": "14.0.3",
     "@x2f/accounts": "0.0.0",
     "@x2f/core": "0.0.0",
     "@x2f/escrow": "0.0.0",
@@ -28,12 +28,12 @@
     "@x2f/reputation": "0.0.0",
     "@x2f/staff": "0.0.0",
     "@x2f/trade": "0.0.0",
-    "argon2": "0.45.2",
-    "fastify": "5.12.8",
+    "argon2": "0.45.1",
+    "fastify": "5.12.7",
     "libsodium-wrappers": "0.8.4",
-    "monero-ts": "0.11.22",
+    "monero-ts": "0.11.16",
     "openpgp": "6.3.2",
-    "otpauth": "9.6.0",
+    "otpauth": "9.5.2",
     "pg": "8.23.1",
     "web-push": "3.6.7"
   },

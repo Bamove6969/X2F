@@ -5,5 +5,5 @@
   "type": "module",
   "exports": { ".": "./regtest.ts" },
   "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "monero-ts": "0.11.22" }
+  "dependencies": { "monero-ts": "0.11.16" }
 }
