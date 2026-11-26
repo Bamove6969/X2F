@@ -1169,6 +1169,32 @@ describe('g62: maintenance holds the freeze clock', () => {
   });
 });
 
+describe('D-059, review of feat/lockout item 1: a trade held only by a lock can still be frozen', () => {
+  // Lead default (owner question pending): a party must not stall a dispute for good by reporting
+  // their own account compromised. On a trade held only by the lock, a freeze still goes in under the
+  // usual silence rule, logged `dispute.lock-override`; maintenance still refuses it (g62).
+  it('the locked side is frozen after its silence, logged as a lock override; maintenance on: refused', async () => {
+    const mod = await staff('mod');
+    const { code, seller } = await disputed(new Date(START.getTime() + 300 * H));
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    setNow(new Date(START.getTime() + 355 * H));
+    await mod.fresh();
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [seller.id, deps.clock()]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [deps.clock()]);
+    const inMaintenance = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect({ status: inMaintenance.statusCode, error: errorOf(inMaintenance) }).toEqual({ status: 409, error: 'freeze-not-allowed' });
+    await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
+    const res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await activeFreezes(seller.id)).toHaveLength(1);
+    const logged = await deps.db.query<{ detail: string }>("select detail from activity_log where trade_code = $1 and action = 'dispute.lock-override'", [code]);
+    expect(logged.rows.map((r) => JSON.parse(r.detail))).toEqual([{ step: 'freeze' }]);
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [seller.id, deps.clock()]);
+    setNow(START);
+  });
+});
+
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 

@@ -101,6 +101,12 @@ export function Login() {
           Use a backup
         </Link>
       </p>
+      {/* J-14 (D-059, flow map 1b): the full lockout form, open without a login. */}
+      <p className="x2f-screen__foot">
+        <Link className="x2f-link" to="/login/compromised" data-part="compromised-link">
+          My account has been compromised
+        </Link>
+      </p>
       {/* The front door (owner, 8 Nov 2026): every screen behind it sends a logged-out visitor here. */}
       <p className="x2f-screen__foot">
         New to X2F?{' '}

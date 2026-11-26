@@ -223,6 +223,19 @@ export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
 export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
 
 /**
+ * `POST /v1/tickets/compromised` (D-059; J-14 review J5, ported), site wide, in this process: the
+ * form needs no login, so it has its own budget, apart from the login starts (a flood of reports
+ * never starves logins, nor the reverse); empty → 503 `busy`. Each report costs one HMAC per login
+ * name key and a lookup. Lead default; the owner may change it.
+ *
+ * Review of feat/lockout, item 4 (lead default, owner question pending): this is the ACCEPT budget
+ * only, sized well above what a flood of locks could use, so that draining it costs a steady 120
+ * requests a minute and real victims still file between bursts. Locks have their own, much smaller
+ * cap in the database (tickets/lock.ts LOCK_CAP_PER_HOUR, 20 an hour site wide): over it a report is
+ * still recorded but locks nothing, and the owner is alerted.
+ */
+export const COMPROMISED_BUCKET: BucketSize = { capacity: 300, perMinute: 120 };
+/**
  * `GET /v1/team/log/integrity` per account (review of team audit v2): each check walks and rehashes
  * the account's whole chain, so 30 at once and 30 an hour. The Team log screen checks once when it
  * opens and when asked; a loop runs dry. Every try counts, refused ones too.
@@ -271,6 +284,8 @@ export interface Budgets {
   accountLookup: KeyedBuckets;
   /** Per session: refused S-085 proofs (review S2, re-verify R2). */
   sessionProof: KeyedBuckets;
+  /** Site wide: `POST /v1/tickets/compromised` (D-059, J-14 review J5). */
+  compromised: TokenBucket;
   /** Per account: `GET /v1/team/log/integrity`. */
   teamLogIntegrity: KeyedBuckets;
   /** Per account: `GET /v1/team/log/export`. */
@@ -298,6 +313,7 @@ export function newBudgets(clock: () => Date): Budgets {
     keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
     accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
     sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
+    compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
     teamLogIntegrity: new KeyedBuckets(TEAM_LOG_INTEGRITY_BUCKET, clock),
     teamLogExport: new KeyedBuckets(TEAM_LOG_EXPORT_BUCKET, clock),
   };

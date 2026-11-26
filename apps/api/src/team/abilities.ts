@@ -156,8 +156,8 @@ const ROWS: readonly Row[] = [
   // B9. Account
   [58, 'reviews-see', 'account', 'See reviews', 'Read the reviews on your profile', 'low', 'not-built', false, 'Start set', 1, 1, 1],
   [59, 'reviews-reply', 'account', 'Reply to reviews', 'Post public replies in your name', 'medium', 'not-built', false, null, 0, 0, 0],
-  [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'not-built', false, null, 0, 0, 0],
-  [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'not-built', false, 'Q69: shared across team', 0, 0, 0],
+  [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'grantable', false, null, 0, 0, 0],
+  [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'grantable', false, 'Q69: shared across team', 0, 0, 0],
   [62, 'feedback-send', 'account', 'Send X2F feedback', 'Use "How\'s X2F doing?" (own limit)', 'low', 'grantable', false, 'Q69: per member', 1, 1, 0],
   [63, 'profile-edit', 'account', 'Edit profile', 'Change the display name or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
   [64, 'alerts-settings', 'account', 'Change alert settings', "Change the account's push and Jabber alerts", 'medium', 'owner-only', false, 'Lead only (lead default)', 0, 0, 0],

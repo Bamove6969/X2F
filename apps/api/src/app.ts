@@ -42,6 +42,7 @@ import { newsRoutes } from './news/routes.js';
 import { maintenanceGate, siteRoutes } from './site/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
 import { ticketTraderRoutes } from './tickets/traderRoutes.js';
+import { compromisedReportRoute } from './tickets/compromisedRoutes.js';
 import { feedbackRoutes } from './feedback/mood.js';
 import { pastRepRoutes } from './pastrep/routes.js';
 import type { MarketPrices } from './price/market.js';
@@ -429,6 +430,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   feedbackRoutes(app);
   // Plan 4, Task 30: a trader's support tickets to X2F staff (the staff side is staffTicketRoutes).
   ticketTraderRoutes(app);
+  // D-059: "My account has been compromised", the no-login report and the full lockout it starts.
+  compromisedReportRoute(app, { publish: tradePublish });
 
   return app;
 }

@@ -20,6 +20,8 @@ export interface TicketSummary {
 
 export interface TicketMessage {
   from: 'trader' | 'staff';
+  /** Team tickets (owner Q69): the team member who wrote a trader line; left out for the account owner's own lines. */
+  by?: string;
   body: string;
   at: string;
 }
@@ -87,6 +89,8 @@ export const TICKET_COPY = {
   // An id that names no ticket of this account (a stale link, or a ticket past its retention).
   missing: 'This ticket is not in your list. It may have been deleted.',
   you: 'You',
+  // Team tickets (owner Q69): a line the account owner wrote, read by a team member.
+  owner: 'Team owner',
   staff: 'X2F support',
   replyLabel: 'Write a reply',
   close: 'Close ticket',
@@ -95,6 +99,19 @@ export const TICKET_COPY = {
   tradeLine: 'Trade',
   opened: 'Opened',
 } as const;
+
+/**
+ * Who wrote a line, as the reader is shown it: "X2F support" for staff (never a staff name); for a
+ * trader line, "You" for the reader's own lines, the member's name for a team member's line (`by`),
+ * and "Team owner" for the account owner's line read by a member. `viewer`: the reading member's
+ * name, null for the account owner.
+ */
+export function whoWrote(m: TicketMessage, viewer: string | null): string {
+  if (m.from === 'staff') return TICKET_COPY.staff;
+  const by = typeof m.by === 'string' && m.by !== '' ? m.by : null;
+  if (by === null) return viewer === null ? TICKET_COPY.you : TICKET_COPY.owner;
+  return viewer !== null && by === viewer ? TICKET_COPY.you : by;
+}
 
 /** The daily cap on new tickets (429 `limit: 'daily'`). COPY-UNSIGNED */
 export const TICKETS_DAILY_TEXT = (n: number) => `You've opened ${n} tickets in the last day. The limit helps keep spam out. Try again tomorrow.`;

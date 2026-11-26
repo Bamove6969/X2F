@@ -52,7 +52,7 @@ type Refusal = { from: string; title: string; body: string };
 export function ticketRefusal(e: unknown): Refusal | null {
   if (!(e instanceof ApiCallError) || !isCantDoCode(e.code)) return null;
   if (e.code === TOO_MANY_TICKETS_CODE) return { from: e.code, title: TOO_MANY_TICKETS.title, body: TOO_MANY_TICKETS.body(TICKET_OPEN_AT_ONCE) };
-  // A team member (tickets are the account owner's: 403 owner-only, or a role without the box):
+  // A team member without the box (403 forbidden: "See support tickets" or "Open support tickets", owner Q69):
   // the team refusal's own words. Any other code is said as a fault by the screen.
   const title = teamCantDoTitle(e.code);
   return title === CANT_DO_TITLE.team ? null : { from: e.code, title, body: teamCantDoText(e.code) };

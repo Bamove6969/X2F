@@ -405,6 +405,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'lift-ban':
       exactKeys(r, ['kind', 'accountId', 'banId']);
       return { kind: 'lift-ban', accountId: match(r, 'accountId', UUID).toLowerCase(), banId: match(r, 'banId', UUID).toLowerCase() };
+    case 'unlock-account':
+      exactKeys(r, ['kind', 'accountId', 'ticketId']);
+      return { kind: 'unlock-account', accountId: match(r, 'accountId', UUID).toLowerCase(), ticketId: match(r, 'ticketId', UUID).toLowerCase() };
     case 'reset-staff-security':
       exactKeys(r, ['kind', 'accountId', 'inviteId', 'tokenHash', 'expiresAt']);
       return {
@@ -616,6 +619,9 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'accounts.ban';
     case 'lift-ban':
       return 'accounts.unban';
+    // D-059: the same people who may freeze an account (a senior moderator or the owner).
+    case 'unlock-account':
+      return 'accounts.freeze';
     // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
     case 'reset-staff-security':
     case 'add-owner-key':

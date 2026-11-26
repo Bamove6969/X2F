@@ -40,7 +40,11 @@ export type AuditAction =
   | 'hold-changes-cancelled'
   | 'hold-changes-approved'
   // Notes on traders (S-094): added, never deleted by a member.
-  | 'note-added';
+  | 'note-added'
+  // Team tickets (owner Q69, J-14 ported): a member's support ticket, its lines and its close (never the text).
+  | 'ticket-opened'
+  | 'ticket-replied'
+  | 'ticket-closed';
 
 /**
  * Actions only the account owner takes that the team log still records (T-076, p7-1: every
@@ -76,6 +80,9 @@ export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'hold-changes-cancelled': 'hold-cancel',
   'hold-changes-approved': 'hold-end',
   'note-added': 'notes-add',
+  'ticket-opened': 'support-open',
+  'ticket-replied': 'support-open',
+  'ticket-closed': 'support-open',
 };
 
 /** Who acted: the session's account and member (null for the account owner). */

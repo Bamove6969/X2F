@@ -335,6 +335,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // another staff member holding a ticket is a staff answer.
   'ticket-closed': 'the ticket was closed (its own state; TicketThread.tsx offers a new ticket)',
   'ticket-taken': 'a staff answer: another staff member has taken the ticket (staff app only)',
+  // D-059 (J-14, ported): the trade is paused for a staff check (its own state: the trade room shows
+  // it paused, never why; lead default, owner question pending); a staff answer on a report.
+  'trade-held': 'never sent to a trader (review of feat/lockout, item 5): system paths only; a party gets wrong-state, as on any paused trade',
+  'account-locked': 'a staff answer: the report cannot close while its account is locked (staff app only)',
 };
 
 export function isCantDoCode(code: unknown): code is CantDoCode {
@@ -378,6 +382,8 @@ export const CANT_DO_TITLE = {
   changes: "This change can't be saved yet",
   // Job 1c (owner S-094, p7-8): notes on traders. COPY-UNSIGNED
   notes: "This note can't be saved",
+  // J-14 (D-059): the compromised form's own budget or its per-name daily cap. COPY-UNSIGNED
+  compromised: "This report can't be sent yet",
 } as const;
 
 /**

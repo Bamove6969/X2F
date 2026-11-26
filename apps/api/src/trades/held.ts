@@ -132,12 +132,18 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
          from trades where code = $1`,
       [r.code],
     );
+    // D-059 (J-14 review S1, ported): a compromised-account lock on either party refuses both events
+    // (409 `trade-held`). The released row then stays, with any recorded cancel, and the next pass
+    // after the unlock decides the trade (as during maintenance); deleting it would drop the cancel.
+    let lockHeld = false;
+    const heldByLock = (e: unknown) => e instanceof ApiError && e.code === 'trade-held';
     if (t.rows[0]?.paused === true) {
       try {
         const after = await applyEvent(store, r.code, { type: 'resume' }, 'system', undefined, (c) => stillHeld(c, false));
         if (after.pausedAt === null) n++;
       } catch (e) {
         if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+        if (heldByLock(e)) lockHeld = true;
       }
     }
     // Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel recorded during the hold is
@@ -148,14 +154,16 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
     // cancel already applied (a crash between the apply and the row's delete leaves the trade
     // settling), makes the machine refuse it. Without the catch that throw would end this pass
     // partway, leave this row for good and never decide the rows after it (lead re-verify 9 Nov m1).
-    if (t.rows[0]?.asked === true) {
+    if (t.rows[0]?.asked === true && !lockHeld) {
       try {
         await applyEvent(store, r.code, { type: 'buyer-cancel' }, 'buyer', undefined, (c) => stillHeld(c, true));
         n++;
       } catch (e) {
         if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+        if (heldByLock(e)) lockHeld = true;
       }
     }
+    if (lockHeld) continue;
     await deps.db.query('delete from held_trades where code = $1 and account_id = $2 and released_at is not null', [r.code, r.account_id]);
   }
   return n;

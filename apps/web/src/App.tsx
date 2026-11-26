@@ -31,6 +31,7 @@ import { MethodList } from './screens/browse/MethodList.js';
 import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Compromised } from './screens/auth/Compromised.js';
 import { Landing } from './screens/auth/Landing.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
@@ -370,6 +371,8 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
+          {/* J-14 (D-059): "My account has been compromised" needs no login (the person may have lost every way in). */}
+          <Route path="/login/compromised" element={<Compromised />} />
           <Route path="/team/join" element={<MemberInvite />} />
           {/* Owner demo notes 12 Nov #42: the help placeholders linked from /login and /session-length. */}
           {/* The help library (owner, 18 Nov 2026): every topic at /help, one at /help/:topic. */}
