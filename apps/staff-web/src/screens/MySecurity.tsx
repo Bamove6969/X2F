@@ -53,7 +53,6 @@ const C = {
       pgp: 'PGP key',
       'security-key': 'Security key',
       passkey: 'Passkey',
-      password: 'Password',
       totp: 'Authenticator app',
       'recovery-codes': 'Recovery codes',
     } satisfies Record<MethodType, string>,

@@ -529,7 +529,7 @@ export const staffPay = () => staffApi<{ members: StaffPayRow[] }>('/staff/v1/pa
 // ---------------------------------------------------------------------------------------------
 // One's own security (apps/api/src/staff/account.ts; perm self, every role, one's own account)
 
-export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'password' | 'totp' | 'recovery-codes';
+export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'totp' | 'recovery-codes';
 export interface MethodEntry {
   type: MethodType;
   id: string;
@@ -777,13 +777,12 @@ export const decideLimits = (accountId: string, recId: string, b: { approve: boo
     { method: 'POST', body: b },
   );
 // ---------------------------------------------------------------------------------------------
-// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts, holds.ts):
+// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts):
 // senior moderators and the owner (`accounts.ban`, `accounts.freeze`; the API checks every call).
 
 export type BanKind = 'trade' | 'site';
 export interface AccountStatus {
   bans: Array<{ id: string; kind: BanKind; reasonCode: import('@x2f/staff').BanReasonCode; until: string | null; permanent: boolean }>;
-  hold: { until: string; reason: string } | null;
   frozen: boolean;
   lien: boolean;
 }
@@ -825,9 +824,6 @@ export const placeBan = (id: string, b: { banId: string; kind: BanKind; ruleId: 
   staffApi<StaffBan>(accountPath(id, '/bans'), { method: 'POST', body: b });
 export const liftBan = (id: string, banId: string, tapId: string) =>
   staffApi<StaffBan>(accountPath(id, `/bans/${encodeURIComponent(banId)}/lift`), { method: 'POST', body: { tapId } });
-export const extendHold = (id: string, until: string) => staffApi<{ holdUntil: string }>(accountPath(id, '/hold/extend'), { method: 'POST', body: { until } });
-export const endHold = (id: string, via: 'secure-jabber' | null) =>
-  staffApi<unknown>(accountPath(id, '/hold/end'), { method: 'POST', body: via === null ? {} : { via } });
 
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });

@@ -10,21 +10,16 @@ import {
   addWebAuthnKey,
   confirmWithWebAuthn,
   createAuthApi,
-  isStaged,
   loginWithPasskey,
   loginWithSecurityKey,
   registerWithWebAuthn,
-  shouldSendAway,
   withConfirm,
   type AuthApi,
-  type Staged,
 } from '../src/index.js';
 import { ROUTES, callSample, methodNames } from './helpers/routes.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
-const GOOD = 'Correct-Horse-9';
-const WRONG = 'Wrong-Horse-99';
 const LABEL = 'Browser on Linux';
 
 /**
@@ -262,27 +257,6 @@ describe('onboarding', () => {
     await expect(j.api.renameWebAuthnKey({ credentialId, label: 'x'.repeat(33) })).rejects.toMatchObject({ status: 400, code: 'key-name-invalid', reason: 'too-long' });
   });
 
-  it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
-    const own = jar();
-    const username = uniqueName('pass');
-    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms() })));
-    expect(leaked.status).toBe(400);
-    expect(leaked.code).toBe('password-leaked');
-    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms() })));
-    expect(weak.code).toBe('password-weak');
-    expect(weak.missing).toEqual(expect.arrayContaining(['length']));
-    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old' })));
-    expect(stale.code).toBe('terms-not-accepted');
-
-    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() })).resolves.toEqual({
-      displayName: `D${username}`,
-    });
-    await own.api.logout();
-    expect(apiError(await failure(own.api.newRecoveryCodes({}))).code).toBe('not-authenticated');
-    // Review M2: the password is the account's only login, so the session is setup-only (and says so).
-    await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok', setupOnly: true });
-    expect((await own.api.me()).setupOnly).toBe(true);
-  });
 });
 
 describe('confirm it\'s you (P2-C2)', () => {
@@ -333,90 +307,11 @@ describe('confirm it\'s you (P2-C2)', () => {
   });
 });
 
-describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
-  it('never locks out the user\'s own browser, a passkey, PGP, or a confirm', async () => {
-    // A password account (this browser becomes trusted) that adds a passkey and a PGP key during onboarding.
-    const own = jar();
-    const username = uniqueName('flood');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() });
-    const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
-    await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
-    const key = await genKey();
-    const add = await own.api.addPgpKeyStart({ publicKey: key.publicKey });
-    await expect(own.api.addPgpKeyFinish({ challengeId: add.challengeId, code: await codeFrom(add.encryptedMessage, key) })).resolves.toEqual({
-      fingerprint: key.fingerprint,
-    });
-
-    // A stranger with no device cookie: 12 wrong passwords, each answered the same way, with no wait.
-    const stranger = jar(false);
-    for (let i = 0; i < 12; i++) {
-      const e = apiError(await failure(stranger.api.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL })));
-      expect(e.status).toBe(401);
-      expect(e.code).toBe('credentials-invalid');
-      expect(e.retryAfterSeconds).toBeUndefined();
-    }
-    expect(stranger.cookies.size).toBe(0);
-    // The server now quietly stops checking this name for the stranger: even the right password
-    // gets the same answer.
-    const locked = apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })));
-    expect(locked.status).toBe(401);
-    expect(locked.code).toBe('credentials-invalid');
-    expect(locked.retryAfterSeconds).toBeUndefined();
-
-    // At once, with no time passing: the user's own browser (trusted device cookie) logs in with the password,
-    await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok' });
-    // a fresh browser logs in with the passkey (discoverable) and with PGP,
-    // Task 16: the sign-up browser is still logged in, so each new browser is approved first.
-    const [j1, j2] = [jar(), jar()];
-    await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
-    await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
-    // and the live session gets a confirm token by passkey and uses it.
-    const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    // Hold model v3: that session logged in with a username and password, so the change is staged
-    // for review (it is not refused by the flood).
-    const first = await own.api.newRecoveryCodes({ confirmToken: token });
-    expect(first).toMatchObject({ codes: expect.any(Array), status: 'staged' });
-    expect(isStaged(first)).toBe(true);
-    // So does a confirm by password from the trusted browser, still with no time passing; the next
-    // change is staged too, not refused by the flood.
-    const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
-    expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    const second = await own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken });
-    expect(isStaged(second)).toBe(true);
-    const view = await own.api.holdView();
-    expect(view.changesWait).toBe(true);
-    expect(view.drafts.map((d) => d.id).sort()).toEqual([(first as Staged).changeId, (second as Staged).changeId].sort());
-
-    // The flood is still in force for the stranger.
-    expect(apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
-  });
-});
-
-describe('sending the visitor away after about 10 misses', () => {
-  it('a browser that keeps its cookies is told to leave at the 10th miss in a row, whatever the names', async () => {
-    const visitor = jar();
-    const results: boolean[] = [];
-    for (let i = 0; i < 10; i++) {
-      const e = await failure(visitor.api.loginPassword({ loginName: uniqueName('miss'), password: WRONG, deviceLabel: LABEL }));
-      expect(apiError(e).code).toBe('credentials-invalid');
-      results.push(shouldSendAway(e));
-    }
-    expect(results).toEqual([false, false, false, false, false, false, false, false, false, true]);
-  });
-});
-
-describe('a flood of bad passwords against a two-factor username (Review Focus 2)', () => {
+describe('a two-factor username on the trader site (Review Focus 2)', () => {
   // Staff and the owner log in only on the staff API (owner 2026-11-03, Q19; owner Q13, 6 Nov). After a
-  // flood of wrong passwords the owner's keys still answer here exactly as an unknown name's would.
-  it('owner (Q13): after 13 anonymous wrong passwords, the trader site answers the owner as an unknown name', async () => {
+  // the owner's keys answer here exactly as an unknown name's would.
+  it('owner (Q13): the trader site answers the owner as an unknown name', async () => {
     const { username, soft, key } = await staffWithKeyAndPgp(srv, 'owner');
-    const stranger = jar(false);
-    for (let i = 0; i < 13; i++) {
-      const e = apiError(await failure(stranger.api.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL })));
-      expect(e.status).toBe(401);
-      expect(e.code).toBe('credentials-invalid');
-    }
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
     const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
@@ -425,10 +320,9 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
   });
 
-  it('staff: the trader site answers a staff username as an unknown one (password, security key, PGP)', async () => {
+  it('staff: the trader site answers a staff username as an unknown one (security key, PGP)', async () => {
     const { username, soft, key } = await staffWithKeyAndPgp(srv);
     const browser: AuthApi = jar().api;
-    expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
     const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))

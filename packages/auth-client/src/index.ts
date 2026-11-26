@@ -1,11 +1,7 @@
 export {
   AuthApiError,
-  MISSES_BEFORE_SENDING_AWAY,
-  PASSWORD_LOGIN_MISMATCH,
   createAuthApi,
-  isStaged,
   isVendor,
-  shouldSendAway,
   type AccountOverview,
   type AccountType,
   type AlertEntry,
@@ -21,15 +17,11 @@ export {
   type AuthApi,
   type AuthenticationChallenge,
   type ConfirmTokenResult,
-  type HoldChangeSummary,
-  type HoldView,
-  type Staged,
   type DeviceSettings,
   type LienView,
   type LoginResult,
   type MyLiens,
   type MethodEntry,
-  type PasswordLoginResult,
   type PgpChallenge,
   type RegistrationChallenge,
   type SessionEntry,
@@ -63,7 +55,7 @@ export {
   type RegistrationCeremony,
 } from './webauthn.js';
 export { becomeVendorAction, defaultDeviceLabel, teamAbilitiesAction, teamInviteAbilitiesAction, teamInviteAction, teamLimitsAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
-export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName, checkPassword, describeAction, formatRecoveryInput, hasPasswordSpace, inspectPublicKey, METHOD_PARTNERS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode, partnerMissing, partnerNeededBy, passwordAlone, STANDS_ALONE } from '@x2f/accounts';
+export { checkDisplayName, checkLoginName, checkNames, checkNewDisplayName, checkNewLoginName, COUNTED_KINDS, countedKinds, describeAction, enoughMethods, formatRecoveryInput, inspectPublicKey, LOGIN_KEYS, MIN_METHOD_KINDS, needsStrongConfirm, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
 export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, sameKeyName, type KeyNameCheck, type KeyNameProblem } from '@x2f/accounts';
 export {

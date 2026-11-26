@@ -3,8 +3,6 @@ import { useEffect, useId, useState } from 'react';
 import {
   accountBans,
   codeOf,
-  endHold,
-  extendHold,
   liftBan,
   placeBan,
   serverNow,
@@ -25,14 +23,12 @@ import '../ui/staff.css';
  * DESIGNER-REVIEW; every sentence is COPY-UNSIGNED.
  *
  * What it shows: the reputation a case's trader card shows, and the status (the bans in force, a
- * running account hold, a dispute freeze, a lien). What it offers follows the API's perms exactly,
+ * dispute freeze, a lien; account holds ended with owner 26 Nov 2026). What it offers follows the API's perms exactly,
  * and the API checks every call again:
  * - `accounts.ban` (senior moderators and the owner): the ban history with staff notes, a ban
  *   (trade or site, a rule from the list, an end or Permanent as D-017 allows for this offence,
  *   an optional staff note) and lifting a ban in force; each a security-key tap
  *   (`ban-account`, `lift-ban`) whose dialog says exactly what happens.
- * - `accounts.freeze` (the same roles): extending or ending a running account hold, each after a
- *   confirm sheet that says exactly what happens (the API takes no tap for them).
  * A role without the perm sees the status only.
  */
 
@@ -44,20 +40,9 @@ export const REASON_WORDS: Readonly<Record<BanReasonCode, string>> = {
   'account-security': 'Account security',
 };
 
-/** Why an account hold runs (apps/api auth/hold.ts HoldReason). COPY-UNSIGNED */
-const HOLD_WORDS: Readonly<Record<string, string>> = {
-  'recovery-code': 'a login with a recovery code',
-  'weak-change': 'a security change from a weaker login',
-  'weak-new-device': 'a login on a new device',
-  'weak-backup-login': 'a backup login',
-};
-
 /** The ban lengths offered (whole days; the API takes any end after now). */
 export const BAN_DAYS = [1, 3, 7, 30, 90, 365] as const;
-/** The hold extensions offered, from the hold's current end (the API caps a hold at 30 days from now). */
-export const HOLD_EXTEND_DAYS = [1, 3, 7] as const;
 const DAY = 86_400_000;
-const HOLD_MAX_AHEAD = 30 * DAY;
 export const BAN_NOTE_MAX = 500;
 
 const daysText = (n: number) => (n === 1 ? '1 day' : `${n} days`);
@@ -68,12 +53,6 @@ export function banUntil(days: number, now: Date): string {
   return new Date(now.getTime() + days * DAY).toISOString();
 }
 
-/** A hold extension's new end, or null when it would pass the API's 30-day cap. */
-export function holdExtendUntil(currentEnd: string, days: number, now: Date): string | null {
-  const t = Date.parse(currentEnd) + days * DAY;
-  return t > now.getTime() + HOLD_MAX_AHEAD ? null : new Date(t).toISOString();
-}
-
 const endText = (until: string | null) => (until === null ? 'Permanent' : `until ${utcMinuteText(until)}`);
 
 /** One line per status entry, in the card. */
@@ -81,7 +60,6 @@ export function statusLines(a: LookedUpAccount): string[] {
   const s = a.status;
   const out: string[] = [];
   for (const b of s.bans) out.push(`${KIND_WORDS[b.kind]}, ${endText(b.until)}: ${REASON_WORDS[b.reasonCode] ?? b.reasonCode}`);
-  if (s.hold !== null) out.push(`Account hold until ${utcMinuteText(s.hold.until)}, after ${HOLD_WORDS[s.hold.reason] ?? 'a security event'}`);
   if (s.frozen) out.push('Frozen in a dispute');
   if (s.lien) out.push('A lien blocks all trading until the repayment trade completes');
   return out;
@@ -108,21 +86,16 @@ export function banBody(name: string, kind: BanKind, rule: BanRule, until: strin
 }
 
 type Tap = { intent: KeyTapIntent; title: string; body: string; labels: Record<string, string>; run: (tapId: string) => Promise<void> };
-type Confirm = { title: string; body: string; action: string; danger: boolean; run: (jabber: boolean) => Promise<void>; jabber?: boolean };
 
 export function AccountCard({ account: a, role, onChanged }: { account: LookedUpAccount; role: StaffRole; onChanged: () => Promise<void> }) {
   const mayBan = can(role, 'accounts.ban');
-  const mayHold = can(role, 'accounts.freeze');
   const [bans, setBans] = useState<AccountBans | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ code: StaffRefusal; text: string } | null>(null);
   const [tap, setTap] = useState<Tap | null>(null);
-  const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [banning, setBanning] = useState(false);
-  const [extending, setExtending] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [confirmJabber, setConfirmJabber] = useState(false);
   const name = a.displayName;
 
   const loadBans = async () => {
@@ -197,41 +170,6 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
     });
   };
 
-  const hold = a.status.hold;
-  const askEndHold = () =>
-    setConfirm({
-      title: `End the account hold on ${name}`,
-      body: `The hold ends now instead of at ${hold !== null ? utcMinuteText(hold.until) : 'its end'}. ${name} can trade again and the trades waiting on the hold resume. A security change that was waiting for the hold to end is dropped, not applied. ${name} is told staff ended the hold. The end is written to the activity log.`,
-      action: 'End the hold',
-      danger: false,
-      jabber: true,
-      run: async (jabber) => {
-        const via = jabber ? ('secure-jabber' as const) : null;
-        await act(() => endHold(a.accountId, via), `The hold on ${name} has ended. Logged.`, (c) =>
-          // not-a-refusal: the hold ended meanwhile, a changed state.
-          c === 'not-found' ? `${name} has no hold running any more.`
-            // not-a-refusal: the claim about the Jabber channel does not check out, so the hold stays; an input fault.
-            : c === 'no-secure-jabber' ? `X2F has no secure Jabber address for ${name} proven before the hold began, so the hold stays. End it without that box ticked if you vetted them another way.`
-            : '',
-        );
-      },
-    });
-  const askExtend = (until: string) => {
-    setExtending(false);
-    setConfirm({
-      title: `Extend the account hold on ${name}`,
-      // not-a-refusal: says what the hold does, to the staff member extending it.
-      body: `The hold now ends at ${utcMinuteText(until)} instead of ${hold !== null ? utcMinuteText(hold.until) : 'its current end'}. Until then ${name} can't trade or change their security, and the trades waiting on the hold stay paused. ${name} is told staff extended the hold. The change is written to the activity log.`,
-      action: 'Extend the hold',
-      danger: true,
-      run: () =>
-        act(() => extendHold(a.accountId, until), `The hold on ${name} now ends at ${utcMinuteText(until)}. Logged.`, (c) =>
-          // not-a-refusal: the hold ended meanwhile, a changed state.
-          c === 'not-found' ? `${name} has no hold running any more.` : c === 'bad-request' ? 'That end is too far ahead or already passed. Pick again.' : '',
-        ),
-    });
-  };
-
   const lines = statusLines(a);
   const standing = new Set(a.status.bans.map((b) => b.kind));
   const free: BanKind[] = (['trade', 'site'] as const).filter((k) => !standing.has(k));
@@ -247,7 +185,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
       </p>
       <div data-part="account-status">
         {lines.length === 0 ? (
-          <p>No ban, hold, freeze or lien.</p>
+          <p>No ban, freeze or lien.</p>
         ) : (
           <ul>
             {lines.map((l) => (
@@ -286,18 +224,6 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
         </div>
       ) : null}
 
-      {mayHold && hold !== null ? (
-        <div className="x2f-stack" data-part="account-hold">
-          <h3 className="x2f-staff-eyebrow">Account hold</h3>
-          <Button variant="secondary" disabled={busy} onClick={() => setExtending(true)}>
-            Extend the hold
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => { setConfirmJabber(false); askEndHold(); }}>
-            End the hold
-          </Button>
-        </div>
-      ) : null}
-
       {done !== null ? (
         <p className="x2f-staff-ok" role="status" data-part="account-done">
           {done}
@@ -310,34 +236,6 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
       ) : null}
 
       {banning && bans !== null ? <BanSheet name={name} bans={bans} kinds={free} onCancel={() => setBanning(false)} onReview={askBan} /> : null}
-      {extending && hold !== null ? <ExtendSheet name={name} end={hold.until} onCancel={() => setExtending(false)} onPick={askExtend} /> : null}
-      {confirm !== null ? (
-        <Sheet open title={confirm.title} wide="dialog" onClose={() => setConfirm(null)}>
-          <div className="x2f-stack" data-part="account-confirm">
-            <p>{confirm.body}</p>
-            {confirm.jabber ? (
-              <label className="x2f-check">
-                <input type="checkbox" data-part="hold-jabber" checked={confirmJabber} onChange={(e) => setConfirmJabber(e.target.checked)} />
-                <span>I reached the account holder on the account's own secure Jabber address</span>
-              </label>
-            ) : null}
-            <Button
-              variant={confirm.danger ? 'danger-outline' : 'secondary'}
-              disabled={busy}
-              onClick={() => {
-                const c = confirm;
-                setConfirm(null);
-                void c.run(c.jabber === true && confirmJabber);
-              }}
-            >
-              {confirm.action}
-            </Button>
-            <Button variant="quiet" onClick={() => setConfirm(null)}>
-              Cancel
-            </Button>
-          </div>
-        </Sheet>
-      ) : null}
       {tap !== null ? (
         <KeyTapDialog
           intent={tap.intent}
@@ -464,37 +362,3 @@ function BanSheet({ name, bans, kinds, onCancel, onReview }: {
   );
 }
 
-function ExtendSheet({ name, end, onCancel, onPick }: { name: string; end: string; onCancel: () => void; onPick: (until: string) => void }) {
-  const headId = useId();
-  const now = serverNow();
-  const options = HOLD_EXTEND_DAYS.flatMap((d) => {
-    const until = holdExtendUntil(end, d, now);
-    return until === null ? [] : [{ value: until, label: `${daysText(d)} more`, note: `Until ${utcMinuteText(until)}` }];
-  });
-  const [pick, setPick] = useState<string | null>(null);
-  return (
-    <Sheet open title={`Extend the account hold on ${name}`} wide="dialog" onClose={onCancel}>
-      <div className="x2f-stack" data-part="hold-extend">
-        {/* not-a-refusal: the API's bound on an extension, explained before any choice. */}
-        <p className="x2f-staff-hint">{`The hold now ends at ${utcMinuteText(end)}. A hold can run at most 30 days from now.`}</p>
-        {options.length === 0 ? (
-          // not-a-refusal: explains why no extension is offered (the API's 30-day cap), before any attempt.
-          <p>The hold already ends close to 30 days from now, so it cannot be extended further.</p>
-        ) : (
-          <>
-            <p className="x2f-staff-eyebrow" id={headId}>
-              Extend by
-            </p>
-            <ChoiceGroup look="card" labelledBy={headId} value={pick} onChange={setPick} part="hold-days" options={options} />
-          </>
-        )}
-        <Button variant="secondary" disabled={pick === null} onClick={() => pick !== null && onPick(pick)}>
-          Review the extension
-        </Button>
-        <Button variant="quiet" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </Sheet>
-  );
-}

@@ -67,8 +67,7 @@ describe('note #94: test a security key right after adding it', () => {
     const old = softKey();
     await addKey(j, old, undefined, 'Old key');
     const soft = softKey();
-    const { staged, credentialId } = await addKey(j, soft, old, 'New key');
-    expect(staged).toBeUndefined();
+    const { credentialId } = await addKey(j, soft, old, 'New key');
     expect(credentialId).toBe(soft.credentialId);
     const c = watched(soft);
     await expect(testWebAuthnKey(j.api, credentialId, c)).resolves.toBeUndefined();

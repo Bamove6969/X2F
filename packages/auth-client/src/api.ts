@@ -18,66 +18,6 @@ import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginRe
 
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult, TermsSignature };
 
-/**
- * Hold model v3: a security change made from a login with just a username and password (202): nothing
- * changed yet; it is a draft of this session (`changeId`) to review and submit (`submitHoldChanges`),
- * then applies on its own 24 h after the account's latest submission (owner Q14). A login with a
- * passkey, security key or PGP key held before discards it; any session of the owner cancels it.
- */
-export interface Staged {
-  status: 'staged';
-  changeId: string;
-}
-
-/** True for a change staged by hold model v3 (202 `{ status: 'staged', changeId }`). */
-export function isStaged(x: unknown): x is Staged {
-  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'staged' && typeof (x as { changeId?: unknown }).changeId === 'string';
-}
-
-/** Hold model v3: what a staged or waiting change is (never a secret, an address or a key). */
-export interface HoldChangeSummary {
-  kind: string;
-  method?: string;
-  wallets?: number;
-  /** Wallets: each new address's last 6 characters. Optional: older API builds do not send it. */
-  addressEnds?: string[];
-  /** Wallets (owner note #6): for each, in order, whether it is for one trade only. Absent from older API builds. */
-  oneTime?: boolean[];
-  on?: boolean;
-  memberId?: string;
-  roles?: string[];
-  /** A member's new boxes (Job 1c, `team-abilities`): their ids, and each one's catalogue label. */
-  abilities?: string[];
-  abilityLabels?: string[];
-  /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
-  label?: string;
-  /** J-20 (`team-limits`): a member's new trade-size band (null: none) and working hours. */
-  band?: TradeBand | null;
-  hours?: WorkingHours;
-}
-
-/** Hold model v3: `GET /v1/account/hold`. */
-export interface HoldView {
-  /** The account's hold (a recovery-code login's), while one runs. */
-  accountHold: { until: string; reason: string } | null;
-  /** Every waiting (submitted) change of the account, each with its own date (lead review 8 Nov I4); `takesEffectAt` is the next one. */
-  changes: {
-    count: number;
-    takesEffectAt: string | null;
-    items: Array<HoldChangeSummary & { id: string; createdAt: string; submittedAt: string; takesEffectAt?: string; by: string | null; mine: boolean }>;
-  };
-  /** This session's drafts, to review and submit. */
-  drafts: Array<HoldChangeSummary & { id: string; createdAt: string }>;
-  /** This session's changes are staged instead of applied. */
-  changesWait: boolean;
-  /**
-   * Owner p4-8: set for a team member only, their "Holds and waiting changes" right (`none`: they
-   * see only that a hold is on, no list), and `lead`, the team's name.
-   */
-  rights?: 'none' | 'see' | 'cancel' | 'end';
-  lead?: string;
-}
-
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
 export class AuthApiError extends Error {
   readonly status: number;
@@ -86,16 +26,10 @@ export class AuthApiError extends Error {
   readonly detail?: string;
   /** How long to wait before trying again (429 `slow-down` / `locked`, 503 `busy`), kept within 1 second to one day. */
   readonly retryAfterSeconds?: number;
-  /** The password rules not met (400 `password-weak`). */
-  readonly missing?: string[];
-  /** When a held recovery session may make changes (403 `recovery-hold`). */
-  readonly holdUntil?: string;
   /** The current Terms version (403 `terms-required`, 400 `terms-not-accepted`). */
   readonly version?: string;
   /** The kind of action that needs a confirm token (403 `confirm-required`). */
   readonly action?: string;
-  /** This browser's password-login misses in a row (401 `credentials-invalid` from `loginPassword`); see `shouldSendAway`. */
-  readonly misses?: number;
   /** The open full sessions to choose from (409 `too-many-devices`, Task 16). */
   readonly sessions?: Array<{ id: string; deviceLabel: string; lastSeenAt: string; current: boolean }>;
   /** Why a 429 `slow-down` was sent: `approvals` for the hourly cap on login approvals (Task 16), else absent (a throttle on tries). */
@@ -115,11 +49,8 @@ export class AuthApiError extends Error {
       // At least 1 s; capped only at one day (the TOTP-backup daily cap waits until UTC midnight).
       this.retryAfterSeconds = Math.min(86_400, Math.max(1, Math.ceil(extra.retryAfterSeconds)));
     }
-    if (Array.isArray(extra.missing)) this.missing = extra.missing.filter((m): m is string => typeof m === 'string');
-    if (typeof extra.holdUntil === 'string') this.holdUntil = extra.holdUntil;
     if (typeof extra.version === 'string') this.version = extra.version;
     if (typeof extra.action === 'string') this.action = extra.action;
-    if (typeof extra.misses === 'number' && Number.isInteger(extra.misses) && extra.misses > 0) this.misses = extra.misses;
     if (Array.isArray(extra.sessions)) {
       this.sessions = extra.sessions.filter(
         (s): s is { id: string; deviceLabel: string; lastSeenAt: string; current: boolean } =>
@@ -131,25 +62,6 @@ export class AuthApiError extends Error {
     if (extra.outcome === 'approved' || extra.outcome === 'blocked' || extra.outcome === 'expired') this.outcome = extra.outcome;
     if (typeof extra.max === 'number' && Number.isInteger(extra.max) && extra.max > 0) this.max = extra.max;
   }
-}
-
-/**
- * The one sentence for every failed password login (owner, 2026-10-23): an unknown login name, a
- * wrong password and a name the server is quietly not checking all read the same. Show no wait.
- */
-export const PASSWORD_LOGIN_MISMATCH = "That login name and password don't match";
-
-/** After about this many password-login misses in a row, the page sends the visitor away from the site. */
-export const MISSES_BEFORE_SENDING_AWAY = 10;
-
-/**
- * True when a refused `loginPassword` call says this browser has missed `MISSES_BEFORE_SENDING_AWAY`
- * times in a row: the login page should then send the visitor away (the redirect itself is Plan 3's
- * screen). The count comes from the server (per browser, never per name), so a reload does not
- * reset it. Any other error, or none, is false.
- */
-export function shouldSendAway(e: unknown): boolean {
-  return e instanceof AuthApiError && e.code === 'credentials-invalid' && (e.misses ?? 0) >= MISSES_BEFORE_SENDING_AWAY;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -169,13 +81,6 @@ export interface AuthenticationChallenge {
   challengeId: string;
   options: PublicKeyCredentialRequestOptionsJSON;
 }
-
-/**
- * A password login: a session, (TOTP enrolled) a pending login for `loginSecondFactor`, or (Task 16)
- * a wait for a logged-in device to approve this one (`pollLoginApproval`).
- */
-/** Review M2: `setupOnly` when the account's only login is the password: the session may only add a second method. */
-export type PasswordLoginResult = { status: 'ok'; setupOnly?: true } | { status: 'second-factor'; pendingId: string; needs: ['totp'] } | ApprovalWait;
 
 /**
  * Task 16: the new device's poll. `ok`: the session has started (`loggedOut` names the devices
@@ -206,7 +111,7 @@ type Token = { confirmToken?: string | undefined };
 /** Task 10: one login method of the account (nothing secret). */
 export interface MethodEntry {
   type: MethodType;
-  /** A UUID; for password, TOTP and recovery codes the type's own name. */
+  /** A UUID; for TOTP and recovery codes the type's own name. */
   id: string;
   label: string;
   createdAt: string | null;
@@ -222,8 +127,9 @@ export interface AccountOverview {
   /** True for an account made before login names existed (migration 009): it still logs in by its public display name and should set a private login name (`setLoginName`). */
   needsLoginName: boolean;
   kind: AccountKind;
-  level: 'full' | 'recovery';
-  holdUntil: string | null;
+  level: 'full';
+  /** A recovery-code login may change anything without confirming until this time (one hour), else null. Optional: older API builds do not send it. */
+  recoveryUntil?: string | null;
   /** A trader's starter-limits stage (spec 2.3), null for staff and owner. Optional: older API builds do not send it. */
   stage?: 'starter' | 'building' | 'graduated' | null;
   /** Plan 5 Task 6: a trader's completed trades (for "How's X2F doing?"), null for staff and owner. Optional: older API builds do not send it. */
@@ -233,20 +139,12 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   termsCurrent: boolean;
   /**
-   * Review M2: this session is setup-only (the account's only login is a password, its sign-up
-   * window over): only adding a second method, the recovery code and logging out work. Optional:
-   * older API builds do not send it.
+   * This session is setup-only (the account holds fewer than two kinds of login method, its sign-up
+   * window over): only adding a method, the recovery code and logging out work. Optional: older API
+   * builds do not send it.
    */
   setupOnly?: boolean;
-  /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
-  accountHoldUntil?: string | null;
-  /** Hold model v3: the account's waiting changes (the banner), else null. Optional: older API builds do not send it. */
-  pendingChanges?: { count: number; takesEffectAt: string } | null;
-  /** Owner p4-8: for a team member, while the lead's changes wait, when they take effect (nothing more). */
-  teamHold?: { takesEffectAt: string } | null;
-  /** Hold model v3: this session's changes are staged and wait 24 h. Optional: older API builds do not send it. */
-  changesWait?: boolean;
-  /** Hold model v3: a new recovery code may be shown once (`revealRecoveryCode`). Optional: older API builds do not send it. */
+  /** A new recovery code may be shown once (`revealRecoveryCode`). Optional: older API builds do not send it. */
   recoveryCodeToShow?: boolean;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
@@ -282,8 +180,8 @@ export interface AccountOverview {
   /**
    * Owner demo note #6 (16 Nov 2026) and his answers of 17 Nov: the trader account's rating by its
    * login methods, decided by the API alone (apps/api/src/auth/rating.ts). `high` (a passkey, security
-   * key or PGP key, with or without a password) may add a payout address on the trade screen; `medium`
-   * (a password with the authenticator app) and `weak` (a password alone) add them in Settings. Null for
+   * key or PGP key) may add a payout address on the trade screen; `weak` (no key) adds them in
+   * Settings; `medium` is no longer given (it was a password with the authenticator app). Null for
    * team members, staff and owner. Optional: older API builds do not send it (read it as not high).
    */
   securityRating?: SecurityRating | null;
@@ -300,8 +198,8 @@ export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undef
   return me?.accountType === 'vendor';
 }
 
-/** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
-export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
+/** Plan 2 Task 18: a team member's roles (spec 6.7). */
+export type TeamRole = 'offers' | 'trades';
 
 /** J-20 (owner p7-4): a member's trade-size band, XMR atomic units as decimal strings, both ends included. */
 export interface TradeBand {
@@ -359,7 +257,7 @@ export interface TeamAuditEntry {
 export interface SessionEntry {
   id: string;
   deviceLabel: string;
-  level: 'full' | 'recovery';
+  level: 'full';
   createdAt: string;
   lastSeenAt: string;
   current: boolean;
@@ -417,15 +315,12 @@ export interface WalletDraft {
 /**
  * `GET /v1/wallets/rule` (owner, 2026-10-24): what adding wallets will do for this account, for the
  * Add a wallet screen to explain before anything is entered. `firstWallet`: the account never had
- * one, so the next add works at once whatever the method. `strongMethods`: the methods it holds
- * that make new wallets work at once. `password`: whether a password confirm is possible and would
- * wait (`none`, `immediate`, `waits`).
+ * one, so the sign-up session adds it without a confirm. `strongMethods`: the methods it holds to
+ * confirm with. No wallet waits (owner, 26 Nov 2026).
  */
 export interface WalletRule {
   firstWallet: boolean;
   strongMethods: Array<'pgp' | 'passkey' | 'security-key'>;
-  password: 'none' | 'immediate' | 'waits';
-  waitHours: number;
 }
 
 /**
@@ -523,36 +418,16 @@ export interface AuthApi {
    */
   nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  /**
-   * `acceptedTerms`: the Terms version accepted with the tick. No signature: a trader agrees with the
-   * tick alone (owner demo note #187, 25 Nov 2026; the API still checks one if it is sent).
-   */
-  registerPassword(b: {
-    displayName: string;
-    loginName: string;
-    password: string;
-    deviceLabel: string;
-    acceptedTerms: string;
-  }): Promise<{
-    displayName: string;
-  }>;
-  /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
-  loginPassword(b: { loginName: string; password: string; deviceLabel: string }): Promise<PasswordLoginResult>;
-  /** `POST /v1/login/second-factor`: the TOTP code for a password login's `pendingId`. */
-  loginSecondFactor(b: { pendingId: string; code: string }): Promise<{ status: 'ok' } | ApprovalWait>;
   /** `POST /v1/login/approval/:id/poll` (Task 16): only the browser that started the login, with its approval cookie; anything else 404. */
   pollLoginApproval(id: string): Promise<ApprovalPoll>;
   /** `POST /v1/login/approval/:id/cancel` (Task 16): stop waiting. */
   cancelLoginApproval(id: string): Promise<void>;
   /**
-   * `POST /v1/login/backup`: a recovery code (the only backup way in; an authenticator code is 400
-   * `bad-request`) opens a recovery session held 24 hours.
+   * `POST /v1/login/backup`: a recovery code (the only backup way in) logs every other session out
+   * and opens a full session that may change anything without confirming for an hour (owner, 26 Nov
+   * 2026). The code is spent and a new one is shown once (`revealRecoveryCode`).
    */
-  loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{
-    status: 'ok';
-    level: 'recovery';
-    holdUntil: string | null;
-  }>;
+  loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
   /**
@@ -577,10 +452,9 @@ export interface AuthApi {
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
   /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once, with a `set-login-name` confirm token (`withConfirm`); 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
-  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Staged>;
+  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true }>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
-  confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;
   confirmPgpStart(b: { action: ConfirmAction }): Promise<PgpChallenge>;
   confirmPgpFinish(b: { challengeId: string; code: string }): Promise<ConfirmTokenResult>;
   confirmWebAuthnStart(b: { action: ConfirmAction }): Promise<AuthenticationChallenge>;
@@ -589,47 +463,25 @@ export interface AuthApi {
   keyTestWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON }): Promise<{ tested: true }>;
 
   // Login methods of the account
-  /**
-   * Hold model v3: each change below answers `Staged` (202) instead when made from a login with just
-   * a username and password: nothing changed yet; it is a draft to review and submit (`isStaged`).
-   */
-  /**
-   * `PUT /v1/account/password` (Task 10). With `recoveryCode` (owner S-110) the change applies at
-   * once, never staged, and the code is burned (the server answers `recoveryCodeBurned: true`).
-   */
-  setPassword(b: { password: string; recoveryCode?: string } & Token): Promise<Staged | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
-  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Staged>>;
+  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string }>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;
-  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Staged | undefined>;
+  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<void>;
   /** `secret` (base32) and `otpauthUri` are for the authenticator app only: show them, never keep them. */
   addTotpStart(b: Token): Promise<{ challengeId: string; otpauthUri: string; secret: string }>;
-  addTotpFinish(b: { challengeId: string; code: string }): Promise<Staged | undefined>;
-  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Staged>>;
-  cancelRecoverySession(id: string): Promise<void>;
-  /** Hold model v3: `POST /v1/account/recovery-code/reveal`, once, by a full session opened after a recovery-code login. */
+  addTotpFinish(b: { challengeId: string; code: string }): Promise<void>;
+  /** One code at a time: a new one cancels the old one. */
+  newRecoveryCodes(b: Token): Promise<{ codes: string[] }>;
+  /** `POST /v1/account/recovery-code/reveal`, once, by the owner's session opened with or after a recovery-code login. */
   revealRecoveryCode(): Promise<{ code: string }>;
   /** `POST /v1/account/onboarding/end`: closes this session's sign-up window when sign-up ends (review M1). */
   endOnboarding(): Promise<{ ok: true }>;
-  /** Hold model v3: `GET /v1/account/hold`. */
-  holdView(): Promise<HoldView>;
-  /** Hold model v3: `POST /v1/account/hold/changes/submit`, exactly the drafts reviewed (409 `changes-changed` otherwise). */
-  submitHoldChanges(b: { ids: string[] }): Promise<{ status: 'queued'; count: number; takesEffectAt: string }>;
-  /**
-   * Owner G58: `POST /v1/account/hold/changes/approve { ids }`: a strong login approves waiting
-   * changes now, so they apply at once. (The API route is being added on this branch.)
-   */
-  approveHoldChanges(b: { ids: string[] }): Promise<unknown>;
-  /** Hold model v3: `DELETE /v1/account/hold/changes`: cancels every waiting change (and this session's drafts). */
-  cancelHoldChanges(): Promise<void>;
-  /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
-  cancelHoldChange(id: string): Promise<void>;
   /** Lien recovery: `GET /v1/account/liens`, the account's own liens, both ways. */
   listLiens(): Promise<MyLiens>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
-  removeMethod(type: MethodType, id: string, b: Token): Promise<Staged | undefined>;
+  removeMethod(type: MethodType, id: string, b: Token): Promise<void>;
   /**
    * `PUT /v1/account/webauthn/label` (owner 25 Nov security-key report): names one of the account's
    * passkeys or security keys by its credential ID (the registration response's `id`). Answers the
@@ -663,8 +515,7 @@ export interface AuthApi {
   /** W-021: turns one event on or off; 404 `not-found` until an address is proven. */
   setJabberEvent(b: { kind: JabberEventKind; on: boolean }): Promise<JabberEvents>;
 
-  // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
-  // (403 `weak-session`), never during a hold (403 `recovery-hold`).
+  // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner.
   /** `GET /v1/account/chat-keys`: the account's current epoch and its open envelopes, oldest first. */
   listChatKeys(): Promise<{ epoch: number; envelopes: ChatKeyEnvelope[] }>;
   /** `POST /v1/account/chat-keys`: 400 `bad-request` with `{ epoch }` when `epoch` is not the account's current one; 429 `slow-down`. */
@@ -680,26 +531,23 @@ export interface AuthApi {
   decideApproval(id: string, b: ApprovalDecision): Promise<{ outcome: 'approved' | 'blocked' }>;
   getDeviceSettings(): Promise<DeviceSettings>;
   /** Confirm-it's-you for `{ kind: 'set-one-device', on }` (`withConfirm`). */
-  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Staged>;
+  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings>;
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
   /**
    * The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`.
-   * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
-   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (a username and
-   * password; a PGP key login is strong, owner 6 Nov 2026 Q81) nothing is added yet: 202 (staged).
+   * Every wallet is usable at once (owner, 26 Nov 2026: no waits).
    */
-  addWallet(b: WalletDraft & Token): Promise<Wallet | Staged>;
+  addWallet(b: WalletDraft & Token): Promise<Wallet>;
   /**
    * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
    * one `usableFrom`: one wait for the batch, not one each.
    */
-  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Staged>;
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[]>;
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
-  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the wallet stays until it applies. */
-  removeWallet(id: string): Promise<Staged | undefined>;
+  removeWallet(id: string): Promise<void>;
   /**
    * Owner, 17 Nov 2026 (note #6 Q1): makes an open saved wallet the default the trade screen picks
    * first (`PUT /v1/wallets/:id/default`, 204). 409 `wallet-one-time` for a one-time wallet,
@@ -712,8 +560,7 @@ export interface AuthApi {
    * name outside the rule (`cleanWalletLabel`), 404 `not-found` for a wallet not open on the account.
    */
   renameWallet(id: string, label: string): Promise<void>;
-  // Session length (owner, 2 Nov 2026). Full trader sessions only. Never staged (lead reading of
-  // owner p11-26: a hold holds only the security changes made; see routes/account.ts).
+  // Session length (owner, 2 Nov 2026). Full trader sessions only.
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
   setSessionLength(b: { hours: number }): Promise<SessionInfo>;
   /**
@@ -735,20 +582,17 @@ export interface AuthApi {
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
   /**
    * Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once.
-   * Owner p11-21 (S-104): from a login that waits (a username and password) the invite still goes out, and the answer is also
-   * `Staged` (`isStaged`): the member's boxes are a draft that applies 24 h after it is submitted.
    */
   /** Job 1c: with `abilities` (the boxes, in catalogue order) instead of `roles`, confirm `team-invite-abilities` (`teamInviteAbilitiesAction`). */
-  inviteMember(b: ({ displayName: string; roles: TeamRole[] } | { displayName: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string } & Partial<Staged>>;
-  /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
-  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
-  /** Job 1c: a member's boxes, in catalogue order; confirm `team-abilities` (`teamAbilitiesAction`). From a login that waits, 202 `Staged`. */
-  setMemberAbilities(id: string, b: { abilities: string[] } & Token): Promise<TeamMember | Staged>;
+  inviteMember(b: ({ displayName: string; roles: TeamRole[] } | { displayName: string; abilities: string[] }) & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
+  /** Confirm `team-roles` (`teamRolesAction`). */
+  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember>;
+  /** Job 1c: a member's boxes, in catalogue order; confirm `team-abilities` (`teamAbilitiesAction`). */
+  setMemberAbilities(id: string, b: { abilities: string[] } & Token): Promise<TeamMember>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
-  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
-  removeMember(id: string, b: Token): Promise<Staged | undefined>;
-  /** J-20: confirm `team-limits` (`teamLimitsAction`). From a login that waits (a username and password), 202 `Staged`. */
-  setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember | Staged>;
+  removeMember(id: string, b: Token): Promise<void>;
+  /** J-20: confirm `team-limits` (`teamLimitsAction`). */
+  setMemberLimits(id: string, b: { band: TradeBand | null; hours: WorkingHours } & Token): Promise<TeamMember>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -833,19 +677,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   const done = async (p: Promise<unknown>): Promise<void> => {
     await p;
   };
-  /** Nothing, or the `Staged` answer of a change staged for review (hold model v3). */
-  const stagedOrDone = async (p: Promise<unknown>): Promise<Staged | undefined> => {
-    const r = await p;
-    return isStaged(r) ? r : undefined;
-  };
 
   return {
     getTerms: () => get('/v1/terms'),
     getPgpSigningKey: () => get('/v1/pgp/signing-key'),
     nameAvailable: (b) => post('/v1/register/name-check', b),
-    registerPassword: (b) => post('/v1/register/password', b),
-    loginPassword: (b) => post('/v1/login/password', b),
-    loginSecondFactor: (b) => post('/v1/login/second-factor', b),
     pollLoginApproval: (id) => post(`/v1/login/approval/${seg(id)}/poll`),
     cancelLoginApproval: (id) => done(post(`/v1/login/approval/${seg(id)}/cancel`)),
     loginBackup: (b) => post('/v1/login/backup', b),
@@ -860,32 +696,24 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     logout: () => done(post('/v1/logout')),
     setLoginName: (b) => post('/v1/account/login-name', b),
 
-    confirmPassword: (b) => post('/v1/confirm/password', b),
     confirmPgpStart: (b) => post('/v1/confirm/pgp/start', b),
     confirmPgpFinish: (b) => post('/v1/confirm/pgp/finish', b),
     confirmWebAuthnStart: (b) => post('/v1/confirm/webauthn/start', b),
     confirmWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
     keyTestWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
 
-    setPassword: (b) => stagedOrDone(call('PUT', '/v1/account/password', b)),
     addPgpKeyStart: (b) => post('/v1/account/pgp/start', b),
     addPgpKeyFinish: (b) => post('/v1/account/pgp/finish', b),
     addWebAuthnStart: (b) => post('/v1/account/webauthn/start', b),
-    addWebAuthnFinish: (b) => stagedOrDone(post('/v1/account/webauthn/finish', b)),
+    addWebAuthnFinish: (b) => done(post('/v1/account/webauthn/finish', b)),
     addTotpStart: (b) => post('/v1/account/totp/start', b),
-    addTotpFinish: (b) => stagedOrDone(post('/v1/account/totp/finish', b)),
+    addTotpFinish: (b) => done(post('/v1/account/totp/finish', b)),
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
-    cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
     revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
     endOnboarding: () => post('/v1/account/onboarding/end'),
-    holdView: () => get('/v1/account/hold'),
-    submitHoldChanges: (b) => post('/v1/account/hold/changes/submit', b),
-    approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
-    cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
-    cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listLiens: () => get('/v1/account/liens'),
     listMethods: () => get('/v1/account/methods'),
-    removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
+    removeMethod: (type, id, b) => done(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
     renameWebAuthnKey: (b) => call('PUT', '/v1/account/webauthn/label', b),
 
     me: () => get('/v1/account/me'),
@@ -914,7 +742,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallet: (b) => post('/v1/wallets', b),
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
-    removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
+    removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
     setDefaultWallet: async (id) => {
       await call('PUT', `/v1/wallets/${seg(id)}/default`, {});
     },
@@ -931,7 +759,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
     setMemberAbilities: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
-    removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    removeMember: (id, b) => done(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     setMemberLimits: (id, b) => call('PUT', `/v1/team/members/${seg(id)}/limits`, b),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthApiError, MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH, createAuthApi, shouldSendAway } from '../src/index.js';
+import { AuthApiError, createAuthApi } from '../src/index.js';
 
 interface Sent {
   url: string;
@@ -21,7 +21,7 @@ const bodyOf = (s: Sent): unknown => (typeof s.init.body === 'string' ? JSON.par
 
 async function refusal(res: Response): Promise<AuthApiError> {
   const { fetch } = recorder(() => res);
-  const e = await createAuthApi({ fetch }).loginPassword({ loginName: 'alice', password: 'x', deviceLabel: 'Browser' }).catch((x: unknown) => x);
+  const e = await createAuthApi({ fetch }).loginPgpStart({ loginName: 'alice', key: 'KEY' }).catch((x: unknown) => x);
   expect(e).toBeInstanceOf(AuthApiError);
   return e as AuthApiError;
 }
@@ -128,24 +128,22 @@ describe('createAuthApi requests', () => {
     expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
   });
 
-  it('uses PUT for setting the password and the session length, POST for staying logged in', async () => {
+  it('uses PUT for the session length, POST for staying logged in', async () => {
     const info = { lengthHours: 8, choices: [2, 4, 8, 12], expiresAt: '2026-11-02T18:00:00.000Z', canExtend: true, serverNow: '2026-11-02T12:00:00.000Z' };
     const { sent, fetch } = recorder(() => Response.json(info));
     const api = createAuthApi({ fetch });
-    await api.setPassword({ password: 'x' });
     await expect(api.setSessionLength({ hours: 8 })).resolves.toEqual(info);
     await expect(api.extendSession({ confirmToken: 't' })).resolves.toEqual(info);
     // Owner Q73: the extend picks one of the login choices.
     await expect(api.extendSession({ confirmToken: 'u', hours: 12 })).resolves.toEqual(info);
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
-      ['PUT', '/v1/account/password'],
       ['PUT', '/v1/account/session/length'],
       ['POST', '/v1/account/session/extend'],
       ['POST', '/v1/account/session/extend'],
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ hours: 8 });
-    expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 't' });
-    expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 'u', hours: 12 });
+    expect(bodyOf(sent[0]!)).toEqual({ hours: 8 });
+    expect(bodyOf(sent[1]!)).toEqual({ confirmToken: 't' });
+    expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 'u', hours: 12 });
   });
 
   it('sets the idle reminder with PUT (owner Q75): minutes, or null for off', async () => {
@@ -160,10 +158,8 @@ describe('createAuthApi requests', () => {
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
-    const { fetch } = recorder(() => Response.json({ status: 'second-factor', pendingId: 'p', needs: ['totp'] }));
-    await expect(createAuthApi({ fetch }).loginPassword({ loginName: 'a', password: 'b', deviceLabel: 'c' })).resolves.toEqual({
-      status: 'second-factor', pendingId: 'p', needs: ['totp'],
-    });
+    const { fetch } = recorder(() => Response.json({ status: 'ok' }));
+    await expect(createAuthApi({ fetch }).loginBackup({ loginName: 'a', kind: 'recovery-code', code: 'b', deviceLabel: 'c' })).resolves.toEqual({ status: 'ok' });
     const empty = recorder(() => new Response(null, { status: 204 }));
     await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
   });
@@ -172,11 +168,9 @@ describe('createAuthApi requests', () => {
   it('a trader sign-up and a Terms re-acceptance send the version and no signature', async () => {
     const { sent, fetch } = recorder();
     const api = createAuthApi({ fetch });
-    await api.registerPassword({ displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' });
     await api.registerPgpFinish({ challengeId: 'c', code: 'x', deviceLabel: 'B', acceptedTerms: 'v' });
     await api.acceptTerms({ version: 'v' });
     expect(sent.map(bodyOf)).toEqual([
-      { displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' },
       { challengeId: 'c', code: 'x', deviceLabel: 'B', acceptedTerms: 'v' },
       { version: 'v' },
     ]);
@@ -212,12 +206,12 @@ describe('createAuthApi requests', () => {
 
 describe('AuthApiError', () => {
   it('carries the status and code, and the fields the API sent', async () => {
-    const e = await refusal(Response.json({ error: 'password-weak', missing: ['upper', 'symbol'] }, { status: 400 }));
+    const e = await refusal(Response.json({ error: 'key-unreadable', detail: 'Not a key.' }, { status: 400 }));
     expect(e.status).toBe(400);
-    expect(e.code).toBe('password-weak');
-    expect(e.missing).toEqual(['upper', 'symbol']);
+    expect(e.code).toBe('key-unreadable');
+    expect(e.detail).toBe('Not a key.');
     expect(e.name).toBe('AuthApiError');
-    expect(e.message).toBe('password-weak');
+    expect(e.message).toBe('key-unreadable');
   });
 
   it('reads retryAfterSeconds from the body, else from the Retry-After header', async () => {
@@ -246,21 +240,17 @@ describe('AuthApiError', () => {
     expect(await header('9')).toBe(9);
   });
 
-  it('carries detail, holdUntil, version and action', async () => {
+  it('carries detail, version and action', async () => {
     expect((await refusal(Response.json({ error: 'key-expired', detail: 'This key expired.' }, { status: 400 }))).detail).toBe('This key expired.');
-    const hold = await refusal(Response.json({ error: 'recovery-hold', holdUntil: '2026-10-18T12:00:00.000Z' }, { status: 403 }));
-    expect(hold.holdUntil).toBe('2026-10-18T12:00:00.000Z');
     expect((await refusal(Response.json({ error: 'terms-required', version: '2026-10-17' }, { status: 403 }))).version).toBe('2026-10-17');
     expect((await refusal(Response.json({ error: 'confirm-required', action: 'add-wallet' }, { status: 403 }))).action).toBe('add-wallet');
   });
 
   it('drops fields of the wrong type', async () => {
-    const e = await refusal(Response.json({ error: 'password-weak', missing: 'upper', retryAfterSeconds: '5', detail: 7 }, { status: 400 }));
-    expect(e.missing).toBeUndefined();
+    const e = await refusal(Response.json({ error: 'key-unreadable', retryAfterSeconds: '5', detail: 7, version: 3 }, { status: 400 }));
     expect(e.retryAfterSeconds).toBeUndefined();
     expect(e.detail).toBeUndefined();
-    const mixed = await refusal(Response.json({ error: 'password-weak', missing: ['upper', 3] }, { status: 400 }));
-    expect(mixed.missing).toEqual(['upper']);
+    expect(e.version).toBeUndefined();
   });
 
   it('answers internal for a reply that is not an API error (a proxy page, no error code)', async () => {
@@ -269,21 +259,5 @@ describe('AuthApiError', () => {
     expect(html.code).toBe('internal');
     const noCode = await refusal(Response.json({ error: 42 }, { status: 500 }));
     expect(noCode.code).toBe('internal');
-  });
-});
-
-describe('password-login misses (owner, 2026-10-23)', () => {
-  it('reads the server’s per-browser miss count and says when to send the visitor away', async () => {
-    const at = async (misses: unknown) => refusal(Response.json({ error: 'credentials-invalid', misses }, { status: 401 }));
-    expect((await at(3)).misses).toBe(3);
-    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY - 1))).toBe(false);
-    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY))).toBe(true);
-    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY + 5))).toBe(true);
-    for (const junk of ['10', -1, 2.5, null]) expect((await at(junk)).misses).toBeUndefined();
-    expect(shouldSendAway(await refusal(Response.json({ error: 'busy', misses: 50 }, { status: 503 })))).toBe(false);
-    expect(shouldSendAway(new Error('x'))).toBe(false);
-    expect(shouldSendAway(undefined)).toBe(false);
-    expect(MISSES_BEFORE_SENDING_AWAY).toBe(10);
-    expect(PASSWORD_LOGIN_MISMATCH).toBe("That login name and password don't match");
   });
 });
