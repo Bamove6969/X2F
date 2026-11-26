@@ -259,6 +259,11 @@ export function StaffOverview() {
           <Link className="x2f-link" to="/overview/revenue">
             Revenue
           </Link>
+          {' · '}
+          {/* Owner 26 Nov 2026: every trade not deleted yet, by status (TradeStatus). COPY-UNSIGNED */}
+          <Link className="x2f-link" to="/overview/trades">
+            Trade status
+          </Link>
         </p>
       </section>
 

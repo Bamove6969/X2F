@@ -212,3 +212,29 @@ export async function applyLienVoid(client: pg.PoolClient, id: string, now: Date
   if (changed) await appendLog(client, { at: now, actor: system, tradeCode: logCode ?? (r.rows[0] as { from_code: string }).from_code, action: 'lien.voided', detail: { lienId: id } });
   return changed;
 }
+
+/**
+ * Owner 26 Nov 2026: the owner writes lien `id` off as uncollectible (tap `lien-uncollectible`,
+ * consumed by the caller in this transaction). It ends like a void: the holds of the debtor's
+ * trades whose terms are not signed yet are released, the lien is lifted (no more recovery, no more
+ * blocking) and its trade gets its delete date back (@x2f/trade retention.ts: 90 days from now).
+ * Any ban stays as it is. False when the lien is not active or suspended.
+ */
+export async function applyLienUncollectible(client: pg.PoolClient, id: string, by: string, tapId: string, now: Date): Promise<string | null> {
+  const released = await client.query<{ trade_code: string; amount_atomic: string }>(
+    `update lien_recovery_holds h set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null
+      where h.lien_id = $1 and h.status = 'open' and not exists (select 1 from trade_attestations a where a.code = h.trade_code)
+      returning h.trade_code, h.amount_atomic::text`,
+    [id, now],
+  );
+  const r = await client.query<{ from_code: string }>(
+    `update liens set status = 'uncollectible', changed_at = $2, lifted_at = $2, written_off_by = $3, written_off_tap = $4
+      where id = $1 and status in ('active', 'suspended') returning from_code`,
+    [id, now, by, tapId],
+  );
+  const system = { kind: 'system' as const };
+  for (const h of released.rows) {
+    await appendLog(client, { at: now, actor: system, tradeCode: h.trade_code, action: 'lien.recovery-released', detail: { lienId: id, amountAtomic: h.amount_atomic } });
+  }
+  return r.rows[0]?.from_code ?? null;
+}

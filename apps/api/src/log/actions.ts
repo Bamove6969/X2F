@@ -141,6 +141,8 @@ export const LOG_ACTIONS = {
   'lien.suspended': { lienId: 'id' },
   'lien.reactivated': { lienId: 'id' },
   'lien.voided': { lienId: 'id' },
+  // Owner 26 Nov 2026: written off by the owner.
+  'lien.uncollectible': { lienId: 'id' },
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md). No reason text: it stays in
@@ -177,7 +179,7 @@ export const LOG_ACTIONS = {
   'staff.security-reset-finished': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
-  'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool' },
+  'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool', ban: 'bool', liftBan: 'bool' },
   // Owner 26 Nov 2026: one person's share of the fee, basis points of the fee (null = the role's default).
   'staff.pay-set': { staffId: 'uuid', from: 'setting', to: 'setting' },
   'staff.session-ended-hours': { staffId: 'uuid' },

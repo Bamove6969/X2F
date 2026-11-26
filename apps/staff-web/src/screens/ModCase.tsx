@@ -216,7 +216,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           <EscrowCard c={c} buyer={buyer} seller={seller} />
           {c.mayWork ? <FreezeCard c={c} buyer={buyer} seller={seller} onChange={(freezes) => setC({ ...c, freezes })} /> : null}
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
-          {can(role, 'accounts.ban') || can(role, 'accounts.freeze') ? <AccountActionsCard code={c.code} role={role} /> : null}
+          {can(role, 'accounts.freeze') ? <AccountActionsCard code={c.code} role={role} /> : null}
           <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} reProposing={reProposing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
         </div>
       </div>

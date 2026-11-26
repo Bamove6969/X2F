@@ -536,6 +536,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'banner-publish':
       exactKeys(r, ['kind', 'bannerKind', 'textSha256']);
       return { kind: 'banner-publish', bannerKind: oneOf(r, 'bannerKind', ['info', 'warning'] as const), textSha256: match(r, 'textSha256', HEX64) };
+    case 'lien-uncollectible':
+      exactKeys(r, ['kind', 'lienId']);
+      return { kind: 'lien-uncollectible', lienId: match(r, 'lienId', UUID).toLowerCase() };
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
       // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
@@ -587,6 +590,8 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'account-limit':
     case 'lien-rate':
       return 'rulings.approve';
+    case 'lien-uncollectible':
+      return 'owner';
     case 'emergency-stop':
     case 'resume-trading':
     // Review p4t22 m2: the owner's publishing acts.
@@ -608,8 +613,9 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'starter-limits':
       return 'settings.write';
     case 'ban-account':
-    case 'lift-ban':
       return 'accounts.ban';
+    case 'lift-ban':
+      return 'accounts.unban';
     // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
     case 'reset-staff-security':
     case 'add-owner-key':

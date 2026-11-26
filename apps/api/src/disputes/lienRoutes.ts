@@ -9,6 +9,7 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, type LienFiguresRow } from './recovery.js';
+import { applyLienUncollectible } from './lien.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
 
@@ -75,6 +76,26 @@ export function lienRoutes(app: FastifyInstance): void {
         status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at?.toISOString() ?? null,
       })),
     };
+  });
+
+  // Owner 26 Nov 2026: the owner writes a lien off as uncollectible, with a tap bound to the lien.
+  const owner = { preHandler: requireStaff('settings.write'), config: { perm: 'settings.write' as const } };
+  app.post('/staff/v1/liens/:id/uncollectible', owner, async (req) => {
+    const id = param(req, 'id');
+    const b = bodyOf(req, ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request', { field: 'tapId' });
+    const me = actorOf(req);
+    const { db, clock } = req.server.deps;
+    return withTx(db, async (c) => {
+      const now = clock();
+      const lien = (await c.query<{ status: string }>('select status from liens where id = $1 for update', [id])).rows[0];
+      if (!lien) throw new ApiError(404, 'not-found');
+      if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      const tap = await consumeKeyTap(c, b.tapId as string, req.staff.accountId, { kind: 'lien-uncollectible', lienId: id }, now, { sessionId: req.auth.sessionId });
+      const code = await applyLienUncollectible(c, id, req.staff.accountId, tap.id, now);
+      await appendLog(c, { at: now, actor: me, tradeCode: code, action: 'lien.uncollectible', detail: { lienId: id } });
+      return { status: 'uncollectible' };
+    });
   });
 
   app.post('/staff/v1/liens/:id/rate', handle, async (req, reply) => {
