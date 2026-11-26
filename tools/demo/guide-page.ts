@@ -34,6 +34,8 @@ export interface SeedSummary {
   trades: Array<{ code: string; buyer: string; seller: string; offer: string; fiat: string; state: string; at: string }>;
   /** demo_ana's team members (seeded through the real invite and join). */
   team?: Array<{ shown: string; login: string; roles: string[] }>;
+  /** Liens the seed placed (demo-only rows; seed.ts). */
+  liens?: Array<{ id: string; debtor: string; creditor: string; code: string; amountAtomic: string }>;
   failures: string[];
 }
 

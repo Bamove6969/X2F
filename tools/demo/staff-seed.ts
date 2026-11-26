@@ -13,7 +13,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { newsPublishIntent, type KeyTapIntent } from '@x2f/staff';
+import { evidenceSha256, newsPublishIntent, type KeyTapIntent } from '@x2f/staff';
+import pg from 'pg';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
 import { authenticate, newKey, register, registerPasskey, type CaData, type KeyData } from '../regtest/e2e/softKey.js';
 import { newPgp, pgpCode, StaffClient } from '../regtest/e2e/staffClient.js';
@@ -154,6 +155,113 @@ if (senior && disputed[0]) {
   }
 }
 
+// ── staff pay (owner 26 Nov 2026, PR #23): the owner's pay settings and one person's own share ─
+// Each with the owner's tap, through the real routes (Settings, Staff pay).
+const PAY = {
+  modDisputeUsdCents: 500, // a moderator's minimum per dispute: $5
+  seniorDisputeUsdCents: 800, // a senior moderator's minimum: $8
+  seniorLargeTradeBp: 1000, // 10% of the fee on a large trade
+  largeTradeThresholdUsd: 1000,
+  modFeeBp: 3000, // 30% of the 1% fee
+  seniorFeeBp: 4000, // 40% of the 1% fee
+  modFlatUsdCents: 200, // $2 flat on top
+  seniorFlatUsdCents: 300, // $3 flat on top
+};
+const paid: string[] = [];
+try {
+  const tapId = await tap(owner, { kind: 'pay-settings', ...PAY });
+  await owner.client.ok('PUT', '/staff/v1/pay/settings', { ...PAY, tapId });
+  paid.push('pay settings: moderator 30% of the fee + $2 (min $5), senior 40% + $3 (min $8)');
+  const members = (await owner.client.ok<{ members: Array<{ staffId: string; displayName: string; role: string }> }>('GET', '/staff/v1/pay/staff')).members;
+  const mod = members.find((m) => m.role === 'mod');
+  if (mod) {
+    const feeBp = 5000;
+    const t = await tap(owner, { kind: 'staff-pay', accountId: mod.staffId, feeBp });
+    await owner.client.ok('PUT', `/staff/v1/pay/staff/${mod.staffId}`, { feeBp, tapId: t });
+    paid.push(`${mod.displayName}'s own share: 50% of the fee`);
+  }
+  console.log('demo staff seed: staff pay set');
+} catch (e) {
+  failures.push(`staff pay: ${(e as Error).message}`);
+}
+
+// ── rulings, so the pay pages have earned items (pay accrues when round 1 is published) ─────
+const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+type Outcome = 'release-to-buyer' | 'refund-to-seller';
+/** One ruling's propose or approve tap over exactly what the route stores (disputes/rulings.ts). */
+function rulingTap(step: 'propose' | 'approve', a: { rulingId: string; code: string; round: 1 | 2; outcome: Outcome; amountAtomic: string; reason: string; evidence: string[] }): KeyTapIntent {
+  return {
+    kind: 'ruling', step, rulingId: a.rulingId, code: a.code, round: a.round, outcome: a.outcome, accountAction: { kind: 'none' },
+    amountAtomic: a.amountAtomic, reasonSha256: sha(a.reason), evidenceSha256: evidenceSha256(a.evidence), round1Id: null,
+  };
+}
+async function propose(p: Staffer, code: string, outcome: Outcome, reason: string, evidence: string[]): Promise<{ rulingId: string; status: string; round: 1 | 2; amountAtomic: string }> {
+  const v = await p.client.ok<{ round: 1 | 2; escrow: { amountAtomic: string } }>('GET', `/staff/v1/disputes/${code}`);
+  const a = { rulingId: randomUUID(), code, round: v.round, outcome, amountAtomic: v.escrow.amountAtomic, reason, evidence };
+  const tapId = await tap(p, rulingTap('propose', a));
+  await p.client.ok('POST', `/staff/v1/disputes/${code}/rulings`, { rulingId: a.rulingId, outcome, accountAction: { kind: 'none' }, reason, evidence, tapId });
+  const after = await p.client.ok<{ status: string }>('GET', `/staff/v1/disputes/${code}`);
+  return { rulingId: a.rulingId, status: after.status, round: v.round, amountAtomic: v.escrow.amountAtomic };
+}
+const ruled: string[] = [];
+const mods = staff.filter((p) => p.role === 'mod');
+// The senior moderator rules the case they took (a USD trade under the limit: one person decides).
+if (senior && taken[0]) {
+  try {
+    const r = await propose(senior, taken[0], 'refund-to-seller', 'The buyer stopped answering after the escrow was secured and never showed any payment, so the XMR goes back to the seller.', ['Trade chat: no reply from the buyer after the escrow was secured.']);
+    ruled.push(`${taken[0]}: refund to the seller (${senior.displayName}, ${r.status})`);
+    console.log(`demo staff seed: ${senior.displayName} ruled ${taken[0]} (${r.status})`);
+  } catch (e) {
+    failures.push(`ruling ${taken[0]}: ${(e as Error).message}`);
+  }
+}
+// A moderator takes the other case and proposes; a non-USD trade needs a second person, so the
+// senior moderator approves it.
+const other = disputed.find((c) => !taken.includes(c));
+if (mods[0] && senior && other) {
+  try {
+    await mods[0].client.ok('POST', `/staff/v1/disputes/${other}/take`, {});
+    taken.push(other);
+    const reason = 'The buyer showed a SEPA Instant payment from an account in their own name for the full amount, so the XMR is released to the buyer.';
+    const evidence = ['Bank screenshot: SEPA Instant for the trade total, sender name matches the buyer.'];
+    const r = await propose(mods[0], other, 'release-to-buyer', reason, evidence);
+    if (r.status === 'awaiting-approval') {
+      const t = await tap(senior, rulingTap('approve', { rulingId: r.rulingId, code: other, round: r.round, outcome: 'release-to-buyer', amountAtomic: r.amountAtomic, reason, evidence }));
+      await senior.client.ok('POST', `/staff/v1/disputes/${other}/rulings/${r.rulingId}/approve`, { tapId: t });
+    }
+    ruled.push(`${other}: release to the buyer (${mods[0].displayName}, approved by ${senior.displayName})`);
+    console.log(`demo staff seed: ${mods[0].displayName} ruled ${other}, ${senior.displayName} approved`);
+  } catch (e) {
+    failures.push(`ruling ${other}: ${(e as Error).message}`);
+  }
+}
+
+// ── past shifts (DEMO ONLY): a few clocked hours over the last week for each moderator ──────
+// A shift is written by the staff login itself (migration 420's session trigger), so the seed's
+// logins make today's; earlier ones are written straight into the demo's own throwaway database
+// (no session behind them), so Work and hours and the pay pages have a week to show.
+if (process.env.DATABASE_URL) {
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await db.connect();
+    const day = 86_400_000;
+    for (const [i, p] of staff.filter((s) => s.role !== 'owner').entries()) {
+      const id = (await db.query<{ id: string }>('select id::text from accounts where display_name = $1', [p.displayName])).rows[0]?.id;
+      if (!id) continue;
+      for (const [d, hours, ended] of [[6, 3.5, 'clock-out'], [4, 5, 'clock-out'], [2, 2.25, 'auto-logout'], [1, 4 + i, 'clock-out']] as const) {
+        const start = new Date(Date.now() - d * day - (9 + i) * 3_600_000);
+        const end = new Date(start.getTime() + hours * 3_600_000);
+        await db.query('insert into staff_shifts (session_id, staff_id, clocked_in_at, ended_at, ended) values ($1, $2, $3, $4, $5)', [randomUUID(), id, start, end, ended]);
+      }
+    }
+    console.log('demo staff seed: past shifts written');
+  } catch (e) {
+    failures.push(`shifts: ${(e as Error).message}`);
+  } finally {
+    await db.end().catch(() => undefined);
+  }
+}
+
 // Logged out again: the seed holds no staff session.
 for (const p of staff) await p.client.call('POST', '/staff/v1/logout');
 for (const f of failures) console.log(`demo staff seed: refused: ${f}`);
@@ -166,6 +274,8 @@ const summary: StaffSummary = {
   disputes: disputed,
   taken,
   news: NEWS.title,
+  pay: paid,
+  ruled,
   failures,
 };
 writeFileSync(STAFF_SUMMARY_FILE, JSON.stringify(summary, null, 2));
@@ -175,7 +285,9 @@ appendFileSync(join(DEMO_DIR, 'logins.txt'), [
   `Staff (the staff app, its own origin: ${ORIGIN}):`,
   `  Log in at ${ORIGIN}/__demo/staff (one tap: the demo holds each account's throwaway security key and PGP key and does the real two-step staff login).`,
   ...STAFF_CAST.filter((p) => staff.some((s) => s.loginName === p.loginName)).map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} ${role(p.role)}: ${p.sees}`),
-  ...(disputed.length > 0 ? [`  Open disputes in the queue: ${disputed.join(', ')}${taken.length > 0 ? ` (${taken.join(', ')} taken by the senior moderator)` : ''}`] : []),
+  ...(disputed.length > 0 ? [`  Disputes in the queue: ${disputed.join(', ')}${taken.length > 0 ? ` (${taken.join(', ')} taken)` : ''}`] : []),
+  ...ruled.map((r) => `  Ruled: ${r}`),
+  ...paid.map((p) => `  Staff pay: ${p}`),
   '',
 ].join('\n'));
 process.exit(0);

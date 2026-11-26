@@ -2,6 +2,7 @@
  * DEMO ONLY: seeds the demo traders and offers through the real API (sign-up with a password,
  * first payout wallet, offers), exactly as a browser would. Run by demo.ts after the stack is up.
  */
+import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEMO_DIR, DEMO_PASSWORD, ENV_FILE } from './config.js';
@@ -18,6 +19,7 @@ import { NEW_NAME_MIN, checkDisplayName, checkLoginName } from '../../packages/a
 import { loginTag } from '../../apps/api/src/accounts.js';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { applyEvent } from '../../apps/api/src/trades/store.js';
+import { appendLog } from '../../apps/api/src/log/append.js';
 import { newPgp, pgpCode } from '../regtest/e2e/staffClient.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
@@ -236,7 +238,26 @@ async function disputeTrade(code: string, seller: DemoClient, reason: 'silent' |
 }
 const tradePool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 
-async function seedTrade(takerLogin: string, posterLogin: string, label: string, methodId: string, currency: string, fiatWhole: number, then: 'open' | 'cancel' | { reason: 'silent' | 'other'; note: string }): Promise<void> {
+/**
+ * DEMO ONLY (a Completed trade with ratings): the same system events as `disputeTrade` secure the
+ * escrow, then the buyer taps "I've paid" and the seller "Release" through the real API, the
+ * moderation service's report of the payout is the system event `settled` (a throwaway tx hash; no
+ * XMR moves), and both traders leave a review through the real API, as the review sheet does.
+ */
+async function releaseTrade(code: string, buyer: DemoClient, seller: DemoClient): Promise<void> {
+  const deps = { db: tradePool, clock: () => new Date() };
+  const t = await applyEvent(deps, code, { type: 'setup-done', escrowAddress: await throwawayAddress() }, 'system');
+  const funds = t.sellerFundsAtomic;
+  await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: 0n, confirmations: 1 }, 'system');
+  const secured = await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system');
+  await buyer.ok('POST', `/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: secured.fiatCents.toString() });
+  await seller.ok('POST', `/v1/trades/${code}/events`, { type: 'release-started' });
+  await applyEvent(deps, code, { type: 'settled', kind: 'release', txHash: randomBytes(32).toString('hex') }, 'system');
+  await buyer.ok('POST', `/v1/trades/${code}/review`, { neutral: false, stars: 5, phrases: ['Fast release', 'Would trade again'], note: 'Smooth trade, released right after my payment.' });
+  await seller.ok('POST', `/v1/trades/${code}/review`, { neutral: false, stars: 5, phrases: ['Fast payment', 'Friendly'] });
+}
+
+async function seedTrade(takerLogin: string, posterLogin: string, label: string, methodId: string, currency: string, fiatWhole: number, then: 'open' | 'cancel' | 'release' | { reason: 'silent' | 'other'; note: string }): Promise<void> {
   const cancel = then === 'cancel';
   const what = `${takerLogin} takes ${posterLogin} ${label}`;
   // The taker buys: the poster's sell offer.
@@ -262,7 +283,8 @@ async function seedTrade(takerLogin: string, posterLogin: string, label: string,
     const code = (res.body as { code: string }).code;
     if (cancel) await c.ok('POST', `/v1/trades/${code}/events`, { type: 'buyer-cancel' });
     if (typeof then === 'object') await disputeTrade(code, clients.get(posterLogin)!, then.reason, then.note);
-    const state = cancel ? 'cancelled' : typeof then === 'object' ? 'disputed' : 'setup';
+    if (then === 'release') await releaseTrade(code, c, clients.get(posterLogin)!);
+    const state = cancel ? 'cancelled' : typeof then === 'object' ? 'disputed' : then === 'release' ? 'released' : 'setup';
     trades.push({ code, buyer: takerLogin, seller: posterLogin, offer: `${label} ${fiatWhole}`, fiat: `${fiatWhole} ${currency}`, state, at: new Date().toISOString() });
     console.log(`demo seed: trade ${code} (${what}, ${state})`);
   } catch (e) {
@@ -275,6 +297,46 @@ await seedTrade('lowtide-login', 'satoshi-login', 'CASH_APP USD', 'CASH_APP', 'U
 // Two open disputes for the staff panel's queue (staff-seed.ts has the senior moderator take one).
 await seedTrade('nightowl-login', 'satoshi-login', 'ZELLE USD', 'ZELLE', 'USD', 60, { reason: 'silent', note: 'The buyer stopped answering after the escrow was secured.' });
 await seedTrade('mira-login', 'lowtide-login', 'SEPA_INSTANT EUR', 'SEPA_INSTANT', 'EUR', 45, { reason: 'other', note: 'The buyer asked me to send the euros to a different name than on the account.' });
+// A released trade with both reviews (Completed, ratings on both profiles).
+await seedTrade('kettle-login', 'nightowl-login', 'VENMO USD', 'VENMO', 'USD', 50, 'release');
+
+/**
+ * DEMO ONLY (the lien screens): a lien as a round-1 restitution ruling places it (disputes/lien.ts):
+ * the seller of the cancelled trade above owes its buyer that trade's XMR. Placing one for real
+ * needs a dispute opened after a refund and a published ruling, which needs escrow keys a browser
+ * holds, so the seed writes the row straight into the demo's own throwaway database, with the
+ * system's `lien.placed` log entry (appendLog, as lien.ts writes it). Liens stay switched off
+ * (site_flags.liens_enabled), as the demo ships, so no trade of the debtor's is changed by it;
+ * Settings, Liens of both accounts shows it.
+ */
+interface SeededLien { id: string; debtor: string; creditor: string; code: string; amountAtomic: string }
+const liens: SeededLien[] = [];
+{
+  const src = trades.find((t) => t.state === 'cancelled');
+  const client = await tradePool.connect();
+  try {
+    if (!src) throw new Error('no cancelled trade to name');
+    await client.query('begin');
+    const now = new Date();
+    const r = await client.query<{ id: string; amount: string; debtor: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at)
+       select t.seller_account_id, t.buyer_account_id, t.amount_atomic, 0, t.code, 1, 1, 'restitution', 'active', $2, $2 from trades t where t.code = $1
+       returning id::text, amount_atomic::text as amount, debtor_account_id::text as debtor`,
+      [src.code, now],
+    );
+    const l = r.rows[0];
+    if (!l) throw new Error(`trade ${src.code} not found`);
+    await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: src.code, action: 'lien.placed', detail: { lienId: l.id, accountId: l.debtor, amountAtomic: l.amount, cause: 'restitution' } });
+    await client.query('commit');
+    liens.push({ id: l.id, debtor: src.seller, creditor: src.buyer, code: src.code, amountAtomic: l.amount });
+    console.log(`demo seed: lien ${l.id} (${src.seller} owes ${src.buyer}, from ${src.code})`);
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    failures.push(`lien: ${(e as Error).message}`);
+  } finally {
+    client.release();
+  }
+}
 await tradePool.end();
 
 /**
@@ -341,6 +403,8 @@ const logins = [
   ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
   '',
   ...(team.length > 0 ? [`demo_ana's team (Settings, Team on ana-demo): ${team.map((m) => `${m.shown} (${m.roles.join(', ')})`).join(', ')}`] : []),
+  ...trades.filter((t) => t.state === 'released').map((t) => `Completed and rated: ${t.code} (${t.buyer} bought from ${t.seller}, 5 stars both ways)`),
+  ...liens.map((l) => `Lien (demo row): ${l.debtor} owes ${l.creditor}, from ${l.code} (Settings, Liens on either account)`),
   ...(trades.some((t) => t.state === 'disputed') ? [`Open disputes (the staff queue): ${trades.filter((t) => t.state === 'disputed').map((t) => `${t.code} (${t.buyer} buys from ${t.seller})`).join(', ')}`] : []),
 ];
 writeFileSync(TOTP_FILE, JSON.stringify(totp, null, 2), { mode: 0o600 });
@@ -350,6 +414,7 @@ writeFileSync(SEED_SUMMARY_FILE, JSON.stringify({
   cast: CAST.map((p) => ({ login: p.loginName, shown: p.displayName, offers: p.offers.map(offerLabel) })),
   trades,
   team,
+  liens,
   failures,
 }, null, 2));
 // The accounts the gateway's door lets in from a fresh browser (door.ts).

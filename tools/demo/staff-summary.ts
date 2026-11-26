@@ -14,6 +14,10 @@ export interface StaffSummary {
   /** The ones the senior moderator took. */
   taken: string[];
   news: string;
+  /** Staff pay the seed set (Settings, Staff pay). */
+  pay?: string[];
+  /** Rulings the seed made (pay is earned when round 1 is published). */
+  ruled?: string[];
   failures: string[];
 }
 

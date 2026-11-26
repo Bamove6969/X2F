@@ -261,7 +261,7 @@ async function main(): Promise<void> {
       env: {
         ...process.env, ...demo, MONERO_DAEMON_URI: MONEROD_RPC,
         DEMO_STAFF_API: `http://${HOST}:${PORTS.staff}`, DEMO_STAFF_ORIGIN: o.staff, DEMO_STAFF_RP_ID: o.staffRpId,
-        DEMO_API_LOG: join(LOG_DIR, 'api.log'), DEMO_STAFF_CA: staffCaFile,
+        DEMO_API_LOG: join(LOG_DIR, 'api.log'), DEMO_STAFF_CA: staffCaFile, DATABASE_URL: pgUrl('x2f'),
       },
     });
   } catch {

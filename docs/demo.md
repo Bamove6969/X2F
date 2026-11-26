@@ -120,6 +120,27 @@ events the moderation service's watcher would report (`setup-done`, `chain`; thr
 store, on the demo's throwaway database, with a throwaway escrow address that no wallet watches),
 and the seller then opens the dispute through the real API. No XMR moves.
 
+**A completed, rated trade.** `kettle-login` buys from `nightowl-login` (Venmo, USD 50): the same
+system events secure the escrow, the buyer's "I've paid" and the seller's "Release" go through the
+real API, the payout is the system event `settled` (a throwaway tx hash), and both leave a 5-star
+review through the real API. It is on both accounts' Completed and on both profiles.
+
+**A lien (demo row).** `mira-login` (the seller of the cancelled trade above) owes `lowtide-login`
+that trade's XMR, as a round-1 restitution ruling would place it. A real lien needs a dispute
+opened after a refund and a published ruling, so the seed writes this one row straight into the
+demo's throwaway database with its `lien.placed` log entry. Liens stay switched off
+(`site_flags.liens_enabled`), so nothing recovers from mira's trades; it shows on Settings, Liens of
+both accounts.
+
+**Staff pay and rulings.** The owner sets the pay settings with a tap (moderator 30% of the 1% fee
+plus $2, minimum $5; senior moderator 40% plus $3, minimum $8; 10% of the fee on trades of $1,000 or
+more) and gives the first moderator their own share (50%). The senior moderator rules the case they
+took (refund to the seller; one person decides a USD trade under the limit); the first moderator
+takes the euro case and proposes release to the buyer, which the senior moderator approves (a
+non-USD trade needs a second person). Pay is earned when round 1 is published, so Staff pay owed and
+each person's Work and hours have items. Each moderator also has four past shifts over the last week
+(written straight into the demo database; a real shift is the staff login itself).
+
 **demo_ana's team.** `ana-demo` has a team of two members, invited and joined through the real
 routes: `ana_desk` (Trades) and `ana_nights` (Offers). An invite needs a strong session and a
 confirm, so the seed logs `ana-demo` in again with password and authenticator code and confirms
