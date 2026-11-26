@@ -160,6 +160,8 @@ describe('tapChallenge', () => {
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       { kind: 'ban-account', accountId: 'a1', banId: 'b1', banKind: 'site', ruleId: 'abuse', until: null },
       { kind: 'lift-ban', accountId: 'a1', banId: 'b1' },
+      // D-059: lifting a compromised report's lock, bound to the account and the report.
+      { kind: 'unlock-account', accountId: 'a1', ticketId: 't1' },
       ruling,
       { ...ruling, outcome: 'seller-sends-xmr' },
     ].map((i) => stampIssuedAt(i as KeyTapIntent, AT));

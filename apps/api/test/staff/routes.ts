@@ -165,6 +165,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/tickets/:id/messages', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   { method: 'POST', url: '/staff/v1/tickets/:id/close', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   { method: 'POST', url: '/staff/v1/tickets/:id/release', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  // D-059: "My account has been compromised" reports (accounts.freeze: senior moderators and the owner).
+  // The sample id names no report: an allowed caller gets 404.
+  { method: 'GET', url: '/staff/v1/compromised', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'GET', url: '/staff/v1/compromised/:id', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/compromised/:id/unlock', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  { method: 'POST', url: '/staff/v1/compromised/:id/close', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },

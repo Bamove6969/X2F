@@ -5,6 +5,9 @@ export { newTradeCode, normalizeTradeCode } from './tradeCode.js';
 export { MAX_NETWORK_FEE, X2F_FEE_BPS, feeFor, feeSplitLayout, networkFeeShares, wallet2PayOrder } from './fees.js';
 export { FEEDBACK_FORM_DAILY } from './feedback.js';
 export {
+  COMPROMISED_METHODS,
+  compromisedTicketLabel,
+  type CompromisedMethod,
   TICKET_BODY_MAX,
   TICKET_CATEGORIES,
   TICKET_KEEP_DAYS,

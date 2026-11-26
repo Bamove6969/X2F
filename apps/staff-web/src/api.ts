@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, Perm, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
+import type { CompromisedMethod, GrantablePerm, KeyTapIntent, LoginHours, NavItem, Perm, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -268,6 +268,51 @@ export const takeTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/t
 export const replyToTicket = (id: string, body: string) => staffApi<TicketCase>(ticketUrl(id, '/messages'), { method: 'POST', body: { body } });
 export const closeStaffTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/close'), { method: 'POST', body: {} });
 export const releaseTicket = (id: string) => staffApi<{ released: true }>(ticketUrl(id, '/release'), { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
+// "My account has been compromised" reports (owner D-059; J-14 ported; perm accounts.freeze: senior
+// moderators and the owner). API: apps/api/src/tickets/compromisedRoutes.ts. The list carries no
+// comment; opening a report is written to the activity log before its comment is read.
+
+export interface CompromisedItem {
+  id: string;
+  /** The number the sender was shown (CT-<number>). */
+  number: number;
+  status: 'open' | 'closed';
+  methodsLeft: CompromisedMethod[];
+  createdAt: string;
+  closedAt: string | null;
+  /** Whether the typed name matched a lockable account. */
+  matched: boolean;
+  /** The matched account's public name; null for no match or a team member's login. */
+  displayName: string | null;
+  locked: boolean;
+}
+
+export interface CompromisedCase {
+  id: string;
+  number: number;
+  status: 'open' | 'closed';
+  methodsLeft: CompromisedMethod[];
+  createdAt: string;
+  closedAt: string | null;
+  comment: string | null;
+  account: {
+    id: string;
+    displayName: string | null;
+    kind: string;
+    team: string | null;
+    createdAt: string;
+    lockedAt: string | null;
+    openTrades: Array<{ code: string; state: string; side: 'seller' | 'buyer'; paused: boolean }>;
+  } | null;
+}
+
+const reportUrl = (id: string, tail = '') => `/staff/v1/compromised/${encodeURIComponent(id)}${tail}`;
+export const compromisedReports = (status: 'open' | 'closed' = 'open') => staffApi<{ items: CompromisedItem[] }>(`/staff/v1/compromised?status=${status}`);
+export const compromisedReport = (id: string) => staffApi<CompromisedCase>(reportUrl(id));
+export const unlockAccount = (id: string, tapId: string) => staffApi<{ status: 'unlocked' }>(reportUrl(id, '/unlock'), { method: 'POST', body: { tapId } });
+export const closeCompromised = (id: string) => staffApi<Omit<CompromisedCase, 'comment' | 'account'>>(reportUrl(id, '/close'), { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)

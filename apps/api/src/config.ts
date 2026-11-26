@@ -34,6 +34,13 @@ export interface Config {
   /** Keys of the login-name tag (HMAC-SHA-256, FU-D): the only form a login name is stored in; `X2F_LOGIN_NAME_KEYS`. */
   loginNameKeys: Keyring;
   /**
+   * J-14 review J6 (ported): keys that seal support-ticket text at rest (`ticket_messages.body_sealed`:
+   * every message of a ticket, staff replies and a compromised report's comment), `X2F_TICKET_KEYS`,
+   * env or file, like the other rings (tickets/store.ts). Required: tickets are always on. Format-0
+   * blobs from before migration 861 open under `subkey('ticket-body')` until `rewrap-tickets` moves them.
+   */
+  ticketKeys: Keyring;
+  /**
    * `X2F_LEGACY_SECRETS` (`on` by default, or `off`): whether values stored before FU-C are still
    * accepted: unpeppered password hashes, SHA-256 recovery codes and format-0 TOTP blobs. Turned off
    * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
@@ -285,6 +292,7 @@ export function loadConfig(env: Env): Config {
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
   const loginNameKeys = parseKeyring('X2F_LOGIN_NAME_KEYS', ringSource(env, 'X2F_LOGIN_NAME_KEYS'));
+  const ticketKeys = parseKeyring('X2F_TICKET_KEYS', ringSource(env, 'X2F_TICKET_KEYS'));
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
@@ -299,7 +307,7 @@ export function loadConfig(env: Env): Config {
   assertSeparate(serverKey, [
     ['X2F_TRAINING_ID_KEY', { current: 1, keys: new Map([[1, trainingIdKey]]) }],
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
-    ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
+    ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ['X2F_TICKET_KEYS', ticketKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
   ]);
 
   // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
@@ -323,7 +331,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet, payrollWallet,
+    loginNameKeys, ticketKeys, legacySecrets, deviceBoundSessions, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp, trainingIdKey, feeWallet, payrollWallet,
   };
 }
 
@@ -378,7 +386,7 @@ function parseXmpp(env: Env): XmppConfig | null {
  * `login-seal` seals the login name of a sign-up waiting in its challenge (FU-D, `sealNames`).
  * `terms-signature` seals the signature kept with an account (`sealTermsSignature`).
  * `pay-quote` signs a staff clock-out sheet's quote (Plan 4 Task 33, security review S2).
- * `ticket-body` seals each support-ticket message at rest (Plan 4 Task 30, tickets/store.ts).
+ * `ticket-body` opened support-ticket messages sealed before migration 861 (format 0; new ones are under X2F_TICKET_KEYS, tickets/store.ts).
  */
 export function subkey(
   config: Config,

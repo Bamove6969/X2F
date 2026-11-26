@@ -233,6 +233,11 @@ function sentence(
     case 'news.deleted': return 'Deleted a news post';
     case 'ticket.replied': return 'Replied to a support ticket';
     case 'ticket.closed': return 'Closed a support ticket';
+    // COPY-UNSIGNED (D-059: the "My account has been compromised" lockout).
+    case 'account.locked': return 'Locked an account on a "my account was compromised" report';
+    case 'account.unlocked': return 'Unlocked an account after a "my account was compromised" report';
+    case 'account.report-viewed': return 'Read a "my account was compromised" report';
+    case 'account.report-closed': return 'Closed a "my account was compromised" report';
     case 'training.copy-saved': return 'Saved a training case';
     case 'feedback.form-opened': return 'Opened the feedback messages';
     case 'log.checkpoint': return 'Activity log checkpoint';

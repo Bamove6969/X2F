@@ -94,6 +94,9 @@ export type KeyTapIntent =
   // kind, its rule and its end (null = lifetime); and lifting one.
   | { kind: 'ban-account'; accountId: string; banId: string; banKind: 'trade' | 'site'; ruleId: string; until: string | null; issuedAt?: string }
   | { kind: 'lift-ban'; accountId: string; banId: string; issuedAt?: string }
+  // D-059 (J-14, ported): lifting the lock a "My account has been compromised" report put on an
+  // account (perm accounts.freeze: a senior moderator or the owner), bound to the account and the report.
+  | { kind: 'unlock-account'; accountId: string; ticketId: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Chat membership design task 8 (design section 4, lead 18 Nov): a staff member certifies one of
@@ -207,6 +210,7 @@ export const KEY_TAP_KINDS = [
   'reset-staff-security',
   'ban-account',
   'lift-ban',
+  'unlock-account',
   'add-owner-key',
   'settings',
   'add-pgp-key',

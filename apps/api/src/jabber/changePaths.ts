@@ -246,9 +246,13 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'feedback_form.account_id': 'feedback sent to X2F',
   // Plan 4 Task 30: support tickets. A ticket is the trader's own question to staff, not a change to
   // the account; who took it and which staff member wrote a line are staff-side.
-  'tickets.account_id': "a support ticket the account's owner opened to X2F staff",
+  'tickets.account_id': "a support ticket the account's owner (or a team member) opened to X2F staff, or a compromised report naming it (the lock it starts sets accounts.disabled_at, which notifies)",
   'tickets.taken_by': 'the staff member working a ticket (staff side)',
   'ticket_messages.staff_id': 'the staff member who wrote a ticket reply (staff side, never shown to the trader)',
+  // D-059 (migration 860, J-14 ported; lead default, owner p11-119 pattern): the compromised-account
+  // lock record. The lock sets accounts.disabled_at and the unlock clears it, which notify.
+  'account_locks.account_id': 'the compromised-account lock record; the lock sets accounts.disabled_at and the unlock clears it, which notify',
+  'account_locks.unlocked_by': 'the staff member who lifted a lock (staff side)',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.

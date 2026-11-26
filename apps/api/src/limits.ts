@@ -222,6 +222,14 @@ export const PAYMENT_PROOF_BUCKET: BucketSize = { capacity: 10, perMinute: 1 };
  */
 export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
 
+/**
+ * `POST /v1/tickets/compromised` (D-059; J-14 review J5, ported), site wide, in this process: the
+ * form needs no login, so it has its own budget, apart from the login starts (a flood of reports
+ * never starves logins, nor the reverse); empty → 503 `busy`. Each report costs one HMAC per login
+ * name key and a lookup. Lead default; the owner may change it.
+ */
+export const COMPROMISED_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
@@ -259,6 +267,8 @@ export interface Budgets {
   accountLookup: KeyedBuckets;
   /** Per session: refused S-085 proofs (review S2, re-verify R2). */
   sessionProof: KeyedBuckets;
+  /** Site wide: `POST /v1/tickets/compromised` (D-059, J-14 review J5). */
+  compromised: TokenBucket;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -282,5 +292,6 @@ export function newBudgets(clock: () => Date): Budgets {
     keyLabel: new KeyedBuckets(KEY_LABEL_BUCKET, clock),
     accountLookup: new KeyedBuckets(ACCOUNT_LOOKUP_BUCKET, clock),
     sessionProof: new KeyedBuckets(SESSION_PROOF_BUCKET, clock),
+    compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
   };
 }

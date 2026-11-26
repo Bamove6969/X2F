@@ -24,6 +24,7 @@ import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushT
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffTicketRoutes } from '../tickets/staffRoutes.js';
+import { staffCompromisedRoutes } from '../tickets/compromisedRoutes.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
@@ -205,6 +206,8 @@ export async function buildStaffApi(
   staffFeedbackRoutes(app);
   // Plan 4 Task 30: support tickets, worked by the staff the owner granted tickets.handle.
   staffTicketRoutes(app);
+  // D-059: "My account has been compromised" reports, read and unlocked by senior moderators and the owner.
+  staffCompromisedRoutes(app);
   // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
   staffDisputeRoutes(app, {
     moderation: deps.moderation,

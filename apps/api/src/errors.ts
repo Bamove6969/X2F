@@ -300,7 +300,11 @@ export type ApiErrorCode =
   // TICKET_OPEN_AT_ONCE tickets not closed (409); another staff member has taken the ticket (409).
   | 'ticket-closed'
   | 'too-many-tickets'
-  | 'ticket-taken';
+  | 'ticket-taken'
+  // D-059 (J-14, ported): a trade one of whose accounts is locked by a compromised report takes no
+  // trader or moderator event (409); a compromised report does not close while its lock holds (409).
+  | 'trade-held'
+  | 'account-locked';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

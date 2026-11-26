@@ -1,7 +1,8 @@
 /**
  * One support ticket (Plan 4 Task 31; /support/tickets/:id): the thread, oldest first, the trader's
  * reply box and Close ticket. A staff line says "X2F support" and never which staff member wrote
- * it (the API sends no name). A closed ticket shows its thread and "Open a ticket".
+ * it (the API sends no name). A team member's line names the member (`by`, owner Q69: a team shares
+ * its tickets); the account owner's own lines say "You". A closed ticket shows its thread and "Open a ticket".
  * API: apps/api/src/tickets/traderRoutes.ts. DESIGN: not drawn (no board), kit parts only.
  * COPY-UNSIGNED (tickets-model.ts).
  */
@@ -13,9 +14,11 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { formatDateTime } from '../../ui/dates.js';
 import { FlowScreen } from '../../ui/FlowScreen.js';
 import { Notice } from '../../ui/Notice.js';
+import { memberOf } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import { waitSentence } from '../auth/refusals.js';
 import { NEW_TICKET_PATH, TICKETS_PATH, TicketStatusChip, ticketRefusal } from './Tickets.js';
-import { CATEGORY_LABELS, REPLIES_DAILY_TEXT, TICKET_BODY_MAX, TICKET_COPY, closeTicket, getTicket, replyTicket, type TicketThreadView } from './tickets-model.js';
+import { CATEGORY_LABELS, REPLIES_DAILY_TEXT, TICKET_BODY_MAX, TICKET_COPY, closeTicket, getTicket, replyTicket, whoWrote, type TicketThreadView } from './tickets-model.js';
 import '../screens.css';
 import './support.css';
 
@@ -23,6 +26,8 @@ type Load = { kind: 'loading' } | { kind: 'missing' } | { kind: 'failed' } | { k
 
 export function TicketThread() {
   const { id = '' } = useParams();
+  // Team tickets (owner Q69): whose lines are "You" depends on who is reading.
+  const viewer = memberOf(useSession())?.name ?? null;
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -125,7 +130,7 @@ export function TicketThread() {
             {t.messages.map((m, i) => (
               <li key={i} className="x2f-ticket-msg" data-from={m.from} data-part="ticket-message">
                 <p className="x2f-ticket-msg__who">
-                  <strong>{m.from === 'staff' ? TICKET_COPY.staff : TICKET_COPY.you}</strong> · {formatDateTime(m.at)}
+                  <strong>{whoWrote(m, viewer)}</strong> · {formatDateTime(m.at)}
                 </p>
                 <p className="x2f-ticket-msg__body">{m.body}</p>
               </li>

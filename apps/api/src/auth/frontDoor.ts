@@ -96,8 +96,8 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
   // Plan 4 Task 30: my own support tickets (anyone else's id is the unknown-id 404).
-  'GET /v1/tickets': "my own account's support tickets (account owner only)",
-  'GET /v1/tickets/:id': 'one of my own support tickets and its messages (account owner only)',
+  'GET /v1/tickets': "my own account's support tickets (the account owner, or a team member with See support tickets: the team's shared tickets)",
+  'GET /v1/tickets/:id': "one of my own account's support tickets and its messages (the owner, or a member with See support tickets)",
 };
 
 /**
@@ -178,7 +178,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
   'POST /v1/feedback': 'a platform-feedback row; no data back',
   'POST /v1/feedback/form': 'a feedback row; no data back',
-  // Plan 4 Task 30: support tickets (account owner only; anyone else's id is the unknown-id 404).
+  // Plan 4 Task 30: support tickets (the owner, or a member with Open support tickets; anyone else's id is the unknown-id 404).
   'POST /v1/tickets': 'opens my own support ticket (naming, at most, one of my own trades); answers its id',
   'POST /v1/tickets/:id/messages': 'a message on one of my own support tickets; answers that ticket',
   'POST /v1/tickets/:id/close': 'closes one of my own support tickets; answers that ticket',
@@ -240,6 +240,8 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/register/webauthn/start': 'create an account (passkey or security key)',
   'POST /v1/register/webauthn/finish': 'create an account (passkey or security key)',
   'POST /v1/login/password': 'log in',
+  // D-059: the person may have lost every way in. Answers the same `{ number, moderatorUrl }` for every name.
+  'POST /v1/tickets/compromised': '"My account has been compromised": locks the named trader account at once (FULL LOCKOUT); answers the same for every name',
   'POST /v1/login/pgp/start': 'log in',
   'POST /v1/login/pgp/finish': 'log in',
   'POST /v1/login/webauthn/start': 'log in',

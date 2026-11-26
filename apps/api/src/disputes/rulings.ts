@@ -21,6 +21,7 @@ import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, withDispute, type DisputeRecord } from './store.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
 
@@ -200,6 +201,10 @@ async function publishDecided(client: pg.PoolClient, next: Dispute, draft: Draft
  */
 async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promise<void> {
   if (rec.pausedSince !== null) throw new ApiError(409, 'dispute-paused');
+  // D-059 (J-14 re-verify M1, ported): a compromised-account lock on either party holds the trade
+  // from the lock's commit on, before the dispute timers' next pass sets `paused_since`.
+  const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [rec.dispute.code]);
+  if (held.rows[0]?.held === true) throw new ApiError(409, 'dispute-paused');
   // Lead follow-up: the site's maintenance switch too, so nothing gets through before the timer
   // has marked the dispute paused. Both flags `for share`: a switch being set waits for this or is seen.
   const { rows } = await client.query<{ paused: boolean; maintenance: boolean }>(

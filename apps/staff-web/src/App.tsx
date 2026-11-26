@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router';
 import { Accounts } from './screens/Accounts.js';
+import { CompromisedList, CompromisedReport } from './screens/Compromised.js';
 import { Disputes } from './screens/Disputes.js';
 import { Feedback } from './screens/Feedback.js';
 import { Invite } from './screens/Invite.js';
@@ -38,7 +39,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, accounts: <Accounts />, staff: <StaffList />, performance: <Performance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, tickets: <Tickets />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, disputes: <Disputes />, 'past-reputation': <PastRep />, accounts: <AccountsPages />, staff: <StaffList />, performance: <Performance />, settings: <StaffSettings />, prices: <Prices />, feedback: <Feedback />, tickets: <Tickets />, training: <Training />, log: <StaffLog /> }} notifications={<OwnerAlerts />} security={<MySecurity />} />} />
     </Routes>
   );
 }
@@ -54,6 +55,20 @@ function Overview() {
       <Route path="news" element={<NewsEditor />} />
       <Route path="revenue" element={<Revenue />} />
       <Route path="trades" element={<TradeStatus />} />
+    </Routes>
+  );
+}
+
+/**
+ * Accounts (spec 6.6) and, under it, the "My account has been compromised" reports (owner D-059;
+ * J-14 ported): the list at /accounts/compromised and one report at /accounts/compromised/:id.
+ */
+function AccountsPages() {
+  return (
+    <Routes>
+      <Route index element={<Accounts />} />
+      <Route path="compromised" element={<CompromisedList />} />
+      <Route path="compromised/:id" element={<CompromisedReport />} />
     </Routes>
   );
 }

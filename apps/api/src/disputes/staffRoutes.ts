@@ -9,6 +9,7 @@ import type { EventBus, LiveEvent, PublishOptions } from '../events/bus.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { getMethod } from '../methods/profiles.js';
 import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
@@ -719,8 +720,12 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         if (on) {
           if (d.status === 'closed') throw new ApiError(409, 'wrong-state');
           if (active.rows.length > 0) throw new ApiError(409, 'wrong-state');
-          // g62: no freeze while maintenance holds the dispute's timers.
-          if (rec.pausedSince !== null || !(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
+          // g62: no freeze while maintenance holds the dispute's timers. D-059 (J-14, ported): nor while
+          // a compromised-account lock holds the trade (all its timers stop; the locked party cannot
+          // reply), read here from the lock itself, before the dispute timers' pass marks it paused.
+          if (rec.pausedSince !== null || (await tradeHeld(client, code)) || !(await freezeAllowed(client, d, side, reason!, now))) {
+            throw new ApiError(409, 'freeze-not-allowed');
+          }
           await client.query(
             `insert into trading_holds (account_id, created_at, kind, dispute_code, dispute_seq, side, reason, placed_by)
              values ($1, $2, 'freeze', $3, $4, $5, $6, $7)`,
@@ -805,6 +810,12 @@ function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
     }
     return reply.code(204).send();
   });
+}
+
+/** D-059: whether the buyer's or the seller's account is locked by a compromised report. */
+async function tradeHeld(q: Queryable, code: string): Promise<boolean> {
+  const { rows } = await q.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
+  return rows[0]?.held === true;
 }
 
 /** Whether a moderator may freeze `side` now (owner 2026-11-02). */
