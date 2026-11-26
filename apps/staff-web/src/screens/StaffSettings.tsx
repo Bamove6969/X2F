@@ -52,9 +52,16 @@ const RULING_FIELDS: ReadonlyArray<{ field: RulingField; label: string; unit: st
 ];
 
 /** How each pay setting is typed: dollars (to cents), a percent (to basis points) or whole dollars. COPY-UNSIGNED */
+// Owner 26 Nov 2026: pay is a share (0-100%) of X2F's 1% fee on each trade whose dispute the person
+// rules; the dollar amounts are the minimum a completed dispute pays. Each person can have their own
+// share (Staff pay owed, below). COPY-UNSIGNED
 const PAY_FIELDS: ReadonlyArray<{ field: PayField; label: string; unit: string; help: string; kind: 'cents' | 'bp' | 'usd'; max: number; min: number }> = [
-  { field: 'modDisputeUsdCents', label: 'Moderator, per dispute', unit: 'USD in XMR', help: 'For each dispute they complete. A ruling overturned on appeal is taken back.', kind: 'cents', min: 0, max: 10_000_000 },
-  { field: 'seniorDisputeUsdCents', label: 'Senior moderator, per dispute', unit: 'USD in XMR', help: 'For each dispute they complete. A ruling overturned on appeal is taken back.', kind: 'cents', min: 0, max: 10_000_000 },
+  { field: 'modFeeBp', label: 'Moderator, share of the fee', unit: '% of the 1% fee', help: "Of X2F's 1% fee on each trade whose dispute they rule. 50% of the fee on a $1,000 trade is $5. You can set a different share for one person below.", kind: 'bp', min: 0, max: 10_000 },
+  { field: 'seniorFeeBp', label: 'Senior moderator, share of the fee', unit: '% of the 1% fee', help: "Of X2F's 1% fee on each trade whose dispute or appeal they rule. You can set a different share for one person below.", kind: 'bp', min: 0, max: 10_000 },
+  { field: 'modFlatUsdCents', label: 'Moderator, flat amount per dispute', unit: 'USD in XMR', help: 'Paid for each dispute they rule, on top of the share. Leave it empty for none.', kind: 'cents', min: 0, max: 10_000_000 },
+  { field: 'seniorFlatUsdCents', label: 'Senior moderator, flat amount per dispute', unit: 'USD in XMR', help: 'Paid for each dispute or appeal they rule, on top of the share. Leave it empty for none.', kind: 'cents', min: 0, max: 10_000_000 },
+  { field: 'modDisputeUsdCents', label: 'Moderator, minimum per dispute', unit: 'USD in XMR', help: 'The least they get for a dispute, whatever the share and flat amount come to (a full refund means X2F takes no fee). A ruling overturned on appeal is taken back.', kind: 'cents', min: 0, max: 10_000_000 },
+  { field: 'seniorDisputeUsdCents', label: 'Senior moderator, minimum per dispute', unit: 'USD in XMR', help: 'The least they get for a dispute or appeal, whatever the share and flat amount come to. A ruling overturned on appeal is taken back.', kind: 'cents', min: 0, max: 10_000_000 },
   { field: 'seniorLargeTradeBp', label: 'Senior moderator, share of large-trade fees', unit: '% of the fee', help: "Of X2F's fee on a large trade whose dispute they decided or co-approved.", kind: 'bp', min: 0, max: 10_000 },
   { field: 'largeTradeThresholdUsd', label: 'Large trade from', unit: 'USD', help: 'A trade at or above this value, when its dispute opened, counts as large for the share above.', kind: 'usd', min: 1, max: 10_000_000 },
 ];
@@ -89,7 +96,7 @@ export function StaffSettings() {
   const [stored, setStored] = useState<RulingSettings | null>(null);
   const [pay, setPay] = useState<PaySettings | null>(null);
   const [ruling, setRuling] = useState<Record<RulingField, string>>({ largeTradeLimitUsd: '', firstResponseH: '', appealWindowH: '' });
-  const [payDraft, setPayDraft] = useState<Record<PayField, string>>({ modDisputeUsdCents: '', seniorDisputeUsdCents: '', seniorLargeTradeBp: '', largeTradeThresholdUsd: '' });
+  const [payDraft, setPayDraft] = useState<Record<PayField, string>>({ modDisputeUsdCents: '', seniorDisputeUsdCents: '', seniorLargeTradeBp: '', largeTradeThresholdUsd: '', modFeeBp: '', seniorFeeBp: '', modFlatUsdCents: '', seniorFlatUsdCents: '' });
   const [fault, setFault] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ code: StaffRefusal; text: string } | null>(null);
   const [saved, setSaved] = useState(false);

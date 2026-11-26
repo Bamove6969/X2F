@@ -14,7 +14,7 @@ import { requireStaff } from './guard.js';
  * The staff Accounts page's lookup (spec 6.6 "Account actions", Plan 4 Task 27: a senior moderator
  * or the owner acts on an account outside a case). Read-only.
  *
- * `GET /staff/v1/accounts/lookup?q=<display name or trade code>` (perm `accounts.ban`: senior
+ * `GET /staff/v1/accounts/lookup?q=<display name or trade code>` (perm `accounts.freeze`: senior
  * moderators and the owner, the roles that may act on what it finds; `accounts.freeze` has the same
  * roles) → `{ accounts }`:
  * - `q` that reads as a trade code (`normalizeTradeCode`: dashes, spaces and look-alikes allowed)
@@ -74,7 +74,7 @@ async function statusOf(q: Queryable, accountId: string, now: Date): Promise<Loo
 }
 
 export function staffAccountLookupRoutes(app: FastifyInstance): void {
-  const perm = 'accounts.ban' as const;
+  const perm = 'accounts.freeze' as const;
   app.get('/staff/v1/accounts/lookup', { config: { perm }, preHandler: requireStaff(perm) }, async (req) => {
     // Every try counts, before anything is read.
     req.server.budgets.accountLookup.take(req.staff.accountId);

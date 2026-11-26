@@ -17,6 +17,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { Button, CantDoThat, ChoiceGroup, Notice, Sheet } from '../ui/kit.js';
 import { utcMinuteText } from './staffFormat.js';
+import { useMe } from '../ui/StaffShell.js';
 import '../ui/staff.css';
 
 /**
@@ -27,7 +28,8 @@ import '../ui/staff.css';
  * What it shows: the reputation a case's trader card shows, and the status (the bans in force, a
  * running account hold, a dispute freeze, a lien). What it offers follows the API's perms exactly,
  * and the API checks every call again:
- * - `accounts.ban` (senior moderators and the owner): the ban history with staff notes, a ban
+ * - `accounts.freeze` reads the ban history; `accounts.ban` places a ban and `accounts.unban` lifts one
+ *   (owner 26 Nov 2026: the owner, or a senior moderator ticked for each). Was: `accounts.ban`: the ban history with staff notes, a ban
  *   (trade or site, a rule from the list, an end or Permanent as D-017 allows for this offence,
  *   an optional staff note) and lifting a ban in force; each a security-key tap
  *   (`ban-account`, `lift-ban`) whose dialog says exactly what happens.
@@ -111,8 +113,12 @@ type Tap = { intent: KeyTapIntent; title: string; body: string; labels: Record<s
 type Confirm = { title: string; body: string; action: string; danger: boolean; run: (jabber: boolean) => Promise<void>; jabber?: boolean };
 
 export function AccountCard({ account: a, role, onChanged }: { account: LookedUpAccount; role: StaffRole; onChanged: () => Promise<void> }) {
-  const mayBan = can(role, 'accounts.ban');
+  const grants = useMe()?.grants ?? [];
+  // Owner 26 Nov 2026: placing and lifting a ban are boxes per senior moderator; the history reads with the hold perm.
+  const mayBan = can(role, 'accounts.ban', grants);
+  const mayLift = can(role, 'accounts.unban', grants);
   const mayHold = can(role, 'accounts.freeze');
+  const mayReadBans = mayHold || mayBan;
   const [bans, setBans] = useState<AccountBans | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -126,7 +132,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
   const name = a.displayName;
 
   const loadBans = async () => {
-    if (!mayBan) return;
+    if (!mayReadBans) return;
     try {
       setBans(await accountBans(a.accountId));
     } catch (e) {
@@ -135,7 +141,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
   };
   useEffect(() => {
     void loadBans();
-  }, [a.accountId, mayBan]);
+  }, [a.accountId, mayReadBans]);
 
   /** Runs an action; a refusal is CantDoThat, a known changed state or anything else a fault. Then reads again. */
   const act = async (f: () => Promise<unknown>, ok: string, known: (code: string | null) => string): Promise<void> => {
@@ -257,7 +263,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
         )}
       </div>
 
-      {mayBan ? (
+      {mayReadBans ? (
         <div className="x2f-stack" data-part="account-bans">
           <h3 className="x2f-staff-eyebrow">Bans</h3>
           {bans === null ? null : bans.bans.length === 0 ? (
@@ -269,7 +275,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
                   <span>{`${KIND_WORDS[b.kind]}, ${endText(b.until)}: ${bans.rules.find((r) => r.id === b.ruleId)?.label ?? b.ruleId}. Placed ${utcMinuteText(b.createdAt)}.`}</span>
                   {b.liftedAt !== null ? <span className="x2f-staff-hint">{` Lifted ${utcMinuteText(b.liftedAt)}.`}</span> : b.endedAt !== null || !b.active ? <span className="x2f-staff-hint"> Ended.</span> : null}
                   {b.note !== null ? <span className="x2f-staff-hint">{` Staff note: ${b.note}`}</span> : null}
-                  {b.active ? (
+                  {b.active && mayLift ? (
                     <Button variant="secondary" disabled={busy} onClick={() => askLift(b)}>
                       {`Lift this ${KIND_WORDS[b.kind].toLowerCase()}`}
                     </Button>
@@ -278,7 +284,7 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
               ))}
             </ul>
           )}
-          {bans !== null && free.length > 0 ? (
+          {mayBan && bans !== null && free.length > 0 ? (
             <Button variant="danger-outline" disabled={busy} onClick={() => setBanning(true)}>
               {`Ban ${name}`}
             </Button>

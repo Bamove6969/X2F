@@ -29,7 +29,7 @@ const uses = (re: RegExp) => files.filter((f) => re.test(f.text)).map((f) => f.p
 // fingerprint it shows before the tap (the owner taps both keys, owner G4).
 const KEY_TAP_CALLERS: string[] = [
   'screens/AccountActions.tsx', 'screens/LimitRecommendations.tsx', 'screens/ModCase.tsx', 'screens/MySecurity.tsx', 'screens/NewsEditor.tsx', 'screens/PlannedMaintenance.tsx', 'screens/StaffGrants.tsx',
-  'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'screens/settings/FeeSweepSection.tsx', 'screens/settings/StarterLimitsSection.tsx',
+  'screens/StaffList.tsx', 'screens/StaffOverview.tsx', 'screens/StaffSettings.tsx', 'screens/TradeStatus.tsx', 'screens/settings/FeeSweepSection.tsx', 'screens/settings/StaffPaySection.tsx', 'screens/settings/StarterLimitsSection.tsx',
   'ui/ClockOut.tsx', 'ui/DeviceCard.tsx',
 ];
 // Chat membership design task 8: DeviceCard taps `certify-device` with every signed field labelled (X3).

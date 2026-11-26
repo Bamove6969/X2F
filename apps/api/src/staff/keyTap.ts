@@ -464,7 +464,7 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'address']);
       return { kind: 'payout-address', address: match(r, 'address', COLD_ADDRESS) };
     case 'pay-settings': {
-      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd']);
+      exactKeys(r, ['kind', 'modDisputeUsdCents', 'seniorDisputeUsdCents', 'seniorLargeTradeBp', 'largeTradeThresholdUsd', 'modFeeBp', 'seniorFeeBp', 'modFlatUsdCents', 'seniorFlatUsdCents']);
       const opt = (key: string): number | null => (r[key] === null ? null : amount(r, key, { integer: true }));
       return {
         kind: 'pay-settings',
@@ -472,7 +472,17 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         seniorDisputeUsdCents: opt('seniorDisputeUsdCents'),
         seniorLargeTradeBp: opt('seniorLargeTradeBp'),
         largeTradeThresholdUsd: opt('largeTradeThresholdUsd'),
+        modFeeBp: opt('modFeeBp'),
+        seniorFeeBp: opt('seniorFeeBp'),
+        modFlatUsdCents: opt('modFlatUsdCents'),
+        seniorFlatUsdCents: opt('seniorFlatUsdCents'),
       };
+    }
+    case 'staff-pay': {
+      exactKeys(r, ['kind', 'accountId', 'feeBp']);
+      const feeBp = r.feeBp === null ? null : amount(r, 'feeBp', { integer: true });
+      if (feeBp !== null && feeBp > 10_000) throw badRequest();
+      return { kind: 'staff-pay', accountId: match(r, 'accountId', UUID).toLowerCase(), feeBp };
     }
     case 'starter-limits': {
       // Spec 6.6 "Settings": every starter-limit number, whole, in the order STARTER_FIELDS lists them.
@@ -526,6 +536,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'banner-publish':
       exactKeys(r, ['kind', 'bannerKind', 'textSha256']);
       return { kind: 'banner-publish', bannerKind: oneOf(r, 'bannerKind', ['info', 'warning'] as const), textSha256: match(r, 'textSha256', HEX64) };
+    case 'lien-uncollectible':
+      exactKeys(r, ['kind', 'lienId']);
+      return { kind: 'lien-uncollectible', lienId: match(r, 'lienId', UUID).toLowerCase() };
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
       // Q1 (provisional, 17 Nov): at most 90% (@x2f/trade LIEN_RECOVERY_MAX_BPS, owner question OQ1). The moderation service verifies this tap itself before it signs a recovery at the rate.
@@ -577,6 +590,8 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'account-limit':
     case 'lien-rate':
       return 'rulings.approve';
+    case 'lien-uncollectible':
+      return 'owner';
     case 'emergency-stop':
     case 'resume-trading':
     // Review p4t22 m2: the owner's publishing acts.
@@ -594,11 +609,13 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'settings':
     case 'fee-sweep':
     case 'pay-settings':
+    case 'staff-pay':
     case 'starter-limits':
       return 'settings.write';
     case 'ban-account':
-    case 'lift-ban':
       return 'accounts.ban';
+    case 'lift-ban':
+      return 'accounts.unban';
     // Review MF1 (mod-rules 12 Nov): the reset is the owner role's own, never a perm a grant could hand out.
     case 'reset-staff-security':
     case 'add-owner-key':

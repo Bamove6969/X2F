@@ -301,7 +301,7 @@ describe('StaffList (board StaffList)', () => {
 // StaffSettings
 
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: null, communityTelegramUrl: null };
-const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: 2500, seniorLargeTradeBp: null, largeTradeThresholdUsd: null };
+const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: 2500, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
 
 function settingsApi(extra: Record<string, Parameters<typeof fakeApi>[0][string]> = {}) {
   return fakeApi({
@@ -328,10 +328,10 @@ describe('StaffSettings (board StaffSettings)', () => {
     expect(page.textContent).toContain('A moderator can rule alone on trades below this. At or above it, a senior moderator or you must approve too.');
     expect(page.textContent).toContain('How soon a moderator must reply after a dispute opens. Traders see this deadline and their place in the queue.');
     expect(page.textContent).toContain('How long either trader has to appeal a ruling. Appeals go to a senior moderator or you, never the moderator who ruled.');
-    const mod = field('Moderator, per dispute', page) as HTMLInputElement;
+    const mod = field('Moderator, minimum per dispute', page) as HTMLInputElement;
     expect(mod.value).toBe('');
     expect(mod.placeholder).toBe('Not set');
-    expect((field('Senior moderator, per dispute', page) as HTMLInputElement).value).toBe('25.00');
+    expect((field('Senior moderator, minimum per dispute', page) as HTMLInputElement).value).toBe('25.00');
     expect(page.querySelectorAll('[data-primary]')).toHaveLength(1);
     expect(button('Save settings')!.disabled).toBe(true);
   });
@@ -360,17 +360,18 @@ describe('StaffSettings (board StaffSettings)', () => {
     expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/settings', body: { largeTradeLimitUsd: 2500, appealWindowH: 72, tapId: 'tap-1' } });
   });
 
-  it('a pay amount changed: a pay-settings tap of all four, then the PUT', async () => {
+  it('a pay amount changed: a pay-settings tap of all eight, then the PUT', async () => {
     const api = settingsApi();
     await open('/settings');
-    typeInto(field('Moderator, per dispute'), '12.50');
-    typeInto(field('Senior moderator, per dispute'), '');
+    typeInto(field('Moderator, minimum per dispute'), '12.50');
+    typeInto(field('Senior moderator, minimum per dispute'), '');
     typeInto(field('Senior moderator, share of large-trade fees'), '2.5');
     typeInto(field('Large trade from'), '5000');
+    typeInto(field('Moderator, share of the fee'), '40');
     await settle();
     await click(button('Save settings'));
     await click(button('Tap security key'));
-    const next = { modDisputeUsdCents: 1250, seniorDisputeUsdCents: null, seniorLargeTradeBp: 250, largeTradeThresholdUsd: 5000 };
+    const next = { modDisputeUsdCents: 1250, seniorDisputeUsdCents: null, seniorLargeTradeBp: 250, largeTradeThresholdUsd: 5000, modFeeBp: 4000, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
     expect(tapIntents(api.calls)).toEqual([{ kind: 'pay-settings', ...next }]);
     expect(api.calls.find((c) => c.method === 'PUT')).toMatchObject({ path: '/staff/v1/pay/settings', body: { ...next, tapId: 'tap-1' } });
     expect(api.calls.some((c) => c.path === '/staff/v1/settings' && c.method === 'PUT')).toBe(false);
@@ -380,7 +381,7 @@ describe('StaffSettings (board StaffSettings)', () => {
     const api = settingsApi();
     await open('/settings');
     typeInto(field('Large-trade limit'), '900');
-    typeInto(field('Moderator, per dispute'), '10');
+    typeInto(field('Moderator, minimum per dispute'), '10');
     await settle();
     await click(button('Save settings'));
     await click(button('Tap security key'));
@@ -637,5 +638,34 @@ describe('StaffOverview (board StaffOverview)', () => {
     overviewApi({ tradingPaused: true, stoppedAt: '2026-11-18T01:20:00.000Z' });
     await open('/overview');
     expect(document.querySelectorAll('[data-screen="staff-overview"] [data-primary]')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// StaffWork (owner 26 Nov 2026): one person's work and hours
+
+describe('StaffWork (the owner audit of one person)', () => {
+  it("shows the totals, each pay item with where it stands, and the shifts; a period button reloads it", async () => {
+    const id = '22222222-2222-4222-8222-222222222222';
+    const audit = (days: number) => ({
+      staffId: id, displayName: 'dmitri_k', role: 'mod', switchedOff: false, feeBp: null, days,
+      totals: { minutes: 150, shifts: 2, clockOuts: 1, disputes: 3, appeals: 0, earnedUsdCents: '500', earnedAtomic: '5000000000', clawedBackUsdCents: '0', clawedBackAtomic: '0' },
+      shifts: [{ clockedInAt: '2026-11-25T10:00:00.000Z', endedAt: '2026-11-25T12:00:00.000Z', ended: 'clock-out', minutes: 120 }],
+      items: [{ kind: 'fee-share', code: 'ABCD-EFGH-JKMN-PQRS', seq: 1, round: 1, usdCents: null, atomic: '5000000000', earnedAt: '2026-11-25T11:00:00.000Z', status: 'paid', paidAt: '2026-11-25T12:00:00.000Z' }],
+      payouts: [],
+    });
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      [`GET /staff/v1/pay/staff/${id}/audit`]: (_b, path) => ({ body: audit(Number(new URL(`http://x${path}`).searchParams.get('days') ?? '30')) }),
+    });
+    await open(`/performance/${id}/work`);
+    const page = document.querySelector('[data-screen="staff-work"]')!;
+    expect(page.querySelector('h1')?.textContent).toBe('Work and hours: dmitri_k');
+    expect(page.querySelector('[data-total="minutes"]')?.textContent).toBe('2 h 30 min');
+    expect(page.querySelector('[data-total="disputes"]')?.textContent).toBe('3');
+    expect(tableRows('Pay per case')).toEqual([['2026-11-25 11:00 UTC', 'Share of the fee', 'ABCD-EFGH-JKMN-PQRS', 'Ruling', '', expect.any(String), 'Paid']]);
+    expect(tableRows('Shifts')).toEqual([['2026-11-25 10:00 UTC', '2026-11-25 12:00 UTC', 'Clocked out', '2 h 00 min']]);
+    await click(button('Last 90 days'));
+    expect(api.calls.some((c) => c.path.endsWith('/audit?days=90'))).toBe(true);
   });
 });

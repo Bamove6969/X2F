@@ -32,10 +32,18 @@ const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> =
   large_trade_limit_usd: { name: 'the large-trade limit', unit: 'USD' },
   first_response_h: { name: 'the first-reply time', unit: 'hours' },
   appeal_window_h: { name: 'the appeal window', unit: 'hours' },
+  payModFeeBp: { name: "a moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
+  paySeniorFeeBp: { name: "a senior moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
+  payModDisputeUsdCents: { name: "a moderator's minimum per dispute", unit: 'US cents' },
+  paySeniorDisputeUsdCents: { name: "a senior moderator's minimum per dispute", unit: 'US cents' },
+  payModFlatUsdCents: { name: "a moderator's flat amount per dispute", unit: 'US cents' },
+  paySeniorFlatUsdCents: { name: "a senior moderator's flat amount per dispute", unit: 'US cents' },
 };
 
 const groups = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const num = (v: unknown) => (typeof v === 'number' ? groups(String(v)) : typeof v === 'string' ? groups(v) : 'not set');
+/** Basis points of the fee as a percent of the fee; null = the role's default. */
+const pct = (v: unknown) => (typeof v === 'number' ? `${String(v / 100)}%` : "the role's default");
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 const xmr = (v: unknown) => (typeof v === 'string' && /^\d+$/.test(v) ? `${xmrShort(v)} XMR` : '');
 
@@ -158,6 +166,7 @@ function sentence(
     case 'lien.suspended': return 'A lien was suspended while the appeal is open';
     case 'lien.reactivated': return 'A lien is in force again';
     case 'lien.voided': return 'A lien was cancelled';
+    case 'lien.uncollectible': return 'Wrote a lien off as uncollectible';
     case 'lien.repaid': return 'A lien was repaid';
     case 'fee.owed': return `An account owes the 1% fee: ${xmr(d.amountAtomic) || 'the fee'}`;
     case 'limits.recommended': return `Recommended account limits${typeof d.capUsd === 'number' ? ` of ${num(d.capUsd)} USD` : ''}`;
@@ -180,6 +189,7 @@ function sentence(
     case 'staff.role-set': return `Changed ${who('staffId', 'a staff member')}'s role from ${ROLE_WORDS[str(d.from)] ?? str(d.from)} to ${ROLE_WORDS[str(d.to)] ?? str(d.to)}`;
     case 'staff.hours-set': return `Changed ${who('staffId', 'a staff member')}'s login hours`;
     case 'staff.grants-set': return `Changed ${who('staffId', 'a staff member')}'s extra access`;
+    case 'staff.pay-set': return `Changed ${who('staffId', 'a staff member')}'s share of the fee from ${pct(d.from)} to ${pct(d.to)}`;
     case 'staff.session-ended-hours': return `Ended ${who('staffId', 'a staff member')}'s session at the end of their login hours`;
     case 'staff.method-added': return 'Added a login method';
     case 'staff.method-removed': return 'Removed a login method';
@@ -195,6 +205,7 @@ function sentence(
     // COPY-UNSIGNED (owner 26 Nov: the payroll wallet pays at clock-out).
     case 'pay.sent': return 'Pay sent from the payroll wallet';
     case 'pay.send-failed': return 'Pay not sent from the payroll wallet';
+    case 'pay.earned': return d.minimum === true ? `${who('staffId', 'A staff member')} earned the minimum for a dispute` : `${who('staffId', 'A staff member')} earned ${pct(d.feeBp)} of the fee${xmr(d.atomic) ? `, ${xmr(d.atomic)}` : ''}`;
     case 'pay.address-added': return 'Added a payout address';
     case 'pay.address-removed': return 'Removed a payout address';
     // The owner, settings, the site.

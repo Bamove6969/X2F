@@ -25,6 +25,8 @@ export const PERMS = [
   'rulings.approve',
   'accounts.freeze',
   'accounts.ban',
+  // Owner 26 Nov 2026: lifting a ban is its own box, apart from placing one.
+  'accounts.unban',
   'reputation.review',
   'reputation.verify',
   'reputation.revoke',
@@ -45,16 +47,20 @@ export type Perm = (typeof PERMS)[number];
  */
 // `feedback.read`: owner Q60 (6 Nov 2026), whether a moderator or a helper reads feedback is a
 // checkbox the owner ticks per person (senior moderators always do).
-export const GRANTABLE_PERMS = ['tickets.handle', 'feedback.read'] as const satisfies readonly Perm[];
+// `accounts.ban`, `accounts.unban`: owner 26 Nov 2026, "I want the ability to choose if a senior
+// moderator can ban or not or lift bans": two boxes per senior moderator, off unless ticked. They
+// count for a senior moderator only (`SENIOR_ONLY_GRANTS`); a stored one on anyone else is ignored.
+export const GRANTABLE_PERMS = ['tickets.handle', 'feedback.read', 'accounts.ban', 'accounts.unban'] as const satisfies readonly Perm[];
+export const SENIOR_ONLY_GRANTS = ['accounts.ban', 'accounts.unban'] as const satisfies readonly Perm[];
 export type GrantablePerm = (typeof GRANTABLE_PERMS)[number];
 
 const MOD_PERMS: readonly Perm[] = ['disputes.handle', 'log.read.cases', 'reputation.review', 'training.read', 'self'];
 
 const ROLE_PERMS: Readonly<Record<StaffRole, ReadonlySet<Perm>>> = {
   owner: new Set(PERMS),
-  // `accounts.ban`: a ban, including a permanent one, is a senior-moderator or owner action (Task 27).
+  // `accounts.ban` / `accounts.unban`: owner-only by role since 26 Nov 2026; a senior by grant.
   // `feedback.read`: owner Q60, "the senior moderator will automatically have access to feedback".
-  senior: new Set<Perm>([...MOD_PERMS, 'rulings.approve', 'accounts.freeze', 'accounts.ban', 'reputation.verify', 'reputation.revoke', 'feedback.read']),
+  senior: new Set<Perm>([...MOD_PERMS, 'rulings.approve', 'accounts.freeze', 'reputation.verify', 'reputation.revoke', 'feedback.read']),
   // `reputation.review` for moderators is a lead default (Revision 2026-10-29b); the owner may change it.
   mod: new Set<Perm>(MOD_PERMS),
   helper: new Set<Perm>(['self']),
@@ -68,7 +74,14 @@ const ROLE_PERMS: Readonly<Record<StaffRole, ReadonlySet<Perm>>> = {
 export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): boolean {
   if (!Object.hasOwn(ROLE_PERMS, role)) return false;
   if (ROLE_PERMS[role].has(perm)) return true;
-  return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
+  if (!(GRANTABLE_PERMS as readonly Perm[]).includes(perm) || !grants.includes(perm)) return false;
+  return role === 'senior' || !(SENIOR_ONLY_GRANTS as readonly Perm[]).includes(perm);
+}
+
+/** Whether `role` may hold `perm` as a per-person box at all (a senior-only box on a senior). */
+export function grantableTo(role: StaffRole, perm: Perm): boolean {
+  if (!(GRANTABLE_PERMS as readonly Perm[]).includes(perm)) return false;
+  return role === 'senior' || !(SENIOR_ONLY_GRANTS as readonly Perm[]).includes(perm);
 }
 
 export type NavItem = 'overview' | 'disputes' | 'past-reputation' | 'accounts' | 'staff' | 'performance' | 'prices' | 'training' | 'log' | 'feedback' | 'tickets' | 'settings';
@@ -83,8 +96,9 @@ export const NAV_PERM: Readonly<Record<NavItem, Perm>> = {
   // Plan 5 Task 11: the past-reputation claims waiting for a moderator (`GET /staff/v1/past-rep`).
   'past-reputation': 'reputation.review',
   // Spec 6.6 "Account actions": find a trader and ban, lift or work a hold outside a case
-  // (`GET /staff/v1/accounts/lookup`, accounts.ban; the hold routes' accounts.freeze has the same roles).
-  accounts: 'accounts.ban',
+  // (`GET /staff/v1/accounts/lookup`, accounts.freeze: senior moderators and the owner; ban and
+  // lift are boxes per senior since 26 Nov 2026).
+  accounts: 'accounts.freeze',
   staff: 'staff.manage',
   performance: 'perf.read',
   prices: 'stats.read',

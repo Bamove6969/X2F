@@ -73,11 +73,11 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // D-032 (owner G60): the owner's tapped reset of a staff member's security.
   { method: 'POST', url: '/staff/v1/members/:id/reset-security', perm: 'staff.manage', allowed: OWNER, body: {} },
   // Plan 4 Task 27: bans (senior moderators and the owner).
-  { method: 'GET', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
-  { method: 'POST', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
-  { method: 'POST', url: '/staff/v1/accounts/:id/bans/:banId/lift', perm: 'accounts.ban', allowed: ['owner', 'senior'], body: {} },
+  { method: 'GET', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
+  { method: 'POST', url: '/staff/v1/accounts/:id/bans', perm: 'accounts.ban', allowed: ['owner'], grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/accounts/:id/bans/:banId/lift', perm: 'accounts.unban', allowed: ['owner'], grantable: true, body: {} },
   // Spec 6.6: the staff Accounts page's read-only lookup (senior moderators and the owner).
-  { method: 'GET', url: '/staff/v1/accounts/lookup', perm: 'accounts.ban', allowed: ['owner', 'senior'] },
+  { method: 'GET', url: '/staff/v1/accounts/lookup', perm: 'accounts.freeze', allowed: ['owner', 'senior'] },
   { method: 'GET', url: '/staff/v1/terms', perm: 'public-invite', allowed: 'public' },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
@@ -208,7 +208,11 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/pay/addresses', perm: 'self', allowed: EVERY_ROLE, body: {} },
   { method: 'DELETE', url: '/staff/v1/pay/addresses/:id', perm: 'self', allowed: EVERY_ROLE },
   { method: 'GET', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER },
-  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'PUT', url: '/staff/v1/pay/settings', perm: 'settings.write', allowed: OWNER, body: { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null, tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'GET', url: '/staff/v1/trades/status', perm: 'log.read.all', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/liens/:id/uncollectible', perm: 'settings.write', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' } },
+  { method: 'GET', url: '/staff/v1/pay/staff/:id/audit', perm: 'earnings.read', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/pay/staff/:id', perm: 'settings.write', allowed: OWNER, body: { feeBp: null, tapId: '00000000-0000-4000-8000-000000000000' } },
   { method: 'GET', url: '/staff/v1/pay/staff', perm: 'earnings.read', allowed: OWNER },
   // Plan 4 Task 19: the Activity log page (the staff scope for moderators and senior moderators, all
   // for the owner; the chain check is the owner's) and the training library (closed cases, scrubbed).

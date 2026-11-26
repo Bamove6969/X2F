@@ -124,7 +124,17 @@ export type KeyTapIntent =
       seniorDisputeUsdCents: number | null;
       seniorLargeTradeBp: number | null;
       largeTradeThresholdUsd: number | null;
+      // Owner 26 Nov 2026: each role's default share of X2F's 1% fee on a disputed trade, in basis
+      // points of the fee (10000 = 100%); the US-cent amounts above are then the minimum per dispute.
+      modFeeBp: number | null;
+      seniorFeeBp: number | null;
+      // Owner 26 Nov 2026: a flat amount per dispute for each role, US cents, on top of the share.
+      modFlatUsdCents: number | null;
+      seniorFlatUsdCents: number | null;
     }
+  // Owner 26 Nov 2026: one moderator's or senior moderator's own share of the fee (basis points of
+  // the fee, 0-10000), overriding their role's default; null = back to the role's default.
+  | { kind: 'staff-pay'; accountId: string; feeBp: number | null }
   // Spec 6.6 "Settings" / 2.3 (owner 2026-10-24: "The owner can change every number in Settings"):
   // the starter limits as they will be after the change (whole numbers; `@x2f/staff`'s
   // STARTER_FIELDS). They decide how big a trade a new account can be part of, so they are tapped.
@@ -162,6 +172,8 @@ export type KeyTapIntent =
   // approves a moderator's request to change how much of a debtor's proceeds each trade recovers
   // (basis points). It changes who gets money, so it is tapped and bound to exactly that request.
   | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
+  // Owner 26 Nov 2026: the owner writes a lien off as uncollectible (it ends; the trade can then go).
+  | { kind: 'lien-uncollectible'; lienId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -203,6 +215,7 @@ export const KEY_TAP_KINDS = [
   'fee-sweep',
   'payout-address',
   'pay-settings',
+  'staff-pay',
   'starter-limits',
   'certify-device',
   'revoke-device',
@@ -212,6 +225,7 @@ export const KEY_TAP_KINDS = [
   'news-publish',
   'banner-publish',
   'lien-rate',
+  'lien-uncollectible',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

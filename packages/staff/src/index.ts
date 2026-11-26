@@ -9,6 +9,8 @@ export { TICKET_BODY_MAX, TICKET_CATEGORIES, type TicketCategory, type TicketSta
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
+  SENIOR_ONLY_GRANTS,
+  grantableTo,
   NAV,
   NAV_PERM,
   navFor,
