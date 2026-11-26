@@ -171,7 +171,7 @@ const ROWS: readonly Row[] = [
   // lead's device also seals each trade's escrow keys to the member's own reader key, and the member
   // may open that copy (escrowSync/routes.ts). On its own it grants no signing; with Release coins
   // (22) the member may also release (owner question trades-release).
-  [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; never releases XMR", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
+  [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; releases nothing without Release coins", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
 ];
 
 export const ABILITIES: readonly Ability[] = ROWS.map(([no, id, group, label, does, risk, availability, hard, ruling, offers, trades, start]) => ({

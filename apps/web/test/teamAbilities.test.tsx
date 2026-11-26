@@ -98,8 +98,10 @@ describe('the catalogue helpers', () => {
     const c = real();
     const all = allAbilities(c);
     const locked = all.filter((a) => !isTickable(a)).map((a) => a.id);
-    expect(locked).toEqual(expect.arrayContaining(['trades-release', 'trades-confirm-received', 'own-login-methods']));
+    expect(locked).toEqual(expect.arrayContaining(['trades-confirm-received', 'own-login-methods']));
     expect(locked).not.toContain('offers-edit-prices');
+    // Owner question trades-release: Release coins is a box the lead may tick now.
+    expect(locked).not.toContain('trades-release');
     const out = sendable(c, ['notes-add', ...locked, 'chat-read', 'offers-see', 'made-up-box', 'offers-see', 'trades-accept']);
     expect(out).toEqual(['offers-see', 'trades-accept', 'chat-read', 'notes-add']);
   });
@@ -186,6 +188,25 @@ describe('AbilityPicker', () => {
     expect(seen.at(-1)).toEqual(presetBoxes(c, 'offers'));
     expect(seen.at(-1)).toContain('offers-edit-prices');
   });
+
+  it('owner question trades-release: Release coins ticks on its own, and says it needs Hold trade keys until that is ticked too', async () => {
+    const c = real();
+    const seen: string[][] = [];
+    const alone = render(<Harness catalogue={c} start={['trades-release']} onChange={(v) => seen.push(v)} />);
+    openAll(alone.host);
+    await settle();
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(false);
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.checked).toBe(true);
+    expect(byPart(alone.host, 'release-needs-keys')?.textContent).toContain('Hold trade keys');
+    // Never ticked for the lead: the keys box stays as it was.
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-escrow-keys"]')!.checked).toBe(false);
+    const both = render(<Harness catalogue={c} start={['trades-release', 'trades-escrow-keys']} onChange={(v) => seen.push(v)} />);
+    openAll(both.host);
+    await settle();
+    expect(byPart(both.host, 'release-needs-keys')).toBeNull();
+    // In no preset.
+    for (const p of c.presets) expect(presetBoxes(c, p.id), p.id).not.toContain('trades-release');
+  });
 });
 
 describe('Team: editing a member', () => {
@@ -206,7 +227,10 @@ describe('Team: editing a member', () => {
     const prices = row.querySelector<HTMLInputElement>('input[data-box="offers-edit-prices"]')!;
     expect(prices.disabled).toBe(false);
     expect(prices.checked).toBe(true);
-    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(true);
+    // Owner question trades-release: Release coins can be ticked (off by default); confirming payment received stays the lead's.
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(false);
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.checked).toBe(false);
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-confirm-received"]')!.disabled).toBe(true);
     click(row.querySelector('input[data-box="notes-view"]')!);
     await settle();
     click(byPart(host, 'save-boxes')!);
