@@ -36,6 +36,8 @@ export type AuditAction =
   | 'withdraw-cancel'
   | 'walk-away'
   | 'confirm-cancel'
+  // Owner question trades-release (26 Nov 2026): a member's release, under the member's own name.
+  | 'release-started'
   // Owner p4-8: the lead's waiting changes, by a member the lead gave a hold box.
   | 'hold-changes-cancelled'
   | 'hold-changes-approved'
@@ -48,7 +50,8 @@ export type AuditAction =
 
 /**
  * Actions only the account owner takes that the team log still records (T-076, p7-1: every
- * release is logged with name and amount; members never release, so the name is the lead's).
+ * release is logged with name and amount; this row is the lead's own release, a member's release
+ * is the member's `auditMember` row, owner question trades-release).
  * Written only on a team account (one with a live member or open invite).
  */
 export type LeadAuditAction = 'release-started';
@@ -76,6 +79,7 @@ export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'withdraw-cancel': 'trades-cancel',
   'walk-away': 'trades-cancel',
   'confirm-cancel': 'trades-confirm-cancel',
+  'release-started': 'trades-release',
   // Hold model v3's (gone since 26 Nov 2026), kept so older log rows still read; no route writes them.
   'hold-changes-cancelled': 'hold-cancel',
   'hold-changes-approved': 'hold-end',

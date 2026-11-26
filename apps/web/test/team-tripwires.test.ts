@@ -23,16 +23,26 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     expect(existsSync(`${ROOT}apps/web/src/screens/settings/team.css`)).toBe(false);
   });
 
-  it('Task 42 escrow-key sync: the keys are copied end to end, and a member device still never starts an escrow step (owner question trades-release open)', () => {
+  it('Task 42 escrow-key sync: the keys are copied end to end; the API lets a Release coins member release, and the member device is not wired to sign yet (owner question trades-release)', () => {
+    // Owner question trades-release (26 Nov 2026, pending his final yes): the API side landed. A
+    // member the lead gives Release coins together with Hold trade keys (team/abilities.ts
+    // ABILITY_REQUIRES) may send release-started with a `release-trade` confirm token from a
+    // passkey, security key or PGP key, logged under the member's name. The member's DEVICE is not
+    // wired yet: MemberRoom still runs no escrow and imports no synced copy. Next step: a member
+    // device restores its copy (keySync.ts restoreTrades with the member's reader key) into an
+    // escrow store, and the member's room gets the seller's release (press-and-hold, then
+    // withConfirm(release-trade), then release-started with the token, then escrow.release()).
+    // When that lands (escrow/memberKey.ts or MemberRoom running the escrow), change this check.
+    const confirm = readFileSync(`${ROOT}packages/accounts/src/confirmAction.ts`, 'utf8');
+    expect(confirm).toMatch(/STRONG_ONLY_ACTIONS[^=]*= \[[^\]]*'release-trade'/);
+    expect(readFileSync(`${ROOT}apps/api/src/team/perms.ts`, 'utf8')).toMatch(/MEMBER_SIGNING_EVENTS_LIST: readonly string\[\] = \['fund-started'\]/);
     // NEEDS_PLAN3_TASK42_MEMBER_KEY is retired by the escrow-key sync (apps/web/src/escrow/keySync.ts,
     // API escrowSync/routes.ts, migration 860): the holder's escrow worker keeps an end-to-end
     // encrypted server copy of each trade's keys for itself and the members it assigned ("Hold trade
     // keys"), and a new device of the holder restores them after a passkey/security-key PRF or PGP
-    // unlock. Conservative default while the owner's 'trades-release' question is open: an assigned
-    // member's device holds a copy to read, never imports it into an escrow store, and never runs the
-    // escrow (MemberRoom; the API's member-cannot-sign stays). When the owner answers yes, wire the
-    // member's device into the escrow (the chat label "<lead Trade Tag> Assistant N", proof,
-    // release), drop the 'member-cannot-sign' words if no longer reachable, and change this check.
+    // unlock. Until the member device is wired (above): an assigned member's device holds a copy to
+    // read, never imports it into an escrow store, and never runs the escrow (MemberRoom). The API's
+    // member-cannot-sign stays for funding, taking, accepting and the trade identity.
     expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
     expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);
     expect(readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8')).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);

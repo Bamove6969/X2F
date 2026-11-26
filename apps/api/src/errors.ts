@@ -192,6 +192,8 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // Owner question trades-release (26 Nov 2026): Release coins needs Hold trade keys (team/abilities.ts ABILITY_REQUIRES).
+  | 'release-needs-trade-keys'
   // J-20 (owner p7-4, p7-11; review S-m4): a member's action on a trade or offer outside their
   // trade-size band, and a session end asked for past the member's working hours.
   | 'outside-trade-band'

@@ -699,8 +699,13 @@ const ENTRIES: readonly Entry[] = [
     id: 'member-never',
     topic: 'teams',
     q: 'What do team members never do?',
-    a: 'Confirm a payment arrived or release XMR, add or remove wallets, invite or remove members, change members\' permissions, change the account\'s security or delete the account. Opening a dispute is also the account owner\'s.',
-    sources: ['apps/api/src/team/abilities.ts:13-18 Members never confirm payment received', 'apps/api/src/team/abilities.ts:146-148 team-invite', 'apps/api/src/team/abilities.ts:165 account-delete'],
+    // Owner question trades-release (26 Nov 2026): releasing is a box now. COPY-UNSIGNED
+    a: 'Confirm a payment arrived, add or remove wallets, invite or remove members, change members\' permissions, change the account\'s security or delete the account. Opening a dispute is also the account owner\'s. Releasing coins is the account owner\'s too, unless the lead gives a member both Release coins and Hold trade keys; then each release needs the member\'s passkey, security key or PGP key, and is in the team log under their name.',
+    sources: ['apps/api/src/team/abilities.ts:13-18 Members never confirm payment received',
+      "apps/api/src/team/abilities.ts:121 [22, 'trades-release', 'trades', 'Release coins'",
+      "apps/api/src/team/abilities.ts:251-253 'trades-release': ['trades-escrow-keys']",
+      "packages/accounts/src/confirmAction.ts:69 'release-trade'",
+      "apps/api/src/trades/routes.ts:190 kind: 'release-trade'", 'apps/api/src/team/abilities.ts:146-148 team-invite', 'apps/api/src/team/abilities.ts:165 account-delete'],
   },
   {
     id: 'member-chat',

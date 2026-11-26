@@ -97,7 +97,11 @@ export async function redeemConfirm(
  * The confirm actions a team member may prove with their own login methods (owner, Q73, 6 Nov 2026:
  * "Stay logged in?"). Every other confirm stays the account owner's (Task 18: `owner-only`).
  */
-export const MEMBER_CONFIRM_ACTIONS: ReadonlySet<ConfirmAction['kind']> = new Set<ConfirmAction['kind']>(['extend-session']);
+export const MEMBER_CONFIRM_ACTIONS: ReadonlySet<ConfirmAction['kind']> = new Set<ConfirmAction['kind']>([
+  'extend-session',
+  // Owner question trades-release (26 Nov 2026): a member's release, with the member's own key.
+  'release-trade',
+]);
 
 /**
  * Whose login methods a confirm route checks: the account's, or for a team member's session (only

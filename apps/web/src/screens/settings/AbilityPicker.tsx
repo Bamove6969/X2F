@@ -17,6 +17,14 @@ import { Disclosure } from '../../ui/Disclosure.js';
 import { PICKER_COPY as P } from './teamCopy.js';
 import { boxKind, isTickable, presetMatching, presetBoxes, sendable, type Catalogue } from './teamApi.js';
 
+/**
+ * Owner question trades-release (26 Nov 2026): Release coins needs Hold trade keys (the API's
+ * ABILITY_REQUIRES; it refuses one without the other, 400 release-needs-trade-keys). Ticking one
+ * never ticks the other for the lead: the box says so, and the save is refused until both or neither.
+ */
+const RELEASE_BOX = 'trades-release';
+const RELEASE_NEEDS = 'trades-escrow-keys';
+
 export function AbilityPicker({ catalogue, value, onChange, idPrefix }: { catalogue: Catalogue; value: readonly string[]; onChange: (next: string[]) => void; idPrefix: string }) {
   const picked = sendable(catalogue, value);
   const has = new Set(picked);
@@ -66,6 +74,11 @@ export function AbilityPicker({ catalogue, value, onChange, idPrefix }: { catalo
                           </span>
                         </span>
                       </label>
+                      {a.id === RELEASE_BOX && has.has(RELEASE_BOX) && !has.has(RELEASE_NEEDS) ? (
+                        <p className="x2f-note" data-part="release-needs-keys">
+                          {P.releaseNeedsKeys}
+                        </p>
+                      ) : null}
                     </li>
                   );
                 })}

@@ -222,6 +222,8 @@ export const PICKER_COPY = {
     yours: 'Only you', // COPY-UNSIGNED
     always: 'Every member has this', // COPY-UNSIGNED
   } as const,
+  // Owner question trades-release (26 Nov 2026): under Release coins, while Hold trade keys is not ticked. COPY-UNSIGNED
+  releaseNeedsKeys: 'Release coins works only with Hold trade keys: tick that box too. Each release asks the member for a passkey, security key or PGP key and goes in the team log.', // COPY-UNSIGNED
   loadFailed: 'The permission boxes did not load. Reload the page to try again.', // COPY-UNSIGNED
   pickBox: 'Tick at least one box.', // COPY-UNSIGNED
   // COPY-UNSIGNED: a member's row, by the preset their boxes match.
