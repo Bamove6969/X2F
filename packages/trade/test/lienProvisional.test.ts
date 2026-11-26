@@ -77,9 +77,9 @@ describe('Q1/Q5: the provisional limits (one constant each)', () => {
     // The review's probe: an approved 10000 bps reserved XMR - 1 for a 1 XMR trade.
     expect(() => release(XMR, XMR - 1n)).toThrow(/bad recovery amount/);
     expect(() => release(XMR, (XMR * 9n) / 10n + 1n)).toThrow(/bad recovery amount/);
-    expect(release(XMR, (XMR * 9n) / 10n)[0]).toEqual({ address: BUYER, amountAtomic: XMR / 10n });
+    expect(release(XMR, (XMR * 9n) / 10n)[0]).toEqual({ address: BUYER, amountAtomic: XMR / 10n, bearsNetworkFee: true });
     const small = XMR / 10n;
-    expect(release(small, small - LIEN_BUYER_KEEPS_ATOMIC)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC });
+    expect(release(small, small - LIEN_BUYER_KEEPS_ATOMIC)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC, bearsNetworkFee: true });
     expect(() => release(small, small - LIEN_BUYER_KEEPS_ATOMIC + 1n)).toThrow(/bad recovery amount/);
     expect(() => release(XMR, XMR / 100n - 1n)).toThrow(/bad recovery amount/);
     expect(release(XMR, XMR / 100n)[2]).toEqual({ address: CREDITOR, amountAtomic: XMR / 100n });
