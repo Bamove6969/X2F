@@ -89,7 +89,8 @@ describe('MyAccess', () => {
     expect(byPart(card, 'my-access-hours')?.textContent).toBe('Any time');
     expect(byPart(card, 'my-access-now')?.textContent).toBe('You can work at any time.');
     // "See the team log" opens the member's own rows.
-    expect(byPart(card, 'my-team-log-link')?.getAttribute('href')).toBe('/settings/team/log');
+    // The team log is the owner's alone: no link, even with the box ticked.
+    expect(byPart(card, 'my-team-log-link')).toBeNull();
     // Nothing to change here: no inputs, no buttons.
     expect(card.querySelectorAll('input, select, button').length).toBe(0);
   });

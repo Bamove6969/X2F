@@ -126,7 +126,6 @@ export const TEAM_LOG_COPY = {
   back: 'Back to Team',
   intro:
     'Everything your members do, every change to your team, every member login and every request X2F refused them. Entries are never edited or deleted, and each one is sealed to the one before it.',
-  memberIntro: 'What you did for this team, and the changes your team lead made to you.',
   loadFailed: 'The team log did not load. Try again in a moment.',
   loading: 'Loading…',
   empty: 'Nothing matches these filters.',

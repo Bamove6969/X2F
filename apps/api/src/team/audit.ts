@@ -286,8 +286,6 @@ export interface AuditFilter {
   tradeCode?: string;
   /** Paging: only rows with a smaller id (the previous page's `next`). */
   before?: string;
-  /** A member reading their own log (the `team-see-log` box): only rows they acted in or are about. */
-  onlyMember?: string;
   limit?: number;
 }
 
@@ -318,7 +316,6 @@ function where(accountId: string, f: AuditFilter): { sql: string; params: unknow
   if (f.from) add((n) => `l.at >= ${n}`, f.from);
   if (f.to) add((n) => `l.at < ${n}`, f.to);
   if (f.members && f.members.length > 0) add((n) => `(l.member_id = any(${n}::uuid[]) or l.subject_id = any(${n}::uuid[]))`, f.members);
-  if (f.onlyMember) add((n) => `(l.member_id = ${n}::uuid or l.subject_id = ${n}::uuid)`, f.onlyMember);
   if (f.categories && f.categories.length > 0) add((n) => `l.category = any(${n}::text[])`, f.categories);
   if (f.actions && f.actions.length > 0) add((n) => `l.action = any(${n}::text[])`, f.actions);
   if (f.tradeCode) add((n) => `l.trade_commit = sha256(convert_to(${n}::text, 'UTF8'))`, f.tradeCode);

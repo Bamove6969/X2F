@@ -272,21 +272,16 @@ describe('reading the log', () => {
     expect(seen).toBe(all.length);
   });
 
-  it('a member with "See the team log" sees only their own rows; without it, 403; the rest stays owner-only', async () => {
+  it('the log is the account owner\'s alone: a member is refused (403) everywhere, even with "See the team log" ticked', async () => {
     const owner = await team();
     const reader = await member(owner.id, [...rolesToAbilities(['offers']), 'team-see-log']);
     const other = await member(owner.id, rolesToAbilities(['offers']));
-    expect((await other.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
-    expect((await reader.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
-    const mine = await log(reader.browser);
-    expect(mine.entries.length).toBeGreaterThan(0);
-    expect(mine.entries.every((e) => e.memberId === reader.id || e.subjectId === reader.id)).toBe(true);
-    // Asking for the other member cannot widen it.
-    expect((await log(reader.browser, `?member=${other.id}`)).entries.every((e) => e.subjectId === reader.id || e.memberId === reader.id)).toBe(true);
-    expect((await other.browser.get('/v1/team/log')).statusCode).toBe(403);
-    for (const path of ['/v1/team/log/integrity', '/v1/team/log/summary', '/v1/team/log/export']) {
-      expect((await reader.browser.get(path)).statusCode).toBe(403);
+    for (const m of [reader, other]) {
+      for (const path of ['/v1/team/log', '/v1/team/log/integrity', '/v1/team/log/summary', '/v1/team/log/export']) {
+        expect((await m.browser.get(path)).statusCode, path).toBe(403);
+      }
     }
+    expect((await owner.browser.get('/v1/team/log')).statusCode).toBe(200);
   });
 
   it('refuses malformed filters', async () => {

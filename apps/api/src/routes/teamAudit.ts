@@ -4,9 +4,8 @@
  * - `GET /v1/team/log?from&to&member&category&action&trade&before&limit` → `{ entries, next }`,
  *   newest first. `member`, `category` and `action` take a comma-separated list. `trade` is a
  *   trade code (matched by its kept commitment, so it still finds a deleted trade's rows if the
- *   reader has the code). `before` is the previous page's `next`. The account owner sees the
- *   whole log; a member holding the `team-see-log` box sees only the rows they acted in or are
- *   about, and `member` cannot widen that.
+ *   reader has the code). `before` is the previous page's `next`. Account owner only (owner's
+ *   choice, 26 Nov 2026): no member reads the log, whatever boxes they hold.
  * - `GET /v1/team/log/integrity?id&hash` (account owner) → the chain check: `{ ok, entries,
  *   brokenAt, head }`, and with a kept fingerprint (`id` and `hash`) whether it still matches.
  * - `GET /v1/team/log/summary?days` (account owner) → `{ since, members }`: per member, their work,
@@ -106,15 +105,10 @@ function toCsv(rows: ExportRow[]): string {
 
 export function teamAuditRoutes(app: FastifyInstance): void {
   const owner = requireSession({ kinds: ['trader'] });
-  const ownerOrLogReader = requireSession({ kinds: ['trader'], member: 'team-see-log' });
   const integrityBudget = async (req: FastifyRequest) => req.server.budgets.teamLogIntegrity.take(req.auth.accountId);
   const exportBudget = async (req: FastifyRequest) => req.server.budgets.teamLogExport.take(req.auth.accountId);
 
-  app.get('/v1/team/log', { preHandler: ownerOrLogReader }, async (req) => {
-    const f = filterOf(req.query);
-    const memberId = req.auth.memberId;
-    return listAudit(req.server.deps.db, req.auth.accountId, memberId === null ? f : { ...f, onlyMember: memberId });
-  });
+  app.get('/v1/team/log', { preHandler: owner }, async (req) => listAudit(req.server.deps.db, req.auth.accountId, filterOf(req.query)));
 
   app.get('/v1/team/log/integrity', { preHandler: [owner, integrityBudget] }, async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;

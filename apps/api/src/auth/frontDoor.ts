@@ -81,7 +81,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/team': "my own team's members (account owner only)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
   'GET /v1/team/members/:id/sessions': "one member of my own team's signed-in sessions: device name, signed in at, last seen (account owner only)",
-  'GET /v1/team/log': "my own team's audit log, filtered and paged (the account owner; a member with the team-see-log box sees only their own rows)",
+  'GET /v1/team/log': "my own team's audit log, filtered and paged (the account owner only)",
   'GET /v1/team/log/export': "my own team's audit log as a download, with its hash chain (account owner only)",
   'GET /v1/team/log/integrity': "the hash-chain check of my own team's audit log (account owner only)",
   'GET /v1/team/log/summary': "per-member counts from my own team's audit log (account owner only)",
