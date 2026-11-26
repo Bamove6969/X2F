@@ -1823,7 +1823,7 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     const b = ruling(mod);
     expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R }, { address: FEE, amountAtomic: plan.feeAtomic }, { address: CREDITOR, amountAtomic: R }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
