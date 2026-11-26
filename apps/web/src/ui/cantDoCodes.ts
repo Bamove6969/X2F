@@ -337,7 +337,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'ticket-taken': 'a staff answer: another staff member has taken the ticket (staff app only)',
   // D-059 (J-14, ported): the trade is paused for a staff check (its own state: the trade room shows
   // it paused, never why; lead default, owner question pending); a staff answer on a report.
-  'trade-held': "the trade's own state: paused while X2F staff check one of its accounts (the room shows it paused)",
+  'trade-held': 'never sent to a trader (review of feat/lockout, item 5): system paths only; a party gets wrong-state, as on any paused trade',
   'account-locked': 'a staff answer: the report cannot close while its account is locked (staff app only)',
 };
 

@@ -274,12 +274,16 @@ export const releaseTicket = (id: string) => staffApi<{ released: true }>(ticket
 // moderators and the owner). API: apps/api/src/tickets/compromisedRoutes.ts. The list carries no
 // comment; opening a report is written to the activity log before its comment is read.
 
+export type LockSkip = 'recent-unlock' | 'legacy-login-name' | 'lock-cap';
+
 export interface CompromisedItem {
   id: string;
   /** The number the sender was shown (CT-<number>). */
   number: number;
   status: 'open' | 'closed';
   methodsLeft: CompromisedMethod[];
+  /** Why a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4); null when it locked or matched none. */
+  lockSkipped: LockSkip | null;
   createdAt: string;
   closedAt: string | null;
   /** Whether the typed name matched a lockable account. */
@@ -294,6 +298,8 @@ export interface CompromisedCase {
   number: number;
   status: 'open' | 'closed';
   methodsLeft: CompromisedMethod[];
+  /** Why a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4); null when it locked or matched none. */
+  lockSkipped: LockSkip | null;
   createdAt: string;
   closedAt: string | null;
   comment: string | null;

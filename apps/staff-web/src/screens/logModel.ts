@@ -238,6 +238,8 @@ function sentence(
     case 'account.unlocked': return 'Unlocked an account after a "my account was compromised" report';
     case 'account.report-viewed': return 'Read a "my account was compromised" report';
     case 'account.report-closed': return 'Closed a "my account was compromised" report';
+    // COPY-UNSIGNED (review of feat/lockout, item 1).
+    case 'dispute.lock-override': return d.step === 'freeze' ? 'Froze a party on a trade paused by a compromised-account lock' : 'Worked a ruling on a trade paused by a compromised-account lock';
     case 'training.copy-saved': return 'Saved a training case';
     case 'feedback.form-opened': return 'Opened the feedback messages';
     case 'log.checkpoint': return 'Activity log checkpoint';

@@ -2,15 +2,18 @@
 // and the full lockout it starts; the staff routes that read it and lift the lock; the separate
 // X2F_TICKET_KEYS ring (migration 861); and team tickets (owner Q69).
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { PUBLIC_ROUTES } from '../src/auth/frontDoor.js';
 import { hashPassword } from '../src/auth/password.js';
 import { keyringBox } from '../src/auth/keystore.js';
 import { subkey } from '../src/config.js';
 import { COMPROMISED_BUCKET } from '../src/limits.js';
+import { MIGRATIONS_DIR } from '../src/db/migrate.js';
 import { tradeHeldSql } from '../src/tickets/held.js';
+import { LOCK_CAP_PER_HOUR, RELOCK_BAR_DAYS } from '../src/tickets/lock.js';
 import { COMPROMISED_PER_NAME_DAILY, afterLocksSettled } from '../src/tickets/compromisedRoutes.js';
 import { TICKET_WRITE_GAP_S } from '../src/tickets/traderRoutes.js';
 import { openBody, purgeTickets, rewrapTicketSecrets, sealBody } from '../src/tickets/store.js';
@@ -45,6 +48,12 @@ beforeEach(() => {
   const budgets = (app as unknown as { budgets: { start: { tokens: number }; compromised: { tokens: number } } }).budgets;
   budgets.start.tokens = 120;
   budgets.compromised.tokens = COMPROMISED_BUCKET.capacity;
+});
+// Review item 4: new locks are capped site wide per hour (LOCK_CAP_PER_HOUR). Every test here runs at
+// T0, so the locks of earlier tests are aged past the hour before each one, leaving the cap to the
+// test that is about it.
+beforeEach(async () => {
+  await deps.db.query("update account_locks set locked_at = locked_at - interval '2 hours', unlocked_at = unlocked_at - interval '2 hours', relock_after = relock_after - interval '2 hours' where locked_at > $1", [new Date(T0.getTime() - 3_600_000)]);
 });
 
 interface Trader {
@@ -137,8 +146,9 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     const { trade } = await seedTrade(deps, { sellerId: other.id, buyerId: victim.id, poster: 'seller' });
     await driveTo(deps, trade, 'secured');
     expect((await report({ loginName: victim.loginName, methodsLeft: [], comment: '' })).statusCode).toBe(202);
-    await expect(applyEvent({ db: deps.db, clock: deps.clock }, trade.code, { type: 'propose-cancel' }, 'seller')).rejects.toMatchObject({ status: 409, code: 'trade-held' });
-    await expect(applyEvent({ db: deps.db, clock: deps.clock }, trade.code, { type: 'mark-paid', fiatCents: FIAT }, 'buyer')).rejects.toMatchObject({ code: 'trade-held' });
+    // Review item 5: a party is answered as on any paused trade (409 wrong-state), never trade-held.
+    await expect(applyEvent({ db: deps.db, clock: deps.clock }, trade.code, { type: 'propose-cancel' }, 'seller')).rejects.toMatchObject({ status: 409, code: 'wrong-state' });
+    await expect(applyEvent({ db: deps.db, clock: deps.clock }, trade.code, { type: 'mark-paid', fiatCents: FIAT }, 'buyer')).rejects.toMatchObject({ code: 'wrong-state' });
     // A system resume (a hold's or maintenance's end) is refused too.
     await expect(applyEvent({ db: deps.db, clock: deps.clock }, trade.code, { type: 'resume' }, 'system')).rejects.toMatchObject({ code: 'trade-held' });
     // Maintenance on, then off: an ordinary paused trade would resume; this one stays paused.
@@ -375,9 +385,10 @@ describe('J-14 review minors (J4-J7), ported', () => {
     expect((await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [id])).rowCount).toBe(0);
   });
 
-  // J2 (owner p11-79): lead default, owner question pending: the other party of a held trade cannot
-  // open a dispute either (409 trade-held), and no dispute row is written.
-  it("J7: the counterparty's open-dispute on a held trade is refused (409 trade-held)", async () => {
+  // Review item 5 (lead default, owner question pending; was J2/J7: refused with trade-held): the other
+  // trader must not learn of the lock, so their dispute goes in as on any paused trade (owner G7);
+  // the dispute is then paused with the trade, and staff with rulings.approve may still rule.
+  it("the counterparty's open-dispute on a held trade goes in, as on any paused trade, with nothing that names a lock", async () => {
     const victim = await trader();
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: victim.id, buyerId: buyer.id, poster: 'seller' });
@@ -386,8 +397,9 @@ describe('J-14 review minors (J4-J7), ported', () => {
     setNow(new Date(paid.confirmBy!.getTime() + 60_000));
     expect((await buyer.b.post('/t/login', { accountId: buyer.id })).statusCode).toBe(200);
     const res = await buyer.b.post(`/v1/trades/${trade.code}/dispute`, { reason: 'paid', note: '' });
-    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'trade-held' });
-    expect((await deps.db.query('select 1 from disputes where code = $1', [trade.code])).rowCount).toBe(0);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(JSON.stringify(res.json())).not.toMatch(/lock|compromis|held/i);
+    expect((await deps.db.query('select 1 from disputes where code = $1', [trade.code])).rowCount).toBe(1);
   });
 });
 
@@ -459,7 +471,7 @@ describe('team tickets (owner Q69, J-14 ported)', () => {
     // Writing to a thread (whose answer is the thread) also needs support-see.
     expect(errorOf(await opener.b.post(`/v1/tickets/${id}/messages`, { body: 'me too' }))).toBe('forbidden');
     // The team log names the member's ticket (never its text).
-    const audit = await deps.db.query<{ action: string; detail: unknown }>('select action, detail from team_audit where account_id = $1 and member_id = $2', [lead.id, writer.id]);
+    const audit = await deps.db.query<{ action: string; detail: unknown }>("select action, detail from team_audit where account_id = $1 and member_id = $2 and action like 'ticket-%'", [lead.id, writer.id]);
     expect(audit.rows).toEqual([{ action: 'ticket-opened', detail: { ticketId: id } }]);
     expect(JSON.stringify(audit.rows)).not.toContain('where is trade');
 
@@ -474,5 +486,137 @@ describe('team tickets (owner Q69, J-14 ported)', () => {
     const cased = await helper.b.post(`/staff/v1/tickets/${id}/take`);
     expect(cased.statusCode, cased.body).toBe(200);
     expect(JSON.stringify(cased.json())).not.toContain(writer.name);
+  });
+});
+
+// Review of feat/lockout (items 1-4, 6): each fix and its lead default (owner question pending).
+describe('review of feat/lockout', () => {
+  const lockedNow = async (id: string) => (await deps.db.query('select 1 from account_locks where account_id = $1 and unlocked_at is null', [id])).rowCount === 1;
+  const skippedOf = async (number: number) =>
+    (await deps.db.query<{ lock_skipped: string | null; account_id: string | null }>("select lock_skipped, account_id from tickets where kind = 'compromised' and number = $1", [number])).rows[0]!;
+  async function unlock(accountId: string, number: number) {
+    const senior = await staff('senior');
+    const id = await reportId(number);
+    const tapId = await seedTap(deps, senior.id, { kind: 'unlock-account', accountId, ticketId: id });
+    const res = await senior.b.post(`/staff/v1/compromised/${id}/unlock`, { tapId });
+    expect(res.statusCode, res.body).toBe(200);
+    return { senior, id };
+  }
+
+  it(`item 1: once staff unlock an account, the form records reports on it but does not lock it again for ${RELOCK_BAR_DAYS} days; the answer is the same`, async () => {
+    const v = await trader();
+    const first = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });
+    expect(await lockedNow(v.id)).toBe(true);
+    const { senior } = await unlock(v.id, first.json().number);
+    setNow(new Date(T0.getTime() + 60_000));
+    const again = await report({ loginName: v.loginName, methodsLeft: ['password'], comment: 'me again' });
+    expect(again.statusCode).toBe(202);
+    expect(Object.keys(again.json()).sort()).toEqual(['moderatorUrl', 'number']);
+    expect(await lockedNow(v.id)).toBe(false);
+    expect(await skippedOf(again.json().number)).toEqual({ lock_skipped: 'recent-unlock', account_id: v.id });
+    const seen = await senior.b.get(`/staff/v1/compromised/${await reportId(again.json().number)}`);
+    expect(seen.json()).toMatchObject({ lockSkipped: 'recent-unlock', account: { id: v.id, lockedAt: null } });
+    // Past the bar, the form locks it again.
+    setNow(new Date(T0.getTime() + (RELOCK_BAR_DAYS + 1) * DAY_MS));
+    const later = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });
+    expect(await skippedOf(later.json().number)).toEqual({ lock_skipped: null, account_id: v.id });
+    expect(await lockedNow(v.id)).toBe(true);
+  });
+
+  it('item 2: the lock revokes every session in its own transaction (no after-reply work needed) and ends their streams; the unlock revokes every session from before it', async () => {
+    const v = await trader();
+    const extra = await insertSession(deps, v.id, 'trader');
+    const closeAccount = vi.spyOn(app.events, 'closeAccount');
+    try {
+      // The after-lock work is not awaited here: the sessions are already revoked when the reply is sent.
+      const res = await new Browser(app).post('/v1/tickets/compromised', { loginName: v.loginName, methodsLeft: [], comment: '' });
+      expect(res.statusCode).toBe(202);
+      expect((await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [v.id])).rowCount).toBe(0);
+      expect(closeAccount).toHaveBeenCalledWith(v.id);
+      await afterLocksSettled();
+      // A session that somehow outlived the lock (made live again here by hand) is revoked by the unlock.
+      await deps.db.query('update sessions set revoked_at = null where id = $1', [extra.sessionId]);
+      await unlock(v.id, res.json().number);
+      expect((await deps.db.query<{ revoked_at: Date | null }>('select revoked_at from sessions where id = $1', [extra.sessionId])).rows[0]!.revoked_at).not.toBeNull();
+    } finally {
+      closeAccount.mockRestore();
+    }
+  });
+
+  it("item 2: a team member's login: the member's sessions on the team account are revoked in the lock's transaction", async () => {
+    const lead = await trader();
+    const m = await member(lead.id);
+    const res = await new Browser(app).post('/v1/tickets/compromised', { loginName: m.loginName, methodsLeft: [], comment: '' });
+    expect(res.statusCode).toBe(202);
+    expect((await deps.db.query('select 1 from sessions where member_id = $1 and revoked_at is null', [m.id])).rowCount).toBe(0);
+    // The lead's own session stays.
+    expect((await deps.db.query('select 1 from sessions where account_id = $1 and member_id is null and revoked_at is null', [lead.id])).rowCount).toBeGreaterThan(0);
+    await afterLocksSettled();
+  });
+
+  it('item 3: an account whose login name is still its public display name (legacy) is reported but never locked, flagged for staff', async () => {
+    const v = await trader();
+    await deps.db.query('update accounts set legacy_login_name = true where id = $1', [v.id]);
+    const res = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });
+    expect(res.statusCode).toBe(202);
+    expect(Object.keys(res.json()).sort()).toEqual(['moderatorUrl', 'number']);
+    expect(await lockedNow(v.id)).toBe(false);
+    expect((await deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [v.id])).rows[0]!.disabled_at).toBeNull();
+    expect((await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [v.id])).rowCount).toBeGreaterThan(0);
+    expect(await skippedOf(res.json().number)).toEqual({ lock_skipped: 'legacy-login-name', account_id: v.id });
+    const senior = await staff('senior');
+    const list = await senior.b.get('/staff/v1/compromised');
+    expect((list.json() as { items: Array<{ number: number; lockSkipped: string | null }> }).items.find((i) => i.number === res.json().number)).toMatchObject({ lockSkipped: 'legacy-login-name' });
+  });
+
+  it(`item 4: at most ${LOCK_CAP_PER_HOUR} new locks an hour site wide; over it a report is recorded, locks nothing, and the owner is alerted`, async () => {
+    await staff('owner');
+    const filler = await trader();
+    const at = new Date(T0.getTime() - 10 * 60_000);
+    for (let i = 0; i < LOCK_CAP_PER_HOUR; i++) {
+      await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled, unlocked_at) values ($1, $2, false, $2)', [filler.id, at]);
+    }
+    try {
+      const v = await trader();
+      const res = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });
+      expect(res.statusCode).toBe(202);
+      expect(Object.keys(res.json()).sort()).toEqual(['moderatorUrl', 'number']);
+      expect(await lockedNow(v.id)).toBe(false);
+      expect(await skippedOf(res.json().number)).toEqual({ lock_skipped: 'lock-cap', account_id: v.id });
+      const alert = await deps.db.query<{ detail: unknown }>("select detail from alerts where kind = 'compromised-lock-cap' order by created_at desc limit 1");
+      expect(alert.rows[0]?.detail).toEqual({ ticketId: await reportId(res.json().number) });
+      // An hour on, the cap has room again.
+      setNow(new Date(T0.getTime() + 60 * 60_000));
+      const w = await trader();
+      await report({ loginName: w.loginName, methodsLeft: [], comment: '' });
+      expect(await lockedNow(w.id)).toBe(true);
+    } finally {
+      await deps.db.query('delete from account_locks where account_id = $1', [filler.id]);
+    }
+  });
+
+  it('item 4: the accept budget is its own and far larger than the lock cap, so a flood of locks cannot drain it in one go', () => {
+    expect(COMPROMISED_BUCKET.capacity).toBeGreaterThan(10 * LOCK_CAP_PER_HOUR);
+    expect(COMPROMISED_BUCKET.perMinute * 60).toBeGreaterThan(100 * LOCK_CAP_PER_HOUR);
+  });
+
+  it('item 6: migration 861 run a second time changes no row', async () => {
+    const v = await trader();
+    const opened = await v.b.post('/v1/tickets', { category: 'trades', body: 'run it twice' });
+    expect(opened.statusCode, opened.body).toBe(201);
+    const id = opened.json().id as string;
+    const before = (await deps.db.query<{ body_sealed: Buffer }>('select body_sealed from ticket_messages where ticket_id = $1', [id])).rows[0]!.body_sealed;
+    const sql = readFileSync(`${MIGRATIONS_DIR}861_ticket_key_ring.sql`, 'utf8');
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query(sql);
+      const after = (await c.query<{ body_sealed: Buffer }>('select body_sealed from ticket_messages where ticket_id = $1', [id])).rows[0]!.body_sealed;
+      expect(after.equals(before)).toBe(true);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+    expect(((await v.b.get(`/v1/tickets/${id}`)).json() as { messages: Array<{ body: string }> }).messages[0]!.body).toBe('run it twice');
   });
 });

@@ -24,6 +24,8 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'dispute-comply-lapsed': 'A seller did not prove the payment a ruling ordered: the case needs a senior moderator',
   'tx-proof-check-stuck': 'The payment proof checker is stuck: restart the API so sellers can prove their payments',
   'tx-proof-check-stopped': 'The payment proof checker has stopped: no seller can prove a payment until the API is restarted',
+  // COPY-UNSIGNED (review of feat/lockout, item 4).
+  'compromised-lock-cap': 'Many compromised-account reports at once: for the rest of this hour new ones are recorded without locking accounts',
   'fee-sweep-due': 'Fee wallet sweep',
   'fee-sweep-failed': 'Fee wallet sweep did not go through',
   // COPY-UNSIGNED (owner 26 Nov): the payroll wallet's automatic staff pay.

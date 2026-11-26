@@ -227,8 +227,14 @@ export const ACCOUNT_LOOKUP_BUCKET: BucketSize = { capacity: 20, perMinute: 4 };
  * form needs no login, so it has its own budget, apart from the login starts (a flood of reports
  * never starves logins, nor the reverse); empty → 503 `busy`. Each report costs one HMAC per login
  * name key and a lookup. Lead default; the owner may change it.
+ *
+ * Review of feat/lockout, item 4 (lead default, owner question pending): this is the ACCEPT budget
+ * only, sized well above what a flood of locks could use, so that draining it costs a steady 120
+ * requests a minute and real victims still file between bursts. Locks have their own, much smaller
+ * cap in the database (tickets/lock.ts LOCK_CAP_PER_HOUR, 20 an hour site wide): over it a report is
+ * still recorded but locks nothing, and the owner is alerted.
  */
-export const COMPROMISED_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+export const COMPROMISED_BUCKET: BucketSize = { capacity: 300, perMinute: 120 };
 
 export interface Budgets {
   register: TokenBucket;

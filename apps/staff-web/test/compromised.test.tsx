@@ -7,7 +7,8 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import type { CompromisedCase, CompromisedItem } from '../src/api.js';
-import { button, click, fakeApi, honestTapStart, refused, render, settle } from './helpers.js';
+import { LOCK_SKIP_WORDS } from '../src/screens/Compromised.js';
+import { button, cleanup, click, fakeApi, honestTapStart, refused, render, settle } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -20,10 +21,10 @@ const AT = new Date(Date.now() - 2 * 3_600_000).toISOString();
 const TAPS = { 'POST /staff/v1/taps/start': honestTapStart('tap-1'), 'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } } };
 
 const item = (o: Partial<CompromisedItem> = {}): CompromisedItem => ({
-  id: ID, number: 1042, status: 'open', methodsLeft: ['password'], createdAt: AT, closedAt: null, matched: true, displayName: 'harbor_lin', locked: true, ...o,
+  id: ID, number: 1042, status: 'open', methodsLeft: ['password'], lockSkipped: null, createdAt: AT, closedAt: null, matched: true, displayName: 'harbor_lin', locked: true, ...o,
 });
 const report = (o: Partial<CompromisedCase> = {}): CompromisedCase => ({
-  id: ID, number: 1042, status: 'open', methodsLeft: ['password', 'recovery-code'], createdAt: AT, closedAt: null, comment: 'They took my phone.',
+  id: ID, number: 1042, status: 'open', methodsLeft: ['password', 'recovery-code'], lockSkipped: null, createdAt: AT, closedAt: null, comment: 'They took my phone.',
   account: { id: ACCT, displayName: 'harbor_lin', kind: 'trader', team: null, createdAt: AT, lockedAt: AT, openTrades: [{ code: '7RWD3MXEKQ84HN2T', state: 'funded', side: 'seller', paused: true }] },
   ...o,
 });
@@ -84,6 +85,17 @@ describe('Compromised account reports (D-059)', () => {
     api.set('POST /staff/v1/compromised/:id/close', { body: { ...report(), status: 'closed' } });
     await click(part('report-close'));
     expect(api.calls.some((c) => c.method === 'POST' && c.path.endsWith('/close'))).toBe(true);
+  });
+
+  it('a report that matched an account but locked nothing says why (review items 1, 3, 4), with no Unlock', async () => {
+    for (const why of ['recent-unlock', 'legacy-login-name', 'lock-cap'] as const) {
+      fakeApi({ 'GET /staff/v1/me': { body: SENIOR }, 'GET /staff/v1/compromised/:id': { body: report({ lockSkipped: why, account: { ...report().account!, lockedAt: null } }) } });
+      await open(`/accounts/compromised/${ID}`);
+      expect(part('report-lock-skipped')?.textContent).toBe(LOCK_SKIP_WORDS[why]);
+      expect(part('report-unlock')).toBeNull();
+      expect((part('report-close') as HTMLButtonElement).disabled).toBe(false);
+      cleanup();
+    }
   });
 
   it('a report that matched no account says nothing was locked and offers Close only', async () => {

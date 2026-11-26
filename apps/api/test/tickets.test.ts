@@ -89,8 +89,9 @@ describe('schema and storage', () => {
       // Migration 860 (Q69): a team member's line names the member (shown to the team only).
       'ticket_messages.member_id',
       'tickets.id', 'tickets.account_id', 'tickets.category', 'tickets.trade_code', 'tickets.status', 'tickets.taken_by', 'tickets.created_at', 'tickets.updated_at', 'tickets.closed_at',
-      // Migration 860 (D-059): the compromised report's kind, ticked method kinds and number.
-      'tickets.kind', 'tickets.methods_left', 'tickets.number',
+      // Migration 860 (D-059): the compromised report's kind, ticked method kinds and number, and why
+      // a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4).
+      'tickets.kind', 'tickets.methods_left', 'tickets.number', 'tickets.lock_skipped',
     ]);
   });
 

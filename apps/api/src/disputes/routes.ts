@@ -19,7 +19,6 @@ import { appealWaiting, syncNoReviewerAlert } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 import { refuseHeldTradeEvent } from '../trades/held.js';
-import { tradeHeldSql } from '../tickets/held.js';
 import { disputeGrant } from '../chat/grants.js';
 
 /**
@@ -381,10 +380,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     let noReviewer = false;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
-        // D-059 (J-14, ported): no trader event moves a held trade, the other party's neither (as
-        // applyEvent refuses them): the appeal waits until staff lift the lock (its window is paused).
-        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [d.code]);
-        if (held.rows[0]?.held === true) throw new ApiError(409, 'trade-held');
+        // D-059, review of feat/lockout item 5 (lead default, owner question pending): an appeal on a
+        // trade a compromised-account lock holds goes through as on any paused dispute, so the other
+        // trader never learns of the lock (the locked party is logged out and cannot appeal).
         // A held trade's own account may not appeal while held (lead hold v3 review, minor).
         await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         const s = await disputeSettings(client);

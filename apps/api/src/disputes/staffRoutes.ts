@@ -720,12 +720,19 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         if (on) {
           if (d.status === 'closed') throw new ApiError(409, 'wrong-state');
           if (active.rows.length > 0) throw new ApiError(409, 'wrong-state');
-          // g62: no freeze while maintenance holds the dispute's timers. D-059 (J-14, ported): nor while
-          // a compromised-account lock holds the trade (all its timers stop; the locked party cannot
-          // reply), read here from the lock itself, before the dispute timers' pass marks it paused.
-          if (rec.pausedSince !== null || (await tradeHeld(client, code)) || !(await freezeAllowed(client, d, side, reason!, now))) {
+          // g62: no freeze while maintenance holds the dispute's timers. D-059, review of feat/lockout
+          // item 1 (lead default, owner question pending): a trade held only by a compromised-account
+          // lock (maintenance off, so its `paused_since` is the lock's) may still be frozen, so a party
+          // cannot stall their dispute for good by reporting their own account; logged
+          // `dispute.lock-override`. The silence rule (`freezeAllowed`) still applies.
+          if (await tradeHeld(client, code)) {
+            const m = await client.query<{ maintenance: boolean }>('select maintenance_since is not null as maintenance from site_flags for share');
+            if (m.rows[0]?.maintenance !== false) throw new ApiError(409, 'freeze-not-allowed');
+            await log(client, { at: now, actor: me, tradeCode: code, action: 'dispute.lock-override', detail: { step: 'freeze' } });
+          } else if (rec.pausedSince !== null) {
             throw new ApiError(409, 'freeze-not-allowed');
           }
+          if (!(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
           await client.query(
             `insert into trading_holds (account_id, created_at, kind, dispute_code, dispute_seq, side, reason, placed_by)
              values ($1, $2, 'freeze', $3, $4, $5, $6, $7)`,

@@ -83,7 +83,10 @@ export type AlertKind =
   | 'tx-proof-check-stuck'
   // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
   // until the API is restarted. Once.
-  | 'tx-proof-check-stopped';
+  | 'tx-proof-check-stopped'
+  // Owner only (review of feat/lockout, item 4): the site-wide cap on new compromised-account locks
+  // was reached; a report was recorded without locking. Detail: the report's id.
+  | 'compromised-lock-cap';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

@@ -15,8 +15,14 @@
  *     never lists the account's trades either (lead default, owner question pending: the board
  *     "Compromised" shows the paused trades on its result, which would tell anyone typing a name
  *     what that account trades). `moderatorUrl` is the site's moderator contact link (settings), the
- *     same for everyone. The 202 is sent before the after-lock work (session revokes, trade pauses)
- *     runs (J-14 review J4), so its timing says nothing either.
+ *     same for everyone. The sessions are revoked in the report's transaction (review of feat/lockout,
+ *     item 2) and their streams end right after the commit; the 202 is sent before the trade pauses
+ *     run (J-14 review J4).
+ *   - A report that matches a lockable account is recorded but locks nothing, flagged for staff
+ *     (`lockSkipped`), when staff unlocked the account in the last RELOCK_BAR_DAYS (`recent-unlock`,
+ *     review item 1), the account still logs in with its public display name (`legacy-login-name`,
+ *     item 3), or LOCK_CAP_PER_HOUR new locks were placed site wide in the last hour (`lock-cap`,
+ *     item 4; the owner is alerted). Lead defaults, owner question pending.
  *   - At most COMPROMISED_PER_NAME_DAILY a day per typed name (by its HMAC tag, `daily_counts`), and
  *     the form's own site-wide budget, COMPROMISED_BUCKET, apart from the login starts (review J5;
  *     503 `busy`).
@@ -48,7 +54,9 @@ import { requireStaff } from '../staff/guard.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { body, log, tapIdOf } from '../staff/members.js';
 import type { TradePublisher } from '../trades/store.js';
-import { activeLock, afterLock, LOCKABLE_KINDS, placeLock, unlockAccount, type PlacedLock } from './lock.js';
+import { addOwnerAlert } from '../alerts.js';
+import { pushOwnerAlert } from '../push/ownerAlert.js';
+import { activeLock, afterLock, closeLockStreams, LOCKABLE_KINDS, placeLock, unlockAccount } from './lock.js';
 import { addMessage, loadTicket, messagesOf, ticketIdOf, type TicketRow } from './store.js';
 
 /** Reports per typed login name per UTC day (its HMAC tag; a lead default, the owner may change it). */
@@ -101,7 +109,7 @@ export function compromisedReportRoute(app: FastifyInstance, o: { publish?: Trad
     const name = loginNameLookup(deps.config, f.loginName);
     await dailyCap(deps, `ticket-compromised:${name.tag}`, COMPROMISED_PER_NAME_DAILY);
     const now = deps.clock();
-    const { number, lock, moderatorUrl } = await withTx(deps.db, async (c) => {
+    const { number, lock, capped, moderatorUrl } = await withTx(deps.db, async (c) => {
       // Always one lookup under every key of the ring: a malformed name's tags match no account.
       const found = (
         await c.query<{ id: string; kind: string }>(`select a.id, a.kind from accounts a where ${loginTagMatch('a', 1)}`, [name.candidates.ids, name.candidates.tags])
@@ -115,15 +123,23 @@ export function compromisedReportRoute(app: FastifyInstance, o: { publish?: Trad
       const t = rows[0]!;
       // Sealed like every message (the sender may have typed credentials here).
       if (f.comment !== '') await addMessage(c, deps.config, { ticketId: t.id, sender: 'trader', staffId: null, text: f.comment, at: now });
-      const lock: PlacedLock | null = accountId !== null ? await placeLock(c, accountId, t.id, now) : null;
+      const placed = accountId !== null ? await placeLock(c, accountId, t.id, now) : ({ kind: 'not-lockable' } as const);
+      if (placed.kind === 'skipped') {
+        // Reviews items 1, 3, 4: recorded for staff, with why it locked nothing; the answer is the same.
+        await c.query('update tickets set lock_skipped = $2 where id = $1', [t.id, placed.reason]);
+        if (placed.reason === 'lock-cap') await addOwnerAlert(c, 'compromised-lock-cap', { ticketId: t.id }, now);
+      }
       const s = await c.query<{ url: string | null }>('select moderator_contact_url as url from settings where id = 1');
-      return { number: Number(t.number), lock, moderatorUrl: s.rows[0]?.url ?? null };
+      return { number: Number(t.number), lock: placed.kind === 'locked' ? placed.lock : null, capped: placed.kind === 'skipped' && placed.reason === 'lock-cap', moderatorUrl: s.rows[0]?.url ?? null };
     });
-    // J4: the answer goes out first, the same for every name; the session revokes and trade pauses
-    // run once it has been sent. The account is refused and its trades held from the commit on
-    // (disabled_at, tradeHeldSql), so nothing waits on this; a pause that fails is left to the timer loop.
-    if (lock !== null) {
-      const afterDeps = { db: deps.db, clock: deps.clock, events: req.server.events, ...(o.publish ? { publish: o.publish } : {}), log: (reason: string) => req.log.warn({ reason }) };
+    if (capped) void pushOwnerAlert({ db: deps.db, push: req.server.push }, 'compromised-lock-cap').catch(() => undefined);
+    // Review item 2: the sessions were revoked in the lock's transaction; their streams end now.
+    if (lock !== null && lock.placed) closeLockStreams(req.server.events, lock.accountId, lock.revoked);
+    // J4: the answer goes out first, the same for every name; the trade pauses run once it has been
+    // sent. The account is refused and its trades held from the commit on (disabled_at,
+    // tradeHeldSql), so nothing waits on this; a pause that fails is left to the timer loop.
+    if (lock !== null && lock.placed) {
+      const afterDeps = { db: deps.db, clock: deps.clock, ...(o.publish ? { publish: o.publish } : {}), log: (reason: string) => req.log.warn({ reason }) };
       let started = false;
       const run = () => {
         if (started) return;
@@ -154,6 +170,8 @@ async function reportOf(q: Queryable, req: FastifyRequest, o: { lock?: boolean }
 
 const summary = (t: TicketRow) => ({
   id: t.id, number: Number(t.number), status: t.status, methodsLeft: t.methods_left,
+  // Review items 1, 3, 4: why a report on a lockable account locked nothing (null: it locked, or matched none).
+  lockSkipped: t.lock_skipped,
   createdAt: t.created_at.toISOString(), closedAt: t.closed_at?.toISOString() ?? null,
 });
 
@@ -166,7 +184,7 @@ export function staffCompromisedRoutes(app: FastifyInstance): void {
     const status = statusOf(req);
     const order = status === 'closed' ? 'desc' : 'asc';
     const { rows } = await req.server.deps.db.query<TicketRow & { display_name: string | null; locked: boolean }>(
-      `select t.id, t.number, t.status, t.methods_left, t.account_id, t.created_at, t.closed_at,
+      `select t.id, t.number, t.status, t.methods_left, t.lock_skipped, t.account_id, t.created_at, t.closed_at,
               case when a.kind = 'member' then null else a.display_name end as display_name,
               exists (select 1 from account_locks l where l.account_id = t.account_id and l.unlocked_at is null) as locked
          from tickets t left join accounts a on a.id = t.account_id
@@ -220,16 +238,18 @@ export function staffCompromisedRoutes(app: FastifyInstance): void {
   app.post('/staff/v1/compromised/:id/unlock', opts, async (req) => {
     const tapId = tapIdOf(body(req));
     const now = req.server.deps.clock();
-    await withTx(req.server.deps.db, async (c) => {
+    const closed = await withTx(req.server.deps.db, async (c) => {
       const t = await reportOf(c, req, { lock: true });
       if (t.account_id === null) throw new ApiError(409, 'wrong-state');
       const accountId = t.account_id;
       await c.query('select 1 from accounts where id = $1 for no key update', [accountId]);
       if ((await activeLock(c, accountId)) === null) throw new ApiError(409, 'wrong-state');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'unlock-account', accountId, ticketId: t.id }, now, { sessionId: req.auth.sessionId });
-      await unlockAccount(c, accountId, req.staff.accountId, now);
+      const revoked = await unlockAccount(c, accountId, req.staff.accountId, now);
       await log(c, req, 'account.unlocked', { accountId, ticketId: t.id });
+      return { accountId, revoked: revoked ?? [] };
     });
+    closeLockStreams(req.server.events, closed.accountId, closed.revoked);
     return { status: 'unlocked' as const };
   });
 

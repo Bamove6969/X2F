@@ -1,7 +1,7 @@
 import { compromisedTicketLabel, type CompromisedMethod } from '@x2f/staff';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { closeCompromised, codeOf, compromisedReport, compromisedReports, serverNow, unlockAccount, type CompromisedCase, type CompromisedItem } from '../api.js';
+import { closeCompromised, codeOf, compromisedReport, compromisedReports, serverNow, unlockAccount, type CompromisedCase, type CompromisedItem, type LockSkip } from '../api.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { Button, Notice } from '../ui/kit.js';
@@ -40,6 +40,16 @@ export const METHOD_WORDS: Readonly<Record<CompromisedMethod, string>> = {
 };
 
 export const COMPROMISED_PATH = '/accounts/compromised';
+
+/**
+ * Why a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4; lead
+ * defaults, owner question pending). The sender was answered the same as any other. COPY-UNSIGNED
+ */
+export const LOCK_SKIP_WORDS: Readonly<Record<LockSkip, string>> = {
+  'recent-unlock': 'Not locked: staff unlocked this account less than 30 days ago, so the form does not lock it again. Check with the owner before acting.',
+  'legacy-login-name': "Not locked: this is an older account whose login name is still its public display name, so anyone could have typed it. Contact the owner before acting.",
+  'lock-cap': 'Not locked: 20 accounts were already locked from the form in the last hour, so this report was only recorded. Check it and act by hand if it is real.',
+};
 
 const methodsText = (m: readonly CompromisedMethod[]) => (m.length === 0 ? 'None of these' : m.map((x) => METHOD_WORDS[x]).join(', '));
 const accountText = (r: { matched: boolean; displayName: string | null }) => (!r.matched ? 'No account matched' : r.displayName ?? 'A team member login');
@@ -105,7 +115,7 @@ export function CompromisedList() {
             },
             { title: 'Age', cell: (r) => span(now - Date.parse(r.createdAt)), mono: true },
             { title: 'Account', cell: (r) => accountText(r) },
-            { title: 'Lock', cell: (r) => (r.locked ? 'Locked' : r.matched ? 'Unlocked' : '') },
+            { title: 'Lock', cell: (r) => (r.locked ? 'Locked' : r.lockSkipped !== null ? 'Not locked (flagged)' : r.matched ? 'Unlocked' : '') },
           ]}
         />
       ) : null}
@@ -206,6 +216,11 @@ export function CompromisedReport() {
               <dd className="x2f-staff-thread__body">{c.comment ?? 'No comment'}</dd>
             </div>
           </dl>
+          {c.lockSkipped !== null ? (
+            <Notice tone="caution" data-part="report-lock-skipped">
+              {LOCK_SKIP_WORDS[c.lockSkipped]}
+            </Notice>
+          ) : null}
           {a === null ? (
             <Notice tone="plain" data-part="report-no-account">
               The name the sender typed matched no account that the form locks. Nothing was locked.

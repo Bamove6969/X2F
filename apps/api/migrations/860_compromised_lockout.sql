@@ -13,6 +13,12 @@ alter table tickets alter column account_id drop not null;
 alter table tickets add column kind text not null default 'support' check (kind in ('support', 'compromised'));
 alter table tickets add column methods_left text[] not null default '{}';
 alter table tickets add column number bigint generated always as identity (start with 1001) unique;
+-- Review of feat/lockout (items 1, 3, 4; lead default, owner question pending): a report that matched
+-- a lockable account but did not lock it, and why, for staff (the sender is answered the same):
+-- 'recent-unlock' (staff unlocked the account in the last 30 days: no self-stall by re-reporting),
+-- 'legacy-login-name' (a pre-009 account whose login name is its public display name, so anyone
+-- could type it), 'lock-cap' (the site-wide cap on new locks per hour was reached; owner alerted).
+alter table tickets add column lock_skipped text check (lock_skipped in ('recent-unlock', 'legacy-login-name', 'lock-cap'));
 alter table tickets drop constraint tickets_category_check;
 alter table tickets add constraint tickets_category_check
   check (category in ('account', 'trades', 'offers', 'wallets', 'alerts', 'everything-else', 'compromised'));
@@ -21,6 +27,7 @@ alter table tickets add constraint tickets_kind_shape check (
   and (kind = 'compromised' or account_id is not null)
   and (kind = 'support' or (trade_code is null and taken_by is null and status <> 'answered'))
   and (kind = 'compromised' or cardinality(methods_left) = 0)
+  and (kind = 'compromised' or lock_skipped is null)
 );
 create index tickets_compromised on tickets (created_at) where kind = 'compromised';
 
@@ -44,7 +51,13 @@ create table account_locks (
   set_disabled boolean not null,
   unlocked_at timestamptz,
   unlocked_by uuid references accounts (id) on delete set null,
-  check (unlocked_at is null or unlocked_at >= locked_at)
+  -- Review item 1 (lead default, owner question pending): set at the staff unlock to 30 days later;
+  -- until then the form records reports on the account but never locks it again.
+  relock_after timestamptz,
+  check (unlocked_at is null or unlocked_at >= locked_at),
+  check (relock_after is null or unlocked_at is not null)
 );
+-- Review item 4: the site-wide cap on new locks counts the last hour's.
+create index account_locks_recent on account_locks (locked_at);
 create unique index account_locks_active on account_locks (account_id) where unlocked_at is null;
 create index account_locks_lifted on account_locks (unlocked_at) where unlocked_at is not null;

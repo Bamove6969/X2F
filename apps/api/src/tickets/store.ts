@@ -111,6 +111,8 @@ export interface TicketRow {
   number: string;
   /** A compromised report's ticked ways to log in (kinds only); empty on a support ticket. */
   methods_left: string[];
+  /** A compromised report that matched a lockable account but did not lock it, and why (migration 860). */
+  lock_skipped: 'recent-unlock' | 'legacy-login-name' | 'lock-cap' | null;
   category: TicketCategory | 'compromised';
   trade_code: string | null;
   status: TicketStatus;
@@ -120,7 +122,7 @@ export interface TicketRow {
   closed_at: Date | null;
 }
 
-const COLUMNS = 'id, account_id, kind, number, methods_left, category, trade_code, status, taken_by, created_at, updated_at, closed_at';
+const COLUMNS = 'id, account_id, kind, number, methods_left, lock_skipped, category, trade_code, status, taken_by, created_at, updated_at, closed_at';
 
 /**
  * The ticket of `kind` (a support ticket unless asked; a compromised report is never one, so no

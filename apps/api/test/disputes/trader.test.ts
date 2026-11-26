@@ -358,27 +358,24 @@ describe('startDisputeTimers', () => {
   });
 });
 
-describe('D-059 (J-14 ported): a held trade takes no appeal', () => {
-  // "No trader event moves a held trade (the other party's neither)" (tickets/lock.ts): the appeal
-  // moves the dispute too, so it waits, like the trade, until staff lift the lock.
-  it('neither side appeals while either account is locked; once lifted, the appeal goes in', async () => {
+describe('D-059, review of feat/lockout item 5: the other trader never learns of a lock', () => {
+  // Lead default (owner question pending): an appeal on a dispute whose trade a compromised-account
+  // lock holds goes in as on any paused dispute, so the other trader cannot tell a lock from a pause.
+  it("the other side's appeal goes in while the seller's account is locked; the dispute stays paused with the trade", async () => {
     await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     const base = 1700 * H;
     const c = await disputed(at(base));
     await publishRuling(deps, c.t.code, { outcome: 'release-to-buyer' });
     await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [c.seller.id, at(base + H)]);
     setNow(at(base + 2 * H));
-    await relogin(c.buyer);
-    const res = await c.buyer.browser.post(appeal(c.t.code), { why: WHY });
-    expect({ status: res.statusCode, body: res.json() }).toEqual({ status: 409, body: { error: 'trade-held' } });
-    expect((await loadDispute(deps.db, c.t.code))!.status).toBe('published');
-    expect((await deps.db.query('select count(*)::int as n from dispute_appeals where code = $1', [c.t.code])).rows[0]).toEqual({ n: 0 });
-    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [c.seller.id, at(base + 3 * H)]);
-    setNow(at(base + 3 * H));
     await tick();
     await relogin(c.buyer);
-    const ok = await c.buyer.browser.post(appeal(c.t.code), { why: WHY });
-    expect(ok.statusCode, ok.body).toBe(200);
+    const res = await c.buyer.browser.post(appeal(c.t.code), { why: WHY });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await deps.db.query('select count(*)::int as n from dispute_appeals where code = $1', [c.t.code])).rows[0]).toEqual({ n: 1 });
+    expect(JSON.stringify(res.json())).not.toMatch(/lock|compromis|held/i);
+    expect((await row(c.t.code)).paused_since).not.toBeNull();
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [c.seller.id, at(base + 3 * H)]);
   });
 });
 

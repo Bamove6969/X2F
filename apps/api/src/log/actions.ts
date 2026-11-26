@@ -260,6 +260,9 @@ export const LOG_ACTIONS = {
   'account.unlocked': { accountId: 'uuid', ticketId: 'id' },
   'account.report-viewed': { ticketId: 'id' },
   'account.report-closed': { ticketId: 'id' },
+  // Review of feat/lockout, item 1: staff ruled on (`propose`, `approve`, `second-approval`,
+  // `re-propose`, `send-back`) or froze (`freeze`) a trade held only by a compromised-account lock.
+  'dispute.lock-override': { step: 'id' },
   'training.copy-saved': {},
   // D-058 (lead 12 Nov): a staff member opened a page of the feedback form list, which names the
   // sender of a named row; how many rows on that page were named (never who).
