@@ -131,7 +131,7 @@ async function member(teamId: string, roles: Role[] | { abilities: string[] }): 
 
 async function auditRows(teamId: string): Promise<{ action: string; member_id: string; trade_code: string | null }[]> {
   const { rows } = await deps.db.query<{ action: string; member_id: string; trade_code: string | null }>(
-    'select action, member_id, trade_code from team_audit where account_id = $1 order by id',
+    "select action, member_id, trade_code from team_audit where account_id = $1 and category = 'work' order by id",
     [teamId],
   );
   return rows;
@@ -468,7 +468,7 @@ describe('the audit log', () => {
       currencies: [{ currency: 'USD', bands: [{ min: '1000', max: '500000', marginBps: 0, minTrades: null, methodIds: null }] }],
       methods: [{ methodId: 'ZELLE', adjustBps: 0, currencies: ['USD'] }],
     };
-    const offerRows = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
+    const offerRows = await deps.db.query<{ detail: unknown }>("select detail from team_audit where account_id = $1 and category = 'work' order by id", [owner.id]);
     expect(offerRows.rows.map((r) => r.detail)).toEqual([terms, terms, terms]);
 
     const other = await team();
@@ -480,7 +480,8 @@ describe('the audit log', () => {
 
     const list = await owner.browser.get(`/v1/team/audit?member=${m.id}`);
     expect(list.statusCode).toBe(200);
-    const entries = list.json() as { action: string; memberName: string }[];
+    // Team audit v2: the member's filter also finds the team's changes about them (their invite, join, login).
+    const entries = (list.json() as { action: string; memberName: string; category: string }[]).filter((e) => e.category === 'work');
     expect(entries.map((e) => e.action)).toEqual(['mark-paid', 'offer-relisted', 'offer-paused', 'offer-posted']);
     expect(entries.every((e) => e.memberName === m.name)).toBe(true);
     // A refused action logs nothing.
@@ -496,7 +497,7 @@ describe('the audit log', () => {
     await expect(deps.db.query('delete from team_audit where account_id = $1', [owner.id])).rejects.toThrow(/append-only/);
     await expect(deps.db.query('truncate team_audit')).rejects.toThrow(/append-only/);
     await expect(deps.db.query('truncate team_members cascade')).rejects.toThrow(/append-only/);
-    expect((await deps.db.query('update team_audit set trade_code = null where account_id = $1', [owner.id])).rowCount).toBe(1);
+    expect((await deps.db.query('update team_audit set trade_code = null where account_id = $1 and trade_code is not null', [owner.id])).rowCount).toBe(1);
     expect((await auditRows(owner.id))[0]!.trade_code).toBeNull();
   });
 

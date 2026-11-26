@@ -33,6 +33,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
+      // Away (856, owner 26 Nov 2026): the person's own switch, shown on their public profile; a change.
+      'away_since',
     ],
     bookkeeping: {
       had_wallet: 'set with the first wallet, which notifies through wallets',
@@ -204,7 +206,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'login_approvals.account_id': 'a new device asking to log in (push and alert)',
   'push_subscriptions.account_id': 'a browser subscribing to pushes, renewed by the browser itself',
   'name_keys.account_id': 'kept by a trigger from accounts (which notifies)',
-  'team_audit.account_id': "the team's audit log, written with the member change (team_members notifies)",
   'offers.account_id': 'trading, not the account',
   'trades.seller_account_id': 'trading, not the account',
   'trades.buyer_account_id': 'trading, not the account',

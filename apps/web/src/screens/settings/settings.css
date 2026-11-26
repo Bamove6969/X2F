@@ -1,12 +1,12 @@
 /*
  * Settings tabs (owner demo note #101; SettingsTabs.tsx). The bar is the Buy / Sell segment
- * (browse.css `x2f-segment`) with four tabs; its tabs are links, so the chosen one is marked by
+ * (browse.css `x2f-segment`) with five tabs; its tabs are links, so the chosen one is marked by
  * aria-current instead of aria-selected, in the same look: a 2 px ink border on surface-raised,
  * never orange. Tokens only. DESIGNER-REVIEW.
  */
 
 .x2f-settings-tabs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .x2f-settings-tabs__tab {
@@ -32,6 +32,31 @@
 .x2f-settings-tabs__tab:focus-visible {
   outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
+}
+
+/*
+ * Five names do not fit five equal columns on a phone ("Preferences" alone is wider than a fifth
+ * of 360 px): there the bar keeps one row, each tab as wide as its name, and scrolls sideways
+ * inside itself (the page never does); SettingsTabs scrolls the current tab into view.
+ * DESIGNER-REVIEW.
+ */
+@media (max-width: 479px) {
+  .x2f-settings-tabs {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .x2f-settings-tabs__tab {
+    padding: 0 var(--x2f-space-3);
+  }
+
+  /* Inside the scrolling bar an outside ring would be cut off. */
+  .x2f-settings-tabs__tab:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 .x2f-settings__panel {

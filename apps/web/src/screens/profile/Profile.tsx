@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
-import { Avatar } from '../../ui/Avatar.js';
+import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { BadgeChips, badgesFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
 import { UNDER_REVIEW_LABEL } from '@x2f/reputation';
@@ -118,6 +118,12 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
           <span className="x2f-note" data-part="presence">
             {C.presence(p.online, p.memberSince)}
           </span>
+          {/* Owner 26 Nov 2026: the trader turned on Away in Settings (their offers are paused). */}
+          {p.away ? (
+            <span data-part="away">
+              <RoleTag role="neutral">{C.away}</RoleTag>
+            </span>
+          ) : null}
         </span>
       </section>
 
