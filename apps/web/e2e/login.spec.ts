@@ -1,6 +1,6 @@
-// Login screen (Task 30): one login per method, the generic password error and the leave-the-site
-// guard, an expired session returning to the same screen, and a stale-Terms login seeing the Terms
-// screen first. WebAuthn (passkey, security key) runs against a CDP virtual authenticator — the
+// Login screen (Task 30): one login per method (PGP, passkey, security key; no passwords since
+// 26 Nov 2026), an expired session returning to the same screen, and a stale-Terms login seeing the
+// Terms screen first. WebAuthn (passkey, security key) runs against a CDP virtual authenticator — the
 // browser stand-in for Plan 2's soft authenticator. The API is stubbed per test with page.route.
 import { expect, test, type CDPSession, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
@@ -14,8 +14,7 @@ function overview(over: Overview = {}): Overview {
     tradeTag: 'nightowl',
     kind: 'trader',
     level: 'full',
-    holdUntil: null,
-    methods: ['password', 'passkey'],
+    methods: ['pgp', 'passkey'],
     hasBackup: true,
     suggestions: [],
     termsCurrent: true,
@@ -24,6 +23,22 @@ function overview(over: Overview = {}): Overview {
 }
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+
+/** Stubs a PGP login whose finish answers with `finish` (the start always sends a message). */
+async function stubPgp(page: Page, finish: (r: Route) => Promise<void>): Promise<void> {
+  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
+  await page.route('**/v1/login/pgp/finish', finish);
+}
+
+/** A PGP login from the method choice: name, key, the message, the code. */
+async function pgpLogin(page: Page): Promise<void> {
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '12345678');
+  await page.click('[data-part="pgp-login"]');
+}
 
 // WebAuthn refuses an IP address as the relying party, so the WebAuthn tests open the app on
 // `localhost` (the same server; a secure context in Chromium).
@@ -88,33 +103,6 @@ test('PGP login (paste key, decrypt message, paste code) lands on returnTo', asy
   expect(startBody).toEqual({ loginName: 'nightowl', key: FAKE_KEY.trim() });
 });
 
-test('owner G58: a strong login while changes wait shows them first, with Approve now, then Continue goes on', async ({ page }) => {
-  const due = '2099-01-02T15:00:00.000Z';
-  await page.route('**/v1/account/me', json(overview({ pendingChanges: { count: 1, takesEffectAt: due }, changesWait: false, member: null })));
-  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
-  await page.route('**/v1/login/pgp/finish', json({ status: 'ok' }));
-  await page.route('**/v1/account/hold', json({
-    accountHold: null,
-    changes: { count: 1, takesEffectAt: due, items: [{ id: '11111111-1111-4111-8111-111111111111', kind: 'password', createdAt: due, submittedAt: due, by: 'Chrome on Windows', mine: false }] },
-    drafts: [],
-    changesWait: false,
-  }));
-  await page.goto('/login?returnTo=%2Fbuy');
-  await page.click('[data-method="pgp"]');
-  await page.fill('#pgp-login-name', 'nightowl');
-  await page.fill('#pgp-key', FAKE_KEY);
-  await page.click('text=Send me a login message');
-  await page.fill('[aria-label="Login code"]', '12345678');
-  await page.click('[data-part="pgp-login"]');
-  await expect(page).toHaveURL(/\/settings\/changes\?returnTo=%2Fbuy$/);
-  await expect(page.locator('[data-part="changes-waiting"] [data-part="change"]')).toContainText('After A new password');
-  await expect(page.locator('[data-part="waiting-approve"]')).toHaveText('Approve now');
-  await expect(page.locator('[data-part="waiting-cancel-all"]')).toHaveText('Cancel all changes');
-  await expect(page.locator('[data-part="waiting-make-changes"]')).toHaveText('Make changes');
-  await page.click('[data-part="changes-continue"]');
-  await expect(page).toHaveURL(/\/buy$/);
-});
-
 test('PGP login: an expired code offers a new message, and a second step goes on to the security key', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
   let starts = 0;
@@ -154,96 +142,23 @@ test('PGP login: an expired code offers a new message, and a second step goes on
   expect(webauthnStart).toEqual({ pendingId: 'p9' });
 });
 
-test('password login with an authenticator step lands on the default screen', async ({ page }) => {
-  await page.route('**/v1/account/me', json(overview()));
-  let body: unknown = null;
-  await page.route('**/v1/login/password', (r) => {
-    body = JSON.parse(r.request().postData() ?? '{}');
-    return json({ status: 'second-factor', pendingId: 'p1', needs: ['totp'] })(r);
-  });
-  await page.route('**/v1/login/second-factor', json({ status: 'ok' }));
-
-  await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
-  await page.fill('#login-totp', '123456');
-  await page.click('[data-part="verify-totp"]');
-  await expect(page).toHaveURL(/\/sell$/);
-  // FU-A: the private login name goes as `loginName`.
-  expect(body).toMatchObject({ loginName: 'nightowl', password: 'Correct-Horse-9!' });
-});
-
-test('a wrong login name and a wrong password both give the one generic error', async ({ page }) => {
-  await page.route('**/v1/account/me', json(overview(), 401));
-  await page.route('**/v1/login/password', json({ error: 'credentials-invalid', misses: 1 }, 401));
-
-  await page.goto('/login');
-  await page.click('[data-method="password"]');
-
-  await page.fill('#login-name', 'does-not-exist');
-  await page.fill('#login-password', 'whatever-1!');
-  await page.click('[data-part="password-login"]');
-  await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
-
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'wrong-pass-2!');
-  await page.click('[data-part="password-login"]');
-  await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
-});
-
-test('the server miss count sends the visitor off the site, even across a method switch', async ({ page }) => {
-  // The server counts misses per browser (FU-A), so switching method or reloading never resets it.
-  let misses = 0;
-  await page.route('**/v1/account/me', json(overview(), 401));
-  await page.route('**/v1/login/password', (r) => {
-    misses += 1;
-    return json({ error: 'credentials-invalid', misses }, 401)(r);
-  });
-  await page.route('https://duckduckgo.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }));
-
-  const tryOnce = async () => {
-    await page.fill('#login-name', 'nightowl');
-    await page.fill('#login-password', 'wrong-1!');
-    await page.click('[data-part="password-login"]');
-  };
-  await page.goto('/login');
-  await page.click('[data-method="password"]');
-  for (let i = 0; i < 5; i++) {
-    await tryOnce();
-    await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
-  }
-  await page.click('[data-part="back"]');
-  await page.click('[data-method="password"]');
-  await page.reload();
-  await page.click('[data-method="password"]');
-  for (let i = 0; i < 4; i++) {
-    await tryOnce();
-    await expect(page.locator('[data-part="password-login"]')).toBeEnabled();
-  }
-  await expect(page).toHaveURL(/\/login$/);
-  await tryOnce();
-  await expect(page).toHaveURL(/^https:\/\/duckduckgo\.com\//);
-});
-
-test('an outage or a wait is not a miss: a neutral retry or the wait, and ten of them keep the visitor here', async ({ page }) => {
+test('an outage or a wait is not a mismatch: a neutral retry or the wait, and the visitor stays here', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview(), 401));
   let n = 0;
-  await page.route('**/v1/login/password', (r) => {
+  await page.route('**/v1/login/pgp/start', (r) => {
     n += 1;
     return n % 2 === 0 ? json({ error: 'busy' }, 503)(r) : json({ error: 'slow-down', retryAfterSeconds: 5 }, 429)(r);
   });
 
   await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  for (let i = 1; i <= 10; i++) {
-    await page.click('[data-part="password-login"]');
-    // Odd tries get the 429 (re-review item 3: say how long), even ones the 503.
-    await expect(page.locator('[data-part="login-error"]')).toHaveText(
-      i % 2 === 1 ? 'Too many tries. Try again in 1 minute.' : 'X2F could not check that just now. Try again in a moment.',
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
+  await page.fill('#pgp-key', FAKE_KEY);
+  for (let i = 1; i <= 4; i++) {
+    await page.click('text=Send me a login message');
+    // Odd tries get the 429 (re-review item 3: say how long), even ones the 503 (the PGP step's own retry line).
+    await expect(page.locator('[data-part="pgp"] [role="alert"]')).toHaveText(
+      i % 2 === 1 ? 'Too many tries. Try again in 1 minute.' : 'Could not send a login message for that key. Check the key and try again.',
     );
   }
   await expect(page).toHaveURL(/\/login$/);
@@ -259,7 +174,7 @@ test('passkey login via the virtual authenticator lands on returnTo', async ({ p
   });
   const other: string[] = [];
   page.on('request', (r) => {
-    if (/\/v1\/login\/(pgp|password|totp)/.test(r.url())) other.push(r.url());
+    if (/\/v1\/login\/(pgp|totp)/.test(r.url())) other.push(r.url());
   });
 
   await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
@@ -287,12 +202,13 @@ test('security-key login by login name via the virtual authenticator lands on re
 
 test('recovery-code backup login lands on the default screen', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
-  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: null }));
+  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'full' }));
 
   await page.goto('/login/backup');
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', 'abcd-efgh-ij');
   await page.click('[data-part="backup-login"]');
+  await page.click('[data-part="recovery-continue"]');
   await expect(page).toHaveURL(/\/sell$/);
 });
 
@@ -378,17 +294,6 @@ test('PGP login: an expired message says so (not "wrong code") and a new message
   await expect(page.locator('[data-part="pgp-new-message"]')).toBeVisible();
 });
 
-test('password login: too many tries says how long to wait, not that the password was wrong', async ({ page }) => {
-  await page.route('**/v1/account/me', json(overview(), 401));
-  await page.route('**/v1/login/password', json({ error: 'locked', retryAfterSeconds: 900 }, 429));
-  await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Some-Password-1!');
-  await page.click('[data-part="password-login"]');
-  await expect(page.locator('[data-part="login-error"]')).toHaveText('Too many tries. Try again in 15 minutes.');
-});
-
 test('security-key login: a second step that needs PGP asks for the PGP key, with the pendingId', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
   await page.route('**/v1/login/webauthn/start', json({ challengeId: 'w1', options: AUTH_OPTIONS }));
@@ -417,21 +322,21 @@ test('security-key login: a second step that needs PGP asks for the PGP key, wit
   await expect(page).toHaveURL(/\/buy$/);
 });
 
-test('a recovery-code backup login says when changes can be made, then carries on', async ({ page }) => {
-  await page.route('**/v1/account/me', json(overview({ level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' })));
-  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' }));
+test('a recovery-code backup login says what the next hour allows and that the code is used up, then carries on', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview({ recoveryUntil: '2099-01-01T01:00:00.000Z' })));
+  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'full' }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
   // Design build gaps Job 1: a recovery code is the only backup; there is no authenticator choice.
   await expect(page.locator('[data-kind="totp"]')).toHaveCount(0);
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
-  await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
+  await expect(page.locator('[data-part="recovery-window-note"]')).toContainText('For the next hour you can add or remove any login method');
+  await expect(page.locator('[data-part="code-burned"]')).toBeVisible();
+  await expect(page.locator('[data-part="hold-note"]')).toHaveCount(0);
   await expect(page).toHaveURL(/\/login\/backup/);
-  await page.click('[data-part="hold-continue"]');
-  // A recovery session never reaches the marketplace (front door, 8 Nov 2026): it lands on Security,
-  // where a new login method can be added.
-  await expect(page).toHaveURL(/\/settings\/security$/);
+  await page.click('[data-part="recovery-continue"]');
+  await expect(page).toHaveURL(/\/buy$/);
 });
 
 test('a paced backup login says when to try again', async ({ page }) => {
@@ -449,7 +354,7 @@ test('a paced backup login says when to try again', async ({ page }) => {
 test('new-device approval: the number shows, the poll lets it in, and Continue goes on', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
   const id = '11111111-1111-4111-8111-111111111111';
-  await page.route('**/v1/login/password', json({
+  await stubPgp(page, json({
     status: 'approve-on-device', approvalId: id, number: 47,
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
   }));
@@ -460,10 +365,7 @@ test('new-device approval: the number shows, the poll lets it in, and Continue g
   });
 
   await page.goto('/login?returnTo=%2Fbuy');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page);
   await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
   // Review M5: nothing about the account's devices before approval.
   await expect(page.locator('[data-part="approve-room"]')).toHaveCount(0);
@@ -474,35 +376,16 @@ test('new-device approval: the number shows, the poll lets it in, and Continue g
 
 test('new-device approval: a blocked login says so and offers a backup login', async ({ page }) => {
   const id = '22222222-2222-4222-8222-222222222222';
-  await page.route('**/v1/login/password', json({
+  await stubPgp(page, json({
     status: 'approve-on-device', approvalId: id, number: 12,
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
   }));
   await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'blocked' }));
   await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page);
   await expect(page.locator('[data-part="approve-blocked"]')).toContainText('This login was blocked');
   await page.click('[data-part="approve-retry"]');
-  await expect(page.locator('[data-method="password"]')).toBeVisible();
-});
-
-// Plan 2 Task 17 review round 3 (R3-M3, R3-M4): a login refused during the hold opens CantDoThat
-// with a sentence for this login (a login is never refused by the device limit any more).
-test('a login refused during the 24-hour hold opens CantDoThat: this login waits until the hold ends', async ({ page }) => {
-  await page.route('**/v1/login/password', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
-  await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
-  const popup = page.locator('[role="dialog"] [data-part="cant-do-that"]');
-  await expect(popup).toHaveAttribute('data-from', 'recovery-hold');
-  await expect(popup).toContainText("This login can't get in until");
-  await expect(popup).not.toContainText('can still be finished');
-  await expect(page.locator('[data-part="login-error"]')).toHaveCount(0);
+  await expect(page.locator('[data-method="pgp"]')).toBeVisible();
 });
 
 // C2-D1 (LoginApprove board, side=new): the waiting screen at phone sizes: no sideways scroll,
@@ -510,14 +393,11 @@ test('a login refused during the 24-hour hold opens CantDoThat: this login waits
 for (const viewport of PHONE_VIEWPORTS) {
   test(`new-device approval at ${viewport}: the board's screen, phone layout and 44 px targets`, async ({ page }) => {
     const id = '33333333-3333-4333-8333-333333333333';
-    await page.route('**/v1/login/password', json({ status: 'approve-on-device', approvalId: id, number: 47, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+    await stubPgp(page, json({ status: 'approve-on-device', approvalId: id, number: 47, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
     await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'waiting', expiresAt: new Date(Date.now() + 300_000).toISOString() }));
     await setPhone(page, viewport);
     await page.goto('/login');
-    await page.click('[data-method="password"]');
-    await page.fill('#login-name', 'nightowl');
-    await page.fill('#login-password', 'Correct-Horse-9!');
-    await page.click('[data-part="password-login"]');
+    await pgpLogin(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
     await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
     const where = page.getByRole('button', { name: 'Where do I approve it?' });
@@ -537,17 +417,14 @@ for (const viewport of PHONE_VIEWPORTS) {
 test('after login a session with no length asks for one, then lands on the default screen', async ({ page }) => {
   const session = { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: '2099-01-01T02:00:00.000Z', canExtend: true, serverNow: '2099-01-01T00:00:00.000Z' };
   await page.route('**/v1/account/me', json(overview({ session })));
-  await page.route('**/v1/login/password', json({ status: 'ok' }));
+  await stubPgp(page, json({ status: 'ok' }));
   let saved: unknown = null;
   await page.route('**/v1/account/session/length', (r) => {
     saved = JSON.parse(r.request().postData() ?? '{}');
     return json({ ...session, lengthHours: 8, expiresAt: '2099-01-01T08:00:00.000Z' })(r);
   });
   await page.goto('/login');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page);
   await expect(page).toHaveURL(/\/session-length\?returnTo=/);
   await expect(page.locator('[data-part="session-length-select"]')).toHaveValue('');
   await expect(page.locator('[data-part="session-length-continue"]')).toBeDisabled();

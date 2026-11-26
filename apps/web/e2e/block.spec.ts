@@ -31,7 +31,7 @@ async function stubApi(page: Page, o: { signedIn: boolean }): Promise<Seen> {
   // The real API leaves out a blocked poster's offers (apps/api/test/blocks.test.ts).
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: seen.blocks.includes(B.offer.poster.tradeTag) ? [] : [B.offer] }));
   await page.route('**/v1/wallets', (r) => (o.signedIn ? r.fulfill({ json: [...B.wallets] }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } })));
-  await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+  await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: ['pgp'] } }));
   await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
@@ -101,7 +101,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     test('Settings, Security links to Blocked traders (review M3)', async ({ page }) => {
       await stubApi(page, { signedIn: true });
       for (const [path, body] of [
-        ['**/v1/account/methods', [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]],
+        ['**/v1/account/methods', [{ type: 'pgp', id: 'pgp-1', label: 'PGP key', createdAt: null, lastUsedAt: null }, { type: 'passkey', id: 'pk-1', label: 'Passkey', createdAt: null, lastUsedAt: null }]],
         ['**/v1/account/sessions', []],
         ['**/v1/account/alerts', []],
       ] as const) {

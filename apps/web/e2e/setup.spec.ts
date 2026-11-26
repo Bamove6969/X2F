@@ -22,6 +22,9 @@ const RECOVERY_CODE = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-ABCD-EFGH-JKMN-PQ
  */
 async function saveRecoveryCodes(page: Page): Promise<void> {
   await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
+  // Owner, 26 Nov 2026: the strong warning is ticked before the code is made.
+  await expect(page.locator('[data-part="recovery-make"]')).toBeDisabled();
+  await page.check('[data-part="recovery-understood"]');
   await page.click('[data-part="recovery-make"]');
   await expect(page.locator('[data-part="recovery-next"]')).toBeDisabled();
   await page.check('[data-part="recovery-written"]');
@@ -40,6 +43,23 @@ async function chooseOnly(page: Page, id: 'password' | 'passkey'): Promise<void>
   await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
   await page.check(`[data-method="${id}"] input[type="checkbox"]`);
   if (id === 'password') await page.check('[data-method="totp"] input[type="checkbox"]');
+}
+
+/**
+ * No passwords (owner, 26 Nov 2026): a PGP key and an authenticator app, the two kinds, from the
+ * login step to the recovery code (the passkey ticked by default is unticked).
+ */
+async function pgpAndAuthenticator(page: Page): Promise<void> {
+  await page.uncheck('[data-method="passkey"] input[type="checkbox"]');
+  await page.check('[data-method="totp"] input[type="checkbox"]');
+  await page.click('[data-part="method-continue"]');
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
+  await page.fill('#phrase', '1234-5678-9ABC');
+  await page.click('[data-part="pgp-verify"]');
+  await page.click('[data-part="pgp-continue"]');
+  await addAuthenticator(page);
 }
 
 /** The authenticator step after the password (owner, 16 Nov 2026): no "Set up later" when the password is the only login. */
@@ -174,7 +194,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     s.methods = [...s.methods, 'totp'];
     return r.fulfill({ status: 204 });
   });
-  await page.route('**/v1/wallets/rule', json({ firstWallet: s.wallets.length === 0, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: s.wallets.length === 0, strongMethods: ['pgp'] }));
   await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
   await page.route('**/v1/wallets', (r) => {
     if (r.request().method() === 'GET') return json(s.wallets)(r);
@@ -250,6 +270,8 @@ for (const v of PHONES) {
     await expect(page.locator('[data-method]').first()).toContainText('PGP key');
     await expect(page.locator('[data-method]').first().locator('input[type="checkbox"]')).toBeChecked();
     await expectParity(page, 'SetupLogin', { viewport: v });
+    // The passkey ticked by default is left for later; the authenticator app is the second kind.
+    await page.check('[data-method="totp"] input[type="checkbox"]');
     await page.click('[data-part="method-continue"]');
 
     await expect(page).toHaveURL(/\/setup\/pgp-key\?/);
@@ -265,6 +287,9 @@ for (const v of PHONES) {
     await page.click('[data-part="pgp-verify"]');
     await expect(page.locator('[aria-label="Key verified"]')).toBeVisible();
     await page.click('[data-part="pgp-continue"]');
+    await expect(page).toHaveURL(/\/setup\/passkey\?/);
+    await page.click('[data-part="method-later"]');
+    await addAuthenticator(page);
 
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
@@ -316,54 +341,6 @@ for (const v of PHONES) {
     expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
   });
 
-  test(`the password path matches SetupPassword at ${v}; the leaked list is the server's answer`, async ({ page }) => {
-    await setViewport(page, v);
-    const s = await stubApi(page);
-    let tries = 0;
-    await page.unroute('**/v1/register/password');
-    await page.route('**/v1/register/password', (r) => {
-      tries += 1;
-      (s.bodies.password ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
-      if (tries === 1) return json({ error: 'password-leaked' }, 400)(r);
-      s.registered = true;
-      s.methods = ['password'];
-      return json({ tradeTag: 'lumen.kai' }, 201)(r);
-    });
-
-    await page.goto('/setup');
-    await acceptTerms(page);
-    await pickNames(page, 'lumen.kai', 'lumen-login-7');
-    await chooseOnly(page, 'password');
-    await page.click('[data-part=\"method-continue\"]');
-    await expect(page).toHaveURL(/\/setup\/password\?/);
-
-    const setBtn = page.locator('[data-part="password-set"]');
-    await page.fill('#pw', 'short');
-    await expect(setBtn).toBeDisabled();
-    await page.fill('#pw', 'Orbit-lantern-74');
-    await page.fill('#pw2', 'Orbit-lantern-7');
-    await expect(setBtn).toBeDisabled();
-    await page.fill('#pw2', 'Orbit-lantern-74');
-    await expect(setBtn).toBeEnabled();
-    await expectParity(page, 'SetupPassword', { viewport: v });
-
-    await setBtn.click();
-    await expect(page.locator('[data-rule="leaked"]')).toHaveAttribute('data-met', 'false');
-    await expect(page).toHaveURL(/\/setup\/password\?/);
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-    await setBtn.click();
-    await addAuthenticator(page);
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
-
-    expect(s.bodies.password?.at(-1)).toMatchObject({
-      tradeTag: 'lumen.kai',
-      loginName: 'lumen-login-7',
-      password: 'Quiet-harbour-58',
-      acceptedTerms: TERMS_VERSION,
-    });
-    expect(s.bodies.password?.at(-1)).not.toHaveProperty('termsSignature');
-  });
 }
 
 // Owner demo note #190 (25 Nov 2026): his layout makes the tick box the only condition; no
@@ -454,18 +431,13 @@ test('no signature: no pad or typed name, and the keyboard alone ticks and accep
   await expect(page).toHaveURL(/\/setup\/name\?/);
 
   await pickNames(page, 'lumen.kai', 'lumen-login-7');
-  await chooseOnly(page, 'password');
-  await page.click('[data-part=\"method-continue\"]');
-  await page.fill('#pw', 'Quiet-harbour-58');
-  await page.fill('#pw2', 'Quiet-harbour-58');
-  await page.click('[data-part="password-set"]');
-  await addAuthenticator(page);
+  await pgpAndAuthenticator(page);
   await expect(page).toHaveURL(/\/setup\/backup\?/);
-  expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION })]);
-  expect(s.bodies.password?.[0]).not.toHaveProperty('termsSignature');
+  expect(s.bodies['pgp-finish']).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION })]);
+  expect(s.bodies['pgp-finish']?.[0]).not.toHaveProperty('termsSignature');
 });
 
-test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ page }) => {
+test('Mira.Kay_ shows exactly as typed after setup (PGP path)', async ({ page }) => {
   const s = await stubApi(page);
   const urls: string[] = [];
   page.on('framenavigated', (f) => urls.push(f.url()));
@@ -473,13 +445,7 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
   await acceptTerms(page);
   await pickNames(page, 'Mira.Kay_', 'mira-signin-01');
-  await chooseOnly(page, 'password');
-  await page.click('[data-part=\"method-continue\"]');
-  await page.fill('#pw', 'Quiet-harbour-58');
-  await page.fill('#pw2', 'Quiet-harbour-58');
-  await page.click('[data-part="password-set"]');
-
-  await addAuthenticator(page);
+  await pgpAndAuthenticator(page);
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await saveRecoveryCodes(page);
   await page.fill('#xmr-payout', ADDRESS);
@@ -497,7 +463,7 @@ test('Mira.Kay_ shows exactly as typed after setup (password path)', async ({ pa
   await expect(page.locator('[data-method="recovery-codes"] [data-part="mark-set"]')).toHaveCount(1);
   // Owner demo notes 12 Nov 2026: Welcome's fee line is now his own (owner-copy.spec.ts).
   await expect(page.getByText('Remember, you only pay a fee if you post an ad. Clicking on an ad and starting a trade is always free.')).toBeVisible();
-  expect(s.bodies.password?.[0]).toMatchObject({ tradeTag: 'Mira.Kay_', loginName: 'mira-signin-01' });
+  expect(s.bodies['pgp-start']?.[0]).toMatchObject({ tradeTag: 'Mira.Kay_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
   // Owner G25: Log in next, then on to the post.
@@ -583,7 +549,7 @@ test('a taken Trade Tag at register sends the person back to change their names,
 
 test('a step opened without the earlier ones goes back to the Terms', async ({ page }) => {
   await stubApi(page);
-  await page.goto(`/setup/password?returnTo=${encodeURIComponent('/post')}`);
+  await page.goto(`/setup/pgp-key?returnTo=${encodeURIComponent('/post')}`);
   await expect(page).toHaveURL(/\/setup\?returnTo=%2Fpost$/);
   await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
 });
@@ -948,20 +914,6 @@ test.describe('review fix round', () => {
   // backup step, so its I1 test of a second key already on another account went with them; a second
   // PGP key is added in Settings, and that refusal stays covered by pgp.test.ts (adding a key already
   // on another account → key-in-use at finish).
-
-  test('I2: after a password sign-up, Back never reopens the sign-up steps or registers again', async ({ page }) => {
-    const s = await stubApi(page);
-    await toPassword(page);
-    await page.click('[data-part="password-set"]');
-    await addAuthenticator(page);
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
-    await page.goBack();
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
-    await page.goBack();
-    await expect(page.locator('[data-part="password-set"]')).toHaveCount(0);
-    await expect(page.locator('[data-part="method-continue"]')).toHaveCount(0);
-    expect(s.bodies.password).toHaveLength(1);
-  });
 
   test('I2: after a PGP sign-up, Back never reopens the key step or starts a second sign-up', async ({ page }) => {
     const s = await stubApi(page);
