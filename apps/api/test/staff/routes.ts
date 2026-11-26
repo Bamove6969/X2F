@@ -157,6 +157,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // P-012/P-013: the blur-check answers, read by the feedback readers.
   { method: 'GET', url: '/staff/v1/feedback/blur-checks', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 30: support tickets (tickets.handle: the owner by role, anyone else by the owner's grant).
+  // The sample id names no ticket: an allowed caller gets 404 (a body stops at validation first).
+  { method: 'GET', url: '/staff/v1/tickets', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'GET', url: '/staff/v1/tickets/:id', perm: 'tickets.handle', allowed: OWNER, grantable: true },
+  { method: 'POST', url: '/staff/v1/tickets/:id/take', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/messages', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/close', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
+  { method: 'POST', url: '/staff/v1/tickets/:id/release', perm: 'tickets.handle', allowed: OWNER, grantable: true, body: {} },
   // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
   // incident ID: 404 past the guard).
   { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },

@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole, StarterSettings } from '@x2f/staff';
+import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -231,6 +231,41 @@ const page = (path: string, before?: string) => (before === undefined ? path : `
 export const moodFeedback = (before?: string) =>
   staffApi<{ items: MoodItem[]; counts: { great: number; ok: number; needsWork: number }; next: string | null }>(page('/staff/v1/feedback', before));
 export const formFeedback = (before?: string) => staffApi<{ items: FormItem[]; next: string | null }>(page('/staff/v1/feedback/form', before));
+
+// ---------------------------------------------------------------------------------------------
+// Support tickets (Plan 4 Tasks 30-31 on the staff API; perm tickets.handle: the owner, and anyone
+// the owner granted it). The queue carries no text and no trader; a case opens only to its taker.
+
+export interface TicketQueueItem {
+  id: string;
+  category: TicketCategory;
+  status: 'open' | 'answered';
+  createdAt: string;
+  updatedAt: string;
+  /** Whose turn it is. */
+  waiting: 'staff' | 'trader';
+  /** Who holds it: the reader, someone else, or nobody. */
+  taken: 'me' | 'other' | null;
+}
+
+export interface TicketCase {
+  id: string;
+  category: TicketCategory;
+  status: TicketStatus;
+  tradeCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: Array<{ from: 'trader' | 'staff'; body: string; at: string; mine: boolean }>;
+}
+
+const ticketUrl = (id: string, tail = '') => `/staff/v1/tickets/${encodeURIComponent(id)}${tail}`;
+export const ticketQueue = (category?: TicketCategory) =>
+  staffApi<{ items: TicketQueueItem[] }>(category === undefined ? '/staff/v1/tickets' : `/staff/v1/tickets?category=${encodeURIComponent(category)}`);
+export const ticketCase = (id: string) => staffApi<TicketCase>(ticketUrl(id));
+export const takeTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/take'), { method: 'POST', body: {} });
+export const replyToTicket = (id: string, body: string) => staffApi<TicketCase>(ticketUrl(id, '/messages'), { method: 'POST', body: { body } });
+export const closeStaffTicket = (id: string) => staffApi<TicketCase>(ticketUrl(id, '/close'), { method: 'POST', body: {} });
+export const releaseTicket = (id: string) => staffApi<{ released: true }>(ticketUrl(id, '/release'), { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
 // Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)

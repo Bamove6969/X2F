@@ -281,7 +281,12 @@ export type ApiErrorCode =
   | 'quote-expired'
   | 'quote-changed'
   // Plan 4 Task 19, re-review 3 m1: a training case changed after the curator opened it.
-  | 'case-changed';
+  | 'case-changed'
+  // Plan 4 Task 30 (support tickets): a closed ticket takes no message (409); the account already has
+  // TICKET_OPEN_AT_ONCE tickets not closed (409); another staff member has taken the ticket (409).
+  | 'ticket-closed'
+  | 'too-many-tickets'
+  | 'ticket-taken';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

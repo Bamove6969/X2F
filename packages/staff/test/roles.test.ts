@@ -81,7 +81,8 @@ describe('can', () => {
 
 describe('NAV', () => {
   test('owner sees the boards\' seven, plus feedback (Plan 5 Task 4) and Prices (owner Q13, J-21)', () => {
-    expect(NAV.owner).toEqual(['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings']);
+    // Plan 4 Task 31: Tickets after Feedback (no board places it: a lead default).
+    expect(NAV.owner).toEqual(['overview', 'disputes', 'past-reputation', 'accounts', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'tickets', 'settings']);
   });
   test('J-21: every menu item needs a perm its role holds; Prices is the price-health data (stats.read)', () => {
     for (const role of STAFF_ROLES) {
@@ -102,10 +103,22 @@ describe('NAV', () => {
   test('owner Q60: a feedback grant adds Feedback to a moderator\'s or helper\'s menu, once', () => {
     expect(navFor('mod', ['feedback.read'])).toEqual(['disputes', 'past-reputation', 'training', 'log', 'feedback']);
     expect(navFor('helper', ['feedback.read'])).toEqual(['feedback']);
-    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'past-reputation', 'training', 'log']);
     expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback']);
   });
-  test('helper sees nothing', () => {
+  test('Plan 4 Tasks 30-31: a tickets grant adds Tickets (after Feedback) to any role\'s menu, once', () => {
+    expect(NAV_PERM.tickets).toBe('tickets.handle');
+    expect(navFor('helper', ['tickets.handle'])).toEqual(['tickets']);
+    expect(navFor('helper', ['tickets.handle', 'feedback.read'])).toEqual(['feedback', 'tickets']);
+    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'past-reputation', 'training', 'log', 'tickets']);
+    expect(navFor('senior', ['tickets.handle'])).toEqual(['disputes', 'past-reputation', 'accounts', 'training', 'log', 'feedback', 'tickets']);
+    // The owner by role, in the owner's own order.
+    expect(navFor('owner')).toEqual(NAV.owner);
+    expect(NAV.owner.filter((i) => i === 'tickets')).toHaveLength(1);
+    // Without the grant, no role but the owner has it.
+    for (const role of ['senior', 'mod', 'helper'] as const) expect(navFor(role)).not.toContain('tickets');
+  });
+  test('a helper without a grant sees nothing', () => {
     expect(NAV.helper).toEqual([]);
+    expect(navFor('helper')).toEqual([]);
   });
 });

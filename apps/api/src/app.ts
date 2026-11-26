@@ -36,6 +36,7 @@ import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
 import { maintenanceGate, siteRoutes } from './site/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
+import { ticketTraderRoutes } from './tickets/traderRoutes.js';
 import { feedbackRoutes } from './feedback/mood.js';
 import { pastRepRoutes } from './pastrep/routes.js';
 import type { MarketPrices } from './price/market.js';
@@ -388,6 +389,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
+  // Plan 4, Task 30: a trader's support tickets to X2F staff (the staff side is staffTicketRoutes).
+  ticketTraderRoutes(app);
 
   return app;
 }

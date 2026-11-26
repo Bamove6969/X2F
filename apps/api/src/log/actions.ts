@@ -221,7 +221,10 @@ export const LOG_ACTIONS = {
   'news.published': { newsId: 'id' },
   'news.edited': { newsId: 'id' },
   'news.deleted': { newsId: 'id' },
-  // Support tickets (Task 30): never the text.
+  // Support tickets (Task 30): the ticket id only, never the text, the trader or the trade.
+  'ticket.taken': { ticketId: 'id' },
+  'ticket.released': { ticketId: 'id' },
+  'ticket.opened': { ticketId: 'id' },
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
   'training.copy-saved': {},

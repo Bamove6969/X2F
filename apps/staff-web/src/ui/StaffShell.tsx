@@ -24,6 +24,8 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   log: 'Activity log',
   // Plan 5 Task 4: no board places it yet (NAV puts it before Settings). DESIGNER-REVIEW
   feedback: 'Feedback',
+  // Plan 4 Task 31: the support-ticket queue (no board places it: DESIGN not drawn). COPY-UNSIGNED DESIGNER-REVIEW
+  tickets: 'Tickets',
   settings: 'Settings',
 };
 
@@ -38,6 +40,7 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   training: '/training',
   log: '/log',
   feedback: '/feedback',
+  tickets: '/tickets',
   settings: '/settings',
 };
 
@@ -51,7 +54,7 @@ export const useMe = (): Me | null => useContext(MeContext);
 /** The countdown shows when the session ends this soon (Plan 4 Task 16). */
 export const COUNTDOWN_FROM_MS = 10 * 60_000;
 
-/** What a staff member whose role has no pages sees (a helper until Task 30's tickets). COPY-UNSIGNED */
+/** What a staff member with no pages sees (a helper the owner has not granted tickets or feedback). COPY-UNSIGNED */
 export const NOTHING_FOR_ROLE = 'Nothing to show for your role yet';
 
 /** How the shell left: Login says "Your login hours have ended." for `hours`. */

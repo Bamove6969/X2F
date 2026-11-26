@@ -93,6 +93,9 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/trades/:code/proofs/:id': 'a proof ciphertext of one of my own trades (participants only)',
   'GET /v1/wallets': 'my own payout wallets',
   'GET /v1/wallets/rule': 'my own wallet rule',
+  // Plan 4 Task 30: my own support tickets (anyone else's id is the unknown-id 404).
+  'GET /v1/tickets': "my own account's support tickets (account owner only)",
+  'GET /v1/tickets/:id': 'one of my own support tickets and its messages (account owner only)',
 };
 
 /**
@@ -168,6 +171,10 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
   'POST /v1/feedback': 'a platform-feedback row; no data back',
   'POST /v1/feedback/form': 'a feedback row; no data back',
+  // Plan 4 Task 30: support tickets (account owner only; anyone else's id is the unknown-id 404).
+  'POST /v1/tickets': 'opens my own support ticket (naming, at most, one of my own trades); answers its id',
+  'POST /v1/tickets/:id/messages': 'a message on one of my own support tickets; answers that ticket',
+  'POST /v1/tickets/:id/close': 'closes one of my own support tickets; answers that ticket',
   // Wallets and offers (my own).
   'POST /v1/wallets': 'adds my own payout wallets; answers them',
   'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
