@@ -55,6 +55,7 @@ import { AccountSettings, AlertsSettings } from './screens/settings/SettingsTabs
 import { ACCOUNT_PATH, ALERTS_PATH, PREFERENCES_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_PATH } from './screens/settings/settingsCopy.js';
 import { PreferencesSettings } from './screens/settings/Preferences.js';
 import { Team } from './screens/settings/Team.js';
+import { Privacy, PRIVACY_PATH } from './screens/settings/Privacy.js';
 import { TeamLog } from './screens/settings/TeamLog.js';
 import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
@@ -339,6 +340,8 @@ export function App() {
             <Route path="/settings/team" element={<Team />} />
             <Route path="/settings/team/log" element={<TeamLog />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
+            {/* Plan 7 Task 4: Settings → Privacy, what X2F keeps and when it is deleted (from Settings → Help). */}
+            <Route path={PRIVACY_PATH} element={<Privacy />} />
             <Route path="/settings/account-type" element={<AccountType />} />
             {/* Plan 5 Task 12: badge visibility and the signed reputation record. */}
             <Route path="/settings/badges" element={<BadgeSettings />} />

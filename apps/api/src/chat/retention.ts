@@ -7,12 +7,23 @@ import { PURGE_ROLE } from '../trades/purge.js';
 /**
  * Decides from a chat's facts whether it is due for deletion now. The default is @x2f/trade's
  * `chatPurgeDue` (30 days after an undisputed trade closes, 90 after a dispute closes, never while
- * one is open; 7 idle days before a trade). Plan 7's self-delete plugs its per-side times in here without a schema change
+ * one is open or while a lien from the trade is unpaid, then 90 after the lien ends; 7 idle days
+ * before a trade). Plan 7's self-delete plugs its per-side times in here without a schema change
  * (Revision 2026-10-28).
  */
 export type ChatPurgeRule = (facts: ChatRetentionFacts, now: Date) => boolean;
 
 const BATCH = 500;
+
+/**
+ * Owner 26 Nov 2026: the lien facts of the trade `code` (an SQL expression) names, as two columns,
+ * `lien_open` (a lien from it is active or suspended) and `lien_ended` (when its last lien ended).
+ * Shared by the chat, proof and whole-trade purges, so all three keep a trade with an unpaid lien
+ * and count the same 90 days from its end. A null code (a pre-trade chat) has no lien.
+ */
+export const LIEN_FACTS_SQL = (code: string): string =>
+  `exists (select 1 from liens l where l.from_code = ${code} and l.status in ('active', 'suspended')) as lien_open,
+   (select max(l.lifted_at) from liens l where l.from_code = ${code}) as lien_ended`;
 const DAY_MS = 86_400_000;
 
 /**
@@ -40,6 +51,8 @@ interface FactRow {
   disputes: number;
   disputes_open: number;
   dispute_closed_at: Date | null;
+  lien_open: boolean;
+  lien_ended: Date | null;
 }
 
 const factsOf = (r: FactRow): ChatRetentionFacts => ({
@@ -50,12 +63,17 @@ const factsOf = (r: FactRow): ChatRetentionFacts => ({
   disputeClosedAt: r.dispute_closed_at,
   createdAt: r.created_at,
   lastMessageAt: r.last_message_at,
+  // Owner 26 Nov 2026: an unpaid lien from the trade keeps its chat; an ended one, 90 days more.
+  lienOpen: r.lien_open,
+  lienEndedAt: r.lien_ended,
 });
 
 // `closed` is the machine's last status and the only one with a closed_at; every other status
 // counts as open, including `published` (the appeal window, on a trade that has already closed).
+// The lien facts are the trade purge's own (retention/tradePurge.ts factsSql): LIEN_FACTS_SQL.
 const FACTS = `select c.code, c.trade_code, c.created_at, c.last_message_at, t.closed_at, t.state, t.dispute_by,
-                      d.total as disputes, d.still_open as disputes_open, d.last_closed as dispute_closed_at
+                      d.total as disputes, d.still_open as disputes_open, d.last_closed as dispute_closed_at,
+                      ${LIEN_FACTS_SQL('c.trade_code')}
                  from chats c
                  left join trades t on t.code = c.trade_code
                  left join lateral (select count(*)::int as total,

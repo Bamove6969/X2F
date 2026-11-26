@@ -15,6 +15,7 @@ import { ACCOUNT_TYPE_PATH } from '../src/screens/settings/accountTypeCopy.js';
 import { DEVICES_PATH } from '../src/screens/settings/devicesCopy.js';
 import { CHANGES_PATH } from '../src/screens/settings/holdCopy.js';
 import { IDLE_REMINDER_PATH } from '../src/screens/auth/sessionCopy.js';
+import { PRIVACY_PATH } from '../src/screens/settings/privacyCopy.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
@@ -61,7 +62,7 @@ describe('note #101: which tab each settings screen is under', () => {
       [SECURITY_PATH, 'security'], [CHANGES_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
       [ALERTS_PATH, 'alerts'], ['/settings/jabber', 'alerts'], ['/settings/jabber/events', 'alerts'],
       [ACCOUNT_PATH, 'account'], [ACCOUNT_TYPE_PATH, 'account'], [TEAM_PATH, 'account'], [BLOCKED_PATH, 'account'],
-      [PREFERENCES_PATH, 'preferences'], [SETTINGS_HELP_PATH, 'help'],
+      [PREFERENCES_PATH, 'preferences'], [SETTINGS_HELP_PATH, 'help'], [PRIVACY_PATH, 'help'],
     ];
     for (const [path, tab] of under) expect(settingsTabOf(path), path).toBe(tab);
     expect(settingsTabOf('/settings/account-typo')).toBeNull();
@@ -110,7 +111,7 @@ describe('note #101: the tab pages', () => {
     expect(host.querySelector('[aria-current="page"]')!.textContent).toBe('Alerts');
   });
 
-  it('Help holds the tour replay and the way back to the welcome screen', async () => {
+  it('Help holds the tour replay, the way back to the welcome screen and the way on to Privacy', async () => {
     const { host } = render(
       <MemoryRouter initialEntries={[SETTINGS_HELP_PATH]}>
         <TourProvider>
@@ -121,6 +122,8 @@ describe('note #101: the tab pages', () => {
     await flush();
     expect(host.querySelector('[data-part="tour-replay"]')).not.toBeNull();
     expect(host.querySelector('[data-part="welcome-link"]')).not.toBeNull();
+    // Plan 7 Task 4: the way on to Settings → Privacy.
+    expect(host.querySelector('[data-part="privacy-link"]')!.getAttribute('href')).toBe(PRIVACY_PATH);
     expect(host.querySelector('[aria-current="page"]')!.textContent).toBe('Help');
   });
 });
