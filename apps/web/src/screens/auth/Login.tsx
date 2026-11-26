@@ -8,12 +8,16 @@
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { loginWithPasskey, loginWithSecurityKey, type ApprovalWait, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
+import { AuthApiError, loginWithPasskey, loginWithSecurityKey, type ApprovalWait, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { ApproveOnDevice } from './ApproveOnDevice.js';
 import { afterLogin, authApi, deviceLabel, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { isExpired, loginCantDo, refusalText } from './refusals.js';
+import { LOGIN_RETRY_LATER } from './loginRules.js';
+
+/** X2F itself could not answer (a 5xx): the neutral line, not one that blames the pasted key. */
+const serverDown = (e: unknown): boolean => e instanceof AuthApiError && e.status >= 500;
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
@@ -213,7 +217,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
       setCopied(false);
     } catch (e) {
       // An expired or revoked key is turned away with the reason (spec 6.2); a wait says how long.
-      setError(refusalText(e, 'Could not send a login message for that key. Check the key and try again.'));
+      setError(serverDown(e) ? LOGIN_RETRY_LATER : refusalText(e, 'Could not send a login message for that key. Check the key and try again.'));
     } finally {
       setBusy(false);
     }

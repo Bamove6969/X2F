@@ -1165,7 +1165,7 @@ describe('the abilities catalogue on the API (J-10)', () => {
     const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
     expect(lists[0]).toEqual([...ROLE_ABILITIES.offers]);
     expect(lists[1]).toEqual([...ROLE_ABILITIES.trades]);
-    // lists[2..4] were hold v3's three member rights (migration 016); migration 840 removed them.
+    // lists[2..4] were hold v3's three member rights (migration 016); migration 853 removed them.
     expect(new Set(lists[5])).toEqual(HARD_OWNER_ONLY);
   });
 

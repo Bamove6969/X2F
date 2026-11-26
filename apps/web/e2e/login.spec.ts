@@ -156,9 +156,9 @@ test('an outage or a wait is not a mismatch: a neutral retry or the wait, and th
   await page.fill('#pgp-key', FAKE_KEY);
   for (let i = 1; i <= 4; i++) {
     await page.click('text=Send me a login message');
-    // Odd tries get the 429 (re-review item 3: say how long), even ones the 503 (the PGP step's own retry line).
+    // Odd tries get the 429 (re-review item 3: say how long), even ones the 503 (the neutral retry line, not one that blames the key).
     await expect(page.locator('[data-part="pgp"] [role="alert"]')).toHaveText(
-      i % 2 === 1 ? 'Too many tries. Try again in 1 minute.' : 'Could not send a login message for that key. Check the key and try again.',
+      i % 2 === 1 ? 'Too many tries. Try again in 1 minute.' : 'X2F could not check that just now. Try again in a moment.',
     );
   }
   await expect(page).toHaveURL(/\/login$/);

@@ -237,7 +237,7 @@ describe('Staff pay owed', () => {
   });
 
   it("changes one person's share of the fee with a staff-pay tap bound to them and the value", async () => {
-    const member = { staffId: '11111111-1111-4111-8111-111111111111', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: 2000 };
+    const member = { staffId: '11111111-1111-4111-8111-111111111111', tradeTag: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: 2000 };
     const c = api({
       'GET /staff/v1/pay/staff': { body: { members: [member] } },
       [`PUT /staff/v1/pay/staff/${member.staffId}`]: (b) => ({ body: { feeBp: (b as { feeBp: number | null }).feeBp } }),
