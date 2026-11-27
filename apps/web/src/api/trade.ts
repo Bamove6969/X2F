@@ -107,6 +107,12 @@ export interface TradeView {
    * it at take (ConfirmedDeal.lienRecoveryAtomic); not shown on screen yet (Liens.tsx).
    */
   lienRecoveryAtomic?: string;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): to the
+   * seller only, the extra this trade's escrow holds for the person they owe (part of
+   * `funding.sellerFundsAtomic`); absent when none. The screens show the device's own figure.
+   */
+  sellerLienRecoveryAtomic?: string;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -192,6 +198,7 @@ export function parseTradeView(raw: unknown): TradeView {
     throw new TradeShapeError('deleteAt');
   }
   if (v.lienRecoveryAtomic !== undefined) amount(v.lienRecoveryAtomic, 'lienRecoveryAtomic');
+  if (v.sellerLienRecoveryAtomic !== undefined) amount(v.sellerLienRecoveryAtomic, 'sellerLienRecoveryAtomic');
   return raw as TradeView;
 }
 

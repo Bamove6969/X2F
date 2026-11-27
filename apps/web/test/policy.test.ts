@@ -510,7 +510,7 @@ describe('lien recovery in the signed terms', () => {
   it('the buyer co-signs the release that pays the signed recovery, and nothing else', () => {
     const c = withRec('buyer');
     const to = recSet(c);
-    expect(to[3]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
+    expect(to[3]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic, bearsNetworkFee: true });
     expect(cosignPolicy(c, out(to, 'seller', 'buyer'))).toBe(true);
     // The plain release (no recovery) does not match the signed terms.
     expect(cosignPolicy(c, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
@@ -551,5 +551,60 @@ describe('lien recovery: the buyer co-signs only the recovery it accepted (revie
     const c = ctx('buyer', { state: 'paid', paidAt: '2026-11-16T12:00:00.000Z' });
     const accepted = { ...c, own: { ...c.own, lienRecoveryAtomic: REC.amountAtomic } };
     expect(cosignPolicy(accepted, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
+  });
+});
+
+// Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the seller
+// funds extra on top of amount + fee; a completed trade pays it to the creditor as its own output,
+// every refund returns it to the seller, and the seller co-signs only the extra it accepted.
+describe('seller lien recovery in the signed terms', () => {
+  const CREDITOR = '4CreditorPayoutAddress';
+  const SREC = { address: CREDITOR, amountAtomic: 200_000_000_000n };
+  const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller', sellerLienRecoveryAtomic: SREC.amountAtomic });
+  const withExtra = (role: 'buyer' | 'seller', accepted: bigint | undefined = SREC.amountAtomic, o: Parameters<typeof ctx>[1] = {}): PolicyContext => {
+    const c = ctx(role, { state: 'paid', paidAt: '2026-11-27T12:00:00.000Z', balance: plan.sellerFundsAtomic, ...o });
+    return {
+      ...c,
+      own: role === 'seller' && accepted !== undefined ? { ...c.own, sellerLienRecoveryAtomic: accepted } : c.own,
+      signedTerms: { ...c.signedTerms, sellerLienRecovery: SREC },
+    };
+  };
+  const set = (kind: SettleKind, balance: bigint): Payout[] =>
+    payoutsFor({ kind, amountAtomic: AMOUNT, poster: 'seller', feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, balanceAtomic: balance,
+      buyerPayout: BUYER, sellerRefund: SELLER, feeWallet: FEE, payrollWallet: PAYROLL, sellerLienRecovery: SREC });
+
+  it('the release pays the buyer exactly what it gets without a lien, and the extra to the creditor; both sides co-sign only it', () => {
+    const to = set('release', plan.sellerFundsAtomic);
+    expect(to[0]).toEqual(expected('release', ctx('buyer', { state: 'paid', paidAt: '2026-11-27T12:00:00.000Z' }))[0]);
+    expect(to.find((p) => p.address === CREDITOR)).toEqual({ address: CREDITOR, amountAtomic: SREC.amountAtomic, bearsNetworkFee: true });
+    expect(cosignPolicy(withExtra('buyer'), out(to, 'seller', 'buyer'))).toBe(true);
+    expect(outcomeFor('release', withExtra('seller'))?.to).toEqual(to);
+    // The extra to another address, or one atomic unit more: refused.
+    const elsewhere = to.map((p) => (p.address === CREDITOR ? { ...p, address: ATTACKER } : p));
+    expect(cosignPolicy(withExtra('buyer'), out(elsewhere, 'seller', 'buyer'))).toBe(false);
+  });
+
+  it('a refund returns the whole balance, extra included, to the seller', () => {
+    for (const kind of ['buyer-cancel', 'mutual-cancel', 'auto-refund', 'lapse-refund'] as const) {
+      expect(set(kind, plan.sellerFundsAtomic)).toEqual([{ address: SELLER, amountAtomic: plan.sellerFundsAtomic }]);
+    }
+    // The buyer's own cancel, on this device: the whole balance back to the seller, extra included.
+    expect(outcomeFor('buyer-cancel', withExtra('buyer', undefined, { state: 'secured', paidAt: null }))?.to).toEqual([{ address: SELLER, amountAtomic: plan.sellerFundsAtomic }]);
+  });
+
+  it('the seller refuses signed terms whose extra it did not accept (injected, inflated, or dropped)', () => {
+    const to = set('release', plan.sellerFundsAtomic);
+    expect(outcomeFor('release', withExtra('seller', 0n))).toBeNull();
+    expect(outcomeFor('release', withExtra('seller', SREC.amountAtomic - 1n))).toBeNull();
+    expect(cosignPolicy(withExtra('seller', SREC.amountAtomic - 1n), out(to, 'buyer', 'seller'))).toBe(false);
+    const c = ctx('seller', { state: 'paid', paidAt: '2026-11-27T12:00:00.000Z' });
+    expect(outcomeFor('release', { ...c, own: { ...c.own, sellerLienRecoveryAtomic: SREC.amountAtomic } })).toBeNull();
+  });
+
+  it('growth never counts the extra: an escrow funded with exactly amount + fee + extra stays at the amount at take', () => {
+    const d: Deal = { poster: 'seller', takeAmountAtomic: AMOUNT, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 10_000_000n };
+    expect(deviceAmount(d, AMOUNT, plan.sellerFundsAtomic, plan.sellerFundsAtomic, SREC.amountAtomic)).toBe(AMOUNT);
+    // Without the extra the same balance would read as growth.
+    expect(deviceAmount(d, AMOUNT, plan.sellerFundsAtomic, plan.sellerFundsAtomic)).toBeGreaterThan(AMOUNT);
   });
 });

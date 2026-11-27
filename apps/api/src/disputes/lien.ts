@@ -17,10 +17,11 @@ import { releaseStaleHolds } from './recovery.js';
  *
  * A lien's effect (owner 16 Nov 2026, option b; docs/lien-recovery.md): an active lien no longer
  * blocks trading. The debtor keeps trading and each trade in which they receive XMR pays part of
- * their proceeds to the creditor (disputes/recovery.ts) until the lien is repaid. A moderator's
- * freeze or ban (`trading_holds`, bans) is separate and unchanged. `LIEN_BLOCKS_SQL` and
- * `lienBlocksTrading` stay the one choke point the trading guards read (409 `lien`), now false, so
- * an owner answer to NEEDS_OWNER_SELLER_DEBTOR (e.g. block selling only) has one place to change.
+ * their proceeds to the creditor (disputes/recovery.ts) until the lien is repaid; each trade in which
+ * they sell funds extra on top that a completed trade pays to the creditor (owner 27 Nov 2026,
+ * option (a) of docs/lien-recovery.md "Debtor is the seller"). A moderator's freeze or ban
+ * (`trading_holds`, bans) is separate and unchanged. `LIEN_BLOCKS_SQL` and `lienBlocksTrading` stay
+ * the one choke point the trading guards read (409 `lien`), now false.
  *
  * Task 25's repayment trade (NEEDS_REPAYMENT_TRADE) is replaced by recovery from the debtor's
  * trades. The seller's accepted tx proof of `seller-sends-xmr` repays a lien for the XMR alone

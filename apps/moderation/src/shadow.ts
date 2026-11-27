@@ -47,6 +47,8 @@ export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Tr
       payWindowMin: terms.payWindowMin,
       minFiatCents: 1n,
       maxFiatCents: BigInt(d.maxFiatCents),
+      // Owner 27 Nov 2026: a selling debtor's extra is part of what the escrow must hold (signed terms only).
+      ...(terms.sellerLienRecovery !== undefined ? { sellerLienRecoveryAtomic: BigInt(terms.sellerLienRecovery.amountAtomic) } : {}),
     },
     takenAt,
   );

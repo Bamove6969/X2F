@@ -1,6 +1,6 @@
 import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
-import { CLOSED_STATES, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
+import { CLOSED_STATES, attestedSellerRecovery, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { apiShowsSellerCancel, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
 import { apiAllows, buyerCancelStep } from './buyerCancel.js';
@@ -402,6 +402,8 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       sellerRefund: r.sellerRefund,
       feeWallet: o.feeWallet,
       payrollWallet: o.payrollWallet,
+      // Owner 27 Nov 2026: a refund returns the seller's extra too; it is part of the funds (escrowPlan).
+      ...(terms.sellerLienRecovery !== undefined ? { sellerLienRecovery: attestedSellerRecovery(terms)! } : {}),
     });
   };
 

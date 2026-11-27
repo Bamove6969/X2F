@@ -187,6 +187,12 @@ export interface TakeRequest {
    * the trade would reserve any other figure. Sent by a buying taker only.
    */
   lienRecoveryAtomic?: bigint;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the
+   * extra the quote showed a selling taker, which they accepted by tapping Trade (0: none). The API
+   * refuses 409 `lien-recovery-changed` for any other figure. Sent by a selling taker only.
+   */
+  sellerLienRecoveryAtomic?: bigint;
 }
 
 /**
@@ -197,6 +203,19 @@ export async function previewLienRecovery(offerId: string, amountAtomic: bigint,
   const q = new URLSearchParams({ offerId, amountAtomic: amountAtomic.toString(), walletId });
   const o = obj(await api(`/v1/account/liens/preview?${q.toString()}`, signal ? { signal } : {}), 'lien preview');
   const v = o.lienRecoveryAtomic;
+  if (typeof v !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(v)) throw new TypeError('lien preview');
+  return BigInt(v);
+}
+
+/**
+ * The same preview for a taker who SELLS into a buy ad (owner 27 Nov 2026): the extra they would
+ * fund for their own lien (`sellerLienRecoveryAtomic`), 0 when none. A reply without the figure
+ * is refused (the quote then waits), never read as none.
+ */
+export async function previewSellerLienRecovery(offerId: string, amountAtomic: bigint, walletId: string, signal?: AbortSignal): Promise<bigint> {
+  const q = new URLSearchParams({ offerId, amountAtomic: amountAtomic.toString(), walletId });
+  const o = obj(await api(`/v1/account/liens/preview?${q.toString()}`, signal ? { signal } : {}), 'lien preview');
+  const v = o.sellerLienRecoveryAtomic;
   if (typeof v !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(v)) throw new TypeError('lien preview');
   return BigInt(v);
 }
@@ -213,6 +232,8 @@ export interface Taken {
   maxFiatCents: bigint;
   /** Lien recovery (owner 16 Nov 2026): what this buyer's proceeds pay to the person they owe; absent = none. */
   lienRecoveryAtomic?: bigint;
+  /** Seller lien recovery (owner 27 Nov 2026): the extra this selling taker funds for their own lien; absent = none. */
+  sellerLienRecoveryAtomic?: bigint;
 }
 
 /** `POST /v1/offers/:id/take` (Task 5) → the new trade's code, the rate and total that locked, and its growth ceiling. */
@@ -222,5 +243,6 @@ export async function takeOffer(offerId: string, body: TakeRequest): Promise<Tak
     code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take'),
     maxFiatCents: big(o, 'maxFiatCents', 'take'),
     ...(o.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: big(o, 'lienRecoveryAtomic', 'take') } : {}),
+    ...(o.sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic: big(o, 'sellerLienRecoveryAtomic', 'take') } : {}),
   };
 }

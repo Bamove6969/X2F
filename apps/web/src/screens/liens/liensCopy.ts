@@ -17,10 +17,15 @@ export const LIENS_COPY = {
   remaining: 'Still to pay',
   rate: 'Taken from each purchase',
   suspended: 'On hold while your appeal is decided.',
-  sellNote: 'Selling XMR does not pay it back.',
+  // Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): selling pays it back too,
+  // with extra the seller sends on top of the sale. COPY-UNSIGNED.
+  sellNote: (pct: string) =>
+    pct === '100%'
+      ? 'Each time you sell XMR, you also send extra into the escrow, as much again as you sell, until it is paid in full. The extra goes to them when the trade completes. You get it back if the trade is refunded.'
+      : `Each time you sell XMR, you also send extra into the escrow, ${pct} of what you sell, until it is paid in full. The extra goes to them when the trade completes. You get it back if the trade is refunded.`,
   fromTrade: (code: string) => `From trade ${code}`,
   owedToTitle: 'Owed to you after a dispute',
-  owedToIntro: 'What this trader receives when they buy XMR is paid to you until the amount is paid in full.',
+  owedToIntro: 'What this trader receives when they buy XMR, and extra they send when they sell XMR, is paid to you until the amount is paid in full.',
   received: 'Received',
   repaid: 'Paid in full.',
   addressNeeded: 'Choose the wallet these payments go to. Nothing is paid to you until you do.',
@@ -51,4 +56,22 @@ export const LIEN_QUOTE_COPY = {
     `You owe another trader after a dispute. This purchase pays ${paid} of it, from the XMR you buy. You receive ${kept}. Tapping Trade agrees to this.`,
   failed: 'We could not check what this purchase pays to the person you owe. Try again in a moment.',
   sheet: (paid: string) => `You owe another trader after a dispute. This purchase pays ${paid} of it, from the XMR you buy. Using a wallet agrees to this.`,
+} as const;
+
+/**
+ * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): a seller
+ * who owes a lien sends extra on top of the sale, and sees and accepts the figure before the trade
+ * starts (the quote for a buy ad, the accept sheet for their own sell ad) and again on the funding
+ * screen. Only the seller ever sees it. COPY-UNSIGNED. DESIGN: not drawn (NEEDS_DESIGN_SELLER_LIEN:
+ * placed as a quote row and a note until design draws it).
+ */
+export const SELLER_LIEN_COPY = {
+  row: 'Extra for what you owe',
+  fundRow: 'Includes extra for what you owe',
+  explain: 'It goes to the person you owe when the trade completes; you get it back if the trade is refunded.',
+  note: (extra: string) =>
+    `Extra for what you owe: ${extra}. It goes to the person you owe when the trade completes; you get it back if the trade is refunded. Tapping Trade agrees to this.`,
+  sheet: (extra: string) =>
+    `Extra for what you owe: ${extra}. It goes to the person you owe when the trade completes; you get it back if the trade is refunded. Using a wallet agrees to this.`,
+  failed: 'We could not check the extra you send for what you owe. Try again in a moment.',
 } as const;

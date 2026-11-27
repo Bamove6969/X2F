@@ -295,7 +295,7 @@ describe('payoutsFor: lien recovery', () => {
       { address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true },
       { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
       { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
-      { address: CREDITOR, amountAtomic: R },
+      { address: CREDITOR, amountAtomic: R, bearsNetworkFee: true },
       { address: SELLER, amountAtomic: 7n },
     ]);
     expect(sum(p)).toBe(AMOUNT + FEE_AMOUNT + 7n);
@@ -304,7 +304,7 @@ describe('payoutsFor: lien recovery', () => {
   test('on a buyer ad the proceeds are amount − fee', () => {
     const p = payoutsFor(withRec('release', 'buyer', AMOUNT));
     expect(p[0]).toEqual({ address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT - R, bearsNetworkFee: true });
-    expect(p[3]).toEqual({ address: CREDITOR, amountAtomic: R });
+    expect(p[3]).toEqual({ address: CREDITOR, amountAtomic: R, bearsNetworkFee: true });
   });
 
   test.each([...REFUNDS, 'dispute-seller'] as const)('%s pays no recovery (nothing was completed)', (kind) => {
@@ -331,7 +331,7 @@ describe('payoutsFor: lien recovery', () => {
       { address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true },
       { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
       { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
-      { address: CREDITOR, amountAtomic: R },
+      { address: CREDITOR, amountAtomic: R, bearsNetworkFee: true },
     ]);
   });
 });
@@ -364,12 +364,12 @@ describe('lien recovery limits (review B1, B3)', () => {
     for (const fee of [1n, 7n, 30_720_001n, MAX_NETWORK_FEE - 1n, MAX_NETWORK_FEE]) {
       const shares = networkFeeShares(fee, bearers);
       set.forEach((p, i) => expect(p.amountAtomic - shares[i]!).toBeGreaterThan(0n));
-      expect(feeWalletNetworkFee('release', fee, FEE_AMOUNT)).toBe(shares[1]! + shares[2]!);
+      expect(feeWalletNetworkFee('release', fee, FEE_AMOUNT, 1)).toBe(shares[1]! + shares[2]!);
     }
   });
 
   test('B1: payoutsFor refuses a recovery above the cap (the API cannot take more by signing it in)', () => {
-    expect(payoutsFor(rec(CAP))[3]).toEqual({ address: CREDITOR, amountAtomic: CAP });
+    expect(payoutsFor(rec(CAP))[3]).toEqual({ address: CREDITOR, amountAtomic: CAP, bearsNetworkFee: true });
     expect(() => payoutsFor(rec(CAP + 1n))).toThrow(/bad recovery amount/);
     expect(() => payoutsFor(rec(AMOUNT))).toThrow(/bad recovery amount/);
   });

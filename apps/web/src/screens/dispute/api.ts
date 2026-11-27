@@ -38,6 +38,8 @@ export interface DisputeTrade {
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
   /** How the trade settled (a refund's kind): a cancel's refund can't be disputed (owner 2026-10-29). */
   settling?: TradeView['settling'];
+  /** Owner 27 Nov 2026: the seller's own lien extra (seller's view only; absent: none). A refund returns it too. */
+  sellerLienRecoveryAtomic?: string;
   serverNow: string;
 }
 
@@ -167,6 +169,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     closedAt: v.closedAt,
     dispute: v.dispute,
     settling: v.settling,
+    ...(v.role === 'seller' && v.sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic: v.sellerLienRecoveryAtomic } : {}),
     serverNow: v.serverNow,
   };
 }

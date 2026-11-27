@@ -87,12 +87,24 @@ for (const size of PHONES) {
       await page.goto('/sell');
       await expect(page).toHaveURL(/\/welcome$/);
       const screen = page.locator('[data-screen="welcome"]');
+      const lead = screen.locator('[data-part="welcome-lead"]');
+      const w1 = lead.locator('[data-part="welcome-word-1"]');
+      const w2 = lead.locator('[data-part="welcome-word-2"]');
+      await expect(lead).toBeVisible();
+      await expect(w1).toHaveText('Welcome');
+      await expect(w2).toHaveText('to');
       const mark = screen.locator('[data-part="welcome-mark"][role="img"][aria-label="X2F"]');
       await expect(mark).toBeVisible();
       // Four layers in one box: X, 2, F and the dot, spring-animated in turn.
       for (const l of ['x', '2', 'f', 'dot']) await expect(mark.locator(`[data-part="letter-${l}"]`)).toBeAttached();
       expect(await mark.locator('[data-part="letter-x"]').evaluate((el) => el.getAnimations().length)).toBeGreaterThan(0);
       const mb = (await mark.boundingBox())!;
+      const b1 = (await w1.boundingBox())!;
+      const b2 = (await w2.boundingBox())!;
+      // "Welcome to" moves diagonally from top-left down-right toward the big centred logo.
+      expect(b1.x).toBeLessThan(b2.x);
+      expect(b1.y).toBeLessThan(b2.y);
+      expect(b2.y).toBeLessThan(mb.y + mb.height / 2);
       expect(Math.abs(mb.x + mb.width / 2 - size.width / 2)).toBeLessThanOrEqual(2);
       expect(mb.width).toBeLessThanOrEqual(280);
       await expect(screen.getByRole('heading', { level: 1 })).toHaveText('Welcome to X2F');
@@ -167,15 +179,17 @@ for (const size of PHONES) {
       await card(page).locator('[data-part="tour-back"]').click();
       await expect(count(page)).toHaveText('1 of 19');
 
-      // Stop 5: a centred card with the eye-off tile, no ring.
+      // Stop 5: a centred card with the eye-off tile, no ring; last stop on Find a trade reads "Next screen".
       await goTo(page, 5);
       await expect(card(page)).toHaveAttribute('data-placement', 'center');
       await expect(card(page).locator('[data-icon="eye-off"]')).toBeVisible();
       await expect(page.locator('[data-part="tour-ring"]')).toHaveCount(0);
+      await expect(next(page)).toHaveText('Next screen');
 
       // Stop 6: the Offers screen pushes in, marked Example.
       await next(page).click();
       await expect(count(page)).toHaveText('6 of 19');
+      await expect(next(page)).toHaveText('Next');
       await expect(stage(page).getByRole('heading', { level: 1 })).toHaveText('Sell XMR via Cash App');
       await expect(stage(page).locator('[data-part="example"]')).toBeVisible();
       await expect(card(page).getByRole('img', { name: 'Page 2 of 7, Offers' })).toBeAttached();
@@ -254,18 +268,21 @@ for (const size of PHONES) {
   });
 }
 
-test('folded iPhone Duo (466x678): the links hide, both choices fit with no scrolling', async ({ page }) => {
+test('folded iPhone Duo (466x678): compacted layout keeps the links and both choices visible with no scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 466, height: 678 });
   await stubApi(page);
   await page.goto('/sell');
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
-  await expect(page.locator('nav[aria-label="Help and settings"]')).toBeHidden();
+  const linksNav = page.locator('nav[aria-label="Help and settings"]');
+  await expect(linksNav).toBeVisible();
+  await expect(linksNav.locator('a')).toHaveText(['FAQ', 'Getting started', 'Support', 'Settings']);
   // Waits for layout to settle after the webfont swap (agy-flakes, Job 9); toPass keeps the numbers.
   await expect(async () => {
-    const skip = (await page.getByRole('button', { name: 'Skip and get started' }).boundingBox())!;
+    const linksBox = (await linksNav.boundingBox())!;
     const nav = (await page.locator('nav[aria-label="Main"]').boundingBox())!;
-    expect(skip.y + skip.height).toBeLessThanOrEqual(nav.y);
+    expect(linksBox.y + linksBox.height).toBeLessThanOrEqual(nav.y);
   }).toPass();
+  await expect44(page.locator('[data-screen="welcome"] button, [data-screen="welcome"] a'));
   await noSidewaysScroll(page);
 });
 

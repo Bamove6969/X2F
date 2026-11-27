@@ -44,6 +44,7 @@ export interface TradeView {
    */
   maxFiatCents: string;
   grown: { at: string; fromAtomic: string; fromFiatCents: string } | null;
+  /** What the escrow received; to the buyer, less the seller's lien extra (owner 27 Nov 2026: never shown it). */
   receivedAtomic: string;
   confirmations: number;
   releasable: boolean;
@@ -68,6 +69,13 @@ export interface TradeView {
    * confirms it (ConfirmedDeal.lienRecoveryAtomic) and accepts only signed terms that carry it.
    */
   lienRecoveryAtomic?: string;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): to the
+   * seller only, the extra XMR this trade's escrow holds for the person they owe (part of
+   * `funding.sellerFundsAtomic`); absent when none. Never in the buyer's view. The seller's device
+   * confirms it (ConfirmedDeal.sellerLienRecoveryAtomic) and accepts only signed terms that carry it.
+   */
+  sellerLienRecoveryAtomic?: string;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -135,6 +143,12 @@ export interface ViewContext {
   lienRecoveryAtomic?: bigint | null;
 }
 
+/** What the escrow received, as the buyer may see it: less the seller's lien extra, never below 0. */
+function buyerSeesReceived(t: Trade): bigint {
+  const extra = t.sellerLienRecoveryAtomic ?? 0n;
+  return t.receivedAtomic > extra ? t.receivedAtomic - extra : 0n;
+}
+
 /**
  * The single serializer for a trade (Task 6). Throws for a viewer who is not a participant; the
  * route answers 404 before calling it.
@@ -159,7 +173,9 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     grown: t.grown
       ? { at: t.grown.at.toISOString(), fromAtomic: t.grown.fromAtomic.toString(), fromFiatCents: t.grown.fromFiatCents.toString() }
       : null,
-    receivedAtomic: t.receivedAtomic.toString(),
+    // Review of feat/seller-lien item 2 (privacy): the buyer is never told of the seller's lien, so
+    // the buyer's figure leaves out the seller's extra (what it would read without the lien).
+    receivedAtomic: (role === 'buyer' ? buyerSeesReceived(t) : t.receivedAtomic).toString(),
     confirmations: t.confirmations,
     releasable: t.releasable,
     releasableEtaMin: releasableEta(t),
@@ -178,6 +194,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     dispute: t.dispute ? { by: t.dispute.by, at: t.dispute.at.toISOString() } : null,
     appealUntil: ctx.appealUntil ? ctx.appealUntil.toISOString() : null,
     ...(role === 'buyer' && typeof ctx.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: ctx.lienRecoveryAtomic.toString() } : {}),
+    ...(role === 'seller' && (t.sellerLienRecoveryAtomic ?? 0n) > 0n ? { sellerLienRecoveryAtomic: t.sellerLienRecoveryAtomic!.toString() } : {}),
     txHash: t.txHash,
     takenAt: t.takenAt.toISOString(),
     setupBy: iso(t.setupBy),

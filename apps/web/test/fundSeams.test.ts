@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseTradeView, TradeShapeError } from '../src/api/trade.js';
 import { fundedForGood } from '../src/screens/trade/fund.js';
-import { amountToSend, integrityFailed } from '../src/screens/trade/seams.js';
+import { amountToSend, expectedFundsAtomic, integrityFailed } from '../src/screens/trade/seams.js';
 
 const ADDRESS = '4' + 'A'.repeat(94);
 
@@ -13,6 +13,21 @@ describe('integrityFailed', () => {
     expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '' } })).toBe(true);
     expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1'.repeat(31) } })).toBe(true);
     expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1250000000000' } })).toBe(false);
+  });
+});
+
+describe('owner 27 Nov 2026: the seller funds its lien extra on top', () => {
+  const deal = { poster: 'buyer' as const, takeAmountAtomic: 1_250_000_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 100_000n };
+  const EXTRA = 125_000_000_000n;
+  it('the amount to fund is amount + fee + extra, and the API must ask for exactly that', () => {
+    expect(expectedFundsAtomic(deal, EXTRA)).toBe(1_250_000_000_000n + EXTRA);
+    const e = { error: null, escrowAddress: ADDRESS, deal, sellerLienRecoveryAtomic: EXTRA } as const;
+    expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1375000000000' } })).toBe(false);
+    // The amount without the extra, or with more: refused.
+    expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1250000000000' } })).toBe(true);
+    expect(integrityFailed(e, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1375000000001' } })).toBe(true);
+    // A device that accepted none refuses an API that asks for the extra.
+    expect(integrityFailed({ ...e, sellerLienRecoveryAtomic: null }, { poster: 'buyer', funding: { escrowAddress: ADDRESS, sellerFundsAtomic: '1375000000000' } })).toBe(true);
   });
 });
 

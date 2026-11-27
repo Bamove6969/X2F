@@ -178,7 +178,16 @@ export async function bookSettlementNetworkFee(q: Queryable, code: string, txFee
   if (!t || t.closed_at === null || t.state !== 'released') return false;
   const kind = (t.settling ?? 'release') as FeeOutputKind;
   if (feeOutputAtomic(kind, t.poster, BigInt(t.fee_atomic)) <= 0n) return false;
-  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic, BigInt(t.fee_atomic));
+  // The lien recovery outputs the signed terms paid bear their own shares too (27 Nov 2026): one per
+  // recovery the attested terms carry (the buyer's `lienRecovery`, the seller's `sellerLienRecovery`).
+  const recoveries = (
+    await q.query<{ n: number }>(
+      `select ((a.attestation->'terms' ? 'lienRecovery')::int + (a.attestation->'terms' ? 'sellerLienRecovery')::int) as n
+         from trade_attestations a where a.code = $1`,
+      [code],
+    )
+  ).rows[0]?.n ?? 0;
+  const share = feeWalletNetworkFee(kind, txFeeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : txFeeAtomic, BigInt(t.fee_atomic), recoveries);
   if (share <= 0n) return false;
   const { rows } = await q.query<{ booked: boolean }>(
     `with mark as (

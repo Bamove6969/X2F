@@ -117,12 +117,19 @@ export function formatFiat(cents: bigint, currency: string): string {
  * What the seller must fund. The fee is 1% of the amount, paid only by the ad
  * poster: a seller-poster funds amount + fee; on a buyer's ad the fee comes
  * out of the buyer's payout, so the seller funds the amount.
+ *
+ * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): a seller
+ * who owes a lien also funds `sellerLienRecoveryAtomic` (the signed terms' `sellerLienRecovery`),
+ * which a completed trade pays to the person owed and every refund returns to the seller. It is
+ * part of what the escrow must hold, so it is in `sellerFundsAtomic`; absent or 0: none.
  */
-export function escrowPlan(a: { amountAtomic: bigint; poster: 'seller' | 'buyer' }): { sellerFundsAtomic: bigint; feeAtomic: bigint } {
+export function escrowPlan(a: { amountAtomic: bigint; poster: 'seller' | 'buyer'; sellerLienRecoveryAtomic?: bigint }): { sellerFundsAtomic: bigint; feeAtomic: bigint } {
   if (a.amountAtomic <= 0n) throw new RangeError('amount must be positive');
   if (a.poster !== 'seller' && a.poster !== 'buyer') throw new RangeError('unknown poster');
+  const extra = a.sellerLienRecoveryAtomic ?? 0n;
+  if (typeof extra !== 'bigint' || extra < 0n) throw new RangeError('seller recovery must not be negative');
   const feeAtomic = feeFor(a.amountAtomic);
-  return { sellerFundsAtomic: a.amountAtomic + (a.poster === 'seller' ? feeAtomic : 0n), feeAtomic };
+  return { sellerFundsAtomic: a.amountAtomic + (a.poster === 'seller' ? feeAtomic : 0n) + extra, feeAtomic };
 }
 
 /**

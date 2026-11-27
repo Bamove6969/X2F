@@ -33,7 +33,15 @@ export interface Trade {
   methodId: string;
   amountAtomic: bigint;
   feeAtomic: bigint;
+  /** What the escrow must hold: amount + fee (on a seller's ad) + any seller lien recovery (`escrowPlan`). */
   sellerFundsAtomic: bigint;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the
+   * extra a selling debtor funds for the person owed, fixed at take (the signed terms'
+   * `sellerLienRecovery`). Included in `sellerFundsAtomic`; growth never counts it as extra XMR and
+   * never changes it. Absent: none (every trade without one keeps its exact shape).
+   */
+  sellerLienRecoveryAtomic?: bigint;
   /** Fixed at take (OD-5). */
   lockedRate: Price;
   /** Fixed at take (OD-5). */
@@ -243,6 +251,8 @@ export function newTrade(
     payWindowMin?: number;
     minFiatCents: bigint;
     maxFiatCents: bigint;
+    /** Seller lien recovery reserved at take (absent or 0: none). */
+    sellerLienRecoveryAtomic?: bigint;
   },
   now: Date,
 ): Trade {
@@ -255,7 +265,8 @@ export function newTrade(
     throw new RangeError('bad pay window');
   }
   if (a.sellerId === a.buyerId) throw new RangeError('seller and buyer must differ');
-  const plan = escrowPlan({ amountAtomic: a.amountAtomic, poster: a.poster });
+  const extra = a.sellerLienRecoveryAtomic ?? 0n;
+  const plan = escrowPlan({ amountAtomic: a.amountAtomic, poster: a.poster, sellerLienRecoveryAtomic: extra });
   const fiat = fiatFor(a.amountAtomic, a.lockedRate);
   if (fiat <= 0n) throw new RangeError('fiat total must be positive');
   if (a.minFiatCents <= 0n || a.minFiatCents > a.maxFiatCents) throw new RangeError('bad offer limits');
@@ -270,6 +281,7 @@ export function newTrade(
     amountAtomic: a.amountAtomic,
     feeAtomic: plan.feeAtomic,
     sellerFundsAtomic: plan.sellerFundsAtomic,
+    ...(extra > 0n ? { sellerLienRecoveryAtomic: extra } : {}),
     lockedRate: { currency: a.lockedRate.currency, centsPerXmr: a.lockedRate.centsPerXmr },
     fiatCents: fiat,
     confirmWindowMin: a.confirmWindowMin,
@@ -396,7 +408,10 @@ function grow(t: Trade, now: Date): Trade {
   if (!GROW_STATES.includes(t.state) || t.paidAt !== null) return t;
   const fromAtomic = t.grown?.fromAtomic ?? t.amountAtomic;
   const fromFiatCents = t.grown?.fromFiatCents ?? t.fiatCents;
-  const basis = t.releasable ? t.receivedAtomic : t.receivedAtomic < t.sellerFundsAtomic ? t.receivedAtomic : t.sellerFundsAtomic;
+  // A seller's lien recovery is never extra XMR: growth works on what is left above it.
+  const extra = t.sellerLienRecoveryAtomic ?? 0n;
+  const held = t.releasable ? t.receivedAtomic : t.receivedAtomic < t.sellerFundsAtomic ? t.receivedAtomic : t.sellerFundsAtomic;
+  const basis = held - extra;
   let amountAtomic = fromAtomic;
   if (basis > escrowPlan({ amountAtomic: fromAtomic, poster: t.poster }).sellerFundsAtomic) {
     const candidate = amountForFunds(basis, t.poster);
@@ -404,7 +419,7 @@ function grow(t: Trade, now: Date): Trade {
     if (candidate > fromAtomic) amountAtomic = fiatFor(candidate, t.lockedRate) <= t.maxFiatCents ? candidate : t.amountAtomic;
   }
   if (amountAtomic === t.amountAtomic) return t;
-  const plan = escrowPlan({ amountAtomic, poster: t.poster });
+  const plan = escrowPlan({ amountAtomic, poster: t.poster, sellerLienRecoveryAtomic: extra });
   const back = amountAtomic === fromAtomic;
   return {
     ...t,

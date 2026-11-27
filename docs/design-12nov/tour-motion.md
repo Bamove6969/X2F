@@ -37,7 +37,7 @@ The springs are generated in JS (`spring(zeta, omega, dur)`) as `linear()` easin
 3. **One line:** 17/24 `--ink-muted`. "Swap Monero for cash, bank transfers or gift cards, person to person." This is the line from the old intro scene 1, so it is still **COPY-UNSIGNED**.
 4. **Take the tour:** primary, 56 high.
 5. **Skip and get started:** secondary, 52 high.
-6. **FAQ / Getting started / Support / Settings:** these only show when the screen is at least 760 tall.
+6. **FAQ / Getting started / Support / Settings:** ~~these only show when the screen is at least 760 tall.~~ Owner note #47, confirmed 26 Nov: they show on every screen height; under 760 tall the spacing compacts to fit them.
 7. **Tab bar:** 60 high, with no tab current.
 
 **The letters.** These are the real logo paths (`viewBox 0 -2.15 292 122.15`), split into four layers: X, 2, F and the orange dot.
@@ -144,7 +144,7 @@ The amounts all agree: market price $329.90; satoshi_ghost pays 2% above it, $33
 ## 6. Responsive and foldable (READY)
 
 Checked at deviceScaleFactor 2 for 443 × 794 and 390 × 844, and at 3 for the iPhone Duo's third-party estimates:
-- **Folded, 466 × 678:** the hero shrinks, so the letters, the welcome text and both buttons fit with no scrolling. The four links hide (under 760 tall). Tour cards use the short-screen sizes, and every stop places without covering its highlight.
+- **Folded, 466 × 678:** the hero shrinks, so the letters, the welcome text and both buttons fit with no scrolling. ~~The four links hide (under 760 tall).~~ Owner note #47, confirmed 26 Nov: the spacing compacts and the four links stay. Tour cards use the short-screen sizes, and every stop places without covering its highlight.
 - **Unfolded portrait, 626 × 890:** a centred 480 column. The cards are 448 wide, not edge to edge.
 - **Unfolded landscape, 890 × 626:** the intro is the centred column. In the tour, the column slides left and the cards sit beside each highlight (§3, rule 3).
 

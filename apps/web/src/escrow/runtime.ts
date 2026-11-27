@@ -68,6 +68,13 @@ export interface ConfirmedTrade {
    * Buyer only; absent = none. Kept out of `deal`, which both sides sign and compare.
    */
   lienRecoveryAtomic?: bigint;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the extra
+   * XMR this trade's escrow holds for the person the seller owes, as the take (or the poster's own
+   * trade view, on the accepted sheet) told the seller and the seller accepted. Seller only; absent =
+   * none. Kept out of `deal` (both sides sign and compare it; the buyer is never told of it).
+   */
+  sellerLienRecoveryAtomic?: bigint;
 }
 
 /**
@@ -189,6 +196,12 @@ export interface EscrowStatus {
    * alone shows gets no pay form.
    */
   restitution?: { address: string; amountAtomic: bigint } | null;
+  /**
+   * Owner 27 Nov 2026, seller only: the extra for the seller's own lien that this trade's escrow must
+   * hold on top of amount + fee: the figure the seller accepted (its record), which the attestation
+   * must carry exactly. Null for the buyer (never shown the seller's lien) and when there is none.
+   */
+  sellerLienRecoveryAtomic?: bigint | null;
 }
 
 export type EscrowAction =
@@ -348,7 +361,9 @@ function validConfirmed(c: ConfirmedTrade): boolean {
     (d.poster === 'buyer' || d.poster === 'seller') &&
     typeof d.currency === 'string' &&
     /^[A-Z]{3}$/.test(d.currency) &&
-    [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'bigint' && x > 0n)
+    [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'bigint' && x > 0n) &&
+    // Owner 27 Nov 2026: a seller's lien extra, if any, is a positive figure and only ever the seller's.
+    (c.sellerLienRecoveryAtomic === undefined || (c.role === 'seller' && typeof c.sellerLienRecoveryAtomic === 'bigint' && c.sellerLienRecoveryAtomic > 0n))
   );
 }
 
@@ -514,6 +529,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           this.afterRefund.amountAtomic === amountAtomic && this.afterRefund.address === this.attested.buyerPayout
             ? { address: this.attested.buyerPayout, amountAtomic }
             : null,
+        sellerLienRecoveryAtomic: this.rec?.role === 'seller' ? (this.rec.sellerLienRecoveryAtomic ?? null) : null,
       };
       const j = JSON.stringify(s, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
       if (j !== this.last) {
@@ -678,6 +694,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           theirAddress: null,
           deal: { ...c.deal },
           ...(c.role === 'buyer' && typeof c.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: c.lienRecoveryAtomic } : {}),
+          ...(c.role === 'seller' && typeof c.sellerLienRecoveryAtomic === 'bigint' ? { sellerLienRecoveryAtomic: c.sellerLienRecoveryAtomic } : {}),
           theirDeal: null,
           sizeAtomic: c.deal.takeAmountAtomic,
           paidSeen: false,
@@ -765,7 +782,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           {
             trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic,
             // The buyer accepts only the lien recovery it confirmed (none: none), @x2f/trade verifyAttestation.
-            deal: this.rec.lienRecoveryAtomic !== undefined ? { ...this.rec.deal, lienRecoveryAtomic: this.rec.lienRecoveryAtomic } : this.rec.deal,
+            // The seller accepts only the lien extra it confirmed (none: none; owner 27 Nov 2026).
+            deal: {
+              ...this.rec.deal,
+              ...(this.rec.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: this.rec.lienRecoveryAtomic } : {}),
+              ...(this.rec.sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic: this.rec.sellerLienRecoveryAtomic } : {}),
+            },
             ownAddress: this.rec.ownAddress,
             payWindowMin: shown,
             methodId: view0.methodId,
@@ -925,7 +947,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
       return {
         role: r.role,
-        own: r.role === 'buyer' ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) } : { refund: r.ownAddress },
+        own: r.role === 'buyer'
+          ? { payout: r.ownAddress, ...(r.lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic: r.lienRecoveryAtomic } : {}) }
+          : { refund: r.ownAddress, ...(r.sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic: r.sellerLienRecoveryAtomic } : {}) },
         balance,
         trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, payrollWallet: deps.config.payrollWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
@@ -934,6 +958,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           refund,
           // The lien recovery the moderation service signed (verified attestation only; never the API's view).
           ...(this.attested?.lienRecovery !== undefined ? { lienRecovery: { address: this.attested.lienRecovery.address, amountAtomic: BigInt(this.attested.lienRecovery.amountAtomic) } } : {}),
+          // Owner 27 Nov 2026: the seller's signed lien extra (both devices build the same set with it).
+          ...(this.attested?.sellerLienRecovery !== undefined ? { sellerLienRecovery: { address: this.attested.sellerLienRecovery.address, amountAtomic: BigInt(this.attested.sellerLienRecovery.amountAtomic) } } : {}),
         },
         ruling: statement === null ? null : { code: this.code, escrowAddress: this.address!, modSigningPublic: deps.config.modSigningPublic, statement: statement.statement, sig: statement.sig },
       };
@@ -1386,7 +1412,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // which is safe because the fix is capped by both the buyer's signed amount and own funds.
       const sellerWaiting = r.role === 'seller' && (r.acceptedAtomic ?? null) === null && r.paidRefused !== true;
       if ((!r.paidSeen || sellerWaiting) && (GROW_STATES.includes(v.state) || (sellerWaiting && SELLER_WAIT_STATES.includes(v.state))) && f.balance > 0n) {
-        const size = deviceAmount(r.deal, r.sizeAtomic, f.balance, f.unlocked);
+        // The seller's signed lien extra is never growth (owner 27 Nov 2026).
+        const extra = this.attested?.sellerLienRecovery !== undefined ? BigInt(this.attested.sellerLienRecovery.amountAtomic) : 0n;
+        const size = deviceAmount(r.deal, r.sizeAtomic, f.balance, f.unlocked, extra);
         if (size !== r.sizeAtomic) {
           r.sizeAtomic = size;
           changed = true;
