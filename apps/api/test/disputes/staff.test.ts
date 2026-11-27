@@ -1577,4 +1577,40 @@ describe('private lanes: what the other trader never gets (PR #41/#44 follow-up 
     expect(result(await mod.b.post(url(code, '/messages'), await modeMsg(code, 'buyer', false)))).toEqual({ status: 409, error: 'wrong-state' });
     expect((await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and to_role is not null", [chat])).rows[0]).toEqual({ n: 0 });
   });
+
+  it('a chat.mode-only post (mode: true) logs mode: true without setting firstReplyAt; explicit mode: false sets firstReplyAt; bad mode or oversize ct is 400 (fix-mode-firstreply)', async () => {
+    const { code, mod } = await readCase();
+    expect((await loadDispute(deps.db, code))!.firstReplyAt).toBeNull();
+
+    // Validation: mode must be boolean, mode: true requires a private lane (`to`) and smallest pad bucket (ct.length === 364).
+    const modeBody = await modeMsg(code, 'buyer', true);
+    expect(modeBody.ct.length).toBe(364);
+    expect(result(await mod.b.post(url(code, '/messages'), { ...modeBody, mode: 'yes' }))).toEqual({ status: 400, error: 'bad-request' });
+    const sharedBody = await msg(code, 'Not a lane');
+    expect(result(await mod.b.post(url(code, '/messages'), { ...sharedBody, mode: true }))).toEqual({ status: 400, error: 'bad-request' });
+    const longLaneBody = await msg(code, 'x'.repeat(300), { to: 'buyer' });
+    expect(longLaneBody.ct.length).toBeGreaterThan(364);
+    expect(result(await mod.b.post(url(code, '/messages'), { ...longLaneBody, mode: true }))).toEqual({ status: 400, error: 'bad-request' });
+
+    // Posting chat.mode with mode: true succeeds (201), logs mode: true, and does not set firstReplyAt.
+    const modeRes = await mod.b.post(url(code, '/messages'), { ...modeBody, mode: true });
+    expect(modeRes.statusCode, modeRes.body).toBe(201);
+    expect((await loadDispute(deps.db, code))!.firstReplyAt).toBeNull();
+
+    // Posting a private lane message with explicit mode: false sets firstReplyAt and omits mode in the audit log.
+    const msgRes = await mod.b.post(url(code, '/messages'), { ...(await msg(code, 'Hello buyer', { to: 'buyer' })), mode: false });
+    expect(msgRes.statusCode, msgRes.body).toBe(201);
+    expect((await loadDispute(deps.db, code))!.firstReplyAt).not.toBeNull();
+
+    const sentLogs = (
+      await deps.db.query<{ detail: string }>(
+        "select detail from activity_log where trade_code = $1 and action = 'chat.message-sent' order by id",
+        [code],
+      )
+    ).rows.map((r) => JSON.parse(r.detail) as Record<string, unknown>);
+    expect(sentLogs).toHaveLength(2);
+    expect(sentLogs[0]).toMatchObject({ to: 'buyer', mode: true });
+    expect(sentLogs[1]).toMatchObject({ to: 'buyer' });
+    expect('mode' in sentLogs[1]!).toBe(false);
+  });
 });

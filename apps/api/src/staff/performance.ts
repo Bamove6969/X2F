@@ -66,6 +66,7 @@ interface Row {
 /** The earliest staff chat message on the trade from `start` up to the first reply (that is the first reply). */
 const replyBy = (start: string, reply: string) => `(select l.actor_id::text from activity_log l
     where l.trade_code = d.code and l.action = 'chat.message-sent' and l.actor_kind = 'staff'
+      and l.detail::jsonb->>'mode' is distinct from 'true'
       and l.at >= ${start} and l.at <= ${reply}
     order by l.at, l.id limit 1)`;
 

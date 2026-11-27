@@ -102,6 +102,8 @@ export interface SealedModMessage {
   sig: string;
   /** A private message's lane (a v3 body, the lane countersign); absent for both traders. */
   to?: Lane;
+  /** True for a `chat.mode`-only control message (does not set `firstReplyAt`). */
+  mode?: boolean;
 }
 
 /** This browser's device key, its public halves only (what the person certifies). */
