@@ -14,6 +14,7 @@ import { roleOf } from '../trades/view.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeDeps } from './store.js';
 import { noTxProofCheck, TX_HASH, TxProofUnavailable, type TxProofCheck, type TxProofResult } from './txProof.js';
+import { LIEN_NOT_COLLECTING_SQL } from './lien.js';
 
 /**
  * Plan 4 Task 12, after-refund compliance (A6; was NEEDS_TASK_12_TX_PROOF):
@@ -308,7 +309,8 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
         and d.comply_by is not null and d.comply_by <= $1 and d.paused_since is null
         and (d.comply_lapsed_at is null or d.comply_lapsed_at < d.comply_by)
         and ${HAS_AFTER_REFUND_STATEMENT_SQL}
-        and not exists (select 1 from ruling_payments p where p.code = d.code and p.seq = d.seq and p.status = 'pending')`,
+        and not exists (select 1 from ruling_payments p where p.code = d.code and p.seq = d.seq and p.status = 'pending')
+        and not exists (select 1 from liens l where l.from_code = d.code and l.dispute_seq = d.seq and ${LIEN_NOT_COLLECTING_SQL('l')})`,
     [now],
   );
   let n = 0;
@@ -322,7 +324,8 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
         if (!(await hasAfterRefundStatement(client, d.ruling.id))) return d;
         const fresh = await client.query(
           `update disputes set comply_lapsed_at = $3 where code = $1 and seq = $2 and (comply_lapsed_at is null or comply_lapsed_at < comply_by)
-             and not exists (select 1 from ruling_payments x where x.code = $1 and x.seq = $2 and x.status = 'pending')`,
+             and not exists (select 1 from ruling_payments x where x.code = $1 and x.seq = $2 and x.status = 'pending')
+             and not exists (select 1 from liens l where l.from_code = $1 and l.dispute_seq = $2 and ${LIEN_NOT_COLLECTING_SQL('l')})`,
           [d.code, d.seq, at],
         );
         if ((fresh.rowCount ?? 0) === 0) return d;
@@ -340,7 +343,8 @@ export async function runComplyLapses(deps: DisputeDeps, failures: unknown[]): P
 
 /** SQL over `disputes d`: the seller let the ruling's comply time pass (A6), and still owes it. */
 export const COMPLY_LAPSED_SQL = `(d.comply_lapsed_at is not null and d.comply_by is not null and d.comply_lapsed_at >= d.comply_by
-  and d.complied_at is null and d.status in ('published', 'complying'))`;
+  and d.complied_at is null and d.status in ('published', 'complying')
+  and not exists (select 1 from liens l where l.from_code = d.code and l.dispute_seq = d.seq and ${LIEN_NOT_COLLECTING_SQL('l')}))`;
 
 /** What the staff case view shows of the seller's compliance (A6): the latest proof, and the lapse. */
 export interface ComplianceView {

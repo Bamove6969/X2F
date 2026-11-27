@@ -51,6 +51,10 @@ export const LIENS_ON_SQL = `coalesce((select f.liens_enabled from site_flags f)
 export const LIEN_COLLECTING_SQL = (l: string) =>
   `(${l}.repaid_off_platform_at is null and (${l}.grace_until is null or ${l}.collect_started_at is not null))`;
 
+/** SQL over `liens ${l}`: the lien is in grace or repaid off-platform. */
+export const LIEN_NOT_COLLECTING_SQL = (l: string) =>
+  `(${l}.status in ('active', 'repaid') and not ${LIEN_COLLECTING_SQL(l)})`;
+
 /** SQL: whether account `p` (a parameter or column) has an active lien that binds (liens switched on). */
 export const ACTIVE_LIEN_SQL = (p: string) =>
   `(${LIENS_ON_SQL} and exists (select 1 from liens l where l.debtor_account_id = ${p} and l.status = 'active'))`;

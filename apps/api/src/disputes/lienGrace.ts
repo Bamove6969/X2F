@@ -1,4 +1,4 @@
-import { LIEN_LAPSE_ESCALATE_HOURS, LIEN_LAPSE_STARTS_COLLECTING, can, parseCollectRate } from '@x2f/staff';
+import { LIEN_LAPSE_ESCALATE_HOURS, LIEN_LAPSE_STARTS_COLLECTING, applyDispute, can, DisputeRuleError, parseCollectRate, type Dispute } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { addAlert, addOwnerAlert } from '../alerts.js';
@@ -14,7 +14,8 @@ import { proposeLienRate, rateDeciders } from './lien.js';
 export { GRACE_WAITING_SQL, graceOf, remainingWith, type GraceView } from './lienCase.js';
 import { releaseStaleHolds } from './recovery.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
-import type { DisputeDeps } from './store.js';
+import { withDispute, type DisputeDeps } from './store.js';
+import { disputeSettings } from './settings.js';
 
 /**
  * Owner decision, 26 Nov 2026 5:43 PM Pacific (docs/lien-recovery.md "Grace: 7 days to pay the
@@ -177,6 +178,7 @@ interface LockedLien {
   status: string;
   creditor: string;
   from_code: string;
+  dispute_seq: number;
   fee_atomic: string;
   ruled_by: string | null;
   grace_until: Date | null;
@@ -189,7 +191,7 @@ interface LockedLien {
 async function lockLien(c: pg.PoolClient, id: string): Promise<LockedLien | undefined> {
   return (
     await c.query<LockedLien>(
-      `select status, creditor_account_id::text as creditor, from_code, fee_atomic::text, ruled_by::text, grace_until, grace_lapsed_at,
+      `select status, creditor_account_id::text as creditor, from_code, dispute_seq, fee_atomic::text, ruled_by::text, grace_until, grace_lapsed_at,
               grace_escalated_at, collect_started_at, repaid_off_platform_at
          from liens where id = $1 for update`,
       [id],
@@ -256,14 +258,15 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
     if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request', { field: 'tapId' });
     const me = actorOf(req);
     const { db, clock } = req.server.deps;
-    return withTx(db, async (c) => {
-      const now = clock();
-      const l = await lockLien(c, id);
+    const deps: DisputeDeps = { db, clock, events: req.server.events, push: o.push ?? req.server.push };
+    return withLienDispute(deps, id, async (client, now, d) => {
+      const l = await lockLien(client, id);
       if (l === undefined) throw new ApiError(404, 'not-found');
       if (!mayDecide(req, l)) throw new ApiError(403, 'forbidden');
       if (l.status !== 'active' || l.repaid_off_platform_at !== null) throw new ApiError(409, 'wrong-state');
-      await consumeKeyTap(c, b.tapId as string, me.id, { kind: 'lien-paid-off-platform', lienId: id }, now, { sessionId: req.auth.sessionId });
-      return endOffPlatform(c, id, l, now, me);
+      await consumeKeyTap(client, b.tapId as string, me.id, { kind: 'lien-paid-off-platform', lienId: id }, now, { sessionId: req.auth.sessionId });
+      const out = await endOffPlatform(client, id, l, now, me);
+      return { out, next: await complyOnOffPlatform(client, d, now) };
     });
   });
 
@@ -294,21 +297,68 @@ export function accountLienGraceRoutes(app: FastifyInstance): void {
     bodyOf(req, []);
     const me = req.auth.accountId;
     const { db, clock } = req.server.deps;
-    return withTx(db, async (c) => {
-      const now = clock();
+    const deps: DisputeDeps = { db, clock, events: req.server.events, push: req.server.push };
+    return withLienDispute(deps, id, async (client, now, d) => {
       // It ends what the creditor is owed: the session must still be live, under the account lock.
-      await requireLiveSessionInTx(c, req.auth, now);
-      const l = await lockLien(c, id);
+      await requireLiveSessionInTx(client, req.auth, now);
+      const l = await lockLien(client, id);
       // Only the person owed: anyone else (the debtor included) is told nothing about it.
       if (l === undefined || l.creditor !== me) throw new ApiError(404, 'not-found');
       // Review item 3 (lead default): never while an appeal holds the lien (`suspended`).
       if (l.status !== 'active' || !waitingGrace(l)) throw new ApiError(409, 'wrong-state');
       const side = (
-        await c.query<{ side: 'buyer' | 'seller' }>(`select case when buyer_account_id = $2 then 'buyer' else 'seller' end as side from trades where code = $1`, [l.from_code, me])
+        await client.query<{ side: 'buyer' | 'seller' }>(`select case when buyer_account_id = $2 then 'buyer' else 'seller' end as side from trades where code = $1`, [l.from_code, me])
       ).rows[0]?.side;
-      return endOffPlatform(c, id, l, now, side === undefined ? { kind: 'system' } : { kind: 'trader', side });
+      const actor: Parameters<typeof appendLog>[1]['actor'] = side === undefined ? { kind: 'system' } : { kind: 'trader', side };
+      const out = await endOffPlatform(client, id, l, now, actor);
+      return { out, next: await complyOnOffPlatform(client, d, now) };
     });
   });
+}
+
+/**
+ * Runs `fn` inside `withDispute` (preserving canonical lock order: trades -> disputes -> totals ->
+ * accounts -> liens) when the lien has a dispute row, or falls back to `withTx` (with `d = null`)
+ * when the lien is missing or has no dispute row so session and 404 checks still run normally.
+ */
+async function withLienDispute<T>(
+  deps: DisputeDeps,
+  lienId: string,
+  fn: (client: pg.PoolClient, now: Date, d: Dispute | null) => Promise<{ out: T; next: Dispute | null }>,
+): Promise<T> {
+  const { rows } = await deps.db.query<{ from_code: string; dispute_seq: number }>(
+    `select l.from_code, l.dispute_seq
+       from liens l
+       join disputes d on d.code = l.from_code and d.seq = l.dispute_seq
+      where l.id = $1`,
+    [lienId],
+  );
+  const target = rows[0];
+  if (target === undefined) {
+    return withTx(deps.db, async (client) => (await fn(client, deps.clock(), null)).out);
+  }
+  let result!: T;
+  try {
+    await withDispute(deps, { code: target.from_code, seq: target.dispute_seq }, async (d, client, now) => {
+      const { out, next } = await fn(client, now, d);
+      result = out;
+      return next ?? d;
+    });
+  } catch (err) {
+    if (err instanceof DisputeRuleError) throw new ApiError(409, 'wrong-state');
+    throw err;
+  }
+  return result;
+}
+
+/** Marks an after-refund `seller-sends-xmr` dispute as complied when its lien is settled off-platform. */
+async function complyOnOffPlatform(client: pg.PoolClient, d: Dispute | null, now: Date): Promise<Dispute | null> {
+  if (d !== null && d.afterRefund && d.compliedAt === null && (d.status === 'published' || d.status === 'complying') && d.ruling?.outcome === 'seller-sends-xmr') {
+    const next = applyDispute(d, { type: 'complied' }, { kind: 'system' }, now, await disputeSettings(client));
+    await appendLog(client, { at: now, actor: { kind: 'system' }, tradeCode: d.code, action: 'dispute.complied', detail: {} });
+    return next;
+  }
+  return d;
 }
 
 /**

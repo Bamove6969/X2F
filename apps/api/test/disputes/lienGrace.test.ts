@@ -14,6 +14,7 @@ import { appendLog } from '../../src/log/append.js';
 import { startDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
 import { parseKeyTapIntent } from '../../src/staff/keyTap.js';
+import { COMPLY_LAPSED_SQL, runComplyLapses } from '../../src/disputes/comply.js';
 import { buildStaffApi } from '../../src/staff/app.js';
 import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff, seedTap } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
@@ -85,7 +86,7 @@ async function ruled(lienPlan?: unknown) {
   const res = await mod.b.post(`/staff/v1/disputes/${d.code}/rulings`, {
     rulingId, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' }, reason: REASON, evidence: EVIDENCE, tapId, ...(lienPlan === undefined ? {} : { lienPlan }),
   });
-  return { ...d, mod, res, tapId };
+  return { ...d, mod, res, tapId, rulingId };
 }
 
 interface LienRow {
@@ -684,5 +685,149 @@ describe('lien grace & collect-now % edge cases (#45)', () => {
     const ok = await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {});
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(3500);
+  });
+});
+
+describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-grace)', () => {
+  it('excludes disputes whose lien is in grace or repaid off-platform from comply lapse, COMPLY_LAPSED_SQL, freezeAllowed, and closes complying dispute in endOffPlatform', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    const rulingId = r.rulingId;
+    await deps.db.query(
+      `insert into after_refund_statements (ruling_id, code, seq, round, statement, sig) values ($1, $2, 1, 1, '{}'::jsonb, 'x')`,
+      [rulingId, r.code],
+    );
+    await deps.db.query(
+      `update disputes set status = 'complying', comply_by = $2, comply_lapsed_at = null where code = $1`,
+      [r.code, new Date(START.getTime() + 2 * H)],
+    );
+
+    // Jump past comply_by (e.g. 3 hours in, still within 7 days grace)
+    setNow(new Date(START.getTime() + 3 * H));
+    await fresh(r.mod);
+
+    // 1. runComplyLapses while lien is in grace: stays null, no owner alert
+    const failures: unknown[] = [];
+    const n = await runComplyLapses(deps, failures);
+    expect(failures).toEqual([]);
+    expect(n).toBe(0);
+    const lapsedAt = (await deps.db.query<{ at: Date | null }>('select comply_lapsed_at as at from disputes where code = $1', [r.code])).rows[0]!.at;
+    expect(lapsedAt).toBeNull();
+    const alertCount = (await deps.db.query<{ count: number }>("select count(*)::int as count from alerts where kind = 'dispute-comply-lapsed'")).rows[0]!.count;
+    expect(alertCount).toBe(0);
+
+    // 2. COMPLY_LAPSED_SQL must evaluate to false while in grace or repaid off-platform,
+    //    and true once collecting (with comply_lapsed_at >= comply_by set so it is not vacuously false).
+    await deps.db.query('update disputes set comply_lapsed_at = comply_by where code = $1', [r.code]);
+    const isLapsed = async () =>
+      (await deps.db.query<{ lapsed: boolean }>(`select ${COMPLY_LAPSED_SQL} as lapsed from disputes d where d.code = $1`, [r.code])).rows[0]!.lapsed;
+    expect(await isLapsed()).toBe(false);
+    await deps.db.query('update liens set collect_started_at = $2 where id = $1', [l.id, deps.clock()]);
+    expect(await isLapsed()).toBe(true);
+    await deps.db.query('update liens set repaid_off_platform_at = $2 where id = $1', [l.id, deps.clock()]);
+    expect(await isLapsed()).toBe(false);
+    await deps.db.query('update liens set collect_started_at = null, repaid_off_platform_at = null where id = $1', [l.id]);
+    await deps.db.query('update disputes set comply_lapsed_at = null where code = $1', [r.code]);
+
+    // 3. freezeAllowed for ignored-ruling: negative case while in grace returns 409 freeze-not-allowed
+    const freezeRes = await r.mod.b.post(`/staff/v1/disputes/${r.code}/freeze`, { side: 'seller', on: true, reason: 'ignored-ruling' });
+    expect(freezeRes.statusCode).toBe(409);
+    expect(errorOf(freezeRes)).toBe('freeze-not-allowed');
+
+    // Positive case: once collect_started_at is set, freeze succeeds
+    await deps.db.query('update liens set collect_started_at = now() where id = $1', [l.id]);
+    const freezeOk = await r.mod.b.post(`/staff/v1/disputes/${r.code}/freeze`, { side: 'seller', on: true, reason: 'ignored-ruling' });
+    expect(freezeOk.statusCode).toBe(200);
+    expect(freezeOk.json()).toMatchObject({ freezes: { seller: true } });
+
+    // Reset collect_started_at so lien is in grace for creditor paid sign-off
+    await deps.db.query('update liens set collect_started_at = null where id = $1', [l.id]);
+
+    // 4. Mark lien repaid off-platform
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+    const paidRes = await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {});
+    expect(paidRes.statusCode).toBe(200);
+
+    // 5. endOffPlatform must close the complying dispute and log dispute.complied
+    const d2 = (await deps.db.query<{ status: string; closed_at: Date | null; complied_at: Date | null }>(
+      'select status, closed_at, complied_at from disputes where code = $1',
+      [r.code],
+    )).rows[0]!;
+    expect(d2.status).toBe('closed');
+    expect(d2.closed_at).not.toBeNull();
+    expect(d2.complied_at).not.toBeNull();
+    const compliedLogs = await deps.db.query("select 1 from activity_log where trade_code = $1 and action = 'dispute.complied'", [r.code]);
+    expect(compliedLogs.rowCount).toBeGreaterThan(0);
+  });
+
+  it('published dispute repaid off-platform sets complied_at without closing during appeal window, and closes directly after', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    const dBefore = (await deps.db.query<{ status: string; complied_at: Date | null }>('select status, complied_at from disputes where code = $1', [r.code])).rows[0]!;
+    expect(dBefore.status).toBe('published');
+    expect(dBefore.complied_at).toBeNull();
+
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+    const paidRes = await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {});
+    expect(paidRes.statusCode).toBe(200);
+
+    // Stays published during appeal window, but complied_at is set
+    const dMid = (await deps.db.query<{ status: string; complied_at: Date | null; closed_at: Date | null }>('select status, complied_at, closed_at from disputes where code = $1', [r.code])).rows[0]!;
+    expect(dMid.status).toBe('published');
+    expect(dMid.complied_at).not.toBeNull();
+    expect(dMid.closed_at).toBeNull();
+
+    // After appeal window passes, resolveFinal transitions directly to closed (never complying)
+    setNow(new Date(START.getTime() + 48 * H + 1000));
+    await tick();
+
+    const dAfter = (await deps.db.query<{ status: string; complied_at: Date | null; closed_at: Date | null }>('select status, complied_at, closed_at from disputes where code = $1', [r.code])).rows[0]!;
+    expect(dAfter.status).toBe('closed');
+    expect(dAfter.closed_at).not.toBeNull();
+  });
+
+  it('staff /staff/v1/liens/:id/paid-off-platform closes a complying dispute and logs dispute.complied', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await deps.db.query(
+      `update disputes set status = 'complying', comply_by = $2, comply_lapsed_at = null where code = $1`,
+      [r.code, new Date(START.getTime() + 2 * H)],
+    );
+
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    const res = await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId });
+    expect(res.statusCode, res.body).toBe(200);
+
+    const d = (await deps.db.query<{ status: string; closed_at: Date | null; complied_at: Date | null }>(
+      'select status, closed_at, complied_at from disputes where code = $1',
+      [r.code],
+    )).rows[0]!;
+    expect(d.status).toBe('closed');
+    expect(d.closed_at).not.toBeNull();
+    expect(d.complied_at).not.toBeNull();
+    const compliedLogs = await deps.db.query("select 1 from activity_log where trade_code = $1 and action = 'dispute.complied'", [r.code]);
+    expect(compliedLogs.rowCount).toBe(1);
+  });
+
+  it('staff /staff/v1/liens/:id/paid-off-platform keeps a published dispute published, sets complied_at, and logs dispute.complied', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    const dBefore = (await deps.db.query<{ status: string; complied_at: Date | null }>('select status, complied_at from disputes where code = $1', [r.code])).rows[0]!;
+    expect(dBefore.status).toBe('published');
+    expect(dBefore.complied_at).toBeNull();
+
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    const res = await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId });
+    expect(res.statusCode, res.body).toBe(200);
+
+    const dAfter = (await deps.db.query<{ status: string; closed_at: Date | null; complied_at: Date | null }>(
+      'select status, closed_at, complied_at from disputes where code = $1',
+      [r.code],
+    )).rows[0]!;
+    expect(dAfter.status).toBe('published');
+    expect(dAfter.closed_at).toBeNull();
+    expect(dAfter.complied_at).not.toBeNull();
+    const compliedLogs = await deps.db.query("select 1 from activity_log where trade_code = $1 and action = 'dispute.complied'", [r.code]);
+    expect(compliedLogs.rowCount).toBe(1);
   });
 });
