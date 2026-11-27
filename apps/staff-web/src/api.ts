@@ -776,6 +776,29 @@ export interface EarningsReport {
   allTime: EarningsMonth;
 }
 export const earnings = () => staffApi<EarningsReport>('/staff/v1/earnings');
+/**
+ * Mirrors apps/api `EarningsTallies` (owner 26 Nov 2026: "tallies by the day, tallies by the week,
+ * and tallies by the month"): `GET /staff/v1/earnings?period=…`, the last 31 days, 12 ISO weeks
+ * (Monday first) or 12 months, cut in `timeZone` (UTC), every one listed, empty ones too.
+ */
+export type EarningsPeriod = 'day' | 'week' | 'month';
+export interface EarningsTally extends Omit<EarningsMonth, 'month'> {
+  /** `YYYY-MM-DD`, ISO `YYYY-Www` or `YYYY-MM`; the total's is `last-31-days` and so on. */
+  period: string;
+  from: string;
+  to: string;
+}
+export interface EarningsTallies {
+  feeWallet: EarningsWallet | null;
+  payrollWallet: EarningsWallet | null;
+  usdCentsPerXmr: string | null;
+  timeZone: string;
+  period: EarningsPeriod;
+  tallies: EarningsTally[];
+  total: EarningsTally;
+  allTime: EarningsMonth;
+}
+export const earningsTallies = (period: EarningsPeriod) => staffApi<EarningsTallies>(`/staff/v1/earnings?period=${period}`);
 
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
