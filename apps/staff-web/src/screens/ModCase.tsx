@@ -25,7 +25,7 @@ import {
 } from '../api.js';
 import { AccountCard } from './AccountActions.js';
 import { browserChatKeys, type ChatKeys } from '../chat/client.js';
-import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic } from '../chat/types.js';
+import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic, type Lane } from '../chat/types.js';
 import { DeviceCard } from '../ui/DeviceCard.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
@@ -208,7 +208,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
       <div className="x2f-staff-case">
         <div className="x2f-stack">
           <ChatCard code={c.code} work={work} keys={keys} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
-          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
+          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} buyer={buyer} seller={seller} /> : null}
         </div>
         <div className="x2f-stack">
           <TradersCard c={c} />
@@ -362,10 +362,22 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
             <Fragment key={l.id}>
               {/* COPY-UNSIGNED. Review N2: where the server dropped or held back messages, shown where it happened. */}
               {l.missingBefore > 0 ? <li data-part="chat-missing">{`${l.missingBefore} message(s) missing here`}</li> : null}
-              <li data-from={l.from}>
-                <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
-                {l.text}
-              </li>
+              {l.to === undefined ? (
+                <li data-from={l.from}>
+                  <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+                  {l.text}
+                </li>
+              ) : (
+                // Private lanes (owner 27 Nov): the private colour and marker, for the moderator and every audit reader alike.
+                <li data-from={l.from} data-private={l.to} className="x2f-staff-chat__line--private">
+                  <span className="x2f-staff-chat__private" data-part="chat-private">
+                    <LockIcon />
+                    {privateMarker(l.to === 'buyer' ? buyer : seller)}
+                  </span>
+                  <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+                  {l.text}
+                </li>
+              )}
             </Fragment>
           ))}
           {opened.unreadable > 0 ? <li data-part="chat-unreadable">{`${opened.unreadable} message(s) did not open on this device.`}</li> : null}
@@ -376,32 +388,59 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
   );
 }
 
-function MessageCard({ code, keys, device, opened, onSent }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void }) {
+/** Private lanes (owner 27 Nov): the marker on a private line. COPY-UNSIGNED (the owner's words). */
+export const privateMarker = (name: string) => `Private · only ${name} sees this`;
+
+function LockIcon() {
+  return (
+    <svg className="x2f-staff-chat__lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+type TalkTo = 'both' | Lane;
+
+function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void; buyer: string; seller: string }) {
   const id = useId();
+  const toId = useId();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [talkTo, setTalkTo] = useState<TalkTo>('both');
   const [note, setNote] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const ready = device !== null && opened !== null;
+  const lane: Lane | undefined = talkTo === 'both' ? undefined : talkTo;
+  const hasLane = (l: Lane) => opened?.nextSeqByLane?.[l] !== undefined;
+  // A lane the opened chat does not have is never sent to.
+  const laneReady = lane === undefined || hasLane(lane);
+  const name = lane === 'buyer' ? buyer : seller;
+  const other = lane === 'buyer' ? seller : buyer;
 
   const send = async () => {
-    if (device === null || opened === null) return;
+    if (device === null || opened === null || !laneReady) return;
     setBusy(true);
     setNote(null);
     try {
-      let seq = opened.nextSeq;
+      let seq = lane === undefined ? opened.nextSeq : opened.nextSeqByLane[lane]!;
       let res: { id: string };
       try {
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
       } catch (e) {
         // Another moderator message went first: seal again at the seq the moderation process names, once.
         const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
         if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
         seq = next;
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
       }
-      onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString(), missingBefore: 0 }] });
+      const line = { id: res.id, from: 'mod' as const, text, at: serverNow().toISOString(), missingBefore: 0, ...(lane !== undefined ? { to: lane } : {}) };
+      onSent(
+        lane === undefined
+          ? { ...opened, nextSeq: seq + 1, lines: [...opened.lines, line] }
+          : { ...opened, nextSeqByLane: { ...opened.nextSeqByLane, [lane]: seq + 1 }, lines: [...opened.lines, line] },
+      );
       setText('');
-      setNote({ tone: 'ok', text: 'Sent and logged.' });
+      setNote({ tone: 'ok', text: lane === undefined ? 'Sent and logged.' : `Sent to ${name} only, and logged.` });
     } catch (e) {
       setNote({ tone: 'danger', text: faultText(e, 'The message could not be sent just now. Try again.') });
     } finally {
@@ -410,18 +449,36 @@ function MessageCard({ code, keys, device, opened, onSent }: { code: string; key
   };
 
   return (
-    <section className="x2f-card" data-part="message">
+    <section className={lane === undefined ? 'x2f-card' : 'x2f-card x2f-staff-compose--private'} data-part="message" data-private={lane}>
+      {/* Private lanes (owner 27 Nov): who sees the next message, above the composer. The owner's words. */}
+      <div className="x2f-field">
+        <label className="x2f-label" htmlFor={toId}>
+          Who sees it
+        </label>
+        <select id={toId} className="x2f-input x2f-staff-select" data-part="talking-to" value={talkTo} disabled={busy} onChange={(e) => setTalkTo(e.target.value as TalkTo)}>
+          <option value="both">Talking to both</option>
+          <option value="seller" disabled={opened !== null && !hasLane('seller')}>{`Talking to ${seller}`}</option>
+          <option value="buyer" disabled={opened !== null && !hasLane('buyer')}>{`Talking to ${buyer}`}</option>
+        </select>
+      </div>
+      {lane !== undefined ? (
+        // COPY-UNSIGNED: said every time a private message is being written, so it is never sent by mistake.
+        <p className="x2f-staff-chat__private" data-part="compose-private">
+          <LockIcon />
+          {`Private: only ${name} sees this. ${other} sees nothing of it.`}
+        </p>
+      ) : null}
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={id}>
-          Message both traders
+          {lane === undefined ? 'Message both traders' : `Message ${name} privately`}
         </label>
         <textarea id={id} className="x2f-textarea" rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
       </div>
-      <Button variant="secondary" disabled={busy || !ready || !modTextOk(text)} onClick={() => void send()}>
-        Send
+      <Button variant="secondary" disabled={busy || !ready || !laneReady || !modTextOk(text)} onClick={() => void send()}>
+        {lane === undefined ? 'Send' : `Send to ${name} only`}
       </Button>
       {/* Board ModCase's line, always shown (parity); until the chat is open, how to write (COPY-UNSIGNED). */}
-      <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p>
+      <p className="x2f-staff-hint">{lane === undefined ? 'Your messages show the X2F Moderator badge to both traders.' : `Your message shows the X2F Moderator badge to ${name}.`}</p>
       {ready ? null : <p className="x2f-staff-hint">Open the full chat on this device to write to both traders.</p>}
       {note !== null ? (note.tone === 'ok' ? <p className="x2f-staff-ok">{note.text}</p> : <Notice tone="danger">{note.text}</Notice>) : null}
     </section>

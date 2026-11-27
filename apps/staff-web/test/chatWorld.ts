@@ -4,7 +4,7 @@
 // `workerPair` runs the chat key worker's keeper in this process behind a message pair that copies
 // every message (structured clone) and delivers it later, as postMessage does.
 import { newTradeCode } from '@x2f/core';
-import { generateIdentity, makeChatKeyRecord, newChatKey, sealChat, wrapChatKey, type Participants } from '@x2f/protocol';
+import { generateIdentity, makeChatKeyRecord, newChatKey, newPrivateKey, privateKeyHash, sealChat, sealPrivate, wrapChatKey, wrapPrivateKey, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, type Attestation } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { connectChatKeys, type ChatKeys, type Endpoint } from '../src/chat/client.js';
@@ -51,8 +51,14 @@ export async function world(o: { signer?: Uint8Array; chat?: string; backend?: D
     // Under another key: it never opens, so it is counted, never shown.
     { id: '3', senderRole: 'seller', envelope: await seal('seller', 1, 'hidden', await newChatKey()), at: 'c' },
   ];
-  const answer: CaseChatAnswer = { chat, channel, wrap: await wrapChatKey(device.boxPublic, tk), tkh: record.tkh, nextSeq: 0, attestation: { attestation, sig }, record, envelopes };
-  return { chat, channel, ids, participants, tk, record, device, answer, seal };
+  // Private lanes (owner 27 Nov): each trader's lane key, re-wrapped to this device as the moderation process does.
+  const pk = { buyer: await newPrivateKey(), seller: await newPrivateKey() };
+  const lanes = [];
+  for (const to of ['buyer', 'seller'] as const) lanes.push({ to, pkh: await privateKeyHash(pk[to]), wrap: await wrapPrivateKey(device.boxPublic, pk[to]), nextSeq: 0 });
+  const sealLane = (from: 'buyer' | 'seller' | 'mod', to: 'buyer' | 'seller', seq: number, text: string, key = pk[to]) =>
+    sealPrivate({ trade: channel, from, to, seq, type: 'chat.msg', payload: { text }, pk: key, me: ids[from] });
+  const answer: CaseChatAnswer = { chat, channel, wrap: await wrapChatKey(device.boxPublic, tk), tkh: record.tkh, nextSeq: 0, attestation: { attestation, sig }, record, envelopes, lanes };
+  return { chat, channel, ids, participants, tk, pk, record, device, answer, seal, sealLane };
 }
 
 /** Two ends of a message channel: each message is structured-cloned and delivered on a later task. */

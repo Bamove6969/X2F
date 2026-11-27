@@ -716,6 +716,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_countersign_requests where chat = $1', [chat]);
           // Review lead-mod-purge m5: the moderator's next chat seq for the chat.
           await client.query('delete from mod_chat_seq where chat = $1', [chat]);
+          // Owner 27 Nov (migration 897): the chat's sealed private lane keys and the moderator's lane seqs.
+          await client.query('delete from mod_private_lanes where chat = $1', [chat]);
+          await client.query('delete from mod_private_lane_seq where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');

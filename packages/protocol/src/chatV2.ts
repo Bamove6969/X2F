@@ -566,3 +566,276 @@ export async function verifyGrantAccepted(raw: unknown, a: { chat: string; parti
   );
   return body as unknown as GrantAccepted;
 }
+
+// ── private lanes (owner 27 Nov: the moderator talks to one trader privately) ──
+//
+// REVIEW-PROTOCOL. In a dispute the moderator may talk to ONE trader where the other cannot read
+// it, while every audit reader (any staff member the moderation process re-wraps the chat to, the
+// owner included) still reads all of it. TK cannot carry that (both traders hold TK), so each
+// trader gets a private lane key PK (32 random bytes), made and kept by the moderation process
+// (sealed in its keystore beside the chat's moderator identity), never by a trader or the API:
+//
+// - `privateKeyHash(PK)`: `pkh`, as `tkh` under its own domain `x2f/chat-private-key/v1\0`.
+// - The lane record (`x2f/chat-private-lane/v1\0`), signed by the chat's moderator identity:
+//   `{v:1, chat, to, pkh, wrap}`, `wrap` = PK sealed to `to`'s attested box key. Only that trader
+//   opens it; the API files and serves it (it can check the signature, never the wrap).
+// - A staff device gets PK sealed to its certified box key (`wrapPrivateKey`), exactly as it gets TK,
+//   on every read the moderation process grants (the audit path), and opens it with `unwrapPrivateKey`.
+// - Envelope v3: `{v:3, trade, from, to, seq, nonce, ct, sig}`, the v2 envelope plus `to` (the lane:
+//   'buyer' or 'seller'), `from` ∈ {'mod', to}. AEAD under PK with associated data
+//   `"x2f/chat-private/v1\0" || trade || "\0" || from || "\0" || to || "\0" || seq`; Ed25519 by the
+//   sender's attested chat identity over `"x2f/chat-envelope-private/v1\0"` + canonical JSON of every
+//   other field. Seq is per (from, to) lane, so the other trader sees no gap in the moderator's
+//   shared seq. A lane message never opens under TK nor under the other lane's PK.
+// - The moderator's countersign for a lane message (`x2f/mod-countersign-private/v1\0`) is the v1
+//   countersign plus `to`, so the API cannot move a sealed message into another lane.
+
+const PKH_DOMAIN = 'x2f/chat-private-key/v1\0';
+const LANE_DOMAIN = 'x2f/chat-private-lane/v1\0';
+const PRIVATE_AD_DOMAIN = 'x2f/chat-private/v1\0';
+const PRIVATE_ENVELOPE_DOMAIN = 'x2f/chat-envelope-private/v1\0';
+const PRIVATE_COUNTERSIGN_DOMAIN = 'x2f/mod-countersign-private/v1\0';
+
+export type Lane = 'buyer' | 'seller';
+export const isLane = (v: unknown): v is Lane => v === 'buyer' || v === 'seller';
+
+/** A private lane key PK (moderation process only). */
+export const newPrivateKey = newChatKey;
+
+/** `pkh`: 64 lower-case hex characters. */
+export async function privateKeyHash(pk: Uint8Array): Promise<string> {
+  await sodium.ready;
+  assertKey(pk, 'privateKeyHash');
+  const msg = new Uint8Array(PKH_DOMAIN.length + CHAT_KEY_BYTES);
+  msg.set(utf8.encode(PKH_DOMAIN));
+  msg.set(pk, PKH_DOMAIN.length);
+  try {
+    return sodium.to_hex(sodium.crypto_generichash(32, msg, null));
+  } finally {
+    sodium.memzero(msg);
+  }
+}
+
+/** PK sealed to one member's X25519 key, as canonical base64 (80 bytes). */
+export async function wrapPrivateKey(boxPublic: string, pk: Uint8Array): Promise<string> {
+  await sodium.ready;
+  assertKey(pk, 'wrapPrivateKey');
+  return toB64(await sealTo(boxPublic, pk));
+}
+
+/** Opens a wrap of PK and checks it against the pinned `pkh` (as `unwrapChatKey` for TK). */
+export async function unwrapPrivateKey(me: BoxKeyPair | BoxOpener, wrap: unknown, pkh: string): Promise<Uint8Array> {
+  await sodium.ready;
+  const bytes = b64Field(wrap, (n) => n === WRAP_LEN, b64Len(WRAP_LEN), 'wrap');
+  const want = hexField(pkh, 32, 'pkh');
+  const pk = 'sharedWith' in me ? await openSealedWith(me, bytes) : await openSealed(me, bytes);
+  if (pk.length !== CHAT_KEY_BYTES || !sodium.memcmp(sodium.from_hex(await privateKeyHash(pk)), want)) {
+    sodium.memzero(pk);
+    throw bad('Invalid wrap: the private key does not match pkh');
+  }
+  return pk;
+}
+
+export interface PrivateLaneRecord {
+  v: 1;
+  chat: string;
+  to: Lane;
+  pkh: string;
+  wrap: string;
+  sig: string;
+}
+export const PRIVATE_LANE_KEYS = ['v', 'chat', 'to', 'pkh', 'wrap', 'sig'] as const;
+
+/** The moderator's lane record: PK locked to `to`'s attested chat identity, signed as the moderator. */
+export async function makePrivateLaneRecord(a: { chat: string; to: Lane; pk: Uint8Array; mod: Identity; participants: Participants }): Promise<PrivateLaneRecord> {
+  await sodium.ready;
+  if (!isValidTrade(a.chat)) throw new TypeError('makePrivateLaneRecord: invalid chat');
+  if (!isLane(a.to)) throw new TypeError('makePrivateLaneRecord: to must be buyer or seller');
+  assertKey(a.pk, 'makePrivateLaneRecord');
+  signerSecret(a.mod, a.participants.mod, 'makePrivateLaneRecord');
+  participantKeys(a.participants[a.to], a.to);
+  const body = { v: 1 as const, chat: a.chat, to: a.to, pkh: await privateKeyHash(a.pk), wrap: await wrapPrivateKey(a.participants[a.to].boxPublic, a.pk) };
+  return { ...body, sig: await signStatement(LANE_DOMAIN, body, a.mod, 'makePrivateLaneRecord') };
+}
+
+/** Verifies a lane record's shape and the moderator's signature (anyone; only `to` can open the wrap). */
+export async function verifyPrivateLaneRecord(raw: unknown, a: { chat: string; participants: Partial<Participants> }): Promise<PrivateLaneRecord> {
+  const body = await verifyStatement(
+    LANE_DOMAIN, raw, PRIVATE_LANE_KEYS,
+    (s) => s['chat'] === a.chat && isLane(s['to']) && typeof s['pkh'] === 'string' && TKH_HEX.test(s['pkh']) && wrapOk(s['wrap']),
+    () => a.participants.mod,
+    'lane record',
+  );
+  return body as unknown as PrivateLaneRecord;
+}
+
+/** Opens a verified lane record as its trader (checked against the record's pkh). */
+export async function openPrivateLaneRecord(rec: PrivateLaneRecord, me: BoxKeyPair | BoxOpener): Promise<Uint8Array> {
+  return unwrapPrivateKey(me, rec.wrap, rec.pkh);
+}
+
+export const CHAT_ENVELOPE_V3_KEYS = ['v', 'trade', 'from', 'to', 'seq', 'nonce', 'ct', 'sig'] as const;
+
+export interface ChatEnvelopeV3 {
+  readonly v: 3;
+  readonly trade: string;
+  readonly from: Role;
+  readonly to: Lane;
+  readonly seq: number;
+  readonly nonce: string;
+  readonly ct: string;
+  readonly sig: string;
+}
+export type ChatEnvelopeV3Body = Omit<ChatEnvelopeV3, 'sig'>;
+
+function privateAd(trade: string, from: Role, to: Lane, seq: number): Uint8Array {
+  return utf8.encode(`${PRIVATE_AD_DOMAIN}${trade}\0${from}\0${to}\0${seq}`);
+}
+
+function privateEnvelopeMessage(u: ChatEnvelopeV3Body): Uint8Array {
+  return utf8.encode(PRIVATE_ENVELOPE_DOMAIN + canonicalJson({ v: u.v, trade: u.trade, from: u.from, to: u.to, seq: u.seq, nonce: u.nonce, ct: u.ct }));
+}
+
+const laneSenderOk = (from: unknown, to: unknown): boolean => isLane(to) && (from === 'mod' || from === to);
+
+/** The AEAD half of a lane message (a staff device seals the moderator's this way; moderation signs it). */
+export async function encryptPrivate(a: { trade: string; from: Role; to: Lane; seq: number; type: string; payload: unknown; pk: Uint8Array }): Promise<ChatEnvelopeV3Body> {
+  await sodium.ready;
+  if (typeof a.type !== 'string') throw new TypeError('sealPrivate: type must be a string');
+  if (!isValidTrade(a.trade)) throw new TypeError('sealPrivate: invalid trade');
+  if (!isRole(a.from) || !laneSenderOk(a.from, a.to)) throw new TypeError('sealPrivate: from must be mod or the lane trader');
+  if (!isValidSeq(a.seq)) throw new TypeError('sealPrivate: seq must be a non-negative safe integer');
+  assertKey(a.pk, 'sealPrivate');
+  const padded = pad(utf8.encode(canonicalJson({ type: a.type, payload: encodePayload(a.payload) })));
+  const nonce = sodium.randombytes_buf(NONCE_LEN);
+  let ct: Uint8Array;
+  try {
+    ct = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(padded, privateAd(a.trade, a.from, a.to, a.seq), null, nonce, a.pk);
+  } finally {
+    sodium.memzero(padded);
+  }
+  return { v: 3 as const, trade: a.trade, from: a.from, to: a.to, seq: a.seq, nonce: toB64(nonce), ct: toB64(ct) };
+}
+
+/** Signs a sealed v3 body (strictly checked first) with the sender's attested chat identity. */
+export async function signPrivateEnvelope(body: unknown, me: Identity): Promise<ChatEnvelopeV3> {
+  await sodium.ready;
+  const s = snapshot(body, ['v', 'trade', 'from', 'to', 'seq', 'nonce', 'ct'], 'envelope');
+  if (s['v'] !== 3 || typeof s['trade'] !== 'string' || !isValidTrade(s['trade']) || !isRole(s['from']) || !laneSenderOk(s['from'], s['to']) || !isValidSeq(s['seq'])) throw bad('Invalid envelope');
+  b64Field(s['nonce'], (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
+  b64Field(s['ct'], (n) => CT_LENS.has(n), CT_MAX_CHARS, 'ct');
+  const unsigned = { v: 3 as const, trade: s['trade'], from: s['from'], to: s['to'] as Lane, seq: s['seq'], nonce: s['nonce'] as string, ct: s['ct'] as string };
+  const secret = signerSecret(me, undefined, 'signPrivateEnvelope');
+  return { ...unsigned, sig: sodium.to_hex(sodium.crypto_sign_detached(privateEnvelopeMessage(unsigned), secret)) };
+}
+
+export async function sealPrivate(a: { trade: string; from: Role; to: Lane; seq: number; type: string; payload: unknown; pk: Uint8Array; me: Identity }): Promise<ChatEnvelopeV3> {
+  await sodium.ready;
+  signerSecret(a.me, undefined, 'sealPrivate');
+  return signPrivateEnvelope(await encryptPrivate(a), a.me);
+}
+
+/**
+ * Verifies and decrypts a v3 lane envelope, in `openChat`'s order. `to` is the lane the caller
+ * holds `pk` for (a trader: its own role; a staff reader: each lane in turn); `guard` is that lane's
+ * own ReplayGuard (seq is per lane). Opened adds `to`.
+ */
+export async function openPrivate(e: unknown, a: { pk: Uint8Array; trade: string; to: Lane; participants: Partial<Participants>; guard: ReplayGuard }): Promise<Opened & { to: Lane }> {
+  await sodium.ready;
+  assertKey(a.pk, 'openPrivate');
+  if (!(a.guard instanceof ReplayGuard)) throw new TypeError('openPrivate: guard must be a ReplayGuard');
+  if (!isPlainObject(a.participants)) throw new TypeError('openPrivate: invalid participants');
+  if (!isLane(a.to)) throw new TypeError('openPrivate: invalid lane');
+  assertDistinctKeys(a.participants, 'openPrivate');
+  const s = snapshot(e, CHAT_ENVELOPE_V3_KEYS, 'envelope');
+  if (s['v'] !== 3) throw bad('Invalid v');
+  const { trade, from, to, seq } = s;
+  if (typeof trade !== 'string' || trade.length > MAX_TRADE_LEN) throw bad('Invalid trade');
+  if (typeof from !== 'string' || from.length > 16) throw bad('Invalid from');
+  if (!isValidSeq(seq)) throw bad('Invalid seq');
+  if (typeof s['nonce'] !== 'string' || typeof s['ct'] !== 'string' || typeof s['sig'] !== 'string') throw bad('Invalid fields');
+  if (trade !== a.trade || a.guard.trade !== a.trade) throw new ProtocolError('wrong-trade', 'Envelope is for another chat');
+  if (to !== a.to || !laneSenderOk(from, to)) throw new ProtocolError('not-participant', 'Envelope is for another lane');
+  const sender = isRole(from) && Object.prototype.hasOwnProperty.call(a.participants, from) ? a.participants[from] : undefined;
+  if (!isRole(from) || sender === undefined) throw new ProtocolError('not-participant', 'Sender is not a participant');
+  const keys = participantKeys(sender, 'participants[from]');
+  const nonce = b64Field(s['nonce'], (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
+  const ct = b64Field(s['ct'], (n) => CT_LENS.has(n), CT_MAX_CHARS, 'ct');
+  const sig = hexField(s['sig'], sodium.crypto_sign_BYTES, 'sig');
+  const u = { v: 3 as const, trade, from, to: to as Lane, seq, nonce: s['nonce'], ct: s['ct'] };
+  let ok = false;
+  try {
+    ok = sodium.crypto_sign_verify_detached(sig, privateEnvelopeMessage(u), keys.sign);
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw bad('Invalid sig');
+  let padded: Uint8Array;
+  try {
+    padded = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, ct, privateAd(trade, from, to as Lane, seq), nonce, a.pk);
+  } catch {
+    throw bad('Invalid ct: decryption failed');
+  }
+  let opened: Omit<Opened, 'from'>;
+  try {
+    opened = parsePlaintext(padded);
+  } catch {
+    throw bad('Invalid plaintext');
+  } finally {
+    sodium.memzero(padded);
+  }
+  if (!a.guard.accept(from, seq)) throw new ProtocolError('replay', 'Sequence number already seen');
+  return { type: opened.type, payload: opened.payload, from, to: to as Lane };
+}
+
+export interface ModPrivateCountersign extends ModCountersign {
+  to: Lane;
+}
+
+function privateCountersignBytes(c: Omit<ModPrivateCountersign, 'sig'>): Uint8Array {
+  return utf8.encode(PRIVATE_COUNTERSIGN_DOMAIN + canonicalJson({ chat: c.chat, to: c.to, seq: c.seq, nonce: c.nonce, ctSha256: c.ctSha256, requestId: c.requestId, issuedAt: c.issuedAt }));
+}
+
+/** The staff device's countersign of a sealed moderator lane body (`encryptPrivate` with from 'mod'). */
+export async function makeModPrivateCountersign(a: { body: ChatEnvelopeV3Body; requestId: string; issuedAt: string; me: Identity | Signer }): Promise<ModPrivateCountersign> {
+  await sodium.ready;
+  if (a.body.from !== 'mod' || !isLane(a.body.to) || !isValidTrade(a.body.trade) || !isValidSeq(a.body.seq)) throw new TypeError('makeModPrivateCountersign: a moderator lane body');
+  if (!REQUEST_ID.test(a.requestId) || !ISO_MS.test(a.issuedAt) || Number.isNaN(Date.parse(a.issuedAt))) throw new TypeError('makeModPrivateCountersign: invalid requestId or issuedAt');
+  b64Field(a.body.nonce, (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
+  const c = { chat: a.body.trade, to: a.body.to, seq: a.body.seq, nonce: a.body.nonce, ctSha256: await ctSha256Of(a.body.ct), requestId: a.requestId, issuedAt: a.issuedAt };
+  const bytes = privateCountersignBytes(c);
+  if ('sign' in a.me && typeof a.me.sign === 'function') {
+    const pk = hexField(a.me.signPublic, 32, 'signPublic');
+    const sig = await a.me.sign(bytes);
+    if (!(sig instanceof Uint8Array) || sig.length !== sodium.crypto_sign_BYTES || !sodium.crypto_sign_verify_detached(sig, bytes, pk)) {
+      throw new TypeError('makeModPrivateCountersign: the signer does not sign as signPublic');
+    }
+    return { ...c, sig: sodium.to_hex(sig) };
+  }
+  const secret = signerSecret(a.me as Identity, undefined, 'makeModPrivateCountersign');
+  return { ...c, sig: sodium.to_hex(sodium.crypto_sign_detached(bytes, secret)) };
+}
+
+/** Verifies a lane countersign for exactly this body (channel, lane, seq, nonce, ciphertext) by `signPublic`. */
+export async function verifyModPrivateCountersign(raw: unknown, a: { body: ChatEnvelopeV3Body; signPublic: string }): Promise<ModPrivateCountersign> {
+  await sodium.ready;
+  const s = snapshot(raw, ['chat', 'to', 'seq', 'nonce', 'ctSha256', 'requestId', 'issuedAt', 'sig'], 'countersign');
+  if (typeof s['requestId'] !== 'string' || !REQUEST_ID.test(s['requestId']) || typeof s['issuedAt'] !== 'string' || !ISO_MS.test(s['issuedAt']) || Number.isNaN(Date.parse(s['issuedAt']))) {
+    throw bad('Invalid countersign');
+  }
+  if (s['chat'] !== a.body.trade || s['to'] !== a.body.to || !isLane(s['to']) || s['seq'] !== a.body.seq || s['nonce'] !== a.body.nonce || a.body.from !== 'mod'
+    || s['ctSha256'] !== (await ctSha256Of(a.body.ct))) {
+    throw bad('Invalid countersign: not for this message');
+  }
+  const pk = hexField(a.signPublic, 32, 'signPublic');
+  const sig = hexField(s['sig'], sodium.crypto_sign_BYTES, 'countersign.sig');
+  const c = { chat: s['chat'] as string, to: s['to'] as Lane, seq: s['seq'] as number, nonce: s['nonce'] as string, ctSha256: s['ctSha256'] as string, requestId: s['requestId'], issuedAt: s['issuedAt'] };
+  let ok = false;
+  try {
+    ok = sodium.crypto_sign_verify_detached(sig, privateCountersignBytes(c), pk);
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw bad('Invalid countersign.sig');
+  return { ...c, sig: s['sig'] as string };
+}

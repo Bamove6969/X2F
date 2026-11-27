@@ -12,6 +12,8 @@ import type pg from 'pg';
  *   its own table apart from the saved session (R27), so one leaked party-state row never yields
  *   the wallet password that protects the saved escrow keys.
  * The trade code is the associated data, so a sealed row moved to another trade fails to open.
+ * A chat's moderator identity (`mod_chat_identities`) and its private lane keys (`mod_private_lanes`,
+ * migration 897, associated data `chat || '\0' || lane`) are sealed under MOD_KEYSTORE_KEY too.
  */
 const KEY_LEN = 32;
 const NONCE_LEN = 12;
@@ -171,6 +173,28 @@ export async function loadChatIdentity(db: Queryable, keystoreKey: Uint8Array, c
     signSecret: new Uint8Array(Buffer.from(o.signSecret!, 'hex')),
     boxSecret: new Uint8Array(Buffer.from(o.boxSecret!, 'hex')),
   };
+}
+
+/** A chat's private lane (migration 897): the trader who reads it. */
+export type LaneName = 'buyer' | 'seller';
+const laneAad = (chat: string, lane: LaneName): string => `${chat}\0${lane}`;
+
+/**
+ * Seal and store a chat's lane key PK (32 bytes) with its pkh and signed lane record, once: a second
+ * call (a racing grant) keeps the first, and the caller reads the lane back (`loadPrivateLane`).
+ */
+export async function savePrivateLane(db: Queryable, keystoreKey: Uint8Array, chat: string, lane: LaneName, pk: Uint8Array, pkh: string, record: unknown): Promise<void> {
+  await db.query('insert into mod_private_lanes (chat, lane, sealed, pkh, record) values ($1, $2, $3, $4, $5) on conflict (chat, lane) do nothing', [
+    chat, lane, seal(keystoreKey, laneAad(chat, lane), pk), pkh, record,
+  ]);
+}
+
+/** A chat's lane as stored: PK opened (the caller wipes it), its pkh and lane record; null if none. */
+export async function loadPrivateLane(db: Queryable, keystoreKey: Uint8Array, chat: string, lane: LaneName): Promise<{ pk: Uint8Array; pkh: string; record: Record<string, unknown> } | null> {
+  const { rows } = await db.query<{ sealed: Buffer; pkh: string; record: Record<string, unknown> }>('select sealed, pkh, record from mod_private_lanes where chat = $1 and lane = $2', [chat, lane]);
+  const row = rows[0];
+  if (!row) return null;
+  return { pk: open(keystoreKey, laneAad(chat, lane), row.sealed), pkh: row.pkh, record: row.record };
 }
 
 /** Seal and store a trade's escrow PartyState (Task 9) under MOD_KEYSTORE_KEY, apart from its wallet password (R27). */

@@ -20,7 +20,8 @@ import { isChatNotice } from './notices.js';
 
 export type ToChatWorker =
   | { t: 'chat-sync'; id: number; chat: string }
-  | { t: 'chat-send'; id: number; chat: string; text: string }
+  /** `private`: a private reply to the moderator in this trader's own lane (owner D2). */
+  | { t: 'chat-send'; id: number; chat: string; text: string; private?: boolean }
   /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
   /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
@@ -107,7 +108,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         let snapshot: ChatSnapshot;
         if (m.t === 'chat-send') {
           if (typeof m.text !== 'string') throw new ChatSendFailed('bad-text');
-          snapshot = await eng.send(m.chat, m.text);
+          snapshot = m.private === true ? await eng.send(m.chat, m.text, { private: true }) : await eng.send(m.chat, m.text);
         } else if (m.t === 'chat-send-pay') {
           // Checked here so that nothing but a well-formed package reaches the engine.
           snapshot = await eng.sendPay(m.chat, parsePayDetails(m.pay));

@@ -164,6 +164,8 @@ export {
   chatIdentityProofBytes,
   checkChatEnvelopeV2,
   type ChatEnvelopeV2Shape,
+  checkChatEnvelopeV3,
+  type ChatEnvelopeV3Shape,
   chatIdentityProofValid,
   chatPurgeDue,
   checkChatEnvelope,

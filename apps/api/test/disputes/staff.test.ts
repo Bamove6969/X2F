@@ -9,7 +9,11 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { chatKeyHash, encryptChat, makeModCountersign, newChatKey, openChat, ReplayGuard, signChatEnvelope, unwrapChatKey, wrapChatKey, type ChatEnvelopeV2, type Identity, type Participants } from '@x2f/protocol';
+import {
+  chatKeyHash, encryptChat, encryptPrivate, makeModCountersign, makeModPrivateCountersign, makePrivateLaneRecord, newChatKey, newPrivateKey, openChat, openPrivate,
+  openPrivateLaneRecord, privateKeyHash, ReplayGuard, sealPrivate, signChatEnvelope, signPrivateEnvelope, unwrapChatKey, unwrapPrivateKey, verifyPrivateLaneRecord, wrapChatKey,
+  wrapPrivateKey, type ChatEnvelopeV2, type Identity, type Lane, type Participants,
+} from '@x2f/protocol';
 import { channelFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -61,6 +65,8 @@ interface ChatSetup {
   seq: number;
   /** The chat key (design task 5): the stand-in holds it to re-wrap; a real moderation process opens it from the grant. */
   tk: Uint8Array;
+  /** Private lanes (private-mod-chat-2026-11-27): each trader's lane key and the moderator's next seq in it. */
+  lanes: Record<Lane, { pk: Uint8Array; seq: number }>;
 }
 
 /** The staff member's certified device (staff-web's key), as the stand-in's gate would know it. */
@@ -89,15 +95,32 @@ class FakeModeration implements ModerationClient {
     const c = this.chats.get(a.code);
     if (!c) throw new ModerationError(404, 'no-chat');
     if (a.deviceKeyId !== DEVICE_KEY_ID) throw new ModerationError(403, 'device-not-certified');
-    return { wrap: await wrapChatKey(DEVICE.boxPublic, c.tk), tkh: (await deps.db.query<{ tkh: string }>('select tkh from chat_keys where chat = $1', [c.chat])).rows[0]!.tkh, boxPublic: DEVICE.boxPublic, nextSeq: c.seq };
+    const lanes = [];
+    for (const to of ['buyer', 'seller'] as const) {
+      const l = c.lanes[to];
+      lanes.push({
+        to, pkh: await privateKeyHash(l.pk), wrap: await wrapPrivateKey(DEVICE.boxPublic, l.pk), nextSeq: l.seq,
+        record: this.laneRecord ? await this.laneRecord(c, to) : await makePrivateLaneRecord({ chat: c.channel, to, pk: l.pk, mod: c.ids.mod, participants: c.participants }),
+      });
+    }
+    return { wrap: await wrapChatKey(DEVICE.boxPublic, c.tk), tkh: (await deps.db.query<{ tkh: string }>('select tkh from chat_keys where chat = $1', [c.chat])).rows[0]!.tkh, boxPublic: DEVICE.boxPublic, nextSeq: c.seq, lanes };
   }
 
-  async chatSend(a: ModCaseCall & ModCountersigned) {
+  /** A test's stand-in for a lane record (a bad one); null: the real one. */
+  laneRecord: ((c: ChatSetup, to: Lane) => Promise<unknown>) | null = null;
+
+  async chatSend(a: ModCaseCall & ModCountersigned & { to?: Lane }) {
     // Review 8 Nov M-2: the API asks under `chat.message-requested`; `chat.message-sent` comes after.
     await this.logged(a.logEntryId, 'chat.message-requested', a.code);
     this.calls.push({ op: 'send', code: a.code, logEntryId: a.logEntryId });
     const c = this.chats.get(a.code);
     if (!c) throw new ModerationError(404, 'no-chat');
+    if (a.to !== undefined) {
+      const l = c.lanes[a.to];
+      if (a.seq !== l.seq) throw new ModerationError(409, 'stale-seq', l.seq);
+      l.seq++;
+      return { envelope: await signPrivateEnvelope({ v: 3, trade: c.channel, from: 'mod', to: a.to, seq: a.seq, nonce: a.nonce, ct: a.ct }, c.ids.mod) };
+    }
     if (a.seq !== c.seq) throw new ModerationError(409, 'stale-seq', c.seq);
     c.seq++;
     return { envelope: await signChatEnvelope({ v: 2, trade: c.channel, from: 'mod', seq: a.seq, nonce: a.nonce, ct: a.ct }, c.ids.mod) };
@@ -175,7 +198,8 @@ async function disputed(at = START, o: { methodId?: string; seller?: Awaited<Ret
     [chat, await chatKeyHash(tk), 'a'.repeat(128)],
   );
   await deps.db.query('insert into chat_attestations (chat, attestation, sig) values ($1, $2, $3) on conflict do nothing', [chat, { v: 1, trade: chat, participants }, 'aa']);
-  moderation.chats.set(t.code, { chat, channel: await channelFor(chat, 'chat'), ids, participants, seq: 0, tk });
+  const lanes = { buyer: { pk: await newPrivateKey(), seq: 0 }, seller: { pk: await newPrivateKey(), seq: 0 } };
+  moderation.chats.set(t.code, { chat, channel: await channelFor(chat, 'chat'), ids, participants, seq: 0, tk, lanes });
   return { seller, buyer, code: t.code, chat };
 }
 
@@ -183,8 +207,14 @@ async function disputed(at = START, o: { methodId?: string; seller?: Awaited<Ret
  * A moderator message as staff-web sends it (design build task 9): sealed under the chat key as
  * `from: 'mod'` at the chat's next moderator seq, countersigned by the staff device key.
  */
-async function msg(code: string, text: string, o: { seq?: number } = {}) {
+async function msg(code: string, text: string, o: { seq?: number; to?: Lane } = {}) {
   const c = moderation.chats.get(code)!;
+  if (o.to !== undefined) {
+    // A private lane message: v3 under that lane's key, the lane countersign.
+    const body = await encryptPrivate({ trade: c.channel, from: 'mod', to: o.to, seq: o.seq ?? c.lanes[o.to].seq, type: 'chat.msg', payload: { text }, pk: c.lanes[o.to].pk });
+    const cs = await makeModPrivateCountersign({ body, requestId: randomUUID().replace(/-/g, ''), issuedAt: new Date(deps.clock().getTime()).toISOString(), me: DEVICE });
+    return { deviceKeyId: DEVICE_KEY_ID, to: o.to, seq: body.seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
+  }
   const body = await encryptChat({ trade: c.channel, from: 'mod', seq: o.seq ?? c.seq, type: 'chat.msg', payload: { text }, tk: c.tk });
   const cs = await makeModCountersign({ body, requestId: randomUUID().replace(/-/g, ''), issuedAt: new Date(deps.clock().getTime()).toISOString(), me: DEVICE });
   return { deviceKeyId: DEVICE_KEY_ID, seq: body.seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
@@ -1247,4 +1277,165 @@ describe('Task 11 tripwires (local tree only)', () => {
   });
 
 
+});
+
+describe('private moderator lanes (owner 27 Nov, private-mod-chat-2026-11-27)', () => {
+  type Item = { id: string; senderRole: string; to: Lane | null; envelope: Record<string, unknown> };
+  type Trader = Awaited<ReturnType<typeof newTrader>>;
+  const envelopesOf = async (who: Trader, chat: string) => {
+    const res = await who.browser.get(`/v1/chats/${chat}/envelopes?after=0`);
+    expect(res.statusCode, res.body).toBe(200);
+    return (res.json() as { envelopes: Item[] }).envelopes;
+  };
+  /** A trader's own private reply: v3 in a lane under that lane's key (the one it opened from its record). */
+  async function reply(code: string, role: Lane, text: string, o: { seq: number }) {
+    const c = moderation.chats.get(code)!;
+    return sealPrivate({ trade: c.channel, from: role, to: role, seq: o.seq, type: 'chat.msg', payload: { text }, pk: c.lanes[role].pk, me: c.ids[role] });
+  }
+  /** A disputed trade whose case a moderator took and read (the read files both lanes). */
+  async function readCase() {
+    const mod = await staff('mod');
+    const d = await disputed();
+    await mod.b.post(url(d.code, '/take'), {});
+    const res = await mod.b.post(url(d.code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect(res.statusCode, res.body).toBe(200);
+    return { ...d, mod };
+  }
+  const result = (r: { statusCode: number; body: string }) => ({ status: r.statusCode, error: errorOf(r) });
+
+  it('the read files both lane records and returns each lane\'s wrap; each trader gets only its own record (404 no-lane before)', async () => {
+    const mod = await staff('mod');
+    const { code, chat, buyer, seller } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    expect(result(await seller.browser.get(`/v1/chats/${chat}/lane`))).toEqual({ status: 404, error: 'no-lane' });
+    const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect(res.statusCode, res.body).toBe(200);
+    const a = res.json() as { lanes: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number }> };
+    const c = moderation.chats.get(code)!;
+    expect(a.lanes.map((l) => Object.keys(l).sort())).toEqual([['nextSeq', 'pkh', 'to', 'wrap'], ['nextSeq', 'pkh', 'to', 'wrap']]);
+    expect(a.lanes.map((l) => [l.to, l.nextSeq])).toEqual([['buyer', 0], ['seller', 0]]);
+    for (const l of a.lanes) expect(sodium.memcmp(await unwrapPrivateKey(DEVICE, l.wrap, l.pkh), c.lanes[l.to].pk)).toBe(true);
+    for (const [who, role] of [[buyer, 'buyer'], [seller, 'seller']] as const) {
+      const got = await who.browser.get(`/v1/chats/${chat}/lane`);
+      expect(got.statusCode, got.body).toBe(200);
+      const rec = await verifyPrivateLaneRecord((got.json() as { record: unknown }).record, { chat: c.channel, participants: c.participants });
+      expect(rec.to).toBe(role);
+      expect(sodium.memcmp(await openPrivateLaneRecord(rec, c.ids[role]), c.lanes[role].pk)).toBe(true);
+    }
+    // A second read keeps one row per lane.
+    expect((await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).statusCode).toBe(200);
+    expect((await deps.db.query('select to_role from chat_private_lanes where chat = $1 order by to_role', [chat])).rows).toEqual([{ to_role: 'buyer' }, { to_role: 'seller' }]);
+  });
+
+  it('a lane record the attested moderator did not sign, or for another lane, is refused 502 and nothing is filed', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const stranger = await keyPair();
+    const bads = [
+      async (c: ChatSetup, to: Lane) => makePrivateLaneRecord({ chat: c.channel, to, pk: c.lanes[to].pk, mod: stranger, participants: { ...c.participants, mod: { signPublic: stranger.signPublic, boxPublic: stranger.boxPublic } } }),
+      async (c: ChatSetup, to: Lane) => makePrivateLaneRecord({ chat: c.channel, to: to === 'buyer' ? 'seller' : 'buyer', pk: c.lanes[to].pk, mod: c.ids.mod, participants: c.participants }),
+    ];
+    for (const bad of bads) {
+      moderation.laneRecord = bad;
+      try {
+        expect(result(await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID }))).toEqual({ status: 502, error: 'moderation-unavailable' });
+      } finally {
+        moderation.laneRecord = null;
+      }
+    }
+    expect((await deps.db.query('select 1 from chat_private_lanes where chat = $1', [chat])).rows).toEqual([]);
+  });
+
+  it('a private message is stored in its lane, logged with `to`, told to that trader only, read by that trader and the audit read, never by the other', async () => {
+    const mod = await staff('mod');
+    const { code, chat, buyer, seller } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    // Before any read the lane is not filed: refused before anything is logged or asked.
+    expect(result(await mod.b.post(url(code, '/messages'), await msg(code, 'Too early.', { to: 'seller' })))).toEqual({ status: 409, error: 'no-lane' });
+    expect((await logOf(code)).filter((e) => e.action === 'chat.message-requested')).toEqual([]);
+    expect((await mod.b.post(url(code, '/messages'), { ...(await msg(code, 'x', { to: 'seller' })), to: 'mod' })).statusCode).toBe(400);
+    await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    const lastBefore = (await deps.db.query<{ last_message_at: Date | null }>('select last_message_at from chats where code = $1', [chat])).rows[0]!.last_message_at;
+    const sb = stream(buyer.id);
+    const ss = stream(seller.id);
+    try {
+      const res = await mod.b.post(url(code, '/messages'), await msg(code, 'Seller, only you see this.', { to: 'seller' }));
+      expect(res.statusCode, res.body).toBe(201);
+      expect(eventsOf(ss.frames, 'chat')).toEqual([{ type: 'chat', chat }]);
+      expect(eventsOf(sb.frames, 'chat')).toEqual([]);
+    } finally {
+      sb.stop();
+      ss.stop();
+    }
+    const stored = (await deps.db.query<{ id: string; to_role: string; seq: string }>("select id::text as id, to_role, seq::text as seq from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat])).rows;
+    expect(stored.map((r) => [r.to_role, r.seq])).toEqual([['seller', '0']]);
+    const sent = (await logOf(code)).filter((e) => e.action === 'chat.message-sent');
+    expect(sent.map((e) => JSON.parse(e.detail))).toEqual([{ envelopeId: stored[0]!.id, to: 'seller' }]);
+    // The dispute's reply, as a shared message is; the other trader's chat list does not move.
+    expect((await loadDispute(deps.db, code))!.firstReplyAt).toEqual(START);
+    expect((await deps.db.query<{ last_message_at: Date | null }>('select last_message_at from chats where code = $1', [chat])).rows[0]!.last_message_at).toEqual(lastBefore);
+
+    const c = moderation.chats.get(code)!;
+    const mine = (await envelopesOf(seller, chat)).filter((e) => e.senderRole === 'mod');
+    expect(mine.map((e) => e.to)).toEqual(['seller']);
+    expect(await openPrivate(mine[0]!.envelope, { pk: c.lanes.seller.pk, trade: c.channel, to: 'seller', participants: c.participants, guard: new ReplayGuard(c.channel) }))
+      .toEqual({ from: 'mod', to: 'seller', type: 'chat.msg', payload: { text: 'Seller, only you see this.' } });
+    expect((await envelopesOf(buyer, chat)).filter((e) => e.senderRole === 'mod')).toEqual([]);
+    // A shared message next starts the shared seq at 0 (the lanes count apart) and reaches both.
+    expect((await mod.b.post(url(code, '/messages'), await msg(code, 'To both.'))).statusCode).toBe(201);
+    expect((await envelopesOf(buyer, chat)).filter((e) => e.senderRole === 'mod').map((e) => [e.to, e.envelope['seq']])).toEqual([[null, 0]]);
+    // The audit read sees every lane, each item naming its lane.
+    const audit = (await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID })).json() as { envelopes: Item[]; lanes: Array<{ to: Lane; nextSeq: number }> };
+    expect(audit.envelopes.filter((e) => e.senderRole === 'mod').map((e) => e.to)).toEqual(['seller', null]);
+    expect(audit.lanes.map((l) => [l.to, l.nextSeq])).toEqual([['buyer', 0], ['seller', 1]]);
+    // A lane seq the moderation process says is stale passes its next seq on.
+    const stale = await mod.b.post(url(code, '/messages'), await msg(code, 'Again.', { to: 'seller', seq: 0 }));
+    expect({ ...result(stale), next: (stale.json() as { nextSeq?: number }).nextSeq }).toEqual({ status: 409, error: 'stale-seq', next: 1 });
+  });
+
+  it('a trader replies privately only in its own lane, only once the moderator wrote there, only while the dispute is open; lane seqs are independent', async () => {
+    const { code, chat, buyer, seller, mod } = await readCase();
+    const post = (who: Trader, body: unknown) => who.browser.post(`/v1/chats/${chat}/envelopes`, body);
+    // D2: nothing from the moderator in the seller's lane yet.
+    expect(result(await post(seller, await reply(code, 'seller', 'Hi', { seq: 0 })))).toEqual({ status: 409, error: 'lane-not-open' });
+    expect((await mod.b.post(url(code, '/messages'), await msg(code, 'Seller?', { to: 'seller' }))).statusCode).toBe(201);
+    // Another lane, or a lane the moderator has not written in, is refused.
+    // (The protocol will not seal it, so the shape is moved by hand; the API checks the shape only.)
+    expect(result(await post(seller, { ...(await reply(code, 'seller', 'Hi', { seq: 0 })), to: 'buyer' }))).toEqual({ status: 400, error: 'wrong-lane' });
+    expect(result(await post(buyer, await reply(code, 'buyer', 'Me too', { seq: 0 })))).toEqual({ status: 409, error: 'lane-not-open' });
+    const sb = stream(buyer.id);
+    const ss = stream(seller.id);
+    try {
+      const ok = await post(seller, await reply(code, 'seller', 'Only to you.', { seq: 0 }));
+      expect(ok.statusCode, ok.body).toBe(201);
+      expect(eventsOf(ss.frames, 'chat')).toEqual([{ type: 'chat', chat }]);
+      expect(eventsOf(sb.frames, 'chat')).toEqual([]);
+    } finally {
+      sb.stop();
+      ss.stop();
+    }
+    expect(result(await post(seller, await reply(code, 'seller', 'Again', { seq: 0 })))).toEqual({ status: 409, error: 'stale-seq' });
+    // The seller's shared seq is untouched by its lane: a shared v2 at seq 0 is taken.
+    const c = moderation.chats.get(code)!;
+    const shared = await signChatEnvelope(await encryptChat({ trade: c.channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'To both.' }, tk: c.tk }), c.ids.seller);
+    expect((await post(seller, shared)).statusCode).toBe(201);
+    const rows = (await deps.db.query<{ sender_role: string; to_role: string | null; seq: string }>('select sender_role, to_role, seq::text as seq from chat_envelopes where chat = $1 order by id', [chat])).rows;
+    expect(rows.map((r) => [r.sender_role, r.to_role, r.seq])).toEqual([['mod', 'seller', '0'], ['seller', 'seller', '0'], ['seller', null, '0']]);
+    // The buyer sees the seller's shared message only.
+    expect((await envelopesOf(buyer, chat)).map((e) => [e.senderRole, e.to])).toEqual([['seller', null]]);
+    const own = (await envelopesOf(seller, chat)).find((e) => e.senderRole === 'seller' && e.to === 'seller')!;
+    expect(await openPrivate(own.envelope, { pk: c.lanes.seller.pk, trade: c.channel, to: 'seller', participants: c.participants, guard: new ReplayGuard(c.channel) }))
+      .toEqual({ from: 'seller', to: 'seller', type: 'chat.msg', payload: { text: 'Only to you.' } });
+    // A closed dispute ends the lane.
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, START]);
+    expect(result(await post(seller, await reply(code, 'seller', 'Late', { seq: 1 })))).toEqual({ status: 409, error: 'lane-closed' });
+  });
+
+  it('a trader\'s v3 before the lane is filed is no-lane, and a v3 in a chat with no key is refused as a body of the wrong version', async () => {
+    const { code, chat, seller } = await disputed();
+    expect(result(await seller.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'seller', 'Hi', { seq: 0 })))).toEqual({ status: 409, error: 'no-lane' });
+    await deps.db.query('delete from chat_keys where chat = $1', [chat]);
+    expect(result(await seller.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'seller', 'Hi', { seq: 0 })))).toEqual({ status: 400, error: 'bad-request' });
+  });
 });
