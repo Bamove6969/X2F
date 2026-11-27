@@ -20,7 +20,8 @@ import { isChatNotice } from './notices.js';
 
 export type ToChatWorker =
   | { t: 'chat-sync'; id: number; chat: string }
-  | { t: 'chat-send'; id: number; chat: string; text: string }
+  /** `expectPrivate`: the lane the trader wrote in; the worker refuses the line ('mode-changed') if the mode is now the other one. */
+  | { t: 'chat-send'; id: number; chat: string; text: string; expectPrivate: boolean }
   /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
   | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown }
   /** Plan 5 Task 15: a `proof.attached` payload (the proof's key); the worker checks and seals it. */
@@ -32,7 +33,7 @@ export type ToChatWorker =
   /** Build task 6: the trader's signed dispute grant, for the dispute request. */
   | { t: 'chat-grant'; id: number; chat: string; disputeAt: unknown };
 
-export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'unavailable' | 'not-found';
+export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'mode-changed' | 'unavailable' | 'not-found';
 
 export type FromChatWorker =
   | { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot }
@@ -107,7 +108,8 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         let snapshot: ChatSnapshot;
         if (m.t === 'chat-send') {
           if (typeof m.text !== 'string') throw new ChatSendFailed('bad-text');
-          snapshot = await eng.send(m.chat, m.text);
+          if (typeof m.expectPrivate !== 'boolean') throw new ChatSendFailed('refused');
+          snapshot = await eng.send(m.chat, m.text, m.expectPrivate);
         } else if (m.t === 'chat-send-pay') {
           // Checked here so that nothing but a well-formed package reaches the engine.
           snapshot = await eng.sendPay(m.chat, parsePayDetails(m.pay));

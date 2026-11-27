@@ -161,6 +161,8 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   unsupported: 'an input check on the picked proof image',
   // Proof review M2: a proof's post got no answer (it may have been stored); shown as PROOF_SEND_UNCERTAIN.
   uncertain: 'a fault: no answer, so the send may have gone through',
+  // Private lanes (A1): the moderator's private mode changed while the trader typed; the draft stays (ChatPanel's SEND_ERRORS).
+  'mode-changed': "the chat's state moved on: the private mode changed since the trader started typing",
   internal: 'a server fault',
   busy: 'the server is busy (try again)',
   'display-name-invalid': 'an input check on a typed name',

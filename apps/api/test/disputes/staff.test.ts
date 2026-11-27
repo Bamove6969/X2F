@@ -1310,11 +1310,16 @@ describe('private moderator lanes (owner 27 Nov, private-mod-chat-2026-11-27)', 
     expect(result(await seller.browser.get(`/v1/chats/${chat}/lane`))).toEqual({ status: 404, error: 'no-lane' });
     const res = await mod.b.post(url(code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
     expect(res.statusCode, res.body).toBe(200);
-    const a = res.json() as { lanes: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number }> };
+    const a = res.json() as { lanes: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }> };
     const c = moderation.chats.get(code)!;
-    expect(a.lanes.map((l) => Object.keys(l).sort())).toEqual([['nextSeq', 'pkh', 'to', 'wrap'], ['nextSeq', 'pkh', 'to', 'wrap']]);
+    expect(a.lanes.map((l) => Object.keys(l).sort())).toEqual([['nextSeq', 'pkh', 'record', 'to', 'wrap'], ['nextSeq', 'pkh', 'record', 'to', 'wrap']]);
     expect(a.lanes.map((l) => [l.to, l.nextSeq])).toEqual([['buyer', 0], ['seller', 0]]);
     for (const l of a.lanes) expect(sodium.memcmp(await unwrapPrivateKey(DEVICE, l.wrap, l.pkh), c.lanes[l.to].pk)).toBe(true);
+    // A2: each lane carries the moderator-signed record naming that lane and pkh, so staff-web can check it itself.
+    for (const l of a.lanes) {
+      const rec = await verifyPrivateLaneRecord(l.record, { chat: c.channel, participants: c.participants });
+      expect([rec.to, rec.pkh]).toEqual([l.to, l.pkh]);
+    }
     for (const [who, role] of [[buyer, 'buyer'], [seller, 'seller']] as const) {
       const got = await who.browser.get(`/v1/chats/${chat}/lane`);
       expect(got.statusCode, got.body).toBe(200);

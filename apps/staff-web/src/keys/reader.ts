@@ -11,6 +11,7 @@ import {
   unwrapChatKey,
   unwrapPrivateKey,
   verifyChatKeyRecord,
+  verifyPrivateLaneRecord,
   type Participants,
 } from '@x2f/protocol';
 import { CHAT_MSG_TYPE, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
@@ -34,9 +35,10 @@ export { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine }
  *   next line of that sender carries how many are missing before it (`missingBefore`), and a
  *   sender's first line above seq 0 follows missing ones. Only envelopes that verified count (a seq
  *   the API wrote on one that did not is its word). The API can still cut the end of the chat.
- * Private lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): each lane key PK the
- * answer names is opened with the same device key and must hash to its `pkh` (else the security
- * failure, as for TK); a v3 envelope is opened under its lane's PK with that lane's own replay
+ * Private lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): each lane the answer
+ * names must carry its lane record, signed by the attested moderator for this channel and naming the
+ * same lane and `pkh`; the lane key PK is then opened with the same device key and must hash to that
+ * `pkh` (else the security failure, as for TK); a v3 envelope is opened under its lane's PK with that lane's own replay
  * guard, and its gaps are counted per lane and sender as the shared chat's are. A lane envelope
  * with no PK here (or not opening) is unreadable, never shown. Owner 27 Nov (follow-up): a lane's
  * `chat.mode` envelope from the moderator (payload exactly `{on}`) is a line of kind 'mode'; a
@@ -110,12 +112,16 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
   };
   const rawLanes: unknown = a.lanes ?? [];
   if (!Array.isArray(rawLanes)) throw refuse();
-  for (const l of rawLanes as Array<{ to?: unknown; pkh?: unknown; wrap?: unknown; nextSeq?: unknown } | null>) {
+  for (const l of rawLanes as Array<{ to?: unknown; pkh?: unknown; wrap?: unknown; nextSeq?: unknown; record?: unknown } | null>) {
     const to = l?.to;
     if (l === null || !isLane(to) || lanes[to] !== undefined || typeof l.pkh !== 'string' || !Number.isSafeInteger(l.nextSeq) || (l.nextSeq as number) < 0) throw refuse();
     try {
-      // Pinned: the key opened (by the device's non-extractable X25519 key, as TK) must hash to the
-      // pkh named, so a key the API made up, or a wrap of another lane's, is refused.
+      // The pkh is the API's word until the attested moderator's signed lane record names it for
+      // this lane: a hash check alone would take a key the API made up with a pkh of its own.
+      const rec = await verifyPrivateLaneRecord(l.record, { chat: channel, participants });
+      if (rec.to !== to || rec.pkh !== l.pkh) throw security();
+      // Then pinned: the key opened (by the device's non-extractable X25519 key, as TK) must hash to
+      // that signed pkh, so a key the API made up, or a wrap of another lane's, is refused.
       lanes[to] = { pk: await unwrapPrivateKey(device.opener, l.wrap, l.pkh), pkh: l.pkh, nextSeq: l.nextSeq as number };
     } catch {
       throw refuse();
