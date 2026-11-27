@@ -257,3 +257,77 @@
   color: var(--x2f-ink);
   font: inherit;
 }
+
+/*
+ * Private moderator lanes (owner 27 Nov): a line only this trader and the moderator see, and the
+ * composer while it sends privately. Its own violet (--x2f-private on --x2f-private-bg, AA in both
+ * themes), apart from escrow, caution, danger and the moderator's colour.
+ */
+.x2f-chat__line[data-private],
+.x2f-chat__line[data-private][data-mine],
+.x2f-chat__line[data-private][data-from='mod'] {
+  border: 1px solid var(--x2f-private);
+  background: var(--x2f-private-bg);
+}
+
+.x2f-chat__line[data-private] .x2f-chat__who {
+  color: var(--x2f-private);
+}
+
+.x2f-chat__private {
+  display: inline-flex;
+  gap: var(--x2f-space-1);
+  align-items: center;
+  color: var(--x2f-private);
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+.x2f-chat__private-icon {
+  flex: none;
+}
+
+.x2f-chat__composer[data-private] {
+  padding: var(--x2f-space-2);
+  border: 1px solid var(--x2f-private);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-private-bg);
+}
+
+.x2f-chat__composer[data-private] .x2f-chat__input {
+  border-color: var(--x2f-private);
+}
+
+.x2f-chat__composer > .x2f-chat__private,
+.x2f-chat__sendto {
+  grid-column: 1 / -1;
+}
+
+.x2f-chat__sendto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.x2f-chat__sendto-option {
+  display: inline-flex;
+  gap: var(--x2f-space-2);
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+}
+
+/* Selected: the 2px ink border on surface-raised (selection is never a colour). */
+.x2f-chat__sendto-option:has(input:checked) {
+  border: 2px solid var(--x2f-ink);
+}

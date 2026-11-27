@@ -39,10 +39,18 @@ export interface ModCountersigned {
 
 export interface ModerationClient {
   readonly name: 'moderation';
-  /** `POST /internal/chat/grant`: the chat key re-wrapped to the staff device (`wrap`, of `tkh`), and the next moderator seq. */
-  chatGrant(a: ModCaseCall): Promise<{ wrap: string; tkh: string; boxPublic: string; nextSeq: number }>;
-  /** `POST /internal/chat/send`: the countersigned message signed as the moderator; the API stores it. */
-  chatSend(a: ModCaseCall & ModCountersigned): Promise<{ envelope: unknown }>;
+  /**
+   * `POST /internal/chat/grant`: the chat key re-wrapped to the staff device (`wrap`, of `tkh`), the
+   * next moderator seq, and both private lanes (`lanes: [{ to, pkh, wrap, nextSeq, record }]`, the
+   * lane key PK sealed to the device and the moderator-signed lane record for trader `to`;
+   * private-mod-chat-2026-11-27). Unchecked here: the staff route checks and verifies them.
+   */
+  chatGrant(a: ModCaseCall): Promise<{ wrap: string; tkh: string; boxPublic: string; nextSeq: number; lanes: unknown }>;
+  /**
+   * `POST /internal/chat/send`: the countersigned message signed as the moderator; the API stores it.
+   * With `to`, a private lane message (envelope v3, the lane countersign).
+   */
+  chatSend(a: ModCaseCall & ModCountersigned & { to?: 'buyer' | 'seller' }): Promise<{ envelope: unknown }>;
 }
 
 /** A refusal from the moderation process (its status and error code), or `moderation-unavailable` (503). */
@@ -160,12 +168,13 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
     async chatGrant(a) {
       const v = json(await call('/internal/chat/grant', { code: a.code, logEntryId: a.logEntryId, staffAccountId: a.staffAccountId, deviceKeyId: a.deviceKeyId }));
       if (typeof v.wrap !== 'string' || typeof v.tkh !== 'string' || typeof v.boxPublic !== 'string' || typeof v.nextSeq !== 'number') throw new ModerationError(502, 'moderation-unavailable');
-      return { wrap: v.wrap, tkh: v.tkh, boxPublic: v.boxPublic, nextSeq: v.nextSeq };
+      return { wrap: v.wrap, tkh: v.tkh, boxPublic: v.boxPublic, nextSeq: v.nextSeq, lanes: v.lanes };
     },
     async chatSend(a) {
       const v = json(await call('/internal/chat/send', {
         code: a.code, logEntryId: a.logEntryId, staffAccountId: a.staffAccountId, deviceKeyId: a.deviceKeyId,
         seq: a.seq, nonce: a.nonce, ct: a.ct, ctSha256: a.ctSha256, requestId: a.requestId, issuedAt: a.issuedAt, sig: a.sig,
+        ...(a.to === undefined ? {} : { to: a.to }),
       }));
       if (v.envelope === undefined) throw new ModerationError(502, 'moderation-unavailable');
       return { envelope: v.envelope };

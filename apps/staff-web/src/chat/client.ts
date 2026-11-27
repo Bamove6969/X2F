@@ -1,4 +1,4 @@
-import { CHAT_KEY_ERROR_CODES, ChatKeyError, type CaseChatAnswer, type ChatKeyErrorCode, type ChatView, type DevicePublic, type SealedModMessage } from './types.js';
+import { CHAT_KEY_ERROR_CODES, ChatKeyError, type CaseChatAnswer, type ChatKeyErrorCode, type ChatView, type DevicePublic, type Lane, type SealedModMessage } from './types.js';
 
 /**
  * Design build task 10: the page's side of the chat key worker (keys/chatWorker.ts). The page asks
@@ -10,8 +10,11 @@ export interface ChatKeys {
   device(): Promise<DevicePublic>;
   /** Verifies and decrypts the API's answer in the worker; the chat's key stays there under `handle`. */
   open(answer: CaseChatAnswer): Promise<ChatView>;
-  /** Seals `text` under the opened chat's key at `seq`, countersigned by this device, dated `now`. */
-  seal(handle: string, text: string, now: Date, seq: number): Promise<SealedModMessage>;
+  /**
+   * Seals `text` under the opened chat's key at `seq`, countersigned by this device, dated `now`.
+   * With `to`: a private message to that trader only (its lane's key; `seq` is that lane's).
+   */
+  seal(handle: string, text: string, now: Date, seq: number, to?: Lane): Promise<SealedModMessage>;
   /** Wipes the opened chat's key in the worker. */
   forget(handle: string): void;
 }
@@ -54,7 +57,7 @@ export function connectChatKeys(ep: Endpoint): ChatKeys & { fail(code: ChatKeyEr
   return {
     device: () => ask<DevicePublic>('device', []),
     open: (answer) => ask<ChatView>('open', [answer]),
-    seal: (handle, text, now, seq) => ask<SealedModMessage>('seal', [handle, text, now.toISOString(), seq]),
+    seal: (handle, text, now, seq, to) => ask<SealedModMessage>('seal', to === undefined ? [handle, text, now.toISOString(), seq] : [handle, text, now.toISOString(), seq, to]),
     forget: (handle) => void ask('forget', [handle]).catch(() => undefined),
     fail(code) {
       dead = code;

@@ -50,11 +50,17 @@ import {
   open,
   openChat,
   openChatKeyRecord,
+  openPrivate,
+  openPrivateLaneRecord,
+  ProtocolError,
   seal,
   sealChat,
+  sealPrivate,
   signProof,
   verifyChatKeyRecord,
+  verifyPrivateLaneRecord,
   type ChatEnvelopeV2,
+  type ChatEnvelopeV3,
   type ChatKeyRecord,
   type Envelope,
   type Identity,
@@ -76,6 +82,7 @@ import {
   type PayDetailsPayload,
 } from '@x2f/trade';
 import { CHAT_NOTICES, isChatNotice, type ChatNoticeId } from './notices.js';
+import type { LaneState } from './store.js';
 
 import { PROOF_RECIPIENTS, type ProofAttachedPayload, type ProofUnblurredPayload, parseProofPayload, sealProofEnvelope } from '@x2f/proof';
 
@@ -500,4 +507,83 @@ export async function makeChatKey(a: { channel: string; role: ChatRole; me: Iden
 export async function chatKeyOf(raw: unknown, a: { channel: string; role: ChatRole; me: Identity; participants: Participants }): Promise<Uint8Array> {
   const rec = await verifyChatKeyRecord(raw, { chat: a.channel, participants: a.participants });
   return openChatKeyRecord(rec, a.role, a.me);
+}
+
+// ── private lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md) ──
+//
+// In a dispute the moderator may talk to ONE trader. The moderation process keeps a lane key PK per
+// trader and hands this trader its own in a lane record signed by the chat's ATTESTED moderator
+// identity (never the API's word), PK sealed to this trader's attested box key. A lane message is
+// envelope v3 under PK: the other trader never holds PK, so cannot read it. Seq is per lane, kept in
+// its own LaneState (counter and ReplayGuard), apart from the shared ChatState. Only plain text
+// (`chat.msg`, exactly `{ text }`) travels in a lane; packages, notices and proofs stay shared.
+
+export function newLaneState(channel: string): LaneState {
+  return { nextSeq: 0, guard: new ReplayGuard(channel).toJSON() };
+}
+
+/** Validates a stored LaneState for this chat's channel. Throws ChatError('bad-state'). */
+export function parseLaneState(json: unknown, channel: string): LaneState {
+  const fail = (): ChatError => new ChatError('bad-state', 'Invalid saved lane state');
+  if (!isPlainObject(json) || !hasExactKeys(json, ['nextSeq', 'guard'] as const) || !isValidSeq(json['nextSeq'])) throw fail();
+  let guard: ReplayGuard;
+  try {
+    guard = ReplayGuard.from(json['guard']);
+  } catch {
+    throw fail();
+  }
+  if (guard.trade !== channel) throw fail();
+  return { nextSeq: json['nextSeq'] as number, guard: guard.toJSON() };
+}
+
+/**
+ * This trader's lane key from the API's lane record: signed by the attested moderator for this
+ * chat's channel, naming THIS trader's lane, and this trader's copy hashes to its pkh. Any failure is
+ * a ProtocolError (the engine then fails the chat with `security`, as for the chat key).
+ */
+export async function laneKeyOf(raw: unknown, a: { channel: string; role: ChatRole; me: Identity; participants: Participants }): Promise<{ pk: Uint8Array; pkh: string }> {
+  const rec = await verifyPrivateLaneRecord(raw, { chat: a.channel, participants: a.participants });
+  if (rec.to !== a.role) throw new ProtocolError('bad-signature', 'the lane record is for the other trader');
+  return { pk: await openPrivateLaneRecord(rec, a.me), pkh: rec.pkh };
+}
+
+/**
+ * Seals one private line to the moderator in this trader's own lane (v3, from = to = own role),
+ * with the lane's own seq: never one this device already saw from itself in the lane. Returns the new
+ * LaneState: persist it before posting, as for sealChatMessage.
+ */
+export async function sealLaneMessage(a: { role: ChatRole; me: Identity; channel: string; laneState: LaneState; text: string; pk: Uint8Array }): Promise<{ envelope: ChatEnvelopeV3; laneState: LaneState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealLaneMessage: role must be buyer or seller');
+  const text = checkChatText(a.text);
+  const lane = parseLaneState(a.laneState, a.channel);
+  const seenOwn = lane.guard.seen[a.role];
+  const seq = seenOwn !== undefined && seenOwn >= lane.nextSeq ? seenOwn + 1 : lane.nextSeq;
+  if (!Number.isSafeInteger(seq + 1)) throw new ChatError('bad-state', 'Sequence exhausted');
+  const envelope = await sealPrivate({ trade: a.channel, from: a.role, to: a.role, seq, type: CHAT_MSG_TYPE, payload: { text }, pk: a.pk, me: a.me });
+  if (new TextEncoder().encode(JSON.stringify(envelope)).length > CHAT_BODY_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
+  return { envelope, laneState: { ...lane, nextSeq: seq + 1 } };
+}
+
+/**
+ * Checks and opens one v3 envelope of this trader's own lane under PK, with the lane's own guard.
+ * A moderator line without `modMayPost` is ChatError('mod-not-allowed') and the guard does not move
+ * (as openChatMessage); anything but plain text is 'bad-message'. The input state is not changed.
+ */
+export async function openLaneMessage(body: unknown, a: { role: ChatRole; channel: string; participants: Participants; laneState: LaneState; pk: Uint8Array; modMayPost?: boolean }): Promise<{ message: ChatMessage & { to: ChatRole }; laneState: LaneState }> {
+  const lane = parseLaneState(a.laneState, a.channel);
+  if (new TextEncoder().encode(JSON.stringify(body) ?? '').length > CHAT_BODY_MAX_BYTES) throw new ChatError('bad-message', 'Envelope too large');
+  // A copy: the guard moves only in this copy, returned on success, so a refusal leaves no trace.
+  const guard = ReplayGuard.from(lane.guard);
+  const opened = await openPrivate(body, { pk: a.pk, trade: a.channel, to: a.role, participants: a.participants, guard });
+  if (opened.from === 'mod' && a.modMayPost !== true) throw new ChatError('mod-not-allowed', 'Moderator messages are shown only in a dispute');
+  const p = opened.payload;
+  if (opened.type !== CHAT_MSG_TYPE || !isPlainObject(p) || !hasExactKeys(p, ['text'] as const)) throw new ChatError('bad-message', 'Not a chat message');
+  let text: string;
+  try {
+    text = checkChatText(p['text']);
+  } catch {
+    throw new ChatError('bad-message', 'Not a chat message');
+  }
+  const seq = (body as { seq: number }).seq;
+  return { message: { from: opened.from, seq, text, to: opened.to }, laneState: { ...lane, guard: guard.toJSON() } };
 }
