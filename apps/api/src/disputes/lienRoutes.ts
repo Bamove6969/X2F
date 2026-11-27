@@ -9,7 +9,9 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, pickSellerRecovery, type LienFiguresRow } from './recovery.js';
-import { applyLienUncollectible } from './lien.js';
+import { alertRateDeciders, applyLienUncollectible } from './lien.js';
+import { pushRateDeciders } from './lienGrace.js';
+import { graceOf, remainingWith } from './lienCase.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
 
@@ -21,12 +23,13 @@ import { actorOf, body as bodyOf } from './staffRoutes.js';
  * - `POST /staff/v1/liens/:id/rate { rateBps, reason }` (`disputes.handle`): a moderator proposes a
  *   new rate; a reason is always required (owner: "if they change it at all"). Pending until decided;
  *   the current rate (default 100%, owner 26 Nov 2026) applies meanwhile. One pending request per lien (409 `request-pending`).
- * - `POST /staff/v1/liens/:id/rate/:req/approve { tapId }` (`rulings.approve`): a senior moderator or
- *   the owner, never the proposer (403 `forbidden`), with a `lien-rate` key tap bound to the request
- *   and rate; sets the lien's rate.
+ * - `POST /staff/v1/liens/:id/rate/:req/approve {}` (`rulings.approve`): a senior moderator or
+ *   the owner, never the proposer (403 `forbidden`); sets the lien's rate. Owner change 26 Nov 2026
+ *   5:53 PM: no key tap (it was a `lien-rate` tap); the senior reviews the dispute's chat first
+ *   (opening the request is logged `lien.rate-review-opened`).
  * - `POST /staff/v1/liens/:id/rate/:req/reject {}` (`rulings.approve`): never the proposer.
  * Each is logged (`lien.rate-*`); the reason stays in `lien_rate_requests`, never in the log.
- * NEEDS_STAFF_WEB_LIEN_RATE: the staff site's screen (and its KeyTapDialog caller) is not built.
+ * The staff site shows the lien and its requests on the case (ModCase.tsx `LienPanel`).
  *
  * Trader: `accountLienRoutes` below.
  */
@@ -45,7 +48,7 @@ interface RequestRow {
   reason: string;
   proposed_by: string;
   proposed_at: Date;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
   decided_by: string | null;
   decided_at: Date | null;
 }
@@ -68,8 +71,33 @@ export function lienRoutes(app: FastifyInstance): void {
          from lien_rate_requests where lien_id = $1 order by proposed_at, id`,
       [id],
     );
+    // Owner 26 Nov 2026: the grace (7 days to pay the agreed way), its deadline, lapse and switch.
+    const grace = (await graceOf(db, [id])).get(id);
+    // Owner change 5:53 PM: a senior (or the owner) who may decide a pending request opens it to
+    // review the dispute's chat first; logged once per request and person.
+    const pending = requests.rows.find((r) => r.status === 'pending');
+    if (pending !== undefined && canDecideRateRequest({ role: req.staff.role, id: req.staff.accountId }, pending.proposed_by)) {
+      // Review item 4: on the source trade, once per request and person (serialised by a lock on
+      // that pair, so two opens at once log one entry).
+      await withTx(db, async (c) => {
+        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`lien-rate-review:${pending.id}:${req.staff.accountId}`]);
+        const seen = await c.query(
+          `select 1 from activity_log where action = 'lien.rate-review-opened' and actor_id = $1 and detail::jsonb ->> 'requestId' = $2 limit 1`,
+          [req.staff.accountId, pending.id],
+        );
+        if ((seen.rowCount ?? 0) === 0) {
+          await appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: row.from_code, action: 'lien.rate-review-opened', detail: { lienId: id, requestId: pending.id } });
+        }
+      });
+    }
+    const dispute = (await db.query<{ status: string }>('select status from disputes where code = $1 and seq = (select dispute_seq from liens where id = $2)', [row.from_code, id])).rows[0];
+    const figures = lienFigures(row);
     return {
-      lien: lienFigures(row),
+      lien: { ...figures, remainingAtomic: remainingWith(figures.remainingAtomic, grace) },
+      grace: grace ?? null,
+      // Where the reviewing senior reads the conversation: the dispute's case (its logged chat read).
+      // The moderation service grants a chat only while its dispute is not closed (OWNER p12-1).
+      chat: { code: row.from_code, disputeOpen: dispute !== undefined && dispute.status !== 'closed' },
       recoveries: recoveries.rows.map((r) => ({ tradeCode: r.trade_code, amountAtomic: r.amount_atomic, at: r.at.toISOString() })),
       rateRequests: requests.rows.map((r) => ({
         id: r.id, rateBps: r.proposed_bps, reason: r.reason, proposedBy: r.proposed_by, proposedAt: r.proposed_at.toISOString(),
@@ -107,9 +135,16 @@ export function lienRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     const requestId = await withTx(db, async (c) => {
       const now = clock();
-      const lien = (await c.query<{ status: string }>('select status from liens where id = $1 for update', [id])).rows[0];
+      const lien = (await c.query<{ status: string; waiting: boolean; off: boolean }>(
+        `select status, (grace_until is not null and collect_started_at is null) as waiting, repaid_off_platform_at is not null as off
+           from liens where id = $1 for update`,
+        [id],
+      )).rows[0];
       if (!lien) throw new ApiError(404, 'not-found');
-      if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      if ((lien.status !== 'active' && lien.status !== 'suspended') || lien.off) throw new ApiError(409, 'wrong-state');
+      // Review item 5: in its 7 days to pay the agreed way nothing is collected; the share is set with
+      // the switch to collecting (its tap names it), so no request waits on a lien that collects nothing.
+      if (lien.waiting) throw new ApiError(409, 'lien-in-grace');
       const pending = await c.query(`select 1 from lien_rate_requests where lien_id = $1 and status = 'pending'`, [id]);
       if ((pending.rowCount ?? 0) > 0) throw new ApiError(409, 'request-pending');
       const r = await c.query<{ id: string }>(
@@ -117,9 +152,13 @@ export function lienRoutes(app: FastifyInstance): void {
         [id, b.rateBps, b.reason, me.id, now],
       );
       const requestId = r.rows[0]!.id;
+      // Coordinator follow-up 26 Nov 2026: the seniors and the owner who may decide it are told.
+      await alertRateDeciders(c, { lienId: id, requestId, proposer: me.id, now });
       await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'lien.rate-proposed', detail: { lienId: id, requestId, rateBps: b.rateBps as number } });
       return requestId;
     });
+    const push = req.server.push as typeof req.server.push | undefined;
+    if (push !== undefined) await pushRateDeciders({ db, clock, push }).catch(() => 0);
     return reply.code(201).send({ id: requestId, status: 'pending' });
   });
 
@@ -142,18 +181,32 @@ export function lienRoutes(app: FastifyInstance): void {
     return { lienId, r };
   }
 
+  // Owner change 26 Nov 2026 5:53 PM: approved WITHOUT a key tap. The senior reads the dispute's chat
+  // first (the case's logged chat read, which seniors and the owner may join; opening the request is
+  // logged `lien.rate-review-opened`), then approves or rejects. The moderation service takes the
+  // approved rate on the API's record (apps/moderation lienRecovery.ts `lienRateRequestApprovals`).
   app.post('/staff/v1/liens/:id/rate/:req/approve', approver, async (req) => {
-    const b = bodyOf(req, ['tapId']);
-    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request');
-    const tapId = b.tapId;
+    bodyOf(req, []);
     const me = actorOf(req);
     const { db, clock } = req.server.deps;
     return withTx(db, async (c) => {
       const now = clock();
       const { lienId, r } = await pendingFor(c, req);
-      const lien = (await c.query<{ status: string }>('select status from liens where id = $1', [lienId])).rows[0]!;
+      const lien = (await c.query<{ status: string; from_code: string; open: boolean }>(
+        `select l.status, l.from_code, exists (select 1 from disputes d where d.code = l.from_code and d.seq = l.dispute_seq and d.status <> 'closed') as open
+           from liens l where l.id = $1`,
+        [lienId],
+      )).rows[0]!;
       if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
-      await consumeKeyTap(c, tapId, me.id, { kind: 'lien-rate', lienId, requestId: r.id, rateBps: r.proposed_bps }, now, { sessionId: req.auth.sessionId });
+      // Review item 4: while the dispute is open, the decider has read its chat (the case's logged
+      // chat read) since the request was made. A closed dispute's chat is shut (OWNER p12-1).
+      if (lien.open) {
+        const read = await c.query(
+          `select 1 from activity_log where action = 'chat.read' and actor_id = $1 and trade_code = $2 and at >= $3 limit 1`,
+          [me.id, lien.from_code, r.proposed_at],
+        );
+        if ((read.rowCount ?? 0) === 0) throw new ApiError(409, 'review-chat-first');
+      }
       await c.query(`update lien_rate_requests set status = 'approved', decided_by = $2, decided_at = $3 where id = $1`, [r.id, me.id, now]);
       await c.query('update liens set recovery_rate_bps = $2 where id = $1', [lienId, r.proposed_bps]);
       await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'lien.rate-approved', detail: { lienId, requestId: r.id, rateBps: r.proposed_bps } });
@@ -211,17 +264,29 @@ export function accountLienRoutes(app: FastifyInstance): void {
         [me],
       )
     ).rows;
+    // Owner 26 Nov 2026: a lien given 7 days to pay the agreed way shows both traders the agreed
+    // method and the deadline; the person owed confirms "I've been paid" (`POST …/:id/paid`).
+    const graces = await graceOf(db, rows.map((r) => r.id));
+    // Absent (not null) on a lien never given the grace, so that answer is unchanged.
+    // Review item 3: staff may end any lien as paid off the platform; `paidOffPlatform: true` (absent
+    // otherwise) says why nothing is left, with or without a grace.
+    const graceFor = (id: string) => {
+      const g = graces.get(id);
+      const paid = g?.repaidOffPlatformAt != null ? { paidOffPlatform: true as const } : {};
+      if (g === undefined || g.graceUntil === null) return paid;
+      return { ...paid, grace: { mode: g.mode, method: g.method, graceUntil: g.graceUntil, lapsed: g.lapsedAt !== null, paidOffPlatform: g.repaidOffPlatformAt !== null } };
+    };
     const owes = rows
       .filter((x) => x.debtor === me && x.status !== 'repaid')
       .map((r) => {
         const f = lienFigures(r);
-        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: f.remainingAtomic, rateBps: f.rateBps, defaultRateBps: f.defaultRateBps, fromCode: f.fromCode };
+        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: remainingWith(f.remainingAtomic, graces.get(f.id)), rateBps: f.rateBps, defaultRateBps: f.defaultRateBps, fromCode: f.fromCode, ...graceFor(f.id) };
       });
     const owedTo = rows
       .filter((x) => x.creditor === me)
       .map((r) => {
         const f = lienFigures(r);
-        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: f.remainingAtomic, fromCode: f.fromCode, recoveryAddressSet: r.address_set };
+        return { id: f.id, status: f.status, amountAtomic: f.amountAtomic, recoveredAtomic: f.recoveredAtomic, remainingAtomic: remainingWith(f.remainingAtomic, graces.get(f.id)), fromCode: f.fromCode, recoveryAddressSet: r.address_set, ...graceFor(f.id) };
       });
     return { owes, owedTo };
   });

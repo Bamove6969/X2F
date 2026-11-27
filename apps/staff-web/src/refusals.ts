@@ -33,6 +33,9 @@ export const STAFF_REFUSALS = {
   forbidden: 'Your role does not include this page.',
   // Plan 5 Task 11 (review M3, lead call): a claim backed by one of the reviewer's own login keys.
   'reviewer-own-key': 'This claim uses one of your own login keys, so another moderator needs to review it.',
+  // Review of feat/lien-grace items 4 and 5 (liens).
+  'review-chat-first': 'Read the chat on this case first. While the dispute is open, a lower share is approved after the conversation is read.',
+  'lien-in-grace': 'This lien is in its 7 days to pay the agreed way. Set the share when you start collecting.',
 } as const satisfies Record<string, string>;
 
 export type StaffRefusal = keyof typeof STAFF_REFUSALS;

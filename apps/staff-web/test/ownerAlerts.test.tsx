@@ -90,3 +90,26 @@ describe('owner notifications (O-040)', () => {
     expect(document.body.textContent).toContain('Nothing to show for your role yet');
   });
 });
+
+// Coordinator follow-up 26 Nov 2026: a lower lien share waits for a senior or the owner; the alert links to the case.
+describe('lien alerts', () => {
+  it('link to the case of the trade the lien came from; other alerts and malformed codes do not', async () => {
+    const { alertCaseLink, alertTitle } = await import('../src/screens/OwnerAlerts.js');
+    expect(alertCaseLink('lien-rate-requested', { trade: 'AB12-CD34-EF56-GH78', lienId: 'x', requestId: 'y' })).toBe('/disputes/AB12-CD34-EF56-GH78');
+    expect(alertCaseLink('lien-grace-lapsed', { trade: 'AB12-CD34' })).toBe('/disputes/AB12-CD34');
+    expect(alertCaseLink('fee-sweep-due', { trade: 'AB12-CD34' })).toBeNull();
+    for (const bad of [null, {}, { trade: 3 }, { trade: '../x' }, { trade: 'AB/CD' }]) expect(alertCaseLink('lien-rate-requested', bad)).toBeNull();
+    expect(alertTitle('lien-rate-requested')).toContain('waits for your approval');
+  });
+
+  it('the owner\'s notifications page shows the link', async () => {
+    fakeApi({
+      'GET /staff/v1/me': { body: me('owner') },
+      'GET /staff/v1/owner/alerts': {
+        body: { items: [{ id: 'a9', kind: 'lien-rate-requested', message: null, detail: { trade: 'AB12-CD34-EF56-GH78', lienId: 'l', requestId: 'r' }, createdAt: '2026-11-26T18:00:00.000Z', seenAt: null }], unread: 1, next: null },
+      },
+    });
+    await open('/notifications');
+    expect(document.querySelector('[data-part="alert-case"]')?.getAttribute('href')).toBe('/disputes/AB12-CD34-EF56-GH78');
+  });
+});

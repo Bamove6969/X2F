@@ -213,6 +213,13 @@ export function ModQueue({ role }: { role: StaffRole }) {
                         Payment not proven
                       </span>
                     ) : null}
+                    {/* Owner 26 Nov 2026: a lien's 7 days to pay passed without the person owed confirming. COPY-UNSIGNED */}
+                    {r.graceLapsed === true ? (
+                      <span className="x2f-staff-approval" data-part="queue-grace-lapsed">
+                        {' '}
+                        7 days to pay passed
+                      </span>
+                    ) : null}
                   </>
                 ),
                 mono: true,

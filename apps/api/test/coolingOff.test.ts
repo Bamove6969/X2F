@@ -1714,6 +1714,20 @@ describe('review round 2', () => {
         return { b: o.b, accountId: o.id, fire: () => o.b.post(`/v1/account/liens/${lien}/recovery-address`, { statement, sig }) };
       };
 
+      // Owner 26 Nov 2026 (lien grace): the person owed confirms they were paid the agreed way.
+      ROWS['POST /v1/account/liens/:id/paid'] = async () => {
+        const o = await passkeyWithPassword();
+        const debtor = await seedAccount(deps, { loginName: null });
+        const { code } = await seedTrade(deps, { sellerId: o.id, buyerId: debtor, poster: 'seller' });
+        const lien = (await deps.db.query<{ id: string }>(
+          `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at,
+                              grace_method, grace_until)
+           values ($1, $2, 1000000000000, 0, $3, 1, 1, 'restitution', $4, $4, 'PayPal again', $4::timestamptz + interval '7 days') returning id::text`,
+          [debtor, o.id, code, deps.clock()],
+        )).rows[0]!.id;
+        return { b: o.b, accountId: o.id, fire: () => o.b.post(`/v1/account/liens/${lien}/paid`, {}) };
+      };
+
       // Owner 2 Nov 2026: switching to a vendor account (a passkey on the account; confirmed with it).
       ROWS['PUT /v1/account/type'] = async () => {
         const o = await passkeyWithPassword();

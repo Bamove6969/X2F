@@ -38,7 +38,30 @@ export const LIENS_COPY = {
   addressTaken: 'That wallet cannot be used for this. Pick another one.',
   addressFailed: 'That did not work. Try again.',
   loadFailed: 'Could not load this. Try again later.',
+  // Owner decision 26 Nov 2026 (5:43 PM): 7 days to pay the agreed way. COPY-UNSIGNED
+  graceOwes: (method: string, until: string) =>
+    `A moderator gave you until ${until} to pay this the way you both agreed: ${method}. Nothing is taken from your trades until then. The person you owe must confirm they have been paid.`,
+  graceOwesLapsed: (method: string) =>
+    `The time to pay the agreed way (${method}) has passed and the person you owe has not confirmed payment. A moderator will decide what happens next; from then on what you receive in later trades may go to them.`,
+  graceOwedTo: (method: string, until: string) =>
+    `A moderator gave them until ${until} to pay you the way you both agreed: ${method}. Nothing is taken from their trades until then. Confirm here once you have received it.`,
+  graceOwedToLapsed: (method: string) =>
+    `The time to pay the agreed way (${method}) has passed. A moderator has been told. If you have been paid, confirm it here.`,
+  // Review item 9: the moderator switched a grace lien to collecting. COPY-UNSIGNED
+  graceCollecting: 'A moderator started collecting this from their later trades, since it was not paid the agreed way.',
+  graceConfirm: "I've been paid",
+  graceConfirmCheck: 'Only confirm once the money is in your account. This ends what they owe you for good.',
+  graceConfirmYes: 'Yes, I have been paid in full',
+  graceConfirmNo: 'Not yet',
+  // Ended as paid outside X2F: the person owed confirmed it, or a moderator did once the two settled it.
+  gracePaid: 'This was paid outside X2F. Nothing more is owed to you.',
+  gracePaidDebtor: 'This was paid outside X2F. You owe nothing more.',
 } as const;
+
+/** A deadline for the lien screen, in the reader's own time zone. */
+export function deadlineText(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 /** Basis points as a percentage: 10000 → "100%", 2550 → "25.5%". */
 export function pctOf(bps: number): string {

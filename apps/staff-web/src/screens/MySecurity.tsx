@@ -1,5 +1,6 @@
 import type { KeyTapIntent } from '@x2f/staff';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import {
   addPgpFinish,
   addPgpStart,
@@ -21,6 +22,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Notice, Sheet } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle, useMe } from '../ui/StaffShell.js';
+import { CASE_LINK_TEXT, alertCaseLink } from './OwnerAlerts.js';
 import { lastActiveText, utcMinuteText } from './staffFormat.js';
 import '../ui/staff.css';
 
@@ -125,6 +127,10 @@ const C = {
       'login-method-removed': 'A login method was removed',
       'sessions-ended': 'Other sessions were logged out',
       'staff-device-certified': 'A device was confirmed to read dispute chats',
+      // COPY-UNSIGNED (owner 26 Nov 2026): lien work waiting for this moderator.
+      'lien-grace-lapsed': 'The 7 days to pay the agreed way passed on a lien you ruled',
+      'lien-rate-requested': 'A lower share for a lien waits for your approval',
+      'lien-grace-escalated': 'A lien whose 7 days to pay passed waits for a senior moderator',
       // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"). COPY-UNSIGNED
       'dispute-auto-assigned': 'Nobody took a dispute in time: it was assigned to you automatically',
       'dispute-unassigned-overdue': 'A dispute is still unassigned past its reply deadline',
@@ -347,6 +353,11 @@ export function MySecurity() {
                 </span>
                 <span className="x2f-staff-setting__value">
                   <span className="x2f-staff-hint">{[utcMinuteText(a.createdAt), detail].filter(Boolean).join(' · ')}</span>
+                  {alertCaseLink(a.kind, a.detail) !== null ? (
+                    <Link className="x2f-link" data-part="alert-case" to={alertCaseLink(a.kind, a.detail)!}>
+                      {CASE_LINK_TEXT}
+                    </Link>
+                  ) : null}
                   {a.seenAt === null ? (
                     <Button variant="quiet" aria-label={C.alerts.seenLabel(what)} disabled={busy} onClick={() => void act(() => markMyAlertSeen(a.id).then(() => undefined), null)}>
                       {C.alerts.seen}

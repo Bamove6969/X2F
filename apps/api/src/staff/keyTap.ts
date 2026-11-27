@@ -542,6 +542,14 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'lien-uncollectible':
       exactKeys(r, ['kind', 'lienId']);
       return { kind: 'lien-uncollectible', lienId: match(r, 'lienId', UUID).toLowerCase() };
+    case 'lien-collect':
+      // Owner 26 Nov 2026 (grace): the switch to collecting, bound to the lien and the share entered.
+      exactKeys(r, ['kind', 'lienId', 'rateBps']);
+      if (typeof r.rateBps !== 'number' || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) throw badRequest();
+      return { kind: 'lien-collect', lienId: match(r, 'lienId', UUID).toLowerCase(), rateBps: r.rateBps };
+    case 'lien-paid-off-platform':
+      exactKeys(r, ['kind', 'lienId']);
+      return { kind: 'lien-paid-off-platform', lienId: match(r, 'lienId', UUID).toLowerCase() };
     case 'lien-rate':
       exactKeys(r, ['kind', 'lienId', 'requestId', 'rateBps']);
       // Q1 (owner, 26 Nov 2026, OQ1): at most 100% (@x2f/trade LIEN_RECOVERY_MAX_BPS). The moderation service verifies this tap itself before it signs a recovery at the rate.
@@ -595,6 +603,10 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'rulings.approve';
     case 'lien-uncollectible':
       return 'owner';
+    // The moderator who ruled (or a senior / the owner; the route checks which) switches a grace lien.
+    case 'lien-collect':
+    case 'lien-paid-off-platform':
+      return 'disputes.handle';
     case 'emergency-stop':
     case 'resume-trading':
     // Review p4t22 m2: the owner's publishing acts.

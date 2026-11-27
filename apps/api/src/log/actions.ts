@@ -165,6 +165,15 @@ export const LOG_ACTIONS = {
   'lien.rate-proposed': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-approved': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-rejected': { lienId: 'id', requestId: 'id' },
+  // Owner 26 Nov 2026 (5:43 PM; docs/lien-recovery.md "Grace"): 7 days to pay the agreed way. The
+  // agreed method stays on the lien (staff and the two traders), never in the log.
+  'lien.grace-started': { lienId: 'id', graceUntil: 'iso' },
+  'lien.grace-lapsed': { lienId: 'id' },
+  'lien.grace-escalated': { lienId: 'id', auto: 'bool' },
+  'lien.collect-started': { lienId: 'id', lapsed: 'bool' },
+  'lien.repaid-off-platform': { lienId: 'id' },
+  // Owner change 5:53 PM: a senior (or the owner) opened a pending lower-rate request to review the chat.
+  'lien.rate-review-opened': { lienId: 'id', requestId: 'id' },
   // Recommended account limits (Task 26).
   'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
   'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },

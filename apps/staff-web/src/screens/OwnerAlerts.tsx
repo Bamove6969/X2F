@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { markAllOwnerAlertsRead, markOwnerAlertRead, ownerAlerts, type OwnerAlert } from '../api.js';
 import { faultText } from '../refusals.js';
 import { AlertsCountContext } from '../ui/alertsCount.js';
@@ -38,8 +39,24 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'login-method-added': 'Login method added',
   'login-method-removed': 'Login method removed',
   'sessions-ended': 'Sessions ended',
+  // COPY-UNSIGNED (owner 26 Nov 2026, lien grace and shares).
+  'lien-grace-lapsed': 'The 7 days to pay the agreed way passed without the person owed confirming',
+  'lien-grace-escalated': 'A lien whose 7 days to pay passed waits for a senior moderator',
+  'lien-rate-requested': 'A lower share for a lien waits for your approval',
 };
 export const alertTitle = (kind: string): string => ALERT_TITLES[kind] ?? 'Notice';
+
+/**
+ * Coordinator follow-up 26 Nov 2026: a lien alert links to its case, where the lien panel is (the
+ * case of the trade the lien came from). Null for any other alert or a malformed trade code.
+ */
+export function alertCaseLink(kind: string, detail: unknown): string | null {
+  if (!kind.startsWith('lien-') || detail === null || typeof detail !== 'object') return null;
+  const t = (detail as Record<string, unknown>).trade;
+  return typeof t === 'string' && /^[A-Za-z0-9-]{4,64}$/.test(t) ? `/disputes/${encodeURIComponent(t)}` : null;
+}
+
+export const CASE_LINK_TEXT = 'Open the case';
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -113,6 +130,13 @@ export function OwnerAlerts() {
                 {a.seenAt === null ? <span data-part="alert-unread"> · New</span> : null}
               </p>
               {a.message !== null ? <p>{a.message}</p> : null}
+              {alertCaseLink(a.kind, a.detail) !== null ? (
+                <p>
+                  <Link className="x2f-link" data-part="alert-case" to={alertCaseLink(a.kind, a.detail)!}>
+                    {CASE_LINK_TEXT}
+                  </Link>
+                </p>
+              ) : null}
               <p className="x2f-staff-page__lead">{when(a.createdAt)}</p>
               {a.seenAt === null ? (
                 <Button variant="quiet" onClick={() => void act(() => markOwnerAlertRead(a.id))}>

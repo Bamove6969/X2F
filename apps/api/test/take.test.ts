@@ -1674,6 +1674,32 @@ describe('lien recovery at take', () => {
     expect((await seller.browser.get(`/v1/trades/${out.code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
   });
 
+  // Owner 26 Nov 2026 (lien grace; review of feat/lien-grace): a lien in its 7 days to pay the agreed
+  // way, or ended as paid off the platform, reserves nothing at take; once switched to collecting it does.
+  it('grace: nothing is reserved at take while the lien waits for payment the agreed way; after the switch it is', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    const lien = await lienOn(debtor, creditor, 2n * XMR);
+    await deps.db.query(`update liens set grace_method = 'PayPal again', grace_until = $2 where id = $1`, [lien, new Date(deps.clock().getTime() + 7 * 86_400_000)]);
+    const during = await take(debtor, await postOffer(await person()), body(debtor, XMR));
+    expect(during.statusCode, during.body).toBe(200);
+    const d = during.json() as { code: string; lienRecoveryAtomic?: string };
+    expect(d.lienRecoveryAtomic).toBeUndefined();
+    expect(await holds(d.code)).toEqual([]);
+    await deps.db.query('update liens set collect_started_at = $2 where id = $1', [lien, deps.clock()]);
+    const after = (await take(debtor, await postOffer(await person()), body(debtor, XMR))).json() as { code: string; lienRecoveryAtomic?: string };
+    expect(after.lienRecoveryAtomic).toBe((XMR / 2n).toString());
+    expect(await holds(after.code)).toEqual([{ lien, amount: (XMR / 2n).toString(), address: creditor.address, status: 'open' }]);
+    // Ended as paid off the platform (the lien carries a fee, so it stays active): nothing more.
+    const debtor2 = await person();
+    const other = await lienOn(debtor2, creditor, 2n * XMR, { fee: 1n });
+    await deps.db.query('update liens set repaid_off_platform_at = $2 where id = $1', [other, deps.clock()]);
+    const none = await take(debtor2, await postOffer(await person()), body(debtor2, XMR));
+    expect(none.statusCode, none.body).toBe(200);
+    expect((none.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
+    expect(await holds((none.json() as { code: string }).code)).toEqual([]);
+  });
+
   it('partial: a second trade in progress reserves only what is not already reserved; nothing past the amount', async () => {
     const seller = await person();
     const debtor = await person();
@@ -1816,6 +1842,32 @@ describe('lien recovery at take', () => {
       expect(await sellerPreview(clean, offer2, body(clean, XMR))).toBe('0');
       const plain = await clean.browser.post(`/v1/offers/${offer2}/take`, { ...body(clean, XMR), sellerLienRecoveryAtomic: '0' });
       expect(plain.statusCode, plain.body).toBe(200);
+    });
+
+    // Owner 26 Nov 2026 (lien grace; coordinator, after #43): a selling debtor whose lien waits in its
+    // 7 days to pay the agreed way, or was paid off the platform, funds no extra; after the switch it does.
+    it('grace: a selling debtor whose lien is in grace reserves no extra and funds only amount + fee; after the switch the extra is back', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR);
+      await deps.db.query(`update liens set grace_method = 'PayPal again', grace_until = $2 where id = $1`, [lien, new Date(deps.clock().getTime() + 7 * 86_400_000)]);
+      const plan = escrowPlan({ amountAtomic: XMR, poster: 'seller' });
+      const during = await sellerPosts(debtor, await person());
+      expect(await sideHolds(during)).toEqual([]);
+      const t = await tradeOf(during);
+      expect(t.sellerLienRecoveryAtomic ?? 0n).toBe(0n);
+      expect(t.sellerFundsAtomic).toBe(plan.sellerFundsAtomic);
+      await deps.db.query('update liens set collect_started_at = $2 where id = $1', [lien, deps.clock()]);
+      const after = await sellerPosts(debtor, await person());
+      expect(await sideHolds(after)).toEqual([{ lien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' }]);
+      expect((await tradeOf(after)).sellerFundsAtomic).toBe(plan.sellerFundsAtomic + XMR / 2n);
+      // Paid off the platform (a lien with a fee stays active): no extra again.
+      const debtor2 = await person();
+      const other = await lienOn(debtor2, creditor, 2n * XMR, { fee: 1n });
+      await deps.db.query('update liens set repaid_off_platform_at = $2 where id = $1', [other, deps.clock()]);
+      const off = await sellerPosts(debtor2, await person());
+      expect(await sideHolds(off)).toEqual([]);
+      expect((await tradeOf(off)).sellerFundsAtomic).toBe(plan.sellerFundsAtomic);
     });
 
     it('at the 100% default the extra is the whole trade amount, capped by what is still owed; under 0.01 XMR nothing (carried forward)', async () => {

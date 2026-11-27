@@ -116,6 +116,10 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'recovery_rate_bps',
       // Owner 26 Nov 2026 (migration 851): the write-off, set with the status change to uncollectible.
       'written_off_by', 'written_off_tap',
+      // Owner 26 Nov 2026 (migration 900): 7 days to pay the agreed way, its lapse, the moderator's
+      // switch to collecting and the creditor's "I've been paid" are changes to the debtor's lien.
+      'ruled_by', 'grace_method', 'grace_until', 'grace_lapsed_at', 'grace_escalated_at', 'grace_escalated_by',
+      'collect_started_at', 'collect_started_by', 'collect_tap', 'repaid_off_platform_at',
     ],
     bookkeeping: {
       // Q2 (migration 820): where the CREDITOR's recoveries go, set by the creditor's own signed
@@ -265,5 +269,9 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
   // Owner 26 Nov 2026 (migration 851): the owner's stamp on a write-off; the debtor is notified by the lien's change.
   'liens.written_off_by': 'the owner who wrote a lien off as uncollectible (the debtor is notified by the change to their lien)',
+  // Owner 26 Nov 2026 (migration 900): staff stamps on a lien's grace; the debtor is notified by the lien's change.
+  'liens.ruled_by': 'the moderator whose ruling placed a lien (the debtor is notified by the lien itself)',
+  'liens.grace_escalated_by': 'the moderator who sent a lapsed grace lien to a senior (the debtor is notified by the lien\'s change)',
+  'liens.collect_started_by': 'the staff member who switched a grace lien to collecting (the debtor is notified by the lien\'s change)',
   'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",
 };

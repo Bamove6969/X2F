@@ -1,5 +1,6 @@
 import type { TradePublisher } from '../trades/store.js';
 import { lienRoutes } from '../disputes/lienRoutes.js';
+import { lienGraceRoutes } from '../disputes/lienGrace.js';
 import fastifyCookie from '@fastify/cookie';
 import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -224,6 +225,8 @@ export async function buildStaffApi(
   // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
   staffFeeSweepRoutes(app);
   lienRoutes(app);
+  // Owner 26 Nov 2026: a grace lien switched to collecting, or sent to a senior after its 7 days.
+  lienGraceRoutes(app, app.push ? { push: app.push } : {});
   // Plan 4 Task 33 (D-041..D-045): clock-out pay, payout addresses and the owner's pay settings.
   staffPayRoutes(app);
   // Owner 26 Nov 2026: the owner's audit of every trade not deleted yet, by status.

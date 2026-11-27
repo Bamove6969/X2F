@@ -87,6 +87,10 @@ export type ApiErrorCode =
   | 'lien'
   // Lien recovery (owner 16 Nov 2026): a lien already has a rate change request waiting.
   | 'request-pending'
+  // Review of feat/lien-grace item 4: approve a lower lien share only after reading the open dispute's chat.
+  | 'review-chat-first'
+  // Review item 5: a lien in its 7 days to pay the agreed way takes its share with the switch to collecting.
+  | 'lien-in-grace'
   // Review M2: complied (a lien repaid directly) while a trade still carries a signed recovery for it.
   | 'lien-recovery-in-flight'
   // Review B1: the take would reserve a lien recovery other than the one the buyer's quote showed.

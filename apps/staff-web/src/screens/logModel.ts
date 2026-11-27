@@ -171,6 +171,13 @@ function sentence(
     case 'lien.voided': return 'A lien was cancelled';
     case 'lien.uncollectible': return 'Wrote a lien off as uncollectible';
     case 'lien.repaid': return 'A lien was repaid';
+    // Owner 26 Nov 2026: 7 days to pay the agreed way. COPY-UNSIGNED
+    case 'lien.grace-started': return 'Gave the person at fault 7 days to pay the agreed way';
+    case 'lien.grace-lapsed': return 'The 7 days to pay passed without the person owed confirming payment';
+    case 'lien.grace-escalated': return 'Sent an unpaid lien to a senior moderator';
+    case 'lien.collect-started': return 'Started collecting a lien from the later trades of the person at fault';
+    case 'lien.repaid-off-platform': return 'The person owed confirmed they were paid the agreed way';
+    case 'lien.rate-review-opened': return 'Opened a request for a lower lien rate to review the case';
     case 'fee.owed': return `An account owes the 1% fee: ${xmr(d.amountAtomic) || 'the fee'}`;
     case 'limits.recommended': return `Recommended account limits${typeof d.capUsd === 'number' ? ` of ${num(d.capUsd)} USD` : ''}`;
     case 'limits.decided': return d.approved === true ? 'Approved the recommended limits' : 'Turned down the recommended limits';

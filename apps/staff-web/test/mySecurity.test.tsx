@@ -220,3 +220,18 @@ describe('Alerts', () => {
     expect(c.calls.filter((x) => x.path.endsWith('/seen')).map((x) => x.path)).toEqual(['/staff/v1/account/alerts/b1/seen']);
   });
 });
+
+// Coordinator follow-up 26 Nov 2026: a senior's lien alert names the work and links to the case.
+describe('lien alerts on My security', () => {
+  it('a lower share waiting for approval links to its case', async () => {
+    const SENIOR = { ...MOD, role: 'senior', nav: NAV.senior };
+    api(SENIOR, {
+      'GET /staff/v1/account/alerts': {
+        body: [{ id: 'al9', kind: 'lien-rate-requested', detail: { trade: 'AB12-CD34-EF56-GH78', lienId: 'l', requestId: 'r' }, createdAt: '2026-11-26T18:00:00.000Z', seenAt: null }],
+      },
+    });
+    await open();
+    expect(document.querySelector('[data-part="alerts"]')?.textContent).toContain('A lower share for a lien waits for your approval');
+    expect(document.querySelector('[data-part="alert-case"]')?.getAttribute('href')).toBe('/disputes/AB12-CD34-EF56-GH78');
+  });
+});

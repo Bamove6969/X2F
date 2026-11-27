@@ -8,6 +8,7 @@ import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
+import { pushRateDeciders, runLienGraceEscalations, runLienGraceLapses } from './lienGrace.js';
 import { runAutoAssign } from './autoAssign.js';
 import type { TxProofCheck } from './txProof.js';
 
@@ -44,6 +45,14 @@ export const DISPUTE_TIMER_MS = 30_000;
  *    within the owner's setting goes to the least-busy eligible staff member on shift, oldest first;
  *    one still in the pool past its reply deadline alerts the owner and the senior moderators once
  *    per round (`runAutoAssign`, autoAssign.ts). Each assignment counts as a change.
+ *
+ * 6. **Lien grace lapsed (owner 26 Nov 2026).** A lien given 7 days to pay the agreed way whose
+ *    days passed without the person owed confirming payment is marked once, logged, and the
+ *    moderator who ruled is told (in-app and pushed; the owner in-app) (`runLienGraceLapses`).
+ *    A lapse nobody switched or sent up within LIEN_LAPSE_ESCALATE_HOURS (48), or whose moderator is
+ *    no longer active staff, goes to the seniors and the owner (`runLienGraceEscalations`).
+ *    Then the phone push for new lien rate requests (`pushRateDeciders`: one placed with a ruling
+ *    has no route of its own to push from).
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
@@ -122,6 +131,12 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   n += lapsed;
   // Lead call (18 Nov): a lapse reaches the owner's phone too, through the owner-alert push path.
   if (lapsed > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'dispute-comply-lapsed').catch(() => undefined);
+  // Owner 26 Nov 2026 (grace): a lien's 7 days to pay the agreed way passed without the sign-off.
+  n += await runLienGraceLapses(deps, failures);
+  // Review of feat/lien-grace item 2: a lapse nobody acted on goes to the seniors by itself.
+  n += await runLienGraceEscalations(deps, failures);
+  // Coordinator follow-up 26 Nov 2026: a lower share proposed with a ruling reaches the deciders' phones.
+  if (deps.push) await pushRateDeciders({ db: deps.db, clock: deps.clock, push: deps.push }).catch((e: unknown) => void failures.push(e));
   n += await runAutoAssign(deps, step);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;

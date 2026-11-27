@@ -122,6 +122,21 @@ export {
   type LienStep,
 } from './lien.js';
 export {
+  LIEN_GRACE_DAYS,
+  LIEN_GRACE_METHOD_MAX,
+  LIEN_FULL_RATE_BPS,
+  LIEN_LAPSE_ESCALATE_HOURS,
+  LIEN_LAPSE_STARTS_COLLECTING,
+  LIEN_RATE_REASON_PREFILL,
+  graceUntilOf,
+  parseCollectRate,
+  lienCollecting,
+  parseLienPlan,
+  rulingMayPlaceLien,
+  type LienGraceFacts,
+  type LienPlan,
+} from './lienGrace.js';
+export {
   MANUAL_MASK,
   MAX_TEXT,
   TRADE_CODE_MASK,

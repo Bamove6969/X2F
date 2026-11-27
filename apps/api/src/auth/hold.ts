@@ -635,6 +635,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Lien recovery (review B1/Q2): the creditor's signed address its recoveries are paid to
   // (disputes/lienRoutes.ts; the lock is the account's).
   'POST /v1/account/liens/:id/recovery-address',
+  // Owner 26 Nov 2026 (lien grace): the person owed confirms they were paid the agreed way
+  // (disputes/lienGrace.ts; the lock is the lien's row).
+  'POST /v1/account/liens/:id/paid',
 ];
 
 /**
@@ -776,6 +779,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   ...CHAT_KEY_WRITE_ROUTES,
   // Lien recovery (review B1/Q2): where a creditor's recoveries are paid is not changed during a hold.
   'POST /v1/account/liens/:id/recovery-address',
+  // Owner 26 Nov 2026 (lien grace): nor is a debt owed to the account signed off as paid.
+  'POST /v1/account/liens/:id/paid',
 ];
 
 /**

@@ -14,8 +14,8 @@ import { escrowClient } from '../../escrow/useEscrow.js';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { fetchWallets, type PickWallet } from '../quote/api.js';
-import { fetchLiens, setRecoveryAddress, type MyLiens, type OwedToMe } from './liensApi.js';
-import { LIENS_COPY as C, pctOf } from './liensCopy.js';
+import { confirmPaid, fetchLiens, setRecoveryAddress, type MyLiens, type OwedToMe } from './liensApi.js';
+import { LIENS_COPY as C, deadlineText, pctOf } from './liensCopy.js';
 import '../screens.css';
 
 export const LIENS_PATH = '/settings/liens';
@@ -45,7 +45,14 @@ export function Liens() {
       {data !== null && data.owes.length === 0 && data.owedTo.length === 0 && <p>{C.none}</p>}
       {data?.owes.map((l) => (
         <section key={l.id} aria-label={C.title} data-lien={l.id}>
-          <p>{C.owesIntro(pctOf(l.rateBps))}</p>
+          {/* Owner 26 Nov 2026: 7 days to pay the agreed way (the deadline, the method, who confirms). */}
+          {l.paidOffPlatform === true || l.grace?.paidOffPlatform === true ? (
+            <p data-part="grace">{C.gracePaidDebtor}</p>
+          ) : l.grace?.mode === 'grace' ? (
+            <p data-part="grace">{l.grace.lapsed ? C.graceOwesLapsed(l.grace.method) : C.graceOwes(l.grace.method, deadlineText(l.grace.graceUntil))}</p>
+          ) : (
+            <p>{C.owesIntro(pctOf(l.rateBps))}</p>
+          )}
           {l.status === 'suspended' && <p>{C.suspended}</p>}
           <dl>
             <dt>{C.owed}</dt>
@@ -75,12 +82,68 @@ export function Liens() {
                 <dt>{C.remaining}</dt>
                 <dd>{xmr(l.remainingAtomic)}</dd>
               </dl>
-              {l.status === 'repaid' ? <p>{C.repaid}</p> : <RecoveryAddress lien={l} onSet={() => setReload((n) => n + 1)} />}
+              {l.paidOffPlatform === true || l.grace?.paidOffPlatform === true ? (
+                <p data-part="grace">{C.gracePaid}</p>
+              ) : l.status === 'repaid' ? (
+                <p>{C.repaid}</p>
+              ) : l.grace?.mode === 'grace' ? (
+                <GraceOwedTo lien={l} onPaid={() => setReload((n) => n + 1)} />
+              ) : (
+                <>
+                  {l.grace?.mode === 'collect' ? <p data-part="grace-collecting">{C.graceCollecting}</p> : null}
+                  <RecoveryAddress lien={l} onSet={() => setReload((n) => n + 1)} />
+                </>
+              )}
             </div>
           ))}
         </section>
       )}
     </main>
+  );
+}
+
+/**
+ * Owner decision 26 Nov 2026 (5:43 PM): the person owed signs off that they were paid the agreed way
+ * before the 7 days are up (or after; until a moderator switches the lien to collecting). Only this
+ * account's own session can; it ends the lien. A confirm step first, since it cannot be undone.
+ */
+export function GraceOwedTo({ lien, onPaid }: { lien: OwedToMe; onPaid: () => void }) {
+  const g = lien.grace!;
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const yes = async () => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      await confirmPaid(lien.id);
+      onPaid();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div data-part="grace">
+      <p>{g.lapsed ? C.graceOwedToLapsed(g.method) : C.graceOwedTo(g.method, deadlineText(g.graceUntil))}</p>
+      {asking ? (
+        <>
+          <p>{C.graceConfirmCheck}</p>
+          <button type="button" disabled={busy} onClick={() => void yes()}>
+            {C.graceConfirmYes}
+          </button>
+          <button type="button" disabled={busy} onClick={() => setAsking(false)}>
+            {C.graceConfirmNo}
+          </button>
+        </>
+      ) : (
+        <button type="button" onClick={() => setAsking(true)}>
+          {C.graceConfirm}
+        </button>
+      )}
+      {failed && <p role="alert">{C.addressFailed}</p>}
+    </div>
   );
 }
 

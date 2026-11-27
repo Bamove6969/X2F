@@ -839,6 +839,8 @@ export interface QueueRow {
    * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
    */
   complyLapsed?: boolean;
+  /** Owner 26 Nov 2026: a lien's 7 days to pay the agreed way passed; its moderator (or, once sent up, a senior) decides. Absent from an older API. */
+  graceLapsed?: boolean;
   /**
    * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): when the timer gives this free case to
    * the least-busy moderator on shift (later if nobody eligible is on shift); null when taken or
@@ -861,7 +863,7 @@ export interface CaseTrader {
   positivePct: number | null;
 }
 export interface CaseRuling {
-  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
+  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string; lienPlan?: LienPlanView } | null;
   sentBack: { rulingId: string; note: string | null; at: string } | null;
   draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
   /** Round 1's ruling once there is an appeal (the API's `round1`): a round-2 tap names its id. */
@@ -929,8 +931,48 @@ export interface DisputeCase {
   escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
   ruling: CaseRuling;
   freezes: { buyer: boolean; seller: boolean };
+  /** Owner 26 Nov 2026: the dispute's liens (grace, share, pending rate request). Absent from an older API. */
+  liens?: CaseLien[];
 }
 export type Side = 'buyer' | 'seller';
+
+/** Owner 26 Nov 2026 (5:43 and 5:51 PM): how a lien a ruling places is paid. */
+export type LienPlanView = { mode: 'collect'; rateBps: number; rateReason: string | null } | { mode: 'grace'; method: string };
+export interface LienGraceView {
+  mode: 'collect' | 'grace';
+  method: string | null;
+  graceUntil: string | null;
+  lapsedAt: string | null;
+  escalatedAt: string | null;
+  collectStartedAt: string | null;
+  repaidOffPlatformAt: string | null;
+}
+export interface CaseLien {
+  id: string;
+  status: string;
+  debtor: Side;
+  amountAtomic: string;
+  recoveredAtomic: string;
+  remainingAtomic: string;
+  rateBps: number;
+  createdAt: string;
+  ruledByYou: boolean;
+  grace: LienGraceView | null;
+  pendingRate: { id: string; rateBps: number; reason: string; proposedByYou: boolean } | null;
+}
+/** Owner 26 Nov 2026: switch a grace lien to collecting (tap `lien-collect` bound to the lien and the share). */
+export const collectLien = (lienId: string, b: { tapId: string; rateBps: number; rateReason?: string }) =>
+  staffApi<{ mode: 'collect'; rateRequest: 'pending' | null }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/collect`, { method: 'POST', body: b });
+/** Owner 26 Nov 2026: send a lapsed grace lien to a senior moderator or the owner. */
+export const escalateLien = (lienId: string) => staffApi<unknown>(`/staff/v1/liens/${encodeURIComponent(lienId)}/escalate`, { method: 'POST', body: {} });
+/** Review item 3: end a lien as paid outside X2F (tap `lien-paid-off-platform` bound to the lien). */
+export const paidOffPlatformLien = (lienId: string, tapId: string) =>
+  staffApi<{ status: string }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/paid-off-platform`, { method: 'POST', body: { tapId } });
+/** Opens the lien (a senior's open of a pending lower-rate request is logged, owner 5:53 PM). */
+export const lienView = (lienId: string) => staffApi<{ chat: { code: string; disputeOpen: boolean } }>(`/staff/v1/liens/${encodeURIComponent(lienId)}`);
+/** Owner change 5:53 PM: a senior or the owner decides a lower-rate request without a key tap, never its proposer. */
+export const decideLienRate = (lienId: string, requestId: string, approve: boolean) =>
+  staffApi<unknown>(`/staff/v1/liens/${encodeURIComponent(lienId)}/rate/${encodeURIComponent(requestId)}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: {} });
 
 const casePath = (code: string, rest = '') => `/staff/v1/disputes/${encodeURIComponent(code)}${rest}`;
 
@@ -1035,7 +1077,7 @@ export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-r
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (
   code: string,
-  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string; lienPlan?: import('@x2f/staff').LienPlan },
 ) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const approveRuling = (code: string, rulingId: string, tapId: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
@@ -1046,7 +1088,7 @@ export const secondApproveRuling = (code: string, rulingId: string, tapId: strin
 export const reProposeRuling = (
   code: string,
   replaces: string,
-  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string; lienPlan?: import('@x2f/staff').LienPlan },
 ) => staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(replaces)}/re-propose`), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const sendBackRuling = (code: string, rulingId: string, note: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });
