@@ -398,6 +398,49 @@ describe('the dispute notice (T2)', () => {
     res = await grant('buyer');
     expect({ s: res.statusCode, e: res.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
   });
+
+  it('treats a chat as in dispute when disputes.status <> closed even after trades.state leaves disputed (fix-dispute-open)', async () => {
+    const k = await keyedTrade();
+    await escalate(k);
+    // Simulate a closed/refunded trade whose dispute is still open (e.g. published during appeal window).
+    await deps.db.query("update trades set state = 'refunded', closed_at = $2 where code = $1", [k.trade, now]);
+    await deps.db.query("update disputes set status = 'published' where code = $1", [k.trade]);
+
+    // 1. GET /v1/chats/:chat returns disputeOpen: true.
+    for (const side of [k.taker, k.poster]) {
+      const view = (await side.b.get(`/v1/chats/${k.chat}`)).json() as { disputeOpen: boolean };
+      expect(view.disputeOpen).toBe(true);
+    }
+
+    // 2. GET /internal/v1/chat-notices includes the chat.
+    const c = (await candidates()).find((x) => x.chat === k.chat);
+    expect(c).toMatchObject({ chat: k.chat, trade: k.trade, disputeSeq: 1, openedBy: 'system' });
+
+    // 3. POST /internal/v1/reports (chat-dispute-notice) returns 201.
+    const notice = await makeDisputeNotice({ chat: k.channel, disputeSeq: c!.disputeSeq, openedAt: c!.openedAt, openedBy: 'system', mod: k.mod });
+    expect((await report(k.chat, notice)).statusCode).toBe(201);
+
+    // 4. POST /v1/chats/:chat/grant (fallback grant) returns 201.
+    const grantRes = await k.poster.b.post(`/v1/chats/${k.chat}/grant`, await grantOf(k, 'seller'));
+    expect(grantRes.statusCode, grantRes.body).toBe(201);
+
+    // Negative case: once the dispute is closed (and trade is not disputed), all 4 paths treat it as closed.
+    await deps.db.query("update disputes set status = 'closed', closed_at = $2 where code = $1", [k.trade, now]);
+    const closedView = (await k.taker.b.get(`/v1/chats/${k.chat}`)).json() as { disputeOpen: boolean; notice: unknown };
+    expect(closedView.disputeOpen).toBe(false);
+    expect(closedView.notice).toBeNull();
+    const lateGrant = await k.taker.b.post(`/v1/chats/${k.chat}/grant`, await grantOf(k, 'buyer'));
+    expect({ s: lateGrant.statusCode, e: lateGrant.json().error }).toEqual({ s: 409, e: 'grant-not-needed' });
+
+    const k2 = await keyedTrade();
+    await escalate(k2);
+    const d2 = (await deps.db.query<{ seq: number; opened_at: Date }>('select seq, opened_at from disputes where code = $1', [k2.trade])).rows[0]!;
+    await deps.db.query("update trades set state = 'refunded', closed_at = $2 where code = $1", [k2.trade, now]);
+    await deps.db.query("update disputes set status = 'closed', closed_at = $2 where code = $1", [k2.trade, now]);
+    expect((await candidates()).some((x) => x.chat === k2.chat)).toBe(false);
+    const closedNotice = await makeDisputeNotice({ chat: k2.channel, disputeSeq: d2.seq, openedAt: d2.opened_at.toISOString(), openedBy: 'system', mod: k2.mod });
+    expect((await report(k2.chat, closedNotice)).statusCode).toBe(409);
+  });
 });
 
 describe('review fixes of tasks 3-6 (F2, F5, F6)', () => {
