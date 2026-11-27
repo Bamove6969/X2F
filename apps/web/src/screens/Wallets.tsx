@@ -523,16 +523,10 @@ function WalletsScreen() {
   async function makeDefault(w: WalletView) {
     setError(null);
     try {
-      const r = await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}/default`, { method: 'PUT', body: {} });
-      // Review 17 Nov (b) B1: from a username-and-password login the choice is a draft that waits
-      // 24 h once submitted, like a removal; the default stays as it is until then.
-      if (isStaged(r)) {
-        setStaged(true);
-        return;
-      }
+      // Owner Q12 (27 Nov 2026): applies at once from any login, never staged; the API alerts it.
+      await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}/default`, { method: 'PUT', body: {} });
       void api<WalletView[]>('/v1/wallets').then(setWallets, () => undefined);
     } catch (e) {
-      if (reportChangesCap(e)) return;
       setError((e instanceof ApiCallError || e instanceof AuthApiError) && e.code === 'wallet-not-ready' ? MAKE_DEFAULT_WAITING : MAKE_DEFAULT_FAILED);
     }
   }

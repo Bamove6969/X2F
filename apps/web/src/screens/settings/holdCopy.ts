@@ -68,12 +68,6 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
       const name = [c.label, end !== undefined ? `…${end}` : undefined].filter((x) => x !== undefined && x !== '').join(' · ');
       return { title: 'Wallet removed', before: name !== '' ? name : 'A payout wallet', after: 'Removed' };
     }
-    // Review 17 Nov (b) B1: choosing the default payout wallet waits like a removal. COPY-UNSIGNED
-    case 'default-wallet': {
-      const end = c.addressEnds?.[0];
-      const name = [c.label, end !== undefined ? `…${end}` : undefined].filter((x) => x !== undefined && x !== '').join(' · ');
-      return { title: 'Default payout wallet', before: 'Your current default', after: name !== '' ? name : 'Another payout wallet' };
-    }
     case 'team-remove': {
       const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
       return { title: 'Team member removed', before: who ?? 'A team member', after: 'Removed' };

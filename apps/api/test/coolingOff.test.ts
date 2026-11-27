@@ -1524,7 +1524,7 @@ describe('review round 2', () => {
           const wid = ((await o.b.get('/v1/wallets')).json() as Array<{ id: string }>)[0]!.id;
           return { b: o.b, accountId: o.id, fire: () => o.b.put(`/v1/wallets/${wid}/label`, { label: 'Savings' }) };
         },
-        // Review of wip/third-trade-wallet 17 Nov (b), B1: choosing the default is a security change.
+        // B1: choosing the default re-checks the session live (owner Q12: never staged).
         'PUT /v1/wallets/:id/default': async () => {
           const o = await passkeyWithPassword();
           await deps.db.query('update accounts set had_wallet = true where id = $1', [o.id]);

@@ -95,7 +95,6 @@ export function describeChange(c: PendingChange): ChangeSummary {
     case 'team-abilities':
       return { kind: c.kind, memberId: c.memberId, abilities: [...c.abilities], abilityLabels: c.abilities.map((id) => abilityOf(id)?.label ?? id) };
     case 'remove-wallet':
-    case 'default-wallet':
       return { kind: c.kind, label: c.label, addressEnds: [c.addressEnd] };
     case 'team-remove':
       return { kind: c.kind, memberId: c.memberId };

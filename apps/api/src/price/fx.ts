@@ -255,7 +255,7 @@ export interface FxSettings {
 }
 
 export const FX_DEFAULTS = Object.freeze({
-  pollMs: 5 * 60_000,
+  pollMs: 60_000, // owner 27 Nov 2026: every minute (was 5 min)
   timeoutMs: 10_000, // over Tor the sources answered in 1.6–3.5 s
   staleAfterMs: 60 * 60_000,
   sanityBps: 1_000,

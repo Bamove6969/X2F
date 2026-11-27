@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { gateChange, holdInTx, holdRefusal, settleOf, stagedReply, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
 import { dailyCapInTx } from '../auth/throttle.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -548,8 +548,7 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * The default-wallet write (the route's, or a waiting one applied 24 h after a username-and-password
- * session submitted it), under the account lock: the wallet must still be the account's, open, saved
+ * The default-wallet write, under the account lock: the wallet must still be the account's, open, saved
  * (409 `wallet-one-time`) and usable now (409 `wallet-not-ready`), else nothing changes (404
  * `not-found` for one gone; a waiting change is then dropped). Alert `wallet-default` with display
  * details only (app, label, end of the address), once per actual change: choosing the default again
@@ -580,19 +579,22 @@ export async function applyDefaultWallet(db: Queryable, accountId: string, walle
  * stolen session must not silently pre-arm an address that has not yet passed the wait meant to let
  * the user notice it; the same `usable_from <= now` rule as the take's `pickWallet`).
  * Review of wip/third-trade-wallet 17 Nov (b), B1: the default steers which address a payout goes to
- * (the quote and the accepted sheet preselect it), so it is a security change like a removal: the
- * session is re-checked live under the account lock, a username-and-password login's choice is staged
- * (`gateChange`, 202) and the hold blocks it; applied, it writes alert `wallet-default` (owner
- * question Q12 answered by the review). One default per account (the account lock, and migration
- * 630's partial unique index).
+ * (the quote and the accepted sheet preselect it), so the session is re-checked live under the account
+ * lock and a running recovery hold refuses it (403 `recovery-hold`). Owner Q12 (27 Nov 2026, "Apply at
+ * once, alert"): never staged, from any login; it applies at once and writes alert `wallet-default`.
+ * One default per account (the account lock, and migration 630's partial unique index).
  */
 async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
-  const held = await withTx(deps.db, async (client) => {
-    await requireLiveSessionInTx(client, req.auth, now);
+  await withTx(deps.db, async (client) => {
+    const session = await requireLiveSessionInTx(client, req.auth, now);
+    if (session.kind === 'trader') {
+      const running = await holdInTx(client, settleOf(req), req.auth.accountId, now);
+      if (running !== null) throw holdRefusal(running.holdUntil);
+    }
     const { rows } = await client.query<{ label: string; address: string; one_time: boolean; usable_from: Date }>(
       'select label, address, one_time, usable_from from wallets where id = $1 and account_id = $2 and removed_at is null',
       [id, req.auth.accountId],
@@ -601,11 +603,8 @@ async function defaultHandler(req: FastifyRequest, reply: FastifyReply) {
     if (!w) throw new ApiError(404, 'not-found');
     if (w.one_time) throw new ApiError(409, 'wallet-one-time');
     if (w.usable_from.getTime() > now.getTime()) throw new ApiError(409, 'wallet-not-ready');
-    const g = await gateChange(client, req, { kind: 'default-wallet', walletId: id, label: w.label, addressEnd: addressEnd(w.address) });
-    if (g === null) await applyDefaultWallet(client, req.auth.accountId, id, now);
-    return g;
+    await applyDefaultWallet(client, req.auth.accountId, id, now);
   });
-  if (held !== null) return reply.code(202).send(stagedReply(held));
   return reply.code(204).send();
 }
 

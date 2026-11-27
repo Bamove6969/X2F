@@ -7,7 +7,8 @@ import type { PriceQuote, PriceSource } from './feed.js';
  * lists XMR, needs no key, answers plain JSON, and was fetched over Tor on 2026-10-24). Each
  * parser is self-contained: swapping a source is one entry here plus its fixture test.
  */
-export const PRICE_SOURCE_NAMES = ['kraken', 'bitfinex', 'coingecko'] as const;
+// Owner 27 Nov 2026: CoinGecko, the industry-standard price site, is listed first; the price is still the median of all three.
+export const PRICE_SOURCE_NAMES = ['coingecko', 'kraken', 'bitfinex'] as const;
 
 /**
  * Candidate sources (2026-11-02, docs/superpowers/specs/2026-11-02-price-feeds.md): adapters written

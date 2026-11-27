@@ -44,7 +44,7 @@ describe('median', () => {
 
 describe('createPriceFeed', () => {
   it('uses the plan defaults', () => {
-    expect(PRICE_FEED_DEFAULTS).toMatchObject({ minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000 });
+    expect(PRICE_FEED_DEFAULTS).toMatchObject({ minSources: 2, maxAgeMs: 300_000, pollMs: 15_000, timeoutMs: 5_000 });
   });
 
   it('returns the median of three sources (Review Focus 5)', async () => {
@@ -440,7 +440,7 @@ describe('price sources', () => {
   const one = (name: string, f: typeof fetch) => priceSources([name as (typeof PRICE_SOURCE_NAMES)[number]], f)[0]!;
 
   it('lists the proposed sources', () => {
-    expect(PRICE_SOURCE_NAMES).toEqual(['kraken', 'bitfinex', 'coingecko']);
+    expect(PRICE_SOURCE_NAMES).toEqual(['coingecko', 'kraken', 'bitfinex']);
   });
 
   it('kraken: last trade of XMR/USD and XMR/EUR', async () => {
@@ -545,8 +545,8 @@ describe('price sources', () => {
   });
 
   it('parses PRICE_SOURCES', () => {
-    expect(parsePriceSources(undefined)).toEqual(['kraken', 'bitfinex', 'coingecko']);
-    expect(parsePriceSources('')).toEqual(['kraken', 'bitfinex', 'coingecko']);
+    expect(parsePriceSources(undefined)).toEqual(['coingecko', 'kraken', 'bitfinex']);
+    expect(parsePriceSources('')).toEqual(['coingecko', 'kraken', 'bitfinex']);
     expect(parsePriceSources(' coingecko , kraken ')).toEqual(['coingecko', 'kraken']);
     expect(() => parsePriceSources('kraken,binance')).toThrow(/PRICE_SOURCES/);
     expect(() => parsePriceSources('kraken,kraken')).toThrow(/PRICE_SOURCES/);
@@ -564,7 +564,7 @@ describe('config PRICE_SOURCES', () => {
       ...VAPID_ENV,
   };
   it('defaults to the three proposed sources and refuses an unknown one', () => {
-    expect(loadConfig(env).priceSources).toEqual(['kraken', 'bitfinex', 'coingecko']);
+    expect(loadConfig(env).priceSources).toEqual(['coingecko', 'kraken', 'bitfinex']);
     expect(loadConfig({ ...env, PRICE_SOURCES: 'bitfinex,coingecko' }).priceSources).toEqual(['bitfinex', 'coingecko']);
     expect(() => loadConfig({ ...env, PRICE_SOURCES: 'nope' })).toThrow('PRICE_SOURCES');
   });

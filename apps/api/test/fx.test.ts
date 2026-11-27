@@ -203,7 +203,7 @@ describe('FX sources', () => {
 describe('createFxRates', () => {
   it('uses the defaults: poll every 5 min, stale after 1 h, sanity 10% within 1 h, 3 failures make a source down', () => {
     expect(FX_DEFAULTS).toMatchObject({
-      pollMs: 5 * MIN, staleAfterMs: HOUR, sanityBps: 1_000, sanityWindowMs: HOUR, failLimit: 3,
+      pollMs: MIN, staleAfterMs: HOUR, sanityBps: 1_000, sanityWindowMs: HOUR, failLimit: 3,
     });
   });
 

@@ -426,18 +426,6 @@ describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () =>
     expect(rows.map((r) => r.querySelector('[data-part="make-default"]') !== null)).toEqual([false, false]);
   });
 
-  it('a choice from a username-and-password login is staged: the waiting-changes note shows and the default stays', async () => {
-    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
-    stub.wallets = [{ ...READY, isDefault: true }, other];
-    stub.defaultAnswer = { status: 202, json: { status: 'staged', changeId: 'c-2' } };
-    await mount();
-    fire(document.querySelectorAll<HTMLElement>('[data-part="make-default"]')[0]!, new MouseEvent('click', { bubbles: true }));
-    await until(() => document.querySelector('[data-part="staged-note"]') !== null);
-    expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
-    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
-    expect(rows.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([true, false]);
-  });
-
   it('a 409 wallet-not-ready says the wallet is still waiting', async () => {
     const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
     stub.wallets = [{ ...READY, isDefault: true }, other];

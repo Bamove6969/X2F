@@ -335,6 +335,7 @@ const ENV = {
   X2F_PGP_SIGNING_KEY_PATH: '/k', X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
   X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 11).toString('base64')}`, X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 12).toString('base64')}`,
   X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`, X2F_LOGIN_NAME_KEYS: `1:${Buffer.alloc(32, 14).toString('base64')}`,
+  X2F_TICKET_KEYS: `1:${Buffer.alloc(32, 15).toString('base64')}`,
   ...VAPID_ENV,
 };
 
@@ -372,7 +373,7 @@ describe('config', () => {
 
   it('candidate sources are accepted only when named, never by default', () => {
     expect(CANDIDATE_PRICE_SOURCE_NAMES).toEqual(['coinpaprika']);
-    expect(DEFAULT_PRICE_SOURCES).toEqual(['kraken', 'bitfinex', 'coingecko']);
+    expect(DEFAULT_PRICE_SOURCES).toEqual(['coingecko', 'kraken', 'bitfinex']);
     expect(parsePriceSources('kraken,coinpaprika')).toEqual(['kraken', 'coinpaprika']);
     expect(CANDIDATE_FX_SOURCE_NAMES).toEqual(['frankfurter', 'erapi']);
     expect(DEFAULT_FX_SOURCES).toEqual(['coinbase', 'bitpay', 'coingecko']);

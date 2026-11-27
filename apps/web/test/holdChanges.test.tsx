@@ -92,10 +92,6 @@ describe('the words of a change (owner G29: before and after)', () => {
     expect(changeWords({ kind: 'wallets', wallets: 1 }).after).toBe('1 new wallet added');
     expect(changeWords({ kind: 'recovery-codes' }).after).toBe('A new recovery code');
     expect(changeWords({ kind: 'something-new' }).title).toBe('Account setting');
-    // Review 17 Nov (b) B1: the default payout wallet, named by label and address end.
-    expect(changeWords({ kind: 'default-wallet', label: 'Cake Wallet', addressEnds: ['k3Fzab'] })).toEqual({
-      title: 'Default payout wallet', before: 'Your current default', after: 'Cake Wallet · …k3Fzab',
-    });
   });
 
   it("names a team member's role change by the member's name when it is known", () => {

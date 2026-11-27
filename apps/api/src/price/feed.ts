@@ -43,7 +43,7 @@ export interface PriceFeedOptions {
 }
 
 export const PRICE_FEED_DEFAULTS = Object.freeze({
-  minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000, maxSpreadBps: 300, pairSpreadBps: 200, frozenAfterMs: 30 * 60_000,
+  minSources: 2, maxAgeMs: 300_000, pollMs: 15_000, timeoutMs: 5_000, maxSpreadBps: 300, pairSpreadBps: 200, frozenAfterMs: 30 * 60_000,
 }) satisfies Required<Omit<PriceFeedOptions, 'clock'>>;
 
 export interface FeedQuote {
