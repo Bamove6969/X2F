@@ -115,8 +115,10 @@ export interface LienSource {
 }
 
 /**
- * Q1: the rates a senior moderator's (or the owner's) `lien-rate` key taps approved for `lienId`,
- * each verified by the gate, with the tap's nonce (which the gate binds to that lien and rate).
+ * Q1: the rates a senior moderator's (or the owner's) `lien-rate` key taps (or approved rate
+ * requests) approved for `lienId`, each verified by the gate, with the tap's nonce (which the gate
+ * binds to that lien and rate). Implementations MUST return approvals oldest-first: `checkSide`
+ * spends the last matching approval and everything before it, leaving newer approvals pending.
  */
 export interface LienRates {
   approvals(lienId: string): Promise<ReadonlyArray<{ rateBps: number; nonce: string }>>;
@@ -301,7 +303,7 @@ async function checkSide(w: LienWork, side: 'buyer' | 'seller', d: LienCheckDeps
   if (!sides.includes(creditor)) throw new LienRefused('not-creditor');
   // Rule 5 (Q1): the rate this service last applied (the default until then), or a change a
   // senior's key tap approved that it has not applied yet (verified by its gate). Applying one spends
-  // every new tap for the lien, so none is ever a reason for a change again.
+  // that approval and the older ones, and leaves newer ones pending.
   const rateTaps = await newRateTaps(d, lienId);
   const current = pinned?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
   let spends: string[] = [];
@@ -432,6 +434,7 @@ export function lienRateVerifier(o: { store: GateStore; source: GateSource & { a
         // Owner 26 Nov 2026 5:53 PM: a senior approves without a key tap; the API's approved requests count too.
         const asked = o.source.approvedRateRequests === undefined ? [] : lienRateRequestApprovals(o.store.state, await o.source.approvedRateRequests(lienId), lienId, o.ctx);
         await o.store.save();
+        // Both sources are oldest-first, and legacy `lien-rate` taps predate tapless rate requests.
         return [...ok, ...asked];
       }),
   };
