@@ -23,6 +23,8 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'auto-close-capped': 'Inactive accounts: the automatic close stopped at its limit for this run',
   'dispute-refund-after-ruling': 'A refund landed after a ruling: the case needs a new ruling',
   'dispute-comply-lapsed': 'A seller did not prove the payment a ruling ordered: the case needs a senior moderator',
+  // COPY-UNSIGNED (owner 26 Nov 2026, "Pool first, auto-assign if untaken"): nobody eligible was on shift.
+  'dispute-unassigned-overdue': 'A dispute is still unassigned past its reply deadline: nobody who could take it is on shift',
   'tx-proof-check-stuck': 'The payment proof checker is stuck: restart the API so sellers can prove their payments',
   'tx-proof-check-stopped': 'The payment proof checker has stopped: no seller can prove a payment until the API is restarted',
   // COPY-UNSIGNED (review of feat/lockout, item 4).

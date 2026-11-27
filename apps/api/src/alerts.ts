@@ -100,7 +100,13 @@ export type AlertKind =
   // Review of feat/lien-grace item 9: to the person owed, a lien given 7 days to pay the agreed way
   // is now collected from the debtor's later trades (choose the wallet recoveries go to). Also pushed.
   // Detail: lienId.
-  | 'lien-collecting';
+  | 'lien-collecting'
+  // Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": to a staff member, a
+  // dispute nobody took in time was given to them by the timer. Detail: trade.
+  | 'dispute-auto-assigned'
+  // Same decision: to the owner and every senior moderator, once per round, a dispute still in the
+  // pool past its reply deadline (nobody eligible on shift). Detail: trade, round.
+  | 'dispute-unassigned-overdue';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

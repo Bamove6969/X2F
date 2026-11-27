@@ -9,6 +9,7 @@ import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
 import { pushRateDeciders, runLienGraceEscalations, runLienGraceLapses } from './lienGrace.js';
+import { runAutoAssign } from './autoAssign.js';
 import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
@@ -40,6 +41,10 @@ export const DISPUTE_TIMER_MS = 30_000;
  * 5. **Comply time lapsed (A6).** A `seller-sends-xmr` ruling whose comply time passed with no proof
  *    goes to a senior moderator or the owner (`runComplyLapses`: marked, logged, the owner alerted
  *    in-app and, once per pass with any lapse, by push).
+ * 6. **Auto-assign (owner 26 Nov 2026, "Pool first, auto-assign if untaken").** A case nobody took
+ *    within the owner's setting goes to the least-busy eligible staff member on shift, oldest first;
+ *    one still in the pool past its reply deadline alerts the owner and the senior moderators once
+ *    per round (`runAutoAssign`, autoAssign.ts). Each assignment counts as a change.
  *
  * 6. **Lien grace lapsed (owner 26 Nov 2026).** A lien given 7 days to pay the agreed way whose
  *    days passed without the person owed confirming payment is marked once, logged, and the
@@ -132,6 +137,7 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   n += await runLienGraceEscalations(deps, failures);
   // Coordinator follow-up 26 Nov 2026: a lower share proposed with a ruling reaches the deciders' phones.
   if (deps.push) await pushRateDeciders({ db: deps.db, clock: deps.clock, push: deps.push }).catch((e: unknown) => void failures.push(e));
+  n += await runAutoAssign(deps, step);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }

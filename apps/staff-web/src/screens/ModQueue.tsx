@@ -7,7 +7,7 @@ import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import { isLimitDecider } from './LimitRecommendations.js';
-import { QUEUE_STATUS_LABELS, ageChoices, approvalText, codeText, deadline, limitText, oldestWaiting, olderThan, span, usdText, xmrShort, type QueueAge } from './modModel.js';
+import { QUEUE_STATUS_LABELS, ageChoices, approvalText, assigneeText, codeText, deadline, limitText, oldestWaiting, olderThan, span, usdText, xmrShort, type QueueAge } from './modModel.js';
 import '../ui/staff.css';
 
 type Filter = 'all' | 'mine' | 'free' | 'approval';
@@ -119,6 +119,8 @@ export function ModQueue({ role }: { role: StaffRole }) {
       <PageTitle title="Disputes">
         <p className="x2f-staff-page__lead" data-part="queue-lead">
           {h === null ? 'Open disputes, closest deadline first.' : `Open disputes, closest deadline first. A moderator must reply within ${h} hours of a dispute opening.`}
+          {/* Owner 26 Nov 2026: the pool time. COPY-UNSIGNED */}
+          {queue?.settings.autoAssign?.on === true ? ` A case nobody takes within ${queue.settings.autoAssign.minutes} minutes goes to the moderator on shift with the fewest open cases.` : null}
         </p>
         <Button variant="primary" disabled={busy} onClick={() => void next()}>
           Take next case
@@ -241,7 +243,9 @@ export function ModQueue({ role }: { role: StaffRole }) {
                   </span>
                 ),
               },
-              { title: 'Assigned to', cell: (r) => (r.assignee === null ? 'Unassigned' : r.mine ? 'You' : r.assignee) },
+              // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): a free case says when the
+              // timer assigns it; one the timer gave this person says so. COPY-UNSIGNED
+              { title: 'Assigned to', cell: (r) => <span data-part="queue-assignee">{assigneeText(r, now)}</span> },
               {
                 title: 'Actions',
                 cell: (r) => (

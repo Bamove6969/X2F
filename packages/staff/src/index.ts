@@ -62,6 +62,8 @@ export {
   RULING_DEADLINE_H,
   RULING_GOAL_H,
   applyDispute,
+  autoAssignDispute,
+  mayAutoAssign,
   gateUsdCents,
   limitUsdCentsOf,
   markSeen,

@@ -112,7 +112,10 @@ function sentence(
     case 'trade.tick': return 'A trade deadline passed';
     // Disputes and the case.
     case 'dispute.opened': return `Dispute opened${d.afterRefund === true ? ' after the refund' : ''}`;
-    case 'dispute.assigned': return e.actor.kind === 'staff' ? 'Took the case' : `Assigned the case to ${who('staffId', 'a moderator')}`;
+    // Owner 26 Nov 2026: `auto` is the timer's assignment of a case nobody took in time. COPY-UNSIGNED
+    case 'dispute.assigned':
+      if (d.auto === true) return `Nobody took the case in time; assigned it automatically to ${who('staffId', 'a moderator')}`;
+      return e.actor.kind === 'staff' ? 'Took the case' : `Assigned the case to ${who('staffId', 'a moderator')}`;
     case 'dispute.unassigned': return `The case went back to the queue; ${who('staffId', 'its moderator')} left it`;
     case 'dispute.refund-after-ruling': return 'The seller was refunded after a ruling; the case needs a new ruling';
     case 'dispute.complied': return 'The seller sent the XMR the ruling asked for';

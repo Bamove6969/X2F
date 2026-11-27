@@ -239,6 +239,7 @@ describe('the queue', () => {
     expect((all.json() as { settings: unknown }).settings).toEqual({
       firstResponseH: (await disputeSettings(deps.db)).firstResponseH,
       largeTradeLimitUsd: (await disputeSettings(deps.db)).largeTradeLimitUsd,
+      autoAssign: { on: true, minutes: 15 },
     });
 
     // `next` takes the unassigned dispute due first (here: b or an older one from another test).
