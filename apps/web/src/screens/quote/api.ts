@@ -60,8 +60,8 @@ export function quoteOffer(o: Offer, side: AdSide, currency: string, methodId: s
     id: o.id,
     side,
     currency,
-    // The public display name (spec 6.1); the private login name never reaches here.
-    poster: { displayName: o.poster.displayName, stage: o.poster.stage },
+    // The public Trade Tag (spec 6.1); the private login name never reaches here.
+    poster: { tradeTag: o.poster.tradeTag, stage: o.poster.stage },
     pricing: o.pricing,
     amountUnit: o.amountUnit,
     minAtomic: o.minAtomic,

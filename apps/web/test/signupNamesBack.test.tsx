@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// Signup-team review F8 (8 Nov 2026): Back and "Change your names" lead to the display-name
-// screen when that is the name to change; the display-name step needs a username first.
+// Signup-team review F8 (8 Nov 2026): Back and "Change your names" lead to the trade-tag
+// screen when that is the name to change; the trade-tag step needs a username first.
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
@@ -23,7 +23,7 @@ const byPart = (host: ParentNode, part: string) => host.querySelector<HTMLElemen
 
 function setup(state: Partial<SetupState> = {}): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'Lumen.K', loginName: 'juniper.oak', ...state },
+    state: { ...INITIAL, terms: { version: 'v1' }, tradeTag: 'Lumen.K', loginName: 'juniper.oak', ...state },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),
@@ -39,18 +39,18 @@ function show(el: React.ReactNode, api: SetupApi) {
   ).host;
 }
 
-describe('F8: the way back to the display name', () => {
-  it("the login-method step's back arrow goes to the display-name screen", () => {
+describe('F8: the way back to the Trade Tag', () => {
+  it("the login-method step's back arrow goes to the trade-tag screen", () => {
     const host = show(<Login />, setup());
-    expect(host.querySelector('a[aria-label="Back"]')!.getAttribute('href')).toBe('/setup/display-name');
+    expect(host.querySelector('a[aria-label="Back"]')!.getAttribute('href')).toBe('/setup/trade-tag');
   });
 
   it('"Change your names" goes to the screen of the name that was refused', () => {
     const fallback = 'fallback';
     for (const [code, step] of [
-      ['display-name-taken', 'display-name'],
-      ['display-name-reserved', 'display-name'],
-      ['display-name-invalid', 'display-name'],
+      ['trade-tag-taken', 'trade-tag'],
+      ['trade-tag-reserved', 'trade-tag'],
+      ['trade-tag-invalid', 'trade-tag'],
       ['names-unavailable', 'name'],
       ['login-name-invalid', 'name'],
       ['names-same', 'name'],
@@ -61,14 +61,14 @@ describe('F8: the way back to the display name', () => {
     }
   });
 
-  it('the display-name step needs a username first', () => {
+  it('the trade-tag step needs a username first', () => {
     const host = render(
-      <MemoryRouter initialEntries={['/setup/display-name?returnTo=%2Fsell']}>
+      <MemoryRouter initialEntries={['/setup/trade-tag?returnTo=%2Fsell']}>
         <Routes>
           <Route path="/setup/*" element={<SetupFlow />} />
         </Routes>
       </MemoryRouter>,
     ).host;
-    expect(host.querySelector('[data-screen="setup-display-name"]')).toBeNull();
+    expect(host.querySelector('[data-screen="setup-trade-tag"]')).toBeNull();
   });
 });

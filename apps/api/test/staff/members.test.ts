@@ -1,7 +1,7 @@
 // Plan 4 Task 7: staff management (members, invites, switch off and on, hours, roles, removal).
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { checkNewDisplayName } from '@x2f/accounts';
+import { checkNewTradeTag } from '@x2f/accounts';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { recordBannedValues } from '../../src/bans.js';
@@ -57,21 +57,21 @@ const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${toke
 const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG });
 
 /**
- * A login name whose display name `Kes<login>` passes the new-name rules. The base-36 clock part can
+ * A login name whose Trade Tag `Kes<login>` passes the new-name rules. The base-36 clock part can
  * spell a reserved word on the look-alike skeleton (digits fold to letters: `m0d`, `r00t`, `x2f`),
- * which made this test flaky with 400 `display-name-reserved`; such a pick is skipped, never sent.
+ * which made this test flaky with 400 `trade-tag-reserved`; such a pick is skipped, never sent.
  */
 function safeLoginName(): string {
   for (;;) {
     const n = loginName();
-    if (checkNewDisplayName(`Kes${n}`).ok) return n;
+    if (checkNewTradeTag(`Kes${n}`).ok) return n;
   }
 }
 
 async function pickNames(b: StaffBrowser, token: string) {
   const n = safeLoginName();
-  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Kes${n}`, loginName: n, ...signed() });
-  return { res, loginName: n, displayName: `Kes${n}` };
+  const res = await b.post(acceptUrl(token, '/account'), { tradeTag: `Kes${n}`, loginName: n, ...signed() });
+  return { res, loginName: n, tradeTag: `Kes${n}` };
 }
 
 async function addInviteKey(b: StaffBrowser, token: string, key: SoftAuthenticator, kind: 'security-key' | 'passkey' = 'security-key') {
@@ -141,7 +141,7 @@ describe('invites', () => {
 
     // A second use of the link.
     expect(errorOf(await invitee().get(acceptUrl(inv.token)))).toBe('invite-invalid');
-    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { displayName: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
+    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { tradeTag: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
     expect(errorOf(await s.b.post(acceptUrl(inv.token, '/finish'), {}))).toBe('invite-invalid');
   });
 
@@ -319,7 +319,7 @@ describe('invites', () => {
       [{ acceptedTerms: t.deps.config.termsVersion }, 'signature-required'],
       [{ acceptedTerms: t.deps.config.termsVersion, termsSignature: { kind: 'typed', name: '' } }, 'signature-invalid'],
     ] as const) {
-      const res = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Unsigned1x', loginName: 'unsignedlogin1x', ...extra });
+      const res = await b.post(acceptUrl(inv.token, '/account'), { tradeTag: 'Unsigned1x', loginName: 'unsignedlogin1x', ...extra });
       expect(res.statusCode, res.body).toBe(400);
       expect(errorOf(res)).toBe(error);
     }
@@ -333,7 +333,7 @@ describe('invites', () => {
     expect(openTermsSignature(t.deps.config, signedRow.rows[0]!.terms_signature!, id)).toEqual(SIG);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
-    const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
+    const again = await b.post(acceptUrl(inv.token, '/account'), { tradeTag: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
     // A return visit resumes: the account is made, and the keys added so far are counted.
     const resume = async () => (await invitee().get(acceptUrl(inv.token))).json().resume;
@@ -392,22 +392,22 @@ describe('invites', () => {
 });
 
 describe('a staff name that looks like an existing trader or member (review lead-signup-rules-main M1)', () => {
-  it('is refused at invite accept with 400 display-name-reserved, in either direction of punctuation and look-alikes; the invite stays open', async () => {
+  it('is refused at invite accept with 400 trade-tag-reserved, in either direction of punctuation and look-alikes; the invite stays open', async () => {
     // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).
     t.setNow(new Date(MON_NOON.getTime() - 2 * 86_400_000));
     const tag = Date.now().toString(36).slice(-5);
-    const trader = await seedAccount(t.deps, { loginName: `trlogin${tag}`, displayName: `Mira_${tag}` });
+    const trader = await seedAccount(t.deps, { loginName: `trlogin${tag}`, tradeTag: `Mira_${tag}` });
     await t.deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at)
        values ($1, $2, lower($2), '{offers-see}', $3, $3)`,
       [trader, `Ren_${tag}`, new Date(MON_NOON.getTime() + 86_400_000)],
     );
     const inv = await createInvite('mod');
     const b = invitee();
-    const pick = (displayName: string) => b.post(acceptUrl(inv.token, '/account'), { displayName, loginName: loginName(), ...signed() });
+    const pick = (tradeTag: string) => b.post(acceptUrl(inv.token, '/account'), { tradeTag, loginName: loginName(), ...signed() });
     for (const name of [`Mira.${tag}`, `M1ra${tag}`, `ren-${tag}`, `Re-n${tag}`]) {
       const res = await pick(name);
-      expect({ name, status: res.statusCode, error: errorOf(res) }).toEqual({ name, status: 400, error: 'display-name-reserved' });
+      expect({ name, status: res.statusCode, error: errorOf(res) }).toEqual({ name, status: 400, error: 'trade-tag-reserved' });
     }
     expect((await t.deps.db.query('select account_id from staff_invites where id = $1', [inv.inviteId])).rows).toEqual([{ account_id: null }]);
     // A name unlike both still works.
@@ -444,7 +444,7 @@ describe('members', () => {
     expect(res.statusCode).toBe(200);
     const rows = res.json().members as Array<Record<string, unknown>>;
     expect(rows).toContainEqual({
-      accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
+      accountId: mod.id, inviteId: null, tradeTag: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
       // Owner G3 (review P-m2): this moderator holds only a security key so far.
       missingMethods: ['pgp', 'passkey'],
@@ -452,7 +452,7 @@ describe('members', () => {
       grants: [],
     });
     expect(rows).toContainEqual({
-      accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
+      accountId: null, inviteId: inv.inviteId, tradeTag: null, role: 'helper', status: 'waiting', hours: OFFICE,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [], grants: [],
     });
     expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
@@ -617,8 +617,8 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
   });
 });
 
-describe('owner Q54: the public name is displayName; a field named username is refused', () => {
-  it('the invitee names the account with displayName and loginName; username is not taken', async () => {
+describe('owner Q54: the public name is tradeTag; a field named username is refused', () => {
+  it('the invitee names the account with tradeTag and loginName; username is not taken', async () => {
     const inv = await createInvite('helper');
     const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x', ...signed() });
     expect(res.statusCode).toBe(400);
@@ -645,8 +645,8 @@ describe('per-person grants (owner Q60)', () => {
     // D-058 (owner G20; lead 12 Nov, replacing lead review 7 Nov M5): a named row shows the sender's
     // account to everyone who reads feedback, a grant holder included, so staff can follow up.
     await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
-    const name = (await t.deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [mod.id])).rows[0]!.display_name;
-    // Review m1 (lead 12 Nov): the sender's display name only, never the raw account id, for anyone.
+    const name = (await t.deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [mod.id])).rows[0]!.trade_tag;
+    // Review m1 (lead 12 Nov): the sender's Trade Tag only, never the raw account id, for anyone.
     const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountName: string | null }>;
     expect(asMod.find((i) => i.text === 'named')).toMatchObject({ accountName: name });
     expect(asMod.find((i) => i.text === 'named')).not.toHaveProperty('accountId');

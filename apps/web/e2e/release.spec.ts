@@ -50,8 +50,8 @@ async function open(page: Page, extra = '', o: { warned?: boolean } = {}): Promi
 const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fEscrowCalls ?? []);
 const TX = 'ab'.repeat(32);
 const NOW = '2026-10-25T12:00:00.000Z';
-const ME = { displayName: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
-/** Task 3's ZELLE profile (data/payment-method-profiles.json on wip/second-p3-t3) plus the display name. */
+const ME = { tradeTag: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
+/** Task 3's ZELLE profile (data/payment-method-profiles.json on wip/second-p3-t3) plus the Trade Tag. */
 const ZELLE = {
   id: 'ZELLE',
   name: 'Zelle',
@@ -72,7 +72,7 @@ function view(over: View = {}): View {
     role: 'seller',
     poster: 'seller',
     state: 'paid',
-    counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { tradeTag: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: 'ZELLE',
     profile: ZELLE,
     amountAtomic: '1250000000000',
@@ -122,7 +122,7 @@ const BUYER_RELEASED = (over: View = {}) =>
     txHash: TX,
     closedAt: NOW,
     confirmBy: null,
-    counterparty: { displayName: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
     ...over,
   });
 
@@ -519,10 +519,10 @@ test.describe('phone sizes', () => {
       expect(await escrowCalls(page)).toEqual(['release']);
     });
 
-    test(`SellerConfirm at ${vp.width}x${vp.height} with a 20-character display name: the hold's lines are not clipped`, async ({ page }) => {
+    test(`SellerConfirm at ${vp.width}x${vp.height} with a 20-character Trade Tag: the hold's lines are not clipped`, async ({ page }) => {
       await page.setViewportSize(vp);
       const long = 'abcdefghij_klmnopqrs';
-      await stub(page, { trade: view({ counterparty: { displayName: long, completedTrades: 0, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] } }) });
+      await stub(page, { trade: view({ counterparty: { tradeTag: long, completedTrades: 0, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] } }) });
       await open(page);
       await expect(hold(page)).toContainText(`Hold to release 1.250000 XMR to ${long}`);
       const clipped = await hold(page).evaluate((b) => [...b.children].some((c) => c.scrollWidth > c.clientWidth || c.getBoundingClientRect().bottom > b.getBoundingClientRect().bottom + 0.5));

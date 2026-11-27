@@ -151,7 +151,7 @@ describe('SellerRefund: the board copy (owner 8 Nov: nudges optional, no final a
   });
 
   it('never shows a login name: only the public name the view carries', () => {
-    const { host } = mount(sellerView({ counterparty: { ...sellerView().counterparty, displayName: 'Mira.K_' } }));
+    const { host } = mount(sellerView({ counterparty: { ...sellerView().counterparty, tradeTag: 'Mira.K_' } }));
     expect(host.textContent).toContain('Selling to Mira.K_');
   });
 

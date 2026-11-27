@@ -12,7 +12,6 @@ import { ApiCallError, api } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
 import { refusalText } from './auth/refusals.js';
-import { isCantDoCode, walletRenameCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import type { WalletView } from './wallets-model.js';
 import { RENAME, walletNameHelp } from './walletsCopy.js';
 
@@ -27,15 +26,12 @@ export function RenameSheet({
   addresses = [wallet.address],
   onClose,
   onRenamed,
-  onRefused,
 }: {
   wallet: WalletView;
   /** The account's addresses this screen has (verification review: the name may not spell their ends). */
   addresses?: readonly string[];
   onClose: () => void;
   onRenamed: (label: string) => void;
-  /** A refusal by a rule (403 `weak-session`, security review Medium 2): the screen shows it in CantDoThat. */
-  onRefused: (r: { code: CantDoCode; text: string }) => void;
 }) {
   const [name, setName] = useState(wallet.label);
   const [saving, setSaving] = useState(false);
@@ -55,9 +51,7 @@ export function RenameSheet({
       onRenamed(clean);
     } catch (e) {
       const code = e instanceof ApiCallError ? e.code : null;
-      const refused = isCantDoCode(code) ? walletRenameCantDoText(code) : null;
-      if (refused !== null && isCantDoCode(code)) onRefused({ code, text: refused });
-      else if (code === 'not-found') setError(RENAME.gone);
+      if (code === 'not-found') setError(RENAME.gone);
       else if (code === 'bad-request') setError(walletNameHelp(name, addresses) ?? RENAME.failed);
       else if (code === 'slow-down') setError(RENAME.capped);
       else setError(refusalText(e, RENAME.failed));

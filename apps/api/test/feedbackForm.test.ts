@@ -2,7 +2,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { requireSession } from '../src/auth/sessions.js';
 import { FEEDBACK_FORM_DAILY, FEEDBACK_FORM_MIN_GAP_S, SendGap, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -18,10 +17,10 @@ let deps: Deps;
 let setNow: (d: Date) => void;
 let logs: string[];
 
-async function login(name: string, o: { level?: 'full' | 'recovery'; kind?: 'trader' | 'staff' } = {}): Promise<{ b: Browser; id: string }> {
+async function login(name: string, o: { method?: 'passkey' | 'recovery-code'; kind?: 'trader' | 'staff' } = {}): Promise<{ b: Browser; id: string }> {
   const id = await seedAccount(deps, { loginName: name, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
-  expect((await b.post('/t/login', { accountId: id, ...(o.level ? { level: o.level } : {}) })).statusCode).toBe(200);
+  expect((await b.post('/t/login', { accountId: id, ...(o.method ? { method: o.method } : {}) })).statusCode).toBe(200);
   return { b, id };
 }
 
@@ -31,8 +30,6 @@ const rows = async () =>
 beforeAll(async () => {
   ({ app, deps, setNow, logs } = await testApp());
   addTestLogin(app, deps);
-  // A recovery-allowed route without allowHeld, to show a held session really is held.
-  app.post('/t/held-check', { preHandler: requireSession({ allowRecovery: true }) }, async () => ({}));
 });
 afterAll(async () => app.close());
 beforeEach(async () => {
@@ -146,15 +143,6 @@ describe('POST /v1/feedback/form', () => {
     expect(after.rows[0]!.last_seen_at.getTime()).toBe(before.rows[0]!.last_seen_at.getTime());
   });
 
-  it('takes a HELD backup session too: the recorded allowHeld exception (review M2)', async () => {
-    const { b, id } = await login('held1', { level: 'recovery' });
-    await deps.db.query("update sessions set hold_until = $2 where account_id = $1", [id, new Date(T0.getTime() + 86_400_000)]);
-    // The hold is real: a held route refuses this session.
-    expect((await b.post('/t/held-check')).json()).toMatchObject({ error: 'recovery-hold' });
-    expect((await b.post('/v1/feedback/form', { kind: 'complaint', text: 'held', anonymous: false })).statusCode).toBe(202);
-    expect((await rows()).map((r) => r.account_id)).toEqual([id]);
-  });
-
   it('a failed insert does not use up a send (review M3)', async () => {
     const base = Date.parse('2026-11-15T12:00:00Z');
     // One send per FEEDBACK_FORM_MIN_GAP_S per person: every try below is spaced out.
@@ -200,12 +188,12 @@ describe('POST /v1/feedback/form', () => {
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'é'.repeat(2000), anonymous: true, from: null })).statusCode).toBe(202);
   });
 
-  it('needs a trader session, but takes a backup (recovery) session: a refused person may want to say so', async () => {
+  it('needs a trader session, and takes a recovery-code login', async () => {
     const anon = await app.inject({ method: 'POST', url: '/v1/feedback/form', headers: { origin: ORIGIN }, payload: { kind: 'feedback', text: 'x', anonymous: true } });
     expect(anon.statusCode).toBe(401);
     const { b: staff } = await login('staff1', { kind: 'staff' });
     expect((await staff.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).json()).toEqual({ error: 'wrong-account-kind' });
-    const { b: backup } = await login('backup1', { level: 'recovery' });
+    const { b: backup } = await login('backup1', { method: 'recovery-code' });
     expect((await backup.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(202);
   });
 
@@ -245,10 +233,10 @@ describe('POST /v1/feedback/form', () => {
     setNow(new Date('2026-12-03T10:00:00Z'));
     const { b: owner, id: teamId } = await login('teamfb1');
     const member = async (i: number) => {
-      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, displayName: `fb-m-${i}`, kind: 'member' });
+      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, tradeTag: `fb-m-${i}`, kind: 'member' });
       const name = `FbMember${i}`;
       await deps.db.query(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $5, $5)`,
         [teamId, name, name.toLowerCase(), rolesToAbilities(['offers']), deps.clock(), loginId],
       );

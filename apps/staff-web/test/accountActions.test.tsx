@@ -1,15 +1,14 @@
 // @vitest-environment happy-dom
 // Spec 6.6 "Account actions" (Plan 4 Task 27): the Accounts page, ModCase's Account actions card and
 // the owner's Reset security, against a fake staff API in the shapes of apps/api/src/staff/
-// accountLookup.ts, bans.ts, holds.ts and invites.ts. Every action has a sheet saying exactly what
-// happens; bans and lifts are tapped (ban-account, lift-ban), the holds are not (the API takes no
-// tap); the role gates match the API's (accounts.ban, accounts.freeze: senior moderators and the
-// owner; reset-security: the owner only).
+// accountLookup.ts, bans.ts and invites.ts. Every action has a sheet saying exactly what happens;
+// bans and lifts are tapped (ban-account, lift-ban); the role gates match the API's (accounts.ban:
+// senior moderators and the owner; reset-security: the owner only).
 import { BAN_RULES, NAV, inviteTokenHash } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { banBody, banUntil, holdExtendUntil, statusLines } from '../src/screens/AccountActions.js';
+import { banBody, banUntil, statusLines } from '../src/screens/AccountActions.js';
 import { describeLog } from '../src/screens/logModel.js';
 import { button, cleanup, click, fakeApi, field, honestTapStart, refused, render, settle, tick, typeInto } from './helpers.js';
 
@@ -19,17 +18,17 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 const H = 3_600_000;
 const DAY = 24 * H;
 const ends = () => new Date(Date.now() + H).toISOString();
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, grants: ['accounts.ban', 'accounts.unban'], sessionEndsAt: ends() };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: NAV.senior, grants: ['accounts.ban', 'accounts.unban'], sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
 const ACCT = '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const SELLER = '1b2c3d4e-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const BAN = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
 const CODE = '7RWD3MXEKQ84HN2T';
 
 const account = (o: Record<string, unknown> = {}) => ({
-  accountId: ACCT, displayName: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97,
-  disputes: { won: 1, lost: 2 }, stage: 'graduated', status: { bans: [], hold: null, frozen: false, lien: false }, ...o,
+  accountId: ACCT, tradeTag: 'harbor_lin', matchedBy: 'name', side: null, completedTrades: 30, positivePct: 97,
+  disputes: { won: 1, lost: 2 }, stage: 'graduated', status: { bans: [], frozen: false, lien: false }, ...o,
 });
 const bans = (o: Record<string, unknown> = {}) => ({ priorOffences: 0, bans: [], rules: BAN_RULES, ...o });
 const TAPS = { 'POST /staff/v1/taps/start': honestTapStart('tap-1'), 'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } } };
@@ -51,7 +50,7 @@ async function open(path: string) {
 }
 
 async function lookUp(q: string) {
-  typeInto(field('Display name or trade code'), q);
+  typeInto(field('Trade Tag or trade code'), q);
   await click(button('Look up'));
   // The lookup, then each card's own bans read.
   await settle();
@@ -62,11 +61,9 @@ beforeEach(() => {
 });
 
 describe('helpers', () => {
-  it('a ban end is an exact ISO instant with milliseconds; a hold extension stops at 30 days from now', () => {
+  it('a ban end is an exact ISO instant with milliseconds', () => {
     const now = new Date('2026-11-26T12:00:00.000Z');
     expect(banUntil(7, now)).toBe('2026-12-03T12:00:00.000Z');
-    expect(holdExtendUntil('2026-11-27T12:00:00.000Z', 3, now)).toBe('2026-11-30T12:00:00.000Z');
-    expect(holdExtendUntil('2026-12-24T12:00:00.000Z', 7, now)).toBeNull();
   });
   it('the ban body says what happens: a trade ban lets open trades finish; a permanent site ban puts names and keys on the ban list', () => {
     const rule = BAN_RULES.find((r) => r.id === 'scamming')!;
@@ -77,18 +74,16 @@ describe('helpers', () => {
     expect(site).toContain('"Problems in trades"');
     expect(site).toContain('never the rule or your note');
   });
-  it('the status lines: bans with their end and general reason, a hold, a freeze and a lien', () => {
+  it('the status lines: bans with their end and general reason, a freeze and a lien', () => {
     const lines = statusLines(account({
       status: {
         bans: [{ id: BAN, kind: 'site', reasonCode: 'abuse', until: null, permanent: true }],
-        hold: { until: '2026-11-27T12:00:00.000Z', reason: 'recovery-code' },
         frozen: true,
         lien: true,
       },
     }) as never);
     expect(lines).toEqual([
       'Site ban, Permanent: Abuse of other traders',
-      'Account hold until 2026-11-27 12:00 UTC, after a login with a recovery code',
       'Frozen in a dispute',
       'Lien: until it is repaid, what they receive in their trades goes to the person owed',
     ]);
@@ -99,7 +94,7 @@ describe('the activity log', () => {
   it('words a lookup, by the account found or none', () => {
     const actor = { kind: 'staff', role: 'senior', id: 's-1', name: 'sarah.v' } as const;
     expect(describeLog({ action: 'account.looked-up', detail: { by: 'code', accountId: ACCT }, actor }, { [ACCT]: 'harbor_lin' })).toBe('Looked up harbor_lin by trade code');
-    expect(describeLog({ action: 'account.looked-up', detail: { by: 'name', found: 0 }, actor })).toBe('Looked up an account by display name; none matched');
+    expect(describeLog({ action: 'account.looked-up', detail: { by: 'name', found: 0 }, actor })).toBe('Looked up an account by Trade Tag; none matched');
   });
 });
 
@@ -143,7 +138,7 @@ describe('the Accounts page (spec 6.6)', () => {
     await lookUp('harbor_lin');
     expect(api.calls.find((c) => c.path.startsWith('/staff/v1/accounts/lookup'))!.path).toBe('/staff/v1/accounts/lookup?q=harbor_lin');
     expect(part('account-reputation')?.textContent).toBe('30 trades · 97% positive · Disputes: 1 won, 2 lost');
-    expect(part('account-status')?.textContent).toBe('No ban, hold, freeze or lien.');
+    expect(part('account-status')?.textContent).toBe('No ban, freeze or lien.');
     expect(button('Ban harbor_lin')).toBeDefined();
     await lookUp('nobody');
     expect(part('lookup-empty')?.textContent).toContain('"nobody"');
@@ -153,7 +148,7 @@ describe('the Accounts page (spec 6.6)', () => {
     let placed: Record<string, unknown> | null = null;
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
-      'GET /staff/v1/accounts/lookup': () => ({ body: { accounts: [account(placed ? { status: { bans: [{ id: placed.banId, kind: 'trade', reasonCode: 'abuse', until: placed.until, permanent: false }], hold: null, frozen: false, lien: false } } : {})] } }),
+      'GET /staff/v1/accounts/lookup': () => ({ body: { accounts: [account(placed ? { status: { bans: [{ id: placed.banId, kind: 'trade', reasonCode: 'abuse', until: placed.until, permanent: false }], frozen: false, lien: false } } : {})] } }),
       'GET /staff/v1/accounts/:id/bans': { body: bans() },
       ...TAPS,
       'POST /staff/v1/accounts/:id/bans': (b) => {
@@ -245,7 +240,7 @@ describe('the Accounts page (spec 6.6)', () => {
     const active = { id: BAN, kind: 'site', ruleId: 'abuse', reasonCode: 'abuse', until: null, permanent: true, note: 'Doxxed a seller', createdAt: '2026-11-20T10:00:00.000Z', endedAt: null, liftedAt: null, active: true };
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
-      'GET /staff/v1/accounts/lookup': { body: { accounts: [account({ status: { bans: [{ id: BAN, kind: 'site', reasonCode: 'abuse', until: null, permanent: true }], hold: null, frozen: false, lien: false } })] } },
+      'GET /staff/v1/accounts/lookup': { body: { accounts: [account({ status: { bans: [{ id: BAN, kind: 'site', reasonCode: 'abuse', until: null, permanent: true }], frozen: false, lien: false } })] } },
       'GET /staff/v1/accounts/:id/bans': { body: bans({ priorOffences: 1, bans: [active] }) },
       ...TAPS,
       'POST /staff/v1/accounts/:id/bans/:banId/lift': { body: { ...active, active: false, liftedAt: new Date().toISOString() } },
@@ -260,36 +255,10 @@ describe('the Accounts page (spec 6.6)', () => {
     expect(api.calls.find((c) => c.path.endsWith('/lift'))).toMatchObject({ path: `/staff/v1/accounts/${ACCT}/bans/${BAN}/lift`, body: { tapId: 'tap-1' } });
   });
 
-  it('extends a hold after a confirm sheet; ends it, optionally saying staff reached them on secure Jabber', async () => {
-    const holdEnd = new Date(Date.now() + DAY).toISOString();
-    const api = fakeApi({
-      'GET /staff/v1/me': { body: SENIOR },
-      'GET /staff/v1/accounts/lookup': { body: { accounts: [account({ status: { bans: [], hold: { until: holdEnd, reason: 'recovery-code' }, frozen: false, lien: false } })] } },
-      'GET /staff/v1/accounts/:id/bans': { body: bans() },
-      'POST /staff/v1/accounts/:id/hold/extend': (b) => ({ body: { holdUntil: (b as { until: string }).until } }),
-      'POST /staff/v1/accounts/:id/hold/end': { status: 204 },
-    });
-    await open('/accounts');
-    await lookUp('harbor_lin');
-    await click(button('Extend the hold'));
-    const want = new Date(Date.parse(holdEnd) + 3 * DAY).toISOString();
-    await pick('hold-days', want);
-    await click(button('Review the extension'));
-    expect(part('account-confirm')?.textContent).toContain("can't trade or change their security");
-    expect(api.calls.some((c) => c.path.endsWith('/hold/extend'))).toBe(false);
-    await click(button('Extend the hold', part('account-confirm')!));
-    expect(api.calls.find((c) => c.path.endsWith('/hold/extend'))?.body).toEqual({ until: want });
-
-    await click(button('End the hold'));
-    expect(part('account-confirm')?.textContent).toContain('dropped, not applied');
-    await tick(document.querySelector('[data-part="hold-jabber"]'));
-    await click(button('End the hold', part('account-confirm')!));
-    expect(api.calls.find((c) => c.path.endsWith('/hold/end'))?.body).toEqual({ via: 'secure-jabber' });
-  });
 });
 
 describe('ModCase: Account actions', () => {
-  const trader = (name: string) => ({ displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
+  const trader = (name: string) => ({ tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
   const kase = () => ({
     code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: '',
     afterRefund: false, openedAt: new Date(Date.now() - 2 * H).toISOString(), replyDueAt: new Date(Date.now() + 2 * H).toISOString(),
@@ -306,7 +275,7 @@ describe('ModCase: Account actions', () => {
       'GET /staff/v1/me': { body: SENIOR },
       [`GET /staff/v1/disputes/${CODE}`]: { body: kase() },
       'GET /staff/v1/accounts/lookup': {
-        body: { accounts: [account({ matchedBy: 'code', side: 'seller', accountId: SELLER, displayName: 'quietfox' }), account({ matchedBy: 'code', side: 'buyer' })] },
+        body: { accounts: [account({ matchedBy: 'code', side: 'seller', accountId: SELLER, tradeTag: 'quietfox' }), account({ matchedBy: 'code', side: 'buyer' })] },
       },
       'GET /staff/v1/accounts/:id/bans': { body: bans() },
     });
@@ -342,8 +311,8 @@ describe('ModCase: Account actions', () => {
 describe('StaffList: Reset this member\'s security (owner, D-032)', () => {
   const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
   const MEMBERS = () => [
-    { accountId: 'o-1', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
-    { accountId: 'm-1', inviteId: null, displayName: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(H), openCases: 17, expiresAt: null, missingMethods: [] },
+    { accountId: 'o-1', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(20_000), openCases: 0, expiresAt: null, missingMethods: [] },
+    { accountId: 'm-1', inviteId: null, tradeTag: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(H), openCases: 17, expiresAt: null, missingMethods: [] },
   ];
   const row = (name: string) => [...document.querySelectorAll('table[aria-label="Staff"] tbody tr')].find((tr) => tr.querySelector('td')?.textContent === name)!;
 

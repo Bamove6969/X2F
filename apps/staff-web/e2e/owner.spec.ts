@@ -16,7 +16,7 @@ const MIN = 60_000;
 const H = 60 * MIN;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-const ME = { displayName: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const ME = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'prices', 'training', 'log', 'feedback', 'settings'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 
 /** One soft security key, already registered for localhost (its id goes in each tap's allowCredentials). */
 async function softKey(page: Page): Promise<string> {
@@ -44,14 +44,14 @@ async function softKey(page: Page): Promise<string> {
 function members() {
   const weekdays = { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], start: '09:00', end: '17:00', tz: 'UTC' };
   return [
-    { accountId: '00000000-0000-4000-8000-000000000001', inviteId: null, displayName: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(10_000), openCases: 0, expiresAt: null, missingMethods: [] },
-    { accountId: '00000000-0000-4000-8000-000000000002', inviteId: null, displayName: 'sarah.v', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-09-03T00:00:00Z', lastActiveAt: ago(12 * MIN + 10_000), openCases: 41, expiresAt: null, missingMethods: [] },
-    { accountId: '00000000-0000-4000-8000-000000000003', inviteId: null, displayName: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: weekdays, joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(2 * H + 10_000), openCases: 17, expiresAt: null, missingMethods: [] },
+    { accountId: '00000000-0000-4000-8000-000000000001', inviteId: null, tradeTag: 'lumen.k', role: 'owner', status: 'active', grants: [], hours: 'any', joinedAt: '2026-08-01T00:00:00Z', lastActiveAt: ago(10_000), openCases: 0, expiresAt: null, missingMethods: [] },
+    { accountId: '00000000-0000-4000-8000-000000000002', inviteId: null, tradeTag: 'sarah.v', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-09-03T00:00:00Z', lastActiveAt: ago(12 * MIN + 10_000), openCases: 41, expiresAt: null, missingMethods: [] },
+    { accountId: '00000000-0000-4000-8000-000000000003', inviteId: null, tradeTag: 'dmitri_k', role: 'mod', status: 'active', grants: [], hours: weekdays, joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: ago(2 * H + 10_000), openCases: 17, expiresAt: null, missingMethods: [] },
     {
-      accountId: '00000000-0000-4000-8000-000000000004', inviteId: null, displayName: 'tobi.w', role: 'helper', status: 'active', grants: [],
+      accountId: '00000000-0000-4000-8000-000000000004', inviteId: null, tradeTag: 'tobi.w', role: 'helper', status: 'active', grants: [],
       hours: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], start: '18:00', end: '23:00', tz: 'UTC' }, joinedAt: '2026-10-09T00:00:00Z', lastActiveAt: ago(30 * H), openCases: 0, expiresAt: null, missingMethods: [],
     },
-    { accountId: null, inviteId: '00000000-0000-4000-8000-0000000000a1', displayName: null, role: 'mod', status: 'waiting', grants: [], hours: weekdays, joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: new Date(Date.now() + 21 * H + 30 * MIN).toISOString(), missingMethods: [] },
+    { accountId: null, inviteId: '00000000-0000-4000-8000-0000000000a1', tradeTag: null, role: 'mod', status: 'waiting', grants: [], hours: weekdays, joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: new Date(Date.now() + 21 * H + 30 * MIN).toISOString(), missingMethods: [] },
   ];
 }
 

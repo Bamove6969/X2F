@@ -213,7 +213,7 @@ describe('the Terms text is pinned to its version', () => {
   // 2026-11-25b: owner demo note #189 (section 7 his #184 paragraph, section 6 the proofs' metadata, the key points): new version.
     // 2026-11-25c: the owner's full-length Terms (25 Nov, in chat after note #223): new version.
     // 2026-11-26: the owner's open-items walkthrough (26 Nov): new version.
-  const PIN = { version: '2026-11-26', sha256: '3d83a953fee8f1e3fbbec3fa84f8d392e5ccbee34d20c55bd7983f5dedf918e3' };
+  const PIN = { version: '2026-11-26b', sha256: '6a782154248bf6d242fcf0a1a598adb690be7a79daf20f5c20f5d3d400a39ece' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
@@ -453,7 +453,7 @@ describe('the Terms screen: the cards\' headings', () => {
     expect(full()).toBe('Full Terms of Service');
     await act(async () => answer({ version: TERMS_TEXT_VERSION }));
     expect(full()).toBe(`Full Terms of Service (Version ${TERMS_TEXT_VERSION})`);
-    expect(TERMS_TEXT_VERSION).toBe('2026-11-26');
+    expect(TERMS_TEXT_VERSION).toBe('2026-11-26b');
   });
 });
 

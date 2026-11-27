@@ -30,7 +30,7 @@ let n = 0;
 async function person(): Promise<Who> {
   const login = `rt${++n}${Math.random().toString(36).slice(2, 8)}`;
   const id = await seedAccount(deps, { loginName: login });
-  const { rows } = await deps.db.query<{ name: string }>('select display_name as name from accounts where id = $1', [id]);
+  const { rows } = await deps.db.query<{ name: string }>('select trade_tag as name from accounts where id = $1', [id]);
   return { id, token: (await insertSession(deps, id, 'trader')).token, name: rows[0]!.name };
 }
 const plus = (t: Date, days: number) => new Date(t.getTime() + days * DAY);

@@ -20,7 +20,7 @@ function json(status: number, body: unknown): Response {
 const ACCESS = {
   name: 'Aurora',
   chatLabel: 'Calcium Assistant 2',
-  lead: { displayName: 'Calcium' },
+  lead: { tradeTag: 'Calcium' },
   preset: null,
   groups: [
     {
@@ -46,14 +46,13 @@ beforeEach(() => {
     fetched.push(url);
     if (url === '/v1/account/me') {
       return json(200, {
-        kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['pgp'], accountType: 'vendor', pendingChanges: null,
+        kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['pgp'], accountType: 'vendor',
         member: isMember ? { name: 'Aurora', roles: ['trades'], abilities: ['trades-see-active'] } : null,
       });
     }
     if (url === '/v1/team/me') return json(teamMe.status, teamMe.body);
-    if (url === '/v1/account/hold') return json(200, { level: 'none', count: 0, changes: [] });
     if (url === '/v1/account/methods') return json(200, [{ method: 'pgp', registered: true }]);
-    if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: [], password: 'works', waitHours: 0 });
+    if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: ['pgp'] });
     return json(404, { error: 'not-found' });
   });
 });

@@ -29,8 +29,6 @@ export class Semaphore {
   }
 }
 
-/** Process-wide: Argon2 hashing is bounded by CPU, not by any one app instance. */
-export const ARGON2_SLOTS = new Semaphore(4, 32);
 
 /**
  * An in-memory token bucket (never persisted, so per API process; a restart refills it); an empty
@@ -71,14 +69,9 @@ export interface BucketSize {
 
 /** `/v1/register/*` finishing routes. */
 export const REGISTER_BUCKET: BucketSize = { capacity: 20, perMinute: 20 };
-/** All `/v1/login/*` and `/v1/register/*\/start` routes and `login/password`. */
+/** All `/v1/login/*` and `/v1/register/*\/start` routes. */
 export const START_BUCKET: BucketSize = { capacity: 120, perMinute: 120 };
 
-/**
- * `PUT /v1/account/password`, per session (Plan 2 Task 17 review round 3, R3-I1): a refused change
- * costs a session one try, so a loop against the hold runs dry instead of racing the owner's login.
- */
-export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
 
 /**
  * `POST /v1/account/approvals/:id`, per session (Plan 2 Task 17 review round 4, R4-I1): a refused
@@ -258,8 +251,6 @@ export interface Budgets {
   nameCheckShed: TokenBucket;
   /** The same per device cookie, in this process only: the shed in front of `name-check:dev:<hash>`. */
   nameCheckDeviceShed: KeyedBuckets;
-  /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
-  securityChange: KeyedBuckets;
   /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
   approvalDecision: KeyedBuckets;
   /** Per account. */
@@ -300,7 +291,6 @@ export function newBudgets(clock: () => Date): Budgets {
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
     nameCheckShed: new TokenBucket(NAME_CHECK_BUCKET.capacity, NAME_CHECK_BUCKET.perMinute, clock),
     nameCheckDeviceShed: new KeyedBuckets(NAME_CHECK_DEVICE_BUCKET, clock),
-    securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
     chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),

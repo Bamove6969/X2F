@@ -33,7 +33,7 @@ export const TICKET_KEEP_DAYS = 90;
  * "whatever credentials they still have"). Only the kind is ever sent or kept, never a secret: the
  * form has no login, so it must never check, store or echo a password, a code or a key.
  */
-export const COMPROMISED_METHODS = ['password', 'passkey', 'security-key', 'pgp', 'authenticator', 'recovery-code'] as const;
+export const COMPROMISED_METHODS = ['passkey', 'security-key', 'pgp', 'authenticator', 'recovery-code'] as const;
 export type CompromisedMethod = (typeof COMPROMISED_METHODS)[number];
 
 /**

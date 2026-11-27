@@ -27,38 +27,28 @@ describe('adding a wallet', () => {
     expect(run).toHaveBeenLastCalledWith('tok');
   });
 
-  it('ConfirmSheet is one dialog, explains the wallet wait, and returns the password-confirm token', async () => {
+  it('ConfirmSheet is one dialog, says the wallet works at once, and offers only keys (owner, 26 Nov 2026)', async () => {
     const action = await walletAction(ADDRESS);
-    const rule = { firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 };
+    const rule = { firstWallet: false, strongMethods: ['pgp'] };
     const fetchMock = vi.fn(async (url: string) =>
-      new Response(JSON.stringify(url === '/v1/wallets/rule' ? rule : { confirmToken: 't1' }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      new Response(JSON.stringify(url === '/v1/wallets/rule' ? rule : { challengeId: 'c1', encryptedMessage: 'MSG' }), { status: 200, headers: { 'content-type': 'application/json' } }),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const onToken = vi.fn();
-    render(<ConfirmSheet action={action} methods={['password']} onToken={onToken} onCancel={() => undefined} />);
+    render(<ConfirmSheet action={action} methods={['pgp', 'totp']} onToken={() => undefined} onCancel={() => undefined} />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
 
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.querySelector('[data-part="action"]')?.textContent).toContain('end999');
-    expect(document.querySelector('[data-part="wallet-wait"]')?.textContent).toContain('will work 24 hours after you add it');
-
-    const input = document.querySelector<HTMLInputElement>('#confirm-password')!;
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-    act(() => {
-      setValue.call(input, 'Correct-Horse-9!');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const confirm = [...document.querySelectorAll('[data-method="password"] button')].find((b) => b.textContent === 'Confirm')!;
-    fire(confirm, new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('[data-part="wallet-wait"]')?.textContent).toBe('Confirm with your PGP key and this wallet works at once.');
+    expect(document.querySelector('[data-method="password"]')).toBeNull();
+    expect(document.querySelector('#confirm-totp')).toBeNull();
+    fire(document.querySelector('[data-method="pgp"]')!, new MouseEvent('click', { bubbles: true }));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-
-    expect(onToken).toHaveBeenCalledWith('t1');
-    const [url, init] = fetchMock.mock.calls.find((c) => c[0] === '/v1/confirm/password') as unknown as [string, RequestInit];
-    expect(url).toBe('/v1/confirm/password');
-    expect(JSON.parse(init.body as string)).toEqual({ password: 'Correct-Horse-9!', action });
+    expect(fetchMock.mock.calls.some((c) => c[0] === '/v1/confirm/pgp/start')).toBe(true);
+    expect(document.querySelector('[data-part="pgp-message"]')?.textContent).toBe('MSG');
   });
 });

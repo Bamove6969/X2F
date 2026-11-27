@@ -3,7 +3,7 @@ import { ApiError } from '../errors.js';
 import { listFeedbackForm } from '../feedback/form.js';
 import { feedbackMoodCounts, listFeedback } from '../feedback/mood.js';
 import { blurCheckCounts, listBlurChecks } from '../proof/blurCheck.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { requireStaff } from './guard.js';
 import { log } from './members.js';
 
@@ -28,7 +28,7 @@ const nextOf = (items: readonly { createdOn: string; id: string }[]) => {
  * Plan 5 Tasks 4 and 21 on the staff API (perm `feedback.read`: the owner and senior moderators by
  * role, moderators and helpers when the owner ticks it, owner Q60). D-058 (owner G20, "named shows
  * the account so staff can follow up"; lead 12 Nov, replacing lead review 7 Nov M5): a named form
- * row carries its `accountId` and the account's public display name (`accountName`, never the
+ * row carries its `accountId` and the account's public Trade Tag (`accountName`, never the
  * login name) for everyone who reads feedback, and every opening of the list is logged
  * (`feedback.form-opened`) so the owner can see who looked.
  * - `GET /staff/v1/feedback?before` → `{ items: { id, mood, note, createdOn }[], counts, next }`,
@@ -81,7 +81,7 @@ export function staffFeedbackRoutes(app: FastifyInstance): void {
       const rows = await listFeedbackForm(db, before ? { before } : {});
       // D-058: the list names senders, so the session's first opening in the window is logged with how many it named.
       if (due) await withTx(db, (c) => log(c, req, 'feedback.form-opened', { namedRows: rows.filter((i) => i.accountId !== null).length }));
-      // Review m1 (lead 12 Nov): the sender's public display name only; the raw account id never leaves the API.
+      // Review m1 (lead 12 Nov): the sender's public Trade Tag only; the raw account id never leaves the API.
       const items = rows.map((r) => ({ id: r.id, kind: r.kind, text: r.text, accountName: r.accountName, from: r.from, createdOn: r.createdOn }));
       return { items, next: nextOf(rows) };
     } catch (e) {

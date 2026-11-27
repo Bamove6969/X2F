@@ -10,11 +10,11 @@
  * - The member signs up with the code: a login name of their own and two factors by the staff rule
  *   (*lead default*, owner may change): always a PGP key first, then a security key, a passkey or a
  *   second PGP key. Never a password, an authenticator code or recovery codes. Their login is an
- *   `accounts` row of kind `member`; its display name is a random placeholder nobody sees.
+ *   `accounts` row of kind `member`; its Trade Tag is a random placeholder nobody sees.
  * - Removing a member ends their sessions at once and deletes their login (review M6).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { checkNewDisplayName, checkNewLoginName, staffNameKey } from '@x2f/accounts';
+import { checkNewTradeTag, checkNewLoginName, staffNameKey } from '@x2f/accounts';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -22,13 +22,13 @@ import { createAccount, type NewNames } from '../accounts.js';
 import type { TermsSignature } from '../termsSignature.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
+import { ESCROW_KEYS_ABILITY, dropMemberWraps } from '../escrowSync/store.js';
 import { ApiError } from '../errors.js';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type LiveSession, type SettleDeps } from '../auth/hold.js';
-import { waits } from '../auth/strength.js';
+import { requireLiveSessionInTx, type LiveSession } from '../auth/liveSession.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { assertVendor } from '../routes/accountType.js';
-import { hasAbility, isCustomSet, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
+import { hasAbility, isCustomSet, legacyRoles, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
 import { assistantLabel } from './label.js';
 import { applyLimits, bandOf, bandView, storedHours, type LoginHours, type MemberLimits, type TradeBandView } from './limits.js';
 import { MAX_TEAM_MEMBERS, STREAM_ABILITY, TRADE_PART_ABILITY } from './perms.js';
@@ -47,7 +47,7 @@ export type MemberStatus = 'invited' | 'joining' | 'active';
 
 export interface TeamMemberView {
   id: string;
-  displayName: string;
+  tradeTag: string;
   /** The member's ticked boxes, in catalogue order (team/abilities.ts). */
   abilities: string[];
   /** The preset the boxes match exactly, or null ("Custom"). */
@@ -58,7 +58,7 @@ export interface TeamMemberView {
   custom: boolean;
   status: MemberStatus;
   /**
-   * Owner p11-25 (S-105): how trade chats show this member, "<the lead's display name> Assistant N"
+   * Owner p11-25 (S-105): how trade chats show this member, "<the lead's Trade Tag> Assistant N"
    * (team/label.ts); never the member's own name.
    */
   chatLabel: string;
@@ -83,14 +83,14 @@ export const LIVE_MEMBER = `removed_at is null and (joined_at is not null or inv
 
 interface MemberRow {
   id: string;
-  display_name: string;
+  trade_tag: string;
   abilities: string[];
   member_account_id: string | null;
   joined_at: Date | null;
   invite_expires_at: Date;
   created_at: Date;
   assistant_no: number;
-  /** The team account's display name (read by `MEMBER_COLS`). */
+  /** The team account's Trade Tag (read by `MEMBER_COLS`). */
   lead_name: string;
   band_min_atomic: string | null;
   band_max_atomic: string | null;
@@ -98,15 +98,15 @@ interface MemberRow {
 }
 
 /** The columns a `MemberRow` reads (in a query on `team_members`, unaliased). */
-const MEMBER_COLS = `id, display_name, abilities, member_account_id, joined_at, invite_expires_at, created_at, assistant_no,
-  (select a.display_name from accounts a where a.id = team_members.account_id) as lead_name,
+const MEMBER_COLS = `id, trade_tag, abilities, member_account_id, joined_at, invite_expires_at, created_at, assistant_no,
+  (select a.trade_tag from accounts a where a.id = team_members.account_id) as lead_name,
   band_min_atomic::text, band_max_atomic::text, hours`;
 
 function toView(r: MemberRow): TeamMemberView {
   const status: MemberStatus = r.joined_at !== null ? 'active' : r.member_account_id !== null ? 'joining' : 'invited';
   return {
     id: r.id,
-    displayName: r.display_name,
+    tradeTag: r.trade_tag,
     ...abilitiesView(r.abilities),
     custom: isCustomSet(r.abilities),
     status,
@@ -130,18 +130,18 @@ export async function listMembers(db: Queryable, accountId: string, now: Date): 
 }
 
 /**
- * A member's name, as chat labels show it: the new-display-name rules (8–20 characters, owner note #127; no
+ * A member's name, as chat labels show it: the new-trade-tag rules (8–20 characters, owner note #127; no
  * spaces; no reserved words, with look-alikes) and no look-alike of a staff or owner name
- * (F4), so a label can never read like X2F staff. 400 `display-name-invalid` / `display-name-reserved`.
- * Unique within the team only (the unique index; 409 `display-name-taken`).
+ * (F4), so a label can never read like X2F staff. 400 `trade-tag-invalid` / `trade-tag-reserved`.
+ * Unique within the team only (the unique index; 409 `trade-tag-taken`).
  */
 export async function checkMemberName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
-  const r = checkNewDisplayName(typeof raw === 'string' ? raw : '');
-  if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
+  const r = checkNewTradeTag(typeof raw === 'string' ? raw : '');
+  if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'trade-tag-reserved' : 'trade-tag-invalid');
   // F4, review of third-signup-r3 M2: punctuation and spaces are ignored too (staffNameKey).
   const folded = staffNameKey(r.key);
   const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
-  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  if (rows.some((s) => staffNameKey(s.display_key) === folded)) throw new ApiError(400, 'trade-tag-reserved');
   return { name: r.name, key: r.key };
 }
 
@@ -162,95 +162,58 @@ async function inTransaction<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T
   }
 }
 
-/**
- * The calling session (`req.auth`) and its settle deps (`settleOf(req)`): every write below
- * re-checks, first in its transaction, that the session is still live and the account not held.
- */
+/** The calling session (`req.auth`): every write below re-checks, first in its transaction, that it is still live. */
 export interface Caller {
   accountId: string;
   sessionId: string;
-  settle: SettleDeps;
 }
 
 /**
  * First in each team write's transaction: the account lock and a live calling session
- * (`requireLiveSessionInTx`, 401 `not-authenticated`; `LIVE_SESSION_ROUTES`), then no running
- * hold: owner 2026-10-30, during a 24-hour hold every team change waits (invites, role changes and
- * removals alike), refused with 403 `recovery-hold` `{ holdUntil }` as the other changes refused
- * during a hold (`HOLD_BLOCKED_ROUTES`; the routes also carry `requireNotHeld`, so no confirm
- * token is spent). A hold whose time is up ends here (`holdInTx`) and the change goes ahead.
- *
- * `strong` (owner 1 Nov 2026, landing review I1): changing a member's boxes at once, and an invite
- * that carries its boxes at once, need a strong session (`waits(strength)` false, strength.ts), so
- * a weak foothold (a password and a copied device cookie) cannot give a member login any box
- * before the 24 h are up. A weak session gets 403 `weak-session`. Removal needs no strong session
- * (it only takes access away). Owner p11-21 (S-104, 9 Nov 2026): a weak session's invite is not
- * refused: it goes out with no boxes and the boxes wait 24 h (`createInvite`'s `stage`); that
- * path passes `strong: false, vendor: true`.
- *
- * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
- * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
- * asked for during a hold waits for its end has no case left. A role change by a username-and-
- * password session is staged and waits 24 h (routes/team.ts, `gateChange`). A removal by one is staged
- * too and the member keeps their access until it applies (owner p5-7, 7 Nov, replacing G5).
+ * (`requireLiveSessionInTx`, 401 `not-authenticated`; `LIVE_SESSION_ROUTES`). Owner 2 Nov 2026:
+ * team members are for vendor accounts only. Inviting and changing boxes need a vendor (403
+ * `not-vendor`); a trader's team from before migration 198 can still be removed.
  */
-async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean; vendor?: boolean }): Promise<LiveSession> {
+async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { vendor: boolean }): Promise<LiveSession> {
   const live = await requireLiveSessionInTx(c, caller, now);
-  const hold = await holdInTx(c, caller.settle, caller.accountId, now);
-  if (hold !== null) throw holdRefusal(hold.holdUntil);
-  if (o.strong && waits(live.strength)) throw weakRefusal();
-  // Owner 2 Nov 2026: team members are for vendor accounts only. Inviting and changing roles need
-  // a vendor (403 `not-vendor`); a trader's team from before migration 198 can still be removed.
-  if (o.vendor ?? o.strong) await assertVendor(c, caller.accountId);
+  if (o.vendor) await assertVendor(c, caller.accountId);
   return live;
 }
 
 /**
  * Creates an invite for the account (the account owner's session; `requireSession` already
  * refused members). The account row is locked first (`ownerWriteGate`: 401 when the calling
- * session was revoked meanwhile, 403 `recovery-hold` during a hold, 403 `weak-session` for a
- * session that is not strong), so two invites cannot both pass the count.
+ * session was revoked meanwhile), so two invites cannot both pass the count.
  * Invites past their time are closed first (they no longer count and free their names). 409
- * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `display-name-taken` for a name already in the team.
- *
- * Owner p11-21 (S-104, 9 Nov 2026): from a username-and-password session the route passes `stage`
- * (its `gateChange` for a `team-abilities` change of the new member). The invite then goes out at
- * once with no boxes (migration 390 allows the empty set; no request can ask for it) and `stage`
- * stages `a.abilities` as the session's draft, which applies 24 h after it is submitted (hold
- * v3). Null from `stage` (a session that would apply the change at once: inside its sign-up window)
- * is 403 `weak-session` and nothing is written.
+ * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `trade-tag-taken` for a name already in the team.
+
  */
 export async function createInvite(
   deps: Pick<Deps, 'db' | 'clock'>,
   caller: Caller,
   a: { name: { name: string; key: string }; abilities: string[] },
-  stage?: (c: Queryable, memberId: string) => Promise<{ changeId: string } | null>,
-): Promise<{ id: string; code: string; expiresAt: string; staged: { changeId: string } | null }> {
+): Promise<{ id: string; code: string; expiresAt: string }> {
   const { accountId } = caller;
   const now = deps.clock();
   const code = randomBytes(32).toString('base64url');
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
   try {
     const out = await inTransaction(deps.db, async (c) => {
-      await ownerWriteGate(c, caller, now, stage ? { strong: false, vendor: true } : { strong: true });
+      await ownerWriteGate(c, caller, now, { vendor: true });
       await closeExpiredInvites(c, now, accountId);
       const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
       if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
       const { rows } = await c.query<{ id: string }>(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_hash, invite_expires_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_hash, invite_expires_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [accountId, a.name.name, a.name.key, stage ? [] : a.abilities, inviteHash(code), expiresAt, now],
+        [accountId, a.name.name, a.name.key, a.abilities, inviteHash(code), expiresAt, now],
       );
-      const id = rows[0]!.id;
-      if (!stage) return { id, staged: null };
-      const staged = await stage(c, id);
-      if (staged === null) throw weakRefusal();
-      return { id, staged };
+      return rows[0]!.id;
     });
-    return { id: out.id, code, expiresAt: expiresAt.toISOString(), staged: out.staged };
+    return { id: out, code, expiresAt: expiresAt.toISOString() };
   } catch (e) {
     if ((e as { code?: string; constraint?: string }).code === '23505' && (e as { constraint?: string }).constraint === 'team_members_live_name') {
-      throw new ApiError(409, 'display-name-taken');
+      throw new ApiError(409, 'trade-tag-taken');
     }
     throw e;
   }
@@ -262,38 +225,29 @@ export async function createInvite(
  * M6: nothing of a removed member's login is kept) and every session of theirs is revoked, in one
  * transaction; their live streams are closed after the commit. The row itself stays, so the audit
  * log keeps the member's name. 404 for anyone else's or an already removed one. 401 when the
- * calling session was revoked meanwhile, 403 `recovery-hold` during a hold (`ownerWriteGate`, first).
+ * calling session was revoked meanwhile (`ownerWriteGate`, first).
  */
 export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
   caller: Caller,
   memberId: string,
-  /**
-   * Owner p5-7 (7 Nov 2026, replacing G5): the route's `gateChange`, run after the member is found.
-   * When it stages the removal (a username-and-password session) nothing else is written: the
-   * member keeps their access until the change applies 24 h after it is submitted.
-   */
-  gate: (c: Queryable) => Promise<{ changeId: string } | null> = async () => null,
-): Promise<{ changeId: string } | null> {
+): Promise<void> {
   const { accountId } = caller;
   const now = deps.clock();
   const out = await inTransaction(deps.db, async (c) => {
-    await ownerWriteGate(c, caller, now, { strong: false });
+    await ownerWriteGate(c, caller, now, { vendor: false });
     const found = await c.query('select 1 from team_members where id = $1 and account_id = $2 and removed_at is null', [memberId, accountId]);
     if (found.rows.length === 0) throw new ApiError(404, 'not-found');
-    const staged = await gate(c);
-    if (staged !== null) return { staged, ended: [] as string[] };
-    return { staged: null, ended: await applyMemberRemoval(c, accountId, memberId, now) };
+    return applyMemberRemoval(c, accountId, memberId, now);
   });
-  for (const id of out.ended) deps.events.closeSession(accountId, id);
-  return out.staged;
+  for (const id of out) deps.events.closeSession(accountId, id);
 }
 
 /**
- * The removal write (the route's, or a waiting one applied when its 24 h are up): the row is
+ * The removal write: the row is
  * marked removed, the invite code dies, the member's login account is deleted and every session
  * of theirs is revoked. Returns those sessions (the caller closes their streams after commit).
- * 404 `not-found` when the member was removed meanwhile (a waiting removal is then dropped).
+ * 404 `not-found` when the member was removed meanwhile.
  */
 export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
   // Review 26 Nov (finding 3): lock the member's sessions before the team_members write, whose
@@ -307,6 +261,8 @@ export async function applyMemberRemoval(c: Queryable, accountId: string, member
   const row = rows[0];
   if (!row) throw new ApiError(404, 'not-found');
   if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
+  // Escrow-key sync (migration 864): a removed member's reader key goes, with its unlocks and every wrap sealed to it.
+  await c.query('delete from escrow_readers where member_id = $1', [memberId]);
   const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
   return s.rows.map((r) => r.id);
 }
@@ -320,8 +276,7 @@ async function deleteMemberLogin(c: Queryable, memberAccountId: string): Promise
  * Sets a live member's boxes to exactly `abilities` (takes effect on their next request). When the
  * new set no longer sees active trades, the member's live streams (which carry the account's trade
  * events) are closed after the commit (review M2). 404 for anyone else's or a removed member. 401
- * when the calling session was revoked meanwhile, 403 `recovery-hold` during a hold, 403
- * `weak-session` for a session that is not strong (`ownerWriteGate`, first).
+ * when the calling session was revoked meanwhile, 403 `not-vendor` (`ownerWriteGate`, first).
  */
 export async function setAbilities(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
@@ -332,7 +287,7 @@ export async function setAbilities(
   const { accountId } = caller;
   const now = deps.clock();
   const { row, sessions } = await inTransaction(deps.db, async (c) => {
-    await ownerWriteGate(c, caller, now, { strong: true });
+    await ownerWriteGate(c, caller, now, { vendor: true });
     const r = await updateAbilities(c, accountId, memberId, abilities, now);
     if (!r) throw new ApiError(404, 'not-found');
     return r;
@@ -344,8 +299,8 @@ export async function setAbilities(
 
 /**
  * J-20: sets a live member's (or open invite's) trade-size band and working hours to exactly
- * `limits` (strong session; the route stages a weak one's). The gate is the boxes': the account
- * lock, a live calling session, no hold, a strong session and a vendor account (`ownerWriteGate`).
+ * `limits`. The gate is the boxes': the account lock, a live calling session and a vendor account
+ * (`ownerWriteGate`).
  * Sessions the new hours shut out end at once; their streams close after the commit.
  */
 export async function setLimits(
@@ -357,7 +312,7 @@ export async function setLimits(
   const { accountId } = caller;
   const now = deps.clock();
   const { row, ended } = await inTransaction(deps.db, async (c) => {
-    await ownerWriteGate(c, caller, now, { strong: true });
+    await ownerWriteGate(c, caller, now, { vendor: true });
     const ended = await applyLimits(c, accountId, memberId, limits, now);
     const { rows } = await c.query<MemberRow>(`select ${MEMBER_COLS} from team_members where id = $1`, [memberId]);
     return { row: rows[0]!, ended };
@@ -367,8 +322,7 @@ export async function setLimits(
 }
 
 /**
- * The boxes write (the route's, or a waiting one applied 24 h after a username-and-password session
- * submitted it). Null for a member who is not live. Returns the member's sessions whose live
+ * The boxes write. Null for a member who is not live. Returns the member's sessions whose live
  * streams must close (the new set reads no trades part, review M2, or other parts than before, review
  * trades-list I1).
  */
@@ -382,33 +336,15 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
   );
   const r = rows[0];
   if (!r) return null;
+  // Escrow-key sync (migration 864): unticking "Hold trade keys" takes the member's copies away at
+  // once (the lead's device stops sealing to them; the read route checks the box too).
+  if (!hasAbility(abilities, ESCROW_KEYS_ABILITY)) await dropMemberWraps(c, memberId);
   // A stream carries the parts the boxes allowed when it opened (review trades-list I1): any change
   // to the trades boxes ends it, and the reconnect takes the new ones (or is refused without either).
   const parts = (set: readonly string[]) => Object.values(TRADE_PART_ABILITY).map((a) => hasAbility(set, a)).join();
   const changed = before.rows[0] === undefined || parts(before.rows[0].abilities) !== parts(abilities);
   const s = !changed && hasAbility(abilities, STREAM_ABILITY) ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
   return { row: r, sessions: s };
-}
-
-/**
- * Hold model v3: a member's boxes waiting from a username-and-password session, applied when their
- * 24 h are up (hold.ts `applyChange`, account locked). The set is checked again here against the
- * catalogue as it is now (`parseAbilities`: a box that became owner-only or unknown since it was
- * staged drops the whole change, 400; the database check is the backstop). Throws 404 `not-found`
- * (the change is dropped) when the member is no longer live. Returns the member's sessions whose
- * live streams must close.
- */
-export async function applyAbilities(c: Queryable, accountId: string, memberId: string, abilities: readonly string[], now: Date = new Date()): Promise<string[]> {
-  const set = parseAbilities(abilities);
-  const r = await updateAbilities(c, accountId, memberId, set, now);
-  if (!r) throw new ApiError(404, 'not-found');
-  return r.sessions;
-}
-
-/** True when `memberId` is a live member (or open invite) of the account: a role change for it can be staged. */
-export async function liveMember(c: Queryable, accountId: string, memberId: string, now: Date): Promise<boolean> {
-  const { rows } = await c.query(`select 1 from team_members where id = $1 and account_id = $3 and ${LIVE_MEMBER}`, [memberId, now, accountId]);
-  return rows.length > 0;
 }
 
 /**
@@ -460,7 +396,7 @@ export const purgeTeamLeftovers: RetentionJob = {
  * nothing behind the front door, the vendor's name included, reaches someone not yet inside).
  */
 export interface InviteView {
-  displayName: string;
+  tradeTag: string;
   abilities: string[];
   preset: PresetId | null;
   roles: TeamRole[];
@@ -470,7 +406,7 @@ export interface InviteView {
 interface InviteRow {
   id: string;
   account_id: string;
-  display_name: string;
+  trade_tag: string;
   abilities: string[];
   invite_expires_at: Date;
 }
@@ -488,7 +424,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
     hash = inviteHash(by.code);
   }
   const { rows } = await q.query<InviteRow>(
-    `select tm.id, tm.account_id, tm.display_name, tm.abilities, tm.invite_expires_at
+    `select tm.id, tm.account_id, tm.trade_tag, tm.abilities, tm.invite_expires_at
        from team_members tm join accounts t on t.id = tm.account_id
       where ($1::bytea is null or tm.invite_hash = $1) and ($3::uuid is null or tm.id = $3) and tm.invite_hash is not null
         and tm.removed_at is null and tm.member_account_id is null and tm.invite_expires_at > $2
@@ -502,12 +438,12 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
 }
 
 export function inviteView(r: InviteRow): InviteView {
-  return { displayName: r.display_name, ...abilitiesView(r.abilities), expiresAt: r.invite_expires_at.toISOString() };
+  return { tradeTag: r.trade_tag, ...abilitiesView(r.abilities), expiresAt: r.invite_expires_at.toISOString() };
 }
 
 /**
- * The member's private login name: the login-name rules, and never any account's public display
- * name (one namespace, as at sign-up). 400 `login-name-invalid`, 409 `names-unavailable`. A login
+ * The member's private login name: the login-name rules, and never any account's public Trade
+ * Tag (one namespace, as at sign-up). 400 `login-name-invalid`, 409 `names-unavailable`. A login
  * name already taken is found only by `createAccount` at the end (the same generic answer).
  */
 export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
@@ -530,7 +466,7 @@ export async function startMember(
   a: { inviteId: string; names: NewNames; now: Date; terms: { version: string; signature: TermsSignature }; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
-  // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
+  // FU-D: the login name is stored only as its keyed tag (createAccount); the Trade Tag is the
   // random placeholder `memberNames` made, never shown.
   // The member's own acceptance of the Terms and their signature (review 2026-11-08 F1; owner 9 Nov
   // p11-14, everyone who gets a login signs), checked by `assertTermsAccepted`.
@@ -546,13 +482,13 @@ export async function startMember(
 }
 
 /**
- * A member login account's names: the checked login name's key and a random placeholder display
- * name nobody sees (accounts.display_name is not null and unique). The join challenge keeps them
+ * A member login account's names: the checked login name's key and a random placeholder Trade
+ * Tag nobody sees (accounts.trade_tag is not null and unique). The join challenge keeps them
  * only sealed (`sealNames`, FU-D), as a trader's sign-up does.
  */
 export function memberNames(loginKey: string): NewNames {
   const placeholder = `m-${randomBytes(8).toString('hex')}`;
-  return { displayName: placeholder, displayKey: placeholder, loginKey };
+  return { tradeTag: placeholder, displayKey: placeholder, loginKey };
 }
 
 /**
@@ -560,13 +496,13 @@ export function memberNames(loginKey: string): NewNames {
  * when the member was removed (or had already joined) meanwhile.
  */
 export async function finishMember(c: Queryable, memberAccountId: string, now: Date): Promise<void> {
-  const { rows } = await c.query<{ account_id: string; display_name: string }>(
+  const { rows } = await c.query<{ account_id: string; trade_tag: string }>(
     `update team_members set joined_at = $2
       where member_account_id = $1 and joined_at is null and removed_at is null and invite_expires_at > $2
-      returning account_id, display_name`,
+      returning account_id, trade_tag`,
     [memberAccountId, now],
   );
   const row = rows[0];
   if (!row) throw new ApiError(404, 'not-found');
-  await addAlert(c, row.account_id, 'team-member-joined', { member: row.display_name }, now);
+  await addAlert(c, row.account_id, 'team-member-joined', { member: row.trade_tag }, now);
 }

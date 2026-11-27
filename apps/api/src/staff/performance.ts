@@ -141,10 +141,10 @@ interface Person {
 }
 
 /** The board's order: senior moderators, moderators, then the owner; by name within a role. */
-const PEOPLE = `select m.account_id::text as id, a.display_name as name, m.role
+const PEOPLE = `select m.account_id::text as id, a.trade_tag as name, m.role
   from staff_members m join accounts a on a.id = m.account_id
   where m.role in ('senior', 'mod', 'owner')
-  order by case m.role when 'senior' then 0 when 'mod' then 1 else 2 end, a.display_name`;
+  order by case m.role when 'senior' then 0 when 'mod' then 1 else 2 end, a.trade_tag`;
 
 function periodOf(req: FastifyRequest): Period {
   const raw = (req.query as Record<string, unknown> | undefined)?.period;

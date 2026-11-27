@@ -11,8 +11,8 @@ import { tapChallenge, type KeyTapIntent } from '@x2f/staff';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
 const ends = () => new Date(Date.now() + 8 * H).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends() };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: ['disputes', 'training', 'log', 'feedback'], sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends() };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: ['disputes', 'training', 'log', 'feedback'], sessionEndsAt: ends() };
 const CODE = '7RWD3MXEKQ84HN2T';
 const REASON = 'Third dispute this month as a buyer who marks paid and never pays.';
 const REC = '0d6f8a52-2f4e-4c55-9d0b-6a3f2b1c0e9d';
@@ -40,7 +40,7 @@ async function softKey(page: Page): Promise<string> {
 }
 
 const trader = (name: string) => ({
-  displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
+  tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
 });
 const kase = () => ({
   code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'open', round: 1, openedBy: 'buyer', reason: 'paid', note: '',
@@ -53,7 +53,7 @@ const kase = () => ({
   freezes: { buyer: false, seller: false },
 });
 const rec = () => ({
-  id: REC, accountId: ACCT, displayName: 'harbor_lin', capUsd: 300, stage: null, reason: REASON, code: CODE, recommendedBy: 'dmitri_k',
+  id: REC, accountId: ACCT, tradeTag: 'harbor_lin', capUsd: 300, stage: null, reason: REASON, code: CODE, recommendedBy: 'dmitri_k',
   mine: false, createdAt: new Date(Date.now() - H).toISOString(), currentStage: 'graduated', currentCapUsdCents: null,
 });
 

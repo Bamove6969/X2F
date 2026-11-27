@@ -3,10 +3,10 @@ export {
   type NameCheck,
   type NameRefusal,
   type NamesCheck,
-  checkDisplayName,
+  checkTradeTag,
   checkLoginName,
   checkNames,
-  checkNewDisplayName,
+  checkNewTradeTag,
   checkNewLoginName,
   displayKeyOf,
   LOOK_ALIKE_LETTERS,
@@ -16,15 +16,6 @@ export {
   lookAlikeKey,
   staffNameKey,
 } from './username.js';
-export {
-  type PasswordCheck,
-  type PasswordRule,
-  PASSWORD_MAX,
-  PASSWORD_MIN,
-  checkPassword,
-  hasPasswordSpace,
-  normalizePassword,
-} from './password.js';
 export { formatRecoveryInput, newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
 export {
   type InspectOptions,
@@ -60,6 +51,6 @@ export {
 export {
   IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
 } from './sessionLength.js';
-export { METHOD_PARTNERS, STANDS_ALONE, partnerMissing, partnerNeededBy, passwordAlone } from './methodPartners.js';
+export { COUNTED_KINDS, LOGIN_KEYS, MIN_METHOD_KINDS, countedKinds, enoughMethods } from './loginRule.js';
 export { type WalletLabelProblem, WALLET_LABEL_MAX, addressFold, cleanWalletLabel, labelSpoofsAddress, walletLabelProblem } from './walletLabel.js';
 export { KEY_NAME_MAX, KEY_NAME_PUNCTUATION, checkKeyName, defaultKeyName, sameKeyName, type KeyNameCheck, type KeyNameProblem } from './keyName.js';

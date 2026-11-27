@@ -25,11 +25,11 @@ import { traderIdByName } from './profile.js';
  *   The public copy NEVER lists fingerprints (P5-A35).
  *
  * Contents (P5-A18, as revised 2026-10-29b: nothing links a review to who left it): the fixed first
- * line RECORD_HEADER (so a signed login challenge can never pass as a record), the display name,
+ * line RECORD_HEADER (so a signed login challenge can never pass as a record), the Trade Tag,
  * the member-since month, the issue date, completed trades, % positive with its rated reviews, the
  * review count, then one line per review received, newest first: month, the trader's role, stars or
  * Neutral, and the phrases. Never an amount, method, counterparty, note, trade code or exact time.
- * The display name is the only trader-chosen field and cannot hold a line break (spec 6.1 charset).
+ * The Trade Tag is the only trader-chosen field and cannot hold a line break (spec 6.1 charset).
  */
 
 /** The record's fixed first line (review 2026-10-24: keeps record signatures apart from challenges). */
@@ -76,7 +76,7 @@ export async function recordText(q: Queryable, accountId: string, now: Date, opt
   const lines = [
     RECORD_HEADER,
     '',
-    `Display name: ${s.displayName}`,
+    `Trade Tag: ${s.tradeTag}`,
     `Member since: ${reviewMonth(f.createdAt)}`,
     `Issued: ${now.toISOString().slice(0, 10)}`,
     `Completed trades: ${thousands(s.completedTrades)}`,

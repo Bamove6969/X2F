@@ -11,7 +11,7 @@ import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import sodium from 'libsodium-wrappers';
 import { signRecoveryAddress } from '@x2f/trade';
-import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/liveSession.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { addressEnd, addressHash } from '@x2f/accounts';
 import { insertBan } from './helpers/bans.js';
@@ -458,14 +458,14 @@ describe('POST /v1/offers/:id/take', () => {
     });
   });
 
-  it('tells the poster "<display name> accepted your offer" on their live stream after the take commits', async () => {
+  it('tells the poster "<Trade Tag> accepted your offer" on their live stream after the take commits', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
     const publish = vi.spyOn(app.events, 'publish');
     try {
       const code = await taken(buyer, offer, body(buyer, tenth));
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.displayName }, { closed: false }));
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledWith(seller.id, { type: 'accepted', code, by: buyer.tradeTag }, { closed: false }));
       // Nothing to the taker.
       expect(publish.mock.calls.filter(([id]) => id === buyer.id)).toEqual([]);
     } finally {
@@ -596,19 +596,6 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
       `update trades set state = 'cancelled', closed_at = $2 where code = (select code from trades where buyer_account_id = $1 and closed_at is null limit 1)`,
       [buyer.id, deps.clock()],
     );
-    await taken(buyer, offer, body(buyer, tenth));
-  });
-
-  it('a poster in a recovery-code hold starts no new trade: its offer is read under the account lock and hidden (404; lead hold v3 review, minor)', async () => {
-    const seller = await person();
-    const offer = await postOffer(seller);
-    const buyer = await person();
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
-      [seller.id, deps.clock(), new Date(deps.clock().getTime() + 86_400_000)],
-    );
-    expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 404, error: 'not-found' });
-    await deps.db.query('delete from account_holds where account_id = $1', [seller.id]);
     await taken(buyer, offer, body(buyer, tenth));
   });
 
@@ -1271,33 +1258,6 @@ describe('one-time wallets and the per-trade address (owner demo note #6)', () =
     expect(await listed(buyer)).toContain(buyer.wallet);
   });
 
-  it("a weak account's new address cannot reach a trade: staged, waiting, foreign or sent as an address, the take is refused", async () => {
-    const seller = await person();
-    const offer = await postOffer(seller);
-    const weak = await person();
-    // A username-and-password login (weak account): an add from it is staged (202), so there is no wallet row to use.
-    await deps.db.query(`update sessions set strength = 'weak-single' where account_id = $1`, [weak.id]);
-    const sessionId = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1 and revoked_at is null', [weak.id])).rows[0]!.id;
-    const fresh = fakeAddress();
-    const confirmToken = await issueConfirmToken(deps, {
-      sessionId, accountId: weak.id, method: 'password',
-      action: { kind: 'add-wallet', addressHash: await addressHash(fresh), addressEnd: addressEnd(fresh) },
-    });
-    const staged = await weak.browser.post('/v1/wallets', { app: 'cake', label: 'New', address: fresh, confirmToken, oneTime: true });
-    expect(staged.statusCode, staged.body).toBe(202);
-    const { rows: rowsOfFresh } = await deps.db.query('select 1 from wallets where address = $1', [fresh]);
-    expect(rowsOfFresh).toEqual([]);
-    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fresh }))).toEqual({ status: 400, error: 'bad-request' });
-    const waiting = await addWallet(weak.id, false);
-    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: waiting.id })))).toEqual({ status: 409, error: 'wallet-not-ready' });
-    // The take names a wallet, never an address: an address in the body is refused.
-    expect(refusal(await take(weak, offer, { ...body(weak, tenth), address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
-    expect(refusal(await take(weak, offer, { ...body(weak, tenth), walletId: undefined, address: fakeAddress() }))).toEqual({ status: 400, error: 'bad-request' });
-    // A wallet of another account is not this account's to use.
-    expect(refusal(await take(weak, offer, body(weak, tenth, undefined, { walletId: seller.wallet })))).toEqual({ status: 409, error: 'wallet-not-ready' });
-    // Its own usable wallet works as before.
-    await taken(weak, offer, body(weak, tenth));
-  });
 });
 
 /**

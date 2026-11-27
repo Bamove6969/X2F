@@ -1,7 +1,7 @@
 import { staffDeviceKeyId } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { addAlert, addOwnerAlert } from '../alerts.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { pushOwnerAlert } from '../push/ownerAlert.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';

@@ -2,8 +2,8 @@
  * Setup step 1 (board SetupUsername; design real-app review item 6; owner Q54: "Your username is
  * never shown to anybody and is as confidential as your password"): ONE field, the private
  * username, which is the login name. A live tick says whether it is free (availability.ts; the
- * server paces it). The public display name follows on its own screen (DisplayName.tsx; owner G6:
- * "a unique username and also a unique display name"). 8-20 letters, numbers, dots, dashes and
+ * server paces it). The public Trade Tag follows on its own screen (TradeTag.tsx; owner G6:
+ * "a unique username and also a unique Trade Tag"). 8-20 letters, numbers, dots, dashes and
  * underscores (owner demo note #126, 23 Nov 2026: "minimum of 8 characters").
  *
  * Owner demo notes #196 and #197 (25 Nov 2026, the advice he pasted): Continue stays disabled until
@@ -53,7 +53,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
       return;
     }
     if (!r.ok) {
-      // A login name has no reserved words (only a display name does), so any refusal is its shape.
+      // A login name has no reserved words (only a Trade Tag does), so any refusal is its shape.
       setError(nameShapeProblem('Your Login ID', r.reason === 'length' ? 'length' : 'characters'));
       return;
     }
@@ -63,7 +63,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
       return;
     }
     update({ loginName: r.name, challenge: null });
-    go('display-name');
+    go('trade-tag');
   };
 
   return (
@@ -84,7 +84,7 @@ export function Username({ check }: { check?: NameChecker } = {}) {
         {/* Owner demo note #195 (25 Nov): the whole lead in his words, replacing #124's. */}
         {/* not-a-refusal: "cannot be traced back" reassures about privacy; nothing was tried and refused */}
         You'll use this private username to sign in—nobody else will ever see it. In the next step, you'll choose a separate public
-        display name that other traders see. Your display name cannot be traced back to your login username, and X2F never asks for an
+        Trade Tag that other traders see. Your Trade Tag cannot be traced back to your login username, and X2F never asks for an
         email address or phone number.
       </SetupIntro>
       <div className="x2f-field">

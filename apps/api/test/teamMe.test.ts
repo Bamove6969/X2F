@@ -39,10 +39,10 @@ async function team(): Promise<Who> {
 /** A joined member seeded directly (the real sign-up is team.test.ts's), logged in. */
 async function member(teamId: string, abilities: string[]) {
   const name = `Mmember${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `mmlogin${n}x`, displayName: `mm-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `mmlogin${n}x`, tradeTag: `mm-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -60,7 +60,7 @@ async function sessionId(b: Browser): Promise<string> {
 interface Access {
   name: string;
   chatLabel: string;
-  lead: { displayName: string };
+  lead: { tradeTag: string };
   preset: string | null;
   groups: { id: string; label: string; boxes: { id: string; label: string; does: string; always: boolean; ready: boolean }[] }[];
   limits?: { band: { minAtomic: string; maxAtomic: string } | null; hours: unknown; insideNow: boolean; workingUntil: string | null };
@@ -78,8 +78,8 @@ describe('GET /v1/team/me', () => {
     expect(res.statusCode, res.body).toBe(200);
     const a = res.json() as Access;
     expect(a.name).toBe(m.name);
-    expect(a.lead).toEqual({ displayName: owner.displayName });
-    expect(a.chatLabel).toBe(`${owner.displayName} Assistant 1`);
+    expect(a.lead).toEqual({ tradeTag: owner.tradeTag });
+    expect(a.chatLabel).toBe(`${owner.tradeTag} Assistant 1`);
     expect(a.preset).toBe('trades');
     // Every box the member holds, in catalogue order, with the catalogue's label and description.
     const boxes = a.groups.flatMap((g) => g.boxes);
@@ -134,8 +134,8 @@ describe('GET /v1/team/me', () => {
     const mb = await member(b.id, ['trades-see-active']);
     const va = (await ma.browser.get('/v1/team/me')).json() as Access;
     const vb = (await mb.browser.get('/v1/team/me')).json() as Access;
-    expect(va.lead.displayName).toBe(a.displayName);
-    expect(vb.lead.displayName).toBe(b.displayName);
+    expect(va.lead.tradeTag).toBe(a.tradeTag);
+    expect(vb.lead.tradeTag).toBe(b.tradeTag);
     expect(va.groups.flatMap((g) => g.boxes).map((x) => x.id)).toContain('offers-see');
     expect(va.groups.flatMap((g) => g.boxes).map((x) => x.id)).not.toContain('trades-see-active');
   });

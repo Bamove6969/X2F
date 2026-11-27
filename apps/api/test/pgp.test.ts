@@ -11,7 +11,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
-import { confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { addUnusedKeys, confirmTokenFor, confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
@@ -90,21 +90,24 @@ class Browser {
 let counter = 0;
 const uniqueName = (p = 'user') => `${p}${(++counter).toString().padStart(3, '0')}x`;
 
-/** Signs up with display name `displayName` and login name `<displayName>.l`. */
-async function registerStart(b: Browser, displayName: string, key: Pair) {
-  return b.post('/v1/register/pgp/start', { displayName, loginName: `${displayName}.l`, publicKey: key.publicKey });
+/** Signs up with Trade Tag `tradeTag` and login name `<tradeTag>.l`. */
+async function registerStart(b: Browser, tradeTag: string, key: Pair) {
+  return b.post('/v1/register/pgp/start', { tradeTag, loginName: `${tradeTag}.l`, publicKey: key.publicKey });
 }
 
-/** Registers display name `displayName` with `key` in browser `b` (or a new one); returns the browser. */
-async function registerPgp(displayName: string, key: Pair, b = new Browser()): Promise<Browser> {
-  LOGIN_NAMES.set(key.fingerprint.toLowerCase(), `${displayName}.l`);
-  const start = await registerStart(b, displayName, key);
+/** Registers Trade Tag `tradeTag` with `key` in browser `b` (or a new one); returns the browser. */
+async function registerPgp(tradeTag: string, key: Pair, b = new Browser()): Promise<Browser> {
+  LOGIN_NAMES.set(key.fingerprint.toLowerCase(), `${tradeTag}.l`);
+  const start = await registerStart(b, tradeTag, key);
   expect(start.statusCode).toBe(200);
   const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
   const fin = await b.post('/v1/register/pgp/finish', {
     challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
   expect(fin.statusCode).toBe(201);
+  // Owner 26 Nov 2026: an account holds two kinds of login method; an unused passkey and security
+  // key stand in for the second, so the account is not setup-only once its sign-up window ends.
+  await addUnusedKeys(deps, await accountId(tradeTag));
   return b;
 }
 
@@ -142,8 +145,8 @@ async function isDecoy(res: LightMyRequestResponse): Promise<boolean> {
   return rows.length === 1 && rows[0]!.account_id === null;
 }
 
-async function accountId(displayName: string): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [displayName.toLowerCase()]);
+async function accountId(tradeTag: string): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [tradeTag.toLowerCase()]);
   return rows[0]!.id;
 }
 
@@ -196,7 +199,7 @@ describe('register', () => {
       challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(fin.statusCode).toBe(201);
-    expect(fin.json()).toEqual({ displayName: name });
+    expect(fin.json()).toEqual({ tradeTag: name });
     expect(fin.body).not.toContain(`${name}.l`);
     expect(b.cookies[SESSION_COOKIE]).toBeTruthy();
     const { rows } = await deps.db.query('select terms_version from accounts where display_key = $1', [name.toLowerCase()]);
@@ -259,7 +262,7 @@ describe('register', () => {
 
   it('refuses a private key and stores nothing of it', async () => {
     const before = await deps.db.query('select count(*)::int as n from challenges');
-    const res = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'some.login', publicKey: ed.privateKey });
+    const res = await new Browser().post('/v1/register/pgp/start', { tradeTag: uniqueName(), loginName: 'some.login', publicKey: ed.privateKey });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('key-private');
     expect(typeof res.json().detail).toBe('string');
@@ -272,7 +275,7 @@ describe('register', () => {
   });
 
   it('refuses a 40 KiB key as too large', async () => {
-    const res = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'some.login', publicKey: 'x'.repeat(40 * 1024) });
+    const res = await new Browser().post('/v1/register/pgp/start', { tradeTag: uniqueName(), loginName: 'some.login', publicKey: 'x'.repeat(40 * 1024) });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('key-too-large');
   });
@@ -282,22 +285,22 @@ describe('register', () => {
     await registerPgp(name, await genKey());
     const taken = await registerStart(new Browser(), name.toUpperCase(), ed);
     expect(taken.statusCode).toBe(409);
-    expect(taken.json().error).toBe('display-name-taken');
+    expect(taken.json().error).toBe('trade-tag-taken');
     // A taken login name is not revealed at start; only the finish, after the code proves the key,
     // says so, and only as the generic names-unavailable.
     const fresh = await genKey();
     const lb = new Browser();
-    const loginTaken = await lb.post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: `${name}.L`, publicKey: fresh.publicKey });
+    const loginTaken = await lb.post('/v1/register/pgp/start', { tradeTag: uniqueName(), loginName: `${name}.L`, publicKey: fresh.publicKey });
     expect(loginTaken.statusCode).toBe(200);
-    const free = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'never.used.9', publicKey: fresh.publicKey });
+    const free = await new Browser().post('/v1/register/pgp/start', { tradeTag: uniqueName(), loginName: 'never.used.9', publicKey: fresh.publicKey });
     expect(Object.keys(free.json()).sort()).toEqual(Object.keys(loginTaken.json()).sort());
     const code = codeOf(await dec(loginTaken.json().encryptedMessage, fresh.privateKey));
     const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'names-unavailable' });
     const reserved = await registerStart(new Browser(), 'X2F.Support', ed);
-    expect(reserved.json().error).toBe('display-name-reserved');
-    const same = await new Browser().post('/v1/register/pgp/start', { displayName: 'Same.Pgp1', loginName: 'same.pgp1', publicKey: ed.publicKey });
+    expect(reserved.json().error).toBe('trade-tag-reserved');
+    const same = await new Browser().post('/v1/register/pgp/start', { tradeTag: 'Same.Pgp1', loginName: 'same.pgp1', publicKey: ed.publicKey });
     expect(same.json().error).toBe('names-same');
   });
 
@@ -462,9 +465,6 @@ describe('login', () => {
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
     const attacker = new Browser();
     for (let i = 0; i < 5; i++) expect((await loginStart(attacker, key)).statusCode).toBe(200);
-    // Earlier tests' PGP-alone logins on new browsers started the account's 24-hour hold, during
-    // which a login that waits opens nothing (Task 17 review round 2 N-C1); this test is about challenges.
-    await deps.db.query('delete from account_holds');
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
     const sixth = await loginStart(attacker, key);
@@ -699,7 +699,7 @@ describe('binding', () => {
     const sb = await loginStart(b, key);
     await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey))), (u) => b.post(u, {}));
 
-    const action = { kind: 'set-password' };
+    const action = { kind: 'extend-session' };
     const ca = await a.post('/v1/confirm/pgp/start', { action });
     expect(ca.statusCode).toBe(200);
     const codeA = codeOf(await dec(ca.json().encryptedMessage, key.privateKey, signerPublic));
@@ -725,9 +725,6 @@ describe('binding', () => {
     const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey, confirmToken });
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, newKey.privateKey, signerPublic));
-    // X's PGP-alone login may have started the 24-hour hold (Task 17, coolingOff.test.ts), which
-    // would refuse first; this test is about the binding.
-    await deps.db.query('delete from account_holds');
     const byX = await home.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(byX.json()).toEqual({ error: 'challenge-expired' });
   });
@@ -757,9 +754,6 @@ describe('confirm and adding a key', () => {
     // The token records how it was earned (owner, 2026-10-23: a PGP confirm makes a new wallet usable at once).
     expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
 
-    // A PGP-alone session's change waits 24 hours (Task 17, owner 2026-10-29 14:12; coolingOff.test.ts):
-    // here the session counts as strong, since this test is about the key itself.
-    await deps.db.query("update sessions set strength = 'strong' where account_id = (select id from accounts where display_key = $1)", [n.toLowerCase()]);
     const as = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey, confirmToken });
     expect(as.statusCode).toBe(200);
     const atext = await dec(as.json().encryptedMessage, k2.privateKey, signerPublic);
@@ -786,7 +780,7 @@ describe('confirm and adding a key', () => {
     const k = await genKey();
     const b = await registerPgp(n, k);
     setNow(new Date(now.getTime() + 31 * MIN));
-    const cs = await b.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } });
+    const cs = await b.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } });
     const cf = await b.post('/v1/confirm/pgp/finish', {
       challengeId: cs.json().challengeId, code: codeOf(await dec(cs.json().encryptedMessage, k.privateKey)),
     });

@@ -10,7 +10,7 @@ import { signedIn } from './session.js';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 const profile = (name: string, self: boolean) => ({
-  displayName: name,
+  tradeTag: name,
   self,
   memberSince: '2025-03',
   online: true,
@@ -26,7 +26,7 @@ const profile = (name: string, self: boolean) => ({
 });
 
 async function stub(page: Page): Promise<void> {
-  await signedIn(page, { displayName: 'viewer_1' });
+  await signedIn(page, { tradeTag: 'viewer_1' });
   await page.route('**/v1/traders/viewer_1', json(profile('viewer_1', true)));
   await page.route('**/v1/traders/mira.k', json(profile('mira.k', false)));
   await page.route('**/v1/account/badges', json({

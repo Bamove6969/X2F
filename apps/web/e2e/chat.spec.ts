@@ -87,7 +87,7 @@ async function stubChat(page: Page): Promise<FakeChat> {
     const path = url.pathname.replace(`/v1/chats/${CHAT}`, '');
     const method = r.request().method();
     if (path === '' && method === 'GET') {
-      return json({ chat: CHAT, role: 'seller', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: BOARD.buyer }, tradeCode: BOARD.code, disputeOpen: false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
+      return json({ chat: CHAT, role: 'seller', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: BOARD.buyer }, tradeCode: BOARD.code, disputeOpen: false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
     }
     if (path === '/identity' && method === 'POST') {
       const body = r.request().postDataJSON() as FakeChat['registered'][number];
@@ -176,7 +176,7 @@ test("the room's #chat sheet: a device-bound identity, the buyer's line, and a v
 test('another device of the account (the API holds another key) reads only the notice and the read-only line', async ({ page }) => {
   const other = identity();
   await page.route(`**/v1/trades/${CODE}/chat`, json({ chat: CHAT, role: 'seller' }));
-  await page.context().route(`**/v1/chats/${CHAT}`, json({ chat: CHAT, role: 'seller', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: BOARD.buyer }, tradeCode: BOARD.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-28T12:00:00.000Z', lastMessageAt: null }));
+  await page.context().route(`**/v1/chats/${CHAT}`, json({ chat: CHAT, role: 'seller', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: BOARD.buyer }, tradeCode: BOARD.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-28T12:00:00.000Z', lastMessageAt: null }));
   await openRoom(page);
   const panel = chatSheet(page);
   await expect(panel).toContainText('This conversation is open on another device', { timeout: 30_000 });

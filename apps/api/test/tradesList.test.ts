@@ -62,10 +62,10 @@ async function all(b: Browser, status: string | null, limit: number): Promise<It
 
 async function member(teamId: string, abilities: string[]): Promise<Browser> {
   const name = `Lister${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `llogin${n}x`, displayName: `l-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `llogin${n}x`, tradeTag: `l-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   await deps.db.query(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5)`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -79,7 +79,7 @@ async function member(teamId: string, abilities: string[]): Promise<Browser> {
 async function teamMember(teamId: string): Promise<{ id: string; name: string }> {
   const name = `Actor${String(++n).padStart(4, '0')}`;
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at)
      values ($1, $2, $3, $4, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), ['trades-see-active'], deps.clock()],
   );
@@ -119,7 +119,7 @@ describe('GET /v1/trades', () => {
       amountAtomic: AMOUNT.toString(),
       fiatCents: FIAT.toString(),
       currency: 'USD',
-      counterparty: { displayName: b.displayName },
+      counterparty: { tradeTag: b.tradeTag },
       takenAt: t2.trade.takenAt.toISOString(),
       closedAt: null,
       // Plan 3 Task 42: the account owner's open rows say which member last acted (none here).
@@ -132,7 +132,7 @@ describe('GET /v1/trades', () => {
       amountAtomic: AMOUNT.toString(),
       fiatCents: FIAT.toString(),
       currency: 'USD',
-      counterparty: { displayName: a.displayName },
+      counterparty: { tradeTag: a.tradeTag },
       takenAt: t1.trade.takenAt.toISOString(),
       closedAt: new Date(at).toISOString(),
     });
@@ -301,27 +301,6 @@ describe('GET /v1/trades', () => {
     expect(seen.map((r) => r.code).sort()).toEqual([acted.code, quiet.code, done.code].sort());
     for (const r of seen) expect(r).not.toHaveProperty('lastActedBy');
     expect(JSON.stringify(seen)).not.toContain(second.name);
-  });
-
-  it('review lead-trades-list-2 m1 (lead call): lastActedBy only to a full owner session, never a recovery or held one (as GET /v1/team/audit)', async () => {
-    const owner = await trader();
-    await makeVendor(deps, owner.id);
-    const other = await trader();
-    tick();
-    const t = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
-    const actor = await teamMember(owner.id);
-    await audit(owner.id, actor.id, t.code, 'mark-paid', new Date(at));
-    expect((await page(owner.browser, '?status=open')).trades[0]!.lastActedBy).toEqual({ memberName: actor.name, at: new Date(at).toISOString() });
-
-    const recovery = new Browser(app);
-    const { sessionId } = (await recovery.post('/t/login', { accountId: owner.id, level: 'recovery' })).json() as { sessionId: string };
-    for (const label of ['recovery', 'held']) {
-      if (label === 'held') await deps.db.query('update sessions set hold_until = $2 where id = $1', [sessionId, new Date(at + 3_600_000)]);
-      const rows = (await page(recovery, '?status=open')).trades;
-      expect(rows.map((r) => r.code), label).toEqual([t.code]);
-      expect(rows[0], label).not.toHaveProperty('lastActedBy');
-      expect(JSON.stringify(rows), label).not.toContain(actor.name);
-    }
   });
 
   it('a trade deleted by the retention rule (R36) is simply gone: no row, no stub', async () => {

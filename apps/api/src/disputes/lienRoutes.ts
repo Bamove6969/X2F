@@ -2,7 +2,7 @@ import { canDecideRateRequest, rateRequestRefusal } from '@x2f/staff';
 import { LIEN_RECOVERY_MAX_BPS, isRecoveryAddressStatement, recoveryAddressValid } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
-import { requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
@@ -251,7 +251,7 @@ export function accountLienRoutes(app: FastifyInstance): void {
     return { lienRecoveryAtomic: (r?.amountAtomic ?? 0n).toString() };
   });
 
-  app.post('/v1/account/liens/:id/recovery-address', { preHandler: [requireSession({ kinds: ['trader'] }), ownerDeviceOnly, requireNotHeld] }, async (req, reply) => {
+  app.post('/v1/account/liens/:id/recovery-address', { preHandler: [requireSession({ kinds: ['trader'] }), ownerDeviceOnly] }, async (req, reply) => {
     const b = bodyOf(req, ['statement', 'sig']);
     const id = param(req, 'id');
     const me = req.auth.accountId;

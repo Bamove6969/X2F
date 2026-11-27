@@ -15,15 +15,11 @@
  * session's check, `requireLiveSessionInTx`), then the member's live sessions in id order, then the
  * writes whose trigger takes the team log's lock. A logout locks its session row and then waits on
  * that lock, so taking the rows first never deadlocks with it.
- *
- * As `DELETE /v1/account/sessions/:id` (WEAK_LIMITED_ROUTES): a session whose login waits (a
- * username and password only) may not end a member's session (403 `weak-session`); a member's
- * logins are always strong.
  */
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { requireLiveSessionInTx, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import type { EventBus } from '../events/bus.js';
 
 /** One of a member's live sessions, as the owner's Team screen shows it. */
@@ -59,7 +55,7 @@ export async function listMemberSessions(db: Queryable, accountId: string, membe
  * Ends the member's live session `sessionId`, or with null every live session of theirs. 404
  * `not-found` for a member not of the caller's account (or removed), and for a session that is not
  * that member's; a session of theirs that already ended ends nothing. 401 when the calling session
- * was revoked meanwhile, 403 `weak-session` from a session whose login waits. Returns the sessions
+ * was revoked meanwhile. Returns the sessions
  * ended; their live streams are closed after the commit.
  */
 export async function endMemberSessions(
@@ -71,8 +67,7 @@ export async function endMemberSessions(
   const { accountId } = caller;
   const now = deps.clock();
   const ended = await withTx(deps.db, async (c) => {
-    const live = await requireLiveSessionInTx(c, caller, now);
-    if (weakOf(live, now)) throw weakRefusal();
+    await requireLiveSessionInTx(c, caller, now);
     await assertOwnMember(c, accountId, memberId);
     if (sessionId !== null) {
       const { rows } = await c.query('select 1 from sessions where id = $1 and member_id = $2 and account_id = $3', [sessionId, memberId, accountId]);

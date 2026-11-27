@@ -63,7 +63,7 @@ function AccessBody({ view }: { view: MyTeamAccess }) {
     <>
       <p className="x2f-note">{C.intro}</p>
       <p className="x2f-note" data-part="my-access-lead">
-        {C.lead(view.lead.displayName)}
+        {C.lead(view.lead.tradeTag)}
       </p>
       <p className="x2f-note" data-part="my-access-name">
         {C.you(view.name)}

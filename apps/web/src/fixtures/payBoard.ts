@@ -34,7 +34,7 @@ export const PAY_SECURING: TradeView = {
   poster: 'seller',
   state: 'securing',
   // Desktop board: "412 trades · 99% positive · releases in ~6 min", Trusted, Fast.
-  counterparty: { displayName: BOARD_TRADE.seller, completedTrades: 412, online: true, lastSeenAt: at(-1), typicalMinutes: 6, positivePct: 99, badges: ['Trusted', 'Fast'], stage: 'graduated' },
+  counterparty: { tradeTag: BOARD_TRADE.seller, completedTrades: 412, online: true, lastSeenAt: at(-1), typicalMinutes: 6, positivePct: 99, badges: ['Trusted', 'Fast'], stage: 'graduated' },
   methodId: BOARD_METHOD.id,
   profile: PAY_PROFILE,
   amountAtomic: BOARD_TRADE.amountAtomic.toString(),

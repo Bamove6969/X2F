@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createAccount, assertDisplayNameFree, type NewNames } from '../src/accounts.js';
+import { createAccount, assertTradeTagFree, type NewNames } from '../src/accounts.js';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { insertPgpKey, storableKey } from '../src/auth/pgp.js';
@@ -33,7 +33,7 @@ afterAll(async () => {
   await app.close();
 });
 
-const names = (display: string, login: string): NewNames => ({ displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase() });
+const names = (display: string, login: string): NewNames => ({ tradeTag: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase() });
 
 /** createAccount in a transaction of its own (it takes the names lock). */
 async function create(n: NewNames): Promise<string> {
@@ -61,11 +61,11 @@ async function codeOfError(p: Promise<unknown>): Promise<string> {
   return 'ok';
 }
 
-/** A banned account: display name, login name and one PGP key with an extra subkey. */
+/** A banned account: Trade Tag, login name and one PGP key with an extra subkey. */
 async function banned(o: { jabber?: string } = {}) {
   const display = uniq('Bad');
   const login = uniq('badlogin');
-  const id = await seedAccount(deps, { loginName: login, displayName: display });
+  const id = await seedAccount(deps, { loginName: login, tradeTag: display });
   const key = await genKey({ subkeys: [{}, { sign: true }] });
   await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now: deps.clock() });
   const r = await recordBan(deps, id, o);
@@ -73,14 +73,14 @@ async function banned(o: { jabber?: string } = {}) {
 }
 
 describe('recordBan', () => {
-  it('records the display name, the login name, the primary key and every subkey, and the Jabber account, as keyed tags only', async () => {
+  it('records the Trade Tag, the login name, the primary key and every subkey, and the Jabber account, as keyed tags only', async () => {
     const b = await banned({ jabber: 'Bad.Person@Example.org/phone' });
     const fps = await keyFingerprints(b.key.publicKey);
     expect(fps).toHaveLength(3);
     // display + login + 3 fingerprints + jabber
     expect(b.recorded).toBe(6);
     const { rows } = await deps.db.query<Record<string, unknown>>('select * from banned_identifiers where account_id = $1', [b.id]);
-    expect(rows.map((r) => r.kind).sort()).toEqual(['display-name', 'jabber', 'login-name', 'pgp-fingerprint', 'pgp-fingerprint', 'pgp-fingerprint']);
+    expect(rows.map((r) => r.kind).sort()).toEqual(['jabber', 'login-name', 'pgp-fingerprint', 'pgp-fingerprint', 'pgp-fingerprint', 'trade-tag']);
     // Nothing in clear: no column holds the name, the login name, a fingerprint or the Jabber address.
     const text = JSON.stringify(rows, (_k, v: unknown) => (Buffer.isBuffer(v) ? v.toString('latin1') : v)).toLowerCase();
     for (const s of [b.display.toLowerCase(), b.login.toLowerCase(), ...fps, 'bad.person@example.org']) expect(text).not.toContain(s);
@@ -92,13 +92,13 @@ describe('recordBan', () => {
   });
 
   it("owner G27: banning a team account bans each member login's login name and PGP keys too", async () => {
-    const team = await seedAccount(deps, { loginName: uniq('teamlogin'), displayName: uniq('Team') });
+    const team = await seedAccount(deps, { loginName: uniq('teamlogin'), tradeTag: uniq('Team') });
     const memberLogin = uniq('memberlogin');
     const member = await seedAccount(deps, { loginName: memberLogin, kind: 'member' });
     const key = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: member, fingerprint: key.fingerprint, armored: key.publicKey, now: deps.clock() });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Sam', 'sam', '{trades-see-active}', $2, $3, $2, $2)`,
       [team, deps.clock(), member],
     );
@@ -119,15 +119,15 @@ describe('recordBan', () => {
     const kinds = await deps.db.query<{ def: string }>(
       "select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = 'banned_identifiers'::regclass and contype = 'c'",
     );
-    expect(kinds.rows.map((r) => r.def).join(' ')).toMatch(/display-name.*login-name.*pgp-fingerprint.*jabber/);
+    expect(kinds.rows.map((r) => r.def).join(' ')).toMatch(/trade-tag.*login-name.*pgp-fingerprint.*jabber/);
   });
 });
 
 describe('a banned name can never be used again', () => {
-  it('as a display name: the early check says display-name-taken; createAccount says names-unavailable', async () => {
+  it('as a Trade Tag: the early check says trade-tag-taken; createAccount says names-unavailable', async () => {
     const b = await banned();
     const fresh = names(b.display, uniq('newlogin'));
-    expect(await codeOfError(assertDisplayNameFree(deps.db, fresh, deps.config))).toBe('409 display-name-taken');
+    expect(await codeOfError(assertTradeTagFree(deps.db, fresh, deps.config))).toBe('409 trade-tag-taken');
     expect(await codeOfError(create(fresh))).toBe('409 names-unavailable');
   });
 
@@ -136,12 +136,12 @@ describe('a banned name can never be used again', () => {
     expect(await codeOfError(create(names(uniq('Fresh'), b.login)))).toBe('409 names-unavailable');
   });
 
-  it('in the other namespace too: the banned display name as a login name, the banned login name as a display name', async () => {
+  it('in the other namespace too: the banned Trade Tag as a login name, the banned login name as a Trade Tag', async () => {
     const b = await banned();
     expect(await codeOfError(create(names(uniq('Fresh'), b.display)))).toBe('409 names-unavailable');
     expect(await codeOfError(create(names(b.login, uniq('fresh'))))).toBe('409 names-unavailable');
-    // The early display-name check does not say a private login name was banned.
-    expect(await codeOfError(assertDisplayNameFree(deps.db, names(b.login, uniq('fresh')), deps.config))).toBe('ok');
+    // The early trade-tag check does not say a private login name was banned.
+    expect(await codeOfError(assertTradeTagFree(deps.db, names(b.login, uniq('fresh')), deps.config))).toBe('ok');
   });
 
   it('case-insensitively, and after the banned account is gone', async () => {
@@ -162,16 +162,16 @@ describe('a banned name can never be used again', () => {
     const loginAlike = b.login.replace(/0/g, 'o').replace(/1/g, 'l');
     expect(loginAlike).not.toBe(b.login);
     const fresh = names(alike, loginAlike);
-    expect(await codeOfError(assertDisplayNameFree(deps.db, fresh, deps.config))).toBe('ok');
+    expect(await codeOfError(assertTradeTagFree(deps.db, fresh, deps.config))).toBe('ok');
     expect(await codeOfError(create(fresh))).toBe('ok');
   });
 
-  it('through the sign-up route: POST /v1/register/pgp/start with a banned display name → 409 display-name-taken', async () => {
+  it('through the sign-up route: POST /v1/register/pgp/start with a banned Trade Tag → 409 trade-tag-taken', async () => {
     const b = await banned();
     const key = await genKey();
-    const res = await new Browser(app).post('/v1/register/pgp/start', { displayName: b.display, loginName: uniq('ok.login'), publicKey: key.publicKey });
+    const res = await new Browser(app).post('/v1/register/pgp/start', { tradeTag: b.display, loginName: uniq('ok.login'), publicKey: key.publicKey });
     expect(res.statusCode, res.body).toBe(409);
-    expect(res.json()).toEqual({ error: 'display-name-taken' });
+    expect(res.json()).toEqual({ error: 'trade-tag-taken' });
   });
 });
 
@@ -184,7 +184,7 @@ describe('a banned PGP key can never be used again', () => {
   /** Sign-up start then finish with `key` (the code decrypted with its private half). */
   async function signUp(key: { publicKey: string; privateKey: string }, display = uniq('Newbie'), login = uniq('new.login')) {
     const b = new Browser(app);
-    const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: login, publicKey: key.publicKey });
+    const start = await b.post('/v1/register/pgp/start', { tradeTag: display, loginName: login, publicKey: key.publicKey });
     const code = start.statusCode === 200 ? codeOf(await decrypt(start.json().encryptedMessage, key.privateKey)) : '';
     const finish = start.statusCode === 200
       ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG })
@@ -279,13 +279,12 @@ describe('a banned PGP key can never be used again', () => {
     const other = await seedAccount(deps, { loginName: uniq('keyadder') });
     const br = new Browser(app);
     expect((await br.post('/t/login', { accountId: other })).statusCode).toBe(200);
-    // A strong session with its confirm (this test is about the key, not the confirm or the hold).
-    const sid = (await deps.db.query<{ id: string }>("update sessions set strength = 'strong' where account_id = $1 returning id", [other])).rows[0]!.id;
+    // A session with its confirm (this test is about the key, not the confirm).
+    const sid = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [other])).rows[0]!.id;
     const confirmToken = await issueConfirmToken(deps, { sessionId: sid, accountId: other, action: { kind: 'add-method', method: 'pgp' }, method: 'passkey' });
     const start = await br.post('/v1/account/pgp/start', { publicKey: b.key.publicKey, confirmToken });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, b.key.privateKey));
-    await deps.db.query('delete from account_holds where account_id = $1', [other]);
     const finish = await br.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(finish.statusCode, finish.body).toBe(409);
     expect(finish.json()).toEqual({ error: 'key-unavailable' });
@@ -302,7 +301,7 @@ describe('a banned PGP key can never be used again', () => {
 
   it('a key that is not banned goes through', async () => {
     const k = await genKey();
-    const res = await new Browser(app).post('/v1/register/pgp/start', { displayName: uniq('Clean'), loginName: uniq('clean.login'), publicKey: k.publicKey });
+    const res = await new Browser(app).post('/v1/register/pgp/start', { tradeTag: uniq('Clean'), loginName: uniq('clean.login'), publicKey: k.publicKey });
     expect(res.statusCode, res.body).toBe(200);
   });
 });
@@ -362,7 +361,7 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
   async function register(publicKey: string, privateKey: string) {
     const display = uniq('Mal');
     const b = new Browser(app);
-    const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: uniq('mal.login'), publicKey });
+    const start = await b.post('/v1/register/pgp/start', { tradeTag: display, loginName: uniq('mal.login'), publicKey });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, privateKey));
     const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });

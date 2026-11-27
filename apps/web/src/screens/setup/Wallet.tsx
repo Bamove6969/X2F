@@ -27,7 +27,7 @@
  * something typed there breaks that rule. It can be renamed later in Settings → Your wallets.
  */
 import { useState } from 'react';
-import { WALLET_LABEL_MAX, cleanWalletLabel, isStaged, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
+import { WALLET_LABEL_MAX, cleanWalletLabel, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
@@ -35,7 +35,7 @@ import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { errorCode } from './register.js';
 import { APP_LABELS, EDGE_TIP, WALLET_APPS, nextWalletName } from '../wallets-model.js';
-import { recordStagedAddress, recordTypedAddress } from '../walletRecord.js';
+import { recordTypedAddress } from '../walletRecord.js';
 import { ADD_SWAPPED, walletNameHelp } from '../walletsCopy.js';
 
 /**
@@ -134,25 +134,20 @@ export function Wallet() {
         (t) => authApi.addWallets({ wallets: [draft], ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      // Hold model v3: after the sign-up window a username-and-password login adds no wallet at once
-      // (202 staged): it is a draft, reviewed and submitted under Account changes.
-      const list = isStaged(result) ? undefined : result;
-      // Re-verify O3: a staged add has no id yet, so the address typed is recorded by itself (walletRecord.ts).
-      if (list === undefined) recordStagedAddress(trimmed);
-      const added = list?.[0];
+      const list = result;
+      const added = list[0];
       // Review 17 Nov M4: this device keeps the address typed under the id the API gave it
       // (walletRecord.ts), as Settings → Your wallets does, so the quote, the accepted sheet and the
       // list refuse a later answer naming another. An answer naming another is not taken as saved.
       if (added !== undefined) {
         recordTypedAddress(added.id, trimmed);
-        if (list!.length !== 1 || added.address !== trimmed) {
+        if (list.length !== 1 || added.address !== trimmed) {
           setError(ADD_SWAPPED);
           return;
         }
       }
       update({ wallet: { app, addressEnd: added?.addressEnd ?? trimmed.slice(-6) } });
-      // Owner #161: a wallet the API saved gets its green check before Welcome. A staged add (202) is
-      // not saved yet, so it goes on to Welcome as before, with no check.
+      // Owner #161: a wallet the API saved gets its green check before Welcome.
       if (added !== undefined) {
         // Owner #163: the ending shown is the real end of the address typed here (the answer was
         // checked above to name exactly that address), never a value from anywhere else.

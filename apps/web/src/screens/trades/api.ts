@@ -16,7 +16,7 @@ export interface TradeListItem {
   amountAtomic: bigint;
   fiatCents: bigint;
   currency: string;
-  counterparty: { displayName: string };
+  counterparty: { tradeTag: string };
   takenAt: string;
   closedAt: string | null;
   /**
@@ -76,7 +76,7 @@ function item(raw: unknown): TradeListItem {
     amountAtomic: big(raw.amountAtomic),
     fiatCents: big(raw.fiatCents),
     currency: raw.currency,
-    counterparty: { displayName: str(raw.counterparty.displayName) },
+    counterparty: { tradeTag: str(raw.counterparty.tradeTag) },
     takenAt: iso(raw.takenAt),
     closedAt: raw.closedAt === null ? null : iso(raw.closedAt),
     ...(raw.lastActedBy !== undefined ? { lastActedBy: lastActedBy(raw.lastActedBy) } : {}),

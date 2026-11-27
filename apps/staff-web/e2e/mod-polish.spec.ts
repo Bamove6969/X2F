@@ -11,9 +11,9 @@ const MIN = 60_000;
 const H = 60 * MIN;
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
 const ends = at(8 * H);
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings'], sessionEndsAt: ends };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends };
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings'], sessionEndsAt: ends };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: ends };
 
 const CODE = '7RWD3MXEKQ84HN2T';
 const REASON = 'The bank statement shows the Zelle payment arrived on time and in full.';
@@ -33,7 +33,7 @@ const QUEUE = {
   ],
 };
 
-const trader = (name: string) => ({ displayName: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
+const trader = (name: string) => ({ tradeTag: name, completedTrades: 30, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: 100, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] });
 const WAITING = {
   code: CODE, incidentId: 'D-7RWD', seq: 1, status: 'awaiting-approval', round: 1, openedBy: 'buyer', reason: 'paid', note: '', afterRefund: false,
   openedAt: at(-2 * H), replyDueAt: at(2 * H), rulingDueAt: at(46 * H), firstReplyAt: at(-H), usd: '1320.00', overLimit: true, limitUsd: 1000,

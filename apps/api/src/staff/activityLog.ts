@@ -32,8 +32,8 @@ import { requireStaff } from './guard.js';
  * What an entry shows (Global Constraints: never chat text, ruling reasons, addresses or IPs): the
  * stored `detail` is re-checked against its action's schema on the way out (`assertDetail`), so a
  * row that does not fit (a tampered or older row) shows no detail at all (`withheld: true`) rather
- * than whatever it holds. Names are public display names only; a trader is named by their side of
- * the trade, with their display name from the trade.
+ * than whatever it holds. Names are public Trade Tags only; a trader is named by their side of
+ * the trade, with their Trade Tag from the trade.
  * Reading the log is not itself logged: it is never an action on a case (R37's "involved" counts
  * log entries on a case, and reading the log must not make a reviewer ineligible).
  */
@@ -51,7 +51,7 @@ const isEntryId = (s: string): boolean => ID.test(s) && Number.isSafeInteger(Num
 /** A page size: a plain decimal, 1 to 999 before the cap (review m3: no `1e2`, `0x10`, spaces or a sign). */
 const LIMIT = /^[1-9][0-9]{0,2}$/;
 
-/** Detail keys that hold an account or staff id, resolved to a display name in `names`. */
+/** Detail keys that hold an account or staff id, resolved to a Trade Tag in `names`. */
 const ACCOUNT_KEYS = ['staffId', 'accountId'] as const;
 
 export interface LogEntryView {
@@ -86,7 +86,7 @@ export function shownDetail(action: string, detail: unknown): { detail: Record<s
   }
 }
 
-async function displayNames(db: Queryable, ids: readonly string[]): Promise<Record<string, string>> {
+async function tradeTags(db: Queryable, ids: readonly string[]): Promise<Record<string, string>> {
   const unique = [...new Set(ids)].filter((i) => UUID.test(i));
   if (unique.length === 0) return {};
   // The column name is the constant, never input.
@@ -94,7 +94,7 @@ async function displayNames(db: Queryable, ids: readonly string[]): Promise<Reco
   return Object.fromEntries(rows.map((r) => [r.id, r.name]));
 }
 
-/** Each listed trade's two traders' display names, by side. */
+/** Each listed trade's two traders' Trade Tags, by side. */
 async function traderNames(db: Queryable, codes: readonly string[]): Promise<Map<string, { buyer: string | null; seller: string | null }>> {
   const unique = [...new Set(codes)];
   const out = new Map<string, { buyer: string | null; seller: string | null }>();
@@ -165,7 +165,7 @@ export function staffLogRoutes(app: FastifyInstance): void {
       if (x.e.actorKind === 'staff' && x.e.actorId) ids.push(x.e.actorId);
       for (const k of ACCOUNT_KEYS) if (typeof x.detail[k] === 'string') ids.push(x.detail[k] as string);
     }
-    const names = await displayNames(db, ids);
+    const names = await tradeTags(db, ids);
     const traders = await traderNames(db, page.flatMap((e) => (e.actorKind === 'trader' && e.tradeCode ? [e.tradeCode] : [])));
     const entries: LogEntryView[] = shown.map(({ e, detail, withheld }) => {
       let name: string | null = null;

@@ -194,7 +194,7 @@ export function PastRep() {
             rowKey={(r) => r.id}
             empty="No approved claims."
             columns={[
-              { title: 'Trader', cell: (r) => r.displayName },
+              { title: 'Trader', cell: (r) => r.tradeTag },
               { title: 'Site', cell: (r) => r.site },
               { title: 'Verified trades', cell: (r) => (r.verifiedTrades === null ? '' : count(r.verifiedTrades)), mono: true },
               { title: 'Verified figure', cell: (r) => (r.verifiedUsdCents === null ? 'None' : usdText(r.verifiedUsdCents)), mono: true },
@@ -235,7 +235,7 @@ function ClaimFacts({ claim }: { claim: PastRepClaim }) {
     <>
       <dl className="x2f-staff-facts">
         <dt>Trader</dt>
-        <dd>{claim.displayName}</dd>
+        <dd>{claim.tradeTag}</dd>
         <dt>Site</dt>
         <dd>{claim.site}</dd>
         <dt>Trades claimed</dt>

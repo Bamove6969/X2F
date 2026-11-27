@@ -11,7 +11,11 @@
  * never the checks.
  *
  * Hard rules (the owner's; no box, no preset and no stored set can grant them): `HARD_OWNER_ONLY`.
- * - Members never confirm payment received or release XMR on the lead's sell trades (p10-2, T-076).
+ * - Members never confirm payment received on the lead's sell trades (p10-2, T-076). Releasing was
+ *   one of these rules; since the owner question trades-release (26 Nov 2026, pending his final
+ *   yes) it is the Release coins box (22), which needs Hold trade keys (67) too (`ABILITY_REQUIRES`).
+ *   Owner 26 Nov 2026 18:41 UTC: funding (23), the buyer's payment proof (68) and Mark "I've paid"
+ *   (16) are each their own box too; none is in a preset (team/memberTrade.ts has the contract).
  * - Members never touch payout wallets, the team's members, account deletion or security settings.
  * - Only trade parties open disputes (D-066, p7-7); the "disputes" box sees the dispute and answers
  *   the moderator.
@@ -33,7 +37,7 @@ export type Risk = 'low' | 'medium' | 'high';
  * - `not-built`: a box the lead can tick and the API stores; no member route uses it yet (the
  *   feature, or the member's way into it, is not built). Ticking it changes nothing until then.
  * - `waits-member-keys`: a box; the API still refuses it to members (`member-cannot-sign`) until
- *   Plan 3 Task 42's per-member trade keys (NEEDS_PLAN3_TASK42_MEMBER_KEY).
+ *   Plan 3 Task 42's member signing (the escrow-key sync of migration 864 gives an assigned member a copy to read, not to sign; owner question trades-release).
  * - `waits-member-chat-key`: a box; chat and proof stay hidden from members until a team-member
  *   chat key path exists (C-019, lead default): every chat route stays owner-only.
  * - `always`: every member has it; not a box.
@@ -43,7 +47,7 @@ export type Risk = 'low' | 'medium' | 'high';
 export type Availability = 'grantable' | 'not-built' | 'waits-member-keys' | 'waits-member-chat-key' | 'always' | 'owner-only';
 
 export interface Ability {
-  /** The row number in section B (1..66), for the owner's page. */
+  /** The row number in section B (1..66; 67 added 26 Nov), for the owner's page. */
   no: number;
   /** Stable id: stored in `team_members.abilities`, named by routes. Never renamed. */
   id: string;
@@ -111,8 +115,18 @@ const ROWS: readonly Row[] = [
   [19, 'trades-cancel-no-show', 'trades', 'Cancel a no-show', 'Get the refund when the buyer never paid', 'medium', 'grantable', false, 'Built in Trades role', 0, 1, 0],
   [20, 'trades-confirm-cancel', 'trades', 'Confirm cancel', 'Close a cancelled trade once the XMR is back', 'low', 'grantable', false, 'Built in Trades role', 0, 1, 0],
   [21, 'trades-confirm-received', 'trades', 'Confirm payment received', "Say the buyer's money arrived", 'high', 'owner-only', true, 'Lead only (p10-2)', 0, 0, 0],
-  [22, 'trades-release', 'trades', 'Release XMR', 'Send escrowed XMR to the buyer', 'high', 'owner-only', true, 'Lead only (p10-2)', 0, 0, 0],
-  [23, 'trades-fund', 'trades', 'Fund the escrow', 'Pay XMR into escrow when you sell', 'high', 'waits-member-keys', false, 'Lead only until member keys exist', 0, 0, 0],
+  // Owner question trades-release (26 Nov 2026, pending the owner's final yes; migration 870): was a
+  // hard owner-only rule (p10-2). Now a box only the account holder ticks, per member, off in every
+  // preset and role; it needs Hold trade keys (67) too (`ABILITY_REQUIRES`), and each release by a
+  // member needs confirm-it's-you with a key (`release-trade`, never an authenticator code) and is
+  // in the team log under the member's name. To back out: restore this row to 'owner-only', true.
+  [22, 'trades-release', 'trades', 'Release coins', "Release a trade's coins with the synced trade keys; needs Hold trade keys, and a passkey, security key or PGP key each time", 'high', 'grantable', false, 'Owner question trades-release (26 Nov): only members the lead assigns', 0, 0, 0],
+  // Owner 26 Nov 2026 18:41 UTC (Jess: "funding the escrow for sellers, yes as power granted to them
+  // by team lead"): was 'waits-member-keys'. Now a box only the account holder ticks, per member, off
+  // in every preset and role; it needs Hold trade keys (67) too (`ABILITY_REQUIRES`), and each
+  // funding by a member needs confirm-it's-you with a key (`fund-trade`, never an authenticator or
+  // recovery code; team/memberTrade.ts) and is in the team log under the member's name.
+  [23, 'trades-fund', 'trades', 'Fund the escrow', 'Start funding the escrow when you sell, with the synced trade keys; needs Hold trade keys, and a passkey, security key or PGP key each time', 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
   [24, 'trades-review', 'trades', 'Leave a review', 'Rate the partner after a trade', 'medium', 'not-built', false, null, 0, 0, 0],
   // B3. Chat
   [25, 'chat-read', 'chat', 'Read trade chats', 'Read the chat of any trade', 'low', 'waits-member-chat-key', false, 'Start set', 1, 1, 1],
@@ -140,9 +154,6 @@ const ROWS: readonly Row[] = [
   // B7. Team administration
   [44, 'team-see', 'team', 'See the team', 'See who is on the team and what each may do', 'low', 'not-built', false, null, 1, 1, 0],
   [45, 'team-see-log', 'team', 'See the team log', 'See who did what, and when', 'low', 'not-built', false, 'Start set', 1, 1, 1],
-  [46, 'hold-see', 'team', 'See waiting changes', 'See changes waiting out a 24-hour hold', 'medium', 'grantable', false, 'p4-8: lead grants it', 0, 0, 0],
-  [47, 'hold-cancel', 'team', 'Cancel waiting changes', 'Untick or cancel waiting changes', 'high', 'grantable', false, 'p4-8; team changes asked p11-22', 0, 0, 0],
-  [48, 'hold-end', 'team', 'End a hold', 'Apply waiting changes now', 'high', 'grantable', false, 'p4-8', 0, 0, 0],
   [49, 'team-invite', 'team', 'Invite members', 'Send a team invite', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [50, 'team-remove', 'team', 'Remove members', 'Kick a member out', 'high', 'owner-only', true, 'Lead only (G57)', 0, 0, 0],
   [51, 'team-change-abilities', 'team', 'Change abilities', "Tick or untick another member's boxes", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
@@ -150,7 +161,7 @@ const ROWS: readonly Row[] = [
   [52, 'own-login-methods', 'security', 'Own login methods', 'Set up their own login, any strength', 'low', 'always', false, 'Always on (p7-9)', 0, 0, 0],
   [53, 'own-recovery-codes', 'security', 'Own recovery codes', 'Make their own recovery codes', 'low', 'always', false, 'Always on (p11-28)', 0, 0, 0],
   [54, 'own-session-extend', 'security', 'Extend own session', 'Stay logged in with their own login', 'low', 'always', false, 'Always on (Q73)', 0, 0, 0],
-  [55, 'account-security', 'security', 'Account security settings', "Change the account's logins, holds or timers", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
+  [55, 'account-security', 'security', 'Account security settings', "Change the account's logins or timers", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [56, 'sessions-end-others', 'security', "End others' sessions", 'Log out other devices or members', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [57, 'devices-approve', 'security', 'Approve new devices', 'Let a new device into the account', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   // B9. Account
@@ -159,10 +170,21 @@ const ROWS: readonly Row[] = [
   [60, 'support-see', 'account', 'See support tickets', "Read the account's tickets to X2F staff", 'medium', 'grantable', false, null, 0, 0, 0],
   [61, 'support-open', 'account', 'Open support tickets', 'Write to X2F staff (shared limit of 10 a day)', 'low', 'grantable', false, 'Q69: shared across team', 0, 0, 0],
   [62, 'feedback-send', 'account', 'Send X2F feedback', 'Use "How\'s X2F doing?" (own limit)', 'low', 'grantable', false, 'Q69: per member', 1, 1, 0],
-  [63, 'profile-edit', 'account', 'Edit profile', 'Change the display name or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
+  [63, 'profile-edit', 'account', 'Edit profile', 'Change the Trade Tag or profile', 'medium', 'owner-only', false, 'Not ruled; lead suggests lead only', 0, 0, 0],
   [64, 'alerts-settings', 'account', 'Change alert settings', "Change the account's push and Jabber alerts", 'medium', 'owner-only', false, 'Lead only (lead default)', 0, 0, 0],
   [65, 'account-type', 'account', 'Account type', 'Become or stop being a vendor', 'high', 'owner-only', false, 'Lead only (design)', 0, 0, 0],
   [66, 'account-delete', 'account', 'Delete the account', 'Close the account for good', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
+  // Owner 26 Nov 2026 (escrow-key sync, migration 864): the box IS the lead's assignment. With it the
+  // lead's device also seals each trade's escrow keys to the member's own reader key, and the member
+  // may open that copy (escrowSync/routes.ts). On its own it grants no signing; with Release coins
+  // (22) the member may also release (owner question trades-release).
+  [67, 'trades-escrow-keys', 'trades', 'Hold trade keys', "Keep an encrypted copy of the account's trade escrow keys; funds or releases nothing without Fund the escrow or Release coins", 'high', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
+  // Owner 26 Nov 2026 18:41 UTC (Jess: "allow them to upload proof and click payment sent ... Each of
+  // those are separate abilities"): the buyer's payment proof on the account's buy trades
+  // (`PUT /v1/trades/:code/proofs/:id?kind=proof`, team/memberTrade.ts), its own box apart from Mark
+  // "I've paid" (16). Off in every preset and role; needs no keys (the API stores ciphertext it
+  // cannot open). Row 33 (Upload proof) stays waiting: dispute evidence and the unblurred copy.
+  [68, 'trades-upload-proof', 'trades', 'Upload payment proof', 'Attach the payment proof when you buy', 'medium', 'grantable', false, 'Owner 26 Nov: only members the lead assigns', 0, 0, 0],
 ];
 
 export const ABILITIES: readonly Ability[] = ROWS.map(([no, id, group, label, does, risk, availability, hard, ruling, offers, trades, start]) => ({
@@ -218,34 +240,11 @@ export function presetOf(abilities: readonly string[]): PresetId | null {
 /** A route's need: `any` (every member), one ability, or any one of several. */
 export type AbilityNeed = 'any' | string | readonly string[];
 
-/**
- * Owner p4-8 (7 Nov 2026): the "Holds and waiting changes" boxes, weakest first. Each one includes
- * the ones before it: `hold-cancel` also sees the waiting changes, `hold-end` also cancels them
- * (`effectiveAbilities` closes a stored set downward, so a member stored with `hold-end` alone
- * passes a `hold-see` route; migration 360 stores the closed set for the roles it moves).
- */
-export type HoldRight = 'hold-see' | 'hold-cancel' | 'hold-end';
-export const HOLD_RIGHTS: readonly HoldRight[] = ['hold-see', 'hold-cancel', 'hold-end'];
-
-/** A member's abilities: the stored boxes (only grantable ones count, a hold box with the ones it includes) and the always-on ones. */
+/** A member's abilities: the stored boxes (only grantable ones count) and the always-on ones. */
 export function effectiveAbilities(stored: readonly string[]): Set<string> {
   const out = new Set<string>(ALWAYS_ON);
-  for (const id of stored) {
-    if (!GRANTABLE.has(id)) continue;
-    out.add(id);
-    const h = (HOLD_RIGHTS as readonly string[]).indexOf(id);
-    for (const lower of HOLD_RIGHTS.slice(0, Math.max(h, 0))) out.add(lower);
-  }
+  for (const id of stored) if (GRANTABLE.has(id)) out.add(id);
   return out;
-}
-
-/** A member's hold right, as the waiting-changes view names it: `none` unless the lead granted one. */
-export function holdRightOf(stored: readonly string[]): 'none' | 'see' | 'cancel' | 'end' {
-  const have = effectiveAbilities(stored);
-  if (have.has('hold-end')) return 'end';
-  if (have.has('hold-cancel')) return 'cancel';
-  if (have.has('hold-see')) return 'see';
-  return 'none';
 }
 
 /** True when a member holding `stored` meets `need`. A hard owner-only ability is never met. */
@@ -253,10 +252,40 @@ export function hasAbility(stored: readonly string[], need: AbilityNeed): boolea
   if (need === 'any') return true;
   const have = effectiveAbilities(stored);
   const needs = typeof need === 'string' ? [need] : need;
-  return needs.some((id) => !HARD_OWNER_ONLY.has(id) && have.has(id));
+  return needs.some((id) => !HARD_OWNER_ONLY.has(id) && have.has(id) && (ABILITY_REQUIRES[id] ?? []).every((r) => have.has(r)));
 }
 
-/** Parses an abilities list from a request body: a non-empty set of grantable ids, in catalogue order. 400 `bad-request` otherwise. */
+/**
+ * Boxes that only work together with others (owner question trades-release, 26 Nov 2026; owner
+ * 26 Nov 18:41 UTC for funding): Release coins and Fund the escrow sign with the synced trade keys,
+ * so each needs Hold trade keys. A set holding one without all it needs is refused (`parseAbilities`:
+ * 400 `REQUIRES_ERROR`; migration 870's check) and never met (`hasAbility`). So unticking Hold trade
+ * keys means unticking Release coins and Fund the escrow too.
+ */
+export const ABILITY_REQUIRES: Readonly<Record<string, readonly string[]>> = {
+  'trades-release': ['trades-escrow-keys'],
+  'trades-fund': ['trades-escrow-keys'],
+};
+
+/** The 400 for each box of `ABILITY_REQUIRES` ticked without what it needs. */
+export const REQUIRES_ERROR: Readonly<Record<string, 'release-needs-trade-keys' | 'fund-needs-trade-keys'>> = {
+  'trades-release': 'release-needs-trade-keys',
+  'trades-fund': 'fund-needs-trade-keys',
+};
+
+/** The ids in `stored` that lack a box they need (`ABILITY_REQUIRES`). */
+export function missingRequirements(stored: readonly string[]): string[] {
+  const set = new Set(stored);
+  return Object.entries(ABILITY_REQUIRES)
+    .filter(([id, needs]) => set.has(id) && needs.some((n) => !set.has(n)))
+    .map(([id]) => id);
+}
+
+/**
+ * Parses an abilities list from a request body: a non-empty set of grantable ids, in catalogue
+ * order. 400 `bad-request` otherwise, and 400 `release-needs-trade-keys` / `fund-needs-trade-keys`
+ * for Release coins / Fund the escrow without Hold trade keys (`ABILITY_REQUIRES`, `REQUIRES_ERROR`).
+ */
 export function parseAbilities(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > GRANTABLE.size) throw new ApiError(400, 'bad-request');
   const set = new Set<string>();
@@ -264,6 +293,8 @@ export function parseAbilities(raw: unknown): string[] {
     if (typeof id !== 'string' || !GRANTABLE.has(id) || set.has(id)) throw new ApiError(400, 'bad-request');
     set.add(id);
   }
+  const missing = missingRequirements([...set])[0];
+  if (missing !== undefined) throw new ApiError(400, REQUIRES_ERROR[missing] ?? 'bad-request');
   return sortAbilities([...set]);
 }
 
@@ -276,18 +307,17 @@ export function abilityOf(id: string): Ability | undefined {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The roles of 29 Oct (Plan 2 Task 18) and the hold rights of p4-8, kept for the web until it renders the boxes
+// The roles of 29 Oct (Plan 2 Task 18), kept for the web until it renders the boxes
 
-export type TeamRole = 'offers' | 'trades' | HoldRight;
+export type TeamRole = 'offers' | 'trades';
 /** In their fixed order (the confirm's `roles` lists them in this order). */
-export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
+export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades'];
 
 /**
  * What each old role let a member do, as boxes (migration 360 moved every member's roles to these,
  * and `roles` in a request body still maps to them): exactly what the API allowed the role before,
  * so the move widens nobody's access. Offers also gets the not-built edit boxes the role's bundle
  * named ("adjust and maintain offers"). Trades loses opening a dispute (D-066, owner-only now).
- * A hold right (p4-8, migration 016) keeps the ones it included (`HOLD_RIGHTS`).
  * Pinned here and in migration 360 (a test checks they agree).
  */
 export const ROLE_ABILITIES: Readonly<Record<TeamRole, readonly string[]>> = {
@@ -296,9 +326,6 @@ export const ROLE_ABILITIES: Readonly<Record<TeamRole, readonly string[]>> = {
     'trades-see-active', 'trades-see-history', 'trades-accept', 'trades-take', 'trades-pick-wallet', 'trades-mark-paid', 'trades-extend', 'trades-cancel',
     'trades-cancel-no-show', 'trades-confirm-cancel', 'disputes-answer', 'disputes-appeal', 'wallets-see', 'feedback-send',
   ],
-  'hold-see': ['hold-see'],
-  'hold-cancel': ['hold-see', 'hold-cancel'],
-  'hold-end': ['hold-see', 'hold-cancel', 'hold-end'],
 };
 
 export function rolesToAbilities(roles: readonly TeamRole[]): string[] {
@@ -307,14 +334,12 @@ export function rolesToAbilities(roles: readonly TeamRole[]): string[] {
 
 /**
  * The old roles a set still reads as, for the web's `roles` (Offers: may post; Trades: sees active
- * trades; each hold right the set holds, a stronger one with those it includes).
+ * trades).
  */
 export function legacyRoles(abilities: readonly string[]): TeamRole[] {
   const out: TeamRole[] = [];
   if (abilities.includes('offers-post')) out.push('offers');
   if (abilities.includes('trades-see-active')) out.push('trades');
-  const have = effectiveAbilities(abilities);
-  for (const h of HOLD_RIGHTS) if (have.has(h)) out.push(h);
   return out;
 }
 
@@ -350,7 +375,7 @@ export function catalogueView(): {
     presets: PRESETS.map((p) => ({ ...p, abilities: [...p.abilities] })),
     // COPY-UNSIGNED: the owner's rules on top of the boxes.
     rules: [
-      'Members never confirm payment received or release XMR on your sell trades.',
+      'Members never confirm payment received on your sell trades. Only a member you give Release coins (with Hold trade keys) can release, and only one you give Fund the escrow (with Hold trade keys) can fund, each time after confirming with a passkey, security key or PGP key.',
       'Payout wallets, team members, security settings and closing the account are yours alone.',
       'Only you or your trade partner open a dispute; a member with Answer the moderator can see it and reply.',
       'Every action a member takes is in the team log, with their name and the amount.',

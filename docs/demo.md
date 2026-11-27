@@ -56,24 +56,20 @@ Process ids are in `.demo/pids.json`, logs in `.demo/logs/<name>.log`, the login
 
 ## Accounts
 
-Every demo account's password is **`Demo-Monero-2026!`**. Sign in with the **login name** (the
-private one), not the display name. The login then asks for an authenticator code: run
+There are no passwords (owner, 26 Nov 2026). A trader logs in with a passkey, a security key or a
+PGP key, and every account holds at least two kinds of login method among passkey, security key,
+PGP key and authenticator app (an authenticator app counts as a kind but never logs in alone;
+recovery codes do not count). The seed signs every demo account up with a throwaway PGP key and
+adds an authenticator app: two kinds.
 
-```sh
-npm run demo:code ana-demo     # or with no name: every account's current code
-```
-
-and type the 6 digits (each code works once; a new one comes every 30 seconds). Or add the
-account's authenticator secret from `.demo/logins.txt` to any authenticator app. Password plus
-authenticator code is a strong login, so a demo account works at once in a new browser; a
-password alone would start the 24-hour hold (R42) and leave the account unable to trade.
-
-**The door (demo only, `tools/demo/door.ts`).** On the real app a password + authenticator login
-on a browser the account does not know is refused when no device is logged in to approve it (hold
-model v3, 403 `approval-unavailable`); only a passkey, security key or PGP key gets in. The seeded
-accounts have none of those, so the gateway lets them in: when a seeded account's password step
-passes and the account has no logged-in session, that browser is recorded as known for it before
-the code is checked. Accounts you make yourself in the demo get no door.
+**The demo login (demo only, `tools/demo/door.ts`, `tools/demo/door-page.ts`).** The browser holds
+none of the throwaway keys, so open **`/__demo/login`** on the gateway and tap the account: the
+gateway does the real PGP login (`/v1/login/pgp/start` and `finish`) with that account's key
+(`.demo/secrets/traders.json`, 0600) and hands the browser the session cookie the API set. The API
+checks the code as in production. Accounts you make yourself in the demo get no demo login; sign up
+with a passkey or security key in the browser instead. The authenticator codes are still there
+(`npm run demo:code ana-demo`, `/__demo/codes`, or the secret from `.demo/logins.txt` in any
+authenticator app), but a code never logs in alone.
 
 If the same account is already logged in somewhere else (another browser, or a script), a new
 login asks that device to approve it (number matching, Plan 2 Task 16): log the other one out
@@ -83,7 +79,7 @@ shows).
 Only a vendor can post offers (owner, 2 Nov 2026). The cast and `ana-demo` are made vendors by the
 seeder, straight in the demo database (becoming one for real needs a passkey, security key or PGP
 key); `ben-demo` and `cy-demo` stay traders, so you can see both. The seed signs the Terms with
-each account's display name typed (the sign-up's signature, migration 316).
+each account's Trade Tag typed (the sign-up's signature, migration 316).
 
 Yours, with no offers, to trade with yourself (one browser profile or device per account, since
 each trade's escrow keys live in that browser):
@@ -105,7 +101,7 @@ gift cards, Wise, PayPal):
 | `kettle-login` | kettle.moss |
 | `lowtide-login` | lowtide_rx |
 
-Every account has a password, an authenticator (throwaway secret) and one throwaway payout wallet.
+Every account has a throwaway PGP key, an authenticator app (throwaway secret) and one throwaway payout wallet.
 
 `lowtide_rx` also posts offers in euros (SEPA Instant) and pounds (Faster Payments), and the seed
 makes two trades through the real API so **My trades** has rows for `lowtide-login`: one it cancels
@@ -121,9 +117,8 @@ store, on the demo's throwaway database, with a throwaway escrow address that no
 and the seller then opens the dispute through the real API. No XMR moves.
 
 **demo_ana's team.** `ana-demo` has a team of two members, invited and joined through the real
-routes: `ana_desk` (Trades) and `ana_nights` (Offers). An invite needs a strong session and a
-confirm, so the seed logs `ana-demo` in again with password and authenticator code and confirms
-each invite, waiting for a fresh 30-second code each time (about a minute of the start). Each
+routes: `ana_desk` (Trades) and `ana_nights` (Offers). An invite needs a confirm, so the seed
+confirms each invite with `ana-demo`'s throwaway PGP key on the session her sign-up started. Each
 member joined with two throwaway PGP keys, which are not kept: they are there to be seen on
 Settings, Team.
 
@@ -199,8 +194,7 @@ secrets) and, like `/__demo/codes`, never reaches the API.
 - **Every secret.** The server keys, key rings, PGP signing key, VAPID keys, moderation signing
   key and keystore key, the X2F fee wallet (whose keys are thrown away) and the Postgres password
   are random per start, in `.demo/secrets/` (chmod 600), and die with the demo. So are the demo
-  accounts' authenticator secrets.
-- **The leaked-password list** has a single entry ("password").
+  accounts' authenticator secrets and PGP keys.
 - **The miner and the faucet** are the only demo pieces in `tools/demo/moderator.ts`. It runs the
   real moderation service (attestation, the moderator's escrow party, the chain watcher that
   reports `setup-done`, `chain` and `settled`, the moderator desks), only with a 4-second watcher
@@ -323,7 +317,7 @@ send in the browser (regtest only); keep each trader's page open from take to se
   tunnel is public: anyone who has the URL can open the demo and sign up, and anyone who has the
   staff URL can log in as the demo's staff owner at `/__demo/staff`.** It is fake money only
   (regtest), and the tunnels end with `npm run demo:stop`. Passkeys are made for the tunnel's host
-  name; password logins work everywhere.
+  name; the demo login (`/__demo/login`, PGP) works everywhere.
 - **Any one https origin (a preview pane, a tunnel).** The demo's web build is made with
   placeholder origins for the relay and the node proxy; the gateway fills them, in the app's
   JavaScript and in the CSP, with the origin each request was sent to, and routes `/relay` and the
@@ -346,7 +340,7 @@ send in the browser (regtest only); keep each trader's page open from take to se
   0600; the adopted host is in `.demo/state/rp-origin.json`). A failed restart adopts nothing and
   the next page load tries again (`rp-adopt-failed` in the gateway log; each `self-origin` line
   shows the peer and X-Forwarded-Proto). The first host stays; keys and
-  passkeys then work under it only (localhost still opens the app, and passwords work everywhere).
+  passkeys then work under it only (localhost still opens the app, and the demo login works everywhere).
   Only a request from a loopback peer (the preview pane's forwarder) can be adopted, and
   `X-Forwarded-Host`/`-Proto` count only from one: a client on the phone's LAN address or the
   tailnet cannot choose the host. `DEMO_ADOPT_HOST=<host name>` pins the one host that may be

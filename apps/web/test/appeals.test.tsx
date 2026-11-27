@@ -118,7 +118,7 @@ describe('the trade page offers File appeal while the window is open (D-005)', (
     } as Partial<TradeView>) as TradeView;
 
   it("the account owner's room, on a trade settled by a ruling", async () => {
-    me = { kind: 'trader', level: 'full', displayName: 'Calcium' };
+    me = { kind: 'trader', level: 'full', tradeTag: 'Calcium' };
     const open = await room(released({ appealUntil: iso(120) }));
     expect(links(open.host).map((a) => a.getAttribute('href'))).toEqual([`/trade/${encodeURIComponent(tradeView.code)}/dispute`]);
     open.unmount();
@@ -127,7 +127,7 @@ describe('the trade page offers File appeal while the window is open (D-005)', (
   });
 
   it("a team member's room (the API sends the deadline only to a member with the File an appeal box)", async () => {
-    me = { kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
+    me = { kind: 'trader', level: 'full', tradeTag: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } };
     const open = await room(released({ appealUntil: iso(120) }));
     expect(open.host.querySelector('[data-member]')).not.toBeNull();
     expect(links(open.host)).toHaveLength(1);
@@ -137,7 +137,7 @@ describe('the trade page offers File appeal while the window is open (D-005)', (
   });
 
   it('not inside a disputed trade: the ruling page has its own appeal form', async () => {
-    me = { kind: 'trader', level: 'full', displayName: 'Calcium' };
+    me = { kind: 'trader', level: 'full', tradeTag: 'Calcium' };
     const { host } = await room(released({ state: 'disputed', settling: null, closedAt: null, txHash: null, appealUntil: iso(120) }));
     expect(links(host)).toHaveLength(0);
   });

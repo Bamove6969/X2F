@@ -26,11 +26,8 @@ describe('wallets model', () => {
   });
 
   it('the note under the form follows the rule', () => {
-    expect(ruleNote({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 })).toBe(
-      'Your first wallet works at once.',
-    );
-    expect(ruleNote({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 })).toBe(
-      'They will work 24 hours after you add them.',
-    );
+    expect(ruleNote({ firstWallet: true, strongMethods: [] })).toBe('Your first wallet works at once.');
+    expect(ruleNote({ firstWallet: false, strongMethods: [] })).toBe("Saving asks you to confirm it's you.");
+    expect(ruleNote(null)).toBe("Saving asks you to confirm it's you. New wallets work at once.");
   });
 });

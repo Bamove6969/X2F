@@ -9,7 +9,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { screenStatus } from './session.js';
 
-const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
+const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';

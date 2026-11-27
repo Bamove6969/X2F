@@ -108,7 +108,7 @@ export function PgpChallenge() {
     setBusy(true);
     setError(null);
     try {
-      update({ challenge: await registerPgpStart({ displayName: state.displayName, loginName: state.loginName }, state.publicKey) });
+      update({ challenge: await registerPgpStart({ tradeTag: state.tradeTag, loginName: state.loginName }, state.publicKey) });
       setCode('');
       setCopied(false);
     } catch (e) {

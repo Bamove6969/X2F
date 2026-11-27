@@ -1,18 +1,17 @@
 /**
- * Security review of wip/lead-notes-all 656d259c, M2 (owner, 16 Nov 2026: a password does not
- * stand alone, so a password alone does not finish sign-up). A trader account whose only login is
- * a password (no authenticator app, passkey, security key or PGP key usable now; `passwordAlone`)
- * gets a setup-only session once the creating session's sign-up window is over, whichever way the
- * session began (that window lapsing, or any later login): it reaches only SETUP_ONLY below, the
- * routes that add a second method (with their confirm, their staged change and the recovery code),
- * read the account, the Terms and the feedback form; everything else is 403
- * `second-method-required`. Logging out needs no session. Checked in `requireSession` as the site
+ * Owner, 26 Nov 2026 (no passwords): a trader account holds at least two kinds of login method
+ * (`enoughMethods`, @x2f/accounts). An account owner's session whose account holds fewer is
+ * setup-only once the creating session's sign-up window is over, whichever way the session began:
+ * it reaches only SETUP_ONLY below (the routes that add a method, with their confirm, the recovery
+ * code, reading the account, the Terms and the feedback form); everything else is 403
+ * `two-methods-required`. Logging out needs no session. Checked in `requireSession` as the site
  * ban's gate is (banState.ts): one more column of its query, and the PGP keys only when the
- * account holds nothing else. A team member's session is never setup-only (members log in with two
- * factors). The moment a second method is on the account, its sessions are normal ones.
+ * account could fall short. A team member's session is never setup-only (members log in with two
+ * factors). The moment the account holds two kinds, its sessions are normal ones.
  */
-import { passwordAlone, type MethodType } from '@x2f/accounts';
+import { enoughMethods, type MethodType } from '@x2f/accounts';
 import type { Deps } from '../app.js';
+import type { Queryable } from '../db/pool.js';
 import { usablePgpIds } from './methods.js';
 
 /** "METHOD /route" a setup-only session may reach. */
@@ -23,8 +22,11 @@ export const SETUP_ONLY: ReadonlySet<string> = new Set([
   'POST /v1/account/terms',
   'GET /v1/account/methods',
   'GET /v1/wallets/rule',
-  // A second method: the authenticator app, a passkey or security key, a PGP key, each behind the password's confirm.
-  'POST /v1/confirm/password',
+  // A second method: the authenticator app, a passkey or security key, a PGP key, each behind a confirm.
+  'POST /v1/confirm/pgp/start',
+  'POST /v1/confirm/pgp/finish',
+  'POST /v1/confirm/webauthn/start',
+  'POST /v1/confirm/webauthn/finish',
   'POST /v1/account/totp/start',
   'POST /v1/account/totp/finish',
   'POST /v1/account/webauthn/start',
@@ -34,15 +36,10 @@ export const SETUP_ONLY: ReadonlySet<string> = new Set([
   // The recovery code.
   'POST /v1/account/recovery-codes',
   'POST /v1/account/recovery-code/reveal',
-  // A password login's changes are staged (hold model v3): seeing, submitting and dropping them.
-  'GET /v1/account/hold',
-  'POST /v1/account/hold/changes/submit',
-  'DELETE /v1/account/hold/changes',
-  'DELETE /v1/account/hold/changes/:id',
-  // The sign-up's end (still 409 password-alone), this session's own length, and a new device's login approval.
+  // The sign-up's end (still 409 two-methods-required), this session's own length, and a new device's login approval.
   'POST /v1/account/onboarding/end',
   'PUT /v1/account/session/length',
-  // Re-review N2: seeing its sessions and ending a stranger's (the route's own weak-session rules apply).
+  // Re-review N2: seeing its sessions and ending another one.
   'GET /v1/account/sessions',
   'DELETE /v1/account/sessions/:id',
   'POST /v1/account/session/extend',
@@ -60,17 +57,26 @@ export function setupOnlyAllows(method: string, url: string): boolean {
 
 /**
  * The SQL column `requireSession` reads (aliases `s` sessions, `a` accounts): true for a trader
- * account owner's session whose account has a password and no authenticator app, passkey or
- * security key; its PGP keys are then checked by `passwordOnlyNow`.
+ * account owner's session whose account might hold fewer than two kinds: fewer than two of the
+ * authenticator app, passkeys and security keys (a stored PGP key may have expired, so it is left
+ * to `shortOfMethodsNow`, which then counts exactly).
  */
-export const PASSWORD_ONLY_SQL = `(a.kind = 'trader' and s.member_id is null
-   and exists (select 1 from passwords p where p.account_id = s.account_id)
-   and not exists (select 1 from totp t where t.account_id = s.account_id)
-   and not exists (select 1 from webauthn_credentials w where w.account_id = s.account_id))`;
+export const FEW_METHODS_SQL = `(a.kind = 'trader' and s.member_id is null
+   and ((exists (select 1 from totp t where t.account_id = s.account_id))::int
+      + (exists (select 1 from webauthn_credentials w where w.account_id = s.account_id and w.kind = 'passkey'))::int
+      + (exists (select 1 from webauthn_credentials w where w.account_id = s.account_id and w.kind = 'security-key'))::int) < 2)`;
 
-/** For an account PASSWORD_ONLY_SQL picked out: true unless it holds a PGP key usable now. */
-export async function passwordOnlyNow(deps: Pick<Deps, 'db' | 'config'>, accountId: string, now: Date): Promise<boolean> {
-  const has: MethodType[] = ['password'];
-  if ((await usablePgpIds(deps.db, deps.config, accountId, now)).size > 0) has.push('pgp');
-  return passwordAlone(has);
+/** The kinds of login method the account holds now (a PGP key only when usable now; recovery codes never). */
+export async function methodKinds(db: Queryable, config: Deps['config'], accountId: string, now: Date): Promise<MethodType[]> {
+  const out: MethodType[] = [];
+  if ((await usablePgpIds(db, config, accountId, now)).size > 0) out.push('pgp');
+  const { rows } = await db.query<{ kind: 'passkey' | 'security-key' }>('select distinct kind from webauthn_credentials where account_id = $1', [accountId]);
+  for (const r of rows) out.push(r.kind);
+  if ((await db.query('select 1 from totp where account_id = $1', [accountId])).rows.length > 0) out.push('totp');
+  return out;
+}
+
+/** For an account FEW_METHODS_SQL picked out: true when it holds fewer than two kinds now. */
+export async function shortOfMethodsNow(deps: Pick<Deps, 'db' | 'config'>, accountId: string, now: Date): Promise<boolean> {
+  return !enoughMethods(await methodKinds(deps.db, deps.config, accountId, now));
 }

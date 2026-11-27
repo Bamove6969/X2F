@@ -17,10 +17,10 @@ let deps: Deps;
 let setNow: (d: Date) => void;
 let logs: string[];
 
-async function login(name: string, o: { level?: 'full' | 'recovery'; kind?: 'trader' | 'staff' } = {}): Promise<{ b: Browser; id: string }> {
+async function login(name: string, o: { method?: 'passkey' | 'recovery-code'; kind?: 'trader' | 'staff' } = {}): Promise<{ b: Browser; id: string }> {
   const id = await seedAccount(deps, { loginName: name, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
-  expect((await b.post('/t/login', { accountId: id, ...(o.level ? { level: o.level } : {}) })).statusCode).toBe(200);
+  expect((await b.post('/t/login', { accountId: id, ...(o.method ? { method: o.method } : {}) })).statusCode).toBe(200);
   return { b, id };
 }
 
@@ -185,8 +185,6 @@ describe('POST /v1/feedback', () => {
     expect(anon.statusCode).toBe(401);
     const { b: staff } = await login('staff1', { kind: 'staff' });
     expect((await staff.post('/v1/feedback', { mood: 'ok' })).json()).toEqual({ error: 'wrong-account-kind' });
-    const { b: backup } = await login('backup1', { level: 'recovery' });
-    expect((await backup.post('/v1/feedback', { mood: 'ok' })).json()).toEqual({ error: 'recovery-session' });
     expect(await rows()).toEqual([]);
   });
 

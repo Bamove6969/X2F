@@ -100,7 +100,7 @@ export function usePaymentDetails(code: string): PaymentDetail[] | null {
  */
 export interface TradeChatProps {
   code: string;
-  /** The counterparty's public display name. */
+  /** The counterparty's public Trade Tag. */
   name: string;
   /**
    * The trade's payment method (TradeView.methodId): the payee's side of the chat shows that

@@ -275,7 +275,7 @@ describe('Skip review (owner 2026-11-01, item 28)', () => {
 });
 
 describe('GET /v1/reviews/pending', () => {
-  it("lists the caller's unrated reviewable trades with the counterparty's display name, oldest first", async () => {
+  it("lists the caller's unrated reviewable trades with the counterparty's Trade Tag, oldest first", async () => {
     const { seller, buyer, t } = await tradeIn('released');
     setNow(new Date(START.getTime() + MIN));
     const other = await trader();
@@ -285,8 +285,8 @@ describe('GET /v1/reviews/pending', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       trades: [
-        { code: t.code, counterparty: seller.displayName, reviewableSince: START.toISOString() },
-        { code: trade.code, counterparty: other.displayName, reviewableSince: new Date(START.getTime() + MIN).toISOString() },
+        { code: t.code, counterparty: seller.tradeTag, reviewableSince: START.toISOString() },
+        { code: trade.code, counterparty: other.tradeTag, reviewableSince: new Date(START.getTime() + MIN).toISOString() },
       ],
     });
     expect(res.body).not.toContain(seller.loginName);

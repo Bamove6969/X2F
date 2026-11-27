@@ -83,12 +83,12 @@ describe('"My account has been compromised" (D-059)', () => {
     const host = mount();
     type(host.querySelector('input')!, '  mira.k  ');
     tick(host, 'have-recovery-code');
-    tick(host, 'have-password');
+    tick(host, 'have-passkey');
     type(host.querySelector('textarea')!, ' They took my phone. ');
     click(part(host, 'compromised-send')!);
     expect(calls).toEqual([]);
     expect(host.querySelector('h1')!.textContent).toBe(COMPROMISED_COPY.confirmTitle('mira.k'));
-    expect(part(host, 'compromised-told')!.textContent).toContain('Password, Recovery code');
+    expect(part(host, 'compromised-told')!.textContent).toContain('Passkey, Recovery code');
     // Go back keeps what was typed.
     click(part(host, 'compromised-edit')!);
     expect(host.querySelector('input')!.value).toBe('  mira.k  ');
@@ -96,7 +96,7 @@ describe('"My account has been compromised" (D-059)', () => {
     click(part(host, 'compromised-freeze')!);
     await settle();
     expect(calls).toEqual([
-      { url: '/v1/tickets/compromised', method: 'POST', body: { loginName: 'mira.k', methodsLeft: ['password', 'recovery-code'], comment: 'They took my phone.' } },
+      { url: '/v1/tickets/compromised', method: 'POST', body: { loginName: 'mira.k', methodsLeft: ['passkey', 'recovery-code'], comment: 'They took my phone.' } },
     ]);
     expect(part(host, 'compromised-frozen')!.textContent).toBe(COMPROMISED_COPY.frozenTitle('mira.k'));
     expect(part(host, 'compromised-ticket')!.textContent).toContain('CT-1042');

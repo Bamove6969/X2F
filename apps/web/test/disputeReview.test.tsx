@@ -14,7 +14,7 @@ import { fire, render } from './render.js';
 
 const ID = '3f2b6a1e-5c4d-4e8f-9a0b-1c2d3e4f5a6b';
 const BASE: TraderProfile = {
-  displayName: 'mira.k',
+  tradeTag: 'mira.k',
   self: false,
   memberSince: '2025-03',
   online: false,
@@ -34,7 +34,7 @@ const BASE: TraderProfile = {
 };
 const MINE: TraderProfile = {
   ...BASE,
-  displayName: 'me',
+  tradeTag: 'me',
   self: true,
   reviews: [
     { neutral: false, stars: 1, phrases: ['Slow'], tradeBadges: [], note: 'Rude and slow', method: 'Zelle', age: 'Nov 2026', underReview: false, id: ID, disputable: true },
@@ -51,7 +51,7 @@ beforeEach(() => {
   answer = { status: 201, body: null };
   refreshSession();
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'me' });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'me' });
     if (input === '/v1/traders/mira.k') return json(200, BASE);
     if (input === '/v1/traders/me') return json(200, MINE);
     if ((init.method ?? 'GET') === 'POST') {

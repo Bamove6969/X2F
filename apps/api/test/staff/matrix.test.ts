@@ -20,7 +20,7 @@ let close: () => Promise<void>;
 const ids: Record<string, string> = {};
 
 const CALLERS = [
-  'anonymous', 'trader', 'member', 'helper', 'mod', 'senior', 'owner', 'switched-off mod', 'out-of-hours mod', 'recovery mod', 'mod with a grant', 'senior with a grant',
+  'anonymous', 'trader', 'member', 'helper', 'mod', 'senior', 'owner', 'switched-off mod', 'out-of-hours mod', 'mod with a grant', 'senior with a grant',
 ] as const;
 type Caller = (typeof CALLERS)[number];
 const ROLE_OF: Partial<Record<Caller, StaffRole>> = { helper: 'helper', mod: 'mod', senior: 'senior', owner: 'owner', 'mod with a grant': 'mod', 'senior with a grant': 'senior' };
@@ -36,7 +36,6 @@ beforeAll(async () => {
   ids['switched-off mod'] = (await seedStaff(deps, { role: 'mod', switchedOff: true })).id;
   // A Sunday-only minute: outside the window on Monday at noon.
   ids['out-of-hours mod'] = (await seedStaff(deps, { role: 'mod', hours: { days: ['Sun'], start: '00:00', end: '00:01', tz: 'UTC' } })).id;
-  ids['recovery mod'] = (await seedStaff(deps, { role: 'mod' })).id;
   // Every grantable perm stored: a grant widens only routes of that perm (`grantable` rows).
   ids['mod with a grant'] = (await seedStaff(deps, { role: 'mod', grants: [...GRANTABLE_PERMS] })).id;
   // Owner 26 Nov 2026: the ban and lift boxes count for a senior moderator only (a mod's stored one is ignored).
@@ -49,8 +48,7 @@ async function browserFor(c: Caller): Promise<StaffBrowser> {
   const b = new StaffBrowser(app);
   if (c === 'anonymous') return b;
   // The trader's session is a trader-API one, sent under the staff cookie name.
-  const { token, sessionId } = await insertSession(deps, ids[c]!, c === 'trader' ? 'trader' : 'staff');
-  if (c === 'recovery mod') await deps.db.query("update sessions set level = 'recovery' where id = $1", [sessionId]);
+  const { token } = await insertSession(deps, ids[c]!, c === 'trader' ? 'trader' : 'staff');
   return b.withSession(token);
 }
 
@@ -61,7 +59,6 @@ function expected(c: Caller, r: StaffRouteRow): { status: number; error: string 
   if (c === 'anonymous' || c === 'trader' || c === 'member') return { status: 401, error: 'not-authenticated' };
   if (c === 'switched-off mod') return { status: 403, error: 'account-disabled' };
   if (c === 'out-of-hours mod') return { status: 401, error: 'outside-login-hours' };
-  if (c === 'recovery mod') return { status: 403, error: 'recovery-session' };
   if (r.allowed === 'public') throw new Error(`${r.url} is public`);
   const seniorOnly = (SENIOR_ONLY_GRANTS as readonly string[]).includes(r.perm);
   if (c === 'mod with a grant' && r.grantable && !seniorOnly) return 'allowed';
@@ -69,7 +66,7 @@ function expected(c: Caller, r: StaffRouteRow): { status: number; error: string 
   return r.allowed.includes(ROLE_OF[c]!) ? 'allowed' : { status: 403, error: 'forbidden' };
 }
 
-const REFUSALS = ['not-authenticated', 'account-disabled', 'outside-login-hours', 'forbidden', 'recovery-session'];
+const REFUSALS = ['not-authenticated', 'account-disabled', 'outside-login-hours', 'forbidden'];
 
 describe('privilege matrix', () => {
   it('routes.ts lists exactly the routes the staff app registers, with their perms', () => {

@@ -270,12 +270,12 @@ async function putSettings(req: FastifyRequest) {
   return settingsJson(rows[0]);
 }
 
-/** `POST /v1/account/blocks { displayName }`: by public display name; blocking twice is a no-op. */
+/** `POST /v1/account/blocks { tradeTag }`: by public Trade Tag; blocking twice is a no-op. */
 async function blockHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
-  const { displayName } = bodyOf(req);
-  if (typeof displayName !== 'string' || displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
-  const who = await findByPublicName(deps.db, displayName);
+  const { tradeTag } = bodyOf(req);
+  if (typeof tradeTag !== 'string' || tradeTag.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  const who = await findByPublicName(deps.db, tradeTag);
   if (who === null) throw new ApiError(404, 'not-found');
   if (who.id === req.auth.accountId) throw new ApiError(400, 'bad-request');
   await deps.db.query(
@@ -286,30 +286,30 @@ async function blockHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * `DELETE /v1/account/blocks/:displayName` (Task 37): unblocks by public display name; unblocking
+ * `DELETE /v1/account/blocks/:tradeTag` (Task 37): unblocks by public Trade Tag; unblocking
  * someone not blocked is a no-op (204), an unknown name 404 as for blocking. Everything the block
  * stopped (offers, takes, chats, presence) comes back at once: nothing is stored but the row.
  */
 async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
-  const { displayName } = req.params as { displayName: string };
-  if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
-  // By the stored key (`displayKeyOf`, as `checkDisplayName` makes it), within my own blocks only, with no
+  const { tradeTag } = req.params as { tradeTag: string };
+  if (tradeTag.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  // By the stored key (`displayKeyOf`, as `checkTradeTag` makes it), within my own blocks only, with no
   // name-shape or reserved-word check (review M1): a name that a later rule change would refuse
   // must still be unblockable. 404 only when no account has that name.
   const { rows } = await deps.db.query<{ found: boolean }>(
     `with who as (select id from accounts where display_key = $2),
           gone as (delete from account_blocks b using who where b.account_id = $1 and b.blocked_id = who.id returning 1)
      select exists (select 1 from who) as found`,
-    [req.auth.accountId, displayKeyOf(displayName)],
+    [req.auth.accountId, displayKeyOf(tradeTag)],
   );
   if (rows[0]?.found !== true) throw new ApiError(404, 'not-found');
   return reply.code(204).send();
 }
 
-/** One entry of my Blocked list: the public display name only (never the login name). */
+/** One entry of my Blocked list: the public Trade Tag only (never the login name). */
 export interface BlockedEntry {
-  displayName: string;
+  tradeTag: string;
   /** When I blocked them (S-093: shown with its date and time). */
   blockedAt: string;
   /** S-093 (owner p7-6): my own private note on them, or null; nobody else ever reads it. */
@@ -327,7 +327,7 @@ export const BLOCK_NOTE_MAX = 500;
 const NOTE_CONTROL = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 
 /**
- * `PUT /v1/account/blocks/:displayName/note { note }` (S-093, owner p7-6): sets, changes or clears
+ * `PUT /v1/account/blocks/:tradeTag/note { note }` (S-093, owner p7-6): sets, changes or clears
  * (null, or blank text) my private note on someone I blocked → 200 `{ note }` as stored (trimmed).
  * By the stored name key, as unblock, and only on my own block: 404 `not-found` for an unknown name
  * and for someone I did not block (names are public, so the two need not differ). 400
@@ -337,8 +337,8 @@ const NOTE_CONTROL = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
  */
 async function blockNoteHandler(req: FastifyRequest) {
   const deps = req.server.deps;
-  const { displayName } = req.params as { displayName: string };
-  if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  const { tradeTag } = req.params as { tradeTag: string };
+  if (tradeTag.length > NAME_MAX) throw new ApiError(400, 'bad-request');
   const raw = bodyOf(req).note;
   if (raw !== null && typeof raw !== 'string') throw new ApiError(400, 'bad-request', { field: 'note' });
   const trimmed = raw === null ? '' : raw.trim();
@@ -348,7 +348,7 @@ async function blockNoteHandler(req: FastifyRequest) {
     `update account_blocks b set note = $3 from accounts a
       where a.display_key = $2 and b.account_id = $1 and b.blocked_id = a.id
       returning b.note`,
-    [req.auth.accountId, displayKeyOf(displayName), note],
+    [req.auth.accountId, displayKeyOf(tradeTag), note],
   );
   if (rows.length === 0) throw new ApiError(404, 'not-found');
   return { note: rows[0]!.note };
@@ -364,7 +364,7 @@ async function listBlocks(req: FastifyRequest): Promise<BlockedEntry[]> {
       where b.account_id = $1 order by b.created_at desc, a.${PUBLIC_NAME}`,
     [req.auth.accountId],
   );
-  return rows.map((r) => ({ displayName: r.name, blockedAt: r.created_at.toISOString(), note: r.note }));
+  return rows.map((r) => ({ tradeTag: r.name, blockedAt: r.created_at.toISOString(), note: r.note }));
 }
 
 /** Deletes nudge records older than an hour (registered in main.ts). */
@@ -384,6 +384,6 @@ export function nudgeRoutes(app: FastifyInstance): void {
   app.put('/v1/account/nudges', { preHandler: trader }, putSettings);
   app.get('/v1/account/blocks', { preHandler: trader }, listBlocks);
   app.post('/v1/account/blocks', { preHandler: trader }, blockHandler);
-  app.delete('/v1/account/blocks/:displayName', { preHandler: trader }, unblockHandler);
-  app.put('/v1/account/blocks/:displayName/note', { preHandler: trader }, blockNoteHandler);
+  app.delete('/v1/account/blocks/:tradeTag', { preHandler: trader }, unblockHandler);
+  app.put('/v1/account/blocks/:tradeTag/note', { preHandler: trader }, blockNoteHandler);
 }

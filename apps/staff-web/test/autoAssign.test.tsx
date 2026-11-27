@@ -16,8 +16,8 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 const H = 3_600_000;
 const MIN = 60_000;
 const ends = () => new Date(Date.now() + H).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
 
 async function open(path: string) {
   render(

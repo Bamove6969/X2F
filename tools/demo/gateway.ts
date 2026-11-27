@@ -12,7 +12,8 @@ import http from 'node:http';
 import https from 'node:https';
 import { createCodesHandler } from './codes-page.js';
 import { createGuideHandler } from './guide-page.js';
-import { createDoor } from './door.js';
+import { createDoorHandler } from './door-page.js';
+import { readTraderSecrets, softTraderLogin } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
 import { ROOT } from './config.js';
@@ -90,10 +91,19 @@ const demo = (req: http.IncomingMessage, res: http.ServerResponse): void => {
   const path = (req.url ?? '').split(/[?#]/, 1)[0];
   if (path === '/__demo/codes' || path === '/__demo/codes.js') codes(req, res);
   else if (path === '/__demo/guide' || path === '/__demo/guide/legal') guide(req, res);
+  else if (path === '/__demo/login') door(req, res);
   else notes(req, res);
 };
-// The seeded accounts' way in from a fresh browser (door.ts).
-const passwordStep = createDoor(env('DATABASE_URL'));
+// The seeded traders' way in from a fresh browser (door.ts): the real PGP login with their throwaway keys.
+const door = createDoorHandler({
+  origins: ORIGINS,
+  people: () => readTraderSecrets().map((t) => ({ tradeTag: t.tradeTag, loginName: t.loginName })),
+  login: async (loginName, cookies) => {
+    const who = readTraderSecrets().find((t) => t.loginName === loginName);
+    if (!who) throw new Error('not a seeded account');
+    return softTraderLogin({ api: `http://127.0.0.1:${API}`, origin: PRIMARY }, who, cookies);
+  },
+});
 // Security keys and passkeys under a preview pane's https host (rp-adopt.ts): the API is restarted
 // once with that host as its RP ID. DEMO_API_ENV is the API's environment file (0600, .demo/secrets).
 const API_ENV = process.env.DEMO_API_ENV ?? '';
@@ -117,7 +127,7 @@ const adopter = createAdopter({
   },
 });
 const { web, node, handle, upgrade } = createGateway({
-  api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, passwordStep, beforeApi: adopter.beforeApi,
+  api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, beforeApi: adopter.beforeApi,
 });
 
 function serve(route: Route, port: number, host: string, tls: { key: Buffer; cert: Buffer } | null): void {

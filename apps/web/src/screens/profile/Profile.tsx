@@ -2,7 +2,7 @@
  * Plan 5 Task 12: a trader's profile (Profile board, design/x2f-app/Profile.dc.html), from
  * `GET /v1/traders/:name` (apps/api/src/reputation/profile.ts).
  *
- * - `/profile`: my own profile, by my public display name from the session, with "Choose badges"
+ * - `/profile`: my own profile, by my public Trade Tag from the session, with "Choose badges"
  *   (→ /settings/badges), My offers (→ /profile/offers) and the signed record settings.
  * - `/u/:name`: another trader's public profile, with Block (the blocker still opens the profile of
  *   the person they blocked: that is where Unblock is, traders/blocks.ts).
@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { BadgeChips, badgesFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
@@ -105,7 +105,7 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
   const badges = badgesFromApi([...p.badges.featured, ...p.badges.more]);
   // Only the badges the app knows are drawn; Featured are the first ones (New included).
   const featured = badgesFromApi(p.badges.featured).length;
-  const name = p.displayName;
+  const name = p.tradeTag;
   return (
     <main className="x2f-screen" data-screen="profile" data-self={p.self ? 'true' : 'false'}>
       <h1 className="x2f-screen__title">{C.title}</h1>
@@ -207,9 +207,9 @@ export function ProfileView({ profile: p }: { profile: TraderProfile }) {
           <p className="x2f-note" data-part="offers-count">
             {C.offers(p.offers)}
           </p>
-          <BlockAction displayName={name} />
+          <BlockAction tradeTag={name} />
           {/* Job 1c (owner S-094, p7-8): the account's private notes on this trader, for its own team. */}
-          <SessionTraderNotes displayName={name} />
+          <SessionTraderNotes tradeTag={name} />
         </div>
       )}
     </main>
@@ -237,10 +237,10 @@ function Loaded({ load, retry }: { load: Load; retry: () => void }) {
   );
 }
 
-/** `/profile`: my own profile, by my public display name. */
+/** `/profile`: my own profile, by my public Trade Tag. */
 export function MyProfile() {
   const session = useSession();
-  const name = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  const name = session.status === 'signed-in' ? tradeTagOf(session.me) : null;
   const { load, retry } = useProfile(name);
   return <Loaded load={name === null ? { kind: 'loading' } : load} retry={retry} />;
 }

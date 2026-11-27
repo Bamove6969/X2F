@@ -33,11 +33,11 @@ export type Party = 'buyer' | 'seller';
 
 /**
  * The other trader as the API shows them (apps/api/src/traders/summary.ts `TraderSummary`, Task 4). The name
- * is the PUBLIC display name (FU-A); the private login name is never sent. Read it only through
+ * is the PUBLIC Trade Tag (FU-A); the private login name is never sent. Read it only through
  * `publicName`.
  */
 export interface TraderSummary {
-  displayName: string;
+  tradeTag: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -56,9 +56,9 @@ export interface TraderSummary {
   disputes?: { won: number; lost: number };
 }
 
-/** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
-export function publicName(t: Pick<TraderSummary, 'displayName'>): string {
-  return t.displayName;
+/** The counterparty's public Trade Tag; the one way screens read it (a login name is never sent or shown). */
+export function publicName(t: Pick<TraderSummary, 'tradeTag'>): string {
+  return t.tradeTag;
 }
 
 /**
@@ -74,14 +74,6 @@ export interface TradeView {
   poster: Party;
   state: TradeState;
   counterparty: TraderSummary;
-  /**
-   * Hold model v3: the partner's account has a temporary problem (a recovery-code hold: the trade is
-   * paused or was cancelled). Never says why. Not shown on screen yet (the web's v3 port).
-   * Optional: live-event views and older API builds may leave it out.
-   */
-  counterpartyProblem?: boolean;
-  /** Owner G7 (lead review 8 Nov I5): the buyer's cancel is recorded and waits for the other account's problem to end. Not shown on screen yet. */
-  cancelWaiting?: boolean;
   methodId: string;
   // No `paymentInstructions` here on purpose (instr-hash review I1): the API sends the locked text,
   // but it is unsigned. Only the escrow runtime reads it (from `unknown`, escrow/adapters.ts), and a
@@ -232,6 +224,7 @@ export function methodOf(view: Pick<TradeView, 'methodId' | 'profile'>): { name:
 }
 
 /** POST /v1/trades/:code/events (Task 6); answers the new view, or throws ApiCallError (409 with the rule code). */
-export function postTradeEvent(code: string, event: { type: string; fiatCents?: bigint }): Promise<TradeView> {
+/** `confirmToken`: a team member's confirm-it's-you token for a fund or a release (screens/trade/memberActs.ts). */
+export function postTradeEvent(code: string, event: { type: string; fiatCents?: bigint; confirmToken?: string }): Promise<TradeView> {
   return api<TradeView>(`/v1/trades/${encodeURIComponent(code)}/events`, { method: 'POST', body: event });
 }

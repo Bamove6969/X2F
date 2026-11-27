@@ -30,7 +30,9 @@
 // 2026-11-25c: the owner's full-length Terms, word for word (25 Nov, in chat after demo note #223). COPY-UNSIGNED.
 // 2026-11-26: the owner's open-items walkthrough (26 Nov): items 1-6 (review proposals 8 and 9, the change summary,
 // the custody line in place of the MSB claim, retention words matched to the code). COPY-UNSIGNED.
-export const TERMS_TEXT_VERSION = '2026-11-26';
+// 2026-11-26b: the public name is called the Trade Tag ("display name" becomes "Trade Tag"), and the line about
+// password fingerprints is gone (passwords were removed from the product). COPY-UNSIGNED.
+export const TERMS_TEXT_VERSION = '2026-11-26b';
 
 /**
  * A paragraph of the text, or a paragraph followed by a bulleted list (owner demo notes 13 Nov,
@@ -58,13 +60,9 @@ export const TERMS_DRAFT_NOTE = '';
  */
 export const TERMS_CHANGES: readonly string[] = [
   // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
-  'What X2F is: in place of "not a money services business", we now say X2F never takes custody of your funds and cannot move them on its own.',
+  'Your public name is now called your Trade Tag.',
   // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
-  'Privacy: we now say exactly what is purged after 30 and 90 days, what stays, and list what X2F does keep.',
-  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
-  'IP addresses: we now say X2F\'s servers log none, since we can\'t speak for networks outside X2F.',
-  // not-a-refusal: a summary of what changed in the Terms, not a rule the reader ran into
-  'Changes to these Terms now come with a short summary like this one.',
+  'Privacy: the line about password fingerprints is gone, since X2F no longer uses passwords.',
 ];
 
 /** The board's key points, shown above the full text. */
@@ -95,7 +93,7 @@ export const TERMS: TermsSection[] = [
   {
     heading: "2. Your account",
     paragraphs: [
-      "You need an account to trade or post an ad. Because X2F is built for privacy, we never ask for an email address or phone number. Instead, you create a private user ID (used only to log in) and a public display name that other traders see.",
+      "You need an account to trade or post an ad. Because X2F is built for privacy, we never ask for an email address or phone number. Instead, you create a private user ID (used only to log in) and a public Trade Tag that other traders see.",
       // not-a-refusal: Terms text that explains how X2F works, not a rule the reader ran into
       "Keep your login credentials and recovery codes secure. While your XMR stays in your own wallet—or locked in on-chain 2-of-3 multisig escrow during an active trade—your account age and reputation cannot be restored if you lose access. X2F cannot reset your credentials for you.",
       "One person, one account. Do not sell, share, or lend your login. If you operate with a team, add them as team members so each person has their own separate credentials. Accounts that remain inactive (not signed into) for 60 days or longer are closed automatically.",
@@ -141,7 +139,7 @@ export const TERMS: TermsSection[] = [
     heading: PRIVACY_HEADING,
     paragraphs: [
       "X2F gives access to a completed trade and its chat for 30 days after the trade ends. After that, the chat, its messages and the payment proofs in it are permanently purged. If there was a dispute, the trade’s chat is kept for 90 days after the dispute closes, and is then purged. The wallet addresses used in a trade are deleted 90 days after it ends. What stays is a stripped record of each trade (its code, the two accounts, the amounts and how it ended), so trade counts and reputation keep working. X2F uses no analytics or tracking, its servers log no IP addresses, and it automatically strips Exif and device metadata from uploaded payment proofs.",
-      "What we do keep: your login ID and display name, your login keys, and only a scrambled fingerprint of any password (never the password itself), which Terms version you accepted, your ads, your trades and their encrypted chats for the times above, your ratings, and a log of what our moderators do.",
+      "What we do keep: your login ID and Trade Tag, your login keys, which Terms version you accepted, your ads, your trades and their encrypted chats for the times above, your ratings, and a log of what our moderators do.",
     ],
   },
   {

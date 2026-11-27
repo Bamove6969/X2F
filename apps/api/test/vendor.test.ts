@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
-import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_ROUTES } from '../src/auth/hold.js';
+import { LIVE_SESSION_ROUTES } from '../src/auth/liveSession.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { genKey } from './helpers/pgpKeys.js';
@@ -75,7 +75,7 @@ async function withKey(): Promise<Who> {
   return t;
 }
 
-async function token(who: Who, method: 'pgp' | 'passkey' | 'security-key' | 'password'): Promise<string> {
+async function token(who: Who, method: 'pgp' | 'passkey' | 'security-key'): Promise<string> {
   return issueConfirmToken(deps, { sessionId: await sessionId(who.browser), accountId: who.id, action: { kind: 'become-vendor' }, method });
 }
 
@@ -124,35 +124,35 @@ describe('account type', () => {
     const t = await trader();
     const action = { kind: 'team-invite' as const, name: 'Sailor001', roles: 'offers' };
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(t.browser), accountId: t.id, action, method: 'passkey' });
-    const res = await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken });
+    const res = await t.browser.post('/v1/team/invites', { tradeTag: 'Sailor001', roles: ['offers'], confirmToken });
     expect(res.statusCode, res.body).toBe(403);
     expect(errorOf(res)).toBe('not-vendor');
     const { rows } = await deps.db.query('select used_at from confirm_tokens where account_id = $1', [t.id]);
     expect(rows[0]).toEqual({ used_at: null });
     await makeVendor(deps, t.id);
-    expect((await t.browser.post('/v1/team/invites', { displayName: 'Sailor001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
+    expect((await t.browser.post('/v1/team/invites', { tradeTag: 'Sailor001', roles: ['offers'], confirmToken })).statusCode).toBe(201);
   });
 });
 
 describe('PUT /v1/account/type (switch to vendor)', () => {
   it('needs a passkey, security key or PGP key on the account (403 vendor-needs-key), checked before any confirm', async () => {
+    // Only reachable inside the sign-up window (outside it, fewer than two kinds is setup-only): an
+    // authenticator app alone.
     const t = await trader();
+    await deps.db.query('delete from webauthn_credentials where account_id = $1', [t.id]);
+    await deps.db.query("insert into totp (account_id, secret_enc, created_at) values ($1, '\\x01', now())", [t.id]);
+    await deps.db.query('update sessions set onboarding_until = $2 where account_id = $1', [t.id, new Date(deps.clock().getTime() + DAY)]);
     const res = await t.browser.put('/v1/account/type', { type: 'vendor' });
     expect(res.statusCode, res.body).toBe(403);
     expect(errorOf(res)).toBe('vendor-needs-key');
     expect(await typeOf(t.id)).toBe('trader');
   });
 
-  it('asks to confirm become-vendor; a password confirm is refused (403 method-not-allowed); a PGP confirm switches', async () => {
+  it('asks to confirm become-vendor; a PGP confirm switches', async () => {
     const t = await withKey();
     const ask = await t.browser.put('/v1/account/type', { type: 'vendor' });
     expect(ask.statusCode, ask.body).toBe(403);
     expect(ask.json()).toEqual({ error: 'confirm-required', action: 'become-vendor' });
-
-    const weak = await t.browser.put('/v1/account/type', { type: 'vendor', confirmToken: await token(t, 'password') });
-    expect(weak.statusCode, weak.body).toBe(403);
-    expect(errorOf(weak)).toBe('method-not-allowed');
-    expect(await typeOf(t.id)).toBe('trader');
 
     const ok = await t.browser.put('/v1/account/type', { type: 'vendor', confirmToken: await token(t, 'pgp') });
     expect(ok.statusCode, ok.body).toBe(200);
@@ -173,13 +173,6 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     }
   });
 
-  it('POST /v1/confirm/password refuses to issue a become-vendor token (403 method-not-allowed)', async () => {
-    const t = await withKey();
-    const res = await t.browser.post('/v1/confirm/password', { password: 'irrelevant password here', action: { kind: 'become-vendor' } });
-    expect(res.statusCode, res.body).toBe(403);
-    expect(errorOf(res)).toBe('method-not-allowed');
-  });
-
   it('there is no switching back to trader (owner answer Q77, 2026-11-06: open a new account): 400 bad-request; an unknown type too', async () => {
     const t = await withKey();
     await makeVendor(deps, t.id);
@@ -198,28 +191,13 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     expect(res.json()).toEqual({ accountType: 'vendor' });
   });
 
-  it('is refused during the 24-hour hold (403 recovery-hold), before the confirm token is spent', async () => {
-    const t = await withKey();
-    const now = deps.clock();
-    await deps.db.query(
-      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'weak-new-device', '{}')`,
-      [t.id, now, new Date(now.getTime() + DAY)],
-    );
-    const confirmToken = await token(t, 'pgp');
-    const res = await t.browser.put('/v1/account/type', { type: 'vendor', confirmToken });
-    expect(res.statusCode, res.body).toBe(403);
-    expect(errorOf(res)).toBe('recovery-hold');
-    expect(await typeOf(t.id)).toBe('trader');
-    await deps.db.query('delete from account_holds where account_id = $1', [t.id]);
-  });
-
   it("a team member gets 403 owner-only (account type is the account holder's only)", async () => {
     const t = await withKey();
     await makeVendor(deps, t.id);
-    const loginId = await seedAccount(deps, { loginName: 'vendormember1', displayName: 'vm-1-placeholder', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: 'vendormember1', tradeTag: 'vm-1-placeholder', kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'Vm1', 'vm1', '{offers-see}', $2, $3, $2, $2)`,
       [t.id, now, loginId],
     );
@@ -232,9 +210,8 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     expect(((await mb.get('/v1/account/me')).json() as { accountType?: string }).accountType).toBe('vendor');
   });
 
-  it('is classified: a live-session route and a hold-blocked route', () => {
+  it('is classified: a live-session route', () => {
     expect(LIVE_SESSION_ROUTES).toContain('PUT /v1/account/type');
-    expect(HOLD_BLOCKED_ROUTES).toContain('PUT /v1/account/type');
   });
 });
 
@@ -246,13 +223,13 @@ describe('migration 198: existing accounts', () => {
   it('only accounts with offers or team members that also hold a passkey, security key or PGP key become vendors', async () => {
     const now = deps.clock();
     const mk = async (o: { offer?: 'live' | 'paused' | 'removed'; team?: boolean; key?: boolean }) => {
-      const id = await seedAccount(deps, { loginName: `mig${Math.random().toString(36).slice(2, 10)}` });
+      const id = await seedAccount(deps, { loginName: `mig${Math.random().toString(36).slice(2, 10)}`, methods: false });
       if (o.offer) {
         await insertOffer(deps.db, { accountId: id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 100, max: 200, status: o.offer, at: now });
       }
       if (o.team) {
         await deps.db.query(
-          `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
+          `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
           [id, now],
         );
       }

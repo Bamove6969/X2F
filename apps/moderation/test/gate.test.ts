@@ -1227,7 +1227,7 @@ describe('pgGateSource on the API schema (x2f_mod_reader only)', () => {
       for (const [id, kind] of [[ownerId, 'owner'], [modId, 'staff']] as const) {
         const n = `G${randomBytes(4).toString('hex')}`;
         await c.query(
-          `insert into accounts (id, display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
+          `insert into accounts (id, trade_tag, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
            values ($1, $2, lower($2), $3, 1, true, $4, $5, '2026-10-17', now(), now())`,
           [id, n, randomBytes(32), kind, randomBytes(32)],
         );

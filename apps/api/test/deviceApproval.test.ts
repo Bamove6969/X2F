@@ -1,6 +1,6 @@
 // Plan 2 Task 16: new-device approval, number matching, the 3-device limit and "One device at a
-// time". Logins here use passwords (the gate is the same function for PGP, passkeys and security
-// keys: `completeLogin`'s trader branch; the passkey case below proves that path too).
+// time". Logins here use passkeys (the gate is the same function for PGP keys and security keys:
+// `completeLogin`'s trader branch).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import type { AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
@@ -15,16 +15,18 @@ import { completeLogin, type LoginFactor } from '../src/auth/login.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
 import { accountIdByLoginName, seedAccount, addUnusedSecurityKey } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { SIG } from './helpers/signature.js';
+import { logInWithKey, signUpWithKey } from './helpers/signup.js';
+import type { SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
 const HOUR = 3600_000;
 const TERMS = '2026-10-17';
-const GOOD = 'Correct-Horse-9';
+/** Each signed-up trader's passkey, by login name. */
+const keys = new Map<string, SoftAuthenticator>();
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -34,10 +36,9 @@ let step = 0;
 let cleanup: () => Promise<void>;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
+  cleanup = async () => {};
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set } = await testApp({}));
   setNow = (d) => {
     now = d;
     set(d);
@@ -88,8 +89,8 @@ class Browser {
   }
   get = (url: string) => this.send('GET', url);
   post = (url: string, payload: unknown = {}) => this.send('POST', url, payload);
-  login(name: string, password = GOOD) {
-    return this.post('/v1/login/password', { loginName: name, password, deviceLabel: this.label });
+  login(name: string) {
+    return logInWithKey(this, keys.get(name)!, this.label);
   }
   me() {
     return this.get('/v1/account/me');
@@ -99,16 +100,17 @@ class Browser {
 let seq = 0;
 const unique = (p: string) => `${p}${String(++seq).padStart(4, '0')}x${step}`;
 
-/** Signs up a password trader in a fresh browser (logged in there). */
+/** Signs up a passkey trader in a fresh browser (logged in there). */
 async function signUp(label = 'Firefox on Linux') {
   const b = new Browser(label);
   const name = unique('dev');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
-  expect(res.statusCode).toBe(201);
-  const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
-  // Review M2: a password alone is setup-only; this account's password LOGIN is what is approved.
-  await addUnusedSecurityKey(deps, rows[0]!.id);
-  return { a: b, name, accountId: rows[0]!.id };
+  const { res, auth } = await signUpWithKey(b, { tradeTag: `P${name}`, loginName: name, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
+  expect(res.statusCode, res.body).toBe(201);
+  keys.set(name, auth);
+  const id = (await accountIdByLoginName(deps, name))!;
+  // Owner 26 Nov 2026: two kinds of method, so the account is never setup-only here.
+  await addUnusedSecurityKey(deps, id);
+  return { a: b, name, accountId: id };
 }
 
 type Wait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string };
@@ -160,21 +162,17 @@ describe('when a login waits for approval', () => {
     expect((await b.me()).statusCode).toBe(401);
     // The logged-in side is told, without the number.
     const [alert] = await alerts(accountId, 'login-approval');
-    expect(alert).toEqual({ approvalId: body.approvalId, deviceLabel: 'Browser on Linux', method: 'password' });
+    expect(alert).toEqual({ approvalId: body.approvalId, deviceLabel: 'Browser on Linux', method: 'passkey' });
     expect((await a.me()).statusCode).toBe(200);
   });
 
-  it('an account with no open session: a trusted browser logs in; a new one with a password is refused (hold model v3: approval-unavailable)', async () => {
+  it('an account with no open session: a new browser with a key gets in at once, with no approval', async () => {
     const { a, name, accountId } = await signUp();
     await a.post('/v1/logout');
     const b = new Browser();
-    const res = await b.login(name);
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'approval-unavailable' });
-    expect((await b.me()).statusCode).toBe(401);
+    expect((await b.login(name)).json()).toEqual({ status: 'ok' });
+    expect((await b.me()).statusCode).toBe(200);
     expect(await approvalCount(accountId)).toBe(0);
-    expect((await a.login(name)).json()).toEqual({ status: 'ok' });
-    expect((await a.me()).statusCode).toBe(200);
   });
 
   it('a trusted browser under the limit needs no approval; the same browser re-logging in needs none', async () => {
@@ -185,15 +183,6 @@ describe('when a login waits for approval', () => {
     expect((await b.login(name)).json()).toEqual({ status: 'ok' });
     // A logged-in browser logging in again replaces its own session, no approval.
     expect((await a.login(name)).json()).toEqual({ status: 'ok' });
-  });
-
-  it('a recovery session is not a logged-in device for this rule, and cannot approve', async () => {
-    const { a, name, accountId } = await signUp();
-    await deps.db.query(`update sessions set level = 'recovery' where account_id = $1`, [accountId]);
-    expect((await a.get('/v1/account/approvals')).json()).toMatchObject({ error: 'recovery-session' });
-    // Nothing is logged in to approve it: a password on a new device is refused (hold model v3), no approval opens.
-    expect((await new Browser().login(name)).json()).toEqual({ error: 'approval-unavailable' });
-    expect(await approvalCount(accountId)).toBe(0);
   });
 });
 
@@ -207,8 +196,8 @@ describe('number matching', () => {
     const view = (await a.get(`/v1/account/approvals/${w.approvalId}`)).json() as { choices: number[] } & Record<string, unknown>;
     expect(view).toEqual(list[0]);
     expect(Object.keys(view).sort()).toEqual(['atLimit', 'choices', 'createdAt', 'deviceLabel', 'expiresAt', 'id', 'keysOffered', 'oneDevice']);
-    // J-23: a username-and-password login seen by a username-and-password session: no chat keys on offer.
-    expect(view.keysOffered).toBe(false);
+    // Owner 26 Nov 2026: every login is with a key, so chat keys are always on offer.
+    expect(view.keysOffered).toBe(true);
     expect(view.deviceLabel).toBe('A new device');
     expect(new Set(view.choices).size).toBe(3);
     expect(view.choices).toContain(w.number);
@@ -227,7 +216,7 @@ describe('number matching', () => {
     expect(poll.cookies.find((c) => c.name === SESSION_COOKIE)).toBeDefined();
     expect((await b.me()).statusCode).toBe(200);
     expect((await a.me()).statusCode).toBe(200);
-    expect(await alerts(accountId, 'new-login')).toContainEqual({ method: 'password', deviceLabel: 'Browser on Linux' });
+    expect(await alerts(accountId, 'new-login')).toContainEqual({ method: 'passkey', deviceLabel: 'Browser on Linux' });
     // Collected once: a replay of the poll (cookie and all) starts nothing.
     const replay = new Browser();
     replay.cookies = { ...saved };
@@ -245,7 +234,7 @@ describe('number matching', () => {
     expect((await b.post(`/v1/login/approval/${w.approvalId}/poll`)).json()).toEqual({ status: 'blocked' });
     expect((await b.me()).statusCode).toBe(401);
     expect(await alerts(accountId, 'login-blocked')).toEqual([
-      { approvalId: w.approvalId, deviceLabel: 'Browser on Linux', method: 'password', reason: 'wrong-number' },
+      { approvalId: w.approvalId, deviceLabel: 'Browser on Linux', method: 'passkey', reason: 'wrong-number' },
     ]);
   });
 
@@ -419,7 +408,7 @@ describe('the 3-device limit', () => {
 describe('"One device at a time"', () => {
   async function turnOn(a: Browser, accountId: string, on = true) {
     const { rows } = await deps.db.query<{ id: string }>(`select id from sessions where account_id = $1 and revoked_at is null`, [accountId]);
-    const token = await issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId, action: { kind: 'set-one-device', on: on ? 'on' : 'off' }, method: 'password' });
+    const token = await issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId, action: { kind: 'set-one-device', on: on ? 'on' : 'off' }, method: 'passkey' });
     return a.send('PUT', '/v1/account/security/one-device', { on, confirmToken: token });
   }
 
@@ -428,7 +417,7 @@ describe('"One device at a time"', () => {
     expect((await a.send('PUT', '/v1/account/security/one-device', { on: true })).json()).toEqual({ error: 'confirm-required', action: 'set-one-device' });
     expect((await a.send('PUT', '/v1/account/security/one-device', { on: 'yes' })).statusCode).toBe(400);
     const { rows } = await deps.db.query<{ id: string }>(`select id from sessions where account_id = $1`, [accountId]);
-    const offToken = await issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId, action: { kind: 'set-one-device', on: 'off' }, method: 'password' });
+    const offToken = await issueConfirmToken(deps, { sessionId: rows[0]!.id, accountId, action: { kind: 'set-one-device', on: 'off' }, method: 'passkey' });
     expect((await a.send('PUT', '/v1/account/security/one-device', { on: true, confirmToken: offToken })).json()).toEqual({ error: 'confirm-invalid' });
     expect((await turnOn(a, accountId)).json()).toEqual({ oneDevice: true, maxDevices: 3 });
     expect(await alerts(accountId, 'one-device-set')).toEqual([{ on: true }]);
@@ -511,7 +500,7 @@ describe('who it applies to', () => {
     const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const a = new Browser();
     const name = unique('pk');
-    const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' });
+    const start = await a.post('/v1/register/webauthn/start', { tradeTag: `D.${name}`, loginName: name, kind: 'passkey' });
     const { challengeId, options } = start.json();
     expect((await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
     const b = new Browser();
@@ -545,9 +534,9 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
   /** A joined member of `teamId` (its login account seeded directly; the real sign-up is team.test.ts's). */
   async function memberOf(teamId: string): Promise<{ id: string; loginId: string }> {
     const name = unique('mem');
-    const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: name, tradeTag: `m-${name}-placeholder`, kind: 'member' });
     const { rows } = await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $6, $4, $5, $4, $4) returning id`,
       [teamId, `M${name}`, `m${name}`.toLowerCase(), now, loginId, rolesToAbilities(['offers', 'trades'])],
     );
@@ -561,21 +550,19 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     return (await b.post('/t/complete', { accountId: loginId, pendingId: first.pendingId, factor: second })).json();
   }
   const memberSessions = async (memberId: string) =>
-    (await deps.db.query<{ id: string; account_id: string; strength: string }>(
-      'select id, account_id, strength from sessions where member_id = $1 and revoked_at is null order by created_at, id', [memberId],
+    (await deps.db.query<{ id: string; account_id: string }>(
+      'select id, account_id from sessions where member_id = $1 and revoked_at is null order by created_at, id', [memberId],
     )).rows;
   const approvals = async (accountId: string) => (await deps.db.query('select 1 from login_approvals where account_id = $1', [accountId])).rowCount;
 
-  it("a member's own login needs no approval: its two factors start a strong session of the team account on a new device", async () => {
+  it("a member's own login needs no approval: its two factors start a session of the team account on a new device", async () => {
     const { accountId } = await signUp();
     for (const second of [pgp('B'), { method: 'passkey', credentialId: 'cred', attested: false } as LoginFactor]) {
       const m = await memberOf(accountId);
       const b = new Browser();
       expect(await memberLogin(b, m.loginId, second)).toEqual({ status: 'ok' });
       expect((await b.me()).statusCode).toBe(200);
-      // Members always log in with two factors (any pair `pairAllowed` lets in, two PGP keys
-      // included), so their logins are strong for Task 17.
-      expect(await memberSessions(m.id)).toEqual([expect.objectContaining({ account_id: accountId, strength: 'strong' })]);
+      expect(await memberSessions(m.id)).toEqual([expect.objectContaining({ account_id: accountId })]);
       expect(await approvals(m.loginId)).toBe(0);
     }
     expect(await approvals(accountId)).toBe(0);
@@ -632,14 +619,12 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     await a.post('/v1/logout');
     const m = await memberOf(accountId);
     expect(await memberLogin(new Browser(), m.loginId)).toEqual({ status: 'ok' });
-    // Hold model v3: a password on a new device with no owner device to approve it is refused; on the owner's trusted browser it gets in.
     const d = new Browser('Chrome on Windows');
-    expect((await d.login(name)).json()).toEqual({ error: 'approval-unavailable' });
-    expect((await a.login(name)).json()).toEqual({ status: 'ok' });
+    expect((await d.login(name)).json()).toEqual({ status: 'ok' });
     expect(await approvals(accountId)).toBe(0);
   });
 
-  it("hold model v3: a recovery-code login logs the team's members out too; during the hold no member logs in (403 recovery-hold); after it they do", async () => {
+  it("a recovery-code login logs the team's members out too; with no hold they can log in again at once", async () => {
     const { a, name, accountId } = await signUp();
     // Inside the sign-up window the code needs no confirm token.
     const code = ((await a.post('/v1/account/recovery-codes', {})).json() as { codes: string[] }).codes[0]!;
@@ -648,101 +633,27 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     expect(await memberLogin(mb, m.loginId)).toEqual({ status: 'ok' });
     expect(await memberSessions(m.id)).toHaveLength(1);
     const rec = await new Browser('Tor Browser').post('/v1/login/backup', { loginName: name, kind: 'recovery-code', code, deviceLabel: 'Tor Browser' });
-    expect(rec.json()).toMatchObject({ status: 'ok', level: 'recovery' });
-    const until = (rec.json() as { holdUntil: string }).holdUntil;
+    expect(rec.json()).toMatchObject({ status: 'ok' });
     expect(await memberSessions(m.id)).toEqual([]);
     expect((await mb.me()).statusCode).toBe(401);
-    // A member's login during the hold: refused, no session opens, on the member's own browser too.
-    expect(await memberLogin(mb, m.loginId)).toEqual({ error: 'recovery-hold', holdUntil: until });
-    expect(await memberSessions(m.id)).toEqual([]);
-    setNow(new Date(new Date(until).getTime() + 1000));
     expect(await memberLogin(mb, m.loginId)).toEqual({ status: 'ok' });
     expect(await memberSessions(m.id)).toHaveLength(1);
   });
 });
 
 // J-23 (S-075) phase 1 groundwork (docs/security/multi-device-2026-11-09.md section 3.1 rule 2): the
-// approval view says whether a chat-key handover may be offered at all: the new login's stored
-// strength AND the approving session's stored strength are both 'strong', strictly. No gesture, no
-// handover rides on the approval yet (owner p12-5 pending): the view only tells the screen.
+// approval view says whether a chat-key handover may be offered. Owner 26 Nov 2026 (no passwords):
+// every login is with a key, so it always is.
 describe('the chat-key handover gate (J-23): keysOffered', () => {
-  /** A passkey trader: its sign-up session is strong (a passkey alone is on the owner's list). */
-  async function passkeyAccount() {
-    const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
-    const a = new Browser('Chrome on Windows');
-    const name = unique('pk');
-    const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' });
-    const { challengeId, options } = start.json();
-    expect((await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
-    return { a, name, accountId: (await accountIdByLoginName(deps, name))!, auth };
-  }
-  /** A passkey login in browser `b`, waiting for approval. */
-  async function passkeyWait(b: Browser, auth: ReturnType<typeof createSoftAuthenticator>): Promise<Wait> {
-    const s = (await b.post('/v1/login/webauthn/start', {})).json();
-    const res = await b.post('/v1/login/webauthn/finish', { challengeId: s.challengeId, response: auth.authenticate(s.options, ORIGIN), deviceLabel: 'Phone' });
-    const body = res.json() as Wait;
-    expect(body.status).toBe('approve-on-device');
-    return body;
-  }
-  const viewOf = async (a: Browser, id: string) => (await a.get(`/v1/account/approvals/${id}`)).json() as { keysOffered: boolean } & Record<string, unknown>;
-  const setStrength = (accountId: string, strength: string | null) => deps.db.query('update sessions set strength = $2 where account_id = $1 and revoked_at is null', [accountId, strength]);
-
-  it('a strong login seen by a strong session: keys are on offer; the approval row holds the new login\'s strength', async () => {
-    const { a, auth } = await passkeyAccount();
-    const b = new Browser();
-    const w = await passkeyWait(b, auth);
-    const { rows } = await deps.db.query<{ strength: string }>('select strength from login_approvals where id = $1', [w.approvalId]);
-    expect(rows[0]!.strength).toBe('strong');
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(true);
-    const list = (await a.get('/v1/account/approvals')).json() as Array<{ keysOffered: boolean }>;
-    expect(list.map((v) => v.keysOffered)).toEqual([true]);
-    // The approval itself works as before; the poll carries no key (nothing rides on it yet: p12-5).
-    const poll = await approveAndCollect(a, b, w);
-    expect(poll.json()).toEqual({ status: 'ok', loggedOut: [] });
-    // Recorded on the row as it stood at the decision.
-    const rec = await deps.db.query<{ keys_offered: boolean }>('select keys_offered from login_approvals where id = $1', [w.approvalId]);
-    expect(rec.rows[0]!.keys_offered).toBe(true);
-  });
-
-  it('a username-and-password login seen by a strong session: no keys (the new login is weak)', async () => {
-    const { a, name, accountId } = await signUp();
-    await setStrength(accountId, 'strong');
+  it('a key login seen by a key session: keys are on offer, and the row records it at the decision', async () => {
+    const { a, name } = await signUp();
     const b = new Browser();
     const w = await waitFor(b, name);
-    const { rows } = await deps.db.query<{ strength: string }>('select strength from login_approvals where id = $1', [w.approvalId]);
-    expect(rows[0]!.strength).toBe('weak-single');
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(false);
-    // Approved all the same (a session as today), and recorded without keys.
-    expect((await approveAndCollect(a, b, w)).json()).toMatchObject({ status: 'ok' });
+    const view = (await a.get(`/v1/account/approvals/${w.approvalId}`)).json() as { keysOffered: boolean };
+    expect(view.keysOffered).toBe(true);
+    expect((await approveAndCollect(a, b, w)).json()).toEqual({ status: 'ok', loggedOut: [] });
     const rec = await deps.db.query<{ keys_offered: boolean }>('select keys_offered from login_approvals where id = $1', [w.approvalId]);
-    expect(rec.rows[0]!.keys_offered).toBe(false);
-  });
-
-  it('a strong login seen by a weak session: no keys, and (as before) that session may not answer it', async () => {
-    const { a, accountId, auth } = await passkeyAccount();
-    // The approval opens while a strong session can answer it (else a strong login gets in at once);
-    // then that session is made weak, past its sign-up's first 30 minutes (weak for answering too).
-    const w = await passkeyWait(new Browser(), auth);
-    await setStrength(accountId, 'weak-single');
-    await deps.db.query('update sessions set onboarding_until = null where account_id = $1', [accountId]);
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(false);
-    expect((await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ error: 'weak-session' });
-    const rec = await deps.db.query<{ keys_offered: boolean }>('select keys_offered from login_approvals where id = $1', [w.approvalId]);
-    expect(rec.rows[0]!.keys_offered).toBe(false);
-  });
-
-  it("strictly 'strong': a sign-up's first 30 minutes (not weak for logging out) offer no keys, nor does a session with no stored strength", async () => {
-    const { a, name, accountId } = await signUp();
-    const { rows } = await deps.db.query<{ onboarding_until: Date }>('select onboarding_until from sessions where account_id = $1', [accountId]);
-    expect(rows[0]!.onboarding_until.getTime()).toBeGreaterThan(now.getTime());
-    const w = await waitFor(new Browser(), name);
-    // Even with a strong new login on the row, the onboarding username-and-password session offers nothing.
-    await deps.db.query("update login_approvals set strength = 'strong' where id = $1", [w.approvalId]);
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(false);
-    await setStrength(accountId, null);
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(false);
-    await setStrength(accountId, 'strong');
-    expect((await viewOf(a, w.approvalId)).keysOffered).toBe(true);
+    expect(rec.rows[0]!.keys_offered).toBe(true);
   });
 });
 

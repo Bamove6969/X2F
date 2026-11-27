@@ -49,7 +49,7 @@ const SCREEN_GROUPS: readonly { test: RegExp; group: ScreenGroup }[] = [
   },
   {
     test: /^apps\/web\/src\/screens\/setup\/(?:Username|DisplayName|names)\./,
-    group: { id: 'setup-names', order: 6, title: 'Create Account — Step 2: Username & Display Name', route: '`/setup/name`, `/setup/display-name`' },
+    group: { id: 'setup-names', order: 6, title: 'Create Account — Step 2: Username & Trade Tag', route: '`/setup/name`, `/setup/trade-tag`' },
   },
   {
     test: /^apps\/web\/src\/screens\/setup\/(?:Login|MoreMethods|SecurityKeyArt|Password)\./,

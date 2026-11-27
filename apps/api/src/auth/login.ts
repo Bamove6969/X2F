@@ -6,8 +6,6 @@ import { deviceHash } from './device.js';
 import { needsAfter, pairAllowed, parseFactor } from './methods.js';
 import { traderLogin, type ApprovalWait } from './approval.js';
 import { assertNotDisabled, realmOf, startSession } from './sessions.js';
-import type { LoginStrength } from './strength.js';
-import { SECOND_FACTOR_TTL_MS } from './totp.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,7 +21,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export type LoginFactor =
   | { method: 'pgp'; fingerprint: string; fingerprints: string[] }
-  | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean };
+  | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean }
+  /**
+   * Owner, 27 Nov 2026: a trader's private login name plus the authenticator app's code
+   * (`totpLogin`, totp.ts). Traders only; it is in no staff, member or owner pair (`pairAllowed`).
+   */
+  | { method: 'totp' };
 
 /**
  * `approve-on-device` (Task 16): a trader's login from a new browser while the account is logged in
@@ -31,11 +34,11 @@ export type LoginFactor =
  */
 export type LoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: MethodType[] } | ApprovalWait;
 
-/** A staff or owner login waiting for its second factor lives 5 minutes, as Task 9's password second factor. */
-export const PAIR_TTL_MS = SECOND_FACTOR_TTL_MS;
+/** A staff or owner login waiting for its second factor lives 5 minutes, as the staff app's pair. */
+export const PAIR_TTL_MS = 5 * 60_000;
 
 /**
- * The one way every PGP and WebAuthn login finish ends: runs `afterAuthenticate` (it may throw an
+ * The one way every PGP, WebAuthn and authenticator-app (TOTP, traders only) login finish ends: runs `afterAuthenticate` (it may throw an
  * `ApiError` before anything is created), refuses a disabled account, then:
  * - a trader: a full session (a `pendingId` → 400 `challenge-expired`: traders have no pending login);
  * - staff and the owner need two factors (R1; the one exception is owner G3's known device, through
@@ -75,15 +78,10 @@ export async function completeLogin(
   await assertNotDisabled(deps.db, a.account.id);
   const now = deps.clock();
   const device = deviceHash(req);
-  /** Set for a member's login (Task 18): see below. Staff and owner keep `startSession`'s default. */
-  let strength: LoginStrength | undefined;
   if (a.account.kind === 'trader') {
     if (a.pendingId !== undefined) throw new ApiError(400, 'challenge-expired');
     // Task 16: a session now, or an approval from a logged-in device first.
-    return traderLogin(deps, req, reply, {
-      accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel, factors: [a.factor.method],
-      proven: a.factor.method === 'pgp' ? { kind: 'pgp', fingerprints: a.factor.fingerprints } : { kind: 'webauthn', credentialId: a.factor.credentialId },
-    });
+    return traderLogin(deps, req, reply, { accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel });
   }
   const pairOptions = a.account.kind === 'staff' && a.pgpPairRefused && (await a.pgpPairRefused(a.account.id)) ? { pgpPair: false } : {};
   if (a.pendingId === undefined) {
@@ -115,15 +113,9 @@ export async function completeLogin(
     if (!pending) throw new ApiError(400, 'challenge-expired');
     const first = parseFactor(pending.payload.first);
     if (first === null || !pairAllowed(a.account.kind, first, a.factor, pairOptions)) throw new ApiError(403, 'method-not-allowed');
-    // A member's login (Task 18) is a session of the team account (a trader), so its strength
-    // counts there (the hold, the device limit's weak-first order). Members always log in with two
-    // factors (`pairAllowed`), so their logins are strong (lead's Task 18 landing rule, 2026-10-30;
-    // tests: deviceApproval.test.ts 'team members'), whichever valid pair they used.
-    if (a.account.kind === 'member') strength = 'strong';
   }
   await startSession(deps, req, reply, {
     accountId: a.account.id, level: 'full', deviceLabel: a.deviceLabel, method: a.factor.method, firstSession: false,
-    ...(strength !== undefined ? { strength } : {}),
   });
   return { status: 'ok' };
 }

@@ -18,6 +18,10 @@ import { formatDate as utcDate, formatDateTime as utcDateTime } from '../../ui/d
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 import { RELEASE_IS_FINAL } from './escrowCopy.js';
+import { confirmedEvent, useMemberActs } from './memberActs.js';
+import { isConfirmAbort } from '../auth/ConfirmSheet.js';
+import { isCantDoCode } from '../../ui/cantDoCodes.js';
+import { AuthApiError } from '@x2f/auth-client';
 
 /**
  * SellerConfirm (board SellerConfirm.dc.html; spec 2.2 steps 8-9): the buyer has marked paid; the
@@ -92,6 +96,8 @@ export function SellerConfirm({
   const [acked, setAcked] = useState(() => warned('release', escrowCode) || confirmSkipped('release'));
   /** "Payment not received" was tapped before the confirm window ended: the check-first note shows. */
   const [notYet, setNotYet] = useState(false);
+  /** A team member's room (memberActs.ts): the release needs their `release-trade` confirm first. */
+  const member = useMemberActs();
 
   const buyer = publicName(trade.counterparty);
   const sums = amounts(trade, escrow);
@@ -143,14 +149,20 @@ export function SellerConfirm({
     markReleaseAsked(escrowCode);
     let next: ReleaseTrade;
     try {
-      next = await postTradeEvent(escrowCode, { type: 'release-started' });
+      // A team member (owner Jess, 26 Nov 2026): confirm-it's-you with their own key, then the
+      // same event with the `release-trade` token; then `escrow.release()` below as for the owner.
+      next = member === null ? await postTradeEvent(escrowCode, { type: 'release-started' }) : await confirmedEvent(escrowCode, 'release-trade', 'release-started', member.prove);
     } catch (err) {
       // Refused (the API answered): nothing was started, so the marker goes. Unreachable: it may
       // have been applied (a lost answer); the marker stays and the room's next read resumes it.
-      const refused = err instanceof ApiCallError;
+      // A closed confirm sheet started nothing either.
+      const aborted = isConfirmAbort(err);
+      const refused = err instanceof ApiCallError || aborted || err instanceof AuthApiError;
       if (refused) clearReleaseAsked(escrowCode);
       asked.current = false;
-      setFailed(refused ? 'start' : 'unknown');
+      // A team refusal (403 `forbidden`: no Release coins box) is the room's CantDoThat.
+      if (member !== null && err instanceof ApiCallError && isCantDoCode(err.code)) member.refused(err.code);
+      setFailed(aborted ? null : refused ? 'start' : 'unknown');
       setAttempt((n) => n + 1);
       setBusy(false);
       return;

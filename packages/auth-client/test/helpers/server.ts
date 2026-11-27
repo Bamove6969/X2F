@@ -1,6 +1,6 @@
 /**
  * End-to-end harness: a real `buildApi` listening on 127.0.0.1:0 over Postgres from the API's
- * test harness (its vitest globalSetup), with the leaked-password fixture, and browsers that keep
+ * test harness (its vitest globalSetup), and browsers that keep
  * cookies and send `Origin: https://x2f.test` as a page on the site would.
  */
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
@@ -8,7 +8,6 @@ import type { FastifyInstance } from 'fastify';
 import type { AddressValidator, Deps } from '../../../../apps/api/src/app.js';
 import { LISTEN_OPTIONS } from '../../../../apps/api/src/app.js';
 import { testApp } from '../../../../apps/api/test/helpers/app.js';
-import { fixtureLeakedList } from '../../../../apps/api/test/helpers/leaked.js';
 import type { SoftAuthenticator } from '../../../../apps/api/test/helpers/softAuthenticator.js';
 // Brings in the harness's `pgUrl` declaration that the database helper reads.
 import type {} from '../../../../apps/api/test/setup/postgres.js';
@@ -33,8 +32,7 @@ export interface Server {
 }
 
 export async function startServer(o: { addresses?: AddressValidator } = {}): Promise<Server> {
-  const leaked = await fixtureLeakedList();
-  const t = await testApp({ leaked: leaked.list, ...(o.addresses ? { addresses: o.addresses } : {}) });
+  const t = await testApp({ ...(o.addresses ? { addresses: o.addresses } : {}) });
   let now = T0;
   const setNow = (d: Date) => {
     now = d;
@@ -59,7 +57,6 @@ export async function startServer(o: { addresses?: AddressValidator } = {}): Pro
     serverRoutes: () => listRoutes(t.app),
     close: async () => {
       await t.app.close();
-      await leaked.cleanup();
     },
   };
 }

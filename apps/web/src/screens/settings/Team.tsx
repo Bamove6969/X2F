@@ -13,7 +13,6 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AuthApiError,
-  isStaged,
   teamAbilitiesAction,
   teamInviteAbilitiesAction,
   teamLimitsAction,
@@ -26,12 +25,13 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_CHANGES_CODE, TOO_MANY_MEMBERS_CODE, holdChangesCantDoText, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
+import { TOO_MANY_MEMBERS_CODE, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence } from '../auth/refusals.js';
-import { StagedNote } from './HoldChanges.js';
 import { AbilityPicker } from './AbilityPicker.js';
+import { httpKeySyncApi } from '../../escrow/keySync.js';
+import { ESCROW_KEYS_ABILITY } from './tradeKeys.js';
+import { TEAM_KEYS_COPY } from './tradeKeysCopy.js';
 import { MyAccess } from './MyAccess.js';
 import { MemberSessions } from './MemberSessions.js';
 import { fetchCatalogue, presetBoxes, presetMatching, sendable, type Catalogue } from './teamApi.js';
@@ -176,11 +176,11 @@ function boxesLine(m: TeamMember, cat: Catalogue | null): string {
   return m.roles.length === 0 ? C.noBoxes : C.roles(m.roles);
 }
 
-type CantDo = { code: CantDoCode; max?: number; holdUntil?: string };
+type CantDo = { code: CantDoCode; max?: number };
 
 function cantDoOf(e: unknown): CantDo | null {
   if (e instanceof AuthApiError && isCantDoCode(e.code)) {
-    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}), ...(e.holdUntil !== undefined ? { holdUntil: e.holdUntil } : {}) };
+    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}) };
   }
   return null;
 }
@@ -194,8 +194,6 @@ export function Team() {
   const [cantDo, setCantDo] = useState<CantDo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [said, setSaid] = useState('');
-  // Hold model v3: a role change from a username-and-password login is staged as a draft (202).
-  const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const nameSpaced = hasSpace(name.trim());
@@ -224,7 +222,7 @@ export function Team() {
       setLogMember('');
       // Everyone who can be in the log: current members and anyone already in it (a removed member stays).
       const who = new Map<string, string>();
-      for (const m of t.members) who.set(m.id, m.displayName);
+      for (const m of t.members) who.set(m.id, m.tradeTag);
       // Team audit v2: rows by the account owner or X2F name no member (memberId null).
       for (const e of l) if (e.memberId !== null && !who.has(e.memberId)) who.set(e.memberId, e.memberName ?? '');
       setLogWho([...who].map(([id, name]) => ({ id, name })));
@@ -244,6 +242,23 @@ export function Team() {
     void load();
   }, [load]);
 
+  // Escrow-key sync: which members already have a reader key (`GET /v1/escrow-keys/readers` lists
+  // the holder's and each assigned member's). Null until read, or when it cannot be read.
+  const [keyReaders, setKeyReaders] = useState<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (members === null) return;
+    let live = true;
+    httpKeySyncApi()
+      .readers()
+      .then(
+        (rs) => live && setKeyReaders(new Set(rs.map((r) => (r as { memberId?: string | null }).memberId).filter((x): x is string => typeof x === 'string'))),
+        () => live && setKeyReaders(null),
+      );
+    return () => {
+      live = false;
+    };
+  }, [members]);
+
   useEffect(() => {
     const ctl = new AbortController();
     fetchCatalogue(ctl.signal).then(setCatalogue, () => {
@@ -256,8 +271,8 @@ export function Team() {
     if (isConfirmAbort(e)) return;
     const c = cantDoOf(e);
     if (c !== null) setCantDo(c);
-    else if (e instanceof AuthApiError && (e.code === 'display-name-invalid' || e.code === 'display-name-reserved')) setError(C.nameInvalid);
-    else if (e instanceof AuthApiError && e.code === 'display-name-taken') setError(C.nameTaken);
+    else if (e instanceof AuthApiError && (e.code === 'trade-tag-invalid' || e.code === 'trade-tag-reserved')) setError(C.nameInvalid);
+    else if (e instanceof AuthApiError && e.code === 'trade-tag-taken') setError(C.nameTaken);
     else setError(C.saveFailed);
   };
 
@@ -266,7 +281,6 @@ export function Team() {
     setBusy(true);
     setError(null);
     setSaid('');
-    setStaged(false);
     try {
       await f();
     } catch (e) {
@@ -284,15 +298,13 @@ export function Team() {
         setError(P.pickBox);
         return;
       }
-      const displayName = name.trim();
+      const tradeTag = name.trim();
       const r = await withConfirm(
-        teamInviteAbilitiesAction(displayName, abilities),
-        (confirmToken) => authApi.inviteMember({ displayName, abilities, confirmToken }),
+        teamInviteAbilitiesAction(tradeTag, abilities),
+        (confirmToken) => authApi.inviteMember({ tradeTag, abilities, confirmToken }),
         prove,
       );
-      setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
-      // Owner p11-21 (S-104): from a username-and-password login the boxes wait as a draft.
-      if (isStaged(r)) setStaged(true);
+      setLink({ name: tradeTag, url: inviteLink(window.location.origin, r.invite) });
       setCopied(false);
       setName('');
       await load();
@@ -306,10 +318,9 @@ export function Team() {
         setError(P.pickBox);
         return;
       }
-      const r = await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
+      await withConfirm(teamAbilitiesAction(m.id, abilities), (confirmToken) => authApi.setMemberAbilities(m.id, { abilities, confirmToken }), prove);
       setEditing(null);
-      if (isStaged(r)) setStaged(true);
-      else setSaid(P.boxesSaved(m.displayName));
+      setSaid(P.boxesSaved(m.tradeTag));
       await load();
     });
 
@@ -320,19 +331,16 @@ export function Team() {
         setError(C[l]);
         return;
       }
-      const r = await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
+      await withConfirm(teamLimitsAction(m.id, l.band, l.hours), (confirmToken) => authApi.setMemberLimits(m.id, { ...l, confirmToken }), prove);
       setLimits(null);
-      if (isStaged(r)) setStaged(true);
-      else setSaid(C.limitsSaved(m.displayName));
+      setSaid(C.limitsSaved(m.tradeTag));
       await load();
     });
 
   const remove = (m: TeamMember) =>
     run(async () => {
-      const r = await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
-      // Owner p5-7: from a username-and-password login the removal waits 24 h like every change.
-      if (isStaged(r)) setStaged(true);
-      else setSaid(C.removed(m.displayName));
+      await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
+      setSaid(C.removed(m.tradeTag));
       await load();
     });
 
@@ -402,7 +410,6 @@ export function Team() {
         <p className="x2f-note" role="status" data-part="team-said">
           {said}
         </p>
-        {staged ? <StagedNote /> : null}
 
         {members !== null ? (
           <section className="x2f-card" data-part="team-members" aria-labelledby="team-members-h">
@@ -419,9 +426,9 @@ export function Team() {
             ) : null}
             <ul className="x2f-list" data-part="member-list">
               {members.map((m) => (
-                <li className="x2f-list__row" key={m.id} data-member={m.displayName} data-status={m.status}>
+                <li className="x2f-list__row" key={m.id} data-member={m.tradeTag} data-status={m.status}>
                   <span className="x2f-list__label">
-                    <span data-username="">{m.displayName}</span>
+                    <span data-username="">{m.tradeTag}</span>
                     <br />
                     <span className="x2f-list__time">
                       {boxesLine(m, cat)} · {C.status[m.status]}
@@ -439,6 +446,14 @@ export function Team() {
                     <span className="x2f-list__time" data-part="member-limits">
                       {C.limits(m.band, m.hours)}
                     </span>
+                    {keyReaders !== null && (m.abilities ?? []).includes(ESCROW_KEYS_ABILITY) ? (
+                      <>
+                        <br />
+                        <span className="x2f-list__time" data-part="member-trade-keys" data-ready={keyReaders.has(m.id) ? 'yes' : 'no'}>
+                          {keyReaders.has(m.id) ? TEAM_KEYS_COPY.ready : TEAM_KEYS_COPY.waiting}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                   {editing?.id === m.id && cat !== null ? (
                     <div className="x2f-stack">
@@ -453,7 +468,7 @@ export function Team() {
                   ) : (
                     <Button
                       variant="quiet"
-                      aria-label={P.changeBoxes(m.displayName)}
+                      aria-label={P.changeBoxes(m.tradeTag)}
                       aria-disabled={cat === null}
                       // Job 1c: the member's stored boxes as the API sends them (a member moved from the
                       // old roles holds what migration 360 mapped them to, `ROLE_ABILITIES`).
@@ -471,11 +486,11 @@ export function Team() {
                       </Button>
                     </div>
                   ) : (
-                    <Button variant="quiet" aria-label={C.changeLimits(m.displayName)} onClick={() => setLimits(draftOf(m))} data-part="edit-limits">
+                    <Button variant="quiet" aria-label={C.changeLimits(m.tradeTag)} onClick={() => setLimits(draftOf(m))} data-part="edit-limits">
                       {C.limitsButton}
                     </Button>
                   )}
-                  <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.displayName)} onClick={() => void remove(m)} data-part="remove-member">
+                  <Button variant="danger" aria-disabled={busy} aria-label={C.removeLabel(m.tradeTag)} onClick={() => void remove(m)} data-part="remove-member">
                     {C.remove}
                   </Button>
                   {m.status === 'active' ? <MemberSessions member={m} /> : null}
@@ -517,10 +532,10 @@ export function Team() {
                 aria-invalid={nameSpaced ? true : undefined}
                 onChange={(e) => setName(e.target.value)}
               />
-              {/* Owner demo note #108: a member's display name holds no spaces (the API refuses one too). */}
+              {/* Owner demo note #108: a member's Trade Tag holds no spaces (the API refuses one too). */}
               {nameSpaced ? (
                 <p className="x2f-error" id="team-name-space" data-part="team-name-space">
-                  {spaceProblem('display name')}
+                  {spaceProblem('Trade Tag')}
                 </p>
               ) : null}
               <p className="x2f-note" id="team-name-hint">
@@ -579,7 +594,8 @@ export function Team() {
               </div>
             ) : null}
             {/* Team audit v2: the full log (filters, integrity check, team changes, logins, download). */}
-            <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="team-log-link">
+            {/* The kit's quiet button look on a router link: a 44 px target, not a 28 px line. */}
+            <Link className="x2f-button x2f-button--quiet" to={TEAM_LOG_PATH} data-part="team-log-link">
               {TEAM_LOG_COPY.title}
             </Link>
             {memberWork(log).length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}
@@ -599,15 +615,8 @@ export function Team() {
 
         {cantDo !== null ? (
           <CantDoThat
-            title={cantDo.code === TOO_MANY_CHANGES_CODE ? CANT_DO_TITLE.changes : teamCantDoTitle(cantDo.code)}
-            body={
-              // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
-              cantDo.code === HOLD_CODE
-                ? holdSentence(cantDo.holdUntil)
-                : cantDo.code === TOO_MANY_CHANGES_CODE
-                  ? holdChangesCantDoText(cantDo.max)
-                  : teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})
-            }
+            title={teamCantDoTitle(cantDo.code)}
+            body={teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})}
             from={cantDo.code}
             onClose={() => setCantDo(null)}
           />

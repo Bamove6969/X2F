@@ -10,7 +10,7 @@ import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-const ME = { displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
+const ME = { tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp', 'passkey'], hasBackup: false, suggestions: [], termsCurrent: true };
 const JABBER_ON = { available: true, state: 'on', address: 'n•••@xmpp.example.org', pendingAddress: null, lastSentAt: '2026-11-10T09:00:00.000Z' };
 const JABBER_OFF = { available: true, state: 'off', address: null, pendingAddress: null, lastSentAt: null };
 
@@ -18,7 +18,7 @@ const JABBER_OFF = { available: true, state: 'off', address: null, pendingAddres
 async function base(page: Page, jabber: unknown = JABBER_ON): Promise<string[]> {
   const seen: string[] = [];
   await page.route('**/v1/account/me', json(ME));
-  await page.route('**/v1/account/methods', json([{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]));
+  await page.route('**/v1/account/methods', json([{ type: 'pgp', id: 'pgp-1', label: 'PGP key', createdAt: null, lastUsedAt: null }, { type: 'passkey', id: 'pk-1', label: 'Passkey', createdAt: null, lastUsedAt: null }]));
   await page.route('**/v1/account/sessions', json([]));
   await page.route('**/v1/account/alerts', json([
     { id: 'a1', kind: 'new-login', detail: null, createdAt: '2026-11-11T08:00:00.000Z', seenAt: null },

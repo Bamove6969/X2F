@@ -142,7 +142,7 @@ describe('ModCase: the full chat and messages (design build task 9)', () => {
 });
 
 describe('ModCase: private lanes (owner 27 Nov)', () => {
-  const traders = { buyer: { displayName: 'mira.k', completedTrades: 3, positivePct: 100 }, seller: { displayName: 'nightowl_44', completedTrades: 9, positivePct: 98 } };
+  const traders = { buyer: { tradeTag: 'mira.k', completedTrades: 3, positivePct: 100 }, seller: { tradeTag: 'nightowl_44', completedTrades: 9, positivePct: 98 } };
   const select = () => part('talking-to') as HTMLSelectElement;
   const choose = async (value: string) => {
     await act(async () => {

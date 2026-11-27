@@ -16,7 +16,7 @@ import { hasSkipped, insertReview, insertSkip, reviewableSince, reviewsHeld, rev
  *
  * - `GET /v1/reviews/pending` (trader) → `{ trades: { code, counterparty, reviewableSince }[] }`: the
  *   trades this trader must rate or skip before their next trade (the gate, gate.ts).
- *   `counterparty` is the other trader's public display name.
+ *   `counterparty` is the other trader's public Trade Tag.
  * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, skipped, held }`: `theirs`
  *   as soon as the other side has submitted it (owner 2026-11-02: no blind reveal); `skipped` is
  *   true when the CALLER skipped (the other side's skip is never shown: it shows nothing to anyone).

@@ -11,13 +11,13 @@ import { assertMayTurnOn, inTransaction, switchOfferStatus, type OfferSwitchResu
  * - `PUT /v1/account/away { away: true }` → `{ away: true, since, paused }`: pauses every live offer
  *   of the account, marks the ones it paused (`offers.paused_by_away`) and sets
  *   `accounts.away_since` (kept when Away is already on). Pausing has no guard, as turning off
- *   never does (it works on stale Terms and under a hold).
+ *   never does (it works on stale Terms).
  * - `PUT /v1/account/away { away: false }` → `{ away: false, since: null, resumed }`: turns back on
  *   only the offers Away paused, each through the relist checks of `POST /v1/account/offers/status`
  *   (`switchOfferStatus`: methods, account, per-side caps, launch cap). An offer that fails one
  *   stays paused and its result names why; every mark is cleared, so it is then an ordinary paused
- *   offer. The whole-call relist guards apply first (`assertMayTurnOn`: 403 `terms-required`,
- *   403 `recovery-hold`); Away then stays on.
+ *   offer. The whole-call relist guard applies first (`assertMayTurnOn`: 403 `terms-required`);
+ *   Away then stays on.
  *
  * The account owner only (no `member` option: a team member gets 403 `owner-only`). The public
  * profile shows `away` (reputation/profile.ts).

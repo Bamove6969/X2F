@@ -29,7 +29,7 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   calls = [];
-  me = { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp', 'password'], accountType: 'trader', member: null, termsCurrent: true };
+  me = { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp', 'password'], accountType: 'trader', member: null, termsCurrent: true };
   typeReply = { status: 403, body: { error: 'confirm-required', action: 'become-vendor' } };
   refreshSession();
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
@@ -69,8 +69,8 @@ describe('session helpers', () => {
   });
 
   it('the vendor requirement: a passkey, security key or PGP key', () => {
-    expect(hasVendorKey({ methods: ['password', 'totp'] })).toBe(false);
-    expect(hasVendorKey({ methods: ['password', 'pgp'] })).toBe(true);
+    expect(hasVendorKey({ methods: ['totp'] })).toBe(false);
+    expect(hasVendorKey({ methods: ['totp', 'pgp'] })).toBe(true);
     expect(hasVendorKey({ methods: ['passkey'] })).toBe(true);
     expect(hasVendorKey({ methods: ['security-key'] })).toBe(true);
   });
@@ -173,12 +173,9 @@ describe('Post offer for a trader', () => {
 });
 
 describe('ConfirmSheet', () => {
-  it('offers the password for other actions but not for become-vendor', () => {
-    const a = render(<ConfirmSheet action={{ kind: 'set-login-name' }} methods={['password', 'pgp']} onToken={() => {}} onCancel={() => {}} />);
-    expect(a.host.ownerDocument.querySelector('[data-method="password"]')).not.toBeNull();
-    a.unmount();
-    render(<ConfirmSheet action={{ kind: 'become-vendor' }} methods={['password', 'pgp']} onToken={() => {}} onCancel={() => {}} />);
-    expect(document.querySelector('[data-method="password"]')).toBeNull();
+  it('offers only the account\'s keys, never an authenticator code (owner, 26 Nov 2026)', () => {
+    render(<ConfirmSheet action={{ kind: 'become-vendor' }} methods={['totp', 'pgp']} onToken={() => {}} onCancel={() => {}} />);
+    expect(document.querySelector('#confirm-totp')).toBeNull();
     expect(document.querySelector('[data-method="pgp"]')).not.toBeNull();
   });
 });

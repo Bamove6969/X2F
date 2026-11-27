@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { COOKIE_ATTRS } from '../auth/device.js';
 import { realmOf } from '../auth/sessions.js';
 import { subkey, type Config } from '../config.js';
@@ -224,8 +224,8 @@ export const AUDIT_DAYS: readonly number[] = [7, 30, 90, 365];
  * totals. Staff names and trade codes only: no trader.
  */
 export async function staffAudit(q: Queryable, staffId: string, days: number, now: Date) {
-  const m = (await q.query<{ display_name: string; role: string; switched_off: boolean; pay_fee_bp: number | null }>(
-    `select a.display_name, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp
+  const m = (await q.query<{ trade_tag: string; role: string; switched_off: boolean; pay_fee_bp: number | null }>(
+    `select a.trade_tag, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp
        from staff_members m join accounts a on a.id = m.account_id where m.account_id::text = $1`,
     [staffId],
   )).rows[0];
@@ -271,7 +271,7 @@ export async function staffAudit(q: Queryable, staffId: string, days: number, no
     }
   }
   return {
-    staffId, displayName: m.display_name, role: m.role, switchedOff: m.switched_off, feeBp: m.pay_fee_bp, days,
+    staffId, tradeTag: m.trade_tag, role: m.role, switchedOff: m.switched_off, feeBp: m.pay_fee_bp, days,
     totals: {
       minutes: shifts.reduce((t, s) => t + s.minutes, 0),
       shifts: shifts.length,
@@ -675,14 +675,14 @@ export function staffPayRoutes(app: FastifyInstance): void {
   });
 
   app.get('/staff/v1/pay/staff', earnings, async (req) => {
-    const { rows } = await req.server.deps.db.query<{ staff_id: string; display_name: string; role: string; switched_off: boolean; usd_cents: string; atomic: string; pay_fee_bp: number | null }>(
-      `select m.account_id::text as staff_id, a.display_name, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp,
+    const { rows } = await req.server.deps.db.query<{ staff_id: string; trade_tag: string; role: string; switched_off: boolean; usd_cents: string; atomic: string; pay_fee_bp: number | null }>(
+      `select m.account_id::text as staff_id, a.trade_tag, m.role, m.switched_off_at is not null as switched_off, m.pay_fee_bp,
               coalesce(sum(i.usd_cents), 0)::text as usd_cents, coalesce(sum(i.atomic), 0)::text as atomic
          from staff_members m join accounts a on a.id = m.account_id
          left join staff_pay_items i on i.staff_id = m.account_id and i.payout_id is null
         where m.role <> 'owner'
-        group by m.account_id, a.display_name, m.role, m.switched_off_at, m.pay_fee_bp
-        order by a.display_name`,
+        group by m.account_id, a.trade_tag, m.role, m.switched_off_at, m.pay_fee_bp
+        order by a.trade_tag`,
     );
     const defaults = await getPaySettings(req.server.deps.db);
     const price = usdPrice(req.server.deps.prices);
@@ -693,7 +693,7 @@ export function staffPayRoutes(app: FastifyInstance): void {
         // Owed: the net is a debt. With no price, a dollar debt with no XMR to offset it still is.
         const net = price === null ? (usd < 0n && atomic <= 0n ? -1n : usd > 0n || atomic > 0n ? 1n : 0n) : (usd * XMR_ATOMIC) / price + atomic;
         return {
-          staffId: r.staff_id, displayName: r.display_name, role: r.role, switchedOff: r.switched_off,
+          staffId: r.staff_id, tradeTag: r.trade_tag, role: r.role, switchedOff: r.switched_off,
           unpaidUsdCents: r.usd_cents, unpaidAtomic: r.atomic, owed: net < 0n,
           // The person's own share of the fee (null = their role's), and the share that applies.
           feeBp: r.pay_fee_bp,

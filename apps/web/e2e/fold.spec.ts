@@ -488,7 +488,7 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
   });
 
   test('a half-typed amount on the quote survives unfolding and folding', async ({ page }) => {
-    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
+    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { tradeTag: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
     await page.route('**/v1/methods?*', (r) =>
       r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
     );
@@ -582,7 +582,7 @@ test.describe('screens with two panes: nothing across the hinge (design review 5
       { id: '11111111-1111-4111-8111-111111111111', side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165', pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, status: 'live', createdAt: '2026-10-29T10:00:00.000Z' },
       { id: '22222222-2222-4222-8222-222222222222', side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000', pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
-    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true } }));
+    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true } }));
     await page.route('**/v1/account/offers', (r) => r.fulfill({ json: list }));
     await page.goto(`${ORIGIN}/profile/offers`);
     const side = page.locator('[data-pane="side"]');

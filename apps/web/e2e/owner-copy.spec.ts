@@ -12,7 +12,7 @@ test.use({ viewport: { width: 443, height: 794 } });
 async function stub(page: Page, o: { methods: string[]; session: boolean }) {
   const now = Date.now();
   await page.route('**/v1/account/me', json({
-    displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: o.methods, hasBackup: true, suggestions: [], termsCurrent: true,
+    tradeTag: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: o.methods, hasBackup: true, suggestions: [], termsCurrent: true,
     ...(o.session ? { session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: new Date(now + 2 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(now).toISOString() } } : {}),
   }));
   await page.route('**/v1/wallets', json([{ id: 'w', app: 'cake', label: 'Wallet 1', address: ADDRESS, addressEnd: 'k3Fz', usableFrom: '2026-10-25T00:00:00.000Z', usable: true }]));
@@ -36,7 +36,8 @@ test('/session-length: "Nudges", why a logout happens, and Settings under Device
 });
 
 test('/setup/welcome: the lead line, three ticked items with the methods best to worst, then the next step and the fee note', async ({ page }) => {
-  await stub(page, { methods: ['password', 'totp', 'security-key', 'recovery-codes'], session: false });
+  // Two kinds, one of them a key (security key + authenticator app); recovery codes do not count.
+  await stub(page, { methods: ['totp', 'security-key', 'recovery-codes'], session: false });
   await page.goto('/setup/welcome?returnTo=%2Fsell');
   const screen = page.locator('[data-screen="setup-welcome"]');
   // Owner demo note #166 (23 Nov): two paragraphs.
@@ -44,14 +45,16 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
     'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
     'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
   ]);
-  // Owner #168: every login method, set up or not, a big check or cross each, then the level reached.
+  // Owner #168: every login method, set up or not, a big check or cross each (no password since
+  // passwords were removed; no level line since owner 27 Nov 2026).
   await expect(screen.locator('#welcome-logins-title')).toHaveText('Secure X2F login methods');
-  await expect(screen.locator('[data-part="method-row"] .x2f-welcome__row-name')).toHaveText(['PGP key', 'Security key', 'Passkey', 'Authenticator app', 'Password', 'Recovery code']);
-  await expect(screen.locator('[data-part="method-state"]')).toHaveText(['Not set up', 'Set up', 'Not set up', 'Set up', 'Set up', 'Set up']);
-  await expect(screen.locator('[data-part="mark-set"]')).toHaveCount(4);
+  await expect(screen.locator('[data-part="method-row"] .x2f-welcome__row-name')).toHaveText(['PGP key', 'Security key', 'Passkey', 'Authenticator app', 'Recovery code']);
+  await expect(screen.locator('[data-part="method-state"]')).toHaveText(['Not set up', 'Set up', 'Not set up', 'Set up', 'Set up']);
+  await expect(screen.locator('[data-part="mark-set"]')).toHaveCount(3);
   await expect(screen.locator('[data-part="mark-unset"]')).toHaveCount(2);
   expect((await screen.locator('[data-part="mark-set"]').first().boundingBox())!.width).toBeGreaterThanOrEqual(28);
-  await expect(screen.locator('.x2f-welcome__rating-line')).toHaveText('You have achieved level: Highly secure');
+  await expect(screen.locator('[data-part="security-rating"]')).toHaveCount(0);
+  await expect(screen).not.toContainText(/achieved level|Highly secure/);
   await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Payout wallet:');
   // Owner demo note #226: the wallet's own name first, then its app.
   await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Wallet 1 · Cake Wallet …k3Fz');

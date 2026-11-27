@@ -32,7 +32,7 @@ async function account(): Promise<Jar> {
   const { version } = await j.api.getTerms();
   const key = await genKey();
   const username = uniqueName('kt');
-  const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
+  const start = await j.api.registerPgpStart({ tradeTag: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version });
   return j;
 }
@@ -67,8 +67,7 @@ describe('note #94: test a security key right after adding it', () => {
     const old = softKey();
     await addKey(j, old, undefined, 'Old key');
     const soft = softKey();
-    const { staged, credentialId } = await addKey(j, soft, old, 'New key');
-    expect(staged).toBeUndefined();
+    const { credentialId } = await addKey(j, soft, old, 'New key');
     expect(credentialId).toBe(soft.credentialId);
     const c = watched(soft);
     await expect(testWebAuthnKey(j.api, credentialId, c)).resolves.toBeUndefined();

@@ -160,7 +160,7 @@ export async function messagesOf(
   ticketId: string,
 ): Promise<Array<MessageView & { staffId: string | null; memberId: string | null; memberName: string | null }>> {
   const { rows } = await q.query<MessageRow>(
-    `select m.seq, m.sender, m.staff_id, m.member_id, tm.display_name as member_name, m.body_sealed, m.at
+    `select m.seq, m.sender, m.staff_id, m.member_id, tm.trade_tag as member_name, m.body_sealed, m.at
        from ticket_messages m left join team_members tm on tm.id = m.member_id
       where m.ticket_id = $1 order by m.seq`,
     [ticketId],

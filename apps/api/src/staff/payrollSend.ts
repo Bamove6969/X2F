@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { addOwnerAlert } from '../alerts.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { appendLog } from '../log/append.js';
 import { pushOwnerAlert } from '../push/ownerAlert.js';
 import type { PushKind } from '../push/send.js';

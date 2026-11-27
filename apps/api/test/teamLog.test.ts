@@ -69,10 +69,10 @@ async function team(): Promise<Who> {
 
 async function member(teamId: string, abilities: string[]): Promise<{ id: string; loginId: string; name: string; browser: Browser }> {
   const name = `Logger${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `lglogin${n}x`, displayName: `lg-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `lglogin${n}x`, tradeTag: `lg-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -351,7 +351,7 @@ describe('who closed an unused invite (migration 857)', () => {
     const name = `Expired${String(++n).padStart(4, '0')}`;
     const past = new Date(deps.clock().getTime() - DAY);
     const { rows } = await q.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_hash, invite_expires_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_hash, invite_expires_at, created_at)
        values ($1, $2, $3, '{offers-see}', $4, $5, $5) returning id`,
       [accountId, name, name.toLowerCase(), createHash('sha256').update(name).digest(), past],
     );

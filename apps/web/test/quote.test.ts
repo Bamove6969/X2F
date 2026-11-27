@@ -16,7 +16,7 @@ const SELL_AD: QuoteOffer = {
   id: 'offer-ghost',
   side: 'sell',
   currency: 'USD',
-  poster: { displayName: 'satoshi_ghost', stage: 'graduated' },
+  poster: { tradeTag: 'satoshi_ghost', stage: 'graduated' },
   pricing: { mode: 'market', marginBps: 0 },
   amountUnit: 'fiat',
   minAtomic: null,
@@ -31,7 +31,7 @@ const SELL_AD: QuoteOffer = {
   viewerTrades: null,
 };
 
-const BUY_AD: QuoteOffer = { ...SELL_AD, id: 'offer-mira', side: 'buy', poster: { displayName: 'mira.k', stage: 'graduated' } };
+const BUY_AD: QuoteOffer = { ...SELL_AD, id: 'offer-mira', side: 'buy', poster: { tradeTag: 'mira.k', stage: 'graduated' } };
 
 describe('parseAmount', () => {
   it('reads fiat to cents and XMR to atomic units', () => {

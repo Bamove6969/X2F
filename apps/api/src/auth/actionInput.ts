@@ -1,9 +1,10 @@
 import type { ConfirmAction, MethodType } from '@x2f/accounts';
+import { normalizeTradeCode } from '@x2f/core';
 import { ApiError } from '../errors.js';
 import { parseAbilities, TEAM_ROLES as ROLE_ORDER } from '../team/abilities.js';
 import { bandFromKey, hoursFromKey } from '../team/limits.js';
 
-const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password', 'totp', 'recovery-codes'];
+const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes'];
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS_END = /^[1-9A-HJ-NP-Za-km-z]{1,6}$/; // base58, as Monero addresses are written
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -25,7 +26,7 @@ function teamAbilities(v: string): boolean {
     return false;
   }
 }
-// A member's name as typed (the display-name shape; the full rules run at the invite itself).
+// A member's name as typed (the trade-tag shape; the full rules run at the invite itself).
 const TEAM_NAME = /^[A-Za-z0-9._-]{1,20}$/;
 // 1 to MAX_WALLET_BATCH (10) address ends, comma-separated.
 const ADDRESS_ENDS = /^[1-9A-HJ-NP-Za-km-z]{1,6}(,[1-9A-HJ-NP-Za-km-z]{1,6}){0,9}$/;
@@ -36,7 +37,6 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'add-wallets': { addressesHash: (v) => HEX64.test(v), addressEnds: (v) => ADDRESS_ENDS.test(v) },
   'add-method': { method: (v) => (METHODS as readonly string[]).includes(v) },
   'remove-method': { method: (v) => (METHODS as readonly string[]).includes(v), id: (v) => ID.test(v) },
-  'set-password': {},
   'set-login-name': {},
   'new-recovery-codes': {},
   'set-one-device': { on: (v) => v === 'on' || v === 'off' },
@@ -50,6 +50,10 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'team-limits': { memberId: (v) => UUID.test(v), band: (v) => bandFromKey(v) !== undefined, hours: (v) => hoursFromKey(v) !== undefined },
   'extend-session': {},
   'become-vendor': {},
+  // Owner question trades-release: one trade's code, exactly as stored (normalized).
+  'release-trade': { tradeCode: (v) => normalizeTradeCode(v) === v },
+  // Owner 26 Nov 2026 18:41 UTC: a member's funding, bound the same way.
+  'fund-trade': { tradeCode: (v) => normalizeTradeCode(v) === v },
   // Review L1 (#94): the key test; confirmed only by a passkey or security key, and no token is issued.
   'key-test': {},
 };

@@ -3,8 +3,9 @@
  * addresses, traders signed up through the real API, browser contexts holding their sessions,
  * and the chain (mining, a funder wallet, what a wallet received).
  *
- * Traders are signed up with a password through `POST /v1/register/password` exactly as the
- * sign-up screen does; the browser then carries that session cookie. The one shortcut is the
+ * Traders are signed up with a PGP key through `POST /v1/register/pgp/start` and `/finish` exactly
+ * as the sign-up screen does (no passwords since 26 Nov 2026), with an authenticator app as the
+ * second kind; the browser then carries that session cookie. The one shortcut is the
  * vendor switch of an offer's poster, written straight into this run's throwaway database (the real
  * switch needs a passkey or PGP key and a strong confirm), as the demo seed does.
  */
@@ -14,6 +15,8 @@ import { MoneroNetworkType, MoneroWalletConfig, MoneroWalletFull, type MoneroWal
 import pg from 'pg';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fundedWallet, mine as mineTo, newTestWallet } from '../../../tools/regtest/regtest.js';
+import { newPgp, pgpCode } from '../../../tools/regtest/e2e/staffClient.js';
+import { stepOf, totpCode } from '../../../tools/demo/totp.js';
 import type { StackInfo } from './stack.js';
 
 export function stack(): StackInfo {
@@ -22,7 +25,6 @@ export function stack(): StackInfo {
   return JSON.parse(raw) as StackInfo;
 }
 
-export const PASSWORD = 'E2e-Regtest-Monero-2026!';
 export const PHONE = { width: 390, height: 844 } as const;
 export const DESKTOP = { width: 1280, height: 800 } as const;
 export type Size = typeof PHONE | typeof DESKTOP;
@@ -65,7 +67,7 @@ export class ApiClient {
 }
 
 export interface Trader {
-  displayName: string;
+  tradeTag: string;
   api: ApiClient;
   /** The trader's own payout wallet (a regtest wallet whose keys the spec holds). */
   wallet: Wallet;
@@ -85,29 +87,33 @@ export async function sql<T extends pg.QueryResultRow = pg.QueryResultRow>(text:
   }
 }
 
-/** A new trader: signed up with a password, with a regtest payout wallet; a vendor when `vendor`. */
+/** A new trader: signed up with a PGP key and an authenticator app, with a regtest payout wallet; a vendor when `vendor`. */
 export async function signUp(prefix: string, o: { vendor?: boolean } = {}): Promise<Trader> {
   const s = stack();
   const tag = randomBytes(3).toString('hex');
-  const displayName = `${prefix}_${tag}`;
+  const tradeTag = `${prefix}_${tag}`;
   const api = new ApiClient(s.origin);
   await api.ok('GET', '/v1/site');
-  await api.ok('POST', '/v1/register/password', {
-    displayName,
-    loginName: `${prefix}-login-${tag}`,
-    password: PASSWORD,
+  const key = await newPgp(`${tradeTag} (e2e)`);
+  const start = (await api.ok('POST', '/v1/register/pgp/start', { tradeTag, loginName: `${prefix}-login-${tag}`, publicKey: key.publicKey })) as { challengeId: string; encryptedMessage: string };
+  await api.ok('POST', '/v1/register/pgp/finish', {
+    challengeId: start.challengeId,
+    code: await pgpCode(start.encryptedMessage, key),
     deviceLabel: 'e2e',
     // A trader agrees to the Terms with the tick alone, no signature (owner demo note #187).
     acceptedTerms: TERMS_TEXT_VERSION,
   });
+  // The second kind (owner, 26 Nov 2026: at least two), added in the sign-up window without a confirm.
+  const totp = (await api.ok('POST', '/v1/account/totp/start', {})) as { challengeId: string; secret: string };
+  await api.ok('POST', '/v1/account/totp/finish', { challengeId: totp.challengeId, code: totpCode(totp.secret, stepOf(Date.now())) });
   const wallet = await newTestWallet(s.monerod);
   const address = await wallet.getPrimaryAddress();
   await api.ok('POST', '/v1/wallets', { app: 'cake', label: 'Regtest wallet', address });
   if (o.vendor) {
-    const rows = await sql("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader' returning id", [displayName]);
-    if (rows.length !== 1) throw new Error(`could not make ${displayName} a vendor`);
+    const rows = await sql("update accounts set account_type = 'vendor', vendor_since = now() where trade_tag = $1 and account_type = 'trader' returning id", [tradeTag]);
+    if (rows.length !== 1) throw new Error(`could not make ${tradeTag} a vendor`);
   }
-  return { displayName, api, wallet, address };
+  return { tradeTag, api, wallet, address };
 }
 
 /** A browser context at `size` that is logged in as `t` (the sign-up's session cookie). */
@@ -125,7 +131,7 @@ export async function contextFor(browser: Browser, t: Trader, size: Size): Promi
   const page = await context.newPage();
   // X2F_E2E_DIAG=1: every console line (the escrow workers' too) and every node-proxy call, for debugging a run.
   if (process.env.X2F_E2E_DIAG) {
-    const who = t.displayName;
+    const who = t.tradeTag;
     page.on('console', (m) => console.log(`[${who} ${m.type()}] ${m.text().slice(0, 300)}`));
     page.on('pageerror', (e) => console.log(`[${who} pageerror] ${e.message.slice(0, 300)}`));
     context.on('request', (r) => {

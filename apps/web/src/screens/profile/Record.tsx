@@ -13,7 +13,7 @@
 import { useEffect, useId, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Checkbox } from '../../ui/Checkbox.js';
 import { Switch } from '../../ui/Switch.js';
@@ -29,7 +29,7 @@ export function recordHref(text: string): string {
 
 export function RecordExport({ now = () => new Date() }: { now?: () => Date }) {
   const session = useSession();
-  const name = session.status === 'signed-in' ? displayNameOf(session.me) : '';
+  const name = session.status === 'signed-in' ? tradeTagOf(session.me) : '';
   const [withPgp, setWithPgp] = useState(false);
   const [text, setText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

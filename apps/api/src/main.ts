@@ -5,7 +5,6 @@ import { tradeEventPublisher } from './events/tradePublisher.js';
 import { siteMaintenanceSince, startTimers } from './trades/timers.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
-import { openLeakedList } from './auth/leaked.js';
 import { loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
@@ -16,10 +15,7 @@ import { createMarketPrices } from './price/market.js';
 import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
-import { settleDueHolds } from './auth/hold.js';
 import { settleEndedBans } from './staff/bans.js';
-import { settleDueChanges } from './auth/holdChanges.js';
-import { syncHeldTradesJob } from './trades/held.js';
 import { startDisputeTimers } from './disputes/timers.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
@@ -93,7 +89,6 @@ const deps: Deps = {
   config,
   db,
   clock,
-  leaked: await openLeakedList(config.leakedListPath),
   // Task 12: loads monero-ts's WebAssembly keys module before listening.
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
@@ -134,12 +129,10 @@ const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmation
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 onTxProofStuck = txProofStuckAlert({ db, clock, push: app.push });
 onTxProofStopped = txProofStoppedAlert({ db, clock, push: app.push });
-// Plan 2 Task 17, hold model v3: every minute, holds whose 24 hours are up end, changes whose 24
-// hours are up apply, and held trades are paused or resumed as their holds say.
-const stopHolds = startRetention(
+// Every minute: the jobs below.
+const stopMinuteJobs = startRetention(
   deps,
   [
-    settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish),
     // J-20 (owner p7-11): members' sessions end when their working hours do.
     endMemberSessionsOutsideHours(app.events),
     // Plan 4 Task 27: a timed ban that reached its end is written ended and logged reinstated.
@@ -201,7 +194,7 @@ const timers = startTimers({
 
 const shutdown = async () => {
   if (staff) await staff.close();
-  await stopHolds();
+  await stopMinuteJobs();
   await stopDisputeTimers();
   await stopJabber();
   await timers.stop(); // lets a pass in flight finish before the pool closes

@@ -11,7 +11,7 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { openKey } from '../src/auth/pgp.js';
-import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
+import { LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES } from '../src/auth/liveSession.js';
 import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, archivedOriginalHost, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD, PAST_REP_SIG_AAD } from '../src/pastrep/routes.js';
@@ -60,7 +60,7 @@ let n = 0;
 async function login(display?: string): Promise<{ b: Browser; id: string; name: string }> {
   n += 1;
   const name = display ?? `Trader${String(n).padStart(3, '0')}`;
-  const id = await seedAccount(deps, { loginName: `login${n}x`, displayName: name });
+  const id = await seedAccount(deps, { loginName: `login${n}x`, tradeTag: name });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { b, id, name };
@@ -97,7 +97,7 @@ beforeEach(async () => {
 describe('pastRepChallenge', () => {
   it('is the exact eight lines, the fingerprint uppercase in groups of 4', () => {
     const text = pastRepChallenge({
-      origin: 'https://x2f.test', displayName: 'Old.Trader', site: 'LocalMonero', url: URL_OK,
+      origin: 'https://x2f.test', tradeTag: 'Old.Trader', site: 'LocalMonero', url: URL_OK,
       fingerprint: 'abcdef0123456789abcdef0123456789abcdef01', nonce: '0123456789ABCDEF', issuedAt: T0,
     });
     expect(text).toBe(
@@ -176,7 +176,7 @@ describe('start and finish', () => {
     expect(res.statusCode, res.body).toBe(201);
   });
 
-  it('the text with a different nonce, display name or site → wrong-text', async () => {
+  it('the text with a different nonce, Trade Tag or site → wrong-text', async () => {
     const { b } = await login();
     const c = await start(b, ed);
     for (const changed of [
@@ -420,7 +420,7 @@ describe('cleartext tricks', () => {
 
   it('verifyPastRepSignature compares what was verified', async () => {
     const text = pastRepChallenge({
-      origin: 'https://x2f.test', displayName: 'A.Trader', site: 'Bisq', url: URL_OK, fingerprint: ed.fingerprint, nonce: '0123456789ABCDEF', issuedAt: T0,
+      origin: 'https://x2f.test', tradeTag: 'A.Trader', site: 'Bisq', url: URL_OK, fingerprint: ed.fingerprint, nonce: '0123456789ABCDEF', issuedAt: T0,
     });
     expect(await verifyPastRepSignature(await clearsign(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
     expect(await verifyPastRepSignature(await detach(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
@@ -721,29 +721,7 @@ describe('no lookups (P5-A20, review 2026-10-24)', () => {
   });
 });
 
-describe('hold and throttle (lead follow-up, owner 1 Nov)', () => {
-  it('a held account is refused start and finish with the hold\'s code; list and delete still work', async () => {
-    const { b, id } = await login();
-    const c = await start(b, ed);
-    const signed = await clearsign(c.text, ed);
-    // A claim made before the hold, to list and remove during it.
-    const c2 = await start(b, other, { site: 'Paxful' });
-    const claim = (await b.post('/v1/account/past-rep/finish', { challengeId: c2.challengeId, signed: await clearsign(c2.text, other) })).json().id as string;
-    const until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
-    for (const res of [
-      await b.post('/v1/account/past-rep/start', startBody(ed, { site: 'Bisq' })),
-      await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed }),
-    ]) {
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
-    }
-    expect((await b.get('/v1/account/past-rep')).statusCode).toBe(200);
-    expect((await b.delete(`/v1/account/past-rep/${claim}`)).json()).toEqual({ id: claim, status: 'removed' });
-    expect(await rows()).toMatchObject([{ id: claim, status: 'removed' }]);
-    expect(HOLD_BLOCKED_ROUTES).toEqual(expect.arrayContaining(['POST /v1/account/past-rep/start', 'POST /v1/account/past-rep/finish']));
-    expect(HOLD_BLOCKED_ROUTES).not.toContain('DELETE /v1/account/past-rep/:id');
-  });
-
+describe('throttle (lead follow-up, owner 1 Nov)', () => {
   it(`start is throttled: ${PAST_REP_STARTS_PER_HOUR} an hour per account, the next refused 429 slow-down, fine again after the hour`, async () => {
     expect(PAST_REP_STARTS_PER_HOUR).toBe(10);
     const t = new Date('2026-11-02T08:00:00Z');
@@ -831,32 +809,6 @@ describe('review round 1', () => {
       expect(res.json()).toMatchObject({ error: 'wrong-key' });
     }
     expect(await rows()).toEqual([]);
-  });
-
-  it('M3: a hold that starts after the preHandler refuses finish under the account lock: no row, challenge unused', async () => {
-    const { b, id } = await login();
-    const c = await start(b, ed);
-    const signed = await clearsign(c.text, ed);
-    let until: Date | null = null;
-    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
-    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
-      if (until === null && typeof args[0] === 'string' && args[0].includes('from challenges where id = $1 and purpose')) {
-        until = new Date(0);
-        until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
-      }
-      return orig(...args);
-    }) as never);
-    let res;
-    try {
-      res = await finishOf(b, c.challengeId, signed);
-    } finally {
-      q.mockRestore();
-    }
-    expect(until).not.toBeNull();
-    expect(res.statusCode, res.body).toBe(403);
-    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until!.toISOString() });
-    expect(await rows()).toEqual([]);
-    expect(await challengeUsed(c.challengeId)).toBe(false);
   });
 
   it('M3: a session revoked after the preHandler gets 401 from finish: no row, challenge unused', async () => {
@@ -1032,19 +984,11 @@ describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
 });
 
 describe('members and sessions', () => {
-  it('a recovery (backup) session is refused', async () => {
-    const id = await seedAccount(deps, { loginName: 'recov1x' });
-    const b = new Browser(app);
-    await b.post('/t/login', { accountId: id, level: 'recovery' });
-    const res = await b.post('/v1/account/past-rep/start', startBody(ed));
-    expect(res.statusCode).toBe(403);
-  });
-
   it('a team member gets 403 owner-only on every past-rep route (Task 18: owner-only until decided)', async () => {
     const owner = await login();
-    const loginId = await seedAccount(deps, { loginName: 'pmember1x', displayName: 'pm-placeholder', kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: 'pmember1x', tradeTag: 'pm-placeholder', kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'PastMember', 'pastmember', $2, $3, $4, $3, $3)`,
       [owner.id, rolesToAbilities(['offers', 'trades']), T0, loginId],
     );

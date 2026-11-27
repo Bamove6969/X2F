@@ -137,7 +137,7 @@ describe('staff login with login hours', () => {
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode).toBe(200);
     // The 2-hour idle limit (14:00) comes before the end of the window (17:00).
-    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], grants: [], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
+    expect(me.json()).toEqual({ tradeTag: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'past-reputation', 'training', 'log'], grants: [], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
   });
 
   it('refuses the same login 1 minute after the window closes, only after the key verifies', async () => {
@@ -442,15 +442,6 @@ describe('staff sessions are separate from trading sessions', () => {
         expect(errorOf(res)).toBe('not-authenticated');
       }
     }
-  });
-
-  it('refuses a password login for a staff username', async () => {
-    const s = await seedStaff(deps, { role: 'mod' });
-    const res = await trader.inject({
-      method: 'POST', url: '/v1/login/password', headers: { origin: TRADER_ORIGIN }, payload: { loginName: s.loginName, password: 'correct horse battery staple', deviceLabel: 'D' },
-    });
-    expect(res.statusCode).toBe(401);
-    expect(errorOf(res)).toBe('credentials-invalid');
   });
 
   it('logs out on the staff cookie: never 401, the session is revoked and the cookie cleared', async () => {
@@ -790,7 +781,7 @@ describe('migration 202 (staff_members)', () => {
     // An account with no staff row changes kind as before, and other columns of a staff account still update.
     const t = await seedAccount(deps, { loginName: uniqueTrader(), kind: 'staff' });
     await deps.db.query("update accounts set kind = 'trader' where id = $1", [t]);
-    await deps.db.query("update accounts set display_name = display_name where id = $1", [s.id]);
+    await deps.db.query("update accounts set trade_tag = trade_tag where id = $1", [s.id]);
   });
 
   it('re-checks a staff row written while the account kind is being changed (RV5 m2, both orders)', async () => {

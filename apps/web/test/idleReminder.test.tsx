@@ -13,7 +13,7 @@ import { fire, render } from './render.js';
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let calls: Array<{ url: string; method: string; body: unknown }>;
 let handler: (url: string, init: RequestInit | undefined) => Response | undefined;
-const ME = { displayName: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
+const ME = { tradeTag: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
 
 beforeEach(() => {
   calls = [];

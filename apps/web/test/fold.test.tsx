@@ -171,7 +171,7 @@ describe('styles/fold.css', () => {
 
 describe('TradeGlance warning (round-2 review m1, m2)', () => {
   const ok = { phase: 'ready' as const, error: null, retryable: false, refusal: null, fiatCents: BigInt(PAY_SECURED.fiatCents), amountAtomic: BigInt(PAY_SECURED.amountAtomic) };
-  const buyer = { ...PAY_SECURED, role: 'buyer' as const, counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+  const buyer = { ...PAY_SECURED, role: 'buyer' as const, counterparty: { ...PAY_SECURED.counterparty, tradeTag: 'mira.k' } };
   const seller = { ...buyer, role: 'seller' as const };
 
   it('says nothing once this device is done, whatever refusal is left over', () => {

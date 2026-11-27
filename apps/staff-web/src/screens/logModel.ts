@@ -8,7 +8,7 @@
  *
  * A sentence is built from the entry's action and its detail only (ids, enums, amounts and setting
  * numbers: never chat text, a ruling's reason, an address or an IP, Plan 4 Global Constraints); an
- * id in the detail is shown by the display name the API sent with the page, else not at all.
+ * id in the detail is shown by the Trade Tag the API sent with the page, else not at all.
  */
 import type { LogEntry, LogKind } from '../api.js';
 import { OUTCOME_LABELS, codeText, xmrShort } from './modModel.js';
@@ -21,7 +21,7 @@ export function whoRole(e: Pick<LogEntry, 'actor'>): string {
   return e.actor.kind === 'system' ? '' : (ROLE_LABELS[e.actor.role ?? ''] ?? '');
 }
 
-/** The "Who" column's name: the display name, "system", or the side when no name is known. */
+/** The "Who" column's name: the Trade Tag, "system", or the side when no name is known. */
 export function whoName(e: Pick<LogEntry, 'actor'>): string {
   if (e.actor.kind === 'system') return 'system';
   return e.actor.name ?? (e.actor.kind === 'trader' ? (ROLE_LABELS[e.actor.role ?? ''] ?? 'a trader') : 'a staff member');
@@ -63,7 +63,7 @@ function rulingWords(d: Record<string, unknown>): string {
 
 /**
  * The "What happened" sentence for one entry. `names` maps the ids an entry's detail names
- * (`staffId`, `accountId`) to display names.
+ * (`staffId`, `accountId`) to Trade Tags.
  */
 export function describeLog(e: Pick<LogEntry, 'action' | 'detail' | 'actor' | 'withheld'>, names: Readonly<Record<string, string>> = {}): string {
   const d = e.detail;
@@ -162,7 +162,7 @@ function sentence(
     case 'account.reinstated': return 'An account was reinstated at the end of its ban';
     // The Accounts page's lookup (spec 6.6). COPY-UNSIGNED
     case 'account.looked-up': {
-      const via = d.by === 'code' ? 'trade code' : 'display name';
+      const via = d.by === 'code' ? 'trade code' : 'Trade Tag';
       return d.found === 0 ? `Looked up an account by ${via}; none matched` : `Looked up ${who('accountId', 'an account')} by ${via}`;
     }
     case 'lien.placed': return `Placed a lien of ${xmr(d.amountAtomic) || 'the trade amount'}`;

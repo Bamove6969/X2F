@@ -20,7 +20,7 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const OWNER = { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['password'], accountType: 'vendor', pendingChanges: null, member: null };
+const OWNER = { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['pgp', 'passkey'], accountType: 'vendor', member: null };
 const MEMBER = { ...OWNER, member: { name: 'Aurora', roles: ['trades'] } };
 
 let me: unknown = OWNER;

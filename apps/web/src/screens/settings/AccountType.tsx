@@ -16,10 +16,9 @@ import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
-import { CANT_DO_TITLE, HOLD_CODE, VENDOR_NEEDS_KEY_CODE, accountTypeCantDoText } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, VENDOR_NEEDS_KEY_CODE, accountTypeCantDoText } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence } from '../auth/refusals.js';
 import { ACCOUNT_TYPE_COPY as C, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import '../screens.css';
@@ -67,8 +66,7 @@ function AccountTypeScreen() {
       await load();
     } catch (e) {
       if (isConfirmAbort(e)) return;
-      if (e instanceof AuthApiError && e.code === HOLD_CODE) setError(holdSentence(e.holdUntil));
-      else if (e instanceof AuthApiError && isCantDoCode(e.code)) setCantDo(e.code);
+      if (e instanceof AuthApiError && isCantDoCode(e.code)) setCantDo(e.code);
       else setError(C.saveFailed);
     } finally {
       setBusy(false);

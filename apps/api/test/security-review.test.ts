@@ -1,4 +1,4 @@
-import { checkDisplayName } from '@x2f/accounts';
+import { checkTradeTag } from '@x2f/accounts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -43,7 +43,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
       });
       expect(res.statusCode).toBe(200);
     }
-    const victim = await new Browser(app).post('/v1/login/password', { loginName: 'realuser1', password: 'x', deviceLabel: 'b' });
+    const victim = await new Browser(app).post('/v1/login/pgp/start', { key: 'x', loginName: 'realuser1' });
     expect(victim.statusCode).toBe(503);
     expect(victim.json()).toMatchObject({ error: 'busy' });
     // The owner's security-key login start is refused the same way.
@@ -55,7 +55,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     setNow(new Date('2026-10-17T15:00:00Z')); // the budget has refilled
     const k = await genKey();
     const reg = new Browser(app);
-    const rs = await reg.post('/v1/register/pgp/start', { displayName: 'Busy.Finisher', loginName: 'busy.fin.login', publicKey: k.publicKey });
+    const rs = await reg.post('/v1/register/pgp/start', { tradeTag: 'Busy.Finisher', loginName: 'busy.fin.login', publicKey: k.publicKey });
     const rcode = codeOf(await decrypt(rs.json().encryptedMessage, k.privateKey));
     expect((await reg.post('/v1/register/pgp/finish', {
       challengeId: rs.json().challengeId, code: rcode, deviceLabel: 'b', acceptedTerms: deps.config.termsVersion, termsSignature: SIG,
@@ -167,21 +167,21 @@ describe('F3: API answers are never cached', () => {
   });
 });
 
-describe('F4: look-alike display names (owner decision 2026-10-23)', () => {
+describe('F4: look-alike Trade Tags (owner decision 2026-10-23)', () => {
   it('0/o, 1/l/i and rn/m fold only against reserved names; traders that merely look alike are both allowed', () => {
     for (const name of ['adm1n.team', 'Moderat0r', 'supp0rt', 'Adrnin.k']) {
-      expect(checkDisplayName(name), name).toEqual({ ok: false, reason: 'reserved' });
+      expect(checkTradeTag(name), name).toEqual({ ok: false, reason: 'reserved' });
     }
     for (const name of ['llya.k', 'Ilya.k', 'Alice.b', 'A1ice.b', 'm0nero.fan']) {
-      expect(checkDisplayName(name).ok, name).toBe(true);
+      expect(checkTradeTag(name).ok, name).toBe(true);
     }
   });
 
-  it('a display name folding to a staff or owner display name is refused (the API check)', async () => {
+  it('a Trade Tag folding to a staff or owner Trade Tag is refused (the API check)', async () => {
     setNow(new Date('2026-10-17T18:00:00Z'));
-    await seedAccount(deps, { loginName: 'owner.secret1', displayName: 'Marlin.0', kind: 'owner' });
-    const res = await new Browser(app).post('/v1/register/webauthn/start', { displayName: 'Mar1in.o', loginName: 'fan.login1', kind: 'passkey' });
+    await seedAccount(deps, { loginName: 'owner.secret1', tradeTag: 'Marlin.0', kind: 'owner' });
+    const res = await new Browser(app).post('/v1/register/webauthn/start', { tradeTag: 'Mar1in.o', loginName: 'fan.login1', kind: 'passkey' });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'display-name-reserved' });
+    expect(res.json()).toEqual({ error: 'trade-tag-reserved' });
   });
 });

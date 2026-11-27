@@ -7,7 +7,6 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { PUBLIC_ROUTES } from '../src/auth/frontDoor.js';
-import { hashPassword } from '../src/auth/password.js';
 import { keyringBox } from '../src/auth/keystore.js';
 import { subkey } from '../src/config.js';
 import { COMPROMISED_BUCKET } from '../src/limits.js';
@@ -74,10 +73,10 @@ async function trader(o: { disabled?: boolean } = {}): Promise<Trader> {
 async function member(teamId: string, abilities: string[] = ['trades-see-active']): Promise<{ id: string; loginId: string; loginName: string; name: string; b: Browser }> {
   const name = `Member${++n}`;
   const loginName = `mlogin${n}${randomBytes(3).toString('hex')}`;
-  const loginId = await seedAccount(deps, { loginName, displayName: `m-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName, tradeTag: `m-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -111,7 +110,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     const second = (await seedTrade(deps, { sellerId: other.id, buyerId: victim.id, poster: 'seller' })).trade;
     expect((await victim.b.get('/v1/tickets')).statusCode).toBe(200);
 
-    const res = await report({ loginName: victim.loginName.toUpperCase(), methodsLeft: ['recovery-code', 'password'], comment: `They took my phone. ${SECRET}` });
+    const res = await report({ loginName: victim.loginName.toUpperCase(), methodsLeft: ['recovery-code', 'pgp'], comment: `They took my phone. ${SECRET}` });
     expect(res.statusCode, res.body).toBe(202);
     expect(Object.keys(res.json()).sort()).toEqual(['moderatorUrl', 'number']);
 
@@ -129,7 +128,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     expect((await loadTrade(deps.db, second.code))!.pausedAt).toEqual(T0);
     // The report: the account, the ticked kinds, the sealed comment; never the typed login name.
     const t = await deps.db.query<{ account_id: string; methods_left: string[] }>("select account_id, methods_left from tickets where kind = 'compromised' and account_id = $1", [victim.id]);
-    expect(t.rows[0]).toEqual({ account_id: victim.id, methods_left: ['password', 'recovery-code'] });
+    expect(t.rows[0]).toEqual({ account_id: victim.id, methods_left: ['pgp', 'recovery-code'] });
     const dump = JSON.stringify((await deps.db.query("select t.*, encode(m.body_sealed, 'escape') as m from tickets t left join ticket_messages m on m.ticket_id = t.id where t.kind = 'compromised'")).rows);
     expect(dump.toLowerCase()).not.toContain(victim.loginName.toLowerCase());
     expect(dump).not.toContain('zebra');
@@ -166,7 +165,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
 
   it('answers the same for an unknown name, a malformed one, a staff name and an account already locked, and locks nothing for them', async () => {
     const before = await deps.db.query('select count(*)::int as n from account_locks');
-    const unknown = await report({ loginName: 'no-such-person-here', methodsLeft: ['password'], comment: 'help' });
+    const unknown = await report({ loginName: 'no-such-person-here', methodsLeft: ['passkey'], comment: 'help' });
     const malformed = await report({ loginName: '!!', methodsLeft: [], comment: '' });
     const mod = await staff('mod');
     const staffName = await report({ loginName: mod.loginName, methodsLeft: [] });
@@ -214,7 +213,9 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
 
   it(`refuses a bad body, and more than ${COMPROMISED_PER_NAME_DAILY} reports a day for one typed name`, async () => {
     expect((await report({ loginName: 'x', methodsLeft: ['a-password-value'], comment: '' })).statusCode).toBe(400);
-    expect((await report({ loginName: 'x', methodsLeft: ['password', 'password'], comment: '' })).statusCode).toBe(400);
+    // No passwords (owner 26 Nov 2026): a password is not a login method, so not one that is left.
+    expect((await report({ loginName: 'x', methodsLeft: ['password'], comment: '' })).statusCode).toBe(400);
+    expect((await report({ loginName: 'x', methodsLeft: ['pgp', 'pgp'], comment: '' })).statusCode).toBe(400);
     expect((await report({ loginName: 'x', methodsLeft: [], comment: '', password: 'hunter2' })).statusCode).toBe(400);
     expect((await report({ methodsLeft: [], comment: '' })).statusCode).toBe(400);
     expect((await report({ loginName: 'x', methodsLeft: [], comment: 'a‮b' })).statusCode).toBe(400);
@@ -233,10 +234,10 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     expect([401, 403]).toContain((await m.b.get('/v1/tickets')).statusCode);
     expect((await deps.db.query('select 1 from sessions where member_id = $1 and revoked_at is null', [m.id])).rowCount).toBe(0);
     expect((await owner.b.get('/v1/tickets')).statusCode).toBe(200);
-    // Staff see a member's login as a member login (its display name is a placeholder nobody sees).
+    // Staff see a member's login as a member login (its Trade Tag is a placeholder nobody sees).
     const senior = await staff('senior');
-    const list = (await senior.b.get('/staff/v1/compromised')).json() as { items: Array<{ locked: boolean; displayName: string | null; matched: boolean }> };
-    expect(list.items.find((t) => t.matched && t.locked && t.displayName === null)).toBeDefined();
+    const list = (await senior.b.get('/staff/v1/compromised')).json() as { items: Array<{ locked: boolean; tradeTag: string | null; matched: boolean }> };
+    expect(list.items.find((t) => t.matched && t.locked && t.tradeTag === null)).toBeDefined();
     expect(JSON.stringify(list)).not.toContain('placeholder');
   });
 
@@ -257,7 +258,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
 
     const senior = await staff('senior');
     const listed = ((await senior.b.get('/staff/v1/compromised')).json() as { items: Array<{ id: string }> }).items.find((t) => t.id === id);
-    expect(listed).toMatchObject({ matched: true, locked: true, methodsLeft: ['passkey'], displayName: `D${victim.loginName}` });
+    expect(listed).toMatchObject({ matched: true, locked: true, methodsLeft: ['passkey'], tradeTag: `D${victim.loginName}` });
     expect(JSON.stringify(listed)).not.toContain('Phone');
     const view = (await senior.b.get(`/staff/v1/compromised/${id}`)).json();
     expect(view.comment).toBe('Phone stolen');
@@ -366,19 +367,14 @@ describe('J-14 review minors (J4-J7), ported', () => {
     for (const e of await logEntries(deps, 'account.report-viewed')) expect(JSON.stringify(e)).not.toMatch(/kumquat/);
   });
 
-  it('J7: a real password login and a recovery-code login are refused on a locked account (403 account-disabled), and the code stays unused', async () => {
+  it('J7: a recovery-code login is refused on a locked account (403 account-disabled), and the code stays unused', async () => {
     const { id, loginName } = await trader();
-    const password = 'Correct-Horse-9-locked';
-    const { hash, pepperId } = await hashPassword(deps.config, password);
-    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, hash, pepperId, deps.clock()]);
     const owner = new Browser(app);
     expect((await owner.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
     const codes = await owner.post('/v1/account/recovery-codes', {});
     expect(codes.statusCode, codes.body).toBe(200);
     const code = (codes.json() as { codes: string[] }).codes[0]!;
-    expect((await report({ loginName, methodsLeft: ['password'], comment: '' })).statusCode).toBe(202);
-    const pw = await new Browser(app).post('/v1/login/password', { loginName, password, deviceLabel: 'Thief browser' });
-    expect({ status: pw.statusCode, error: errorOf(pw) }).toEqual({ status: 403, error: 'account-disabled' });
+    expect((await report({ loginName, methodsLeft: ['passkey'], comment: '' })).statusCode).toBe(202);
     const rc = await new Browser(app).post('/v1/login/backup', { loginName, kind: 'recovery-code', code, deviceLabel: 'Thief browser' });
     expect({ status: rc.statusCode, error: errorOf(rc) }).toEqual({ status: 403, error: 'account-disabled' });
     expect((await deps.db.query('select 1 from recovery_codes where account_id = $1 and used_at is not null', [id])).rowCount).toBe(0);
@@ -509,7 +505,7 @@ describe('review of feat/lockout', () => {
     expect(await lockedNow(v.id)).toBe(true);
     const { senior } = await unlock(v.id, first.json().number);
     setNow(new Date(T0.getTime() + 60_000));
-    const again = await report({ loginName: v.loginName, methodsLeft: ['password'], comment: 'me again' });
+    const again = await report({ loginName: v.loginName, methodsLeft: ['passkey'], comment: 'me again' });
     expect(again.statusCode).toBe(202);
     expect(Object.keys(again.json()).sort()).toEqual(['moderatorUrl', 'number']);
     expect(await lockedNow(v.id)).toBe(false);
@@ -554,7 +550,7 @@ describe('review of feat/lockout', () => {
     await afterLocksSettled();
   });
 
-  it('item 3: an account whose login name is still its public display name (legacy) is reported but never locked, flagged for staff', async () => {
+  it('item 3: an account whose login name is still its public Trade Tag (legacy) is reported but never locked, flagged for staff', async () => {
     const v = await trader();
     await deps.db.query('update accounts set legacy_login_name = true where id = $1', [v.id]);
     const res = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });

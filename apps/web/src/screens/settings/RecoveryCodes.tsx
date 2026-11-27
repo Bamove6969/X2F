@@ -9,13 +9,10 @@ import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { refusalText } from '../auth/refusals.js';
-import { StagedNote, reportChangesCap } from './HoldChanges.js';
 
 export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void }) {
   const primary = usePrimaryVariant();
   const [codes, setCodes] = useState<string[] | null>(null);
-  // Hold model v3: a new code made from a username-and-password login is a draft; it works once submitted and applied.
-  const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,10 +22,9 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
     try {
       const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
       setCodes(result.codes);
-      setStaged(result.status === 'staged');
     } catch (e) {
       // COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026)
-      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not make your recovery code. Try again.'));
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make your recovery code. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -39,7 +35,6 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
       <div className="x2f-field" data-part="recovery-codes">
         {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
         <p className="x2f-note">Save this now. It works once, and you will not see it again.</p>
-        {staged ? <StagedNote /> : null}
         <ul className="x2f-codes" data-part="code-list">
           {codes.map((c) => (
             <li className="x2f-codes__item" key={c}>
@@ -62,7 +57,10 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
           {error}
         </p>
       ) : null}
-      {/* COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026) */}
+      {/* COPY-UNSIGNED (owner, 26 Nov 2026: one active code; a new one cancels the old one) */}
+      <p className="x2f-note" data-part="recovery-replaces">
+        You have one recovery code at a time. Making a new one cancels your old code at once.
+      </p>
       <Button variant={primary} disabled={busy} onClick={() => void make()} data-part="recovery-make">
         Show my recovery code
       </Button>

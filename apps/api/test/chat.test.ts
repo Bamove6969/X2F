@@ -211,13 +211,13 @@ describe('POST /v1/chats', () => {
 });
 
 describe('GET /v1/chats/:chat', () => {
-  it('shows a party its role and the other side by display name; a non-participant gets 404', async () => {
+  it('shows a party its role and the other side by Trade Tag; a non-participant gets 404', async () => {
     const o = await openChat();
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, tradeSecuredAt: null, attested: false, mySignPublic: null });
-    expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
+    expect((body.counterparty as { tradeTag: string }).tradeTag).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();
     const miss = await stranger.b.get(`/v1/chats/${o.chat}`);

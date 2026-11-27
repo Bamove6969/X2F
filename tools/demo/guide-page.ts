@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { DEMO_PASSWORD, ROOT, STATE_DIR } from './config.js';
+import { ROOT, STATE_DIR } from './config.js';
 import { demoPageCsp, NOTES_TAG } from './page-csp.js';
 import { forwardedHttps } from './self-origin.js';
 import { ROUND, roundSteps, type GuideStep, type NewStep } from './guide-round.js';
@@ -92,13 +92,13 @@ export function guideSteps(s: SeedSummary | null, staff: StaffSummary | null = n
       title: '1. Sign up',
       links: [link('/'), link('/setup')],
       who: 'Nobody: make a new account of your own (it gets no door, see Log in).',
-      todo: [`Tap Create account; read and sign the Terms (v${TERMS_TEXT_VERSION}); pick a username and a display name; tick the login methods you want.`, 'Save the one recovery code, then type it back on the next screen.', `Paste a payout address when asked (any address shape the form accepts is fine on regtest).${ROUND ? ' "New in this demo" above walks each screen.' : ''}`],
+      todo: [`Tap Create account; read and sign the Terms (v${TERMS_TEXT_VERSION}); pick a username and a Trade Tag; tick the login methods you want.`, 'Save the one recovery code, then type it back on the next screen.', `Paste a payout address when asked (any address shape the form accepts is fine on regtest).${ROUND ? ' "New in this demo" above walks each screen.' : ''}`],
     },
     {
       title: '2. Log in',
-      links: [link('/login'), link('/__demo/codes', '/__demo/codes (authenticator codes)')],
-      who: `Any seeded account, password ${login(DEMO_PASSWORD)}. Use the login name, not the display name.`,
-      todo: ['Type the login name and password.', 'For the 6-digit code, open /__demo/codes in another tab and type that account\'s current code (each code works once; a new one every 30 s).', 'If the account is logged in on another device, log it out there first or approve from it.'],
+      links: [link('/__demo/login', '/__demo/login (one tap)'), link('/login'), link('/__demo/codes', '/__demo/codes (authenticator codes)')],
+      who: 'Any seeded account. There are no passwords: each has a throwaway PGP key and an authenticator app (two kinds of login method).',
+      todo: ['Open /__demo/login and tap the account: the demo does the real PGP login with its throwaway key.', 'The app\'s own /login screen takes a passkey, security key or PGP key; an authenticator code never logs in alone. /__demo/codes shows each account\'s current code.', 'If the account is logged in on another device, log it out there first or approve from it.'],
     },
     {
       title: '3. Browse and buy',
@@ -134,7 +134,7 @@ export function guideSteps(s: SeedSummary | null, staff: StaffSummary | null = n
       title: '8. Rating',
       links: [link('/trades')],
       who: 'Both sides of a released trade.',
-      todo: ['Rate the other side after release (the next take waits until you rate or skip).', 'See the rating on the other trader\'s profile (/u/<display name>).'],
+      todo: ['Rate the other side after release (the next take waits until you rate or skip).', 'See the rating on the other trader\'s profile (/u/<Trade Tag>).'],
     },
     {
       title: '9. My trades',
@@ -248,7 +248,7 @@ export function guidePage(s: SeedSummary | null, staff: StaffSummary | null = nu
     `<title>X2F demo guide</title><style>${STYLE}</style>${NOTES_TAG}</head><body data-screen="demo-guide">`,
     '<h1>Demo guide</h1>',
     '<p>Regtest demo only: fake money, throwaway accounts. Leave a comment on any screen with the Comment button (top right), this guide included: tap Comment, then the item you mean, and the comment records which item it is.</p>',
-    `<p>Password for every seeded account: <code>${esc(DEMO_PASSWORD)}</code>. Codes: ${link('/__demo/codes')}. One account per browser or device.</p>`,
+    `<p>Log in as any seeded account: ${link('/__demo/login')} (no passwords; the demo holds each account's throwaway PGP key). Codes: ${link('/__demo/codes')}. One account per browser or device.</p>`,
     `<p>The Terms legal review of 23 Nov: ${link('/__demo/guide/legal', 'Legal suggestions')}.</p>`,
     accounts,
     ...(ROUND && fresh !== ''

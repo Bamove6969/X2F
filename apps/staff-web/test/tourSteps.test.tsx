@@ -24,8 +24,8 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const MEMBERS = [
-  { accountId: 's-1', inviteId: null, displayName: 'iris.m', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: null, openCases: 1, expiresAt: null, missingMethods: [] },
-  { accountId: 'm-1', inviteId: null, displayName: 'nightowl_44', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-03T00:00:00Z', lastActiveAt: null, openCases: 2, expiresAt: null, missingMethods: [] },
+  { accountId: 's-1', inviteId: null, tradeTag: 'iris.m', role: 'senior', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-02T00:00:00Z', lastActiveAt: null, openCases: 1, expiresAt: null, missingMethods: [] },
+  { accountId: 'm-1', inviteId: null, tradeTag: 'nightowl_44', role: 'mod', status: 'active', grants: [], hours: 'any', joinedAt: '2026-10-03T00:00:00Z', lastActiveAt: null, openCases: 2, expiresAt: null, missingMethods: [] },
 ];
 const HEALTH = {
   xmr: [{ name: 'Kraken', lastGoodAt: '2026-11-10T09:58:00.000Z', consecutiveFailures: 0, inUse: true }],
@@ -37,7 +37,7 @@ const HEALTH = {
 
 function api(role: StaffRole, grants: GrantablePerm[] = []) {
   fakeApi({
-    'GET /staff/v1/me': { body: { displayName: 'lumen.k', role, nav: navFor(role, grants), sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() } },
+    'GET /staff/v1/me': { body: { tradeTag: 'lumen.k', role, nav: navFor(role, grants), sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() } },
     'GET /staff/v1/members': { body: { members: MEMBERS } },
     'GET /staff/v1/price-health': { body: HEALTH },
     'GET /staff/v1/feedback': { body: { items: [], counts: { great: 1, ok: 0, needsWork: 0 }, next: null } },

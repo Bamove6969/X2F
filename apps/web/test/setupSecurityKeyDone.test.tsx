@@ -28,7 +28,8 @@ vi.mock('@x2f/auth-client', async (importOriginal) => ({
   addWebAuthnKeyWithId: async (_api: unknown, kind: string, o: { label?: string }) => {
     added.push({ kind, o });
     await gate;
-    return { staged: await result(), credentialId: 'CRED-NEW' };
+    await result();
+    return { credentialId: 'CRED-NEW' };
   },
   testWebAuthnKey: async (_api: unknown, credentialId: string) => {
     tested.push(credentialId);
@@ -82,7 +83,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function setup(): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'lumen.k', loginName: 'lumen-login-7', registered: true, methods: ['pgp', 'security-key'], done: ['pgp'] },
+    state: { ...INITIAL, terms: { version: 'v1' }, tradeTag: 'lumen.k', loginName: 'lumen-login-7', registered: true, methods: ['pgp', 'security-key'], done: ['pgp'] },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),
@@ -298,22 +299,11 @@ describe('owner note #94: test the security key right after adding it', () => {
     expect(byPart(done, 'key-test-result')!.textContent).toBe("The key's answer couldn't be checked. Try again, or use a different key.");
     expect(tested).toEqual(['CRED-NEW', 'CRED-NEW', 'CRED-NEW']);
   });
-
-  it('a staged key (hold model v3) is not offered a test: it is not a login method yet', async () => {
-    result = async () => ({ status: 'staged', changeId: 'c1' });
-    const api = setup();
-    const host = show(api);
-    click(byPart(host, 'key-add'));
-    await flush();
-    expect(byPart(host, 'key-test-run')).toBeNull();
-    expect(byPart(host, 'key-name-input')).toBeNull();
-    expect(renames).toEqual([]);
-  });
 });
 
 describe('owner 25 Nov: the key the account was made with is acknowledged and named too', () => {
   it('FirstKeySaved: "Security key saved", "Security key 1", stored; Continue clears it and goes on', async () => {
-    const api = { ...setup(), state: { ...setup().state, methods: ['security-key', 'password'] as never, done: ['security-key'] as never, keySaved: { kind: 'security-key' as const, credentialId: 'CRED-FIRST' } } };
+    const api = { ...setup(), state: { ...setup().state, methods: ['security-key', 'totp'] as never, done: ['security-key'] as never, keySaved: { kind: 'security-key' as const, credentialId: 'CRED-FIRST' } } };
     const host = render(
       <MemoryRouter>
         <SetupContext.Provider value={api}>
@@ -328,7 +318,7 @@ describe('owner 25 Nov: the key the account was made with is acknowledged and na
     expect(renames).toEqual([{ credentialId: 'CRED-FIRST', label: 'Titan' }]);
     click(byPart(host, 'key-continue'));
     expect(api.update).toHaveBeenCalledWith({ keySaved: null });
-    expect(api.go).toHaveBeenCalledWith('password', { replace: true });
+    expect(api.go).toHaveBeenCalledWith('authenticator', { replace: true });
   });
 
   it('a passkey made first is "Passkey saved", "Passkey 1", with no key test', async () => {

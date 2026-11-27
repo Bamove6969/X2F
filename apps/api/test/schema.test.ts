@@ -11,10 +11,6 @@ import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { assertLoginNamesTagged, tagLoginNames } from '../src/accounts.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
-import { hashPassword } from '../src/auth/password.js';
-import { SESSION_COOKIE } from '../src/auth/sessions.js';
-import { DEVICE_COOKIE } from '../src/auth/device.js';
-import { trustedDevice } from './helpers/accounts.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
 const VAPID = VAPID_ENV;
@@ -23,13 +19,11 @@ const FULL_ENV = {
   X2F_ORIGINS: 'https://x2f.test,http://x2fexample.onion',
   X2F_RP_ID: 'x2f.test',
   DATABASE_URL: 'postgres://u:p@127.0.0.1:5432/x2f',
-  X2F_LEAKED_LIST_PATH: '/srv/x2f/leaked.bin',
   X2F_SERVER_KEY: Buffer.alloc(32, 7).toString('base64'),
   X2F_MONERO_NETWORK: 'stagenet',
   X2F_TERMS_VERSION: '2026-10-17',
   X2F_PGP_SIGNING_KEY_PATH: '/srv/x2f/signing.asc',
   X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
-  X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 1).toString('base64')}`,
   X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 2).toString('base64')}`,
   X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 3).toString('base64')}`,
   X2F_LOGIN_NAME_KEYS: `1:${Buffer.alloc(32, 4).toString('base64')}`,
@@ -39,6 +33,15 @@ const FULL_ENV = {
 };
 const k32 = (fill: number) => Buffer.alloc(32, fill).toString('base64');
 
+/**
+ * The migrations before 862 (owner 26 Nov 2026: no passwords, no holds, no session strength), into
+ * `dir` and applied: for the tests of what an older migration did to the rows it found.
+ */
+async function migrateBefore862(db: Parameters<typeof migrate>[0], dir: string): Promise<string[]> {
+  for (const f of (await readdir(MIGRATIONS_DIR)).filter((n) => n < '862')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+  return migrate(db, dir);
+}
+
 describe('migrations', () => {
   it('applies every migration once on an empty database, then nothing', async () => {
     const db = await emptyDb();
@@ -46,7 +49,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql',
+        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql', '862_no_passwords_no_holds.sql', '863_trade_tag.sql', '864_escrow_key_sync.sql', '870_trades_release.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '892_totp_login.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -180,7 +183,7 @@ describe('migrations', () => {
     }
   });
 
-  it('009: an existing username becomes the display name and, until the person picks one, the login name too (review I3)', async () => {
+  it('009: an existing username becomes the Trade Tag and, until the person picks one, the login name too (review I3)', async () => {
     const db = await emptyDb();
     const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
     let close: (() => Promise<void>) | null = null;
@@ -195,39 +198,27 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
-        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql', '862_no_passwords_no_holds.sql', '863_trade_tag.sql', '864_escrow_key_sync.sql', '870_trades_release.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '892_totp_login.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql',
       ]);
-      const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
-      expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
+      const { rows } = await db.query('select trade_tag, display_key, login_name, login_key, legacy_login_name from accounts');
+      expect(rows).toEqual([{ trade_tag: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
       // The one key is reserved once, in both namespaces.
       expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
       // Only a legacy row may have equal names.
       await expect(db.query('update accounts set legacy_login_name = false where id = $1', [inserted[0]!.id])).rejects.toMatchObject({ code: '23514' });
 
-      // A pre-009 password account logs in after the migration with its old name, and is asked for a
-      // login name. Deploy order (FU-D): migrate, `tag-login-names`, start.
+      // A pre-009 account is tagged under its old name, and is asked for a login name. Deploy order
+      // (FU-D): migrate, `tag-login-names`, start.
       const { app, deps } = await testApp({ db });
       close = () => app.close();
       await expect(assertLoginNamesTagged(db)).rejects.toThrow(/1 login names are not tagged yet/);
       expect(await tagLoginNames(deps)).toEqual({ tagged: 1 });
       await assertLoginNamesTagged(db);
-      // Tagged under the display name, still legacy; name_keys keeps the display key only.
+      // Tagged under the Trade Tag, still legacy; name_keys keeps the display key only.
       expect((await db.query('select login_name, login_key, login_tag_key_id, legacy_login_name from accounts')).rows).toEqual([
         { login_name: null, login_key: null, login_tag_key_id: deps.config.loginNameKeys.current, legacy_login_name: true },
       ]);
       expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
-      const pw = await hashPassword(deps.config, 'Correct-Horse-9');
-      await db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [inserted[0]!.id, pw.hash, pw.pepperId]);
-      // Hold model v3: with nothing logged in, a password alone gets in only on a trusted device.
-      const login = await app.inject({
-        method: 'POST', url: '/v1/login/password', headers: { origin: 'https://x2f.test' },
-        cookies: { [DEVICE_COOKIE]: await trustedDevice(deps, inserted[0]!.id) },
-        payload: { loginName: 'Old.Trader', password: 'Correct-Horse-9', deviceLabel: 'Old browser' },
-      });
-      expect(login.statusCode).toBe(200);
-      const session = login.cookies.find((c) => c.name === SESSION_COOKIE)?.value;
-      const me = await app.inject({ method: 'GET', url: '/v1/account/me', headers: { origin: 'https://x2f.test' }, cookies: { [SESSION_COOKIE]: session! } });
-      expect(me.json()).toMatchObject({ displayName: 'Old.Trader', needsLoginName: true });
     } finally {
       if (close) await close();
       await db.end();
@@ -270,10 +261,10 @@ describe('migrations', () => {
         [trader, t, waiting],
       );
 
-      expect(await migrate(db)).toEqual([
+      expect(await migrateBefore862(db, dir)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '016_hold_v3.sql', '017_ban_list.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
-        '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql',
+        '111_trade_identities.sql', '112_take.sql', '113_release_claim.sql', '115_news.sql', '116_fund_started.sql', '119_seller_nudged_at.sql', '120_cancel_reversal.sql', '121_confirm_window_days.sql', '122_chat_retention_disputes.sql', '123_chat_shred.sql', '124_pay_window.sql', '125_launch_cap_offers.sql', '198_account_type.sql', '199_team_audit_trades.sql', '200_account_inactivity.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '204_owner_setup.sql', '205_staff_invites.sql', '206_settings_site.sql', '207_disputes.sql', '208_moderation.sql', '209_staff_grants.sql', '210_ban_scope_close_switch.sql', '211_gate_reader.sql', '212_mod_reader_log.sql', '301_reviews.sql', '302_feedback.sql', '303_badge_prefs.sql', '304_past_reputation.sql', '306_feedback_form.sql', '307_session_length.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql', '311_idle_reminder.sql', '312_traded_xmr.sql', '313_session_length_8h.sql', '314_session_token_rotation.sql', '315_min_trades_choices.sql', '316_terms_signature.sql', '324_offer_amount_unit.sql', '325_action_minutes.sql', '326_fast_payments.sql', '331_jabber_notices.sql', '332_jabber_review.sql', '333_jabber_omemo_bundle.sql', '334_jabber_paths_batch4.sql', '335_jabber_omemo_prekeys.sql', '336_jabber_events.sql', '345_offers_market_only.sql', '350_maintenance_kinds.sql', '355_gift_card_terms.sql', '360_team_abilities.sql', '361_trader_notes.sql', '362_block_notes.sql', '367_blur_checks.sql', '380_team_limits.sql', '390_team_assistants.sql', '400_liens.sql', '401_ruling_drafts.sql', '420_staff_pay.sql', '430_revenue_ledger.sql', '431_fee_sweep.sql', '470_cancel_figure.sql', '490_flex_offers.sql', '500_chat_key_envelopes.sql', '520_appeal_no_reviewer.sql', '540_staff_security_reset.sql', '550_ruling_statements.sql', '570_device_bound_sessions.sql', '580_trade_proofs.sql', '585_proof_request_sent.sql', '620_wallet_one_time.sql', '630_wallet_default.sql', '640_wallet_used_by_trade.sql', '701_trade_purge.sql', '702_badge_prefs_jabber.sql', '710_mod_reader_assignee.sql', '711_chat_keys.sql', '712_chat_dispute_notices.sql', '713_chat_grant_refused.sql', '714_mod_reader_grants.sql', '715_staff_last_switched_off.sql', '716_chat_members_statement_mod.sql', '740_ruling_payments.sql', '750_training_curation.sql', '751_pastrep_revoked_by.sql', '752_review_disputes.sql', '760_account_limits.sql', '761_trade_shred_orders.sql', '770_no_russia.sql', '780_account_bans.sql', '790_p4t22_rulings.sql', '791_p4t22_followup.sql', '800_display_name_unicode.sql', '810_display_key_fold.sql', '811_tickets.sql', '820_lien_recovery.sql', '830_revenue_network_fee.sql', '840_payroll_sends.sql', '850_staff_pay_percent.sql', '851_lien_uncollectible.sql', '852_senior_ban_grants.sql', '855_team_audit_chain.sql', '856_away.sql', '857_team_audit_invite_actor.sql', '859_team_audit_session_actor.sql', '860_compromised_lockout.sql', '861_ticket_key_ring.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
@@ -299,6 +290,48 @@ describe('migrations', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+  it('863: the display name columns become trade_tag, values kept; a banned display name becomes a banned Trade Tag; the rekey function follows', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      for (const f of (await readdir(MIGRATIONS_DIR)).filter((n) => n < '863')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const { rows: acct } = await db.query<{ id: string }>(
+        `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ('Trader01', 'trader01', 'trader', $1, now()) returning id`,
+        [randomBytes(32)],
+      );
+      const account = acct[0]!.id;
+      await db.query(
+        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+         values ($1, 'Desk.Ana1', 'desk.ana1', '{trades-see-active}', now() + interval '1 day', now())`,
+        [account],
+      );
+      const tag = randomBytes(32);
+      await db.query(`insert into banned_identifiers (kind, tag_key_id, tag, account_id, banned_at) values ('display-name', 1, $1, $2, now())`, [tag, account]);
+
+      expect(await migrate(db)).toEqual(['863_trade_tag.sql', '864_escrow_key_sync.sql', '870_trades_release.sql', '890_lien_rate_full.sql', '891_seller_lien_recovery.sql', '892_totp_login.sql', '897_chat_private_lanes.sql', '910_auto_assign.sql']);
+      expect((await db.query('select trade_tag, display_key from accounts')).rows).toEqual([{ trade_tag: 'Trader01', display_key: 'trader01' }]);
+      expect((await db.query('select trade_tag, display_key from team_members')).rows).toEqual([{ trade_tag: 'Desk.Ana1', display_key: 'desk.ana1' }]);
+      const gone = await db.query(`select 1 from information_schema.columns where column_name = 'display_name' and table_name in ('accounts', 'team_members')`);
+      expect(gone.rows).toEqual([]);
+      expect((await db.query('select kind, tag from banned_identifiers')).rows).toEqual([{ kind: 'trade-tag', tag }]);
+      await expect(db.query(`insert into banned_identifiers (kind, tag_key_id, tag, banned_at) values ('display-name', 1, $1, now())`, [randomBytes(32)]))
+        .rejects.toMatchObject({ code: '23514' });
+      // The relabel is not a ban: it queued no Jabber notice.
+      expect((await db.query('select count(*)::int as n from jabber_outbox')).rows).toEqual([{ n: 0 }]);
+      await db.query("update accounts set display_key = 'stale'");
+      await db.query('select rekey_trade_tags()');
+      expect((await db.query('select display_key from accounts')).rows).toEqual([{ display_key: 'trader01' }]);
+      await expect(db.query('select rekey_display_names()')).rejects.toMatchObject({ code: '42883' });
+      // The team log's trigger on team_members (855/857) names the column too: it writes the new one.
+      await db.query('update team_members set removed_at = now()');
+      expect((await db.query("select detail->>'name' as name from team_audit where action = 'invite-closed'")).rows).toEqual([{ name: 'Desk.Ana1' }]);
+    } finally {
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("016 (owner 6 Nov 2026, Q81): a PGP key login is strong: earlier 'pgp-single' sessions and approvals become 'strong', and the value is refused after", async () => {
     const db = await emptyDb();
     const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
@@ -327,7 +360,7 @@ describe('migrations', () => {
         )).rows[0]!.id;
       const pgpApproval = await approval('pgp-single');
       const weakApproval = await approval('weak-single');
-      await migrate(db);
+      await migrateBefore862(db, dir);
       const strengthOf = async (table: string, id: string) =>
         (await db.query<{ strength: string }>(`select strength from ${table} where id = $1`, [id])).rows[0]!.strength;
       expect(await strengthOf('sessions', pgp)).toBe('strong');
@@ -363,7 +396,7 @@ describe('schema', () => {
 
   const insertAccount = (kind: string, name: string, login: string | null = `${name}.login`) =>
     db.query(
-      `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+      `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
        values ($1, $2, $3, $4, $5, $6, now())`,
       [name, name.toLowerCase(), login, login?.toLowerCase() ?? null, kind, randomBytes(32)],
     );
@@ -386,11 +419,11 @@ describe('schema', () => {
     });
   });
 
-  it('keeps the login name and its key together, and different from the display name', async () => {
+  it('keeps the login name and its key together, and different from the Trade Tag', async () => {
     await expect(insertAccount('trader', 'Carol123', 'CAROL123')).rejects.toMatchObject({ code: '23514' });
     await expect(
       db.query(
-        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+        `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
          values ('Dave1234', 'dave1234', 'dave.login', null, 'trader', $1, now())`,
         [randomBytes(32)],
       ),
@@ -402,21 +435,21 @@ describe('schema', () => {
   it('ties each key to the lower-cased name (review Minor 8)', async () => {
     const ins = (display: string, displayKey: string, login: string, loginKey: string) =>
       db.query(
-        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+        `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
          values ($1, $2, $3, $4, 'trader', $5, now())`,
         [display, displayKey, login, loginKey, randomBytes(32)],
       );
-    // The display key's check moved into the app with Unicode display names (migration 800,
-    // signup round 3: `checkDisplayName` makes every key); signupRules.test pins that it is gone.
+    // The display key's check moved into the app with Unicode Trade Tags (migration 800,
+    // signup round 3: `checkTradeTag` makes every key); signupRules.test pins that it is gone.
     await expect(ins('Gina1234', 'gina1234', 'GINA.login', 'GINA.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_key_lower' });
     await ins('Gina1234', 'gina1234', 'GINA.login', 'gina.login');
   });
 
   it('one namespace for both names (review I1): a login key never equals any display key and vice versa, under a race too', async () => {
     await insertAccount('trader', 'Mira.K', 'mira.private');
-    // Bob's login name is Alice's public display name.
+    // Bob's login name is Alice's public Trade Tag.
     await expect(insertAccount('trader', 'Bob.Trades', 'MIRA.K')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
-    // Carol's display name is Bob's private login name.
+    // Carol's Trade Tag is Bob's private login name.
     await insertAccount('trader', 'Bob.Trades', 'night.owl');
     await expect(insertAccount('trader', 'Night.Owl', 'carol.private')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
     expect((await db.query("select kind from name_keys where key in ('mira.k', 'mira.private', 'bob.trades', 'night.owl') order by key")).rows).toEqual([
@@ -430,12 +463,12 @@ describe('schema', () => {
       await a.query('begin');
       await b.query('begin');
       await a.query(
-        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+        `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
          values ('Race.One', 'race.one', 'race.two', 'race.two', 'trader', $1, now())`,
         [randomBytes(32)],
       );
       const second = b.query(
-        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+        `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
          values ('Race.Two', 'race.two', 'race.three', 'race.three', 'trader', $1, now())`,
         [randomBytes(32)],
       );
@@ -462,7 +495,7 @@ describe('schema', () => {
         await t2.query('begin');
         const ins = (c: pg.PoolClient, display: string, login: string) =>
           c.query(
-            `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+            `insert into accounts (trade_tag, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
              values ($1, $1, $2, $2, 'trader', $3, now())`,
             [display, login, randomBytes(32)],
           );
@@ -495,7 +528,7 @@ describe('schema', () => {
   /** An account as the API stores it after FU-D: the login name only as a tag (here random bytes). */
   const insertTagged = (name: string, tag: Buffer | null, keyId: number | null) =>
     db.query(
-      `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
+      `insert into accounts (trade_tag, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
        values ($1, $2, $3, $4, 'trader', $5, now())`,
       [name, name.toLowerCase(), tag, keyId, randomBytes(32)],
     );
@@ -510,7 +543,7 @@ describe('schema', () => {
     await expect(insertTagged('Tagged06', randomBytes(32), -1)).rejects.toMatchObject({ code: '23514' });
     await expect(
       db.query(
-        `insert into accounts (display_name, display_key, login_name, login_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
+        `insert into accounts (trade_tag, display_key, login_name, login_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
          values ('Tagged07', 'tagged07', 'tagged.login', 'tagged.login', $1, 1, 'trader', $2, now())`,
         [randomBytes(32), randomBytes(32)],
       ),
@@ -600,13 +633,12 @@ describe('config', () => {
     );
   });
 
-  it('loads the four key rings; the first entry of each is the current key (FU-C, FU-D)', () => {
-    const c = loadConfig({ ...FULL_ENV, X2F_PASSWORD_PEPPERS: ` 7:${k32(9)} , 3:${k32(8)} ` });
-    expect(c.passwordPeppers.current).toBe(7);
-    expect([...c.passwordPeppers.keys.keys()]).toEqual([7, 3]);
-    expect(Buffer.from(c.passwordPeppers.keys.get(3)!)).toEqual(Buffer.alloc(32, 8));
-    expect(c.recoveryCodeKeys.current).toBe(1);
-    expect(Buffer.from(c.recoveryCodeKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 2));
+  it('loads the three key rings; the first entry of each is the current key (FU-C, FU-D)', () => {
+    const c = loadConfig({ ...FULL_ENV, X2F_RECOVERY_CODE_KEYS: ` 7:${k32(9)} , 3:${k32(8)} ` });
+    expect(c.recoveryCodeKeys.current).toBe(7);
+    expect([...c.recoveryCodeKeys.keys.keys()]).toEqual([7, 3]);
+    expect(Buffer.from(c.recoveryCodeKeys.keys.get(3)!)).toEqual(Buffer.alloc(32, 8));
+    expect(Buffer.from(loadConfig(FULL_ENV).recoveryCodeKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 2));
     expect(c.totpKeys.current).toBe(1);
     expect(Buffer.from(c.totpKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 3));
     expect(c.loginNameKeys.current).toBe(1);
@@ -616,22 +648,22 @@ describe('config', () => {
     expect([...rotated.loginNameKeys.keys.keys()]).toEqual([9, 4]);
   });
 
-  it.each(['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS', 'X2F_TICKET_KEYS'])('needs %s', (name) => {
+  it.each(['X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS', 'X2F_TICKET_KEYS'])('needs %s', (name) => {
     const env: Record<string, string> = { ...FULL_ENV };
     delete env[name];
     expect(() => loadConfig(env)).toThrow(name);
   });
 
   it.each([
-    ['X2F_PASSWORD_PEPPERS', ''],
-    ['X2F_PASSWORD_PEPPERS', k32(9)],
-    ['X2F_PASSWORD_PEPPERS', `0:${k32(9)}`],
-    ['X2F_PASSWORD_PEPPERS', `32768:${k32(9)}`],
-    ['X2F_PASSWORD_PEPPERS', `01:${k32(9)}`],
-    ['X2F_PASSWORD_PEPPERS', `1:${Buffer.alloc(16, 9).toString('base64')}`],
-    ['X2F_PASSWORD_PEPPERS', `1:not base64!`],
-    ['X2F_PASSWORD_PEPPERS', `1:${k32(9)},1:${k32(10)}`],
-    ['X2F_PASSWORD_PEPPERS', `1:${k32(9)},`],
+    ['X2F_RECOVERY_CODE_KEYS', ''],
+    ['X2F_RECOVERY_CODE_KEYS', k32(9)],
+    ['X2F_RECOVERY_CODE_KEYS', `0:${k32(9)}`],
+    ['X2F_RECOVERY_CODE_KEYS', `32768:${k32(9)}`],
+    ['X2F_RECOVERY_CODE_KEYS', `01:${k32(9)}`],
+    ['X2F_RECOVERY_CODE_KEYS', `1:${Buffer.alloc(16, 9).toString('base64')}`],
+    ['X2F_RECOVERY_CODE_KEYS', `1:not base64!`],
+    ['X2F_RECOVERY_CODE_KEYS', `1:${k32(9)},1:${k32(10)}`],
+    ['X2F_RECOVERY_CODE_KEYS', `1:${k32(9)},`],
     ['X2F_RECOVERY_CODE_KEYS', `x:${k32(9)}`],
     ['X2F_TOTP_KEYS', `1:${k32(9)},2:${k32(9)}`],
     ['X2F_LOGIN_NAME_KEYS', `0:${k32(9)}`],
@@ -648,13 +680,13 @@ describe('config', () => {
     expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS: `1:${FULL_ENV.X2F_SERVER_KEY}` })).toThrow(
       expect.objectContaining({ message: expect.stringMatching(/X2F_TOTP_KEYS.*separate/) }),
     );
-    expect(() => loadConfig({ ...FULL_ENV, X2F_RECOVERY_CODE_KEYS: `2:${k32(1)}` })).toThrow(/X2F_RECOVERY_CODE_KEYS/);
+    expect(() => loadConfig({ ...FULL_ENV, X2F_RECOVERY_CODE_KEYS: `2:${k32(3)}` })).toThrow(/X2F_RECOVERY_CODE_KEYS|X2F_TOTP_KEYS/);
     const secret = k32(7);
     expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS: `1:${secret}` })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(secret) }),
     );
     // FU-D: the login-name ring is separate from X2F_SERVER_KEY and from each of the other rings.
-    for (const shared of [secret, k32(1), k32(2), k32(3)]) {
+    for (const shared of [secret, k32(2), k32(3)]) {
       expect(() => loadConfig({ ...FULL_ENV, X2F_LOGIN_NAME_KEYS: `2:${k32(13)},1:${shared}` })).toThrow(
         expect.objectContaining({ message: expect.stringMatching(/^config: X2F_LOGIN_NAME_KEYS .*separate/) }),
       );
@@ -682,12 +714,12 @@ describe('config', () => {
     }
     // Separate from X2F_SERVER_KEY and from every key ring.
     expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: FULL_ENV.X2F_SERVER_KEY })).toThrow(/^config: X2F_TRAINING_ID_KEY .*separate/);
-    for (const fill of [1, 2, 3, 4]) expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: k32(fill) })).toThrow(/separate/);
+    for (const fill of [2, 3, 4]) expect(() => loadConfig({ ...FULL_ENV, X2F_TRAINING_ID_KEY: k32(fill) })).toThrow(/separate/);
   });
 
   it('never echoes a key ring in its error', () => {
     const secret = Buffer.alloc(31, 5).toString('base64');
-    for (const name of ['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS']) {
+    for (const name of ['X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS']) {
       expect(() => loadConfig({ ...FULL_ENV, [name]: `4:${secret}` })).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining(secret) }),
       );
@@ -944,7 +976,7 @@ describe('app', () => {
       app.get('/dup', async () => {
         const insert = () =>
           deps.db.query(
-            `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
+            `insert into accounts (trade_tag, display_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
             [marker, marker.toLowerCase(), randomBytes(32)],
           );
         await insert();

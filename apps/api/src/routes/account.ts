@@ -5,8 +5,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { SIGNED_BODY_LIMIT, checkTermsSignature, optionalTermsSignature, sealTermsSignature } from '../termsSignature.js';
-import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
-import type { Config } from '../config.js';
+import { loginNameTaken, setLoginName } from '../accounts.js';
 import type { Queryable } from '../db/pool.js';
 import { COMPLETED_TRADES_SQL, tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
@@ -17,28 +16,28 @@ import { assertSessionEndInHours, endWithinHours, ownLimitsView, type MemberLimi
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { endOnboarding, requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
-import { changesWait, pendingSummary } from '../auth/holdChanges.js';
 import { revealDue } from '../auth/recovery.js';
-import { waits, type LoginStrength } from '../auth/strength.js';
-import { accountRating, type AccountRating } from '../auth/rating.js';
-import { gateChange, stagedReply, holdUntil, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
 export interface AccountOverview {
-  /** The public display name. The private login name is never sent, not even to its owner. */
-  displayName: string;
+  /** The public Trade Tag. The private login name is never sent, not even to its owner. */
+  tradeTag: string;
   /**
    * True for an account made before login names existed (migration 009): it still logs in by its
-   * public display name until `POST /v1/account/login-name` sets a private one (review I3).
+   * public Trade Tag until `POST /v1/account/login-name` sets a private one (review I3).
    */
   needsLoginName: boolean;
   kind: AccountKind;
   /** The calling session's level. */
   level: SessionLevel;
-  /** The calling recovery session's hold while it is still ahead (Task 9), else null. */
-  holdUntil: string | null;
+  /**
+   * Owner, 26 Nov 2026: a recovery-code login may change anything without confirming until this
+   * time (RECOVERY_WINDOW_MS after the login), else null.
+   */
+  recoveryUntil: string | null;
   /** A trader's starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26), the same as on their offers; null for staff and owner. */
   stage: Stage | null;
   /**
@@ -52,35 +51,17 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   termsCurrent: boolean;
   /**
-   * Review M2: this session is setup-only (the account's only login is a password and its sign-up
-   * window is over): it may only add a second method (auth/setupOnly.ts).
+   * This session is setup-only (the account holds fewer than two kinds of login method and its
+   * sign-up window is over): it may only add a method (auth/setupOnly.ts).
    */
   setupOnly: boolean;
-  /** The end of the account's 24-hour hold (a recovery-code login, hold model v3) while one runs, else null. */
-  accountHoldUntil: string | null;
-  /** Hold model v3: the account's changes waiting their 24 h (the banner "N changes take effect on <date>"), else null. */
-  pendingChanges: { count: number; takesEffectAt: string } | null;
-  /**
-   * Owner p4-8: for a team member, while the lead's changes wait, when they take effect (the
-   * member's banner "A hold is on"; no count, nothing listed); null otherwise and for the lead.
-   */
-  teamHold: { takesEffectAt: string } | null;
-  /** Hold model v3: this session's changes are staged and wait 24 h (the pop-up warns before the first one). */
-  changesWait: boolean;
-  /** Hold model v3: a recovery code replaced a used one and this session may show it once (`POST /v1/account/recovery-code/reveal`). */
+  /** A recovery code replaced a used one and this session may show it once (`POST /v1/account/recovery-code/reveal`). */
   recoveryCodeToShow: boolean;
   /**
    * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
    * pays the 1% fee). For a team member, the type of the account they work for.
    */
   accountType: 'trader' | 'vendor';
-  /**
-   * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods
-   * (auth/rating.ts `accountRating`; three levels, owner 17 Nov): `high` lets the trade screen add a
-   * payout address there and then; `medium` and `weak` add them in Settings. Null for a team member (their own
-   * login is always two factors; adding wallets is the account owner's) and for staff and owner accounts.
-   */
-  securityRating: AccountRating | null;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
@@ -151,7 +132,7 @@ function sessionInfo(type: SessionAccountType, row: { length_hours: number | nul
 export interface MemberOverview {
   /** The member's name inside the team (the lead's list, the activity log, notes); never in chats (S-105). */
   name: string;
-  /** Owner p11-25 (S-105): how trade chats show this member, "<the lead's display name> Assistant N" (team/label.ts). */
+  /** Owner p11-25 (S-105): how trade chats show this member, "<the lead's Trade Tag> Assistant N" (team/label.ts). */
   chatLabel: string;
   /** The member's ticked boxes (team/abilities.ts; `GET /v1/team/permissions` names them). */
   abilities: string[];
@@ -170,7 +151,6 @@ export interface MethodCounts {
   pgp: number;
   passkey: number;
   securityKey: number;
-  password: boolean;
   totp: boolean;
   /** Recovery codes not yet used. */
   recoveryCodes: number;
@@ -182,28 +162,21 @@ async function completedTrades(db: Queryable, accountId: string): Promise<number
   return rows[0]?.n ?? 0;
 }
 
-/** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
-async function teamHoldOf(db: Queryable, accountId: string): Promise<{ takesEffectAt: string } | null> {
-  const p = await pendingSummary(db, accountId);
-  return p === null ? null : { takesEffectAt: p.takesEffectAt };
-}
-
 /**
  * The account's method counts. Kept to one query here rather than built on Task 10's `listMethods`,
  * so `hasBackup` counts every credential (two passkeys are two) and spent recovery codes are none.
  */
 export async function methodCounts(db: Queryable, accountId: string): Promise<MethodCounts> {
-  const { rows } = await db.query<{ pgp: number; passkey: number; security_key: number; password: boolean; totp: boolean; recovery: number }>(
+  const { rows } = await db.query<{ pgp: number; passkey: number; security_key: number; totp: boolean; recovery: number }>(
     `select (select count(*)::int from pgp_keys where account_id = $1) as pgp,
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'passkey') as passkey,
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key') as security_key,
-            exists (select 1 from passwords where account_id = $1) as password,
             exists (select 1 from totp where account_id = $1) as totp,
             (select count(*)::int from recovery_codes where account_id = $1 and used_at is null) as recovery`,
     [accountId],
   );
   const r = rows[0]!;
-  return { pgp: r.pgp, passkey: r.passkey, securityKey: r.security_key, password: r.password, totp: r.totp, recoveryCodes: r.recovery };
+  return { pgp: r.pgp, passkey: r.passkey, securityKey: r.security_key, totp: r.totp, recoveryCodes: r.recovery };
 }
 
 /** The method types present, in `MethodType` order; spent recovery codes are not a method. */
@@ -212,7 +185,6 @@ export function methodTypes(c: MethodCounts): MethodType[] {
   if (c.pgp > 0) out.push('pgp');
   if (c.passkey > 0) out.push('passkey');
   if (c.securityKey > 0) out.push('security-key');
-  if (c.password) out.push('password');
   if (c.totp) out.push('totp');
   if (c.recoveryCodes > 0) out.push('recovery-codes');
   return out;
@@ -221,19 +193,17 @@ export function methodTypes(c: MethodCounts): MethodType[] {
 /**
  * R11 (owner, 2026-10-17): a backup is TOTP, unused recovery codes, a second PGP key, or a security
  * key or passkey that is not the account's only primary credential (each PGP key, security key and
- * passkey counts once, a password once). A password is a primary method only and never the backup
- * itself: password + PGP has no backup, password + passkey does (the passkey is the backup).
+ * passkey counts once).
  */
 export function hasBackup(c: MethodCounts): boolean {
   if (c.totp || c.recoveryCodes > 0 || c.pgp >= 2) return true;
   const webauthn = c.passkey + c.securityKey;
-  const primaries = c.pgp + webauthn + (c.password ? 1 : 0);
+  const primaries = c.pgp + webauthn;
   return webauthn >= 1 && primaries >= 2;
 }
 
 export function suggestionsFor(c: MethodCounts): Suggestion[] {
   const out: Suggestion[] = [];
-  if (c.password && !c.totp) out.push('add-authenticator');
   if (!hasBackup(c)) out.push('add-backup');
   return out;
 }
@@ -279,17 +249,17 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     memberTerms = m.rows[0].terms_version;
   }
   const { rows } = await deps.db.query<{
-    display_name: string;
+    trade_tag: string;
     legacy_login_name: boolean;
     kind: AccountKind;
     terms_version: string | null;
     level: SessionLevel;
-    hold_until: Date | null;
+    recovery_until: Date | null;
     length_hours: number | null;
     expires_at: Date;
     account_type: 'trader' | 'vendor';
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.terms_version, s.level, s.hold_until, s.length_hours, s.expires_at, a.account_type
+    `select a.trade_tag, a.legacy_login_name, a.kind, a.terms_version, s.level, s.recovery_until, s.length_hours, s.expires_at, a.account_type
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -306,20 +276,19 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     if (no == null) throw new ApiError(401, 'not-authenticated');
     member = {
       name: req.auth.memberName ?? '',
-      chatLabel: assistantLabel(row.display_name, no),
+      chatLabel: assistantLabel(row.trade_tag, no),
       ...abilitiesView(req.auth.memberAbilities),
     };
     // J-20 review F8 (owner question p11-136; MEMBER_SEES_OWN_LIMITS): the member's own band and hours.
     const limits = await ownLimitsView(deps.db, req.auth.memberId);
     if (limits !== undefined) member.limits = limits;
   }
-  const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
-    displayName: row.display_name,
+    tradeTag: row.trade_tag,
     needsLoginName: row.legacy_login_name,
     kind: row.kind,
     level: row.level,
-    holdUntil: held ? row.hold_until!.toISOString() : null,
+    recoveryUntil: row.recovery_until !== null && now.getTime() < row.recovery_until.getTime() ? row.recovery_until.toISOString() : null,
     stage: row.kind === 'trader' ? (await tradeCap(deps.db, accountId, now)).stage : null,
     completedTrades: row.kind === 'trader' ? await completedTrades(deps.db, accountId) : null,
     methods: methodTypes(counts),
@@ -332,13 +301,8 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
       row.kind !== 'trader' ||
       (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     setupOnly: req.auth.setupOnly,
-    accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     accountType: row.account_type,
-    securityRating: member === null && row.kind === 'trader' ? accountRating(counts) : null,
-    pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
-    teamHold: member === null ? null : await teamHoldOf(deps.db, accountId),
-    changesWait: member !== null ? false : await changesWait(req),
-    recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId, deps.clock()),
+    recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId),
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).
     session: row.kind === 'trader' && row.level === 'full'
@@ -351,11 +315,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
 /**
  * Task 11: account overview, sessions (devices), alerts and the Terms of Service. Nothing here
  * reads or returns an IP address or user agent; device labels were cleaned by `startSession`.
- *
- * Read routes and marking an alert seen take `allowRecovery` and `allowHeld`, so a held recovery
- * session can see its hold and its alerts (it signs out with `POST /v1/logout`). Ending a session
- * needs a full session: a recovery session must not sign the real owner out during the hold.
- * Accepting the Terms is a change, so it is held like the other changes.
+
  */
 /**
  * True for a database error that means the chosen login name clashes with another account's
@@ -385,7 +345,7 @@ function oneDeviceAction(req: FastifyRequest): ConfirmAction {
 
 export function accountRoutes(app: FastifyInstance): void {
   const deps = (): Deps => app.deps;
-  const readAny = { allowRecovery: true, allowHeld: true } as const;
+  const readAny = {} as const;
 
   app.get('/v1/terms', async () => ({ version: deps().config.termsVersion }));
 
@@ -393,8 +353,7 @@ export function accountRoutes(app: FastifyInstance): void {
   app.post('/v1/account/onboarding/end', { preHandler: requireSession() }, endOnboarding);
 
   /**
-   * A pre-009 account sets its private login name, once (review I3). Full session only (a held
-   * recovery session may not change how the account logs in) and behind a confirm token for
+   * A pre-009 account sets its private login name, once (review I3). Behind a confirm token for
    * `set-login-name` (re-review 2: a stolen session must not quietly change how the account logs
    * in); a `login-name-set` alert (without the name) is written in the same transaction. 400 `login-name-invalid` /
    * `names-same`, 409 `login-name-set` when the account already chose its names, 409
@@ -403,7 +362,7 @@ export function accountRoutes(app: FastifyInstance): void {
    * takes a register-budget token: a taken name answers like a sign-up's, at the same cost
    * (plan-2-review residual (b)); the login name is never echoed.
    */
-  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireNotHeld, requireConfirm({ kind: 'set-login-name' })] }, async (req, reply) => {
+  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireConfirm({ kind: 'set-login-name' })] }, async (req) => {
     const d = deps();
     req.server.budgets.register.take();
     const body = req.body;
@@ -419,18 +378,13 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
     const client = await d.db.connect();
-    let held: { changeId: string } | null = null;
     try {
       await client.query('begin');
       try {
-        // Refused at once when taken; FU-D: only the name's keyed tag may wait in the hold, never the name.
+        await requireLiveSessionInTx(client, req.auth, d.clock());
         if (await loginNameTaken(client, d.config, req.auth.accountId, r.key)) throw new ApiError(409, 'names-unavailable');
-        const tag = loginTags(d.config, r.key).current;
-        held = await gateChange(client, req, { kind: 'login-name', tag: tag.toString('base64'), keyId: d.config.loginNameKeys.current });
-        if (held === null) {
-          await setLoginName(client, d.config, req.auth.accountId, r.key);
-          await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
-        }
+        await setLoginName(client, d.config, req.auth.accountId, r.key);
+        await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -442,16 +396,12 @@ export function accountRoutes(app: FastifyInstance): void {
     } finally {
       client.release();
     }
-    if (held !== null) {
-      return reply.code(202).send(stagedReply(held));
-    }
     return { ok: true };
   });
 
   app.post(
     '/v1/account/terms',
-    // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
-    // security change; refusing it could block finishing open trades). `{ version, signature? }`
+    // `{ version, signature? }`
     // (owner, 8 Nov 2026; the signature optional since owner demo note #187), the signature, if
     // any, replacing the one before, with nothing else recorded about the signing.
     // Only a changed version writes: repeating the current one answers 204 and changes nothing, so
@@ -464,7 +414,7 @@ export function accountRoutes(app: FastifyInstance): void {
     // 2026, p11-14). The version check is unchanged and comes first. A trader's changed version
     // writes the new signature, or null when none was given: a stored signature always belongs to
     // the stored version, so the previous version's is never left beside the new one.
-    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
+    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowStaleTerms: true, member: 'any' }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
@@ -518,11 +468,6 @@ export function accountRoutes(app: FastifyInstance): void {
    *   stretch a session): 403 `confirm-required` `{ action: 'extend-session' }`, nothing changed;
    *   the app then confirms it's them and calls `POST /v1/account/session/extend` with `hours`.
    * A shortened session's live streams are ended (review M1); the app reconnects with the new end.
-   * Not a held change: it only ends this session sooner, or sets its length at the login itself.
-   * Hold model v3 (lead reading of owner p11-26, 9 Nov 2026, "the 24-hour hold is really just a hold
-   * on the changes you are implementing; everything else functions as normal"; the owner is asked
-   * on page 11): a username-and-password session's session length, extend and idle reminder are
-   * never staged, since they change nothing about the account's security. Extend keeps its confirm.
    */
   app.put(
     '/v1/account/session/length',
@@ -567,15 +512,13 @@ export function accountRoutes(app: FastifyInstance): void {
    * `POST /v1/account/session/extend { confirmToken, hours? }`: "Stay logged in?" (owner, 2 Nov
    * 2026, board SessionExtend; Q73, 6 Nov), and a longer length chosen partway (owner G24). The
    * person re-proves one of their own login methods on the server (a confirm token for
-   * `extend-session` from a confirm route: passkey, security key, PGP key, or the password, alone
-   * even when the account has an authenticator code, owner G10; a team member with their own PGP
+   * `extend-session` from a confirm route: passkey, security key or PGP key; a team member with their own PGP
    * key, passkey or security key), and the session lasts `hours` from now (one of the account
    * type's choices; absent, its own length, or the shortest choice if none was chosen). That time
    * becomes the session's length (review M4). No fixed maximum. Each extend issues a new session
    * token (review S-m1, `rotateSessionToken`): the cookie is set to it with a fresh lifetime, and the
-   * token before it works only until the session's old end, so a copied cookie dies there. An account in a 24-hour hold may extend (owner G8), and extending raises no alert
-   * (owner G9). Full trader sessions only, a team member's included; recovery sessions are refused
-   * (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
+   * token before it works only until the session's old end, so a copied cookie dies there. Extending raises no alert
+   * (owner G9). Trader sessions only, a team member's included. Bad `hours` → 400 `bad-request` before the token is spent.
    */
   app.post(
     '/v1/account/session/extend',
@@ -653,17 +596,16 @@ export function accountRoutes(app: FastifyInstance): void {
    */
   app.put(
     '/v1/account/security/one-device',
-    { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld, requireConfirm(oneDeviceAction)] },
-    async (req, reply) => {
+    { preHandler: [requireSession({ kinds: ['trader'] }), requireConfirm(oneDeviceAction)] },
+    async (req) => {
       const d = deps();
       const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
       const client = await d.db.connect();
-      let held: { changeId: string } | null = null;
       try {
         await client.query('begin');
         try {
-          held = await gateChange(client, req, { kind: 'one-device', on });
-          if (held === null) await applyOneDevice(client, req.auth.accountId, on, d.clock());
+          await requireLiveSessionInTx(client, req.auth, d.clock());
+          await applyOneDevice(client, req.auth.accountId, on, d.clock());
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -672,9 +614,6 @@ export function accountRoutes(app: FastifyInstance): void {
       } finally {
         client.release();
       }
-      if (held !== null) {
-        return reply.code(202).send(stagedReply(held));
-      }
       return { oneDevice: on, maxDevices: await maxDevices(d.db) };
     },
   );
@@ -682,7 +621,7 @@ export function accountRoutes(app: FastifyInstance): void {
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();
     const { rows } = await d.db.query<{ id: string; device_label: string; level: SessionLevel; created_at: Date; last_seen_at: Date; member: string | null }>(
-      `select s.id, s.device_label, s.level, s.created_at, s.last_seen_at, tm.display_name as member
+      `select s.id, s.device_label, s.level, s.created_at, s.last_seen_at, tm.trade_tag as member
          from sessions s left join team_members tm on tm.id = s.member_id
         where s.account_id = $1 and s.revoked_at is null and s.expires_at > $2
         order by s.last_seen_at desc, s.created_at desc, s.id`,
@@ -709,33 +648,11 @@ export function accountRoutes(app: FastifyInstance): void {
       const now = d.clock();
       const ended = await withTx(d.db, async (db) => {
         // Review round 4: the calling session must still be live where it writes.
-        const caller = await requireLiveSessionInTx(db, req.auth, now);
+        await requireLiveSessionInTx(db, req.auth, now);
         const { rows } = await db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
         if (rows.length === 0) throw new ApiError(404, 'not-found');
-        // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
-        // may not log out an older or a stronger session (403 `weak-session`): the owner's weak
-        // phone keeps its session, and with it the push subscription that carries the hold's
-        // warning. Owner g64 (lead review 8 Nov I4): it may end the account owner's own
-        // username-and-password sessions that are NEWER than itself, so the real owner's older
-        // session kicks out a thief's, and the thief's newer one never kicks the owner (as R4-M1
-        // for backup sessions). Alert `sessions-ended` `{ count: 1, reason: 'older-session' }`.
-        let kicked = false;
-        if (id !== req.auth.sessionId && weakOf(caller, now)) {
-          const t = await db.query<{ created_at: Date; strength: LoginStrength | null; level: string; member_id: string | null }>(
-            'select created_at, strength, level, member_id from sessions where id = $1 and revoked_at is null', [id],
-          );
-          const target = t.rows[0];
-          if (!target || req.auth.memberId !== null || target.level !== 'full' || target.member_id !== null || !waits(target.strength) || target.created_at.getTime() <= caller.created_at.getTime()) {
-            throw weakRefusal();
-          }
-          kicked = true;
-        }
         const r = await db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [id, now]);
         const ended = (r.rowCount ?? 0) > 0;
-        if (ended && kicked) {
-          await addAlert(db, req.auth.accountId, 'sessions-ended', { count: 1, reason: 'older-session' }, now);
-          req.log.info({ reason: 'weak-session-ended-newer' }, 'session ended');
-        }
         return ended;
       });
       // Its streams end once the revocation has committed.
@@ -761,7 +678,6 @@ export function accountRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/account/alerts/:id/seen',
-    // Marking seen is a change: a recovery session must not hide its own recovery-login alert from the owner.
     { preHandler: requireSession() },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
@@ -769,55 +685,16 @@ export function accountRoutes(app: FastifyInstance): void {
       const now = d.clock();
       await withTx(d.db, async (db) => {
         // Review round 4: the calling session must still be live where it writes.
-        const caller = await requireLiveSessionInTx(db, req.auth, now);
-        // Review round 2 N-M3: a session whose login waits cannot hide the warnings meant for the
-        // owner (the hold's alerts and the login alerts) by marking them seen (403 `weak-session`).
-        const weak = weakOf(caller, now);
-        const r = await db.query<{ kind: string }>(
-          `update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and not ($4::boolean and kind = any($5::text[])) returning kind`,
-          [id, req.auth.accountId, now, weak, OWNER_WARNINGS],
-        );
-        if ((r.rowCount ?? 0) === 0) {
-          const exists = await db.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.auth.accountId]);
-          if (exists.rows.length > 0) throw weakRefusal();
-          throw new ApiError(404, 'not-found');
-        }
+        await requireLiveSessionInTx(db, req.auth, now);
+        const r = await db.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2', [id, req.auth.accountId, now]);
+        if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
       });
       return reply.code(204).send();
     },
   );
 }
 
-/** The alerts a weak session may not mark seen (review round 2 N-M3): the hold's own and the login alerts. */
-export const OWNER_WARNINGS: readonly string[] = [
-  'hold-started', 'hold-ended', 'hold-extended', 'hold-changes-submitted', 'hold-changes-cancelled', 'hold-changes-discarded', 'hold-changes-applied',
-  'recovery-code-renewed', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
-];
-
-/**
- * A pre-009 account's login name waiting out the hold, applied when the hold ends by time (FU-D:
- * only its keyed tag was kept). Under `NAMES_LOCK` (review round 2 N-M1; `namesTaken` also counts
- * the pending tag, so no other sign-up took it meanwhile). 409 `names-unavailable` when another
- * account took that tag meanwhile or the tag's key is no longer the ring's current one (a tag
- * under a rotated key could clash with a name taken under the new key, or match nothing once the
- * old key is retired), 409 `login-name-set` when the account chose its names already. Either way
- * the change is dropped (alert `hold-ended` `applied: false`).
- */
-export async function applyLoginName(db: Queryable, config: Config, accountId: string, tag: Buffer, keyId: number, now: Date): Promise<void> {
-  await lockNames(db);
-  if (keyId !== config.loginNameKeys.current) throw new ApiError(409, 'names-unavailable');
-  const taken = await db.query('select 1 from accounts where login_tag_key_id = $2 and login_tag = $3 and id <> $1', [accountId, keyId, tag]);
-  if (taken.rows.length > 0) throw new ApiError(409, 'names-unavailable');
-  const updated = await db.query(
-    `update accounts set login_tag = $2, login_tag_key_id = $3, login_name = null, login_key = null, legacy_login_name = false
-      where id = $1 and legacy_login_name`,
-    [accountId, tag, keyId],
-  );
-  if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
-  await addAlert(db, accountId, 'login-name-set', {}, now);
-}
-
-/** The write of "One device at a time" (the route's, or a pending one when the hold ends by time): alert `one-device-set { on }`. */
+/** The write of "One device at a time": alert `one-device-set { on }`. */
 export async function applyOneDevice(db: Queryable, accountId: string, on: boolean, now: Date): Promise<void> {
   await db.query('update accounts set one_device = $2 where id = $1', [accountId, on]);
   await addAlert(db, accountId, 'one-device-set', { on }, now);

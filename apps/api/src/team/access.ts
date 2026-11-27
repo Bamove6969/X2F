@@ -32,8 +32,8 @@ export interface MyAccessView {
   name: string;
   /** How trade chats show the member (S-105). */
   chatLabel: string;
-  /** The team lead: the account owner the member works for, by their display name. */
-  lead: { displayName: string };
+  /** The team lead: the account owner the member works for, by their Trade Tag. */
+  lead: { tradeTag: string };
   /** The preset the lead's ticked boxes match exactly, or null (a custom set). */
   preset: PresetId | null;
   /** The boxes the member holds (the lead's and the always-on ones), by catalogue group, in catalogue order; empty groups left out. */
@@ -48,8 +48,8 @@ export interface MyAccessView {
 
 /** The access view of live member `memberId` of team `accountId`; null when the row is gone. */
 export async function myAccess(q: Queryable, accountId: string, memberId: string, now: Date): Promise<MyAccessView | null> {
-  const { rows } = await q.query<{ display_name: string; abilities: string[]; assistant_no: number | null; lead_name: string; hours: unknown }>(
-    `select tm.display_name, tm.abilities, tm.assistant_no, a.display_name as lead_name, tm.hours
+  const { rows } = await q.query<{ trade_tag: string; abilities: string[]; assistant_no: number | null; lead_name: string; hours: unknown }>(
+    `select tm.trade_tag, tm.abilities, tm.assistant_no, a.trade_tag as lead_name, tm.hours
        from team_members tm join accounts a on a.id = tm.account_id
       where tm.id = $1 and tm.account_id = $2 and tm.removed_at is null and tm.joined_at is not null`,
     [memberId, accountId],
@@ -68,9 +68,9 @@ export async function myAccess(q: Queryable, accountId: string, memberId: string
     if (boxes.length > 0) groups.push({ id: g.id, label: g.label, boxes });
   }
   const view: MyAccessView = {
-    name: r.display_name,
+    name: r.trade_tag,
     chatLabel: assistantLabel(r.lead_name, r.assistant_no),
-    lead: { displayName: r.lead_name },
+    lead: { tradeTag: r.lead_name },
     preset: presetOf(sortAbilities(r.abilities)),
     groups,
     serverNow: now.toISOString(),

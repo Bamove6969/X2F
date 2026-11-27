@@ -2,18 +2,16 @@
  * The Away switch (owner, 26 Nov 2026), a card on Settings, Account (the account owner's tab).
  * `GET /v1/account/away` shows it; the switch saves at once (`PUT /v1/account/away`). On pauses
  * every live offer and says how many; off turns back on only the offers Away paused, each through
- * the relist checks, and lists every one that stayed off with why (the My offers row text). A 24-hour
- * hold refuses the whole off: CantDoThat with the hold sentence. Kit parts only: x2f-card,
+ * the relist checks, and lists every one that stayed off with why (the My offers row text). No hold
+ * ever delays it (owner, 26 Nov 2026: no 24-hour holds). Kit parts only: x2f-card,
  * x2f-setting and the kit Switch. DESIGNER-REVIEW: no board yet.
  */
 import { useEffect, useState } from 'react';
-import { AuthApiError, type AwayOfferResult, type AwayState } from '@x2f/auth-client';
+import type { AwayOfferResult, AwayState } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence, momentText } from '../auth/refusals.js';
+import { momentText } from '../auth/refusals.js';
 import { fetchMyOffers, type MyOffer } from '../myoffers/api.js';
 import { offerMethods, offerTitle, refusalLine } from '../myoffers/model.js';
-import { CantDoThat } from '../../ui/CantDoThat.js';
-import { HOLD_CODE } from '../../ui/cantDoCodes.js';
 import { Switch } from '../../ui/Switch.js';
 import { AWAY_COPY as C } from './awayCopy.js';
 
@@ -34,7 +32,6 @@ export function AwayCard() {
   const [note, setNote] = useState<string | null>(null);
   const [stayedOff, setStayedOff] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [hold, setHold] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -72,9 +69,8 @@ export function AwayCard() {
         setNote(C.resumed(on, lines.length));
         setStayedOff(lines);
       }
-    } catch (e) {
-      if (e instanceof AuthApiError && e.code === HOLD_CODE) setHold(holdSentence(e.holdUntil));
-      else setError(C.failed);
+    } catch {
+      setError(C.failed);
     } finally {
       setBusy(false);
     }
@@ -133,7 +129,6 @@ export function AwayCard() {
           {error}
         </p>
       ) : null}
-      {hold !== null ? <CantDoThat body={hold} from={HOLD_CODE} onClose={() => setHold(null)} /> : null}
     </section>
   );
 }

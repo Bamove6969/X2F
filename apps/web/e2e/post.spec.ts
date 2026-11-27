@@ -34,7 +34,7 @@ const PRICES: Record<string, { centsPerXmr: string; usdCentsPerXmr: string }> = 
 };
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
+const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true };
 
 interface Stubs {
   signedIn?: boolean;
@@ -288,7 +288,7 @@ test('there is no fixed price (owner Q1): no Fixed choice, no price box, no stal
 test('posting a sell ad returns to the list where buyers see it, with the offer visible', async ({ page }) => {
   // The Buy list (Task 17) reads GET /v1/offers?side=sell; the stub lists the new offer under the poster's name.
   const [satoshi] = boardBuyOffers();
-  const mine = { ...satoshi!, id: 'of_1', poster: { ...satoshi!.poster, displayName: ME.displayName }, pricing: { mode: 'market', marginBps: 50 }, rate: '33155', minTrades: 5 };
+  const mine = { ...satoshi!, id: 'of_1', poster: { ...satoshi!.poster, tradeTag: ME.tradeTag }, pricing: { mode: 'market', marginBps: 50 }, rate: '33155', minTrades: 5 };
   const posts = await stub(page, { offers: [mine] });
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);

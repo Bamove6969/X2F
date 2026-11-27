@@ -79,11 +79,11 @@ async function stubApi(
     if (o.finish) return o.finish(r);
     registered = true;
     methods.push('security-key');
-    return json({ displayName: 'lumen.kai' }, 201)(r);
+    return json({ tradeTag: 'lumen.kai' }, 201)(r);
   });
   await page.route('**/v1/account/me', (r) =>
     registered
-      ? json({ displayName: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
+      ? json({ tradeTag: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
   );
   await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
@@ -92,7 +92,7 @@ async function stubApi(
   await page.route('**/v1/register/pgp/finish', (r) => {
     registered = true;
     methods.push('pgp');
-    return json({ displayName: 'lumen.kai' }, 201)(r);
+    return json({ tradeTag: 'lumen.kai' }, 201)(r);
   });
   await page.route('**/v1/account/webauthn/start', (r) => {
     s.starts.push(JSON.parse(r.request().postData() ?? 'null'));
@@ -104,7 +104,7 @@ async function stubApi(
     methods.push('security-key');
     return json({ ok: true }, 201)(r);
   });
-  await page.route('**/v1/wallets/rule', json({ firstWallet: true, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: ['pgp'] }));
   await page.route('**/v1/wallets', (r) => (r.request().method() === 'GET' ? json([])(r) : json([], 201)(r)));
   return s;
 }
@@ -119,7 +119,11 @@ async function virtualKey(page: Page, transport: 'usb' | 'nfc'): Promise<{ cdp: 
   return { cdp, authenticatorId };
 }
 
-/** Terms and names, then only the security key ticked: the login step's Continue makes the account with it. */
+/**
+ * Terms and names, then the security key ticked and PGP taken off; the passkey stays ticked (it is by
+ * default), so the two kinds the account needs are the security key and a passkey. The security key
+ * comes first in SIGNUP_ORDER, so the login step's Continue makes the account with it.
+ */
 async function toLoginStep(page: Page): Promise<void> {
   await page.goto(`${ORIGIN}/setup?returnTo=%2Fpost`);
   await page.check('[data-part="terms-tick"]');
@@ -127,7 +131,7 @@ async function toLoginStep(page: Page): Promise<void> {
   await page.fill('#uname', 'lumen-login-7');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
   await page.click('[data-part="names-continue"]');
-  await page.fill('#display-name', 'lumen.kai');
+  await page.fill('#trade-tag', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
   await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();
   await page.uncheck('[data-method="pgp"] input[type="checkbox"]');
@@ -145,10 +149,12 @@ async function toSecurityKeyStep(page: Page): Promise<void> {
   await page.fill('#uname', 'lumen-login-7');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
   await page.click('[data-part="names-continue"]');
-  await page.fill('#display-name', 'lumen.kai');
+  await page.fill('#trade-tag', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
 
   await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();
+  // PGP and passkey are ticked by default: the passkey is taken off, leaving PGP and the security key.
+  await page.uncheck('[data-method="passkey"] input[type="checkbox"]');
   await page.click('[data-method="security-key"]');
   await expect(page.locator('[data-method="security-key"] input[type="checkbox"]')).toBeChecked();
   await page.click('[data-part="method-continue"]');
@@ -238,13 +244,13 @@ for (const transport of ['usb', 'nfc'] as const) {
     await done.locator('[data-part="key-name-input"]').fill('  Gold   YubiKey ');
     await done.locator('[data-part="key-name-save"]').click();
     await expect(done.locator('[data-part="key-name"]')).toContainText('Gold YubiKey');
-    expect(s.starts).toEqual([{ displayName: 'lumen.kai', loginName: 'lumen-login-7', kind: 'security-key' }]);
+    expect(s.starts).toEqual([{ tradeTag: 'lumen.kai', loginName: 'lumen-login-7', kind: 'security-key' }]);
     expect(s.labels).toEqual([{ credentialId: s.finishes[0]!.response.id, label: 'Gold YubiKey' }]);
     expect(s.finishes[0]!.response.response.transports).toEqual([transport]);
-    // The test is offered once named; Continue goes on to the backup step.
+    // The test is offered once named; Continue goes on to the next ticked method, the passkey.
     await expect(done.locator('[data-part="key-test-run"]')).toBeVisible();
     await done.locator('[data-part="key-continue"]').click();
-    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await expect(page).toHaveURL(/\/setup\/passkey\?/);
   });
 }
 

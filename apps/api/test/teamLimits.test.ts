@@ -3,8 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_MS } from '../src/auth/hold.js';
-import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
 import { MEMBER_SEES_OWN_LIMITS, endMemberSessionsOutsideHours } from '../src/team/limits.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -71,10 +69,10 @@ async function team(): Promise<Who & { wallet: string }> {
 /** A joined member seeded directly (the real sign-up is team.test.ts's), not yet logged in unless `login`. */
 async function member(teamId: string, abilities: string[], o: { login?: boolean } = {}) {
   const name = `Lmember${String(++n).padStart(4, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `lmlogin${n}x`, displayName: `lm-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `lmlogin${n}x`, tradeTag: `lm-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
     [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
@@ -173,30 +171,11 @@ describe('the limits route (lead only, confirm bound to the exact limits)', () =
 
   it('members never set limits (owner-only), not even their own', async () => {
     const owner = await team();
-    const m = await member(owner.id, rolesToAbilities(['offers', 'trades', 'hold-end']));
+    const m = await member(owner.id, rolesToAbilities(['offers', 'trades']));
     const r = await m.browser.put(`/v1/team/members/${m.id}/limits`, { band: null, hours: 'any', confirmToken: 'x' });
     expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
   });
 
-  it("a username-and-password session's limits change is staged and applies only 24 h after it is submitted", async () => {
-    const owner = await team();
-    const m = await member(owner.id, rolesToAbilities(['trades']));
-    await deps.db.query("update sessions set strength = 'weak-single' where id = $1", [await sessionId(owner.browser)]);
-    const band = { minAtomic: '1', maxAtomic: XMR.toString() };
-    const res = await setLimits(owner, m.id, band, OPEN());
-    expect(res.statusCode, res.body).toBe(202);
-    const changeId = (res.json() as { changeId: string }).changeId;
-    const staged = await deps.db.query<{ change: unknown }>('select change from hold_changes where id = $1', [changeId]);
-    expect(staged.rows[0]!.change).toEqual({ kind: 'team-limits', memberId: m.id, band, hours: OPEN() });
-    const row = async () => (await deps.db.query<{ band_max_atomic: string | null; hours: unknown }>('select band_max_atomic::text, hours from team_members where id = $1', [m.id])).rows[0]!;
-    expect(await row()).toEqual({ band_max_atomic: null, hours: 'any' });
-    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] })).statusCode).toBe(200);
-    const due = new Date(deps.clock().getTime() + HOLD_MS);
-    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
-    expect(await row()).toEqual({ band_max_atomic: null, hours: 'any' });
-    await settleDueChanges(deps.config, app.events).run(deps.db, due);
-    expect(await row()).toEqual({ band_max_atomic: XMR.toString(), hours: OPEN() });
-  });
 });
 
 describe("F8 (owner question p11-136, lead default: yes): a member sees their own limits", () => {

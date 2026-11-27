@@ -32,10 +32,10 @@ async function team(): Promise<Who> {
 
 async function member(teamId: string): Promise<{ id: string; loginId: string; name: string }> {
   const name = `Sessioner${String(++n).padStart(3, '0')}`;
-  const loginId = await seedAccount(deps, { loginName: `mslogin${n}x`, displayName: `ms-${n}-placeholder`, kind: 'member' });
+  const loginId = await seedAccount(deps, { loginName: `mslogin${n}x`, tradeTag: `ms-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, '{}', $4, $5, $4, $4) returning id`,
     [teamId, name, name.toLowerCase(), now, loginId],
   );
@@ -167,21 +167,6 @@ describe("the owner ends a member's sessions", () => {
     expect((await owner.browser.delete(`/v1/team/members/${s.id}/sessions/${ss.sessionId}`)).statusCode).toBe(404);
     expect((await owner.browser.delete(`/v1/team/members/${s.id}/sessions`)).statusCode).toBe(404);
     for (const id of [theirs.sessionId, ownSession, ss.sessionId]) expect(await revoked(id)).toBeNull();
-  });
-
-  it('a session whose login waits (username and password only) may not end them (403 weak-session)', async () => {
-    const owner = await team();
-    const m = await member(owner.id);
-    const a = await login(m.loginId);
-    await deps.db.query("update sessions set strength = 'weak-single', onboarding_until = null where account_id = $1 and member_id is null", [owner.id]);
-    for (const url of [`/v1/team/members/${m.id}/sessions/${a.sessionId}`, `/v1/team/members/${m.id}/sessions`]) {
-      const res = await owner.browser.delete(url);
-      expect(res.statusCode, url).toBe(403);
-      expect(res.json()).toMatchObject({ error: 'weak-session' });
-    }
-    expect(await revoked(a.sessionId)).toBeNull();
-    // Reading them is fine.
-    expect(await sessionsOf(owner.browser, m.id)).toHaveLength(1);
   });
 
   it("a member's own logout racing the owner's end-all finishes both (the removal's lock order)", async () => {

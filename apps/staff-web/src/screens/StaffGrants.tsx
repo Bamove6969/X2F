@@ -58,7 +58,7 @@ function MemberGrants({ member }: { member: Member }) {
   const [saved, setSaved] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ code: StaffRefusal; text: string } | null>(null);
-  const name = member.displayName ?? '';
+  const name = member.tradeTag ?? '';
 
   const toggle = (p: GrantablePerm, on: boolean) => {
     setSaved(false);

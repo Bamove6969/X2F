@@ -49,7 +49,7 @@ async function stubApi(page: Page): Promise<Stub> {
   });
   await page.route('**/v1/account/me', (r) =>
     s.registered
-      ? json({ displayName: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: s.methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
+      ? json({ tradeTag: 'lumen.kai', loginNameSet: true, kind: 'trader', level: 'full', methods: s.methods, hasBackup: false, suggestions: [], termsCurrent: true })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
   );
   await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
@@ -63,16 +63,7 @@ async function stubApi(page: Page): Promise<Stub> {
     record('pgp-finish', r);
     s.registered = true;
     s.methods = ['pgp'];
-    return json({ displayName: 'lumen.kai' }, 201)(r);
-  });
-  await page.route('**/v1/register/password', (r) => {
-    record('register-password', r);
-    return json({ error: 'internal' }, 500)(r);
-  });
-  await page.route('**/v1/account/password', (r) => {
-    record('set-password', r);
-    s.methods.push('password');
-    return json({ ok: true })(r);
+    return json({ tradeTag: 'lumen.kai' }, 201)(r);
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
@@ -88,7 +79,7 @@ async function stubApi(page: Page): Promise<Stub> {
     s.methods.push('recovery-codes');
     return json({ codes: [CODE] })(r);
   });
-  await page.route('**/v1/wallets/rule', json({ firstWallet: true, strongMethods: ['pgp'], password: 'none', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: true, strongMethods: ['pgp'] }));
   await page.route('**/v1/wallets', (r) => {
     if (r.request().method() === 'GET') return json([])(r);
     record('wallets', r);
@@ -114,8 +105,29 @@ async function pickNames(page: Page): Promise<void> {
   await page.fill('#uname', 'lumen-login-7');
   await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
   await page.click('[data-part="names-continue"]');
-  await page.fill('#display-name', 'lumen.kai');
+  await page.fill('#trade-tag', 'lumen.kai');
   await page.click('[data-part="display-continue"]');
+}
+
+/** The PGP key step and its code step, from /setup/pgp-key. */
+async function pgpSteps(page: Page): Promise<void> {
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
+  await expect(page).toHaveURL(/\/setup\/pgp-code\?/);
+  await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
+  await page.click('[data-part="pgp-verify"]');
+  await page.click('[data-part="pgp-continue"]');
+}
+
+/** The authenticator-app step, from /setup/authenticator. */
+async function totpStep(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/setup\/authenticator\?/);
+  await page.click('[data-part="totp-start"]');
+  await page.fill('#totp-code', '123456');
+  await page.click('[data-part="totp-finish"]');
+  await expect(page.locator('[data-part="totp-success"]')).toBeVisible();
+  await page.click('[data-part="totp-continue"]');
 }
 
 const tick = (page: Page, id: string) => page.locator(`[data-method="${id}"] input[type="checkbox"]`);
@@ -132,7 +144,7 @@ const token = (page: Page, name: string) =>
   }, name);
 
 for (const v of VIEWPORTS) {
-  test(`${v}: PGP, password and authenticator app are set up one after another, then the recovery code, written down and typed back unseen`, async ({ page }) => {
+  test(`${v}: PGP and authenticator app are set up one after another, then the recovery code, written down and typed back unseen`, async ({ page }) => {
     await setPhone(page, v);
     const s = await stubApi(page);
     const [, height] = v.split('x').map(Number) as [number, number];
@@ -158,18 +170,16 @@ for (const v of VIEWPORTS) {
     }
     await expect(page.locator('[data-method="totp"] [data-part="strength"]')).toHaveText('RATED-MEDIUM');
     await expect(page.locator('[data-method="totp"]')).toContainText('6-digit code');
-    await expect(page.locator('[data-method="password"] [data-part="strength"]')).toHaveText('RATED-WEAK');
-    await expect(page.locator('[data-method="password"]')).toContainText('It is strongly recommended you do not choose this as the only security method you use.');
-    // Owner decision 16 Nov 2026 (reverses signup round 3 behaviour 1): PGP alone is not enough for
-    // the authenticator app; it goes only with a password, and the M3 sentence is gone.
-    await expect(tick(page, 'totp')).toBeDisabled();
-    await expect(page.locator('[data-method="totp"]')).toContainText('Goes with a password: tick Password to add it.');
-    await expect(page.locator('[data-part="totp-no-password"]')).toHaveCount(0);
+    // No passwords (owner, 26 Nov 2026); PGP and passkey are ticked by default.
+    await expect(page.locator('[data-method="password"]')).toHaveCount(0);
+    await expect(tick(page, 'passkey')).toBeChecked();
+    await expect(tick(page, 'security-key')).not.toBeChecked();
+    await expect(tick(page, 'totp')).not.toBeChecked();
     await page.click('[data-part="pgp-explain"]');
     await expect(page.locator('[data-part="pgp-explainer"]')).toContainText('PGPony (com.pgpony.android on F-Droid, our top Android pick) and OpenKeychain on Android');
-    await page.click('[data-method="password"]');
-    await expect(tick(page, 'password')).toBeChecked();
-    await expect(tick(page, 'totp')).toBeEnabled();
+    // An authenticator app counts as the second kind: PGP and the app, no passkey.
+    await page.click('[data-method="passkey"]');
+    await expect(tick(page, 'passkey')).not.toBeChecked();
     await page.click('[data-method="totp"]');
     await expect(tick(page, 'totp')).toBeChecked();
     // Lead call: "New to PGP?" is a 44 px tap target, and the whole step passes the phone layout check.
@@ -196,24 +206,6 @@ for (const v of VIEWPORTS) {
     await page.click('[data-part="pgp-verify"]');
     await page.click('[data-part="pgp-continue"]');
 
-    // Then the password, added to the account the PGP key made (no second sign-up).
-    await expect(page).toHaveURL(/\/setup\/password\?/);
-    await expect(page.locator('[data-screen="setup-password"]')).toBeVisible();
-    // Signup round 3: each password field has a 44 px show/hide button; hidden by default.
-    await expect(page.locator('#pw')).toHaveAttribute('type', 'password');
-    const eye = page.locator('[data-part="password-field"]:has(#pw) [data-part="password-eye"]');
-    await expect(eye).toHaveAttribute('aria-label', 'Show password');
-    const eyeBox = (await eye.boundingBox())!;
-    expect(Math.round(eyeBox.width)).toBeGreaterThanOrEqual(44);
-    expect(Math.round(eyeBox.height)).toBeGreaterThanOrEqual(44);
-    await eye.click();
-    await expect(page.locator('#pw')).toHaveAttribute('type', 'text');
-    await eye.click();
-    await expect(page.locator('#pw')).toHaveAttribute('type', 'password');
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-    await page.click('[data-part="password-set"]');
-
     // Then the authenticator app.
     await expect(page).toHaveURL(/\/setup\/authenticator\?/);
     await page.click('[data-part="totp-start"]');
@@ -229,6 +221,8 @@ for (const v of VIEWPORTS) {
     // The recovery code comes after all of them. Screen A: the code, the tick, Next.
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Save your recovery code');
+    await expect(page.locator('[data-part="recovery-make"]')).toBeDisabled();
+    await page.check('[data-part="recovery-understood"]');
     await page.click('[data-part="recovery-make"]');
     const shown = page.locator('[data-part="recovery-code"]');
     await expect(shown).toBeVisible();
@@ -272,39 +266,10 @@ for (const v of VIEWPORTS) {
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect.poll(() => s.calls.includes('onboarding-end')).toBe(true);
 
-    // One sign-up (the PGP key), then the password and the authenticator added to it, with no
+    // One sign-up (the PGP key), then the authenticator added to it, with no
     // confirm-it's-you in the sign-up window; one recovery code made, nothing sent to check it.
-    expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'set-password', 'totp-start', 'totp-finish', 'recovery-codes', 'wallets', 'onboarding-end']);
+    expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'totp-start', 'totp-finish', 'recovery-codes', 'wallets', 'onboarding-end']);
     expect(s.calls.filter((c) => c.startsWith('confirm'))).toEqual([]);
-    expect(s.bodies['set-password']).toEqual([{ password: 'Quiet-harbour-58' }]);
-  });
-
-  test(`${v}: a password added after PGP outside the sign-up window asks to confirm it's you (review m-1)`, async ({ page }) => {
-    await setPhone(page, v);
-    const s = await stubApi(page);
-    await page.unroute('**/v1/account/password');
-    await page.route('**/v1/account/password', (r) => {
-      record(s, 'set-password', r);
-      return json({ error: 'confirm-required', action: 'set-password' }, 403)(r);
-    });
-    await page.goto('/setup?returnTo=%2Fpost');
-    await acceptTerms(page);
-    await pickNames(page);
-    await page.click('[data-method="password"]');
-    await page.click('[data-part="method-continue"]');
-    await page.fill('#pub', realKey);
-    await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
-    await page.click('[data-part="key-continue"]');
-    await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
-    await page.click('[data-part="pgp-verify"]');
-    await page.click('[data-part="pgp-continue"]');
-    await expect(page).toHaveURL(/\/setup\/password\?/);
-    await page.fill('#pw', 'Quiet-harbour-58');
-    await page.fill('#pw2', 'Quiet-harbour-58');
-    await page.click('[data-part="password-set"]');
-    // The confirm sheet opens with the account's PGP key, rather than a dead end.
-    await expect(page.locator('[role="dialog"] [data-method="pgp"]')).toBeVisible();
-    await expect(page.locator('[data-part="register-error"]')).toHaveCount(0);
   });
 
   test(`${v}: the /login PGP key box is the same width and much taller`, async ({ page }) => {
@@ -330,13 +295,11 @@ test('leaving sign-up before the recovery code is saved leads back to it (m-2)',
   await page.goto('/setup?returnTo=%2Fpost');
   await acceptTerms(page);
   await pickNames(page);
+  await page.click('[data-method="passkey"]');
+  await page.click('[data-method="totp"]');
   await page.click('[data-part="method-continue"]');
-  await page.fill('#pub', realKey);
-  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
-  await page.click('[data-part="key-continue"]');
-  await page.fill('#phrase', 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789-0ABC-DEFG-HJKM-NPQR');
-  await page.click('[data-part="pgp-verify"]');
-  await page.click('[data-part="pgp-continue"]');
+  await pgpSteps(page);
+  await totpStep(page);
   await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
   // Back, again and again: never out of sign-up past the owed step.
   for (let i = 0; i < 4; i++) {
@@ -352,11 +315,11 @@ test('leaving sign-up before the recovery code is saved leads back to it (m-2)',
   expect(s.calls).not.toContain('wallets');
 });
 
-// Owner demo notes 12 Nov 2026 (#27 a8b080ad, #30 4a8a6e47): ticking all five security options
-// walks through every ticked method in SIGNUP_ORDER (pgp -> security-key -> passkey -> password ->
-// authenticator), prevents skipping ahead to /setup/backup before all chosen options are handled,
+// Owner demo notes 12 Nov 2026 (#27 a8b080ad, #30 4a8a6e47): ticking all four security options
+// walks through every ticked method in SIGNUP_ORDER (pgp -> security-key -> passkey ->
+// authenticator; no passwords since 26 Nov 2026), prevents skipping ahead to /setup/backup before all chosen options are handled,
 // and opens the recovery code screen only after all selected options are complete.
-test('ticking all five security options walks through every chosen method in order before the recovery code screen (#27, #30)', async ({ page }) => {
+test('ticking all four security options walks through every chosen method in order before the recovery code screen (#27, #30)', async ({ page }) => {
   await setPhone(page, VIEWPORTS[1]);
   const s = await stubApi(page);
   await page.goto('/setup?returnTo=%2Fpost');
@@ -364,7 +327,7 @@ test('ticking all five security options walks through every chosen method in ord
   await pickNames(page);
 
   await expect(page.locator('[data-screen="setup-login"]')).toBeVisible();
-  for (const id of ['security-key', 'passkey', 'password', 'totp']) {
+  for (const id of ['security-key', 'totp']) {
     await page.click(`[data-method="${id}"]`);
     await expect(tick(page, id)).toBeChecked();
   }
@@ -383,7 +346,7 @@ test('ticking all five security options walks through every chosen method in ord
   // 2. Security key (and cannot skip ahead to /setup/backup or /sell before finishing remaining methods)
   await expect(page).toHaveURL(/\/setup\/security-key\?/);
   await expect(page.locator('[data-screen="setup-security-key"]')).toBeVisible();
-  for (const skipTo of ['/setup/backup', '/setup/password', '/sell']) {
+  for (const skipTo of ['/setup/backup', '/setup/authenticator', '/sell']) {
     await page.goto(skipTo);
     await expect(page).toHaveURL(/\/setup\/security-key/);
     await expect(page.locator('[data-screen="setup-security-key"]')).toBeVisible();
@@ -395,14 +358,7 @@ test('ticking all five security options walks through every chosen method in ord
   await expect(page.locator('[data-screen="setup-passkey"]')).toBeVisible();
   await page.click('[data-part="method-later"]');
 
-  // 4. Password
-  await expect(page).toHaveURL(/\/setup\/password\?/);
-  await expect(page.locator('[data-screen="setup-password"]')).toBeVisible();
-  await page.fill('#pw', 'Quiet-harbour-58');
-  await page.fill('#pw2', 'Quiet-harbour-58');
-  await page.click('[data-part="password-set"]');
-
-  // 5. Authenticator app (OTP)
+  // 4. Authenticator app (OTP)
   await expect(page).toHaveURL(/\/setup\/authenticator\?/);
   await expect(page.locator('[data-screen="setup-authenticator"]')).toBeVisible();
   await page.click('[data-part="totp-start"]');
@@ -411,8 +367,8 @@ test('ticking all five security options walks through every chosen method in ord
   await expect(page.locator('[data-part="totp-success"]')).toBeVisible();
   await page.click('[data-part="totp-continue"]');
 
-  // 6. Recovery code screen comes only after all chosen methods are done
+  // 5. Recovery code screen comes only after all chosen methods are done
   await expect(page).toHaveURL(/\/setup\/backup\?/);
   await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
-  expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'set-password', 'totp-start', 'totp-finish']);
+  expect(s.calls.filter((c) => !c.startsWith('confirm'))).toEqual(['pgp-start', 'pgp-finish', 'totp-start', 'totp-finish']);
 });

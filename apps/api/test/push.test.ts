@@ -39,10 +39,10 @@ beforeAll(async () => {
   ({ app, deps, setNow, logs } = await testApp({}, { pushTransport: fakeTransport }));
   app.post('/t/login', async (req, reply) => {
     const { startSession } = await import('../src/auth/sessions.js');
-    const b = req.body as { accountId: string; level?: 'full' | 'recovery' };
+    const b = req.body as { accountId: string };
     return {
       sessionId: await startSession(deps, req, reply, {
-        accountId: b.accountId, level: b.level ?? 'full', deviceLabel: 'Test browser', method: 'passkey', firstSession: false,
+        accountId: b.accountId, level: 'full', deviceLabel: 'Test browser', method: 'passkey', firstSession: false,
       }),
     };
   });
@@ -67,10 +67,10 @@ afterEach(async () => {
 
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
-async function trader(o: { kind?: 'trader' | 'staff' | 'owner'; level?: 'full' | 'recovery' } = {}) {
+async function trader(o: { kind?: 'trader' | 'staff' | 'owner' } = {}) {
   const id = await seedAccount(deps, { loginName: `Pu_${String(++n).padStart(4, '0')}`, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
-  expect((await b.post('/t/login', { accountId: id, ...(o.level ? { level: o.level } : {}) })).statusCode).toBe(200);
+  expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { id, b };
 }
 
@@ -162,9 +162,7 @@ describe('POST and DELETE /v1/account/push: who may call', () => {
     expect((await app.inject({ method: 'GET', url: '/v1/account/push' })).statusCode).toBe(401);
   });
 
-  it('refuses recovery sessions and staff accounts', async () => {
-    const rec = await trader({ level: 'recovery' });
-    expect(errorOf(await post(rec.b, subscription()))).toBe('recovery-session');
+  it('refuses staff accounts', async () => {
     const staff = await trader({ kind: 'staff' });
     expect(errorOf(await post(staff.b, subscription()))).toBe('wrong-account-kind');
   });

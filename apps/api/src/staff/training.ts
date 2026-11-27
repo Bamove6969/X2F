@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { MANUAL_MASK, anonymizeText, applyManualMasks, offsetLabel, type AnonymizeNames, type Scrubbed } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
@@ -160,18 +160,18 @@ const listItem = (r: CaseRow, key: Uint8Array) => ({
 
 /** Every name the case's texts may hold: both traders' display and login names, and every staff name. */
 async function caseNames(db: Queryable, r: CaseRow, moderatorNames: readonly string[]): Promise<AnonymizeNames> {
-  const { rows } = await db.query<{ id: string; display_name: string; login_name: string | null }>(
-    'select id::text as id, display_name, login_name from accounts where id = any($1::uuid[])',
+  const { rows } = await db.query<{ id: string; trade_tag: string; login_name: string | null }>(
+    'select id::text as id, trade_tag, login_name from accounts where id = any($1::uuid[])',
     [[r.buyer, r.seller].filter((x): x is string => x !== null)],
   );
-  const of = (id: string | null) => rows.filter((a) => a.id === id).flatMap((a) => [a.display_name, a.login_name ?? '']).filter((n) => n !== '');
-  const staff = await db.query<{ display_name: string; login_name: string | null }>(
-    'select a.display_name, a.login_name from staff_members m join accounts a on a.id = m.account_id',
+  const of = (id: string | null) => rows.filter((a) => a.id === id).flatMap((a) => [a.trade_tag, a.login_name ?? '']).filter((n) => n !== '');
+  const staff = await db.query<{ trade_tag: string; login_name: string | null }>(
+    'select a.trade_tag, a.login_name from staff_members m join accounts a on a.id = m.account_id',
   );
   return {
     buyer: of(r.buyer),
     seller: of(r.seller),
-    staff: [...staff.rows.flatMap((a) => [a.display_name, a.login_name ?? '']), ...moderatorNames].filter((n) => n !== ''),
+    staff: [...staff.rows.flatMap((a) => [a.trade_tag, a.login_name ?? '']), ...moderatorNames].filter((n) => n !== ''),
   };
 }
 

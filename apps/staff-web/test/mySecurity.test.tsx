@@ -15,9 +15,9 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
 const ends = () => new Date(Date.now() + H).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
-const HELPER = { displayName: 'tobi.w', role: 'helper', nav: NAV.helper, sessionEndsAt: ends() };
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: ends() };
+const HELPER = { tradeTag: 'tobi.w', role: 'helper', nav: NAV.helper, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
 
 const PGP_ID = '11111111-1111-4111-8111-111111111111';
 const KEY_ID = '22222222-2222-4222-8222-222222222222';

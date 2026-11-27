@@ -9,28 +9,28 @@ import { Icon } from '../../ui/icons.js';
 import type { RegisterPgpStart, SetupError, TermsAcceptance } from './register.js';
 import './setup.css';
 
-export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
+export type LoginMethod = 'pgp' | 'passkey' | 'security-key';
 /**
- * What can be ticked on the login step (owner demo notes, 12 Nov 2026): the four login methods and
- * an authenticator app, which is a password's second step (TOTP alone never logs in).
+ * What can be ticked on the login step (owner demo notes, 12 Nov 2026; owner 26 Nov 2026, no
+ * passwords): the three login keys and an authenticator app, which counts as a kind and (owner,
+ * 27 Nov 2026) logs in with the username, but never confirms.
  */
 export type SignupMethod = LoginMethod | 'totp';
 /**
  * The order the ticked methods are set up in, one after another (owner, 12 Nov 2026: "it will take
- * them to the next one of their selected security options"). The strong ones first, so the account
- * is made with the strongest one ticked; the authenticator app after the password it belongs to.
+ * them to the next one of their selected security options"). The keys first, so the account is made
+ * with one of them; the authenticator app last, once the account exists.
  */
-export const SIGNUP_ORDER: readonly SignupMethod[] = ['pgp', 'security-key', 'passkey', 'password', 'totp'];
+export const SIGNUP_ORDER: readonly SignupMethod[] = ['pgp', 'security-key', 'passkey', 'totp'];
 /** No authenticator app: it is no backup login (design build gaps Job 1). */
 export type BackupChoice = 'security-key' | 'pgp' | 'recovery-codes';
 export type Step =
   | ''
   | 'name'
-  | 'display-name'
+  | 'trade-tag'
   | 'login'
   | 'pgp-key'
   | 'pgp-code'
-  | 'password'
   | 'security-key'
   | 'passkey'
   | 'authenticator'
@@ -44,7 +44,7 @@ export interface SetupState {
    * (no signature since owner demo note #187, 25 Nov 2026).
    */
   terms: TermsAcceptance | null;
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   /** The method the account was made with (the first ticked one in SIGNUP_ORDER). */
   method: LoginMethod;
@@ -73,10 +73,10 @@ export interface SetupState {
 
 export const INITIAL: SetupState = {
   terms: null,
-  displayName: '',
+  tradeTag: '',
   loginName: '',
   method: 'pgp',
-  methods: ['pgp'],
+  methods: ['pgp', 'passkey'],
   done: [],
   publicKey: '',
   challenge: null,
@@ -107,7 +107,7 @@ export function nextStep(state: Pick<SetupState, 'methods' | 'done'>): Step {
 export function finishMethod(api: Pick<SetupApi, 'state' | 'update' | 'go'>, m: SignupMethod, patch: Partial<SetupState> = {}): void {
   const done = api.state.done.includes(m) ? api.state.done : [...api.state.done, m];
   api.update({ ...patch, done });
-  api.go(nextStep({ methods: api.state.methods, done }), { replace: true });
+  api.go(nextStep({ methods: patch.methods ?? api.state.methods, done }), { replace: true });
 }
 
 export interface SetupApi {
@@ -136,7 +136,7 @@ export function stepPath(step: Step, returnTo: string): string {
  * The frame every setup board shares: the back arrow, "Set up your account", "Step N of 5", the
  * five-part progress bar and "Takes about 2 minutes.", then the screen, then its buttons at the
  * bottom. `fit` keeps the whole frame in the viewport (the middle scrolls; the Terms have no box of their own since owner demo note #187).
- * `footerInline` (owner demo note #199, the display-name step only for now) puts the buttons in the
+ * `footerInline` (owner demo note #199, the trade-tag step only for now) puts the buttons in the
  * flow, right under the screen's last part, instead of in the bar pinned to the bottom.
  */
 export function SetupFrame({
@@ -204,7 +204,7 @@ export function SetupIntro({ title, children }: { title: ReactNode; children?: R
 
 /**
  * A refused register call. A name problem links back to the screen of the name to change (review
- * F8: a display-name refusal to the display-name screen, any other to the username; what they typed is kept);
+ * F8: a trade-tag refusal to the trade-tag screen, any other to the username; what they typed is kept);
  * a key already on another account links back to the key screen and to Log in (review I1); a
  * refused key (key-unavailable) links back to the key screen only.
  */

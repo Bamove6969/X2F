@@ -31,7 +31,6 @@ import '../ui/staff.css';
 
 /** The ways to log in as staff read them. COPY-UNSIGNED */
 export const METHOD_WORDS: Readonly<Record<CompromisedMethod, string>> = {
-  password: 'Password',
   passkey: 'Passkey',
   'security-key': 'Security key',
   pgp: 'PGP key',
@@ -47,12 +46,12 @@ export const COMPROMISED_PATH = '/accounts/compromised';
  */
 export const LOCK_SKIP_WORDS: Readonly<Record<LockSkip, string>> = {
   'recent-unlock': 'Not locked: staff unlocked this account less than 30 days ago, so the form does not lock it again. Check with the owner before acting.',
-  'legacy-login-name': "Not locked: this is an older account whose login name is still its public display name, so anyone could have typed it. Contact the owner before acting.",
+  'legacy-login-name': "Not locked: this is an older account whose login name is still its public Trade Tag, so anyone could have typed it. Contact the owner before acting.",
   'lock-cap': 'Not locked: 20 accounts were already locked from the form in the last hour, so this report was only recorded. Check it and act by hand if it is real.',
 };
 
 const methodsText = (m: readonly CompromisedMethod[]) => (m.length === 0 ? 'None of these' : m.map((x) => METHOD_WORDS[x]).join(', '));
-const accountText = (r: { matched: boolean; displayName: string | null }) => (!r.matched ? 'No account matched' : r.displayName ?? 'A team member login');
+const accountText = (r: { matched: boolean; tradeTag: string | null }) => (!r.matched ? 'No account matched' : r.tradeTag ?? 'A team member login');
 
 export function CompromisedList() {
   const [status, setStatus] = useState<'open' | 'closed'>('open');
@@ -179,7 +178,7 @@ export function CompromisedReport() {
 
   const a = c?.account ?? null;
   const locked = a !== null && a.lockedAt !== null;
-  const name = a === null ? '' : a.displayName ?? (a.team !== null ? `a team member login of ${a.team}` : 'a team member login');
+  const name = a === null ? '' : a.tradeTag ?? (a.team !== null ? `a team member login of ${a.team}` : 'a team member login');
   return (
     <section data-screen="compromised-report">
       <PageTitle title={c !== null ? `Report ${compromisedTicketLabel(c.number)}` : 'Report'}>

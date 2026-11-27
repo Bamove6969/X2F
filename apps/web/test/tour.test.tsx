@@ -118,7 +118,7 @@ describe('the welcome screen (owner, 12 Nov, note #47)', () => {
   // A signed-in trader: the screen waits for the session, then shows (a team member is sent on).
   beforeEach(() => {
     refreshSession();
-    const me = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
+    const me = { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'], hasBackup: true, suggestions: [] };
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string) =>

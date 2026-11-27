@@ -12,7 +12,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { ConfirmAction } from '@x2f/accounts';
-import type { AuthApi, LoginResult, Staged, WebAuthnKind } from './api.js';
+import type { AuthApi, LoginResult, WebAuthnKind } from './api.js';
 
 export interface RegistrationCeremony {
   startRegistration(o: { optionsJSON: PublicKeyCredentialCreationOptionsJSON }): Promise<RegistrationResponseJSON>;
@@ -34,14 +34,14 @@ const BROWSER_AUTHENTICATION: AuthenticationCeremony = { startAuthentication };
  */
 export async function registerWithWebAuthn(
   api: AuthApi,
-  names: { displayName: string; loginName: string },
+  names: { tradeTag: string; loginName: string },
   kind: WebAuthnKind,
   deviceLabel: string,
   acceptedTerms: string,
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
   o: { label?: string } = {},
-): Promise<{ displayName: string; credentialId: string }> {
-  const { challengeId, options } = await api.registerWebAuthnStart({ displayName: names.displayName, loginName: names.loginName, kind });
+): Promise<{ tradeTag: string; credentialId: string }> {
+  const { challengeId, options } = await api.registerWebAuthnStart({ tradeTag: names.tradeTag, loginName: names.loginName, kind });
   const response = await ceremony.startRegistration({ optionsJSON: options });
   const done = await api.registerWebAuthnFinish({
     challengeId, response, deviceLabel, acceptedTerms, ...(o.label !== undefined ? { label: o.label } : {}),
@@ -91,15 +91,14 @@ export async function confirmWithWebAuthn(
 /**
  * Adds a passkey or security key to the signed-in account. Outside the sign-up window the API asks
  * for a confirm token for `{ kind: 'add-method', method: kind }`: wrap the call in `withConfirm`.
- * Answers `Staged` when the key is staged for review (hold model v3: a username-and-password login), else undefined.
  */
 export async function addWebAuthnKey(
   api: AuthApi,
   kind: WebAuthnKind,
   o: { label?: string; confirmToken?: string | undefined } = {},
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
-): Promise<Staged | undefined> {
-  return (await addWebAuthnKeyWithId(api, kind, o, ceremony)).staged;
+): Promise<void> {
+  await addWebAuthnKeyWithId(api, kind, o, ceremony);
 }
 
 /**
@@ -112,14 +111,13 @@ export async function addWebAuthnKeyWithId(
   kind: WebAuthnKind,
   o: { label?: string; confirmToken?: string | undefined } = {},
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
-): Promise<{ staged: Staged | undefined; credentialId: string }> {
+): Promise<{ credentialId: string }> {
   const { challengeId, options } = await api.addWebAuthnStart({
     kind, ...(o.confirmToken !== undefined ? { confirmToken: o.confirmToken } : {}),
   });
   const response = await ceremony.startRegistration({ optionsJSON: options });
-  // Hold model v3: `Staged` when the new key is a draft to review and submit.
-  const staged = await api.addWebAuthnFinish({ challengeId, response, ...(o.label !== undefined ? { label: o.label } : {}) });
-  return { staged, credentialId: response.id };
+  await api.addWebAuthnFinish({ challengeId, response, ...(o.label !== undefined ? { label: o.label } : {}) });
+  return { credentialId: response.id };
 }
 
 /**

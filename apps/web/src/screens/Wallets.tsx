@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { AuthApiError, WALLET_LABEL_MAX, isStaged, walletsAction, withConfirm, type Staged } from '@x2f/auth-client';
+import { AuthApiError, WALLET_LABEL_MAX, walletsAction, withConfirm } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
-import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, holdChangesCantDoText, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, isCantDoCode, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { formatDateTime } from '../ui/dates.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
 import { refusalText } from './auth/refusals.js';
-import { StagedNote, changesCapOf, reportChangesCap } from './settings/HoldChanges.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -32,7 +31,7 @@ import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
 import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG, RENAME, walletNameHelp } from './walletsCopy.js';
 import { RenameSheet } from './WalletRename.js';
-import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
+import { matchesRecord, recordTypedAddress } from './walletRecord.js';
 
 /** An address already in the list (was the error on Save; live since owner demo note #219). */
 export const ADDRESS_REPEATED = 'That address is already in your list.';
@@ -48,8 +47,6 @@ const LABEL_MAX = WALLET_LABEL_MAX;
 /** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
 const when = (iso: string): string => formatDateTime(iso);
 
-/** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
-export { RECOVERY_SESSION_WALLETS };
 /** 403 `confirm-invalid`: the confirm ran out (or was used) before the save went through. */
 export const CONFIRM_INVALID_WALLETS = 'Your confirmation ran out before the wallets were saved. Save again and confirm once more.';
 
@@ -71,7 +68,7 @@ export function addError(e: unknown): string {
     if (e.code === 'wallet-exists') return 'One of those wallets is already linked.';
     if (e.code === 'confirm-invalid') return CONFIRM_INVALID_WALLETS;
   }
-  // Task 30's wording for a held backup session, a wait after too many tries, and the rest.
+  // Task 30's wording for a wait after too many tries, and the rest.
   return refusalText(e, ADD_FAILED);
 }
 
@@ -257,7 +254,6 @@ function WalletRow({
 /** The popup that explains, for this account, what adding wallets will do (owner, 2026-10-24). */
 function RulePopup({ rule, onContinue, onClose }: { rule: WalletRule | null; onContinue: () => void; onClose: () => void }) {
   const lines = rule ? ruleLines(rule) : [ruleNote(null)];
-  const passwordOnly = rule !== null && !rule.firstWallet && rule.strongMethods.length === 0 && rule.password === 'waits';
   return (
     <Sheet open title="Before you add a wallet" onClose={onClose}>
       {lines.map((line) => (
@@ -265,11 +261,6 @@ function RulePopup({ rule, onContinue, onClose }: { rule: WalletRule | null; onC
           {line}
         </p>
       ))}
-      {passwordOnly ? (
-        <Link className="x2f-link" to="/settings/security">
-          Add a login method
-        </Link>
-      ) : null}
       <Button variant="primary" onClick={onContinue}>
         Continue
       </Button>
@@ -347,7 +338,6 @@ function WalletsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [staged, setStaged] = useState(false);
   // Owner demo note #226: the wallet whose Rename sheet is open.
   const [renaming, setRenaming] = useState<WalletView | null>(null);
 
@@ -425,12 +415,11 @@ function WalletsScreen() {
     setSaving(true);
     setError(null);
     setNotice(null);
-    setStaged(false);
     const drafts = trimmed === '' ? batch : [...batch, current()];
     // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
-    const post = async (confirmToken?: string): Promise<WalletView[] | Staged> => {
+    const post = async (confirmToken?: string): Promise<WalletView[]> => {
       try {
-        return await api<WalletView[] | Staged>('/v1/wallets', {
+        return await api<WalletView[]>('/v1/wallets', {
           method: 'POST',
           body: confirmToken === undefined ? { wallets: drafts } : { wallets: drafts, confirmToken },
         });
@@ -442,20 +431,7 @@ function WalletsScreen() {
     };
     try {
       const action = await walletsAction(drafts.map((d) => d.address));
-      const result: WalletView[] | Staged = await withConfirm(action, post, prove);
-      // Hold model v3: added from a username-and-password login (a PGP key login is strong, owner
-      // Q81), the wallets are a draft to review and submit (202 staged): nothing is listed yet.
-      if (isStaged(result)) {
-        // Re-verify O3: no ids yet, so each address typed is recorded by itself (walletRecord.ts).
-        for (const d of drafts) recordStagedAddress(d.address);
-        setBatch([]);
-        setLabel('');
-        setAddress('');
-        setAdding(false);
-        setStaged(true);
-        return;
-      }
-      const saved = result;
+      const saved = await withConfirm(action, post, prove);
       // Review 17 Nov M4: this device keeps the address typed for each id the API gave (walletRecord.ts),
       // so the quote and the accepted sheet refuse any later list naming another. The answer itself
       // must carry exactly the addresses typed, in order: one naming another is not shown as saved.
@@ -492,8 +468,7 @@ function WalletsScreen() {
     } catch (e) {
       if (!isConfirmAbort(e)) {
         const code = addCantDo(e);
-        const cap = changesCapOf(e);
-        if (code !== null) setCantDo({ code, text: cap !== null ? holdChangesCantDoText(cap.max) : (walletsCantDoText(code) ?? refusalText(e, ADD_FAILED)) });
+        if (code !== null) setCantDo({ code, text: refusalText(e, ADD_FAILED) });
         else setError(addError(e));
       }
     } finally {
@@ -505,16 +480,9 @@ function WalletsScreen() {
     setError(null);
     try {
       // Removal cannot redirect money, so it needs no confirm; the API always saves an alert.
-      const r = await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
-      // Owner p5-7: from a username-and-password login the removal is a draft that waits 24 h once
-      // submitted; the wallet stays listed and usable until then.
-      if (isStaged(r)) {
-        setStaged(true);
-        return;
-      }
+      await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
       setWallets((prev) => (prev ?? []).filter((x) => x.id !== w.id));
     } catch (e) {
-      if (reportChangesCap(e)) return;
       setError('That wallet could not be removed. Try again.');
     }
   }
@@ -552,7 +520,6 @@ function WalletsScreen() {
             {notice}
           </p>
         ) : null}
-        {staged ? <StagedNote /> : null}
 
         {wallets && wallets.length > 0 ? (
           <section className="x2f-wallets__section" aria-label="Linked wallets">
@@ -761,10 +728,6 @@ function WalletsScreen() {
           wallet={renaming}
           addresses={(wallets ?? []).map((w) => w.address)}
           onClose={() => setRenaming(null)}
-          onRefused={(r) => {
-            setRenaming(null);
-            setCantDo(r);
-          }}
           onRenamed={(label) => {
             const id = renaming.id;
             setWallets((prev) => (prev ?? []).map((x) => (x.id === id ? { ...x, label } : x)));

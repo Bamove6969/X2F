@@ -411,7 +411,7 @@ describe('BottomNav', () => {
   });
 
   it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
-    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    const me = (member: unknown) => ({ status: 'signed-in', me: { tradeTag: 'Calcium', member } }) as unknown as Session;
     expect(mayPostOffers(me(null))).toBe(true);
     expect(mayPostOffers(me(undefined))).toBe(true);
     expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers'] }))).toBe(true);
@@ -427,7 +427,7 @@ describe('BottomNav', () => {
 
   // Order #2 M1 & M2: mayViewWallets hides Wallets from team members and during loading
   it('mayViewWallets: the account owner may; team members and loading sessions may not', () => {
-    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    const me = (member: unknown) => ({ status: 'signed-in', me: { tradeTag: 'Calcium', member } }) as unknown as Session;
     expect(mayViewWallets(me(null))).toBe(true);
     expect(mayViewWallets(me(undefined))).toBe(true);
     expect(mayViewWallets(me({ name: 'Aurora', roles: ['offers'] }))).toBe(false);
@@ -447,7 +447,7 @@ describe('BottomNav', () => {
   });
 
   it('mayReadTrades: the account owner, and a member with See active trades or See trade history', () => {
-    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    const me = (member: unknown) => ({ status: 'signed-in', me: { tradeTag: 'Calcium', member } }) as unknown as Session;
     expect(mayReadTrades(me(null))).toBe(true);
     expect(mayReadTrades(me(undefined))).toBe(true);
     expect(mayReadTrades(me({ name: 'Aurora', roles: [], abilities: ['trades-see-active'] }))).toBe(true);
@@ -463,7 +463,7 @@ describe('BottomNav', () => {
   });
 
   it('mayOpenLiveEvents: a full trader session, the owner or a member with either trades box (lead, after review trades-list I1)', () => {
-    const me = (over: Record<string, unknown>) => ({ status: 'signed-in', me: { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, member: null, ...over } }) as unknown as Session;
+    const me = (over: Record<string, unknown>) => ({ status: 'signed-in', me: { tradeTag: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, member: null, ...over } }) as unknown as Session;
     expect(mayOpenLiveEvents(me({}))).toBe(true);
     expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: [], abilities: ['trades-see-history'] } }))).toBe(true);
     expect(mayOpenLiveEvents(me({ member: { name: 'A', roles: ['trades'], abilities: ['trades-see-active'] } }))).toBe(true);

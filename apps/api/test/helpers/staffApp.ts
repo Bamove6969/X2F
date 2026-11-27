@@ -70,8 +70,8 @@ export async function insertSession(deps: Deps, accountId: string, app: 'staff' 
   const token = randomBytes(32).toString('base64url');
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, strength, app)
-     values ($1, $2, 'full', 'Test', $3, $3, $4, 'strong', $5) returning id`,
+    `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, app)
+     values ($1, $2, 'full', 'Test', $3, $3, $4, $5) returning id`,
     [accountId, createHash('sha256').update(token).digest(), now, new Date(now.getTime() + 2 * 3600_000), app],
   );
   return { token, sessionId: rows[0]!.id };

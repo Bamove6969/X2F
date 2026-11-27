@@ -55,7 +55,7 @@ function released(code: string): Record<string, unknown> {
     role: 'buyer',
     poster: 'buyer',
     state: 'released',
-    counterparty: { displayName: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: 'ZELLE',
     profile: ZELLE,
     amountAtomic: '1250000000000',
@@ -115,7 +115,7 @@ async function stub(page: Page, o: { completedTrades?: number } = {}): Promise<S
     window.localStorage.setItem('x2f.courtesy-sheet.off', '1');
     window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic: '1250000000000', fiatCents: '41250' };
   });
-  await page.route('**/v1/account/me', json({ displayName: 'mira.k', ...INSIDE, methods: ['pgp'], completedTrades: o.completedTrades ?? 1 }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'mira.k', ...INSIDE, methods: ['pgp'], completedTrades: o.completedTrades ?? 1 }));
   // OLD's room.
   await page.route(`**/v1/trades/${OLD}`, json(released(OLD)));
   await page.route(`**/v1/trades/${OLD}/confirmations`, json({ confirmations: 1, target: 10, payoutEnd: 'k3Fz' }));

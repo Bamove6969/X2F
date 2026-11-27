@@ -7,9 +7,9 @@ Ideas agreed with the owner on 2026-10-15, parked until the app is finished. Not
 - A public community room on **Matrix**, not Telegram, because Telegram requires a phone number and X2F promises no phone number. A Telegram room may be added later for reach.
 - X2F runs **its own Matrix server** (for example `x2f.chat`) with public sign-up closed, so only X2F can create accounts there, and only staff get them. Community members join from any other server, such as matrix.org.
 
-## Why display names don't prove anything
+## Why Trade Tags don't prove anything
 
-On Matrix anyone can set any display name and picture, including an exact copy of a moderator's. The account address (`@sarah:x2f.chat`) is unique, and only X2F can create addresses ending in `:x2f.chat`. The room's moderator label can only be granted by the room's admins, but it shows only inside that room, never in private messages.
+On Matrix anyone can set any Trade Tag and picture, including an exact copy of a moderator's. The account address (`@sarah:x2f.chat`) is unique, and only X2F can create addresses ending in `:x2f.chat`. The room's moderator label can only be granted by the room's admins, but it shows only inside that room, never in private messages.
 
 ## Pinned rules (draft)
 

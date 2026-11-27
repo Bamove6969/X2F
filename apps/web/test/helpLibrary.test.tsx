@@ -114,7 +114,6 @@ function buildFacts(c: Imported = IMPORTED, read: (p: string) => string = source
     feePercent: `${Number(c.X2F_FEE_BPS) / 100}%`,
     pgpCodeMinutes: `${k('apps/api/src/auth/pgp.ts', 'PGP_CHALLENGE_TTL_MS') / MIN} minutes`,
     pgpRsaBits: `${k('packages/accounts/src/pgp.ts', 'MIN_RSA_BITS')} bits`,
-    passwordMin: `${k('packages/accounts/src/password.ts', 'PASSWORD_MIN')} characters`,
     traderSessionHours: `${orList(hoursList('trader', read))} hours`,
     vendorSessionHours: `${orList(hoursList('vendor', read))} hours`,
     sessionPromptMinutes: `${k('packages/accounts/src/sessionLength.ts', 'SESSION_PROMPT_MS') / MIN} minutes`,
@@ -141,14 +140,12 @@ function buildFacts(c: Imported = IMPORTED, read: (p: string) => string = source
     escrowKeys: `${k('packages/escrow/src/monero.ts', 'SIGNERS')} keys`,
     escrowThreshold: `Any ${k('packages/escrow/src/monero.ts', 'THRESHOLD')} keys`,
     checkWords: `${k('packages/trade/src/checkWords.ts', 'WORDS')} words`,
-    payoutWaitHours: `${k('apps/api/src/wallets/routes.ts', 'PAYOUT_WAIT_MS') / HOUR} hours`,
     unlockMinutes: `about ${(c.UNLOCK_CONFIRMATIONS * blockSeconds) / 60} minutes`,
     rulingGoalHours: `within ${k('packages/staff/src/dispute.ts', 'RULING_GOAL_H')} hours`,
     appealWindowHours: `within ${keyIn('apps/api/src/staff/settingsDefaults.ts', 'appealWindowH', read)} hours of the ruling`,
     appealGoalHours: `decide within ${k('packages/staff/src/dispute.ts', 'APPEAL_GOAL_H')} hours`,
-    holdHours: `${k('apps/api/src/auth/hold.ts', 'HOLD_MS') / HOUR} hours`,
-    maxHoldChanges: `Up to ${k('apps/api/src/auth/holdChanges.ts', 'MAX_HOLD_CHANGES')} changes`,
-    recoveryHoldHours: `${k('apps/api/src/auth/recovery.ts', 'RECOVERY_HOLD_MS') / HOUR} hours`,
+    minMethodKinds: `at least ${['no', 'one', 'two', 'three', 'four'][k('packages/accounts/src/loginRule.ts', 'MIN_METHOD_KINDS')]} different kinds`,
+    recoveryWindowMinutes: `${k('apps/api/src/auth/sessions.ts', 'RECOVERY_WINDOW_MS') / MIN} minutes`,
     approvalMinutes: `${k('apps/api/src/auth/approval.ts', 'APPROVAL_TTL_MS') / MIN} minutes`,
     maxDevices: `up to ${k('apps/api/src/auth/approval.ts', 'DEFAULT_MAX_DEVICES')} at a time`,
     trustedDeviceDays: `${k('apps/api/src/auth/device.ts', 'TRUSTED_DEVICE_TTL_MS') / DAY} days`,
@@ -379,7 +376,7 @@ describe('the help library content', () => {
     expect(QUESTIONS.find((q) => q.id === 'member-chat')!.a).toMatch(/^Not yet\./);
     // The per-payment-method pay windows are placeholders (owner p11-29): no 90 minutes, 3 hours or the like.
     expect(all).not.toMatch(/\b90 minutes\b|\b3 hours\b/);
-    // Review B1: X2F keeps names (the display name, PGP user IDs), so no answer says it keeps no name.
+    // Review B1: X2F keeps names (the Trade Tag, PGP user IDs), so no answer says it keeps no name.
     expect(all).not.toMatch(/keeps no name|asks for no name|no name, email/i);
     // Review B2: the receiver of the trade's XMR pays the network fee, so nobody gets "the full trade amount".
     expect(all).not.toMatch(/full trade amount/i);
@@ -609,7 +606,7 @@ describe('the help page', () => {
   it('logged in or out, the library is the same and nothing on it is a primary action', () => {
     const out = at('/help');
     expect(out.querySelectorAll('[data-primary]')).toHaveLength(0);
-    state.session = { status: 'signed-in', me: { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null } };
+    state.session = { status: 'signed-in', me: { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null } };
     const inside = at('/help');
     expect(shownIds(inside)).toEqual(shownIds(out));
     expect(inside.querySelector('[data-part="help-back"]')!.getAttribute('href')).toBe('/sell');

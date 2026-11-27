@@ -20,7 +20,7 @@
  *     run (J-14 review J4).
  *   - A report that matches a lockable account is recorded but locks nothing, flagged for staff
  *     (`lockSkipped`), when staff unlocked the account in the last RELOCK_BAR_DAYS (`recent-unlock`,
- *     review item 1), the account still logs in with its public display name (`legacy-login-name`,
+ *     review item 1), the account still logs in with its public Trade Tag (`legacy-login-name`,
  *     item 3), or LOCK_CAP_PER_HOUR new locks were placed site wide in the last hour (`lock-cap`,
  *     item 4; the owner is alerted). Lead defaults, owner question pending.
  *   - At most COMPROMISED_PER_NAME_DAILY a day per typed name (by its HMAC tag, `daily_counts`), and
@@ -33,7 +33,7 @@
  * - `GET /staff/v1/compromised?status=open|closed` → `{ items }`: the reports, open ones oldest first.
  *   Metadata only, never the comment.
  * - `GET /staff/v1/compromised/:id` → the report, the sender's comment and ticked methods, and the
- *   matched account (display name, kind, created, lock, its open trades' codes and states: owner,
+ *   matched account (Trade Tag, kind, created, lock, its open trades' codes and states: owner,
  *   "the account's trade info helps staff identify the real owner"). Logged `account.report-viewed`
  *   (ids only) before the comment is opened.
  * - `POST /staff/v1/compromised/:id/unlock { tapId }` (tap `unlock-account`, bound to the account and
@@ -45,7 +45,7 @@
 import { COMPROMISED_METHODS, TICKET_BODY_MAX } from '@x2f/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { loginNameLookup, loginTagMatch } from '../accounts.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { dailyCap } from '../auth/throttle.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -183,17 +183,17 @@ export function staffCompromisedRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/compromised', opts, async (req) => {
     const status = statusOf(req);
     const order = status === 'closed' ? 'desc' : 'asc';
-    const { rows } = await req.server.deps.db.query<TicketRow & { display_name: string | null; locked: boolean }>(
+    const { rows } = await req.server.deps.db.query<TicketRow & { trade_tag: string | null; locked: boolean }>(
       `select t.id, t.number, t.status, t.methods_left, t.lock_skipped, t.account_id, t.created_at, t.closed_at,
-              case when a.kind = 'member' then null else a.display_name end as display_name,
+              case when a.kind = 'member' then null else a.trade_tag end as trade_tag,
               exists (select 1 from account_locks l where l.account_id = t.account_id and l.unlocked_at is null) as locked
          from tickets t left join accounts a on a.id = t.account_id
         where t.kind = 'compromised' and (t.status = 'closed') = $1
         order by t.created_at ${order}, t.number ${order} limit 200`,
       [status === 'closed'],
     );
-    // A team member's login has no public name of its own: shown as a member login (displayName null).
-    return { items: rows.map((r) => ({ ...summary(r), matched: r.account_id !== null, displayName: r.display_name, locked: r.locked })) };
+    // A team member's login has no public name of its own: shown as a member login (tradeTag null).
+    return { items: rows.map((r) => ({ ...summary(r), matched: r.account_id !== null, tradeTag: r.trade_tag, locked: r.locked })) };
   });
 
   app.get('/staff/v1/compromised/:id', opts, async (req) => {
@@ -201,9 +201,9 @@ export function staffCompromisedRoutes(app: FastifyInstance): void {
     const t = await reportOf(db, req);
     let account = null;
     if (t.account_id !== null) {
-      const { rows } = await db.query<{ display_name: string; kind: string; created_at: Date; team: string | null }>(
-        `select a.display_name, a.kind, a.created_at,
-                (select o.display_name from team_members tm join accounts o on o.id = tm.account_id where tm.member_account_id = a.id) as team
+      const { rows } = await db.query<{ trade_tag: string; kind: string; created_at: Date; team: string | null }>(
+        `select a.trade_tag, a.kind, a.created_at,
+                (select o.trade_tag from team_members tm join accounts o on o.id = tm.account_id where tm.member_account_id = a.id) as team
            from accounts a where a.id = $1`,
         [t.account_id],
       );
@@ -218,7 +218,7 @@ export function staffCompromisedRoutes(app: FastifyInstance): void {
         ? {
             // The unlock's tap is bound to this id (`unlock-account`).
             id: t.account_id,
-            displayName: a.kind === 'member' ? null : a.display_name,
+            tradeTag: a.kind === 'member' ? null : a.trade_tag,
             kind: a.kind,
             // A member's login: the team it works for (its lead's public name).
             team: a.kind === 'member' ? a.team : null,

@@ -295,7 +295,6 @@ async function makeSecrets(dir: string) {
   return {
     serverKey: key32(),
     trainingIdKey: key32(),
-    passwordPeppers: ring(),
     recoveryCodeKeys: ring(),
     totpKeys: ring(),
     loginNameKeys: ring(),
@@ -304,8 +303,6 @@ async function makeSecrets(dir: string) {
     vapidPrivate: ecdh.getPrivateKey().toString('base64url'),
     pgpKeyPath: write('pgp-signing.asc', privateKey),
     pgpFingerprint: pgpKey.getFingerprint().toLowerCase(),
-    // Sorted 20-byte SHA-1 records; one entry is enough.
-    leakedListPath: write('leaked.bin', createHash('sha1').update('password').digest()),
     modSigningPublic: sodium.to_hex(mod.publicKey),
     modSigningSecret: Buffer.from(mod.privateKey).toString('base64'),
     modKeystoreKey: key32(),
@@ -427,7 +424,6 @@ export async function startStack(o: { logDir: string; staff?: boolean }): Promis
       X2F_ORIGINS: origin,
       X2F_RP_ID: 'localhost',
       DATABASE_URL: pgUrl('x2f'),
-      X2F_LEAKED_LIST_PATH: s.leakedListPath,
       X2F_SERVER_KEY: s.serverKey,
       // Required with the mainnet address format (config.ts); its own random key.
       X2F_TRAINING_ID_KEY: s.trainingIdKey,
@@ -437,7 +433,6 @@ export async function startStack(o: { logDir: string; staff?: boolean }): Promis
       X2F_TERMS_VERSION: TERMS_TEXT_VERSION,
       X2F_PGP_SIGNING_KEY_PATH: s.pgpKeyPath,
       X2F_PGP_SIGNING_FINGERPRINT: s.pgpFingerprint,
-      X2F_PASSWORD_PEPPERS: s.passwordPeppers,
       X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
       X2F_TOTP_KEYS: s.totpKeys,
       X2F_LOGIN_NAME_KEYS: s.loginNameKeys,

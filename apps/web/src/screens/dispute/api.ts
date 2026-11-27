@@ -14,7 +14,7 @@ export type Reason = 'paid' | 'silent' | 'terms' | 'other';
 export type DisputeReason = Reason | 'escalated';
 export type Outcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
 
-/** The TradeView fields the dispute screens read. `counterparty` is a public display name. */
+/** The TradeView fields the dispute screens read. `counterparty` is a public Trade Tag. */
 export interface DisputeTrade {
   code: string;
   role: Party;
@@ -148,7 +148,7 @@ const INCIDENT = /^[0-9A-HJKMNP-TV-Z]{9}$/;
 /**
  * The dispute screens' view of a trade, mapped from Task 22's TradeView (one parser of the trade
  * view: `getTrade`/`parseTradeView` in api/trade.ts). The counterparty is `publicName` (FU-A's
- * public display name), the method sentence `methodOf(view).whatItIs`.
+ * public Trade Tag), the method sentence `methodOf(view).whatItIs`.
  */
 export function tradeFromView(v: TradeView): DisputeTrade {
   return {

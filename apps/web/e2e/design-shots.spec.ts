@@ -82,30 +82,43 @@ async function shot(page: Page, name: string, o: { nightOnly?: boolean; scrollTo
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const LATER = '2099-01-01T00:00:00.000Z';
-const HOLD_UNTIL = '2099-01-02T15:00:00.000Z';
 const noEvents = (page: Page) => page.route('**/v1/events', (r) => r.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: 'retry: 600000\n\n' }));
 
-// ---- 01-13 New-device approval and the 24-hour hold (Plan 2 Tasks 16-17) ----------------------------
+// ---- 01-11 New-device approval and the recovery-code login (Plan 2 Tasks 16-17) -------------------
+// No passwords, 24-hour holds or staged changes since 26 Nov 2026: shots 04 (a login refused during
+// the hold), 12 (the hold banner), 13 (a staged change) and 20 (an invite refused as a weak session)
+// went with them; 05 is the recovery-code login's "You're in" now. Every login here is a PGP login
+// (login.spec.ts's `pgpLogin`), and every confirm the PGP key.
 
-const TRADER_ME = { displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true };
+const TRADER_ME = { tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], termsCurrent: true };
+const LOGIN_MESSAGE = '-----BEGIN PGP MESSAGE-----\n\nwcBMA0test\n-----END PGP MESSAGE-----\n';
+const LOGIN_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEtest\n-----END PGP PUBLIC KEY BLOCK-----\n';
 
-async function passwordLogin(page: Page): Promise<void> {
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+/** Stubs a PGP login whose finish answers with `finish` (the start always sends a message). */
+async function stubPgpLogin(page: Page, finish: (r: Route) => Promise<void>): Promise<void> {
+  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: LOGIN_MESSAGE, expiresAt: LATER }));
+  await page.route('**/v1/login/pgp/finish', finish);
+}
+
+async function pgpLogin(page: Page): Promise<void> {
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
+  await page.fill('#pgp-key', LOGIN_KEY);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '12345678');
+  await page.click('[data-part="pgp-login"]');
 }
 
 test('01-02 the new device: the 2-digit number, then let in', async ({ page }) => {
   await page.route('**/v1/account/me', json(TRADER_ME));
   const id = '11111111-1111-4111-8111-111111111111';
-  await page.route('**/v1/login/password', json({ status: 'approve-on-device', approvalId: id, number: 47, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+  await stubPgpLogin(page, json({ status: 'approve-on-device', approvalId: id, number: 47, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
   let letIn = false;
   await page.route(`**/v1/login/approval/${id}/poll`, (r) =>
     json(letIn ? { status: 'ok', loggedOut: [] } : { status: 'waiting', expiresAt: new Date(Date.now() + 240_000).toISOString() })(r),
   );
   await page.goto('/login?returnTo=%2Fbuy');
-  await passwordLogin(page);
+  await pgpLogin(page);
   await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
   await shot(page, '01-login-approve-number');
   letIn = true;
@@ -115,36 +128,33 @@ test('01-02 the new device: the 2-digit number, then let in', async ({ page }) =
 
 test('03 the new device: blocked', async ({ page }) => {
   const id = '22222222-2222-4222-8222-222222222222';
-  await page.route('**/v1/login/password', json({ status: 'approve-on-device', approvalId: id, number: 12, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+  await stubPgpLogin(page, json({ status: 'approve-on-device', approvalId: id, number: 12, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
   await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'blocked' }));
   await page.goto('/login');
-  await passwordLogin(page);
+  await pgpLogin(page);
   await expect(page.locator('[data-part="approve-blocked"]')).toContainText('This login was blocked');
   await shot(page, '03-login-approve-blocked');
 });
 
-test('04 a login refused during the 24-hour hold (CantDoThat)', async ({ page }) => {
-  await page.route('**/v1/login/password', json({ error: 'recovery-hold', holdUntil: HOLD_UNTIL }, 403));
-  await page.goto('/login');
-  await passwordLogin(page);
-  await expect(page.locator('[role="dialog"] [data-part="cant-do-that"]')).toContainText("This login can't get in until");
-  await shot(page, '04-login-hold-refused');
-});
-
-test('05 a backup login starts the 24-hour hold', async ({ page }) => {
-  await page.route('**/v1/account/me', json({ ...TRADER_ME, level: 'recovery', holdUntil: HOLD_UNTIL }));
-  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: HOLD_UNTIL }));
+test("05 a recovery-code login: \"You're in\", the hour to change login methods, the code burned", async ({ page }) => {
+  await page.route('**/v1/account/me', json(TRADER_ME));
+  await page.route('**/v1/login/backup', json({ status: 'ok' }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
-  await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
-  await shot(page, '05-backup-login-hold-note');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText("You're in");
+  await expect(page.locator('[data-part="recovery-window-note"]')).toBeVisible();
+  await expect(page.locator('[data-part="recovery-continue"]')).toBeVisible();
+  await shot(page, '05-backup-login-youre-in');
 });
 
 async function securityApi(page: Page, o: { me?: Record<string, unknown>; sessions?: unknown[]; devices?: unknown } = {}): Promise<void> {
   await page.route('**/v1/account/me', json({ ...TRADER_ME, ...o.me }));
-  await page.route('**/v1/account/methods', json([{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]));
+  await page.route('**/v1/account/methods', json([
+    { type: 'pgp', id: 'pgp-1', label: 'PGP key', createdAt: null, lastUsedAt: null },
+    { type: 'passkey', id: 'k1', label: 'Passkey', createdAt: null, lastUsedAt: null },
+  ]));
   await page.route('**/v1/account/sessions', json(o.sessions ?? [
     { id: 's1', deviceLabel: 'Browser on Linux', level: 'full', createdAt: '2026-10-20T00:00:00.000Z', lastSeenAt: '2026-10-31T00:00:00.000Z', current: true, member: null },
     { id: 's2', deviceLabel: 'Chrome on Android', level: 'full', createdAt: '2026-10-22T00:00:00.000Z', lastSeenAt: '2026-10-30T00:00:00.000Z', current: false, member: null },
@@ -227,34 +237,16 @@ test('11w-06w the Desktop layout (1280x800): Devices, and the "Is this you?" dia
   await shot(page, '06w-security-approve-ask-wide');
 });
 
-test('12 a held backup session: the hold banner on Security', async ({ page }) => {
-  await securityApi(page, { me: { level: 'recovery', holdUntil: HOLD_UNTIL } });
-  await page.goto('/settings/security');
-  await expect(page.locator('[data-part="hold-banner"]')).toContainText('24-hour hold');
-  await shot(page, '12-security-hold-banner');
-});
-
-test('13 a change from a username-and-password login is staged: "Saved as a draft"', async ({ page }) => {
-  // The logout timer that used to be this shot's staged change is retired (session length, owner
-  // 2 Nov 2026): One device at a time on Devices is the staged change now.
-  await securityApi(page);
-  await page.route('**/v1/account/security/one-device', json({ status: 'staged', changeId: '55555555-5555-4555-8555-555555555555' }, 202));
-  await page.goto('/settings/devices');
-  await page.locator('[data-part="one-device-toggle"]').click();
-  await expect(page.locator('[data-part="staged-note"]')).toContainText('Saved as a draft');
-  await shot(page, '13-devices-staged-change', { scrollTo: page.locator('[data-part="staged-note"]') });
-});
-
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------
 
 const CODE = 'Tq9vX2fInviteCodeAAAAAAAAAAAAAAAAAAAAAAA_-Z';
 const PGP_MESSAGE = '-----BEGIN PGP MESSAGE-----\n\nwcBMA0team\n-----END PGP MESSAGE-----\n';
 const FAKE_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEteam\n-----END PGP PUBLIC KEY BLOCK-----\n';
-const OWNER_ME = { displayName: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], member: null };
+const OWNER_ME = { tradeTag: 'Calcium', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], member: null };
 const memberMe = (roles: string[]) => ({ ...OWNER_ME, methods: ['pgp', 'security-key'], member: { name: 'Aurora', roles } });
-type Member = { id: string; displayName: string; roles: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
-const member = (id: string, displayName: string, roles: string[], status = 'active'): Member => ({
-  id, displayName, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
+type Member = { id: string; tradeTag: string; roles: string[]; status: string; inviteExpiresAt: string | null; joinedAt: string | null; createdAt: string };
+const member = (id: string, tradeTag: string, roles: string[], status = 'active'): Member => ({
+  id, tradeTag, roles, status, inviteExpiresAt: status === 'active' ? null : LATER, joinedAt: status === 'active' ? '2026-10-29T10:00:00.000Z' : null, createdAt: '2026-10-29T09:00:00.000Z',
 });
 const AUDIT = [
   { id: '4', at: '2026-10-30T10:03:00.000Z', memberId: 'm2', memberName: 'Basil', action: 'mark-paid', tradeCode: 'K7M2-9QXA-4FTR-8WPN', detail: {} },
@@ -263,9 +255,10 @@ const AUDIT = [
   { id: '1', at: '2026-10-30T10:00:00.000Z', memberId: 'm1', memberName: 'Aurora', action: 'offer-posted', tradeCode: null, detail: {} },
 ];
 
-async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; inviteAnswer?: { status: number; body: unknown } }): Promise<void> {
+async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[] }): Promise<void> {
   await page.route('**/v1/account/me', json(OWNER_ME));
-  await page.route('**/v1/confirm/password', json({ confirmToken: 'tok-1' }));
+  await page.route('**/v1/confirm/pgp/start', json({ challengeId: 'ch-1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER }));
+  await page.route('**/v1/confirm/pgp/finish', json({ confirmToken: 'tok-1' }));
   await page.route('**/v1/team', (r) => json({ members: s.members, max: 3 })(r));
   // Job 1c: the API's own permission catalogue.
   await page.route('**/v1/team/permissions', json(catalogueView()));
@@ -277,16 +270,17 @@ async function ownerApi(page: Page, s: { members: Member[]; audit?: unknown[]; i
   await page.route('**/v1/team/invites', (r) => {
     const body = r.request().postDataJSON() as Record<string, unknown>;
     if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: body.abilities !== undefined ? 'team-invite-abilities' : 'team-invite' }, 403)(r);
-    if (s.inviteAnswer) return json(s.inviteAnswer.body, s.inviteAnswer.status)(r);
-    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.displayName), (body.roles as string[] | undefined) ?? [], 'invited')];
+    s.members = [...s.members, member(`m${s.members.length + 1}`, String(body.tradeTag), (body.roles as string[] | undefined) ?? [], 'invited')];
     return json({ id: `m${s.members.length}`, invite: CODE, expiresAt: LATER }, 201)(r);
   });
 }
 
-async function confirmWithPassword(page: Page, shotName?: string): Promise<void> {
+/** The confirm sheet with the account's PGP key (no passwords since 26 Nov 2026; team.spec.ts's `confirmWithPgp`). */
+async function confirmWithPgp(page: Page, shotName?: string): Promise<void> {
   const sheet = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(sheet).toBeVisible();
-  await sheet.getByLabel('Your password').fill('Correct-Horse-9!');
+  await sheet.getByRole('button', { name: 'Use your PGP key' }).click();
+  await sheet.getByLabel('Login code').fill('123456');
   if (shotName) await shot(page, shotName);
   await sheet.getByRole('button', { name: 'Confirm' }).click();
 }
@@ -300,7 +294,7 @@ test('14-16 the owner invites a member: the form, the confirm, the link', async 
   await page.locator('[data-part="team-invite"] [data-part="group-trades"]').click();
   await shot(page, '14-team-owner-invite-form');
   await page.locator('[data-part="invite"]').click();
-  await confirmWithPassword(page, '15-team-owner-invite-confirm');
+  await confirmWithPgp(page, '15-team-owner-invite-confirm');
   await expect(page.locator('[data-part="invite-url"]')).toBeVisible();
   await shot(page, '16-team-owner-invite-link', { scrollTo: page.locator('[data-part="invite-url"]') });
 });
@@ -320,19 +314,9 @@ test('19 a full team: the invite control disabled with the board note (review sh
   await shot(page, '19-team-full-invite-disabled', { scrollTo: page.locator('[data-part="invite"]') });
 });
 
-test('20 an invite from a one-proof login is refused (CantDoThat weak-session)', async ({ page }) => {
-  await ownerApi(page, { members: [member('m1', 'Aurora', ['trades'])], inviteAnswer: { status: 403, body: { error: 'weak-session' } } });
-  await page.goto('/settings/team');
-  await page.getByLabel('Their name on your team').fill('Cedric');
-  await page.locator('[data-part="invite"]').click();
-  await confirmWithPassword(page);
-  await expect(page.locator('[data-part="cant-do-that"]')).toHaveAttribute('data-from', 'weak-session');
-  await shot(page, '20-team-refused-weak-session');
-});
-
 async function joinApi(page: Page, invite?: { status: number; body: unknown }): Promise<void> {
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
-  await page.route('**/v1/team/invite', json(invite?.body ?? { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/team/invite', json(invite?.body ?? { tradeTag: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
   await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER }));
   await page.route('**/v1/team/join/finish', json({ setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: LATER }, 201));
@@ -423,7 +407,7 @@ test("28-29 a member's trade room: waiting for the owner's device; a standing pr
 
 test("30 the owner's Devices list names a member's session", async ({ page }) => {
   await securityApi(page, {
-    me: { displayName: 'Calcium', member: null },
+    me: { tradeTag: 'Calcium', member: null },
     sessions: [
       { id: 's-own', deviceLabel: 'Pixel 8', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: true, member: null },
       { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
@@ -447,7 +431,7 @@ const myOffers = (): Offer[] => [
 ];
 
 async function myOffersApi(page: Page, s: { offers: Offer[]; refuseOn?: string }): Promise<void> {
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route('**/v1/account/offers', (r) => json(s.offers)(r));
   await page.route('**/v1/account/offers/status', (r) => {
     const body = r.request().postDataJSON() as { ids: string[]; status: 'live' | 'paused' };
@@ -551,7 +535,7 @@ async function stubChat(
     const path = url.pathname.replace(`/v1/chats/${chatId}`, '');
     const method = r.request().method();
     if (path === '' && method === 'GET') {
-      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: other }, tradeCode, disputeOpen: o.disputeOpen ?? false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
+      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: other }, tradeCode, disputeOpen: o.disputeOpen ?? false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
     }
     if (path === '/identity' && method === 'POST') {
       const body = r.request().postDataJSON() as { signPublic: string; boxPublic: string; proof: string };
@@ -617,7 +601,7 @@ async function openRoom(
   o: { warned?: boolean; chat?: string[]; me?: Record<string, unknown>; confirmations?: unknown; dispute?: unknown; url?: string } = {},
 ): Promise<Room> {
   const s: Room = { view };
-  await page.route('**/v1/account/me', json(o.me ?? { displayName: view.role === 'buyer' ? 'mira.k' : 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json(o.me ?? { tradeTag: view.role === 'buyer' ? 'mira.k' : 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/trades\/[^/]+(\/events)?$/, async (route) => {
     const req = route.request();
     if (req.method() === 'POST') {
@@ -629,7 +613,7 @@ async function openRoom(
   await page.route(/\/v1\/trades\/[^/]+\/confirmations$/, json(o.confirmations ?? { confirmations: 12, target: 10, payoutEnd: 'k3Fz' }));
   await page.route(/\/v1\/trades\/[^/]+\/dispute$/, o.dispute === undefined ? json({ error: 'not-found' }, 404) : json(o.dispute));
   await noEvents(page);
-  if (o.chat) await stubChat(page, view.code, view.role, view.counterparty.displayName, o.chat);
+  if (o.chat) await stubChat(page, view.code, view.role, view.counterparty.tradeTag, o.chat);
   await page.addInitScript(
     (f) => {
       window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic: f.amountAtomic, fiatCents: f.fiatCents, deal: { poster: 'seller', takeAmountAtomic: f.amountAtomic } };
@@ -649,7 +633,7 @@ async function openRoom(
 }
 
 const roomState = (page: Page, state: string) => expect(page.locator('main[data-screen="trade"]')).toHaveAttribute('data-trade-state', state);
-const SELLER_SECURED: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+const SELLER_SECURED: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, tradeTag: 'mira.k' } };
 const CHAT_LINES = ['Hi! Sending the Zelle payment now.', 'Memo has the trade code.'];
 
 test('36 BuyerPay while the escrow secures', async ({ page }) => {
@@ -764,7 +748,7 @@ test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async
   // The buyer's view of satoshi_ghost's trade (review 48: not mira.k), with the time-ran-out timeline in order.
   const ago = (min: number) => new Date(Date.parse(SERVER_NOW) - min * 60_000).toISOString();
   const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), closedAt: ago(600), txHash: 'ab'.repeat(32) });
-  const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
+  const v = { ...base, counterparty: { ...base.counterparty, tradeTag: 'satoshi_ghost' } };
   await openRoom(page, v);
   await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toBeVisible();
   await shot(page, '48-trade-buyer-refunded');
@@ -784,7 +768,7 @@ test('50 Task 20: the chat open on another device of the account', async ({ page
   const other = identity();
   const code = encodeURIComponent(PAY_SECURED.code);
   await page.route(`**/v1/trades/${code}/chat`, json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer' }));
-  await page.context().route('**/v1/chats/C7AT-2M9Q-XA4F-TR8W', json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: 'satoshi_ghost' }, tradeCode: PAY_SECURED.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-31T12:00:00.000Z', lastMessageAt: null }));
+  await page.context().route('**/v1/chats/C7AT-2M9Q-XA4F-TR8W', json({ chat: 'C7AT-2M9Q-XA4F-TR8W', role: 'buyer', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { tradeTag: 'satoshi_ghost' }, tradeCode: PAY_SECURED.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-31T12:00:00.000Z', lastMessageAt: null }));
   await page.addInitScript(() => {
     window.__x2fRealChat = true;
   });
@@ -814,7 +798,7 @@ test('53 an unfolded Fold (884x1104): the offers list (SellOffers)', async ({ pa
   await page.setViewportSize(FOLD);
   await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
   await page.route('**/v1/wallets', json([...B.wallets]));
-  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: ['pgp'] }));
   await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
   await page.goto('/sell/ZELLE');
   // Two panes (Fold-Offers): the list picks, the quote is beside it.
@@ -865,7 +849,7 @@ const disputeTrade = (o: Record<string, unknown> = {}) => ({
   role: 'buyer',
   poster: 'seller',
   state: 'paid',
-  counterparty: { displayName: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+  counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
   paidAt: T('08:02'),
   confirmBy: T('09:32'),
   confirmWindowMin: 90,
@@ -889,7 +873,7 @@ const RULING = {
 };
 
 async function disputeApi(page: Page, trade: unknown, dispute?: unknown): Promise<void> {
-  await page.route('**/v1/account/me', json({ displayName: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'mira.k', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 3, bestRate: null }] }));
   await page.route(`**/v1/trades/${BOARD.code}`, json(trade));
   await page.route(new RegExp(`/v1/trades/${BOARD.code}/(dispute|appeal)$`), dispute === undefined ? json({ error: 'not-found' }, 404) : json(dispute));
@@ -947,7 +931,7 @@ test('60 News', async ({ page }) => {
 });
 
 test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({ page }) => {
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
   await page.route('**/v1/offers?*', json([]));
   await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
@@ -973,30 +957,30 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
 
 async function blockApi(page: Page): Promise<void> {
   let blocks: string[] = [];
-  await page.route('**/v1/account/me', json({ displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['pgp'] }));
   await page.route('**/v1/events', json({ error: 'not-authenticated' }, 401));
   await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
   await page.route('**/v1/price?*', (r) => {
     const currency = new URL(r.request().url()).searchParams.get('currency');
     return json({ currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr })(r);
   });
-  await page.route('**/v1/offers?*', (r) => json(blocks.includes(B.offer.poster.displayName) ? [] : [B.offer])(r));
+  await page.route('**/v1/offers?*', (r) => json(blocks.includes(B.offer.poster.tradeTag) ? [] : [B.offer])(r));
   await page.route('**/v1/wallets', json([...B.wallets]));
-  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: ['pgp'] }));
   await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
-      blocks = [(r.request().postDataJSON() as { displayName: string }).displayName, ...blocks];
+      blocks = [(r.request().postDataJSON() as { tradeTag: string }).tradeTag, ...blocks];
       return r.fulfill({ status: 204 });
     }
-    return json(blocks.map((displayName) => ({ displayName, blockedAt: '2026-10-29T10:00:00.000Z' })))(r);
+    return json(blocks.map((tradeTag) => ({ tradeTag, blockedAt: '2026-10-29T10:00:00.000Z' })))(r);
   });
 }
 
 test('64-65 block a trader from the quote; Blocked traders', async ({ page }) => {
   await blockApi(page);
   await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
-  await page.getByRole('button', { name: `Block ${B.offer.poster.displayName}` }).click();
+  await page.getByRole('button', { name: `Block ${B.offer.poster.tradeTag}` }).click();
   await expect(page.locator('[data-part="block-ask"]')).toBeVisible();
   await shot(page, '64-block-ask-on-quote');
   await page.locator('[data-part="block-confirm"]').click();
@@ -1035,18 +1019,18 @@ test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
  * listed under side=buy, as quote.spec.ts's MIRA_BUYS. The buyer quote uses the BuyQuote board's
  * sell ad (BOARD_BUY_QUOTE) as it is.
  */
-const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
+const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, tradeTag: 'mira.k' } };
 
 /** Every /v1 call PostOffer and the shell make, stubbed (a call nobody named answers 404). */
 async function postApi(page: Page): Promise<void> {
   await page.route('**/v1/**', json({ error: 'not-found' }, 404));
   await noEvents(page);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
   await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
   await page.route('**/v1/offers?*', json([]));
   await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
   await page.route('**/v1/wallets', json([...B.wallets]));
-  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: ['pgp'] }));
   await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
 }
 

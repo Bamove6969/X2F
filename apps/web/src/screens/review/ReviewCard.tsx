@@ -37,7 +37,7 @@ export function ReviewCard({
   skip = postSkip,
 }: {
   code: string;
-  /** The other trader's public display name. */
+  /** The other trader's public Trade Tag. */
   counterparty: string;
   /** The side being rated (the other trader's role). */
   rated: Side;

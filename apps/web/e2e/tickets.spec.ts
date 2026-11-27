@@ -6,7 +6,7 @@
 // apps/api/src/tickets/traderRoutes.ts, and answers like it: the staff reply arrives between loads.
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-const ME = { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password', 'totp'], hasBackup: true, suggestions: [], holdUntil: null };
+const ME = { tradeTag: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password', 'totp'], hasBackup: true, suggestions: [], holdUntil: null };
 const ID = '5d0c8f6e-4c1b-4a8e-9a57-0b3c2d1e4f60';
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 

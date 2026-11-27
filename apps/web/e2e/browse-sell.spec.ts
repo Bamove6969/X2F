@@ -13,7 +13,7 @@ const EUR_LIVE: Row[] = [{ id: 'SEPA', name: 'SEPA', group: 'Bank transfers', gi
 const EUR_OFFER = {
   ...boardSellOffers()[0]!,
   id: 'offer-eur',
-  poster: { ...boardSellOffers()[0]!.poster, displayName: 'euro_buyer' },
+  poster: { ...boardSellOffers()[0]!.poster, tradeTag: 'euro_buyer' },
   rate: '30500',
 };
 

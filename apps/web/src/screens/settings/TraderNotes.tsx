@@ -36,7 +36,7 @@ function cantDoOf(e: unknown): CantDo | null {
   return null;
 }
 
-function NotesBody({ displayName, access, id }: { displayName: string; access: NotesAccess; id: string }) {
+function NotesBody({ tradeTag, access, id }: { tradeTag: string; access: NotesAccess; id: string }) {
   const [load, setLoad] = useState<Load>(access.view ? { kind: 'loading' } : { kind: 'ok', notes: [] });
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,7 +51,7 @@ function NotesBody({ displayName, access, id }: { displayName: string; access: N
     if (!access.view) return;
     const ctl = new AbortController();
     setLoad({ kind: 'loading' });
-    fetchNotes(displayName, ctl.signal).then(
+    fetchNotes(tradeTag, ctl.signal).then(
       (notes) => setLoad({ kind: 'ok', notes }),
       (e: unknown) => {
         if (ctl.signal.aborted) return;
@@ -61,7 +61,7 @@ function NotesBody({ displayName, access, id }: { displayName: string; access: N
       },
     );
     return () => ctl.abort();
-  }, [displayName, access.view, tick]);
+  }, [tradeTag, access.view, tick]);
 
   const fail = useCallback((e: unknown) => {
     const c = cantDoOf(e);
@@ -78,7 +78,7 @@ function NotesBody({ displayName, access, id }: { displayName: string; access: N
     setError(null);
     setBusy(true);
     try {
-      const note = await addNote(displayName, t);
+      const note = await addNote(tradeTag, t);
       setText('');
       setSaid(C.saved);
       if (access.view) setLoad((l) => (l.kind === 'ok' ? { kind: 'ok', notes: [note, ...l.notes] } : l));
@@ -107,7 +107,7 @@ function NotesBody({ displayName, access, id }: { displayName: string; access: N
   };
 
   return (
-    <section className="x2f-stack" id={id} data-part="notes-panel" aria-label={C.summary(displayName)}>
+    <section className="x2f-stack" id={id} data-part="notes-panel" aria-label={C.summary(tradeTag)}>
       <p className="x2f-note">{C.privacy}</p>
       {access.view && load.kind === 'loading' ? <p className="x2f-note">{C.loading}</p> : null}
       {access.view && load.kind === 'failed' && cantDo === null ? (
@@ -198,20 +198,20 @@ function NotesBody({ displayName, access, id }: { displayName: string; access: N
   );
 }
 
-/** The Notes panel for `displayName`, as `access` allows; nothing at all for a session that may neither read nor add. */
-export function TraderNotes({ displayName, access }: { displayName: string; access: NotesAccess }) {
+/** The Notes panel for `tradeTag`, as `access` allows; nothing at all for a session that may neither read nor add. */
+export function TraderNotes({ tradeTag, access }: { tradeTag: string; access: NotesAccess }) {
   if (!access.view && !access.add) return null;
   return (
     <div className="x2f-card" data-part="trader-notes">
-      <Disclosure summary={C.summary(displayName)} part="notes-open">
-        {(id) => <NotesBody displayName={displayName} access={access} id={id} />}
+      <Disclosure summary={C.summary(tradeTag)} part="notes-open">
+        {(id) => <NotesBody tradeTag={tradeTag} access={access} id={id} />}
       </Disclosure>
     </div>
   );
 }
 
 /** The panel for the signed-in session (its owner or member boxes). */
-export function SessionTraderNotes({ displayName }: { displayName: string }) {
+export function SessionTraderNotes({ tradeTag }: { tradeTag: string }) {
   const session = useSession();
-  return <TraderNotes displayName={displayName} access={notesAccessOf(session)} />;
+  return <TraderNotes tradeTag={tradeTag} access={notesAccessOf(session)} />;
 }

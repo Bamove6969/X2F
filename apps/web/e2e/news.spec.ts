@@ -24,6 +24,16 @@ async function stubNews(page: Page, items: unknown[]): Promise<{ writes: string[
   return { writes };
 }
 
+/** A PGP login from the method choice (the stubs answer any key and code). */
+async function pgpLogin(page: Page): Promise<void> {
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'nightowl');
+  await page.fill('#pgp-key', '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEtest\n-----END PGP PUBLIC KEY BLOCK-----\n');
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '12345678');
+  await page.click('[data-part="pgp-login"]');
+}
+
 const titles = (page: Page) => page.locator('[data-part="news-item"] [data-part="news-title"]').allTextContents();
 const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] [data-part="news-title"]').allTextContents();
 
@@ -42,7 +52,7 @@ test('logged out, News never opens: the front door (the Landing board) takes the
 
 test('newest first with dates, all new, then seen on the next visit', async ({ page }) => {
   const s = await stubNews(page, ITEMS);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], termsCurrent: true }));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   // The heading shows before the list loads (failed once under load): wait for the items.
@@ -65,13 +75,11 @@ test('newest first with dates, all new, then seen on the next visit', async ({ p
 
 test('after login, unseen news opens first and Continue goes on', async ({ page }) => {
   await stubNews(page, ITEMS);
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
-  await page.route('**/v1/login/password', json({ status: 'ok' }));
+  await page.route('**/v1/account/me', json({ tradeTag: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp', 'passkey'], hasBackup: true, suggestions: [], termsCurrent: true }));
+  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: '-----BEGIN PGP MESSAGE-----\n\nwcBMA0test\n-----END PGP MESSAGE-----\n', expiresAt: '2099-01-01T00:00:00.000Z' }));
+  await page.route('**/v1/login/pgp/finish', json({ status: 'ok' }));
   await page.goto('/login?returnTo=%2Fwallets');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page);
   await expect(page).toHaveURL(/\/news\?after=login&returnTo=%2Fwallets$/);
   // Wait for the list: allTextContents() reads once and does not retry.
   await expect(page.locator('[data-part="news-item"][data-new] h2')).toHaveCount(3);
@@ -80,10 +88,7 @@ test('after login, unseen news opens first and Continue goes on', async ({ page 
 
   // Logging in again with nothing new goes straight on.
   await page.goto('/login?returnTo=%2Fbuy');
-  await page.click('[data-method="password"]');
-  await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'Correct-Horse-9!');
-  await page.click('[data-part="password-login"]');
+  await pgpLogin(page);
   await expect(page).toHaveURL(/\/buy$/);
 });
 

@@ -23,8 +23,8 @@ function json(status: number, body: unknown): Response {
 }
 
 const MEMBERS = [
-  { id: 'm1', displayName: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
-  { id: 'm2', displayName: 'Basil', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+  { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+  { id: 'm2', tradeTag: 'Basil', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
 ];
 
 beforeEach(() => {
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', async (input: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET';
     calls.push({ url: input, method });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: null });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: null });
     if (input === '/v1/team') return json(200, { members: MEMBERS, max: 3 });
     if (input === '/v1/team/audit') return json(200, []);
     if (input === '/v1/team/permissions') return json(200, catalogueView());
@@ -69,7 +69,7 @@ const byPart = (host: ParentNode, part: string) => host.querySelector(`[data-par
 const click = (el: Element | null) => fire(el!, new MouseEvent('click', { bubbles: true }));
 
 async function opened(): Promise<HTMLElement> {
-  const { host } = render(<MemoryRouter><MemberSessions member={{ id: 'm1', displayName: 'Aurora' }} /></MemoryRouter>);
+  const { host } = render(<MemoryRouter><MemberSessions member={{ id: 'm1', tradeTag: 'Aurora' }} /></MemoryRouter>);
   // Nothing is read until the owner opens the row.
   expect(calls.filter((c) => c.url.includes('/sessions'))).toEqual([]);
   click(byPart(host, 'member-sessions'));
@@ -136,15 +136,14 @@ describe('MemberSessions', () => {
     expect(byPart(host, 'sessions-none')?.textContent).toBe('Aurora is not signed in on any device.');
   });
 
-  it('a username-and-password login is refused through CantDoThat, and the session stays', async () => {
-    endReply = { status: 403, body: { error: 'weak-session' } };
+  it('an end that fails says so, and the session stays (no weak-session refusal: owner, 26 Nov 2026)', async () => {
+    endReply = { status: 500, body: { error: 'internal' } };
     const host = await opened();
     click(host.querySelector('[data-session="s1"] [data-part="end-member-session"]'));
     await settle();
     click(byPart(document.body, 'end-member-confirm'));
     await settle();
-    expect(document.body.textContent).toContain("That device can't be logged out from here");
-    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(C.endFailed);
     expect(host.querySelectorAll('[data-session]')).toHaveLength(2);
   });
 

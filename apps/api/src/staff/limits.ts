@@ -1,7 +1,7 @@
 import { LIMIT_STAGES, type KeyTapIntent, type LimitStage } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { loadDispute } from '../disputes/store.js';
 import { actorOf, body, codeOf, mayWork } from '../disputes/staffRoutes.js';
 import { ApiError } from '../errors.js';
@@ -144,10 +144,10 @@ export function staffLimitRoutes(app: FastifyInstance): void {
     // Review m7: the starter settings once per list.
     const settings = await loadStarterSettings(db);
     const { rows } = await db.query<{
-      id: string; account_id: string; display_name: string; cap_usd: number | null; stage: LimitStage | null; reason: string;
+      id: string; account_id: string; trade_tag: string; cap_usd: number | null; stage: LimitStage | null; reason: string;
       from_code: string | null; recommended_by: string; by_name: string; created_at: Date;
     }>(
-      `select r.id, r.account_id, a.display_name, r.cap_usd, r.stage, r.reason, r.from_code, r.recommended_by, s.display_name as by_name, r.created_at
+      `select r.id, r.account_id, a.trade_tag, r.cap_usd, r.stage, r.reason, r.from_code, r.recommended_by, s.trade_tag as by_name, r.created_at
          from limit_recommendations r
          join accounts a on a.id = r.account_id
          join accounts s on s.id = r.recommended_by
@@ -161,7 +161,7 @@ export function staffLimitRoutes(app: FastifyInstance): void {
       recommendations.push({
         id: r.id,
         accountId: r.account_id,
-        displayName: r.display_name,
+        tradeTag: r.trade_tag,
         capUsd: r.cap_usd,
         stage: r.stage,
         reason: r.reason,

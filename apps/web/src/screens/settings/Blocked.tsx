@@ -41,7 +41,7 @@ export function Blocked() {
     void load().catch(() => setLoadFailed(true));
   }, [load, signedIn]);
 
-  const mark = (name: string, unblocked: boolean) => setRows((l) => (l ?? []).map((r) => (r.displayName === name ? { ...r, unblocked } : r)));
+  const mark = (name: string, unblocked: boolean) => setRows((l) => (l ?? []).map((r) => (r.tradeTag === name ? { ...r, unblocked } : r)));
 
   const unblock = async (name: string) => {
     try {
@@ -52,8 +52,8 @@ export function Blocked() {
       // A 404 means no account has that name now: drop the row only if the server's list agrees.
       if (e instanceof ApiCallError && e.status === 404) {
         const now = await fetchBlocked().catch(() => null);
-        if (now !== null && !now.some((x) => x.displayName === name)) {
-          setRows((l) => (l ?? []).filter((r) => r.displayName !== name));
+        if (now !== null && !now.some((x) => x.tradeTag === name)) {
+          setRows((l) => (l ?? []).filter((r) => r.tradeTag !== name));
           return;
         }
       }
@@ -72,18 +72,18 @@ export function Blocked() {
     // new time). Show the server's row, keeping every other row (and its undo) as it is; if the list
     // cannot be read, at least drop the deleted note.
     const now = await fetchBlocked().catch(() => null);
-    const fresh = now?.find((x) => x.displayName === name);
-    setRows((l) => (l ?? []).map((r) => (r.displayName === name ? { ...r, ...(fresh ?? { note: null }), unblocked: false } : r)));
+    const fresh = now?.find((x) => x.tradeTag === name);
+    setRows((l) => (l ?? []).map((r) => (r.tradeTag === name ? { ...r, ...(fresh ?? { note: null }), unblocked: false } : r)));
     setSaid(C.reblocked(name));
   };
 
   const toggle = async (r: Row) => {
     if (busy !== null) return;
-    setBusy(r.displayName);
+    setBusy(r.tradeTag);
     setError(null);
     setSaid('');
     try {
-      await (r.unblocked ? reblock(r.displayName) : unblock(r.displayName));
+      await (r.unblocked ? reblock(r.tradeTag) : unblock(r.tradeTag));
     } finally {
       setBusy(null);
     }
@@ -94,7 +94,7 @@ export function Blocked() {
     setSaid('');
     try {
       const note = await setBlockNote(name, text);
-      setRows((l) => (l ?? []).map((r) => (r.displayName === name ? { ...r, note } : r)));
+      setRows((l) => (l ?? []).map((r) => (r.tradeTag === name ? { ...r, note } : r)));
       setSaid(note === null ? C.noteRemoved(name) : C.noteSaved(name));
       return true;
     } catch {
@@ -157,18 +157,18 @@ export function Blocked() {
             </h2>
             <ul className="x2f-list" data-part="blocked-list">
               {rows.map((r) => (
-                <li className="x2f-list__row" key={r.displayName} data-unblocked={r.unblocked ? 'true' : 'false'}>
+                <li className="x2f-list__row" key={r.tradeTag} data-unblocked={r.unblocked ? 'true' : 'false'}>
                   <span className="x2f-list__label">
-                    <span data-username="">{r.displayName}</span>
+                    <span data-username="">{r.tradeTag}</span>
                     <br />
                     <span className="x2f-list__time">{r.unblocked ? C.unblockedRow : C.blockedOn(r.blockedAt)}</span>
-                    {!r.unblocked ? <BlockNote name={r.displayName} note={r.note} save={saveNote} /> : null}
+                    {!r.unblocked ? <BlockNote name={r.tradeTag} note={r.note} save={saveNote} /> : null}
                   </span>
                   <Button
                     variant="secondary"
                     // Not `disabled`: disabling the focused button would drop focus to the page.
                     aria-disabled={busy !== null}
-                    aria-label={r.unblocked ? C.undo(r.displayName) : C.unblock(r.displayName)}
+                    aria-label={r.unblocked ? C.undo(r.tradeTag) : C.unblock(r.tradeTag)}
                     onClick={() => void toggle(r)}
                     data-part="unblock"
                   >

@@ -30,8 +30,8 @@ const PROFILE = {
 const NOW = '2026-10-25T12:00:00.000Z';
 const TX = 'ab'.repeat(32);
 
-/** The other trader as the API sends them (FU-A: the public display name only). */
-const who = (displayName: string): TraderSummary => ({ displayName, completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [], stage: 'building' });
+/** The other trader as the API sends them (FU-A: the public Trade Tag only). */
+const who = (tradeTag: string): TraderSummary => ({ tradeTag, completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [], stage: 'building' });
 
 type Over = Omit<Partial<ReleaseTrade>, 'fee'> & { fee?: ReleaseTrade['fee'] | undefined };
 
@@ -912,7 +912,7 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     expect(screenFor(full({ role: 'buyer', state: 'paid' }), 0)).not.toBe(ReleaseRoomScreen);
   });
 
-  it('uses the room\'s escrow, server clock and refresh, and shows the public display name', async () => {
+  it('uses the room\'s escrow, server clock and refresh, and shows the public Trade Tag', async () => {
     vi.useFakeTimers();
     answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
     const escrow = escrowStub();

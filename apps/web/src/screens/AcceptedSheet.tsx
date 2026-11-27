@@ -110,7 +110,7 @@ export async function postTradeWallet(code: string, walletId: string, sellerLien
 type Phase = 'loading' | 'pick' | 'sending' | 'rate' | 'done';
 
 /**
- * Shown to an offer's poster on a live `accepted` event: "<display name> accepted your offer".
+ * Shown to an offer's poster on a live `accepted` event: "<Trade Tag> accepted your offer".
  * The sheet shows the deal from the poster's own trade view and the poster picks which of their
  * usable wallets this trade uses (spec 2.2 step 4; the default is picked first, owner 17 Nov Q9); escrow setup starts
  * after that, and the trade waits in `setup` until `setupBy`. A poster with no usable wallet gets

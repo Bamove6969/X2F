@@ -6,30 +6,25 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { Secret } from 'otpauth';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { fileAttestationPolicy } from '../src/auth/attestation.js';
-import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { BOUND_COOKIE, SESSION_KEY_HEADER } from '../src/auth/deviceBound.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
-import { hashPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
-import { sealSecret } from '../src/auth/totp.js';
 import type { Config } from '../src/config.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
-import { seedAccount, trustedDevice } from './helpers/accounts.js';
+import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { SIG } from './helpers/signature.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds } from './helpers/softAuthenticator.js';
-import { addTestLogin, codeAt } from './helpers/totp.js';
+import { logInWithKey, signUpWithKey } from './helpers/signup.js';
+import { addTestLogin } from './helpers/totp.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
 const DAY = 24 * 3600_000;
-const GOOD = 'Correct-Horse-9';
 const ALLOWED = '11111111-2222-4333-8444-555555555555';
 
 let app: FastifyInstance;
@@ -38,28 +33,25 @@ let setNow: (d: Date) => void;
 let now = T0;
 let step = 0;
 let cleanups: Array<() => Promise<void>> = [];
-let goodHash: { hash: string; pepperId: number };
 let pgpKey: Pair;
 let memberKey: Pair;
 let memberKey2: Pair;
 
 beforeAll(async () => {
-  const leaked = await fixtureLeakedList();
   const ca = createTestCa();
   const mdsDir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
   await writeTestMds(mdsDir, ca, { statements: [ALLOWED], allow: [ALLOWED], ownerAllow: [ALLOWED] });
   const attestation = fileAttestationPolicy(mdsDir);
   await attestation.init();
-  cleanups = [leaked.cleanup, () => rm(mdsDir, { recursive: true, force: true })];
+  cleanups = [() => rm(mdsDir, { recursive: true, force: true })];
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: leaked.list, attestation }));
+  ({ app, deps, setNow: set } = await testApp({ attestation }));
   setNow = (d) => {
     now = d;
     set(d);
   };
   addTestLogin(app, deps);
   (deps.config as Config).deviceBoundSessions = true;
-  goodHash = await hashPassword(deps.config, GOOD);
   pgpKey = await genKey();
   memberKey = await genKey();
   memberKey2 = await genKey();
@@ -122,43 +114,18 @@ async function expectBound(b: Browser): Promise<void> {
   expect(errorOf(await copied.get('/v1/account/me'))).toBe('session-proof-required');
 }
 
-async function withPassword(accountId: string): Promise<void> {
-  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [accountId, goodHash.hash, goodHash.pepperId, now]);
-}
-async function withTotp(accountId: string): Promise<string> {
-  const raw = randomBytes(20);
-  await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [accountId, sealSecret(deps, accountId, new Uint8Array(raw)), now]);
-  return new Secret({ buffer: new Uint8Array(raw).buffer }).base32;
-}
-/** Password then authenticator code, in `b`. */
-async function passwordAndCode(b: Browser, loginName: string, secret: string): Promise<LightMyRequestResponse> {
-  const first = await b.post('/v1/login/password', { loginName, password: GOOD, deviceLabel: 'Laptop' });
-  expect(first.json(), first.body).toMatchObject({ status: 'second-factor' });
-  return b.post('/v1/login/second-factor', { pendingId: (first.json() as { pendingId: string }).pendingId, code: codeAt(secret, now) });
+/** A passkey sign-up in `a`, then a passkey login in a new browser that waits for `a` to approve it. */
+async function waitingLogin(a: Browser, loginName: string): Promise<{ b: Browser; approvalId: string; number: number }> {
+  const { res: reg, auth } = await signUpWithKey(a, { tradeTag: `P${loginName}`, loginName, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion });
+  expect(reg.statusCode, reg.body).toBe(201);
+  const b = new Browser();
+  const wait = await logInWithKey(b, auth, 'Phone');
+  const w = wait.json() as { status: string; approvalId: string; number: number };
+  expect(w.status, wait.body).toBe('approve-on-device');
+  return { b, approvalId: w.approvalId, number: w.number };
 }
 
 describe('every real login path binds the session (S4)', () => {
-  it('password sign-up', async () => {
-    const b = new Browser();
-    const loginName = unique('reg');
-    const res = await b.post('/v1/register/password', { displayName: `P${loginName}`, loginName, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
-    expect(res.statusCode, res.body).toBe(201);
-    await expectBound(b);
-  });
-
-  it('password and authenticator code (the second-factor step)', async () => {
-    const loginName = unique('pw');
-    const id = await seedAccount(deps, { loginName });
-    await withPassword(id);
-    const secret = await withTotp(id);
-    // A browser the account knows (a password and a code get in there with no device to approve).
-    const b = new Browser();
-    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
-    const res = await passwordAndCode(b, loginName, secret);
-    expect(res.json(), res.body).toEqual({ status: 'ok' });
-    await expectBound(b);
-  });
-
   it('a team member\'s login (members log in with a PGP key or a security key): the member session is bound', async () => {
     const owner = await seedAccount(deps, { loginName: unique('teamowner') });
     const loginName = unique('member');
@@ -166,7 +133,7 @@ describe('every real login path binds the session (S4)', () => {
     for (const k of [memberKey, memberKey2]) await insertPgpKey(deps.db, deps.config, { accountId: memberId, fingerprint: k.fingerprint, armored: k.publicKey, now });
     const name = unique('Member');
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [owner, name, name.toLowerCase(), rolesToAbilities(['offers']), now, memberId],
     );
@@ -190,13 +157,7 @@ describe('every real login path binds the session (S4)', () => {
 
   it('a device-approval poll: the session opened by the new device\'s poll is bound to the new device\'s key', async () => {
     const a = new Browser();
-    const loginName = unique('appr');
-    const reg = await a.post('/v1/register/password', { displayName: `P${loginName}`, loginName, password: GOOD, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
-    expect(reg.statusCode, reg.body).toBe(201);
-    const b = new Browser();
-    const wait = await b.post('/v1/login/password', { loginName, password: GOOD, deviceLabel: 'Phone' });
-    const w = wait.json() as { status: string; approvalId: string; number: number };
-    expect(w.status, wait.body).toBe('approve-on-device');
+    const { b, ...w } = await waitingLogin(a, unique('appr'));
     expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
     expect((await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
     const poll = await b.post(`/v1/login/approval/${w.approvalId}/poll`);
@@ -217,16 +178,16 @@ describe('every real login path binds the session (S4)', () => {
   });
 
   it('a PGP login', async () => {
-    const displayName = unique('pgp');
+    const tradeTag = unique('pgp');
     const a = new Browser(null);
-    const start = await a.post('/v1/register/pgp/start', { displayName, loginName: `${displayName}.l`, publicKey: pgpKey.publicKey });
+    const start = await a.post('/v1/register/pgp/start', { tradeTag, loginName: `${tradeTag}.l`, publicKey: pgpKey.publicKey });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, pgpKey.privateKey));
     const fin = await a.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
     expect(fin.statusCode, fin.body).toBe(201);
     // A PGP key is a strong login: it gets in from a new browser while the account is logged in elsewhere (or asks that device; collected below).
     const b = new Browser();
-    const ls = await b.post('/v1/login/pgp/start', { key: pgpKey.publicKey, loginName: `${displayName}.l` });
+    const ls = await b.post('/v1/login/pgp/start', { key: pgpKey.publicKey, loginName: `${tradeTag}.l` });
     expect(ls.statusCode, ls.body).toBe(200);
     const lcode = codeOf(await decrypt(ls.json().encryptedMessage, pgpKey.privateKey));
     const res = await b.post('/v1/login/pgp/finish', { challengeId: ls.json().challengeId, code: lcode, deviceLabel: 'Laptop' });
@@ -244,7 +205,7 @@ describe('every real login path binds the session (S4)', () => {
     const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const loginName = unique('pk');
     const a = new Browser();
-    const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${loginName}`, loginName, kind: 'passkey' });
+    const start = await a.post('/v1/register/webauthn/start', { tradeTag: `D.${loginName}`, loginName, kind: 'passkey' });
     expect(start.statusCode, start.body).toBe(200);
     const { challengeId, options } = start.json();
     const reg = await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
@@ -280,10 +241,7 @@ describe('a malformed header spends no login factor (S5)', () => {
 
   it('an approval poll with a bad header is refused with 400 and the approval can still be collected', async () => {
     const a = new Browser();
-    const loginName = unique('appr');
-    expect((await a.post('/v1/register/password', { displayName: `P${loginName}`, loginName, password: GOOD, deviceLabel: 'Desk', acceptedTerms: deps.config.termsVersion, termsSignature: SIG })).statusCode).toBe(201);
-    const b = new Browser();
-    const w = (await b.post('/v1/login/password', { loginName, password: GOOD, deviceLabel: 'Phone' })).json() as { approvalId: string; number: number };
+    const { b, ...w } = await waitingLogin(a, unique('appr'));
     expect((await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
     const good = b.header;
     b.header = 'not base64!';

@@ -23,12 +23,36 @@ describe('Task 18 web still waits for its design and the member keys', () => {
     expect(existsSync(`${ROOT}apps/web/src/screens/settings/team.css`)).toBe(false);
   });
 
-  it('NEEDS_PLAN3_TASK42_MEMBER_KEY: a member device never starts an escrow step until the member key scheme lands', () => {
-    // The API refuses a member's release and trade identity (403 member-cannot-sign, R44); the web
-    // shows it through CantDoThat (teamCantDoText). Plan 3 Task 42 owns the trade side for members
-    // (chat label "<lead display name> Assistant N", owner p11-25 / S-105, from GET /v1/team and /v1/account/me `chatLabel`; proof; release with a per-member
-    // key). When its key scheme lands (apps/web/src/escrow/memberKey.ts), wire the member's device
-    // into the escrow there, drop the 'member-cannot-sign' words if no longer reachable, and delete this.
-    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`), 'Task 42 member keys landed: wire them in').toBe(false);
+  it('Task 42 member keys: a member acts in a trade only with the matching box, and only with the keys loaded by their own key', () => {
+    // The escrow-key sync (apps/web/src/escrow/keySync.ts, API escrowSync/routes.ts, migration 860)
+    // keeps an end-to-end encrypted copy of each trade's keys for the holder and the members it
+    // assigned ("Hold trade keys"). Owner Jess, 26 Nov 2026 (the 'trades-release' answer): a member
+    // acts in the account's trades with separate boxes, `trades-fund`, `trades-release`,
+    // `trades-upload-proof` and `trades-mark-paid`, each also needing `trades-escrow-keys`; their
+    // device loads the keys (escrow/memberKey.ts, unlocked with the member's own passkey, security
+    // key or PGP key) and runs the escrow only for such a step. A box missing: the action is not
+    // shown. Fund and release take a `fund-trade` / `release-trade` confirm. If a box is added,
+    // removed or renamed, change memberActs.ts and this check together.
+    const confirm = readFileSync(`${ROOT}packages/accounts/src/confirmAction.ts`, 'utf8');
+    expect(confirm).toMatch(/STRONG_ONLY_ACTIONS[^=]*= \[[^\]]*'release-trade'/);
+    expect(confirm).toMatch(/STRONG_ONLY_ACTIONS[^=]*= \[[^\]]*'fund-trade'/);
+    // Owner 26 Nov 2026 18:41 UTC: funding left the signing list too (Fund the escrow, a fund-trade key confirm).
+    expect(readFileSync(`${ROOT}apps/api/src/team/perms.ts`, 'utf8')).toMatch(/MEMBER_SIGNING_EVENTS_LIST: readonly string\[\] = \[\]/);
+    expect(existsSync(`${ROOT}apps/web/src/escrow/keySync.ts`)).toBe(true);
+    expect(readFileSync(`${ROOT}apps/web/src/escrow/worker.ts`, 'utf8')).toMatch(/withKeySync\(await openEscrowStore\(\), httpKeySyncApi\(\)\)/);
+    const room = readFileSync(`${ROOT}apps/web/src/screens/trade/TradeRoom.tsx`, 'utf8');
+    expect(room).toMatch(/if \(memberOf\(session\) !== null\) return <MemberRoom/);
+    // The member's step comes from their boxes only, never from the session's roles.
+    expect(room).toMatch(/const step = boxes === null \? null : memberStep\(view, acts\)/);
+    expect(existsSync(`${ROOT}apps/web/src/escrow/memberKey.ts`)).toBe(true);
+    const acts = readFileSync(`${ROOT}apps/web/src/screens/trade/memberActs.ts`, 'utf8');
+    for (const box of ['trades-fund', 'trades-release', 'trades-upload-proof', 'trades-mark-paid']) expect(acts, box).toContain(`'${box}'`);
+    // Every act needs Hold trade keys: without it, none.
+    expect(acts).toMatch(/if \(!keys\) return NO_ACTS;/);
+    // The release goes through the member's confirm, never the owner's bare post.
+    expect(readFileSync(`${ROOT}apps/web/src/screens/trade/SellerConfirm.tsx`, 'utf8')).toMatch(/confirmedEvent\(escrowCode, 'release-trade', 'release-started', member\.prove\)/);
+    // Never an authenticator code or a recovery code: the confirm sheet offers neither.
+    const sheet = readFileSync(`${ROOT}apps/web/src/screens/auth/ConfirmSheet.tsx`, 'utf8');
+    expect(sheet).not.toMatch(/methods\.includes\('totp'\)|methods\.includes\('recovery-codes'\)/);
   });
 });

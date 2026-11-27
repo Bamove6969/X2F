@@ -15,12 +15,12 @@ import { fire, render } from './render.js';
 
 const OPEN = {
   code: 'K7M2-9QXA-4FTR-8WPN', role: 'buyer', state: 'secured', amountAtomic: '1250000000000', fiatCents: '41250', currency: 'USD',
-  counterparty: { displayName: 'satoshi_ghost' }, takenAt: '2026-11-10T09:30:00.000Z', closedAt: null,
+  counterparty: { tradeTag: 'satoshi_ghost' }, takenAt: '2026-11-10T09:30:00.000Z', closedAt: null,
 };
-const OPEN2 = { ...OPEN, code: 'AB2C-3DEF-4GHJ-5KMN', role: 'seller', state: 'paid', counterparty: { displayName: 'moneta' }, takenAt: '2026-11-09T08:00:00.000Z' };
+const OPEN2 = { ...OPEN, code: 'AB2C-3DEF-4GHJ-5KMN', role: 'seller', state: 'paid', counterparty: { tradeTag: 'moneta' }, takenAt: '2026-11-09T08:00:00.000Z' };
 const DONE = {
   ...OPEN, code: 'Z9Y8-X7W6-V5T4-S3R2', role: 'seller', state: 'released', fiatCents: '9900', currency: 'EUR', amountAtomic: '300000000000',
-  counterparty: { displayName: 'oldfriend' }, takenAt: '2026-11-01T10:00:00.000Z', closedAt: '2026-11-01T12:15:00.000Z',
+  counterparty: { tradeTag: 'oldfriend' }, takenAt: '2026-11-01T10:00:00.000Z', closedAt: '2026-11-01T12:15:00.000Z',
 };
 
 type Answer = { status: number; json: unknown };

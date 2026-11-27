@@ -15,7 +15,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const H = 3_600_000;
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + H).toISOString() };
 const SETTINGS = { largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48, moderatorContactUrl: null, communityMatrixUrl: 'https://matrix.to/#/#x2f:matrix.org', communityTelegramUrl: null };
 const PAY = { modDisputeUsdCents: null, seniorDisputeUsdCents: null, seniorLargeTradeBp: null, largeTradeThresholdUsd: null, modFeeBp: null, seniorFeeBp: null, modFlatUsdCents: null, seniorFlatUsdCents: null };
 const STARTER = { ...STARTER_DEFAULTS, updatedAt: null as string | null };
@@ -219,9 +219,9 @@ describe('Staff pay owed', () => {
       'GET /staff/v1/pay/staff': {
         body: {
           members: [
-            { staffId: 's-1', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false, feeBp: 7500, effectiveFeeBp: 7500 },
-            { staffId: 'm-1', displayName: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true, feeBp: null, effectiveFeeBp: 4000 },
-            { staffId: 'h-1', displayName: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: null },
+            { staffId: 's-1', tradeTag: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '250000', unpaidAtomic: '1500000000000', owed: false, feeBp: 7500, effectiveFeeBp: 7500 },
+            { staffId: 'm-1', tradeTag: 'dmitri_k', role: 'mod', switchedOff: true, unpaidUsdCents: '-1250', unpaidAtomic: '0', owed: true, feeBp: null, effectiveFeeBp: 4000 },
+            { staffId: 'h-1', tradeTag: 'tobi.w', role: 'helper', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: null },
           ],
         },
       },
@@ -237,7 +237,7 @@ describe('Staff pay owed', () => {
   });
 
   it("changes one person's share of the fee with a staff-pay tap bound to them and the value", async () => {
-    const member = { staffId: '11111111-1111-4111-8111-111111111111', displayName: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: 2000 };
+    const member = { staffId: '11111111-1111-4111-8111-111111111111', tradeTag: 'sarah.v', role: 'senior', switchedOff: false, unpaidUsdCents: '0', unpaidAtomic: '0', owed: false, feeBp: null, effectiveFeeBp: 2000 };
     const c = api({
       'GET /staff/v1/pay/staff': { body: { members: [member] } },
       [`PUT /staff/v1/pay/staff/${member.staffId}`]: (b) => ({ body: { feeBp: (b as { feeBp: number | null }).feeBp } }),

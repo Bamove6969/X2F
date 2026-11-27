@@ -1274,54 +1274,6 @@
   text-align: center;
 }
 
-/* Owner #97 (16 Nov 2026): the security rating above the checklist and the links back to each
-   setting. DESIGNER-REVIEW: plain until design restyles it. */
-.x2f-welcome__rating {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--x2f-surface-raised);
-  font-size: 17px;
-}
-
-.x2f-welcome__rating-line,
-.x2f-welcome__rating-raise {
-  margin: 0;
-}
-
-.x2f-welcome__rating-raise {
-  color: var(--x2f-ink-muted);
-  font-size: 15px;
-}
-
-/* Owner demo note #167 (23 Nov): the rating line in the biggest type after the heading, and the
-   rating word coloured by level: Highly secure green, Medium amber (the caution token, clearly not
-   the orange of the button below), Weak red. */
-.x2f-welcome__rating-line {
-  font-family: var(--x2f-screen-title-family);
-  font-size: var(--x2f-screen-title-size);
-  line-height: var(--x2f-screen-title-line);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.x2f-welcome__rating-line .x2f-welcome__title {
-  font-weight: 700;
-}
-
-.x2f-welcome__rating[data-rating='high'] [data-part='rating-word'] {
-  color: var(--x2f-good);
-}
-
-.x2f-welcome__rating[data-rating='medium'] [data-part='rating-word'] {
-  color: var(--x2f-caution);
-}
-
-.x2f-welcome__rating[data-rating='weak'] [data-part='rating-word'] {
-  color: var(--x2f-danger);
-}
-
 /* Owner demo note #168 (23 Nov): every login method X2F offers, bold, under a bold underlined
    heading, a big green check or red cross each. */
 .x2f-welcome__logins {
@@ -1448,7 +1400,7 @@
 
 /* The strong field label (owner demo note #197, 25 Nov 2026): bold crisp ink, a step above the 18 px
    lead and below the 26 px h1, 8 px above its field (the .x2f-field gap) and ~20 px below the lead
-   (the body gap). Used on the private login ID and the display name. */
+   (the body gap). Used on the private login ID and the Trade Tag. */
 .x2f-start .x2f-label.x2f-start__field-label {
   font-size: 20px;
   line-height: 26px;
@@ -1620,4 +1572,27 @@
   display: inline-flex;
   flex-shrink: 0;
   color: var(--x2f-ink);
+}
+
+/* Owner, 26 Nov 2026: the sign-up recovery-code warning, in the danger tone so it cannot be missed. */
+.x2f-start__panel[data-part='backup-warning'] {
+  border: 2px solid var(--x2f-danger);
+}
+
+.x2f-start__panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0 0 8px;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 700;
+  color: var(--x2f-danger);
+}
+
+.x2f-start__warn-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
 }

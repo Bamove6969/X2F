@@ -28,7 +28,6 @@ import { staffCompromisedRoutes } from '../tickets/compromisedRoutes.js';
 import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
-import { staffHoldRoutes } from './holds.js';
 import { staffBanRoutes } from './bans.js';
 import { staffAccountLookupRoutes } from './accountLookup.js';
 import { staffLimitRoutes } from './limits.js';
@@ -196,12 +195,11 @@ export async function buildStaffApi(
   // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
   staffPastRepRoutes(app);
   staffReviewDisputeRoutes(app);
-  staffHoldRoutes(app);
   // Plan 4 Task 26: account limits a moderator recommends and a senior moderator or the owner decides.
   staffLimitRoutes(app);
   // Plan 4 Task 27: ban stages, placed and lifted by a key tap.
   staffBanRoutes(app, deps.traderEvents ? { traderEvents: deps.traderEvents } : {});
-  // Spec 6.6 "Account actions": the staff Accounts page finds a trader by display name or trade code.
+  // Spec 6.6 "Account actions": the staff Accounts page finds a trader by Trade Tag or trade code.
   staffAccountLookupRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);

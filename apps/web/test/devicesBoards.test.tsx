@@ -352,7 +352,7 @@ describe('LoginApprove board, logged-in side (LoginApprove)', () => {
   it('OK after this device logged itself out clears the local session state first', async () => {
     let meStatus = 200;
     handler = (url, init) => {
-      if (url === '/v1/account/me') return meStatus === 200 ? json(200, { displayName: 'nightowl', kind: 'trader', level: 'full' }) : json(401, { error: 'unauthenticated' });
+      if (url === '/v1/account/me') return meStatus === 200 ? json(200, { tradeTag: 'nightowl', kind: 'trader', level: 'full' }) : json(401, { error: 'unauthenticated' });
       if (init?.method === 'POST') return json(200, { outcome: 'approved' });
       return undefined;
     };
@@ -536,7 +536,7 @@ describe('"Devices and sessions" board (Devices)', () => {
 // Build spec j33b section 7 (G-007): the Devices wordings. COPY-UNSIGNED
 describe('Devices wordings (G-007)', () => {
   const SESSION = { choices: [8, 12, 24], expiresAt: new Date(NOW + 3_600_000).toISOString(), canExtend: true, serverNow: new Date(NOW).toISOString() };
-  const member = (displayName: string) => ({ id: displayName, displayName, roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: new Date(NOW).toISOString(), createdAt: new Date(NOW).toISOString() });
+  const member = (tradeTag: string) => ({ id: tradeTag, tradeTag, roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: new Date(NOW).toISOString(), createdAt: new Date(NOW).toISOString() });
   const mount = (o: { sessions?: unknown[]; settings?: unknown; team?: unknown; lengthHours?: number | null; accountType?: 'trader' | 'vendor' }) => {
     handler = (url) => {
       if (url === '/v1/account/sessions') return json(200, o.sessions ?? SESSIONS);
@@ -544,7 +544,7 @@ describe('Devices wordings (G-007)', () => {
       if (url === '/v1/team') return o.team === undefined ? json(403, { error: 'forbidden' }) : json(200, o.team);
       if (url === '/v1/account/me' && (o.lengthHours !== undefined || o.accountType !== undefined)) {
         const session = o.lengthHours === undefined ? null : { ...SESSION, lengthHours: o.lengthHours };
-        return json(200, { displayName: 'nightowl', kind: 'trader', level: 'full', session, ...(o.accountType === undefined ? {} : { accountType: o.accountType }) });
+        return json(200, { tradeTag: 'nightowl', kind: 'trader', level: 'full', session, ...(o.accountType === undefined ? {} : { accountType: o.accountType }) });
       }
       return undefined;
     };

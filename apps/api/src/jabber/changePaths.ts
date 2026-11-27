@@ -30,7 +30,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     // close (closed_at, closed_reason) and the idle reminder are changes the owner should hear about;
     // last_login_at and the sealed Terms signature are bookkeeping. idle_hours went with migration 307.
     changes: [
-      'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
+      'id', 'trade_tag', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
       // Away (856, owner 26 Nov 2026): the person's own switch, shown on their public profile; a change.
@@ -48,11 +48,6 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): nothing moves it yet.
       chat_key_epoch: 'the account chat-key epoch; a rotation comes with the removal or recovery that causes it, which notifies there',
     },
-  },
-  {
-    table: 'passwords', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'updated_at'],
-    bookkeeping: { hash: 'rehashed under the current pepper at login (updated_at stays)', pepper_id: 'rehash' },
   },
   {
     table: 'totp', accountColumn: 'account_id', ops: ALL,
@@ -88,7 +83,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   {
     table: 'team_members', accountColumn: 'account_id', ops: ALL,
     changes: [
-      'id', 'account_id', 'display_name', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
+      'id', 'account_id', 'trade_tag', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
       'joined_at', 'created_at', 'removed_at',
       // Migration 390 (S-105): the member's chat number, set with the invite (its insert notifies).
       'assistant_no',
@@ -98,11 +93,6 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     bookkeeping: {
       first_login_at: "set once by the member's first login, which queues its own notice (kind team-member-first-login, J-20)",
     },
-  },
-  {
-    table: 'account_holds', accountColumn: 'account_id', ops: ALL,
-    changes: ['account_id', 'started_at', 'hold_until', 'reason', 'pending_change', 'started_methods', 'started_by'],
-    bookkeeping: {},
   },
   {
     // J-06 (migration 400): a lien on the account and a 1% it owes are changes to it, like a freeze
@@ -237,8 +227,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_payout_addresses.staff_id': 'staff records: a staff member\'s payout address (added with a security-key tap)',
   // Batch 4 (lead default, owner p11-119): silent.
   // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.
-  'hold_changes.account_id': 'a draft or waiting change (hold v3); the change notifies when it applies, through the table it writes',
-  'held_trades.account_id': 'the trades a hold pauses, kept by the hold job; the hold itself notifies (account_holds)',
   'recovery_code_reveals.account_id': 'a one-time reveal of the new recovery code after a recovery-code login (a login step)',
   'trader_notes.account_id': "the account's own private notes on traders (staff-like records of its own)",
   'trader_notes.about_account_id': 'the trader a note is about: never told (private notes)',
@@ -261,6 +249,10 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // Lien recovery (migration 820; lead default): the staff on a rate request; the approved rate notifies the debtor (liens.recovery_rate_bps).
   'lien_rate_requests.proposed_by': 'the moderator who proposed a lien rate (the debtor is notified when it is approved)',
   'lien_rate_requests.decided_by': 'the senior moderator who decided a lien rate request (the debtor is notified when it is approved)',
+  // Escrow-key sync (migration 864; lead default): silent, ciphertext the API cannot open; the box
+  // that makes a member a reader is a team change and notifies as one.
+  'escrow_readers.account_id': "a reader key's public half for the account's encrypted escrow copies; the team change that assigns a member notifies",
+  'escrow_blobs.account_id': "an encrypted copy of one of the account's own trade escrow records (ciphertext the API cannot open), written by the holder's own device",
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
   // Owner 26 Nov 2026 (migration 851): the owner's stamp on a write-off; the debtor is notified by the lien's change.

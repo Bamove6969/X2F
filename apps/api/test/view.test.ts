@@ -111,7 +111,7 @@ describe('GET /v1/trades/:code', () => {
       code: trade.code, role: 'buyer', poster: 'seller', state: 'setup', serverNow: now.toISOString(),
       setupBy: trade.setupBy!.toISOString(), takenAt: trade.takenAt.toISOString(), fiatCents: '41250',
       amountAtomic: AMOUNT.toString(), confirmations: 0, releasableEtaMin: null, profile: null,
-      counterparty: { displayName: seller.displayName, completedTrades: 0, online: true },
+      counterparty: { tradeTag: seller.tradeTag, completedTrades: 0, online: true },
     });
     expect(res.body).not.toContain(sides.buyerPayout!);
     expect(res.body).not.toContain(sides.sellerRefund!);
@@ -189,7 +189,7 @@ describe('toTradeView', () => {
     const seller = await trader();
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
-    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], featuredBadges: 0, stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 } };
+    const cp: TraderSummary = { tradeTag: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], featuredBadges: 0, stage: 'starter', tradedOverXmr: null, imported: [], disputes: { won: 0, lost: 0 } };
     expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null })).toThrow();
     expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null }).fee).toEqual({ atomic: FEE });
     expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null })).toBe(false);

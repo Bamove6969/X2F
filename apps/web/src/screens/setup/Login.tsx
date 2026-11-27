@@ -4,21 +4,16 @@
  * want to setup"); PGP is first and ticked by default. Continue sets up the first ticked one in
  * SIGNUP_ORDER, which makes the account; each step after that goes on to the next ticked one
  * (`finishMethod`), and the recovery code comes after all of them. PGP goes on to the key and
- * code, a password to its own screen; a passkey or a security key ticked first is registered right
- * here with the browser's own prompt, a later one on its own step (SetupKey.tsx).
+ * code; a passkey or a security key ticked first is registered right here with the browser's own
+ * prompt, a later one on its own step (SetupKey.tsx).
  *
- * Owner's labels (12 Nov 2026): "Recommended" and, in green, "Strong" on PGP and the security key;
- * the authenticator app (OTP) with its explanation, "Medium" (the owner's "Medium" note sat on the
- * passkey's card, so the passkey reads Medium too); the password "Weak", with his sentence. An
- * authenticator code is a password's second step (TOTP alone never logs in, recovery.ts), so it
- * can be ticked only with Password (owner decision, 16 Nov 2026, which reverses signup round 3
- * behaviour 1, TOTP with PGP, a security key or a passkey and no password; the server refuses it,
- * 409 `totp-needs-password`). A password does not stand alone either (owner decision, 16 Nov 2026,
- * login methods): Continue needs the authenticator app or a PGP key, security key or passkey with it
- * (the server refuses finishing sign-up otherwise, 409 `password-alone`).
+ * Owner, 26 Nov 2026 (no passwords): at least two different kinds must be ticked
+ * (`enoughMethods`, @x2f/accounts): any two of PGP key, security key, passkey and the
+ * authenticator app. There is one authenticator app at most, and it logs in only with the
+ * username and never confirms (owner, 27 Nov 2026), so two kinds always include a key that does. The recovery code comes after and does not count.
  */
 import { useId, useState } from 'react';
-import { passwordAlone } from '@x2f/auth-client';
+import { enoughMethods } from '@x2f/auth-client';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { keyErrorText } from '../auth/keyErrors.js';
@@ -40,9 +35,6 @@ interface MethodDef {
   /** A sentence of warning under the description. */
   warn?: string;
   later?: string;
-  /** A method that goes with another one: it can be ticked while any of these is ticked. */
-  needs?: readonly LoginMethod[];
-  needsText?: string;
 }
 
 // COPY-UNSIGNED: the strength words are the owner's (12 Nov 2026), their colours are for design.
@@ -50,7 +42,7 @@ interface MethodDef {
 // Owner demo note #140 (23 Nov): Weak and Medium follow suit, on the right like RATED-STRONG.
 const STRENGTH_WORDS: Record<Strength, string> = { strong: 'RATED-STRONG', medium: 'RATED-MEDIUM', weak: 'RATED-WEAK' };
 
-/** The methods in the order shown (and set up, but for the authenticator app after the password). */
+/** The methods in the order shown (and set up). */
 export const METHODS: MethodDef[] = [
   {
     id: 'pgp',
@@ -58,7 +50,7 @@ export const METHODS: MethodDef[] = [
     rec: true,
     strength: 'strong',
     cta: 'Continue with PGP key',
-    desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
+    desc: 'Log in with a PGP key. X2F stores only your public key, so there is nothing secret for anyone to steal from us.',
     // COPY-UNSIGNED: owner demo note #130 (23 Nov), his words, replacing the 13 Nov line.
     later:
       'Upon logging in, you will be provided with an encrypted message that only you can decrypt or unlock using your private PGP key that is stored in your PGP software. Upon decrypting the message, you will be presented with a unique one-time login code which proves you hold the matching key pair and will allow you to log into the site.',
@@ -92,45 +84,25 @@ export const METHODS: MethodDef[] = [
     cta: 'Continue',
     // Owner demo note #135 (23 Nov), his words; "below" made "on the next screen", since the code box is there.
     // not-a-refusal: explains how authenticator-app setup works
-    desc: 'Scan the QR code using your preferred authenticator app to generate a 6-digit code that refreshes every 30 seconds. Enter the current code on the next screen to finish setup. Going forward, you will use these rotating codes whenever you log in. If you cannot scan the QR code, you can enter the setup key manually.',
-    // Owner demo note #137 (23 Nov), his second paragraph, in his words. COPY-UNSIGNED.
-    // not-a-refusal: advice on choosing login methods
-    more: 'Security Level: Medium. We strongly recommend using an authenticator app alongside a strong password at a minimum, or opting for one of our stronger login methods (such as a PGP key, hardware security key, or passkey) for maximum account protection.',
-    // Owner decision, 16 Nov 2026: only with a password (@x2f/accounts METHOD_PARTNERS).
-    needs: ['password'],
-    // COPY-UNSIGNED (the pre-round-3 sentence, restored)
-    needsText: 'Goes with a password: tick Password to add it.',
-  },
-  {
-    id: 'password',
-    name: 'Password',
-    strength: 'weak',
-    cta: 'Continue with a password',
-    // not-a-refusal: explains the password rules
-    desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.',
-    // COPY-UNSIGNED (the owner's words, 12 Nov 2026)
-    warn: 'It is strongly recommended you do not choose this as the only security method you use.',
-    // Owner demo note #139 (23 Nov), his second paragraph, in his words. COPY-UNSIGNED.
-    // not-a-refusal: explains the risk of a password-only account
-    more: 'Security Level: Low. While your coins are never stored on our site, an attacker who compromises a password-only account can still ruin your trading reputation and wipe out the time you invested building your profile. Because of this lower security level, certain major account changes will also trigger a mandatory 24-hour waiting period before taking effect to help protect your account.',
+    desc: 'Scan the QR code using your preferred authenticator app to generate a 6-digit code that refreshes every 30 seconds. Enter the current code on the next screen to finish setup. If you cannot scan the QR code, you can enter the setup key manually.',
+    // COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; an authenticator app counts as one of the two; 27 Nov: it logs in with the username).
+    // Owner 27 Nov 2026: no "Security Level" sentence any more (no low, medium and high security).
+    // not-a-refusal: explains what an authenticator app does on X2F
+    more: "It counts as one of your two ways in, and with your username it logs you in, but it can't confirm changes or unlock your trade keys, so tick a PGP key, security key or passkey with it. You can add one authenticator app.",
   },
 ];
 
-/** The ticked methods in SIGNUP_ORDER, without one whose partner is not ticked. */
+/** The ticked methods in SIGNUP_ORDER. */
 function ordered(picks: ReadonlySet<SignupMethod>): SignupMethod[] {
-  return SIGNUP_ORDER.filter((m) => {
-    if (!picks.has(m)) return false;
-    const needs = METHODS.find((d) => d.id === m)!.needs;
-    return needs === undefined || needs.some((n) => picks.has(n));
-  });
+  return SIGNUP_ORDER.filter((m) => picks.has(m));
 }
 
-type LearnKey = 'pgp' | 'security-key' | 'passkey' | 'otp' | 'password';
+type LearnKey = 'pgp' | 'security-key' | 'passkey' | 'otp';
 
 /**
  * Owner demo note #221 (25 Nov): the "Learn About" list, in his order. PGP is his #141/#142
- * paragraph word for word; the other four are COPY-UNSIGNED drafts for his review, checked against
- * the code (review: a password with a passkey or PGP key still logs in by itself on a trusted device).
+ * paragraph word for word; the other three are COPY-UNSIGNED drafts for his review, checked against
+ * the code. The password entry went with passwords (owner, 26 Nov 2026).
  */
 const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
   {
@@ -155,13 +127,8 @@ const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
     key: 'otp',
     label: 'OTP',
     text:
-      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. An authenticator app goes together with a password: each time you log in with your password, X2F then asks for the current code.',
-  },
-  {
-    key: 'password',
-    label: 'Password',
-    text:
-      'A password is the most familiar way to log in, and also the easiest to guess, reuse or steal. On X2F a password never stands alone: you add it together with an authenticator app (OTP) or another login method. With an authenticator app, every password login also asks for the current code. Use a long, unique password from a password manager, and never use it anywhere else.',
+      // not-a-refusal: explains what an authenticator app does on X2F (owner, 27 Nov 2026)
+      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. On X2F an authenticator app counts as one of your two ways in. With your username it logs you in, but it can\'t confirm changes or unlock your trade keys: you also need a PGP key, security key or passkey.',
   },
 ];
 
@@ -175,32 +142,28 @@ export function Login() {
   const [error, setError] = useState<SetupError | null>(null);
   const id = useId();
   const chosen = ordered(picks);
+  // SIGNUP_ORDER puts the authenticator app last, so the first ticked one is a key whenever two kinds are ticked.
   const first = chosen[0] as LoginMethod | undefined;
-  const current = first !== undefined ? METHODS.find((m) => m.id === first)! : null;
-  const alone = passwordAlone(chosen);
+  const enough = enoughMethods(chosen);
+  const current = first !== undefined && enough ? METHODS.find((m) => m.id === first)! : null;
 
   const toggle = (m: MethodDef, on: boolean) => {
     setPicks((p) => {
       const n = new Set(p);
       if (on) n.add(m.id);
-      else {
-        n.delete(m.id);
-        // A method that goes with others unticks with the last of them.
-        for (const d of METHODS) if (d.needs !== undefined && !d.needs.some((x) => n.has(x))) n.delete(d.id);
-      }
+      else n.delete(m.id);
       return n;
     });
   };
 
   const next = async () => {
-    if (first === undefined || alone) return;
+    if (first === undefined || !enough) return;
     update({ methods: chosen, done: [], method: first });
     if (first === 'pgp') return go('pgp-key');
-    if (first === 'password') return go('password');
     setBusy(true);
     setError(null);
     try {
-      const { credentialId } = await registerWebAuthn({ displayName: state.displayName, loginName: state.loginName }, first, state.terms!);
+      const { credentialId } = await registerWebAuthn({ tradeTag: state.tradeTag, loginName: state.loginName }, first, state.terms!);
       // Owner 25 Nov security-key report: the key is saved, so say so and ask for its name
       // (FirstKeySaved, shown in this step's place by SetupFlow) before going on.
       update({ registered: true, done: [first], keySaved: { kind: first, credentialId } });
@@ -223,35 +186,33 @@ export function Login() {
   return (
     <SetupFrame
       screen="setup-login"
-      // Owner demo note #199: the display name is step 2 now, so choosing and setting up the login
+      // Owner demo note #199: the Trade Tag is step 2 now, so choosing and setting up the login
       // methods is step 3 together (the method screens were already 3), and "of 5" stays true.
       step={3}
-      // Review F8: the screen before this one is the display name.
-      back={path('display-name')}
+      // Review F8: the screen before this one is the Trade Tag.
+      back={path('trade-tag')}
       footer={
-        <Button variant="primary" disabled={busy || current === null || alone} onClick={() => void next()} data-part="method-continue">
+        <Button variant="primary" disabled={busy || current === null} onClick={() => void next()} data-part="method-continue">
           {current?.cta ?? 'Continue'}
         </Button>
       }
     >
       {/* COPY-UNSIGNED (signup round 3, the owner's words, 13 Nov 2026) */}
       <SetupIntro title="How do you want to log in?">
-        {/* Owner demo note #128 (23 Nov): his sentence continued, in his words. */}
-        Anything you don't set up now can be added later. The more options you choose, the more secure your account becomes, such as not
-        having to wait 24 hours for major changes to your account to take effect, which is explained in better detail in the FAQ.
+        {/* Owner, 26 Nov 2026 (no passwords): at least two. COPY-UNSIGNED. */}
+        Pick at least two. Anything else can be added later. The more you set up, the more ways you have back into your account if you
+        lose one.
       </SetupIntro>
       <div className="x2f-start__choices" role="group" aria-label="Login methods">
         {METHODS.map((m) => {
           const on = picks.has(m.id);
-          const off = m.needs !== undefined && !m.needs.some((x) => picks.has(x));
           return (
-            <label key={m.id} className="x2f-start__choice x2f-start__choice--check" data-method={m.id} data-checked={on && !off ? 'true' : 'false'} data-disabled={off ? 'true' : 'false'}>
+            <label key={m.id} className="x2f-start__choice x2f-start__choice--check" data-method={m.id} data-checked={on ? 'true' : 'false'}>
               <span className="x2f-start__choice-head">
                 <input
                   type="checkbox"
                   className="x2f-start__tick"
-                  checked={on && !off}
-                  disabled={off}
+                  checked={on}
                   onChange={(e) => toggle(m, e.target.checked)}
                   aria-describedby={`${id}-${m.id}`}
                   data-part="method-pick"
@@ -276,7 +237,6 @@ export function Login() {
                   </>
                 ) : null}
                 {m.warn !== undefined ? <span className="x2f-start__choice-warn"> {m.warn}</span> : null}
-                {off && m.needsText !== undefined ? <span className="x2f-start__choice-needs"> {m.needsText}</span> : null}
               </span>
               {on && m.later !== undefined ? <span className="x2f-start__choice-later">{m.later}</span> : null}
             </label>
@@ -284,15 +244,9 @@ export function Login() {
         })}
       </div>
       {current === null ? (
-        // COPY-UNSIGNED
+        // COPY-UNSIGNED (owner, 26 Nov 2026: at least two kinds)
         <p className="x2f-start__help" role="status" data-part="method-none">
-          Tick at least one way to log in.
-        </p>
-      ) : null}
-      {alone ? (
-        // COPY-UNSIGNED (owner decision, 16 Nov 2026: a password does not stand alone)
-        <p className="x2f-start__help" role="status" data-part="password-partner">
-          A password needs the authenticator app or another way to log in. Tick one of them too.
+          Tick at least two ways to log in.
         </p>
       ) : null}
       {busy && (first === 'security-key' || first === 'passkey') ? (
@@ -301,7 +255,7 @@ export function Login() {
         </p>
       ) : null}
       <RegisterError error={error} />
-      {/* Owner demo note #221 (25 Nov): "Learn About", underlined, with the five methods straight down the
+      {/* Owner demo note #221 (25 Nov): "Learn About", underlined, with the methods straight down the
           middle; each opens a write-up the way "New to PGP?" did. PGP keeps his #141/#142 paragraph. */}
       <section className="x2f-start__learn" aria-labelledby={`${learnId}-head`} data-part="learn-about">
         <h2 className="x2f-start__learn-head" id={`${learnId}-head`}>

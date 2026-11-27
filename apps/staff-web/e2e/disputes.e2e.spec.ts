@@ -105,7 +105,7 @@ for (const [label, size] of SIZES) {
           await messageBoth(staff, 'Hello both. Seller, please show whether the payment arrived.');
           for (const page of [o.buyerPage, o.sellerPage]) {
             await page.goto(disputeUrl(o.code));
-            await expect(page.getByLabel('Moderator joined')).toContainText(`Moderator ${mod.displayName} joined this dispute`, { timeout: LONG });
+            await expect(page.getByLabel('Moderator joined')).toContainText(`Moderator ${mod.tradeTag} joined this dispute`, { timeout: LONG });
             await shows(page, /Seller, please show whether the payment arrived/);
             // The message carries the X2F Moderator badge.
             await expect(page.getByText('X2F Moderator').first()).toBeVisible();
@@ -234,7 +234,7 @@ for (const [label, size] of SIZES) {
         // Performance: the moderator's round-1 ruling is overturned.
         await withStaff(browser, await owner(), async (staff) => {
           await staff.goto('/performance');
-          const row = staff.locator('tr', { hasText: mod.displayName });
+          const row = staff.locator('tr', { hasText: mod.tradeTag });
           await expect(row.locator('[data-part="overturned"]')).toHaveText(/^1 of \d+$/, { timeout: LONG });
         });
         // Revision 2026-10-29: the round-1 ruling paid out at once, exactly once, and the overturn moves
@@ -260,7 +260,7 @@ for (const [label, size] of SIZES) {
           await proposeRuling(staff, 'Release to buyer');
         });
         await o.sellerPage.goto(disputeUrl(o.code));
-        await shows(o.sellerPage, new RegExp(`Waiting for ${o.buyer.displayName} to open X2F`), LONG, { mining: true });
+        await shows(o.sellerPage, new RegExp(`Waiting for ${o.buyer.tradeTag} to open X2F`), LONG, { mining: true });
         // Nothing is broadcast while the winner is away.
         expect(await walletSnapshot(o.buyer.wallet)).toEqual(before.buyer);
         o.buyerPage = await buyerContext.newPage();
@@ -307,7 +307,7 @@ for (const [label, size] of SIZES) {
           });
           // The seller is held: their Post offer is refused. (The taker seller is made a vendor first,
           // as regtestKit.signUp does, so posting is theirs to do at all.)
-          await sql("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1", [o.seller.displayName]);
+          await sql("update accounts set account_type = 'vendor', vendor_since = now() where trade_tag = $1", [o.seller.tradeTag]);
           const held = await o.seller.api.call('POST', '/v1/offers', { side: 'sell', currencies: [{ currency: 'USD', bands: [{ min: '20', max: '150', marginBps: 0, minTrades: null }] }], methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: 'x' }], terms: 'x' });
           expect([held.status, (held.body as { error?: string } | null)?.error]).toEqual([409, 'lien']);
 
@@ -398,7 +398,7 @@ test('login hours: a moderator whose window ends in a minute or two is returned 
       await expect(staff).toHaveURL(/\/login/);
     });
     const c = await caseOf(o.code);
-    expect(c.assignee).toBe(mod.displayName);
+    expect(c.assignee).toBe(mod.tradeTag);
     expect(c.status).toBe('open');
   });
 });

@@ -4,7 +4,7 @@ import { AuthApiError, type TradeBand, type WorkingHours } from './api.js';
 /**
  * Runs a change that may need confirm-it's-you (P2-C2): calls `run()`; when the API answers
  * `confirm-required`, calls `prove(action)` once (Plan 3's confirm sheet: PGP, passkey, security
- * key or password) and retries `run(token)` once. Any other error, a failed proof, or a second
+ * key) and retries `run(token)` once. Any other error, a failed proof, or a second
  * refusal propagates; it never loops. A `confirm-required` for an action other than `action.kind`
  * throws before any proof.
  */
@@ -36,10 +36,10 @@ export async function walletsAction(addresses: readonly string[]): Promise<Extra
   return { kind: 'add-wallets', addressesHash: await addressesHash(addresses), addressEnds: addressEnds(addresses) };
 }
 
-type Role = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
-/** Plan 2 Task 18: the roles in the API's fixed order (offers, trades, then owner p4-8's hold rights), comma-separated, as the confirm action binds them. */
+type Role = 'offers' | 'trades';
+/** Plan 2 Task 18: the roles in the API's fixed order (offers, trades), comma-separated, as the confirm action binds them. */
 function rolesText(roles: readonly Role[]): string {
-  return (['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'] as const).filter((r) => roles.includes(r)).join(',');
+  return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).join(',');
 }
 
 /** The action an invite is confirmed for: the member's name exactly as sent, and the roles. */

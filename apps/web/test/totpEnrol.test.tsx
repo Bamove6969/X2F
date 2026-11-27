@@ -103,14 +103,4 @@ describe('authenticator enrolment (signup round 3)', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone.mock.calls[0]![0]).toBeUndefined();
   });
-
-  it('a staged enrolment (it waits 24 hours) is handed on at once, with no success claim', async () => {
-    finish = () => json(202, { status: 'staged', changeId: 'c1' });
-    const { host, onDone } = await started();
-    type(host.querySelector<HTMLInputElement>('#totp-code')!, '123456');
-    click(byPart(host, 'totp-finish'));
-    await flush();
-    expect(byPart(host, 'totp-success')).toBeNull();
-    expect(onDone).toHaveBeenCalledWith({ status: 'staged', changeId: 'c1' });
-  });
 });

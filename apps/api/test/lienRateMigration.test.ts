@@ -31,7 +31,7 @@ async function migratedBefore(before: string, run: (db: pg.Pool) => Promise<void
 async function account(db: pg.Pool): Promise<string> {
   const name = `mig${randomBytes(4).toString('hex')}`;
   const { rows } = await db.query<{ id: string }>(
-    `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ($1, $1, 'trader', $2, now()) returning id`,
+    `insert into accounts (trade_tag, display_key, kind, webauthn_user_id, created_at) values ($1, $1, 'trader', $2, now()) returning id`,
     [name, randomBytes(32)],
   );
   return rows[0]!.id;

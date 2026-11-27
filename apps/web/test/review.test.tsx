@@ -59,7 +59,7 @@ function card(o: { rated?: 'buyer' | 'seller'; submit?: (c: string, b: ReviewInp
 }
 
 describe('ReviewCard', () => {
-  it('asks about the counterparty by display name, with five named stars; Submit is disabled until a star is picked', () => {
+  it('asks about the counterparty by Trade Tag, with five named stars; Submit is disabled until a star is picked', () => {
     const { host } = card();
     expect(host.querySelector('h2')!.textContent).toBe('How was trading with satoshi_ghost?');
     const stars = [...host.querySelectorAll('[role="radiogroup"][aria-label="Stars"] [role="radio"]')];

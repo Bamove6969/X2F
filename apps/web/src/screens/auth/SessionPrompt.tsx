@@ -154,7 +154,7 @@ export function SessionPrompt() {
             {error}
           </p>
         ) : null}
-        <ConfirmMethods action={{ kind: 'extend-session' }} methods={watch.methods} onToken={onToken} submitLabel={C.stayLoggedIn} />
+        <ConfirmMethods action={{ kind: 'extend-session' }} methods={watch.methods} onToken={onToken} />
         <Button
           variant="quiet"
           onClick={() => {

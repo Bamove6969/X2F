@@ -8,7 +8,7 @@
  * `trades`), so no purge can forget it.
  */
 import type pg from 'pg';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
@@ -36,6 +36,11 @@ export type AuditAction =
   | 'withdraw-cancel'
   | 'walk-away'
   | 'confirm-cancel'
+  // Owner question trades-release (26 Nov 2026): a member's release, under the member's own name.
+  | 'release-started'
+  // Owner 26 Nov 2026 18:41 UTC: a member's escrow funding and the buyer's payment proof (team/memberTrade.ts).
+  | 'fund-started'
+  | 'proof-uploaded'
   // Owner p4-8: the lead's waiting changes, by a member the lead gave a hold box.
   | 'hold-changes-cancelled'
   | 'hold-changes-approved'
@@ -48,7 +53,8 @@ export type AuditAction =
 
 /**
  * Actions only the account owner takes that the team log still records (T-076, p7-1: every
- * release is logged with name and amount; members never release, so the name is the lead's).
+ * release is logged with name and amount; this row is the lead's own release, a member's release
+ * is the member's `auditMember` row, owner question trades-release).
  * Written only on a team account (one with a live member or open invite).
  */
 export type LeadAuditAction = 'release-started';
@@ -76,7 +82,10 @@ export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'withdraw-cancel': 'trades-cancel',
   'walk-away': 'trades-cancel',
   'confirm-cancel': 'trades-confirm-cancel',
-  // A stronger hold box includes the weaker ones (`effectiveAbilities`).
+  'release-started': 'trades-release',
+  'fund-started': 'trades-fund',
+  'proof-uploaded': 'trades-upload-proof',
+  // Hold model v3's (gone since 26 Nov 2026), kept so older log rows still read; no route writes them.
   'hold-changes-cancelled': 'hold-cancel',
   'hold-changes-approved': 'hold-end',
   'note-added': 'notes-add',
@@ -323,8 +332,8 @@ function where(accountId: string, f: AuditFilter): { sql: string; params: unknow
   return { sql: parts.join(' and '), params };
 }
 
-const SELECT = `select l.id::text as id, l.at, l.actor_kind, l.member_id, am.display_name as actor_name,
-                       l.subject_id, sm.display_name as subject_name, l.category, l.action, l.trade_code, l.detail,
+const SELECT = `select l.id::text as id, l.at, l.actor_kind, l.member_id, am.trade_tag as actor_name,
+                       l.subject_id, sm.trade_tag as subject_name, l.category, l.action, l.trade_code, l.detail,
                        l.hash, l.prev_hash`;
 const FROM = `from team_audit l
           left join team_members am on am.id = l.member_id
@@ -419,10 +428,10 @@ export interface MemberSummary {
 /** Per member, what the log holds for them since `since` (the screen's overview cards). */
 export async function summariseAudit(q: Queryable, accountId: string, since: Date): Promise<MemberSummary[]> {
   const { rows } = await q.query<{
-    id: string; display_name: string; joined_at: Date | null; removed_at: Date | null;
+    id: string; trade_tag: string; joined_at: Date | null; removed_at: Date | null;
     work: string; logins: string; refused: string; changes: string; last_action_at: Date | null; last_login_at: Date | null;
   }>(
-    `select m.id, m.display_name, m.joined_at, m.removed_at,
+    `select m.id, m.trade_tag, m.joined_at, m.removed_at,
             count(*) filter (where l.category = 'work' and l.member_id = m.id)::text as work,
             count(*) filter (where l.action = 'member-login')::text as logins,
             count(*) filter (where l.action = 'attempt-refused')::text as refused,
@@ -437,7 +446,7 @@ export async function summariseAudit(q: Queryable, accountId: string, since: Dat
     [accountId, since],
   );
   return rows.map((r) => ({
-    memberId: r.id, name: r.display_name,
+    memberId: r.id, name: r.trade_tag,
     status: r.removed_at !== null ? 'removed' : r.joined_at !== null ? 'active' : 'invited',
     work: Number(r.work), logins: Number(r.logins), refused: Number(r.refused), changes: Number(r.changes),
     lastActionAt: r.last_action_at?.toISOString() ?? null, lastLoginAt: r.last_login_at?.toISOString() ?? null,

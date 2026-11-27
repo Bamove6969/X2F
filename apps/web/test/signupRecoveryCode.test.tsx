@@ -51,7 +51,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function setup(state: Partial<SetupState> = {}): SetupApi {
   return {
-    state: { ...INITIAL, terms: { version: 'v1' }, displayName: 'Lumen.K', loginName: 'juniper.oak', ...state },
+    state: { ...INITIAL, terms: { version: 'v1' }, tradeTag: 'Lumen.K', loginName: 'juniper.oak', ...state },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),
@@ -71,6 +71,7 @@ describe('S-017: the recovery code is required at sign-up', () => {
   async function shown(api = setup({ registered: true })) {
     const host = show(<Backup />, api);
     expect(byPart(host, 'backup-skip')).toBeNull();
+    click(byPart(host, 'recovery-understood'));
     click(byPart(host, 'recovery-make'));
     await flush();
     return { host, api };
@@ -88,6 +89,20 @@ describe('S-017: the recovery code is required at sign-up', () => {
     expect(byPart(host, 'backup-skip')).toBeNull();
     expect(host.querySelector('[data-backup="security-key"]')).toBeNull();
     expect(byPart(host, 'recovery-make')).not.toBeNull();
+  });
+
+  it('owner, 26 Nov 2026: the warning is shown, and the code is made only once it is ticked as understood', async () => {
+    const host = show(<Backup />, setup({ registered: true }));
+    expect(byPart(host, 'backup-warning')).not.toBeNull();
+    expect(byPart(host, 'recovery-make')!.hasAttribute('disabled')).toBe(true);
+    click(byPart(host, 'recovery-make'));
+    await flush();
+    expect(byPart(host, 'recovery-code')).toBeNull();
+    click(byPart(host, 'recovery-understood'));
+    expect(byPart(host, 'recovery-make')!.hasAttribute('disabled')).toBe(false);
+    click(byPart(host, 'recovery-make'));
+    await flush();
+    expect(byPart(host, 'recovery-code')).not.toBeNull();
   });
 
   it('shows the one code, and going on waits for the tick and the typed-back code', async () => {

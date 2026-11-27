@@ -42,7 +42,7 @@ export function appPromptName(app: WalletApp): string {
 }
 
 /**
- * The wallets a trade's payout/refund picker may offer: only those past any 24-hour wait
+ * The wallets a trade's payout/refund picker may offer: only those the API reports usable
  * (spec 6.3, 6.4). A waiting wallet is shown on this screen with its status but is never takeable,
  * so the take picker (Tasks 17-19) filters its list through this one source of truth.
  */
@@ -75,7 +75,6 @@ function methodList(methods: WalletRule['strongMethods']): string {
  * "Wallet rules refined", 2026-10-24). One sentence per line.
  */
 export function ruleLines(rule: WalletRule): string[] {
-  const h = rule.waitHours;
   if (rule.firstWallet) {
     return [
       'This is your first wallet, so it works at once, however you confirm.',
@@ -85,36 +84,19 @@ export function ruleLines(rule: WalletRule): string[] {
   const lines: string[] = [];
   const strong = rule.strongMethods;
   if (strong.length > 0) {
-    lines.push(
-      `You use ${methodList(strong)}: confirm with ${strong.length === 1 ? 'it' : 'one of them'} and your new wallets work at once.`,
-    );
-    if (rule.password === 'waits') {
-      lines.push(`If you confirm with your password instead, they work ${h} hours after you add them.`);
-    }
-  } else if (rule.password === 'waits') {
-    // DESIGN: wording (owner 6 Nov 2026, Q14: never "password only")
-    lines.push(`You have no passkey, security key or PGP key yet: new wallets will work ${h} hours after you add them.`);
-    lines.push('Add one first to skip the wait.');
+    lines.push(`You use ${methodList(strong)}: confirm with ${strong.length === 1 ? 'it' : 'one of them'} and your new wallets work at once.`);
   } else {
     lines.push("Saving asks you to confirm it's you.");
   }
-  lines.push(
-    rule.password === 'waits'
-      ? `One confirm covers several wallets, and they share one ${h}-hour wait, not one each.`
-      : 'One confirm covers several wallets.',
-  );
+  lines.push('One confirm covers several wallets.');
   return lines;
 }
 
 /** The short reminder under the form, from the same rule. */
 export function ruleNote(rule: WalletRule | null): string {
-  if (rule === null) return "Saving asks you to confirm it's you. New wallets may wait 24 hours, depending on how you confirm.";
+  if (rule === null) return "Saving asks you to confirm it's you. New wallets work at once.";
   if (rule.firstWallet) return 'Your first wallet works at once.';
-  if (rule.strongMethods.length > 0) {
-    const wait = rule.password === 'waits' ? ` With your password they wait ${rule.waitHours} hours.` : '';
-    return `Confirm with ${methodList(rule.strongMethods)} and they work at once.${wait}`;
-  }
-  if (rule.password === 'waits') return `They will work ${rule.waitHours} hours after you add them.`;
+  if (rule.strongMethods.length > 0) return `Confirm with ${methodList(rule.strongMethods)} and they work at once.`;
   return "Saving asks you to confirm it's you.";
 }
 

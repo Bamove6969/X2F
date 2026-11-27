@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/errors.js';
-import { ARGON2_SLOTS, KeyedBuckets, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets } from '../src/limits.js';
+import { KeyedBuckets, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets } from '../src/limits.js';
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;
@@ -66,14 +66,6 @@ describe('Semaphore', () => {
     const s = new Semaphore(1, 0);
     await expect(s.run(async () => Promise.reject(new Error('x')))).rejects.toThrow('x');
     await expect(s.run(async () => 1)).resolves.toBe(1);
-  });
-
-  it('gives Argon2 four running slots and a queue of 32', async () => {
-    const gate = deferred();
-    const runs = Array.from({ length: 36 }, () => ARGON2_SLOTS.run(() => gate.promise));
-    await expect(ARGON2_SLOTS.run(async () => undefined)).rejects.toMatchObject({ code: 'busy' });
-    gate.resolve();
-    await Promise.all(runs);
   });
 });
 

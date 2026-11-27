@@ -13,7 +13,6 @@ import { BLOCKED_PATH } from '../src/screens/settings/BlockAction.js';
 import { TEAM_PATH } from '../src/screens/settings/teamCopy.js';
 import { ACCOUNT_TYPE_PATH } from '../src/screens/settings/accountTypeCopy.js';
 import { DEVICES_PATH } from '../src/screens/settings/devicesCopy.js';
-import { CHANGES_PATH } from '../src/screens/settings/holdCopy.js';
 import { IDLE_REMINDER_PATH } from '../src/screens/auth/sessionCopy.js';
 import { PRIVACY_PATH } from '../src/screens/settings/privacyCopy.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
@@ -26,7 +25,7 @@ function json(status: number, body: unknown): Response {
 
 // The tab pages wait for the session to know whether this is the owner or a team member (main's
 // order #2 B1 / M3, kept through the tabs): an owner's session here; securityMember.test.tsx has the member's.
-const ME = { kind: 'trader', level: 'full', termsCurrent: true, displayName: 'Calcium', methods: ['password'], accountType: 'vendor', pendingChanges: null, member: null };
+const ME = { kind: 'trader', level: 'full', termsCurrent: true, tradeTag: 'Calcium', methods: ['password'], accountType: 'vendor', pendingChanges: null, member: null };
 
 beforeEach(() => {
   refreshSession();
@@ -59,7 +58,7 @@ describe('note #101: which tab each settings screen is under', () => {
   it('every existing settings route keeps a tab, and the tabs are the five pages', () => {
     expect(SETTINGS_TABS.map((t) => t.to)).toEqual([SECURITY_PATH, ALERTS_PATH, ACCOUNT_PATH, PREFERENCES_PATH, SETTINGS_HELP_PATH]);
     const under: [string, string][] = [
-      [SECURITY_PATH, 'security'], [CHANGES_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
+      [SECURITY_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
       [ALERTS_PATH, 'alerts'], ['/settings/jabber', 'alerts'], ['/settings/jabber/events', 'alerts'],
       [ACCOUNT_PATH, 'account'], [ACCOUNT_TYPE_PATH, 'account'], [TEAM_PATH, 'account'], [BLOCKED_PATH, 'account'],
       [PREFERENCES_PATH, 'preferences'], [SETTINGS_HELP_PATH, 'help'], [PRIVACY_PATH, 'help'],

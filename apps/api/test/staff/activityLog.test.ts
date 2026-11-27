@@ -73,7 +73,7 @@ const log = (e: { at?: Date; actor: Actor; tradeCode: string | null; action: key
 async function member(role: 'owner' | 'senior' | 'mod' | 'helper') {
   const s = await seedStaff(deps, { role, loginName: { owner: 'owner_one', senior: 'senior_one', mod: 'dmitri_mod', helper: 'helper_one' }[role] });
   const b = new StaffBrowser(app).withSession((await insertSession(deps, s.id, 'staff')).token);
-  const name = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [s.id])).rows[0]!.display_name;
+  const name = (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [s.id])).rows[0]!.trade_tag;
   return { id: s.id, b, name };
 }
 
@@ -94,8 +94,8 @@ beforeAll(async () => {
   senior = await member('senior');
   mod = await member('mod');
   helper = await member('helper');
-  const buyer = await seedAccount(deps, { loginName: 'mlogin_mira', displayName: buyerName });
-  const seller = await seedAccount(deps, { loginName: 'qlogin_quiet', displayName: sellerName });
+  const buyer = await seedAccount(deps, { loginName: 'mlogin_mira', tradeTag: buyerName });
+  const seller = await seedAccount(deps, { loginName: 'qlogin_quiet', tradeTag: sellerName });
   const fixed = (n: number) => ({ buyerPayout: fixedAddress(2 * n + 1), sellerRefund: fixedAddress(2 * n + 2) });
   // A: disputed and open. B: never disputed. C: disputed and closed (the training case).
   A = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller', methodId: 'ZELLE', code: CODES.A, ...fixed(0) });
@@ -219,7 +219,7 @@ describe('GET /staff/v1/log', () => {
 
     const byBuyer = await page(owner.b, `?actor=buyer&code=${A.code}`);
     expect(byBuyer.entries.map((e) => e.action).sort()).toEqual(['dispute.opened', 'trade.mark-paid']);
-    // A trader is named by their side, with the trade's display name.
+    // A trader is named by their side, with the trade's Trade Tag.
     expect(byBuyer.entries.every((e) => e.actor.kind === 'trader' && e.actor.role === 'buyer' && e.actor.name === buyerName)).toBe(true);
 
     const system = await page(owner.b, `?actor=system&code=${A.code}`);
@@ -273,7 +273,7 @@ describe('GET /staff/v1/log', () => {
     expect(seen).toEqual(whole.entries.map((e) => e.id));
   });
 
-  it('names the staff an entry\'s detail points at, by display name', async () => {
+  it('names the staff an entry\'s detail points at, by Trade Tag', async () => {
     const p = await page(owner.b, `?code=${A.code}&kind=dispute`);
     const assigned = p.entries.find((e) => e.action === 'dispute.assigned')!;
     expect(assigned.detail).toEqual({ staffId: mod.id });
@@ -531,7 +531,7 @@ describe('the training library', () => {
     expect(CID()).not.toBe(unkeyed);
     expect(createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-id\0${C.code}\0${1}`, 'utf8').digest('hex').slice(0, 32)).toBe(CID());
     // The key is the training id's own: no other secret of the config holds it.
-    const others = [deps.config.serverKey, ...[deps.config.passwordPeppers, deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys, deps.config.ticketKeys].flatMap((r) => [...r.keys.values()])];
+    const others = [deps.config.serverKey, ...[deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys, deps.config.ticketKeys].flatMap((r) => [...r.keys.values()])];
     for (const k of others) expect(Buffer.from(k).equals(Buffer.from(deps.config.trainingIdKey))).toBe(false);
     expect((await mod.b.get(`/staff/v1/training?before=${CID()}`)).statusCode).toBe(200);
     expect((await mod.b.get(`/staff/v1/training/${unkeyed}`)).statusCode).toBe(404);

@@ -8,19 +8,17 @@ import type { TeamRole, TradeBand, WorkingHours } from '@x2f/auth-client';
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
 
-// Owner p4-8: the "Holds and waiting changes" rights (MemberPermissions board, COPY-UNSIGNED).
 export const ROLE_WORDS: Record<TeamRole, string> = {
   offers: 'Offers',
   trades: 'Trades',
-  'hold-see': 'See waiting changes',
-  'hold-cancel': 'Untick or cancel waiting changes',
-  'hold-end': 'End a hold',
 };
 
 /** "Offers", "Trades" or "Offers and Trades". */
 export function rolesText(roles: readonly TeamRole[]): string {
-  const words = (['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]);
-  return words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+  return (['offers', 'trades'] as const)
+    .filter((r) => roles.includes(r))
+    .map((r) => ROLE_WORDS[r])
+    .join(' and ');
 }
 
 /** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
@@ -83,8 +81,6 @@ export const TEAM_COPY = {
   what: [
     'Offers: post, change, turn on or off and remove your offers.',
     'Trades: start trades on offers, mark payments sent, cancel and open disputes.',
-    // Owner p4-8 (MemberPermissions board; COPY-UNSIGNED).
-    'Holds and waiting changes: see your waiting changes, untick or cancel them, or end a hold. Off by default: without these, a member only sees that a hold is on.',
   ] as const,
   // The lead defaults the owner may change (spec 6.7).
   ownerKeeps: 'Payout wallets, your login methods, security settings and the team itself stay with you.',
@@ -93,16 +89,15 @@ export const TEAM_COPY = {
   // method. Not built yet (lead report 2026-11-08: the join, member logins and their strength need
   // rules first); this line says what the join enforces today, so it changes with the build.
   twoFactors: 'Each member logs in with their own two factors: a PGP key plus a security key, a passkey or a second PGP key.',
-  // Plan 3 Task 42 (R44): members cannot release yet.
-  releaseNote: 'Releasing or securing coins still happens on your own device.',
+  // Owner 26 Nov 2026 (trades-release; Jess 18:41 UTC for funding): only members you give the box. COPY-UNSIGNED
+  releaseNote: 'Funding the escrow and releasing coins stay with you, unless you give a member Fund the escrow or Release coins together with Hold trade keys. Each time, they confirm with a passkey, security key or PGP key.',
   membersTitle: 'Members',
   none: 'No team members yet.',
   count: (n: number, max: number) => `${n} of ${max} members`,
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
-  // Owner p11-21 (S-104): a member invited from a username-and-password login holds no box until
-  // the waiting boxes apply. COPY-UNSIGNED
+  // A member whose boxes are all off. COPY-UNSIGNED
   noBoxes: 'No roles yet',
   // Owner p11-25 (S-105): how chats show the member (the owner's words for the label itself). COPY-UNSIGNED
   chatLabel: (label: string) => `In chats: ${label}`,
@@ -117,7 +112,7 @@ export const TEAM_COPY = {
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
   // Owner p11-25 (S-105, 9 Nov 2026, replacing R44's "Team <name> member: <member>"): chats show a
-  // member as "<your display name> Assistant 1", "Assistant 2"; the member's name stays inside the
+  // member as "<your Trade Tag> Assistant 1", "Assistant 2"; the member's name stays inside the
   // team (this list and the activity log). COPY-UNSIGNED
   nameLabel: 'Their name on your team',
   nameHint: 'Only you and your team see it. Chats show them as "<your name> Assistant 1", "Assistant 2" and so on.',
@@ -227,6 +222,10 @@ export const PICKER_COPY = {
     yours: 'Only you', // COPY-UNSIGNED
     always: 'Every member has this', // COPY-UNSIGNED
   } as const,
+  // Owner question trades-release (26 Nov 2026): under Release coins, while Hold trade keys is not ticked. COPY-UNSIGNED
+  releaseNeedsKeys: 'Release coins works only with Hold trade keys: tick that box too. Each release asks the member for a passkey, security key or PGP key and goes in the team log.', // COPY-UNSIGNED
+  // Owner 26 Nov 2026 18:41 UTC: under Fund the escrow, while Hold trade keys is not ticked. COPY-UNSIGNED
+  fundNeedsKeys: 'Fund the escrow works only with Hold trade keys: tick that box too. Each funding asks the member for a passkey, security key or PGP key and goes in the team log.', // COPY-UNSIGNED
   loadFailed: 'The permission boxes did not load. Reload the page to try again.', // COPY-UNSIGNED
   pickBox: 'Tick at least one box.', // COPY-UNSIGNED
   // COPY-UNSIGNED: a member's row, by the preset their boxes match.

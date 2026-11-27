@@ -15,15 +15,14 @@ import type { Keyring } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { ApiError } from '../src/errors.js';
-import { accountIdByLoginName, currentLoginTag, seedAccount, trustedDevice } from './helpers/accounts.js';
-import { DEVICE_COOKIE } from '../src/auth/device.js';
+import { accountIdByLoginName, currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp, testConfig } from './helpers/app.js';
 import { emptyDb } from './helpers/db.js';
-import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 import { SIG } from './helpers/signature.js';
+import { signUpWithKey } from './helpers/signup.js';
 
 // Every HMAC made while a request runs is counted (parity: the same HMAC work for every name).
 vi.mock('node:crypto', async (importOriginal) => {
@@ -36,7 +35,6 @@ const API_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const T0 = new Date('2026-10-17T06:00:00Z');
 const HOUR = 3600_000;
 const TERMS = '2026-10-17';
-const GOOD = 'Correct-Horse-9';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -48,9 +46,8 @@ let step = 0;
 let n = 0;
 
 beforeAll(async () => {
-  const fixture = await fixtureLeakedList();
-  cleanup = fixture.cleanup;
-  ({ app, deps, setNow, logs } = await testApp({ leaked: fixture.list }));
+  cleanup = async () => {};
+  ({ app, deps, setNow, logs } = await testApp({}));
   addTestLogin(app, deps);
   original = deps.config.loginNameKeys;
 });
@@ -71,10 +68,8 @@ const key32 = () => new Uint8Array(crypto.randomBytes(32));
 /** A ring with a new current key `id` in front of the test's original key 1. */
 const rotated = (id = 2): Keyring => ({ current: id, keys: new Map([[id, key32()], ...original.keys]) });
 
-const register = (b: Browser, loginName: string, displayName = `P${loginName}`) =>
-  b.post('/v1/register/password', { displayName, loginName, password: GOOD, deviceLabel: 'T', acceptedTerms: TERMS, termsSignature: SIG });
-const login = (loginName: string, password = GOOD, b = new Browser(app)) =>
-  b.post('/v1/login/password', { loginName, password, deviceLabel: 'T' });
+const register = async (b: Browser, loginName: string, tradeTag = `P${loginName}`) =>
+  (await signUpWithKey(b, { tradeTag, loginName, deviceLabel: 'T', acceptedTerms: TERMS })).res;
 const backup = (loginName: string, code: string, b = new Browser(app)) =>
   b.post('/v1/login/backup', { loginName, kind: 'recovery-code', code, deviceLabel: 'T' });
 
@@ -92,14 +87,20 @@ async function tagRow(id: string) {
   return rows[0]!;
 }
 
-/** A password account under key `keyId` of the ring now in `deps.config` (seeded directly). */
-async function passwordAccount(keyId?: number) {
+/** An account under key `keyId` of the ring now in `deps.config` (seeded directly). */
+async function account(keyId?: number) {
   const loginName = uniq();
   const id = await seedAccount(deps, { loginName, ...(keyId !== undefined ? { loginKeyId: keyId } : {}) });
-  const { hashPassword } = await import('../src/auth/password.js');
-  const h = await hashPassword(deps.config, GOOD);
-  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [id, h.hash, h.pepperId]);
   return { id, loginName };
+}
+
+/** A fresh recovery code for `accountId`, made from a session of its own. */
+async function recoveryCode(accountId: string): Promise<string> {
+  const b = new Browser(app);
+  expect((await b.post('/t/login', { accountId, firstSession: true })).statusCode).toBe(200);
+  const res = await b.post('/v1/account/recovery-codes', {});
+  expect(res.statusCode).toBe(200);
+  return (res.json() as { codes: string[] }).codes[0]!;
 }
 
 describe('the tag', () => {
@@ -145,25 +146,10 @@ describe('I-1 parity under a two-key ring', () => {
     }
   }
 
-  it('password login: old-key, current-key, unknown and malformed names cost the same queries and HMACs', async () => {
-    const old = await passwordAccount(1);
-    deps.config.loginNameKeys = rotated();
-    const current = await passwordAccount();
-    const results = [];
-    for (const name of [old.loginName, current.loginName, uniq('ghost'), 'bad name!', 'x'.repeat(200)]) {
-      results.push(await work(() => login(name, 'Wrong-Horse-9')));
-    }
-    expect(new Set(results.map((r) => r.sql)).size).toBe(1);
-    expect(new Set(results.map((r) => r.hmacs)).size).toBe(1);
-    expect(results.map((r) => r.loginHmacs)).toEqual([2, 2, 2, 2, 2]);
-    // A failed login moves nothing.
-    expect((await tagRow(old.id)).login_tag_key_id).toBe(1);
-  });
-
   it('backup login: old-key, current-key, unknown and malformed names cost the same queries and HMACs', async () => {
-    const old = await passwordAccount(1);
+    const old = await account(1);
     deps.config.loginNameKeys = rotated();
-    const current = await passwordAccount();
+    const current = await account();
     const results = [];
     for (const name of [old.loginName, current.loginName, uniq('ghost'), 'bad name!']) {
       results.push(await work(() => backup(name, 'ABCD-EFGH-JKMN-PQRT')));
@@ -175,40 +161,26 @@ describe('I-1 parity under a two-key ring', () => {
 });
 
 describe('rotation', () => {
-  it('password: a name under the old key still logs in, then the row is re-tagged under the current key', async () => {
-    const { id, loginName } = await passwordAccount(1);
-    deps.config.loginNameKeys = rotated();
-    // One trusted browser: with nothing logged in, a password alone gets in only on a trusted device (hold model v3).
-    const b = new Browser(app);
-    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
-    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
-    const row = await tagRow(id);
-    expect(row.login_tag_key_id).toBe(2);
-    expect(row.login_tag).toEqual(currentLoginTag(deps, loginName, 2));
-    // Once moved, the old key can leave the ring.
-    deps.config.loginNameKeys = { current: 2, keys: new Map([[2, deps.config.loginNameKeys.keys.get(2)!]]) };
-    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
-    expect((await tagRow(id)).login_tag_key_id).toBe(2);
-  });
-
-  it('password: a name still under a key that has left the ring fails like an unknown name', async () => {
-    const { id, loginName } = await passwordAccount(1);
+  it('a name still under a key that has left the ring fails like an unknown name', async () => {
+    const { id, loginName } = await account(1);
+    const code = await recoveryCode(id);
     deps.config.loginNameKeys = { current: 2, keys: new Map([[2, key32()]]) };
-    expect((await login(loginName)).json()).toMatchObject({ error: 'credentials-invalid' });
+    expect((await backup(loginName, code)).json()).toMatchObject({ error: 'credentials-invalid' });
     expect((await tagRow(id)).login_tag_key_id).toBe(1);
   });
 
-  it('a wrong password does not re-tag; a disabled account is not re-tagged either', async () => {
-    const { id, loginName } = await passwordAccount(1);
+  it('a wrong code does not re-tag; a disabled account is not re-tagged either', async () => {
+    const { id, loginName } = await account(1);
+    const code = await recoveryCode(id);
     deps.config.loginNameKeys = rotated();
-    expect((await login(loginName, 'Wrong-Horse-9')).statusCode).toBe(401);
+    expect((await backup(loginName, 'ABCD-EFGH-JKMN-PQRT')).statusCode).toBe(401);
     await deps.db.query('update accounts set disabled_at = now() where id = $1', [id]);
-    expect((await login(loginName)).statusCode).toBe(403);
+    expect((await backup(loginName, code)).statusCode).toBe(403);
     expect((await tagRow(id)).login_tag_key_id).toBe(1);
   });
 
   it('backup login with a recovery code re-tags the row', async () => {
-    const { id, loginName } = await passwordAccount(1);
+    const { id, loginName } = await account(1);
     const b = new Browser(app);
     expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
     const res = await b.post('/v1/account/recovery-codes', {});
@@ -236,29 +208,15 @@ describe('the re-tag is best-effort (review M1)', () => {
     }
   }
 
-  it('password: a failing re-tag still logs in; the row stays under the old key and the next login moves it', async () => {
-    const { id, loginName } = await passwordAccount(1);
-    deps.config.loginNameKeys = rotated();
-    // One trusted browser (hold model v3: with nothing logged in, a password alone gets in only there).
-    const b = new Browser(app);
-    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
-    const res = await retagFails(() => login(loginName, GOOD, b));
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['set-cookie']).toBeDefined();
-    expect((await tagRow(id)).login_tag_key_id).toBe(1);
-    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
-    expect((await tagRow(id)).login_tag_key_id).toBe(2);
-  });
-
   it('recovery code: a failing re-tag after the code is burned still starts the session', async () => {
-    const { id, loginName } = await passwordAccount(1);
+    const { id, loginName } = await account(1);
     const b = new Browser(app);
     expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
     const [code] = ((await b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] }).codes;
     deps.config.loginNameKeys = rotated();
     const res = await retagFails(() => backup(loginName, code!));
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'ok', level: 'recovery' });
+    expect(res.json()).toMatchObject({ status: 'ok' });
     expect((await tagRow(id)).login_tag_key_id).toBe(1);
     expect(logs.join('\n')).not.toContain(loginName.toLowerCase());
   });
@@ -266,7 +224,7 @@ describe('the re-tag is best-effort (review M1)', () => {
 
 describe('uniqueness across keys', () => {
   it('a name held under an old key cannot be signed up again under the current key: names-unavailable', async () => {
-    const { loginName } = await passwordAccount(1);
+    const { loginName } = await account(1);
     deps.config.loginNameKeys = rotated();
     const res = await register(new Browser(app), loginName.toUpperCase());
     expect(res.statusCode).toBe(409);
@@ -291,7 +249,7 @@ describe('uniqueness across keys', () => {
     const b: Keyring = { current: 1, keys: new Map([[1, original.keys.get(1)!], [2, a.keys.get(2)!]]) };
     const name = uniq('roll');
     const names = (d: string) => ({
-      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
+      tradeTag: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
     });
     const first = await deps.db.connect();
     const second = await deps.db.connect();
@@ -326,7 +284,7 @@ describe('uniqueness across keys', () => {
   // signs. `npm run typecheck` is what enforces these.
   it('createAccount needs a signature and a version for a trader, a member and staff, by type', () => {
     type Args = Parameters<typeof createAccount>[2];
-    const base = { displayName: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
+    const base = { tradeTag: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
     // @ts-expect-error a trader must carry a signature
     const unsigned: Args = { ...base, kind: 'trader', termsVersion: TERMS };
     // @ts-expect-error a trader must carry a Terms version
@@ -349,7 +307,7 @@ describe('uniqueness across keys', () => {
       await client.query('begin');
       await expect(
         createAccount(client, deps.config, {
-          displayName: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
+          tradeTag: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
           kind: 'trader', termsVersion: TERMS, termsSignature: SIG, now: new Date(),
         }),
       ).rejects.toEqual(new ApiError(400, 'names-same'));
@@ -362,26 +320,26 @@ describe('uniqueness across keys', () => {
 
 describe('one namespace for both names with tags (FU-A review I1, coordination note 2)', () => {
   const names = (display: string, login: string) => ({
-    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
+    tradeTag: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
   });
 
-  it("B: a display name that is someone's login name under an old key is refused at create (names-unavailable)", async () => {
-    const { loginName } = await passwordAccount(1);
+  it("B: a Trade Tag that is someone's login name under an old key is refused at create (names-unavailable)", async () => {
+    const { loginName } = await account(1);
     deps.config.loginNameKeys = rotated();
     const res = await register(new Browser(app), uniq('carol'), loginName.toUpperCase());
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'names-unavailable' });
   });
 
-  it("A: a login name that is someone's display name is refused, even when the display name appears after the sign-up started", async () => {
-    // At start (cheap, display names are public): FU-A's assertDisplayNameFree.
+  it("A: a login name that is someone's Trade Tag is refused, even when the Trade Tag appears after the sign-up started", async () => {
+    // At start (cheap, Trade Tags are public): FU-A's assertTradeTagFree.
     const alice = uniq('Mira.K');
     expect((await register(new Browser(app), uniq('alice'), alice)).statusCode).toBe(201);
     const early = await register(new Browser(app), alice.toUpperCase(), uniq('Bob.T'));
     expect(early.json()).toEqual({ error: 'names-unavailable' });
-    // At create, under the lock: the display name was taken between a sign-up's start and finish.
+    // At create, under the lock: the Trade Tag was taken between a sign-up's start and finish.
     const late = uniq('Late.D');
-    await seedAccount(deps, { loginName: uniq('late'), displayName: late });
+    await seedAccount(deps, { loginName: uniq('late'), tradeTag: late });
     const client = await deps.db.connect();
     try {
       await client.query('begin');
@@ -415,14 +373,14 @@ describe('one namespace for both names with tags (FU-A review I1, coordination n
   });
 
   it('the login-name route of a pre-009 account checks both namespaces under every key', async () => {
-    const { loginName } = await passwordAccount(1);
+    const { loginName } = await account(1);
     deps.config.loginNameKeys = rotated();
-    const id = await seedAccount(deps, { loginName: null, displayName: uniq('Old.T') });
+    const id = await seedAccount(deps, { loginName: null, tradeTag: uniq('Old.T') });
     const b = new Browser(app);
     const { sessionId } = (await b.post('/t/login', { accountId: id })).json() as { sessionId: string };
     const set = async (name: string) =>
       b.post('/v1/account/login-name', {
-        loginName: name, confirmToken: await issueConfirmToken(deps, { sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'password' }),
+        loginName: name, confirmToken: await issueConfirmToken(deps, { sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'passkey' }),
       });
     expect((await set(loginName)).json()).toEqual({ error: 'names-unavailable' }); // a login name under the old key
     const fresh = uniq('fresh');
@@ -433,10 +391,10 @@ describe('one namespace for both names with tags (FU-A review I1, coordination n
 
 describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
   it('round-trips; holds no plaintext login name; anything that does not open is challenge-expired', () => {
-    const n = { displayName: 'Shown.Name1', displayKey: 'shown.name1', loginKey: 'very.secret1' };
+    const n = { tradeTag: 'Shown.Name1', displayKey: 'shown.name1', loginKey: 'very.secret1' };
     const sealed = sealNames(deps.config, n);
     expect(JSON.stringify(sealed)).not.toContain('very.secret1');
-    expect(sealed.displayName).toBe('Shown.Name1');
+    expect(sealed.tradeTag).toBe('Shown.Name1');
     expect(openNames(deps.config, sealed)).toEqual(n);
     expect(sealNames(deps.config, n).login).not.toBe(sealed.login); // a fresh nonce each time
     const raw = Buffer.from(sealed.login, 'base64url');
@@ -444,7 +402,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     for (const bad of [
       { ...sealed, login: raw.toString('base64url') }, { ...sealed, login: '' }, { ...sealed, login: 1 }, null, 'x',
       // A payload from before FU-D (plaintext names) cannot finish.
-      { displayName: 'Shown.Name1', displayKey: 'shown.name1', loginName: 'very.secret1', loginKey: 'very.secret1' },
+      { tradeTag: 'Shown.Name1', displayKey: 'shown.name1', loginName: 'very.secret1', loginKey: 'very.secret1' },
     ]) {
       expect(() => openNames(deps.config, bad)).toThrow(new ApiError(400, 'challenge-expired'));
     }
@@ -455,7 +413,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     const pair = await genKey();
     const loginName = uniq('pgpsign');
     const b = new Browser(app);
-    const start = await b.post('/v1/register/pgp/start', { displayName: uniq('Shown.Pgp'), loginName, publicKey: pair.publicKey });
+    const start = await b.post('/v1/register/pgp/start', { tradeTag: uniq('Shown.Pgp'), loginName, publicKey: pair.publicKey });
     expect(start.statusCode).toBe(200);
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, deps.clock()));
@@ -474,15 +432,13 @@ describe('no plaintext login name anywhere', () => {
     const bodies: string[] = [];
     const keep = <R extends { body: string }>(r: R): R => (bodies.push(r.body), r);
     keep(await register(b, secret, uniq('Shown.Name')));
-    keep(await login(secret));
-    keep(await login(secret, 'Wrong-Horse-9'));
     keep(await backup(secret, 'ABCD-EFGH-JKMN-PQRT'));
     keep(await new Browser(app).post('/v1/login/webauthn/start', { loginName: secret }));
     // Sign-ups that wait in a challenge (PGP code, WebAuthn ceremony) keep the login name sealed meanwhile.
     const other = uniq('Hidden.Other');
-    const pgp = keep(await new Browser(app).post('/v1/register/pgp/start', { displayName: uniq('Shown.Pgp'), loginName: other, publicKey: (await genKey()).publicKey }));
+    const pgp = keep(await new Browser(app).post('/v1/register/pgp/start', { tradeTag: uniq('Shown.Pgp'), loginName: other, publicKey: (await genKey()).publicKey }));
     expect(pgp.statusCode).toBe(200);
-    const wa = keep(await new Browser(app).post('/v1/register/webauthn/start', { displayName: uniq('Shown.Wa'), loginName: other, kind: 'passkey' }));
+    const wa = keep(await new Browser(app).post('/v1/register/webauthn/start', { tradeTag: uniq('Shown.Wa'), loginName: other, kind: 'passkey' }));
     expect(wa.statusCode).toBe(200);
     const me = keep(await b.get('/v1/account/me'));
     expect(me.json()).toMatchObject({ needsLoginName: false });
@@ -513,7 +469,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       for (const f of (await readdir(MIGRATIONS_DIR)).filter((f) => f < '012')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
       await migrate(db, dir);
       // As 009 left them: two accounts with private login names, and a pre-009 one (legacy: its login
-      // name is its display name until it sets one).
+      // name is its Trade Tag until it sets one).
       const insert = (display: string, login: string) =>
         db.query(
           `insert into accounts (display_name, display_key, login_name, login_key, legacy_login_name, kind, webauthn_user_id, created_at)
@@ -527,7 +483,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       await db.query(
         `insert into challenges (purpose, method, payload, created_at, expires_at)
          values ('register', 'pgp', $1, now(), now() + interval '5 minutes'), ('login', 'pgp', '{}', now(), now() + interval '5 minutes')`,
-        [{ names: { displayName: 'Shown.Four4', displayKey: 'shown.four4', loginName: 'Tool.Secret4', loginKey: 'tool.secret4' } }],
+        [{ names: { tradeTag: 'Shown.Four4', displayKey: 'shown.four4', loginName: 'Tool.Secret4', loginKey: 'tool.secret4' } }],
       );
       expect((await db.query("select kind from name_keys where key like 'tool.%'")).rows).toHaveLength(2);
       // As autovacuum would have done by now: the planner's samples (pg_statistic) hold the names.
@@ -552,7 +508,7 @@ describe('migration 012 and the tag-login-names tool', () => {
         PATH: process.env.PATH, X2F_ORIGINS: 'https://x2f.test', X2F_RP_ID: 'x2f.test', DATABASE_URL: `${inject('pgUrl')}/${name}`,
         X2F_LEAKED_LIST_PATH: '/nonexistent', X2F_SERVER_KEY: b64(config.serverKey), X2F_MONERO_NETWORK: 'stagenet',
         X2F_TERMS_VERSION: TERMS, X2F_PGP_SIGNING_KEY_PATH: '/nonexistent', X2F_PGP_SIGNING_FINGERPRINT: '0'.repeat(40),
-        X2F_PASSWORD_PEPPERS: ring(config.passwordPeppers), X2F_RECOVERY_CODE_KEYS: ring(config.recoveryCodeKeys),
+        X2F_RECOVERY_CODE_KEYS: ring(config.recoveryCodeKeys),
         X2F_TOTP_KEYS: ring(config.totpKeys), X2F_LOGIN_NAME_KEYS: ring(config.loginNameKeys), X2F_TICKET_KEYS: ring(config.ticketKeys), ...VAPID_ENV,
       };
       const run = spawnSync(join(API_DIR, '..', '..', 'node_modules', '.bin', 'tsx'), ['src/tools/tag-login-names.ts'], {
@@ -563,7 +519,7 @@ describe('migration 012 and the tag-login-names tool', () => {
       expect(run.stdout).toBe('{"tagged":3}\n');
 
       const { rows } = await db.query(
-        'select id, login_tag, login_tag_key_id, login_name, login_key, legacy_login_name from accounts order by display_name',
+        'select id, login_tag, login_tag_key_id, login_name, login_key, legacy_login_name from accounts order by trade_tag',
       );
       const key = config.loginNameKeys.keys.get(4)!;
       expect(rows).toEqual([

@@ -26,7 +26,7 @@ export function staffInfo(): StaffInfo {
 }
 
 export interface Staffer {
-  displayName: string;
+  tradeTag: string;
   loginName: string;
   role: 'owner' | 'senior' | 'mod';
   keys: KeyData[];
@@ -113,21 +113,21 @@ export async function hire(role: 'mod' | 'senior', o: { hours?: LoginHours } = {
   await own.client.ok('POST', '/staff/v1/invites', { role, hours: o.hours ?? 'any', inviteId, token, expiresAt, tapId });
 
   const tag = randomBytes(3).toString('hex');
-  const displayName = `${role === 'mod' ? 'Kestrel' : 'Senior'}${tag}`;
+  const tradeTag = `${role === 'mod' ? 'Kestrel' : 'Senior'}${tag}`;
   const loginName = `${role}-login-${tag}`;
   const c = new StaffClient(s.api, s.origin);
   const url = (step = '') => `/staff/v1/invites/accept/${token}${step}`;
   await c.ok('GET', url());
-  await c.ok('POST', url('/account'), { displayName, loginName, acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: displayName } });
+  await c.ok('POST', url('/account'), { tradeTag, loginName, acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: tradeTag } });
   const key = newKey();
   await addKey(c, { path: url('/key/start'), body: { kind: 'security-key' } }, (_s, response) => ({ path: url('/key/finish'), body: { kind: 'security-key', response } }), key, s.ca);
   const passkey = newKey();
   await addKey(c, { path: url('/key/start'), body: { kind: 'passkey' } }, (_s, response) => ({ path: url('/key/finish'), body: { kind: 'passkey', response } }), passkey, null);
-  const pgp = await newPgp(displayName);
+  const pgp = await newPgp(tradeTag);
   const ps = await c.ok<{ challengeId: string; encryptedMessage: string }>('POST', url('/pgp/start'), { publicKey: pgp.publicKey });
   await c.ok('POST', url('/pgp/finish'), { challengeId: ps.challengeId, code: await pgpCode(ps.encryptedMessage, pgp) });
   await c.ok('POST', url('/finish'), {});
-  const p: Staffer = { displayName, loginName, role, keys: [key], pgp, client: new StaffClient(s.api, s.origin), browsers: [] };
+  const p: Staffer = { tradeTag, loginName, role, keys: [key], pgp, client: new StaffClient(s.api, s.origin), browsers: [] };
   await staffLogin(p.client, { loginName, key, pgp });
   return p;
 }
@@ -153,10 +153,10 @@ export async function staffPage(browser: Browser, p: Staffer, size: Size = DESKT
     p.browsers = p.browsers.filter((b) => b.cdp !== cdp);
   });
   if (process.env.X2F_E2E_DIAG) {
-    page.on('console', (m) => console.log(`[staff ${p.displayName} ${m.type()}] ${m.text().slice(0, 300)}`));
-    page.on('pageerror', (e) => console.log(`[staff ${p.displayName} pageerror] ${e.message.slice(0, 300)}`));
+    page.on('console', (m) => console.log(`[staff ${p.tradeTag} ${m.type()}] ${m.text().slice(0, 300)}`));
+    page.on('pageerror', (e) => console.log(`[staff ${p.tradeTag} pageerror] ${e.message.slice(0, 300)}`));
     context.on('response', (r) => {
-      if (r.status() >= 400) void r.text().then((t) => console.log(`[staff ${p.displayName} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)} ${t.slice(0, 200)}`), () => undefined);
+      if (r.status() >= 400) void r.text().then((t) => console.log(`[staff ${p.tradeTag} http ${r.status()}] ${r.request().method()} ${r.url().slice(0, 120)} ${t.slice(0, 200)}`), () => undefined);
     });
   }
   return {

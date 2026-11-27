@@ -104,7 +104,7 @@ const failureOf = (e: unknown): ChatFailure => (e instanceof ChatFailed ? e.code
 
 export interface ChatPanelProps {
   chat: string;
-  /** The counterparty's public display name (never a login name, FU-A). */
+  /** The counterparty's public Trade Tag (never a login name, FU-A). */
   name: string;
   /** The linked trade, when there is one: its live events re-sync the panel (a dispute opening). */
   tradeCode?: string | undefined;
@@ -277,7 +277,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   return (
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={phase ?? 'loading'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
-      <BlockAction displayName={name} onBlocked={() => void sync()} />
+      <BlockAction tradeTag={name} onBlocked={() => void sync()} />
       {snap?.systemCalled ? (
         // Design build task 7 (T2): this device handed the chat key to the moderator on the system's dispute. COPY-UNSIGNED
         <p className="x2f-chat__system" data-system="system-dispute">

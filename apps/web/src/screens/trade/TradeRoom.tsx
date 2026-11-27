@@ -94,7 +94,7 @@ import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type T
 import { memberOf } from '../../session/member.js';
 import { SessionTraderNotes } from '../settings/TraderNotes.js';
 import { useResumeSync } from '../../session/syncFirst.js';
-import { displayNameOf, useSession } from '../../session/useSession.js';
+import { tradeTagOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { CourtesySheet } from '../quote/CourtesySheet.js';
@@ -112,6 +112,10 @@ import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedT
 import { SelfDestructed, SelfDestructNotice, useSelfDestruct } from './SelfDestruct.js';
 import { TradeGlance } from './TradeGlance.js';
 import { CounterpartyCard } from './TradeTimeline.js';
+import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
+import { isCantDoCode, type CantDoCode } from '../../ui/cantDoCodes.js';
+import { actsOf, MemberActsContext, memberStep, useMemberBoxes, type MemberRoomActs } from './memberActs.js';
+import { MemberRefusal, MemberStepRoom } from './MemberKeys.js';
 
 export interface TradeScreenProps {
   /** The trade code the room's escrow runs for (the route's, normalized): never API data. */
@@ -253,7 +257,7 @@ export function TradeRoom() {
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
   // Owner p7-2: "Do not show me this warning again" belongs to the signed-in user (confirmSkip.ts).
-  const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  const confirmUser = session.status === 'signed-in' ? tradeTagOf(session.me) : null;
   useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
   if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
@@ -282,9 +286,9 @@ export function TradeRoom() {
       </main>
     );
   }
-  // Plan 2 Task 18 (review I1, I2): a team member's device never runs the escrow (only the
-  // account owner's device can, until Plan 3 Task 42's member keys): wait for the session first, so
-  // the escrow worker never boots on a member's device, then show the member's room.
+  // Plan 2 Task 18 (review I1, I2): wait for the session first, so the owner's escrow room never
+  // boots the escrow worker on a member's device; the member's room starts it only for a step the
+  // member's boxes allow, once the account's keys are on this device (MemberRoom, memberKey.ts).
   if (session.status === 'loading') return <main data-screen="trade" aria-busy="true" />;
   if (memberOf(session) !== null) return <MemberRoom code={own} view={load.view} refresh={refresh} />;
   // The escrow starts only once the API has shown this trade to this account (review of the
@@ -294,11 +298,17 @@ export function TradeRoom() {
 }
 
 /**
- * A team member's trade room until Plan 3 Task 42 (NEEDS_PLAN3_TASK42_MEMBER_KEY): no escrow on
- * this device, so no funding, check words or release here. Kit parts only (NEEDS_DESIGN_TEAM).
+ * A team member's trade room. Owner Jess, 26 Nov 2026 (the answer to 'trades-release'): members the
+ * lead grants a box act in the account's trades, each its own box (memberActs.ts): `trades-fund`,
+ * `trades-release`, `trades-upload-proof`, `trades-mark-paid`, each with "Hold trade keys". For
+ * such a step the room loads the account's synced escrow keys on this device (memberKey.ts, the
+ * member's own passkey, security key or PGP key), runs the escrow here and shows the lead's own
+ * screen with only the member's actions in it (MemberKeys.tsx `MemberStepRoom`). Fund and release
+ * take a `fund-trade` / `release-trade` confirm first. A box missing: that action is not shown.
+ * Kit parts only (NEEDS_DESIGN_TEAM).
  *
- * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),
- * team/perms.ts; review round 2, n3), as far as it needs no escrow here:
+ * Every other step, as before (owner question 13(d), team/perms.ts; review round 2, n3), as far
+ * as it needs no escrow here:
  * - the slot's `forMembers` screen, if it has one: the seller's Withdraw of a standing proposal while
  *   the buyer pays (no Propose cancel, design proto review P2) (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
  *   it leads to is the owner's device's), and the seller's Confirm cancel after a buyer's cancel
@@ -306,17 +316,34 @@ export function TradeRoom() {
  * - otherwise the trade's state and a notice that the account owner's device does the rest;
  * - Open dispute (or Go to the dispute) whenever the state machine allows one: the dispute screen
  *   at /trade/:code/dispute runs no escrow (Task 27's DisputeEntry).
- * Not offered (open for the owner, see coordination.md): I've paid (the sum to pay must be the
- * escrow device's own, never the API's), the buyer's cancel and accepting a cancel (the buyer's
- * device builds the refund at that moment), and the chat (perms.ts places it with Task 42).
+ * Not offered: I've paid without the escrow here (the sum to pay must be the escrow device's own,
+ * never the API's), the buyer's cancel and accepting a cancel (the buyer's device builds the
+ * refund at that moment), and the chat (perms.ts places it with Task 42).
  */
 function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; refresh: () => Promise<void> }) {
   const serverNow = view.serverNow;
   const clock = useMemo(() => makeServerClock(serverNow), [serverNow]);
-  const Screen = memberScreenFor(view, clock().getTime());
+  const nowMs = clock().getTime();
+  const Screen = memberScreenFor(view, nowMs);
+  // Owner Jess, 26 Nov 2026: the member's own boxes (GET /v1/team/me) pick the step they may take
+  // here (memberActs.ts); while they load, and for every other step, the room stays as it was.
+  const boxes = useMemberBoxes();
+  const acts = useMemo(() => actsOf(boxes ?? []), [boxes]);
+  const step = boxes === null ? null : memberStep(view, acts);
+  const { prove, confirmUi, open } = useConfirm();
+  const [refusal, setRefusal] = useState<CantDoCode | null>(null);
+  const member = useMemo<MemberRoomActs>(() => ({ acts, prove, refused: (c) => setRefusal(isCantDoCode(c) ? c : null) }), [acts, prove]);
+  const stepScreen = step === null ? null : screenFor(view, nowMs);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role} data-member="">
-      {Screen ? (
+      {step !== null && stepScreen !== null ? (
+        <ConfirmOpenProvider value={open}>
+          <MemberActsContext.Provider value={member}>
+            <MemberStepRoom code={code} view={view} refresh={refresh} step={step} member={member} screen={stepScreen} integrity={integrityScreen} />
+          </MemberActsContext.Provider>
+          {confirmUi}
+        </ConfirmOpenProvider>
+      ) : Screen ? (
         <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
       ) : (
         <>
@@ -331,7 +358,8 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         {view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
       </div>
       {/* Job 1c (owner S-094, p7-8): the account's notes on the counterparty, as the member's boxes allow. */}
-      <SessionTraderNotes displayName={publicName(view.counterparty)} />
+      <SessionTraderNotes tradeTag={publicName(view.counterparty)} />
+      {refusal !== null ? <MemberRefusal code={refusal} onClose={() => setRefusal(null)} /> : null}
     </main>
   );
 }
@@ -414,7 +442,7 @@ function ReadyRoom({ code, ownCode, view: apiView, refresh, navState, hash }: { 
             {!broken && view.state !== 'disputed' ? <FileAppeal code={view.code} appealUntil={view.appealUntil} serverClock={clock} /> : null}
             {broken ? null : <SelfDestructNotice view={view} />}
             {/* Job 1c (owner S-094, p7-8): the account's private notes on the counterparty. */}
-            {broken ? null : <SessionTraderNotes displayName={publicName(view.counterparty)} />}
+            {broken ? null : <SessionTraderNotes tradeTag={publicName(view.counterparty)} />}
           </>
         }
         side={

@@ -283,6 +283,12 @@ textarea.x2f-textarea--tall {
   min-height: 44px;
 }
 
+/* A team member's row holds its buttons, the open limits or boxes editor and the "Signed-in
+   sessions" disclosure: they wrap onto new lines on a phone instead of running past the side. */
+[data-part='member-list'] > .x2f-list__row {
+  flex-wrap: wrap;
+}
+
 .x2f-list__label {
   min-width: 0;
   word-break: break-word;

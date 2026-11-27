@@ -1,35 +1,36 @@
 /**
  * Setup step 3 for a method ticked after the first one (owner demo notes, 12 Nov 2026: after the
  * first chosen method is set up, the next chosen one follows): a security key or a passkey
- * (`/setup/security-key`, `/setup/passkey`), or the authenticator app (`/setup/authenticator`,
- * after the password it belongs to). The account exists by now, so these use the account's own
- * add-method calls. While the sign-up window is open the server asks no confirm-it's-you for them;
- * the confirm sheet is wired in anyway, as on the backup step, so someone who comes back later is
- * asked to confirm rather than refused. "Set up later" goes on without it (Settings can add it).
+ * (`/setup/security-key`, `/setup/passkey`), or the authenticator app (`/setup/authenticator`).
+ * The account exists by now, so these use the account's own add-method calls. While the sign-up
+ * window is open the server asks no confirm-it's-you for them; the confirm sheet is wired in anyway,
+ * as on the backup step, so someone who comes back later is asked to confirm rather than refused.
+ * "Set up later" goes on without it (Settings can add it), but only while the methods still ticked
+ * make two kinds without it (owner, 26 Nov 2026: at least two).
  */
 import { useEffect, useState } from 'react';
-import { STANDS_ALONE, addWebAuthnKeyWithId, defaultKeyName, isStaged, withConfirm, type Staged } from '@x2f/auth-client';
+import { MIN_METHOD_KINDS, addWebAuthnKeyWithId, countedKinds, defaultKeyName, withConfirm } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
 import { KEY_SAVED_COPY, KeySaved } from '../auth/KeySaved.js';
-import { HOLD_COPY } from '../settings/holdCopy.js';
 import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, finishMethod, nextStep, useSetup } from './kit.js';
 import { SecurityKeyArt } from './SecurityKeyArt.js';
 
-/** A staged addition (hold model v3) says so before going on; nothing staged goes straight on. */
+/**
+ * `done` once the method is set up; `skip` for "Set up later", which unticks it. `required` when
+ * the other methods still ticked would make fewer than two kinds without this one, so it cannot be
+ * left for later.
+ */
 function useFinish(m: 'security-key' | 'passkey' | 'totp') {
   const api = useSetup();
-  const [held, setHeld] = useState(false);
+  const rest = api.state.methods.filter((x) => x !== m);
   return {
-    held,
-    done: (staged?: Staged | undefined) => {
-      if (staged !== undefined && isStaged(staged)) setHeld(true);
-      else finishMethod(api, m);
-    },
-    next: () => finishMethod(api, m),
+    required: countedKinds(rest).size < MIN_METHOD_KINDS,
+    done: () => finishMethod(api, m),
+    skip: () => finishMethod(api, m, { methods: rest }),
   };
 }
 
@@ -39,19 +40,6 @@ function Later({ onClick }: { onClick: () => void }) {
     <Button variant="quiet" onClick={onClick} data-part="method-later">
       Set up later
     </Button>
-  );
-}
-
-function Held({ onNext }: { onNext: () => void }) {
-  return (
-    <>
-      <p className="x2f-note" role="status" data-part="held-note">
-        {HOLD_COPY.staged}
-      </p>
-      <Button variant="primary" onClick={onNext} data-part="method-next">
-        Continue
-      </Button>
-    </>
   );
 }
 
@@ -95,14 +83,13 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
     setBusy(true);
     setError(null);
     try {
-      const { staged, credentialId } = await withConfirm(
+      const { credentialId } = await withConfirm(
         { kind: 'add-method', method: kind },
         (t) => addWebAuthnKeyWithId(authApi, kind, t !== undefined ? { confirmToken: t } : {}),
         prove,
       );
-      // A key added now says so and is named (owner 25 Nov); a staged one (no key row yet) says it is waiting.
-      if (!(staged !== undefined && isStaged(staged))) setAdded({ credentialId, defaultName: await suggestedKeyName(kind) });
-      else finish.done(staged);
+      // A key added says so and is named (owner 25 Nov).
+      setAdded({ credentialId, defaultName: await suggestedKeyName(kind) });
     } catch (e) {
       // Why it failed, when the browser or the server says (owner demo 13 Nov).
       if (!isConfirmAbort(e)) setError(keyErrorText(e, kind));
@@ -117,12 +104,12 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
         screen={`setup-${kind}`}
         step={3}
         footer={
-          finish.held || added !== null ? null : (
+          added !== null ? null : (
             <div className="x2f-start__buttons">
               <Button variant={primary} disabled={busy} onClick={() => void add()} data-part="key-add">
                 {words.cta}
               </Button>
-              <Later onClick={finish.next} />
+              {finish.required ? null : <Later onClick={finish.skip} />}
             </div>
           )
         }
@@ -134,13 +121,12 @@ export function KeyStep({ kind }: { kind: 'security-key' | 'passkey' }) {
             {KEY_SAVED_COPY.waiting(kind)}
           </p>
         ) : null}
-        {added !== null ? <KeySaved kind={kind} credentialId={added.credentialId} defaultName={added.defaultName} onContinue={finish.next} /> : null}
+        {added !== null ? <KeySaved kind={kind} credentialId={added.credentialId} defaultName={added.defaultName} onContinue={finish.done} /> : null}
         {error !== null ? (
           <p className="x2f-error" role="alert" data-part="key-error">
             {error}
           </p>
         ) : null}
-        {finish.held ? <Held onNext={finish.next} /> : null}
         {confirmUi}
       </SetupFrame>
     </ConfirmOpenProvider>
@@ -175,28 +161,15 @@ export function FirstKeySaved() {
 export function AuthenticatorStep() {
   const { prove, confirmUi, open } = useConfirm();
   const finish = useFinish('totp');
-  const { state } = useSetup();
-  // Owner decision, 16 Nov 2026: the authenticator app goes only with a password (the server refuses
-  // it otherwise, 409 `totp-needs-password`). The sign-up screen never ticks it alone; a flow saved
-  // before that (signup round 3) goes straight on, as "Set up later" would.
-  const noPassword = !state.methods.includes('password');
-  useEffect(() => {
-    if (noPassword) finish.next();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
-  }, [noPassword]);
-  if (noPassword) return null;
-  // Owner decision, 16 Nov 2026: a password does not stand alone, so with no PGP key, security key
-  // or passkey ticked the authenticator app is not left for later (sign-up cannot finish without it).
-  const required = !state.methods.some((m) => STANDS_ALONE.has(m));
 
   return (
     <ConfirmOpenProvider value={open}>
-      <SetupFrame screen="setup-authenticator" step={3} footer={finish.held || required ? null : <Later onClick={finish.next} />}>
-        {/* COPY-UNSIGNED */}
+      <SetupFrame screen="setup-authenticator" step={3} footer={finish.required ? null : <Later onClick={finish.skip} />}>
+        {/* COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; the app counts as one of the two; 27 Nov: it logs in with the username). not-a-refusal: explains what the app does on X2F */}
         <SetupIntro title="Add your authenticator app">
-          Each time you log in with your password, you then type the 6-digit code your authenticator app shows.
+          Your authenticator app shows a new 6-digit code every 30 seconds. It counts as one of your two ways in. With your username it logs you in, but it can&apos;t confirm changes.
         </SetupIntro>
-        {finish.held ? <Held onNext={finish.next} /> : <Totp prove={prove} onDone={finish.done} onCancel={finish.next} />}
+        <Totp prove={prove} onDone={finish.done} onCancel={finish.required ? undefined : finish.skip} />
         {confirmUi}
       </SetupFrame>
     </ConfirmOpenProvider>

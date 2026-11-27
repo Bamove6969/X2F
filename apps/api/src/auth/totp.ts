@@ -1,5 +1,5 @@
 /**
- * TOTP as a second factor and a backup (Task 9).
+ * TOTP, the authenticator app (Task 9).
  *
  * - No patterns (owner, spec 6.2): each enrolment draws a fresh 20-byte secret from
  *   `crypto.randomBytes`, never derived from the username, account ID, time, a counter,
@@ -10,38 +10,44 @@
  *   `subkey('totp')`) still open until `rewrapTotpSecrets` moves them.
  * - SHA-1, 6 digits, 30-second period, window ±1 step; a code is accepted only for a step later than
  *   the last accepted one, set in the same statement (no replay, even in parallel).
- * - Owner, 16 Nov 2026: TOTP is the password login's second factor, so an account has it only with
- *   a password (`@x2f/accounts` METHOD_PARTNERS). Enrolment start, finish and every write of an
- *   enrolment (a staged one too) answer 409 `totp-needs-password` without one; removing the
- *   password while TOTP is on is 409 `password-has-totp` (methods.ts `removable`).
+ * - Owner, 26 Nov 2026 (no passwords): one authenticator app per account (a new enrolment replaces
+ *   the old one). It counts as one of the two kinds of login method a trader account holds
+ *   (`@x2f/accounts` `enoughMethods`).
+ * - Owner, 27 Nov 2026 (Jess, 01:04 UTC, overriding "TOTP never logs in": "Ours will just be a user
+ *   ID and otp because user ID is secret"): a trader logs in with the private login name plus the
+ *   current code (`POST /v1/login/totp`, `totpLogin`). It is a normal full session, through
+ *   `completeLogin` like every other login (the disabled / D-059 lock check, approve-on-device for a
+ *   new browser). It never confirms anything (confirm.ts takes keys only), never unlocks the synced
+ *   trade keys (only passkey/security-key PRF or PGP do) and offers no chat-key handover. Staff,
+ *   members and the owner hold no authenticator app, so their login names take the unknown-name path.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { partnerMissing } from '@x2f/accounts';
 import { Secret, TOTP } from 'otpauth';
-import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { AccountKind } from '@x2f/accounts';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { consumeChallenge, takeStartBudgetUnlessOpen } from './challenges.js';
+import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
+import { consumeChallenge } from './challenges.js';
+import { ensureDeviceCookie } from './device.js';
+import { completeLogin, type LoginResult } from './login.js';
 import { keyringBox, type SecretBox } from './keystore.js';
-import { methodAllowed } from './methods.js';
+import { allowedMethods, methodAllowed } from './methods.js';
 import { onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm } from './confirm.js';
-import { deviceHash, ensureDeviceCookie } from './device.js';
-import { traderLogin } from './approval.js';
-import { gateChange, stagedReply, requireNotHeld } from './hold.js';
-import { assertNotDisabled, requireSession } from './sessions.js';
-import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { requireLiveSessionInTx } from './liveSession.js';
+import { requireSession } from './sessions.js';
+import { NIL_UUID, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 
 export const TOTP_SECRET_BYTES = 20;
 const PERIOD_S = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DIGITS = 6;
 const WINDOW = 1;
-/** An enrolment challenge, and a password login waiting for its code, live 5 minutes. */
+/** An enrolment challenge lives 5 minutes. */
 export const TOTP_ENROL_TTL_MS = 5 * 60_000;
-export const SECOND_FACTOR_TTL_MS = 5 * 60_000;
 /** Open enrolment challenges per session; a new start beyond this replaces the oldest. */
 export const TOTP_OPEN_ENROLMENTS = 3;
 
@@ -112,7 +118,7 @@ export async function rewrapTotpSecrets(deps: Pick<Deps, 'db' | 'config'>): Prom
 /** otpauth wants an ArrayBuffer of exactly the secret's bytes (a Buffer may sit in a shared pool). */
 const secretOf = (bytes: Uint8Array) => new Secret({ buffer: new Uint8Array(bytes).buffer });
 
-/** `label` is the public display name, never the login name. */
+/** `label` is the public Trade Tag, never the login name. */
 function totpOf(bytes: Uint8Array, label: string): TOTP {
   return new TOTP({ issuer: 'X2F', label, algorithm: 'SHA1', digits: DIGITS, period: PERIOD_S, secret: secretOf(bytes) });
 }
@@ -165,47 +171,9 @@ export async function verifyTotp(deps: Pick<Deps, 'db' | 'clock' | 'config'>, ac
   return (r.rowCount ?? 0) > 0;
 }
 
-/**
- * 409 `totp-needs-password` unless the account has a password (owner, 16 Nov 2026). With `lock`
- * the account row is taken for update first, so a parallel password removal (methods.ts
- * `removable` takes the same lock) waits for this transaction and then sees the TOTP.
- */
-export async function assertPasswordForTotp(db: Queryable, accountId: string, o: { lock?: boolean } = {}): Promise<void> {
-  if (o.lock === true) await db.query('select 1 from accounts where id = $1 for update', [accountId]);
-  const { rows } = await db.query('select 1 from passwords where account_id = $1', [accountId]);
-  if (partnerMissing('totp', rows.length > 0 ? ['password'] : []) !== null) throw new ApiError(409, 'totp-needs-password');
-}
-
-/** The start's check, as a preHandler before the confirm token is redeemed (a refusal leaves it unused). */
-const passwordForTotp: preHandlerAsyncHookHandler = async (req) => {
-  await assertPasswordForTotp(req.server.deps.db, req.auth.accountId);
-};
-
 export async function hasTotp(db: Queryable, accountId: string): Promise<boolean> {
   const { rows } = await db.query('select 1 from totp where account_id = $1', [accountId]);
   return rows.length > 0;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Password login's second factor
-
-/**
- * A password login of an account with TOTP stops here: a `challenges` row (purpose
- * `second-factor`, method `totp`, this account and device, 5 minutes) that
- * `POST /v1/login/second-factor` finishes. No session exists until then.
- */
-export async function issueSecondFactor(
-  deps: Pick<Deps, 'db' | 'clock'>,
-  req: FastifyRequest,
-  a: { accountId: string; deviceLabel: string },
-): Promise<string> {
-  const now = deps.clock();
-  const { rows } = await deps.db.query<{ id: string }>(
-    `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
-     values ($1, $2, 'second-factor', 'totp', $3, $4, $5) returning id`,
-    [a.accountId, deviceHash(req), JSON.stringify({ deviceLabel: a.deviceLabel }), now, new Date(now.getTime() + SECOND_FACTOR_TTL_MS)],
-  );
-  return rows[0]!.id;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -226,9 +194,9 @@ function str(b: Record<string, unknown>, key: string): string {
 async function enrolStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const now = deps.clock();
-  const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [req.auth.accountId]);
-  const displayName = rows[0]?.display_name;
-  if (displayName === undefined) throw new ApiError(401, 'not-authenticated');
+  const { rows } = await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [req.auth.accountId]);
+  const tradeTag = rows[0]?.trade_tag;
+  if (tradeTag === undefined) throw new ApiError(401, 'not-authenticated');
   // A fresh secret per enrolment, from the OS CSPRNG only (R9).
   const bytes = new Uint8Array(randomBytes(TOTP_SECRET_BYTES));
   const { rows: ch } = await deps.db.query<{ id: string }>(
@@ -252,7 +220,7 @@ async function enrolStart(req: FastifyRequest) {
          order by (payload->>'n')::bigint desc offset $2)`,
     [req.auth.sessionId, TOTP_OPEN_ENROLMENTS, now],
   );
-  const totp = totpOf(bytes, displayName);
+  const totp = totpOf(bytes, tradeTag);
   return { challengeId: ch[0]!.id, otpauthUri: totp.toString(), secret: totp.secret.base32 };
 }
 
@@ -260,12 +228,12 @@ async function enrolStart(req: FastifyRequest) {
  * Proves the authenticator app holds the new secret, then enrols it (replacing an earlier one).
  * A wrong code answers 401 `code-invalid` and may be retried on the same challenge until it
  * expires (the person only proves they copied a secret they were just shown), but each one counts
- * on the account's `totp` throttle key, as at `login/second-factor`. The throttle is checked
+ * on the account's `totp` throttle key. The throttle is checked
  * before the code and nothing is used up first, so a 429 leaves the challenge for a retry; the
  * right code clears the streak and uses the challenge up with `consumeChallenge`, so it enrols
  * once even in parallel.
  */
-async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
+async function enrolFinish(req: FastifyRequest) {
   const deps = req.server.deps;
   const b = body(req);
   const challengeId = str(b, 'challengeId');
@@ -298,17 +266,14 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   // Sealed again with a fresh nonce; the enrolment code's step counts as used.
   const sealedNow = sealSecret(deps, req.auth.accountId, bytes);
   const client = await deps.db.connect();
-  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
-      // Owner, 16 Nov 2026: only with a password, checked again here (it may have gone since the start).
-      await assertPasswordForTotp(client, req.auth.accountId, { lock: true });
-      // Hold model v3: a waiting login's enrolment is staged; it applies 24 h after it is submitted.
-      held = await gateChange(client, req, { kind: 'totp', secretEnc: sealedNow.toString('base64'), step });
+      // The session must still be live, under the account lock.
+      await requireLiveSessionInTx(client, req.auth, now);
       // Re-verify R1: a start let through on the window may add the first app only, never replace one.
       if (onWindow) await recheckWindowInTx(client, req, 'totp', 'add-method');
-      if (held === null) await applyTotp(client, req.auth.accountId, sealedNow, step, now);
+      await applyTotp(client, req.auth.accountId, sealedNow, step, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -317,19 +282,11 @@ async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   } finally {
     client.release();
   }
-  if (held !== null) {
-    return reply.code(202).send(stagedReply(held));
-  }
   return { ok: true };
 }
 
-/**
- * The write of a TOTP enrolment (the route's, or a pending one when the hold ends by time); replaces
- * an earlier one. 409 `totp-needs-password` when the account has no password by then (a staged
- * enrolment is then dropped, hold.ts).
- */
+/** The write of a TOTP enrolment; replaces an earlier one (one authenticator app per account). */
 export async function applyTotp(db: Queryable, accountId: string, secretEnc: Buffer, step: number, now: Date): Promise<void> {
-  await assertPasswordForTotp(db, accountId, { lock: true });
   await db.query(
     `insert into totp (account_id, secret_enc, last_step, created_at) values ($1, $2, $3, $4)
      on conflict (account_id) do update set secret_enc = excluded.secret_enc, last_step = excluded.last_step,
@@ -340,60 +297,58 @@ export async function applyTotp(db: Queryable, accountId: string, secretEnc: Buf
 }
 
 /**
- * Finishes a password login that answered `second-factor`. The pending login is single-use and
- * bound to the browser that started it; wrong codes count on the account's `totp` throttle key
- * (with Task 4's device scoping), use the pending login up and answer 401 `code-invalid`. The
- * throttle is checked before the pending login is used up, so a 429 leaves it for a retry.
+ * `POST /v1/login/totp { loginName, code, deviceLabel }` (owner, 27 Nov 2026): the private login
+ * name plus the authenticator app's current code. Every miss is the same 401 `credentials-invalid`,
+ * whichever was wrong: an unknown name, an account of another kind (staff, members and the owner
+ * hold no authenticator app), an account without one, or a wrong code (the same lookup and the
+ * same code check against a throwaway secret, `dummyTotpCheck`). Guessing is slowed by the account's
+ * `totp` throttle key (an unknown name by its name tag), checked before the code: 429 `slow-down`
+ * or `locked` with `retryAfterSeconds`. A code works once (`verifyTotp`'s last accepted step, set in
+ * the same statement). Then `completeLogin`: a disabled account (a staff switch-off or the D-059
+ * compromised lock) is 403 `account-disabled`, and a new browser while the account is logged in
+ * elsewhere waits for approval (`approve-on-device`).
  */
-async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
+async function totpLogin(req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> {
   const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
+  req.server.budgets.start.take();
   const b = body(req);
-  // F1: a started password login can always finish its second factor.
-  await takeStartBudgetUnlessOpen(req, b.pendingId, { purpose: 'second-factor', methods: ['totp'] });
-  const pendingId = str(b, 'pendingId');
+  const loginName = str(b, 'loginName');
   const code = str(b, 'code');
-  const now = deps.clock();
-  const device = deviceHash(req);
-  const expired = () => new ApiError(400, 'challenge-expired');
-  const matches = (r: { purpose: string; method: string; account_id: string | null; device_hash: Buffer | null }) =>
-    r.purpose === 'second-factor' && r.method === 'totp' && r.account_id !== null &&
-    r.device_hash !== null && device !== null && r.device_hash.equals(device);
-  if (!UUID.test(pendingId)) throw expired();
-  // Look first (nothing used up), so a throttle refusal leaves the pending login in place.
-  const { rows: peek } = await deps.db.query<{ purpose: string; method: string; account_id: string | null; device_hash: Buffer | null }>(
-    'select purpose, method, account_id, device_hash from challenges where id = $1 and used_at is null and expires_at > $2',
-    [pendingId, now],
-  );
-  const pending = peek[0];
-  if (!pending || !matches(pending)) throw expired();
-  const accountId = pending.account_id!;
-  const key = await throttleKey(deps, req, 'totp', { id: accountId });
+  const deviceLabel = str(b, 'deviceLabel');
+  const name = loginNameLookup(deps.config, loginName);
+  // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account.
+  const found = (
+    await deps.db.query<{ id: string; kind: AccountKind; login_tag_key_id: number }>(
+      `select a.id, a.kind, a.login_tag_key_id from accounts a where ${loginTagMatch('a', 1)}`,
+      [name.candidates.ids, name.candidates.tags],
+    )
+  ).rows[0];
+  const account = found && allowedMethods(found.kind).includes('totp') ? found : undefined;
+  const key = await throttleKey(deps, req, 'totp', account ? { id: account.id } : { nameTag: name.tag });
   await throttleCheck(deps, key);
-  const row = await consumeChallenge(deps.db, pendingId, now);
-  if (!row || !matches(row) || row.account_id !== accountId) throw expired();
-  if (!(await verifyTotp(deps, accountId, code))) {
-    await throttleFail(deps, key, accountId);
-    throw new ApiError(401, 'code-invalid');
+  const ok = await verifyTotp(deps, account?.id ?? NIL_UUID, code);
+  if (!ok || !account) {
+    await throttleFail(deps, key, account?.id ?? null);
+    throw new ApiError(401, 'credentials-invalid');
   }
   await throttleReset(deps, key);
-  await assertNotDisabled(deps.db, accountId);
-  const deviceLabel = typeof row.payload.deviceLabel === 'string' ? row.payload.deviceLabel : '';
-  // Task 16: a session now, or an approval from a logged-in device first.
-  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password', 'totp'], proven: { kind: 'password-totp' } });
+  const result = await completeLogin(deps, req, reply, { account: { id: account.id, kind: account.kind }, factor: { method: 'totp' }, deviceLabel });
+  await retagLoginName(deps, account, name.candidates.current);
+  return result;
 }
 
 /**
  * `POST /v1/account/totp/start|finish` (full session; a confirm token for `add-method:totp`
  * outside onboarding; `assertMethodAllowed` first, so staff and the owner are refused before any
- * token is spent, R2, and then the password check, owner 16 Nov 2026) and `POST /v1/login/second-factor`.
+ * token is spent, R2).
  */
 export function totpRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/totp/start',
-    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, passwordForTotp, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: onlyIfNew('totp') })] },
+    { preHandler: [requireSession(), methodAllowed('totp'), requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: onlyIfNew('totp') })] },
     enrolStart,
   );
-  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld] }, enrolFinish);
-  app.post('/v1/login/second-factor', secondFactor);
+  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp')] }, enrolFinish);
+  app.post('/v1/login/totp', totpLogin);
 }

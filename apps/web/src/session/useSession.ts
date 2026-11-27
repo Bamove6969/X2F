@@ -58,9 +58,9 @@ setSessionGoneListener(() => {
   sessionEnded();
 });
 
-/** The public display name exactly as stored (FU-A `displayName`); '' when the answer has none. */
-export function displayNameOf(me: { displayName?: string }): string {
-  return me.displayName ?? '';
+/** The public Trade Tag exactly as stored (FU-A `tradeTag`); '' when the answer has none. */
+export function tradeTagOf(me: { tradeTag?: string }): string {
+  return me.tradeTag ?? '';
 }
 
 export function useSession(): Session {

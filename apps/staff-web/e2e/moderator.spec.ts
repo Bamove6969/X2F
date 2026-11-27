@@ -50,7 +50,7 @@ const H = 60 * MIN;
 const at = (ms: number) => new Date(Date.now() + ms + (ms >= 0 ? 30_000 : -30_000)).toISOString();
 
 const ACCOUNT_ID = '5b0c8f0e-2c1d-4b7a-9e3f-6a2d1c0b9e8f';
-const ME = { displayName: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const ME = { tradeTag: 'dmitri_k', role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 
 const row = (o: Record<string, unknown>) => ({
   incidentId: 'D-0000', status: 'open', round: 1, openedBy: 'buyer', rulingDueAt: at(40 * H), approval: 'not-needed', assignee: null, mine: false, ...o,
@@ -76,7 +76,7 @@ const QUEUE = {
 };
 
 const trader = (name: string, trades: number, pct: number) => ({
-  displayName: name, completedTrades: trades, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: pct, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
+  tradeTag: name, completedTrades: trades, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: pct, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [],
 });
 
 /** Board ModCase's example case: 7RWD-3MXE-KQ84-HN2T, assigned to the viewer, above the limit. */
@@ -533,7 +533,7 @@ test('design build task 9: a moderator confirms this device, opens the disputed 
 // Disputes-stack review 2026-11-16 (merge 3c63c18e): the owner's unread badge (O-040) is styled at
 // a wide and a narrow width, not only inside ModCase's `@media (max-width: 900px)`.
 test('the owner\'s unread badge is styled at 1280 and at 800 px wide', async ({ page }) => {
-  const owner = { ...ME, displayName: 'lumen.k', role: 'owner', nav: ['disputes'] };
+  const owner = { ...ME, tradeTag: 'lumen.k', role: 'owner', nav: ['disputes'] };
   await page.route('**/staff/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/staff/v1/me') return json(owner)(route);

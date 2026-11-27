@@ -75,7 +75,7 @@ export async function openTrade(
   await p.page.goto('/sell');
   // The taker sells to a buy ad on /sell, buys from a sell ad on /buy.
   await t.page.goto(`/${taker === 'seller' ? 'sell' : 'buy'}/ZELLE?currency=${currency}`);
-  await t.page.getByRole('button', { name: `Trade with ${poster.displayName}` }).click();
+  await t.page.getByRole('button', { name: `Trade with ${poster.tradeTag}` }).click();
   // The amount in XMR (the buy quote opens in the fiat currency).
   await expect(t.page.locator('input[type=text]:visible').first()).toBeVisible();
   const inXmr = t.page.getByRole('button', { name: 'Enter XMR' });

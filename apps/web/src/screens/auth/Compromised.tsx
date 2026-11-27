@@ -45,7 +45,6 @@ export const COMPROMISED_NOTE_MAX = 2000;
 
 /** The board's labels, in its order. COPY-UNSIGNED */
 export const COMPROMISED_METHOD_LABEL: Readonly<Record<CompromisedMethod, string>> = {
-  password: 'Password',
   passkey: 'Passkey',
   'security-key': 'Security key',
   pgp: 'PGP key',

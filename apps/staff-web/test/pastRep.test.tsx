@@ -16,8 +16,8 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const later = new Date(Date.now() + 3600_000).toISOString();
-const MOD = { displayName: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: later };
-const SENIOR = { displayName: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: later };
+const MOD = { tradeTag: 'dmitri_k', role: 'mod', nav: NAV.mod, sessionEndsAt: later };
+const SENIOR = { tradeTag: 'sarah.v', role: 'senior', nav: NAV.senior, sessionEndsAt: later };
 
 const claim = (o: Partial<PastRepClaim> = {}): PastRepClaim => ({
   id: '11111111-1111-4111-8111-111111111111',
@@ -30,14 +30,14 @@ const claim = (o: Partial<PastRepClaim> = {}): PastRepClaim => ({
   fingerprint: 'A1B2 C3D4 E5F6 0718 293A 4B5C 6D7E 8F90 1234 5678',
   keyId: '6D7E8F9012345678',
   signatureValid: true,
-  displayName: 'rook88',
+  tradeTag: 'rook88',
   createdAt: '2026-11-01T10:00:00.000Z',
   originalHost: 'localmonero.co',
   ...o,
 });
 /** One page of the list as the API answers it (review M1). */
 const pg = (items: PastRepClaim[], next: string | null = null) => ({ items, next });
-const SECOND = claim({ id: '22222222-2222-4222-8222-222222222222', site: 'Bisq', displayName: 'wren', claimedTrades: 40 });
+const SECOND = claim({ id: '22222222-2222-4222-8222-222222222222', site: 'Bisq', tradeTag: 'wren', claimedTrades: 40 });
 
 async function open() {
   render(
@@ -199,7 +199,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
   });
 
   it('a senior moderator also sees the approved claims, revokes one with a reason, and enters the verified dollar figure', async () => {
-    const approved = claim({ id: '33333333-3333-4333-8333-333333333333', status: 'approved', verifiedTrades: 900, displayName: 'kestrel', verifiedUsdCents: 1_250_000 });
+    const approved = claim({ id: '33333333-3333-4333-8333-333333333333', status: 'approved', verifiedTrades: 900, tradeTag: 'kestrel', verifiedUsdCents: 1_250_000 });
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
       'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('status=approved') ? pg([approved]) : pg([claim()]) }),
@@ -254,8 +254,8 @@ describe('Past reputation (Plan 5 Task 11)', () => {
   });
 
   it('review M1: the approved claims page with Show more, and a trader-name search asks the API', async () => {
-    const a1 = claim({ id: '44444444-4444-4444-8444-444444444444', status: 'approved', verifiedTrades: 5, displayName: 'newest' });
-    const a2 = claim({ id: '55555555-5555-4555-8555-555555555555', status: 'approved', verifiedTrades: 6, displayName: 'older' });
+    const a1 = claim({ id: '44444444-4444-4444-8444-444444444444', status: 'approved', verifiedTrades: 5, tradeTag: 'newest' });
+    const a2 = claim({ id: '55555555-5555-4555-8555-555555555555', status: 'approved', verifiedTrades: 6, tradeTag: 'older' });
     const api = fakeApi({
       'GET /staff/v1/me': { body: SENIOR },
       'GET /staff/v1/past-rep': (_b, path) => {
@@ -281,7 +281,7 @@ describe('Past reputation (Plan 5 Task 11)', () => {
 
   // Re-review m2: Skip reaches past the first page of the queue, with the same cursor.
   it('the queue pages too: Skip past the last claim of a page loads the next page, then wraps to the start', async () => {
-    const third = claim({ id: '66666666-6666-4666-8666-666666666666', displayName: 'page2' });
+    const third = claim({ id: '66666666-6666-4666-8666-666666666666', tradeTag: 'page2' });
     const api = fakeApi({
       'GET /staff/v1/me': { body: MOD },
       'GET /staff/v1/past-rep': (_b, path) => ({ body: path.includes('cursor=q1') ? pg([third]) : pg([claim(), SECOND], 'q1') }),

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { applyRemoval, listMethods } from '../auth/methods.js';
 import { pgpAddKeyRoutesAt } from '../auth/pgp.js';
 import { ApiError } from '../errors.js';

@@ -14,7 +14,7 @@ import { applyDispute, type Actor, type KeyTapIntent, type RulingOutcome, type S
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { withTx } from '../../src/auth/hold.js';
+import { withTx } from '../../src/auth/liveSession.js';
 import { appendLog } from '../../src/log/append.js';
 import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
 import { startDispute, withDispute } from '../../src/disputes/store.js';

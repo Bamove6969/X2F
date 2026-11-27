@@ -241,7 +241,7 @@ test.describe('cancel', () => {
   });
 
   test("the seller's funded room has no cancel of any kind (no Propose cancel, proto review P2); a standing proposal still gives the buyer an accept card", async ({ page }) => {
-    const seller: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+    const seller: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, tradeTag: 'mira.k' } };
     const s = await open(page, seller);
     await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Cancel/ })).toHaveCount(0);
@@ -399,7 +399,7 @@ test.describe('phone sizes', () => {
       await expectFitsPhone(page);
       await expect(final.getByRole('button', { name: 'Cancel trade' })).toBeInViewport({ ratio: 1 });
       await final.getByRole('button', { name: 'Keep trading' }).tap();
-      s.view = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+      s.view = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, tradeTag: 'mira.k' } };
       await page.reload();
       await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
       await expectFitsPhone(page);

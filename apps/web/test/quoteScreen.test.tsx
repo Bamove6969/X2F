@@ -26,8 +26,8 @@ vi.mock('../src/session/useSession.js', () => ({
   useSession: () => (session.status === 'signed-in' ? { status: 'signed-in', me: session.me } : { status: session.status }),
 }));
 
-const poster = (displayName: string) => ({
-  displayName,
+const poster = (tradeTag: string) => ({
+  tradeTag,
   completedTrades: 212,
   online: true,
   lastSeenAt: '2026-10-24T00:00:00.000Z',
@@ -1316,7 +1316,8 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
   });
 
   async function addOnQuote(answered: string, listed: string) {
-    session.me = { securityRating: 'high' };
+    // Owner 27 Nov 2026: no security rating; the account's owner always gets the inline add.
+    session.me = {};
     stub.addWallet = () => {
       stub.wallets = [...WALLETS, added(listed)];
       return { status: 201, json: added(answered) };
@@ -1331,6 +1332,13 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
     await settle();
     return r;
   }
+
+  it('a team member gets no inline add (wallets are the lead\'s), only the link to Your wallets', async () => {
+    session.me = { member: { name: 'Ana' } };
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(host.querySelector('[data-part="add-new-address"]')).toBeNull();
+    expect(host.querySelector('a.x2f-quote__add')).not.toBeNull();
+  });
 
   it('the address typed is the one picked, shown and recorded as the device\'s own', async () => {
     const { host } = await addOnQuote(TYPED, TYPED);
@@ -1427,24 +1435,6 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
     first.unmount();
     stub.wallets = [...WALLETS, lookalike()];
     await expectLookalikeRefused(`${BUY}&amount=412.50&wallet=w-evil`);
-  });
-
-  it('re-verify N1 (O3): an add staged for review (202) is recorded by address, so a look-alike listed later is refused', async () => {
-    session.me = { securityRating: 'high' };
-    stub.addWallet = () => ({ status: 202, json: { status: 'staged', changeId: 'c-1' } });
-    const r = await open(`${BUY}&amount=412.50`);
-    fire(r.host.querySelector('[data-part="add-new-address"]')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    typeInto('#new-address-label', 'Rent');
-    typeInto('#new-address-address', TYPED);
-    fire(button('Save address'), new MouseEvent('click', { bubbles: true }));
-    await settle();
-    await settle();
-    expect(document.querySelector('[data-part="new-address-staged"]')).not.toBeNull();
-    r.unmount();
-    // Applied later under Account changes, under an id this device never saw; the API lists a look-alike.
-    stub.wallets = [...WALLETS, lookalike()];
-    await expectLookalikeRefused(`${BUY}&amount=412.50`);
   });
 
   it('re-verify N1: a new id listing exactly the address typed here is offered and picked as before', async () => {

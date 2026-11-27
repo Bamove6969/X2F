@@ -53,7 +53,7 @@ export interface FeedbackFormItem {
   /** null for an anonymous row (or a named row whose account was deleted). */
   accountId: string | null;
   /**
-   * D-058 (owner G20): the sender's public display name, so staff can follow up; null when
+   * D-058 (owner G20): the sender's public Trade Tag, so staff can follow up; null when
    * `accountId` is. Never the login name.
    */
   accountName: string | null;
@@ -80,11 +80,11 @@ export async function listFeedbackForm(db: pg.Pool, o: { before?: FeedbackFormCu
     kind: FeedbackKind;
     body: string;
     account_id: string | null;
-    display_name: string | null;
+    trade_tag: string | null;
     from_code: string | null;
     created_on: string;
   }>(
-    `select f.id, f.kind, f.body, a.id as account_id, a.display_name, f.from_code, to_char(f.created_on, 'YYYY-MM-DD') as created_on
+    `select f.id, f.kind, f.body, a.id as account_id, a.trade_tag, f.from_code, to_char(f.created_on, 'YYYY-MM-DD') as created_on
        from feedback_form f
        left join accounts a on a.id = f.account_id
       where ($1::date is null or (f.created_on, f.id) < ($1::date, $2::uuid))
@@ -97,7 +97,7 @@ export async function listFeedbackForm(db: pg.Pool, o: { before?: FeedbackFormCu
     kind: r.kind,
     text: r.body,
     accountId: r.account_id,
-    accountName: r.account_id === null ? null : r.display_name,
+    accountName: r.account_id === null ? null : r.trade_tag,
     from: r.from_code,
     createdOn: r.created_on,
   }));
@@ -195,7 +195,7 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
   // allowHeld is a recorded exception to requireSession's rule (see its comment). touch: false: the
   // send is not counted as activity, so it leaves no fresh last_seen_at beside an anonymous row.
   // A team member refused something may say so too (Plan 2 Task 18), with the Send X2F feedback box (Job 1c; Q69: per member).
-  const trader = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, allowStaleTerms: true, touch: false, member: 'feedback-send' });
+  const trader = requireSession({ kinds: ['trader'], allowStaleTerms: true, touch: false, member: 'feedback-send' });
   app.post('/v1/feedback/form', { preHandler: trader }, async (req, reply) => {
     const f = parseBody(req.body);
     const now = req.server.deps.clock();

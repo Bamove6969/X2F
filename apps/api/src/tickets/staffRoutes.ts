@@ -26,7 +26,7 @@
 import { can } from '@x2f/staff';
 import { TICKET_CATEGORIES, type TicketCategory } from '@x2f/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { loadStaff, requireStaff } from '../staff/guard.js';

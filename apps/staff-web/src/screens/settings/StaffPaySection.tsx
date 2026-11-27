@@ -79,7 +79,7 @@ function shareCell(r: StaffPayRow) {
 }
 
 const COLUMNS: readonly Column<StaffPayRow>[] = [
-  { title: C.cols.name, cell: (r) => <span data-username="">{r.displayName}</span> },
+  { title: C.cols.name, cell: (r) => <span data-username="">{r.tradeTag}</span> },
   { title: C.cols.role, cell: (r) => ROLE_LABELS[r.role] },
   { title: C.cols.status, cell: (r) => (r.switchedOff ? C.off : C.active) },
   { title: C.cols.share, cell: (r) => <span data-part="fee-share">{shareCell(r)}</span> },
@@ -117,14 +117,14 @@ function ShareEditor({ row, onSaved }: { row: StaffPayRow; onSaved: () => void }
   if (!open) {
     return (
       <div className="x2f-stack" data-share-of={row.staffId}>
-        <Button variant="secondary" onClick={() => { setOpen(true); setSaved(false); }}>{`${C.change}: ${row.displayName}`}</Button>
+        <Button variant="secondary" onClick={() => { setOpen(true); setSaved(false); }}>{`${C.change}: ${row.tradeTag}`}</Button>
         {saved ? <Notice tone="plain" data-part="share-saved">{C.saved}</Notice> : null}
       </div>
     );
   }
   return (
     <fieldset className="x2f-card x2f-stack" data-share-of={row.staffId}>
-      <legend><span data-username="">{C.shareTitle(row.displayName)}</span></legend>
+      <legend><span data-username="">{C.shareTitle(row.tradeTag)}</span></legend>
       <label className="x2f-stack">
         <span>{C.shareHelp}</span>
         <input inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)} aria-invalid={next === undefined} data-part="share-input" />
@@ -138,9 +138,9 @@ function ShareEditor({ row, onSaved }: { row: StaffPayRow; onSaved: () => void }
       {tapping && next !== undefined ? (
         <KeyTapDialog
           intent={{ kind: 'staff-pay', accountId: row.staffId, feeBp: next }}
-          title={C.tapTitle(row.displayName)}
+          title={C.tapTitle(row.tradeTag)}
           body={C.tapBody}
-          labels={{ accountId: row.displayName }}
+          labels={{ accountId: row.tradeTag }}
           onDone={(tapId) => void save(tapId)}
           onCancel={() => setTapping(false)}
         />

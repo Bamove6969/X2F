@@ -29,7 +29,7 @@ export interface TradeReviewView {
 
 export interface PendingReview {
   code: string;
-  /** The other trader's public display name. */
+  /** The other trader's public Trade Tag. */
   counterparty: string;
   reviewableSince: string;
 }

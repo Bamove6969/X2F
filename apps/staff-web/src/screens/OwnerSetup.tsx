@@ -16,7 +16,7 @@ import { setupOptions } from '../challenges.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
-import { DISPLAY_NAME_SPACES, hasSpace } from '../ui/noSpaces.js';
+import { TRADE_TAG_SPACES, hasSpace } from '../ui/noSpaces.js';
 import '../ui/staff.css';
 
 /** The locked page's words (A8). COPY-UNSIGNED */
@@ -175,7 +175,7 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
     if (username.trim() === '' || loginName.trim() === '') throw new NamesMissing();
     // Owner demo note #108: the line under the field says why; nothing is sent.
     if (hasSpace(username)) throw new NamesSpaced();
-    await setupAccount({ displayName: username.trim(), loginName: loginName.trim() });
+    await setupAccount({ tradeTag: username.trim(), loginName: loginName.trim() });
     setAccountMade(true);
   };
 
@@ -189,7 +189,7 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
           return;
         }
         if (e instanceof NamesSpaced) {
-          setFault(DISPLAY_NAME_SPACES);
+          setFault(TRADE_TAG_SPACES);
           return;
         }
         throw e;
@@ -278,7 +278,7 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
         />
         {hasSpace(username) ? (
           <p className="x2f-error" id={`${nameId}-space`} data-part="name-space">
-            {DISPLAY_NAME_SPACES}
+            {TRADE_TAG_SPACES}
           </p>
         ) : null}
         {/* Not on the board: the API needs the private login name too (OWNER-Q). COPY-UNSIGNED */}
@@ -349,7 +349,7 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
 }
 
 class NamesMissing extends Error {}
-/** The display name holds a space (owner demo note #108). */
+/** The Trade Tag holds a space (owner demo note #108). */
 class NamesSpaced extends Error {}
 
 function KeySlotRow({ name, note, done, disabled, onTap }: { name: string; note: string; done: boolean; disabled: boolean; onTap: () => void }) {

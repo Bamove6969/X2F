@@ -7,7 +7,7 @@ import { assertNewNames, assertStaffNameUnlike, createAccount } from '../account
 import type { Deps } from '../app.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { COOKIE_ATTRS, ensureDeviceCookie } from '../auth/device.js';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { ownerReady } from '../auth/methods.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { openSession } from '../auth/sessions.js';
@@ -162,7 +162,7 @@ async function takeTry(db: pg.Pool, now: Date): Promise<SetupRow> {
  * 404 `setup-locked` once setup has finished):
  * - `POST /staff/v1/setup/code { code }` → a 30-minute setup cookie (`__Host-x2f_setup`); 10 tries
  *   an hour, globally; a wrong code is 401 `code-invalid` and the code stays valid;
- * - `POST /staff/v1/setup/account { displayName, loginName }` → 201: the pending owner account
+ * - `POST /staff/v1/setup/account { tradeTag, loginName }` → 201: the pending owner account
  *   (`kind 'owner'`, disabled, so it cannot log in yet), replacing an earlier pending one;
  * - `POST /staff/v1/setup/key/{start,finish}` → attested security keys only (`method-not-allowed`);
  * - `POST /staff/v1/setup/pgp/{start,finish}` → the owner's PGP key (required, A9);
@@ -203,7 +203,7 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
       // row lock and no owner is live, so this only ever removes an unfinished account.
       await c.query('update challenges set account_id = null where id = $1', [s.id]);
       await c.query("delete from accounts where kind = 'owner' and disabled_at is not null");
-      const names = await assertNewNames(c, b.displayName, b.loginName);
+      const names = await assertNewNames(c, b.tradeTag, b.loginName);
       await assertStaffNameUnlike(c, names.displayKey);
       const ownerId = await createAccount(c, deps.config, { ...names, kind: 'owner', termsVersion: null, now });
       await c.query('update accounts set disabled_at = $2 where id = $1', [ownerId, now]);
@@ -314,7 +314,7 @@ async function finishSetup(req: FastifyRequest, reply: FastifyReply) {
     await c.query('update challenges set used_at = $2 where id = $1', [setupId, now]);
     await c.query('delete from owner_setup_tries');
     const opened = await openSession(c, deps, req, reply, {
-      accountId: ownerId, level: 'full', deviceLabel, method: 'security-key', firstSession: true, strength: 'strong',
+      accountId: ownerId, level: 'full', deviceLabel, method: 'security-key', firstSession: true,
     });
     after = opened.after;
     // Last, just before the commit (the log lock rule).

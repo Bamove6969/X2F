@@ -44,14 +44,13 @@ export interface PendingMemberStop {
   waitsFor: string;
 }
 
-type MemberPageId = 'find' | 'offers' | 'trade' | 'changes' | 'feedback';
+type MemberPageId = 'find' | 'offers' | 'trade' | 'feedback';
 
 /** The pages, in design's order, with their screens; the Trade room's path takes the trade's code. COPY-UNSIGNED: the names. */
 const PAGES: readonly { id: MemberPageId; name: string; path: (code: string | null) => string | null }[] = [
   { id: 'find', name: 'Find a trade', path: () => '/buy' },
   { id: 'offers', name: 'My offers', path: () => '/profile/offers' },
   { id: 'trade', name: 'Trade room', path: (code) => (code === null ? null : `/trade/${code}`) },
-  { id: 'changes', name: 'Account changes', path: () => '/settings/changes' },
   { id: 'feedback', name: 'Feedback', path: () => '/feedback' },
 ];
 
@@ -61,7 +60,7 @@ const stop = (shows: string, page: MemberPageId, id: string, target: string, tit
   step: { id, target, title, body, placement },
 });
 
-/** Design §4, in page order: Find a trade, My offers, Trade room, Account changes, Feedback. */
+/** Design §4, in page order: Find a trade, My offers, Trade room, Feedback (owner 26 Nov 2026: no holds, so no Account changes). */
 export const MEMBER_STOPS: readonly MemberStop[] = [
   stop('always', 'find', 'whose', '.x2f-browse__brand', 'Whose account this is', "You're working in this vendor's account under your own login. Everything you do goes in the team log.", 'below'),
   stop('always', 'find', 'browse', '.x2f-segment', 'Browse offers', 'See offers to buy or sell, just like any trader.', 'below'),
@@ -75,25 +74,13 @@ export const MEMBER_STOPS: readonly MemberStop[] = [
   stop('trades-see-active', 'trade', 'trades-see-active', '[data-part="member-waiting"]', 'Following a trade', "Watch each step here. Anything that moves the XMR is done on the owner's device.", 'below'),
   stop('disputes-answer', 'trade', 'disputes-answer', '[data-part="member-dispute"]', 'If it goes wrong', 'If a trade party opens a dispute, you can follow it and answer the moderator.', 'above'),
 
-  // Design names `[data-part="account-changes"]`; while a hold is on, the list a member sees is `changes-waiting`.
-  stop('hold-see', 'changes', 'hold-see', '[data-part="changes-waiting"]', 'Waiting changes', 'Changes to the account wait 24 hours before they apply, for safety.', 'below'),
-  // Design: "Cancel a change"; the member's cancel is Cancel all changes (and unticking one).
-  stop('hold-cancel', 'changes', 'hold-cancel', '[data-part="waiting-cancel-all"]', 'Stop a change', 'If a change looks wrong, cancel it before it applies.', 'above'),
-  stop('hold-end', 'changes', 'hold-end', '[data-part="waiting-approve"]', 'Apply it now', "Skip the wait when you're sure the change is right.", 'above'),
-
   // Design: the message field and `feedback-sent-as`; the sent-as line shows only after sending.
   stop('feedback-send', 'feedback', 'feedback-send', 'textarea.x2f-input--message', "Tell us how it's going", "Send X2F your thoughts. It goes with your own name, not the account's.", 'below'),
 ];
 
-/**
- * The hold rights build on each other (the API's effectiveAbilities: end brings cancel and see,
- * cancel brings see), so the tour follows the rights the member really has.
- */
+/** The member's abilities as a set (owner 26 Nov 2026: the hold rights are gone, so nothing builds on another). */
 function effective(abilities: readonly string[]): Set<string> {
-  const has = new Set(abilities);
-  if (has.has('hold-end')) has.add('hold-cancel');
-  if (has.has('hold-cancel')) has.add('hold-see');
-  return has;
+  return new Set(abilities);
 }
 
 /** COPY-UNSIGNED: the tour's name for screen readers, and the line after Skip. */

@@ -32,18 +32,16 @@ beforeEach(() => {
           kind: 'trader',
           level: 'full',
           termsCurrent: true,
-          displayName: 'Calcium',
-          methods: ['password'],
+          tradeTag: 'Calcium',
+          methods: ['pgp', 'passkey'],
           accountType: 'vendor',
-          pendingChanges: null,
           member: isMember ? { name: 'Aurora', roles: ['trades'] } : null,
         });
       }
       if (url === '/v1/account/alerts') return json(200, []);
       if (url === '/v1/account/jabber') return json(200, { available: false });
-      if (url === '/v1/account/methods') return json(200, [{ method: 'password', registered: true }]);
-      if (url === '/v1/account/hold') return json(200, { level: 'none', count: 0, changes: [] });
-      if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: [], password: 'works', waitHours: 0 });
+      if (url === '/v1/account/methods') return json(200, [{ type: 'pgp', id: 'pgp-1', label: 'PGP key', createdAt: null, lastUsedAt: null }, { type: 'passkey', id: 'pk-1', label: 'Passkey', createdAt: null, lastUsedAt: null }]);
+      if (url === '/v1/wallets/rule') return json(200, { firstWallet: true, strongMethods: ['pgp', 'passkey'] });
       return json(404, { error: 'not-found' });
     }),
   );
@@ -120,7 +118,7 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     });
 
     // M1: On initial render while session is loading, no owner sections mount and no owner calls go out
-    const ownerUrls = ['/v1/account/hold', '/v1/account/methods', '/v1/wallets/rule', '/v1/account/jabber', '/v1/account/alerts'];
+    const ownerUrls = ['/v1/account/methods', '/v1/wallets/rule', '/v1/account/jabber', '/v1/account/alerts'];
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
 
     await waitFor(host, '[data-part="idle-reminder-link"]');
@@ -161,7 +159,7 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
     expect(fetchedUrls.filter((u) => ownerUrls.includes(u))).toEqual([]);
   });
 
-  it('does not unmount Methods or PayoutWait on refreshSession() for the owner (B1)', async () => {
+  it('does not unmount Methods on refreshSession() for the owner (B1)', async () => {
     isMember = false;
     refreshSession();
     let host: HTMLElement = null!;
@@ -174,7 +172,6 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
       host = res.host;
     });
     const methodsEl = await waitFor(host, '[data-part="methods"]');
-    const payoutEl = await waitFor(host, '[data-part="payout-wait"]');
 
     // Trigger refreshSession(), which transitions useSession to loading
     const asked = fetchedUrls.filter((u) => u === '/v1/account/me').length;
@@ -184,12 +181,10 @@ describe('Security screen for team members vs owner (Order #2 M3)', () => {
 
     // Sections should still remain mounted during reload (DOM identity preserved)
     expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
-    expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);
 
     await waitUntil(() => fetchedUrls.filter((u) => u === '/v1/account/me').length > asked, 'the session to be asked for again');
     await waitUntil(() => true, 'the reloaded session to settle');
 
     expect(host.querySelector('[data-part="methods"]')).toBe(methodsEl);
-    expect(host.querySelector('[data-part="payout-wait"]')).toBe(payoutEl);
   });
 });

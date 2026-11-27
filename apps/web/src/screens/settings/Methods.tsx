@@ -5,53 +5,40 @@
  * with `last-login-method`; the screen shows that plainly rather than letting someone lock
  * themselves out. TOTP enrolment and recovery codes are their own screens.
  *
- * Owner, 16 Nov 2026: the authenticator app goes only with a password (`@x2f/accounts`
- * METHOD_PARTNERS), so it is offered only on an account with a password, and the password is not
- * removed while it is on (the API refuses both: 409 `totp-needs-password`, `password-has-totp`).
+ * Owner, 26 Nov 2026: no passwords. An account keeps at least two kinds of login method, one of them
+ * a key (`@x2f/accounts` enoughMethods); removing one that would break that is refused here first
+ * and by the API (409 `two-methods-required`). One authenticator app at most.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKeyWithId,
-  checkPassword,
   defaultKeyName,
+  enoughMethods,
   normalizeLoginCode,
-  isStaged,
-  partnerMissing,
-  partnerNeededBy,
-  passwordAlone,
   withConfirm,
   type ConfirmAction,
-  type Staged,
   type MethodEntry,
   type MethodType,
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { KeySaved } from '../auth/KeySaved.js';
-import { Notice } from '../../ui/Notice.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
-import {
-  CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE, PASSWORD_ALONE_CODE, PASSWORD_ALONE_MESSAGE, PASSWORD_HAS_TOTP_CODE, PASSWORD_HAS_TOTP_MESSAGE,
-} from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE, SECOND_METHOD_CODE, SECOND_METHOD_REMOVE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { keyErrorText } from '../auth/keyErrors.js';
 import { refusalText } from '../auth/refusals.js';
-import { StagedNote, reportChangesCap } from './HoldChanges.js';
-import { BURNED_CODE_COPY as BURNED } from './holdCopy.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
-import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
-import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
 import { KeyEmailNote, useKeyCheck } from '../setup/PgpKey.js';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
   passkey: 'Passkey',
   'security-key': 'Security key',
-  password: 'Password',
   totp: 'Authenticator app',
   // COPY-UNSIGNED (singular: owner demo note #28, 12 Nov 2026)
   'recovery-codes': 'Recovery code',
@@ -59,7 +46,7 @@ const LABELS: Record<MethodType, string> = {
 
 
 /** The methods that log in on their own; an authenticator app and recovery codes only back them up. */
-const LOGIN_METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
+const LOGIN_METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key'];
 
 /**
  * True when `m` is the account's only way to log in, so removing it is refused at once, before any
@@ -70,35 +57,26 @@ export function isOnlyLogin(m: MethodEntry, all: readonly MethodEntry[]): boolea
 }
 
 /**
- * True when removing `m` would leave a password with neither the authenticator app nor a PGP key,
- * passkey or security key (owner, 16 Nov 2026). The server decides the rest.
+ * True when removing `m` would leave fewer than two kinds of login method, or none of them a key
+ * (owner, 26 Nov 2026). The server decides the rest.
  */
-export function leavesPasswordAlone(m: MethodEntry, all: readonly MethodEntry[]): boolean {
+export function leavesTooFew(m: MethodEntry, all: readonly MethodEntry[]): boolean {
   const i = all.indexOf(m);
-  return passwordAlone(all.filter((_, j) => j !== i).map((x) => x.type));
+  return !enoughMethods(all.filter((_, j) => j !== i).map((x) => x.type));
 }
 
-type Adding = 'none' | 'password' | 'pgp' | 'totp' | 'recovery-codes';
+type Adding = 'none' | 'pgp' | 'totp' | 'recovery-codes';
 
 export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<string> }) {
   const [methods, setMethods] = useState<MethodEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 409 `last-login-method` (or the same check here first): CantDoThat until closed (Plan 5 Task 21).
   const [lastMethod, setLastMethod] = useState(false);
-  // 409 `password-has-totp` (or the same check here first): the password stays while TOTP is on.
-  const [keepsPassword, setKeepsPassword] = useState(false);
-  // 409 `password-alone` (or the same check here first): a password does not stand alone.
-  const [leavesAlone, setLeavesAlone] = useState(false);
+  // 409 `two-methods-required` (or the same check here first): two kinds stay on the account.
+  const [tooFew, setTooFew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
-  // Hold model v3: a change made from a username-and-password login is staged as a draft (202).
-  // The count makes each new draft announce itself again.
-  const [staged, setStaged] = useState(0);
-  const noteStaged = useCallback((h: Staged | undefined) => {
-    if (h !== undefined) setStaged((n) => n + 1);
-  }, []);
-  const done = (h?: Staged) => {
-    noteStaged(h);
+  const done = () => {
     void refresh().finally(() => setAdding('none'));
   };
 
@@ -121,13 +99,11 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     setError(null);
     setJustAdded(null);
     try {
-      const { staged: h, credentialId } = await withConfirm(
+      const { credentialId } = await withConfirm(
         { kind: 'add-method', method: kind },
         (t) => addWebAuthnKeyWithId(authApi, kind, t !== undefined ? { confirmToken: t } : {}),
         prove,
       );
-      noteStaged(h);
-      // A staged key (hold model v3) is not a login method yet (no key row), so only a key added now is named and tested.
       // Security review of wip/lead-seckey-fix: the key is saved even when the list cannot be read
       // now, so it is still acknowledged and named (never added twice); its number is then a guess.
       let count = 1;
@@ -138,9 +114,9 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       } catch {
         // The list stays as it was; the name step still shows.
       }
-      if (!(h !== undefined && isStaged(h))) setJustAdded({ kind, credentialId, defaultName: defaultKeyName(kind, count) });
+      setJustAdded({ kind, credentialId, defaultName: defaultKeyName(kind, count) });
     } catch (e) {
-      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(keyErrorText(e, kind));
+      if (!isConfirmAbort(e)) setError(keyErrorText(e, kind));
     } finally {
       setBusy(false);
     }
@@ -152,28 +128,23 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       setLastMethod(true);
       return;
     }
-    if (methods !== null && partnerNeededBy(m.type, methods.map((x) => x.type)) !== null) {
-      setKeepsPassword(true);
-      return;
-    }
-    if (methods !== null && leavesPasswordAlone(m, methods)) {
-      setLeavesAlone(true);
+    if (methods !== null && leavesTooFew(m, methods)) {
+      setTooFew(true);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      noteStaged(await withConfirm(
+      await withConfirm(
         { kind: 'remove-method', method: m.type, id: m.id },
         (t) => authApi.removeMethod(m.type, m.id, t !== undefined ? { confirmToken: t } : {}),
         prove,
-      ));
+      );
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
-      else if (e instanceof AuthApiError && e.code === PASSWORD_HAS_TOTP_CODE) setKeepsPassword(true);
-      else if (e instanceof AuthApiError && e.code === PASSWORD_ALONE_CODE) setLeavesAlone(true);
-      else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
+      else if (e instanceof AuthApiError && e.code === SECOND_METHOD_CODE) setTooFew(true);
+      else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -189,7 +160,6 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
           {error}
         </p>
       ) : null}
-      {staged > 0 ? <StagedNote key={staged} /> : null}
       {justAdded !== null ? (
         <div data-part="key-just-added">
           <KeySaved
@@ -204,10 +174,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         </div>
       ) : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
-      {leavesAlone ? <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_ALONE_MESSAGE} from={PASSWORD_ALONE_CODE} onClose={() => setLeavesAlone(false)} /> : null}
-      {keepsPassword ? (
-        <CantDoThat title={CANT_DO_TITLE.methods} body={PASSWORD_HAS_TOTP_MESSAGE} from={PASSWORD_HAS_TOTP_CODE} onClose={() => setKeepsPassword(false)} />
-      ) : null}
+      {tooFew ? <CantDoThat title={CANT_DO_TITLE.methods} body={SECOND_METHOD_REMOVE} from={SECOND_METHOD_CODE} onClose={() => setTooFew(false)} /> : null}
 
       <ul className="x2f-list" data-part="method-list">
         {(methods ?? []).map((m) => (
@@ -230,10 +197,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         <Button variant="secondary" disabled={busy} onClick={() => setAdding('pgp')} data-add="pgp">
           Add a PGP key
         </Button>
-        <Button variant="secondary" disabled={busy} onClick={() => setAdding('password')} data-add="password">
-          Set a password
-        </Button>
-        {methods !== null && partnerMissing('totp', methods.map((x) => x.type)) === null ? (
+        {/* Owner, 26 Nov 2026: one authenticator app at most. */}
+        {methods !== null && !methods.some((x) => x.type === 'totp') ? (
           <Button variant="secondary" disabled={busy} onClick={() => setAdding('totp')} data-add="totp">
             Add an authenticator app
           </Button>
@@ -244,9 +209,6 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
         </Button>
       </div>
 
-      {adding === 'password' ? (
-        <AddPassword prove={prove} onDone={done} onCancel={() => setAdding('none')} />
-      ) : null}
       {adding === 'pgp' ? (
         <AddPgpKey prove={prove} onDone={done} onCancel={() => setAdding('none')} />
       ) : null}
@@ -256,115 +218,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   );
 }
 
-export function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
-  const primary = usePrimaryVariant();
-  const [password, setPassword] = useState('');
-  // Owner S-110 (p11-35): the recovery code, optional, makes the change apply at once.
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [burned, setBurned] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const spaced = hasPasswordSpace(password);
-  // Owner demo note #219 (25 Nov 2026): Save is disabled until the password meets the rules
-  // (`checkPassword`, the server's own shape rule); the leaked list stays the server's to check.
-  const shaped = checkPassword(password).ok;
-  const short = password !== '' && !spaced && !shaped;
-
-  const save = async () => {
-    if (!shaped) return;
-    setBusy(true);
-    setError(null);
-    const code = recoveryCode.trim();
-    try {
-      const staged = await withConfirm(
-        { kind: 'set-password' },
-        (t) => authApi.setPassword({ password, ...(code !== '' ? { recoveryCode: code } : {}), ...(t !== undefined ? { confirmToken: t } : {}) }),
-        prove,
-      );
-      // Owner S-111 (p11-36): a code that was used is burned; say so before closing the form.
-      if (code !== '' && staged === undefined) setBurned(true);
-      else onDone(staged);
-    } catch (e) {
-      if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol, and no spaces.');
-      else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
-      else if (code !== '' && e instanceof AuthApiError && e.code === 'credentials-invalid') setError(BURNED.passwordCodeWrong);
-      else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (burned) {
-    return (
-      <div className="x2f-field" data-part="add-password">
-        <Notice tone="caution" title={BURNED.title} data-part="code-burned">
-          {BURNED.body}
-        </Notice>
-        <div className="x2f-row">
-          <Button variant={primary} onClick={() => onDone()} data-part="code-burned-done">
-            {BURNED.done}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="x2f-field" data-part="add-password">
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <label className="x2f-label" htmlFor="new-password">
-        New password
-      </label>
-      <PasswordInput
-        id="new-password"
-        autoComplete="new-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        {...(short ? { 'aria-describedby': 'new-password-rules' } : {})}
-      />
-      {/* Owner demo note #219: why Save is still dimmed, as quiet help once something is typed. COPY-UNSIGNED */}
-      {short ? (
-        <p className="x2f-note" id="new-password-rules" data-part="password-rules">
-          Use at least 10 characters, with upper and lower case letters, a number and a symbol.
-        </p>
-      ) : null}
-      {/* Owner demo note #108: a new password holds no spaces; said as soon as one is typed. */}
-      {spaced ? (
-        <p className="x2f-error" data-part="password-space">
-          {spaceProblem('password')}
-        </p>
-      ) : null}
-      <label className="x2f-label" htmlFor="password-recovery-code">
-        {BURNED.passwordCodeLabel}
-      </label>
-      <input
-        className="x2f-input"
-        id="password-recovery-code"
-        inputMode="text"
-        autoComplete="off"
-        value={recoveryCode}
-        onChange={(e) => setRecoveryCode(e.target.value)}
-        data-part="password-recovery-code"
-      />
-      <p className="x2f-note">{BURNED.passwordCodeHint}</p>
-      <div className="x2f-row">
-        <Button variant={primary} disabled={busy || !shaped} onClick={() => void save()}>
-          Save
-        </Button>
-        <Button variant="quiet" disabled={busy} onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /** Exported for its tests (owner demo note #144). */
-export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
+export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
@@ -405,10 +260,10 @@ export function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmActio
     setBusy(true);
     setError(null);
     try {
-      const r = await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
-      onDone(isStaged(r) ? r : undefined);
+      await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
+      onDone();
     } catch (e) {
-      if (!reportChangesCap(e)) setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
+      setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
     } finally {
       setBusy(false);
     }

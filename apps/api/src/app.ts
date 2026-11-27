@@ -8,12 +8,10 @@ import type { Config } from './config.js';
 import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
 import { nameCheckRoutes } from './auth/nameCheck.js';
-import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { badgeRoutes } from './reputation/badgeRoutes.js';
 import { profileRoutes } from './reputation/profile.js';
 import { recordRoutes } from './reputation/record.js';
-import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
 import { chatKeyRoutes } from './auth/chatKeys.js';
@@ -56,6 +54,7 @@ import { accountTypeRoutes } from './routes/accountType.js';
 import { jabberRoutes } from './jabber/routes.js';
 import type { JabberSender } from './jabber/sender.js';
 import { noteRoutes } from './team/notes.js';
+import { escrowSyncRoutes } from './escrowSync/routes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { proofRoutes } from './proofs/routes.js';
@@ -68,10 +67,6 @@ import { pushRoutes } from './push/routes.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
-/** Task 6: the leaked-password list held on X2F's own server. */
-export interface LeakedList {
-  has(password: string): Promise<boolean>;
-}
 /**
  * Task 12: Monero payout address check for the configured network. Async because monero-ts's
  * `MoneroUtils.isValidAddress` is (it runs in its WebAssembly task queue).
@@ -95,7 +90,6 @@ export interface Deps {
   config: Config;
   db: pg.Pool;
   clock: () => Date;
-  leaked: LeakedList;
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
@@ -335,14 +329,11 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // sees them in full; anyone else gets only whether maintenance is on, and its kind (front door, 8 Nov 2026).
   siteRoutes(app);
   logoutRoute(app);
-  passwordRoutes(app);
   // The sign-up's live "is available" tick for the private username (limits in nameCheck.ts).
   nameCheckRoutes(app);
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
-  // Hold model v3: the account's hold and the changes waiting their 24 h.
-  holdRoutes(app);
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
@@ -426,6 +417,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   jabberRoutes(app);
   // Job 1c (J-10, S-094): notes on traders.
   noteRoutes(app);
+  // Plan 3 Task 42, first part (owner 26 Nov 2026, migration 864): the end-to-end encrypted escrow-key copies.
+  escrowSyncRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
   // Plan 4, Task 30: a trader's support tickets to X2F staff (the staff side is staffTicketRoutes).

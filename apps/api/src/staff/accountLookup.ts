@@ -1,7 +1,7 @@
 import { displayKeyOf } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { withTx } from '../auth/liveSession.js';
 import { activeBans } from '../banState.js';
 import type { Queryable } from '../db/pool.js';
 import { hasActiveLien } from '../disputes/lien.js';
@@ -14,15 +14,15 @@ import { requireStaff } from './guard.js';
  * The staff Accounts page's lookup (spec 6.6 "Account actions", Plan 4 Task 27: a senior moderator
  * or the owner acts on an account outside a case). Read-only.
  *
- * `GET /staff/v1/accounts/lookup?q=<display name or trade code>` (perm `accounts.freeze`: senior
+ * `GET /staff/v1/accounts/lookup?q=<Trade Tag or trade code>` (perm `accounts.ban`: senior
  * moderators and the owner, the roles that may act on what it finds; `accounts.freeze` has the same
  * roles) → `{ accounts }`:
  * - `q` that reads as a trade code (`normalizeTradeCode`: dashes, spaces and look-alikes allowed)
  *   finds that trade's buyer and seller (`matchedBy: 'code'`, `side`); `q` also finds the trader
- *   whose public display name it is (`matchedBy: 'name'`, the stored key's full fold, so case and
+ *   whose public Trade Tag it is (`matchedBy: 'name'`, the stored key's full fold, so case and
  *   compatibility forms do not matter). Exact matches only: no prefix or partial search, so the
  *   route cannot list accounts. Only trader accounts: never staff or the owner.
- * - Each account: its id (the account action routes take it), the PUBLIC display name and the
+ * - Each account: its id (the account action routes take it), the PUBLIC Trade Tag and the
  *   reputation a case's trader card already shows (completed trades, positive %, disputes won and
  *   lost, stage), and its status: the bans in force (kind, general reason, end), a running account
  *   hold (end and reason), whether a dispute freeze stands, and whether a lien binds it. Never the
@@ -41,7 +41,7 @@ type Side = 'buyer' | 'seller';
 
 export interface LookedUpAccount {
   accountId: string;
-  displayName: string;
+  tradeTag: string;
   matchedBy: 'name' | 'code';
   /** The side in the trade `q` named; null for a name match. */
   side: Side | null;
@@ -51,7 +51,6 @@ export interface LookedUpAccount {
   stage: string;
   status: {
     bans: Array<{ id: string; kind: 'trade' | 'site'; reasonCode: string; until: string | null; permanent: boolean }>;
-    hold: { until: string; reason: string } | null;
     frozen: boolean;
     lien: boolean;
   };
@@ -59,15 +58,9 @@ export interface LookedUpAccount {
 
 async function statusOf(q: Queryable, accountId: string, now: Date): Promise<LookedUpAccount['status']> {
   const bans = await activeBans(q, accountId, now);
-  const hold = await q.query<{ hold_until: Date; reason: string }>(
-    'select hold_until, reason from account_holds where account_id = $1 and hold_until > $2',
-    [accountId, now],
-  );
   const frozen = await q.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
-  const h = hold.rows[0];
   return {
     bans: bans.map((b) => ({ id: b.id, kind: b.kind, reasonCode: b.reasonCode, until: b.until?.toISOString() ?? null, permanent: b.until === null })),
-    hold: h ? { until: h.hold_until.toISOString(), reason: h.reason } : null,
     frozen: frozen.rows.length > 0,
     lien: await hasActiveLien(q, accountId),
   };
@@ -113,7 +106,7 @@ export function staffAccountLookupRoutes(app: FastifyInstance): void {
         if (!s) continue;
         accounts.push({
           accountId: f.id,
-          displayName: s.displayName,
+          tradeTag: s.tradeTag,
           matchedBy: f.matchedBy,
           side: f.side,
           completedTrades: s.completedTrades,

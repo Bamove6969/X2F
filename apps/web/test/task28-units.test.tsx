@@ -7,7 +7,6 @@ import { AuthApiError, type Wallet } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import * as BackupStep from '../src/screens/setup/Backup.js';
 import { stepPath } from '../src/screens/setup/kit.js';
-import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
 import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
@@ -54,22 +53,6 @@ describe('setup backups', () => {
 
 // The Welcome rows became the owner's checklist (12 Nov 2026): ownerCopy1.test.tsx.
 
-describe('passwordRules', () => {
-  it('ticks each board line as it is met; ok only with every rule and a match', () => {
-    expect(passwordRules('', '')).toEqual({ length: false, cases: false, numberSymbol: false, noSpaces: false, match: false, ok: false });
-    expect(passwordRules('short', 'short')).toMatchObject({ length: false, match: true, ok: false });
-    expect(passwordRules('alllowercase-1', 'alllowercase-1')).toMatchObject({ length: true, cases: false, numberSymbol: true, ok: false });
-    expect(passwordRules('Orbit-lantern', 'Orbit-lantern')).toMatchObject({ cases: true, numberSymbol: false, ok: false });
-    expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-7')).toMatchObject({ length: true, cases: true, numberSymbol: true, match: false, ok: false });
-    expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-74').ok).toBe(true);
-  });
-
-  it('owner demo note #108: a space unticks "No spaces" and the password cannot be set', () => {
-    expect(passwordRules('Orbit-lantern-74', 'Orbit-lantern-74')).toMatchObject({ noSpaces: true, ok: true });
-    expect(passwordRules('Orbit lantern-74', 'Orbit lantern-74')).toMatchObject({ length: true, cases: true, numberSymbol: true, noSpaces: false, match: true, ok: false });
-  });
-});
-
 describe('groupFingerprint', () => {
   it('groups of four with a wider gap half way, upper case', () => {
     expect(groupFingerprint('3f2a9c417b0ed5a261c80e4b92d71f6ac3b80d15')).toBe('3F2A 9C41 7B0E D5A2 61C8  0E4B 92D7 1F6A C3B8 0D15');
@@ -78,10 +61,10 @@ describe('groupFingerprint', () => {
 
 describe('register errors', () => {
   it("maps FU-A's name refusals from the typed client and nothing else", () => {
-    // Owner Q54: the private login name is the "username", the public one the "display name".
-    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That display name is taken. Pick another.');
+    // Owner Q54: the private login name is the "username", the public one the "Trade Tag".
+    expect(nameError(new AuthApiError(409, 'trade-tag-taken'))).toBe('That Trade Tag is taken. Pick another.');
     expect(nameError(new AuthApiError(400, 'login-name-invalid'))).toBe('That username cannot be used. Pick another.');
-    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your display name must be different from your username.');
+    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your Trade Tag must be different from your username.');
     expect(nameError(new AuthApiError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
     expect(nameError(new ApiCallError(409, 'username-taken'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'password-weak'))).toBeNull();
@@ -136,15 +119,8 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     expect(setupError(new AuthApiError(503, 'busy', { retryAfterSeconds: 30 }), fallback).text).toBe('X2F is busy right now. Try again in 1 minute.');
     expect(setupError(new AuthApiError(503, 'busy'), fallback).text).toBe('X2F is busy right now. Try again in 1 minute.');
   });
-  it("lists what a weak password still needs, from the server's missing list", () => {
-    expect(setupError(new AuthApiError(400, 'password-weak', { missing: ['length', 'symbol'] }), fallback).text).toBe(
-      'That password still needs: 10 characters or more, a symbol.',
-    );
-    // Owner demo note #108: the server's `space` rule is named too.
-    expect(setupError(new AuthApiError(400, 'password-weak', { missing: ['space'] }), fallback).text).toBe('That password still needs: no spaces.');
-  });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });
+    expect(setupError(new AuthApiError(409, 'trade-tag-taken'), fallback)).toEqual({ text: 'That Trade Tag is taken. Pick another.', names: 'trade-tag' });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
   });
 });

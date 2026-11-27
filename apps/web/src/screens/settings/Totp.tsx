@@ -12,13 +12,12 @@
  * Owner demo note #219 (25 Nov 2026): Confirm is disabled until six digits are typed (`isTotpCode`).
  */
 import { useState } from 'react';
-import { withConfirm, type ConfirmAction, type Staged } from '@x2f/auth-client';
+import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { isTotpCode } from '../auth/loginRules.js';
 import { refusalText } from '../auth/refusals.js';
-import { reportChangesCap } from './HoldChanges.js';
 import { Qr } from './Qr.js';
 
 export type CopyWrite = (text: string) => Promise<void>;
@@ -34,8 +33,9 @@ export function Totp({
   write = clipboardWrite,
 }: {
   prove: (a: ConfirmAction) => Promise<string>;
-  onDone: (staged?: Staged) => void;
-  onCancel: () => void;
+  onDone: () => void;
+  /** Left out where there is nothing to cancel back to (sign-up's required second method). */
+  onCancel?: (() => void) | undefined;
   write?: CopyWrite;
 }) {
   const primary = usePrimaryVariant();
@@ -62,13 +62,11 @@ export function Totp({
     setBusy(true);
     setError(null);
     try {
-      const staged = await authApi.addTotpFinish({ challengeId: enrol!.challengeId, code: code.trim() });
-      // A staged enrolment waits 24 hours: no success claim, the caller says what happens next.
-      if (staged !== undefined) return onDone(staged);
+      await authApi.addTotpFinish({ challengeId: enrol!.challengeId, code: code.trim() });
       setEnrol(null);
       setVerified(true);
     } catch (e) {
-      if (!reportChangesCap(e)) setError(refusalText(e, 'That code did not work. Check your authenticator app and try again.', { expired: 'That setup has expired. Start again.' }));
+      setError(refusalText(e, 'That code did not work. Check your authenticator app and try again.', { expired: 'That setup has expired. Start again.' }));
     } finally {
       setBusy(false);
     }
@@ -110,9 +108,11 @@ export function Totp({
           <Button variant={primary} disabled={busy} onClick={() => void start()} data-part="totp-start">
             Start enrolment
           </Button>
-          <Button variant="quiet" disabled={busy} onClick={onCancel}>
-            Cancel
-          </Button>
+          {onCancel !== undefined ? (
+            <Button variant="quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
         </div>
       ) : (
         <>

@@ -20,7 +20,7 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (input: string) => {
       const url = String(input);
-      if (url === '/v1/account/me') return signedIn ? json(200, { displayName: 'demo_ana', kind: 'trader', level: 'full', termsCurrent: true }) : json(401, { error: 'not-authenticated' });
+      if (url === '/v1/account/me') return signedIn ? json(200, { tradeTag: 'demo_ana', kind: 'trader', level: 'full', termsCurrent: true }) : json(401, { error: 'not-authenticated' });
       if (url === '/v1/news') return json(200, { items: [], serverNow: '2026-11-08T12:00:00.000Z' });
       return json(404, { error: 'not-found' });
     }),

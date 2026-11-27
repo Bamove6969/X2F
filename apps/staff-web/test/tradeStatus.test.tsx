@@ -12,7 +12,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const ends = () => new Date(Date.now() + 3600_000).toISOString();
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: ends() };
 const TAPS = { 'POST /staff/v1/taps/start': honestTapStart('tap-1'), 'POST /staff/v1/taps/:id/finish': { body: { tapId: 'tap-1' } } };
 const LIEN = '3a1f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';
 const LIEN2 = '4b2f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f';

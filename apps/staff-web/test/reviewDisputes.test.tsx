@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { App } from '../src/App.js';
 import { button, click, fakeApi, field, render, settle, tick, typeInto } from './helpers.js';
 
-const ME = { displayName: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
+const ME = { tradeTag: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
 const ITEM = (id: string, tradeCode: string | null) => ({
   id,
   openedAt: '2026-11-12T12:00:00.000Z',

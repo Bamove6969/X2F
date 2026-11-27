@@ -81,7 +81,7 @@ async function statuses(ids: string[]): Promise<Record<string, { status: string;
 }
 
 async function profileAway(viewer: Who, of: Who): Promise<boolean> {
-  const res = await viewer.browser.get(`/v1/traders/${of.displayName}`);
+  const res = await viewer.browser.get(`/v1/traders/${of.tradeTag}`);
   expect(res.statusCode, res.body).toBe(200);
   return (res.json() as { away: boolean }).away;
 }
@@ -184,10 +184,10 @@ describe('the Away switch', () => {
     const me = await vendor();
     const a = await post(me);
     const name = `Awaymember${String(++n).padStart(4, '0')}`;
-    const loginId = await seedAccount(deps, { loginName: `awaylogin${n}x`, displayName: `aw-${n}-placeholder`, kind: 'member' });
+    const loginId = await seedAccount(deps, { loginName: `awaylogin${n}x`, tradeTag: `aw-${n}-placeholder`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
       [me.id, name, name.toLowerCase(), rolesToAbilities(['offers']), now, loginId],
     );

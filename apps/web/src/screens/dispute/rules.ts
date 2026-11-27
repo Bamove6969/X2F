@@ -292,7 +292,7 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
 }
 
 /**
- * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
+ * The ruling card's words for this side. `me` is this side, `other` the other trader's Trade Tag.
  * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
  * you" and the footer. The board's "Sent to Cake Wallet, address ending …k3Fz." once the API
  * reports the payout executed (`ruling.executedAt`); "Goes to …" before it (C11 review I1).

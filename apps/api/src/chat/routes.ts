@@ -63,7 +63,6 @@ import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { isPlainObject, ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2, checkChatEnvelopeV3 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { banHidesSql } from '../banState.js';
 import { LIEN_BLOCKS_SQL } from '../disputes/lien.js';
 import { requireSession } from '../auth/sessions.js';
@@ -83,7 +82,7 @@ export interface ChatView {
   chat: string;
   role: ChatRole;
   offerId: string;
-  /** The other side, by display name only (never a login name, FU-A). */
+  /** The other side, by Trade Tag only (never a login name, FU-A). */
   counterparty: TraderSummary | null;
   /** The trade a take linked to this chat, or null before a take. */
   tradeCode: string | null;
@@ -136,12 +135,11 @@ const CHAT_LIST_LIMIT = 200;
 /**
  * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
  * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
- * neither disabled nor on hold (a trading hold, an active lien or a recovery-code hold).
+ * neither disabled nor on hold (a trading hold or an active lien).
  */
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not ${LIEN_BLOCKS_SQL('o.account_id')}
-  and not ${recoveryHoldHidesSql('o.account_id')}
   and not ${banHidesSql('o.account_id')}`;
 
 interface ChatRow {
@@ -358,7 +356,7 @@ export function chatRoutes(app: FastifyInstance): void {
       chat: r.code,
       role: r.buyer_account_id === me ? 'buyer' : 'seller',
       offerId: r.offer_id,
-      counterparty: names.get(others[i]!)?.displayName ?? null,
+      counterparty: names.get(others[i]!)?.tradeTag ?? null,
       lastMessageAt: r.last_message_at?.toISOString() ?? null,
     }));
     return { chats };

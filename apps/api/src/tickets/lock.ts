@@ -93,7 +93,7 @@ async function revokeSessions(c: Queryable, accountId: string, memberId: string 
  * not locked yet, revokes every one of its sessions in the same transaction (review item 2: never
  * left to the after-reply work), and logs it (`account.locked`, ids only). It does not lock, and says
  * why, for an account staff unlocked in the last RELOCK_BAR_DAYS, a pre-009 account whose login name
- * is its public display name, or once LOCK_CAP_PER_HOUR new locks were placed in the last hour.
+ * is its public Trade Tag, or once LOCK_CAP_PER_HOUR new locks were placed in the last hour.
  */
 export async function placeLock(c: pg.PoolClient, accountId: string, ticketId: string, now: Date): Promise<LockResult> {
   const { rows } = await c.query<{ kind: string; disabled: boolean; legacy: boolean; member_id: string | null }>(
@@ -107,7 +107,7 @@ export async function placeLock(c: pg.PoolClient, accountId: string, ticketId: s
   const kind = a.kind as PlacedLock['kind'];
   const existing = await c.query('select 1 from account_locks where account_id = $1 and unlocked_at is null', [accountId]);
   if ((existing.rowCount ?? 0) > 0) return { kind: 'locked', lock: { accountId, kind, memberId: a.member_id, placed: false, revoked: [] } };
-  // Review item 3: the login name of a pre-009 account is its public display name, so anyone could
+  // Review item 3: the login name of a pre-009 account is its public Trade Tag, so anyone could
   // type it; the report is kept for staff, flagged, and locks nothing.
   if (a.legacy) return { kind: 'skipped', reason: 'legacy-login-name' };
   const barred = await c.query('select 1 from account_locks where account_id = $1 and relock_after > $2 limit 1', [accountId, now]);

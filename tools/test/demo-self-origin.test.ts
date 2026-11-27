@@ -114,8 +114,8 @@ describe('the gateway under a foreign https origin', () => {
   });
 
   it('gives the API and the node proxy its own https origin as the primary one, and answers CORS to it', async () => {
-    const r = await fetch(`${base}/v1/login/password`, { method: 'POST', headers: { ...FRONT, origin: 'https://p.example' }, body: '{}' });
-    expect(hits.at(-1)).toEqual({ url: '/v1/login/password', origin: PRIMARY });
+    const r = await fetch(`${base}/v1/login/pgp/start`, { method: 'POST', headers: { ...FRONT, origin: 'https://p.example' }, body: '{}' });
+    expect(hits.at(-1)).toEqual({ url: '/v1/login/pgp/start', origin: PRIMARY });
     expect(r.headers.get('access-control-allow-origin')).toBe('https://p.example');
     await fetch(`${base}/json_rpc`, { method: 'POST', headers: { ...FRONT, origin: 'https://p.example' }, body: '{}' });
     expect(hits.at(-1)).toEqual({ url: '/json_rpc', origin: PRIMARY });
@@ -123,7 +123,7 @@ describe('the gateway under a foreign https origin', () => {
 
   it('passes any other origin on unchanged (the API refuses it)', async () => {
     for (const origin of ['https://evil.example', 'http://p.example']) {
-      await fetch(`${base}/v1/login/password`, { method: 'POST', headers: { ...FRONT, origin }, body: '{}' });
+      await fetch(`${base}/v1/login/pgp/start`, { method: 'POST', headers: { ...FRONT, origin }, body: '{}' });
       expect(hits.at(-1)?.origin).toBe(origin);
     }
     // A Host that is not the gateway's, over http (DNS rebinding): not its own origin.

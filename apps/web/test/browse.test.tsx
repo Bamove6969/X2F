@@ -10,7 +10,7 @@ import { fire, render } from './render.js';
 const NOW = new Date('2026-10-24T12:00:00Z');
 const raw = () => boardSellOffers(NOW);
 const offers = (): Offer[] => parseOffers(raw());
-const byName = (name: string): Offer => offers().find((o) => o.poster.displayName === name)!;
+const byName = (name: string): Offer => offers().find((o) => o.poster.tradeTag === name)!;
 
 function card(offer: Offer, primary = false) {
   return render(
@@ -26,7 +26,7 @@ const badgeLabels = (host: HTMLElement) => [...host.querySelectorAll('.x2f-badge
 describe('browse API shapes', () => {
   it('reads the offer list the boards show, bigints from strings', () => {
     const [mira] = offers();
-    expect(mira!.poster.displayName).toBe('mira.k');
+    expect(mira!.poster.tradeTag).toBe('mira.k');
     expect(mira!.minFiatCents).toBe(5000n);
     expect(mira!.rate).toBe(33120n);
     expect(mira!.opensAt).toBeUndefined();
@@ -251,7 +251,7 @@ describe('OfferCard as a pick row (two panes, Fold-Offers)', () => {
       </MemoryRouter>,
     );
     expect(host.querySelector('[aria-pressed]')).toBeNull();
-    expect(buttons(host)).toContain(`Message ${off.poster.displayName}`);
+    expect(buttons(host)).toContain(`Message ${off.poster.tradeTag}`);
   });
 });
 

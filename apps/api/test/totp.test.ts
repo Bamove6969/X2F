@@ -1,11 +1,9 @@
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
-import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
-import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { applyTotp, openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
 import { subkey } from '../src/config.js';
@@ -18,14 +16,12 @@ import { Browser, ORIGIN, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './h
 
 const T0 = new Date('2026-10-17T12:00:00Z'); // a step boundary
 const HOUR = 3600_000;
-const GOOD = 'Correct-Horse-9';
 
 let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
 let now = T0;
 let step = 0;
-let goodHash: { hash: string; pepperId: number };
 let n = 0;
 
 beforeAll(async () => {
@@ -36,7 +32,6 @@ beforeAll(async () => {
     set(d);
   };
   addTestLogin(app, deps);
-  goodHash = await hashPassword(deps.config, GOOD);
 });
 
 afterAll(async () => {
@@ -52,13 +47,10 @@ beforeEach(() => {
 const name = (p = 'totp') => `${p}${String(++n).padStart(4, '0')}`;
 const at = (ms: number) => new Date(now.getTime() + ms);
 
-/** A trader with the test password and a logged-in browser (the creating session, so onboarding applies). */
+/** A trader (an unused passkey and security key) and a logged-in browser (the creating session, so onboarding applies). */
 async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' } = {}) {
   const username = name();
   const id = await seedAccount(deps, { loginName: username, ...(o.kind ? { kind: o.kind } : {}) });
-  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
-    id, goodHash.hash, goodHash.pepperId, now,
-  ]);
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id, firstSession: o.firstSession ?? true });
   expect(res.statusCode).toBe(200);
@@ -79,9 +71,6 @@ async function enrol(b: Browser, o: { replacing?: boolean } = {}): Promise<strin
   expect(res.statusCode).toBe(200);
   return s.secret;
 }
-
-const passwordLogin = (b: Browser, username: string) =>
-  b.post('/v1/login/password', { loginName: username, password: GOOD, deviceLabel: 'Test browser' });
 
 function chiSquare(counts: number[], total: number): number {
   const expected = total / counts.length;
@@ -231,142 +220,30 @@ describe('TOTP enrolment', () => {
 });
 
 /**
- * Owner decision, 16 Nov 2026 (to-lead.log 17:38): the authenticator app is the password login's
- * second factor, so an account uses it only together with a password. It reverses signup round 3
- * behaviour 1 (TOTP with a PGP key, passkey or security key and no password).
+ * Owner, 26 Nov 2026 (no passwords): an account holds at most one authenticator app; it counts as a
+ * kind of login method toward the two an account holds, and never confirms. Owner, 27 Nov 2026: it
+ * logs in only with the private login name, at `POST /v1/login/totp` (below), never as a backup
+ * login (no recovery-code powers) and never as a second step.
  */
-describe('TOTP goes with a password (owner, 16 Nov 2026)', () => {
-  const tokenUsed = async (token: string) => {
-    const { rows } = await deps.db.query<{ used_at: Date | null }>('select used_at from confirm_tokens where token_hash = $1', [
-      createHash('sha256').update(token).digest(),
-    ]);
-    return rows[0]!.used_at !== null;
-  };
-  /** A trader whose only login method is a PGP key (no password). */
-  async function pgpTrader(firstSession = true) {
-    const id = await seedAccount(deps, { loginName: name() });
-    const key = await genKey();
-    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
-    const b = new Browser(app);
-    expect((await b.post('/t/login', { accountId: id, firstSession })).statusCode).toBe(200);
-    return { id, b };
-  }
-  const removePassword = (b: Browser, confirmToken: string) =>
-    app.inject({ method: 'DELETE', url: '/v1/account/methods/password/password', headers: { origin: ORIGIN }, cookies: b.cookies, payload: { confirmToken } });
-
-  it('start is refused with 409 totp-needs-password on an account with no password, in the sign-up window', async () => {
-    const { id, b } = await pgpTrader();
-    const res = await b.post('/v1/account/totp/start', {});
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
-    const { rows } = await deps.db.query("select 1 from challenges where account_id = $1 and purpose = 'add-totp'", [id]);
-    expect(rows).toHaveLength(0);
+describe('one authenticator app, never a backup or a confirm (owner 26-27 Nov 2026)', () => {
+  it('an authenticator code is no backup login, no second-factor step and no confirm', async () => {
+    const { b, username } = await trader();
+    const secret = await enrol(b);
+    const other = new Browser(app);
+    const backup = await other.post('/v1/login/backup', { loginName: username, kind: 'totp', code: codeAt(secret, now), deviceLabel: 'x' });
+    expect([backup.statusCode, backup.json()]).toEqual([403, { error: 'method-not-allowed' }]);
+    expect((await other.post('/v1/login/second-factor', { pendingId: '00000000-0000-0000-0000-000000000000', code: codeAt(secret, now) })).statusCode).toBe(404);
+    expect((await b.post('/v1/confirm/totp', { code: codeAt(secret, now), action: { kind: 'extend-session' } })).statusCode).toBe(404);
   });
 
-  it('start outside the sign-up window is refused before the confirm token is spent', async () => {
-    const { id, b } = await pgpTrader(false);
-    const confirmToken = await confirmTokenFor(deps, b.cookies, { kind: 'add-method', method: 'totp' });
-    const res = await b.post('/v1/account/totp/start', { confirmToken });
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
-    expect(await tokenUsed(confirmToken)).toBe(false);
-    // With a password the same token now starts the enrolment.
-    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, goodHash.hash, goodHash.pepperId, now]);
-    expect((await b.post('/v1/account/totp/start', { confirmToken })).statusCode).toBe(200);
-  });
-
-  it('finish is refused with 409 totp-needs-password when the password went after the start; nothing is enrolled', async () => {
+  it('a second enrolment replaces the first: one app per account', async () => {
     const { id, b } = await trader();
-    const s = await enrolStart(b);
-    await deps.db.query('delete from passwords where account_id = $1', [id]);
-    const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'totp-needs-password' }]);
-    expect(await hasTotpRow(id)).toBe(false);
-  });
-
-  it('removing the password while TOTP is enrolled is refused with 409 password-has-totp, before the confirm token is spent', async () => {
-    const { id, b } = await trader();
-    const key = await genKey();
-    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
-    await enrol(b);
-    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'password', id: 'password' });
-    const res = await removePassword(b, token);
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-has-totp' }]);
-    expect(await tokenUsed(token)).toBe(false);
-    const { rows } = await deps.db.query('select 1 from passwords where account_id = $1', [id]);
+    const first = await enrol(b);
+    const second = await enrol(b, { replacing: true });
+    expect(second).not.toBe(first);
+    const { rows } = await deps.db.query<{ secret_enc: Buffer }>('select secret_enc from totp where account_id = $1', [id]);
     expect(rows).toHaveLength(1);
-    // Without the authenticator app, the password can go (the PGP key still logs in).
-    await deps.db.query('delete from totp where account_id = $1', [id]);
-    expect((await removePassword(b, token)).statusCode).toBe(200);
-  });
-
-  it('applyTotp (also the write of a staged enrolment when the hold ends) refuses an account with no password', async () => {
-    const { id } = await pgpTrader();
-    const sealed = sealSecret(deps, id, randomBytes(20));
-    await expect(applyTotp(deps.db, id, sealed, 0, now)).rejects.toMatchObject({ status: 409, code: 'totp-needs-password' });
-    expect(await hasTotpRow(id)).toBe(false);
-  });
-
-  it('a TOTP login still asks a password login for the code (TOTP stays the password\'s second factor)', async () => {
-    const { username, b } = await trader();
-    await enrol(b);
-    const res = await passwordLogin(new Browser(app), username);
-    expect(res.json()).toMatchObject({ status: 'second-factor' });
-  });
-});
-
-/**
- * Owner decision, 16 Nov 2026 (comms to-lead.log 17:50:46): a password does not stand alone; it
- * needs TOTP or another login method (a PGP key, passkey or security key, each of which stands
- * alone). 409 `password-alone` when sign-up would finish, or a removal would leave, a password with
- * neither.
- */
-describe('a password does not stand alone (owner, 16 Nov 2026)', () => {
-  const del = (b: Browser, type: string, id: string, confirmToken: string) =>
-    app.inject({ method: 'DELETE', url: `/v1/account/methods/${type}/${id}`, headers: { origin: ORIGIN }, cookies: b.cookies, payload: { confirmToken } });
-  const pgpKey = async (id: string) => {
-    const key = await genKey();
-    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
-    const { rows } = await deps.db.query<{ id: string }>('select id from pgp_keys where account_id = $1', [id]);
-    return rows[0]!.id;
-  };
-
-  it('finishing sign-up with only a password is refused, 409 password-alone; the sign-up window stays open', async () => {
-    const { id, b } = await trader();
-    const res = await b.post('/v1/account/onboarding/end', {});
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
-    const { rows } = await deps.db.query<{ onboarding_until: Date | null }>('select onboarding_until from sessions where account_id = $1 and revoked_at is null', [id]);
-    expect(rows[0]!.onboarding_until).not.toBeNull();
-  });
-
-  it('with the authenticator app, or with another login method, sign-up finishes', async () => {
-    const one = await trader();
-    await enrol(one.b);
-    expect((await one.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
-    const two = await trader();
-    await pgpKey(two.id);
-    expect((await two.b.post('/v1/account/onboarding/end', {})).statusCode).toBe(200);
-  });
-
-  it('removing the authenticator app from a password-only login is refused, 409 password-alone, token unspent', async () => {
-    const { id, b } = await trader();
-    await enrol(b);
-    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'totp', id: 'totp' });
-    const res = await del(b, 'totp', 'totp', token);
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
-    expect(await hasTotpRow(id)).toBe(true);
-    // With a PGP key too, the authenticator app can go (the key stands alone).
-    await pgpKey(id);
-    expect((await del(b, 'totp', 'totp', token)).statusCode).toBe(200);
-  });
-
-  it('removing the last other login method from a password without TOTP is refused, 409 password-alone', async () => {
-    const { id, b } = await trader();
-    const keyId = await pgpKey(id);
-    const token = await confirmTokenFor(deps, b.cookies, { kind: 'remove-method', method: 'pgp', id: keyId });
-    const res = await del(b, 'pgp', keyId, token);
-    expect([res.statusCode, res.json()]).toEqual([409, { error: 'password-alone' }]);
-    // With the authenticator app, the password has its second factor and the key can go.
-    await enrol(b);
-    expect((await del(b, 'pgp', keyId, token)).statusCode).toBe(200);
+    expect(Buffer.from(openSecret(deps, id, rows[0]!.secret_enc)).length).toBeGreaterThan(0);
   });
 });
 
@@ -403,151 +280,6 @@ describe('verifyTotp replay order (P2-I2)', () => {
   });
 });
 
-describe('password login with TOTP (second factor)', () => {
-  it('answers second-factor with no session until the code is accepted', async () => {
-    const { username, b } = await trader();
-    const secret = await enrol(b);
-    setNow(at(STEP_MS)); // the enrolment used this step's code
-
-    const fresh = new Browser(app);
-    const res = await passwordLogin(fresh, username);
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { status: string; pendingId: string; needs: string[] };
-    expect(body).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['totp'] });
-    expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
-
-    const ok = await fresh.post('/v1/login/second-factor', { pendingId: body.pendingId, code: codeAt(secret, now) });
-    expect(ok.statusCode).toBe(200);
-    // Task 16: the account is logged in elsewhere, so this new browser is approved first.
-    expect(await approvedLogin(deps, ok, (u) => fresh.post(u))).toEqual({ status: 'ok' });
-    expect(fresh.cookies[SESSION_COOKIE]).toBeTruthy();
-    // The pending login is single-use.
-    const again = await fresh.post('/v1/login/second-factor', { pendingId: body.pendingId, code: codeAt(secret, now) });
-    expect(again.json()).toEqual({ error: 'challenge-expired' });
-  });
-
-  it('binds the pending login to the browser and to 5 minutes', async () => {
-    const { username, b } = await trader();
-    const secret = await enrol(b);
-    setNow(at(STEP_MS));
-    const first = new Browser(app);
-    const { pendingId } = (await passwordLogin(first, username)).json() as { pendingId: string };
-    const other = new Browser(app);
-    await other.post('/v1/login/pgp/start', { key: 'none' }); // a device cookie of its own
-    const res = await other.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'challenge-expired' });
-
-    const { pendingId: p2 } = (await passwordLogin(first, username)).json() as { pendingId: string };
-    setNow(at(5 * 60_000));
-    const late = await first.post('/v1/login/second-factor', { pendingId: p2, code: codeAt(secret, now) });
-    expect(late.json()).toEqual({ error: 'challenge-expired' });
-  });
-
-  it('throttles wrong codes on the totp key; a PGP login still succeeds meanwhile', async () => {
-    const { id, username, b } = await trader();
-    const secret = await enrol(b);
-    setNow(at(STEP_MS));
-    const key = await genKey();
-    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: key.fingerprint, armored: key.publicKey, now });
-
-    const attacker = new Browser(app);
-    for (let i = 1; i <= 4; i++) {
-      const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
-      const res = await attacker.post('/v1/login/second-factor', { pendingId, code: wrongCodeAt(secret, now) });
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toEqual({ error: 'code-invalid' });
-    }
-    const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
-    const slowed = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
-    expect(slowed.statusCode).toBe(429);
-    expect(slowed.json()).toMatchObject({ error: 'slow-down' });
-    // A refused check does not use up the pending login: after the wait it still finishes.
-    setNow(at(3_000));
-    const later = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
-    expect(later.statusCode).toBe(200);
-    expect(await approvedLogin(deps, later, (u) => attacker.post(u))).toEqual({ status: 'ok' });
-
-    // PGP is never throttled by the totp key.
-    const owner = new Browser(app);
-    const start = await owner.post('/v1/login/pgp/start', { key: key.publicKey, loginName: username });
-    const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
-    const code = codeOf(await decrypt(encryptedMessage, key.privateKey));
-    const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });
-    expect(fin.statusCode).toBe(200);
-    expect(await approvedLogin(deps, fin, (u) => owner.post(u))).toEqual({ status: 'ok' });
-  });
-
-  it('a correct passkey login still succeeds while TOTP is throttled', async () => {
-    const { id, username, b } = await trader();
-    const secret = await enrol(b);
-    setNow(at(STEP_MS));
-    const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
-    await deps.db.query(
-      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
-       values ($1, $2, $3, 0, 'passkey', true, 'multiDevice', false, 'Phone', $4)`,
-      [id, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, now],
-    );
-
-    const attacker = new Browser(app);
-    for (let i = 1; i <= 4; i++) {
-      const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
-      expect((await attacker.post('/v1/login/second-factor', { pendingId, code: wrongCodeAt(secret, now) })).statusCode).toBe(401);
-    }
-    const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
-    const slowed = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
-    expect(slowed.statusCode).toBe(429);
-    expect(slowed.json()).toMatchObject({ error: 'slow-down' });
-
-    // Passkeys (discoverable login) are never throttled by the totp key.
-    const { rows } = await deps.db.query<{ h: Buffer }>('select webauthn_user_id as h from accounts where id = $1', [id]);
-    const owner = new Browser(app);
-    const start = await owner.post('/v1/login/webauthn/start', {});
-    expect(start.statusCode).toBe(200);
-    const { challengeId, options } = start.json() as { challengeId: string; options: Parameters<typeof auth.authenticate>[0] };
-    const response = auth.authenticate(options, ORIGIN, { userHandle: rows[0]!.h.toString('base64url') });
-    const fin = await owner.post('/v1/login/webauthn/finish', { challengeId, response, deviceLabel: 'Phone' });
-    expect(fin.statusCode).toBe(200);
-    expect(await approvedLogin(deps, fin, (u) => owner.post(u))).toEqual({ status: 'ok' });
-    expect(owner.cookies[SESSION_COOKIE]).toBeDefined();
-  });
-
-  it('logs in without a second factor when no TOTP is enrolled', async () => {
-    const { username } = await trader();
-    const fresh = new Browser(app);
-    const res = await passwordLogin(fresh, username);
-    expect(await approvedLogin(deps, res, (u) => fresh.post(u))).toEqual({ status: 'ok' });
-  });
-});
-
-describe('POST /v1/confirm/password with TOTP', () => {
-  it('requires the current code once TOTP is enrolled', async () => {
-    const { id, b } = await trader();
-    const secret = await enrol(b);
-    setNow(at(STEP_MS));
-    const action = { kind: 'set-password' };
-    // No code: refused before any Argon2 work and counted as a password failure, so neither the
-    // answer nor the throttle tells whether the password was right.
-    const verify = vi.spyOn(argon2, 'verify');
-    const missing = await b.post('/v1/confirm/password', { password: GOOD, action });
-    expect(missing.statusCode).toBe(401);
-    expect(missing.json()).toEqual({ error: 'credentials-invalid' });
-    expect(verify).not.toHaveBeenCalled();
-    const { rows } = await deps.db.query<{ key: string; failures: number }>(
-      "select key, failures from login_throttle where key like 'password:' || $1 || ':%'",
-      [id],
-    );
-    expect(rows.map((r) => r.failures)).toEqual([1]);
-    const wrong = await b.post('/v1/confirm/password', { password: GOOD, totp: wrongCodeAt(secret, now), action });
-    expect(wrong.json()).toEqual({ error: 'credentials-invalid' });
-    const ok = await b.post('/v1/confirm/password', { password: GOOD, totp: codeAt(secret, now), action });
-    expect(ok.statusCode).toBe(200);
-    expect(ok.json()).toEqual({ confirmToken: expect.any(String) });
-    // Password plus authenticator code is still the weak kind: a new wallet waits 24 hours (owner, 2026-10-23).
-    expect(await confirmTokenMethod(deps, ok.json().confirmToken)).toBe('password');
-  });
-});
-
 describe('no patterns in TOTP secrets (R9)', () => {
   it('1,000 enrolments give 1,000 distinct secrets with an even byte spread', async () => {
     const secrets = new Set<string>();
@@ -567,18 +299,13 @@ describe('no patterns in TOTP secrets (R9)', () => {
 
   it('the same login name at different times never gets the same secret', async () => {
     const username = name('same');
-    // Owner, 16 Nov 2026: TOTP only with a password, so each account gets one first.
-    const withPassword = (id: string) =>
-      deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, goodHash.hash, goodHash.pepperId, now]);
     const first = await seedAccount(deps, { loginName: username });
-    await withPassword(first);
     const b1 = new Browser(app);
     await b1.post('/t/login', { accountId: first, firstSession: true });
     const s1 = await enrol(b1);
     await deps.db.query('delete from accounts where id = $1', [first]);
     setNow(at(HOUR / 2));
     const second = await seedAccount(deps, { loginName: username });
-    await withPassword(second);
     const b2 = new Browser(app);
     await b2.post('/t/login', { accountId: second, firstSession: true });
     const s2 = await enrol(b2);
@@ -683,5 +410,128 @@ describe('TOTP key store (FU-C, ASVS 2.8.2)', () => {
       deps.config.totpKeys = saved;
     }
     expect(await sealedOf(id)).toEqual(replacement);
+  });
+});
+
+/** A known authenticator secret written straight to `totp` (for kinds that cannot enrol: staff). Returns its base32. */
+async function seedTotp(id: string): Promise<string> {
+  const bytes = new Uint8Array(randomBytes(20));
+  await applyTotp(deps.db, id, sealSecret(deps, id, bytes), 0, now);
+  return new Secret({ buffer: bytes.buffer }).base32;
+}
+
+const totpLogin = (b: Browser, loginName: string, code: string) => b.post('/v1/login/totp', { loginName, code, deviceLabel: 'Firefox on Linux' });
+
+/**
+ * Owner, 27 Nov 2026 (Jess, 01:04 UTC): "Ours will just be a user ID and otp because user ID is
+ * secret". A trader logs in with the private login name plus the authenticator code: a normal full
+ * session, with approve-on-device, the throttle and the D-059 lock as every other login, and still
+ * never a confirm.
+ */
+describe('login name + authenticator code logs a trader in (owner 27 Nov 2026)', () => {
+  it('opens a full session when the account is logged in nowhere else; the code works once', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    await b.post('/v1/logout');
+    setNow(at(STEP_MS)); // the enrolment's step is used
+    const code = codeAt(secret, now);
+    const c = new Browser(app);
+    const res = await totpLogin(c, username, code);
+    expect([res.statusCode, res.json()]).toEqual([200, { status: 'ok' }]);
+    expect(c.cookies[SESSION_COOKIE]).toBeDefined();
+    expect((await c.get('/v1/account/me')).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ detail: { method: string } }>(`select detail from alerts where account_id = $1 and kind = 'new-login'`, [id]);
+    expect(rows.map((r) => r.detail.method)).toContain('totp');
+    // The same code again, from another browser: refused like a wrong code (no replay).
+    const replay = await totpLogin(new Browser(app), username, code);
+    expect([replay.statusCode, replay.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+  });
+
+  it('a new browser waits for approval on the logged-in device, and that approval offers no chat keys', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    const res = await totpLogin(c, username, codeAt(secret, now));
+    expect(res.statusCode).toBe(200);
+    const wait = res.json() as { status: string; approvalId: string };
+    expect(wait.status).toBe('approve-on-device');
+    expect(c.cookies[SESSION_COOKIE]).toBeUndefined();
+    const view = (await b.get(`/v1/account/approvals/${wait.approvalId}`)).json() as { keysOffered: boolean };
+    expect(view.keysOffered).toBe(false);
+    expect(await approvedLogin(deps, res, (url) => c.post(url))).toEqual({ status: 'ok' });
+    expect((await c.get('/v1/account/me')).statusCode).toBe(200);
+  });
+
+  it('a wrong code, a wrong name, an account without an app and a staff account all get the same refusal', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const plain = await trader();
+    const staffName = name('staff');
+    const staffId = await seedAccount(deps, { loginName: staffName, kind: 'staff' });
+    const staffSecret = await seedTotp(staffId);
+    const answers = [
+      await totpLogin(new Browser(app), username, wrongCodeAt(secret, now)),
+      await totpLogin(new Browser(app), `${username}x`, codeAt(secret, now)),
+      await totpLogin(new Browser(app), plain.username, codeAt(secret, now)),
+      await totpLogin(new Browser(app), staffName, codeAt(staffSecret, now)),
+      await totpLogin(new Browser(app), 'not a name!', '123456'),
+    ];
+    for (const r of answers) expect([r.statusCode, r.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+    // The trader's own code was never spent by those tries.
+    const ok = await totpLogin(new Browser(app), username, codeAt(secret, now));
+    expect((ok.json() as { status: string }).status).toBe('approve-on-device');
+  });
+
+  it('wrong codes slow down, then lock, with retryAfterSeconds; the right code waits too', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    const waits = [0, 0, 0, 2, 4, 8, 16, 30, 30, 0];
+    for (const [i, w] of waits.entries()) {
+      const res = await totpLogin(c, username, wrongCodeAt(secret, now));
+      expect(res.statusCode, `try ${i + 1}`).toBe(401);
+      if (i === 3) {
+        const slowed = await totpLogin(c, username, codeAt(secret, now));
+        expect(slowed.statusCode).toBe(429);
+        expect(slowed.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: 2 });
+      }
+      setNow(at(w * 1000 + 500));
+    }
+    const locked = await totpLogin(c, username, codeAt(secret, now));
+    expect(locked.statusCode).toBe(429);
+    expect(locked.json()).toMatchObject({ error: 'locked' });
+    expect((locked.json() as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(0);
+    const { rows } = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'login-locked' and detail->>'method' = 'totp'`, [id]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('a disabled account (the D-059 compromised lock sets disabled_at) is refused after the right code only', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [id, now]);
+    const wrong = await totpLogin(new Browser(app), username, wrongCodeAt(secret, now));
+    expect([wrong.statusCode, wrong.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+    const c = new Browser(app);
+    const right = await totpLogin(c, username, codeAt(secret, now));
+    expect([right.statusCode, right.json()]).toEqual([403, { error: 'account-disabled' }]);
+    expect(c.cookies[SESSION_COOKIE]).toBeUndefined();
+  });
+
+  it('the session it opens still needs a key to confirm a change: there is no TOTP confirm', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    await b.post('/v1/logout');
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    expect((await totpLogin(c, username, codeAt(secret, now))).json()).toEqual({ status: 'ok' });
+    // Replacing the app (a login-method change) asks for a confirm, and the authenticator cannot give one.
+    const change = await c.post('/v1/account/totp/start', {});
+    expect([change.statusCode, change.json()]).toEqual([403, { error: 'confirm-required', action: 'add-method' }]);
+    setNow(at(STEP_MS));
+    expect((await c.post('/v1/confirm/totp', { code: codeAt(secret, now), action: { kind: 'add-method', method: 'totp' } })).statusCode).toBe(404);
   });
 });

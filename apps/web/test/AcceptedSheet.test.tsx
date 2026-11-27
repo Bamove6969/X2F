@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 describe('AcceptedSheet', () => {
-  it('names the taker by display name exactly as set, and lists only usable wallets', async () => {
+  it('names the taker by Trade Tag exactly as set, and lists only usable wallets', async () => {
     render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
     await flush();
     expect(sheet().querySelector('h2')!.textContent).toBe('mira.K_77 accepted your offer');

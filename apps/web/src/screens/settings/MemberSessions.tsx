@@ -3,8 +3,8 @@
  * the member signed in and when it was last seen, and a way to end it, or all of them (asked
  * first). A row opens the list (Disclosure), so the screen reads nothing until the owner asks.
  * Each session ended shows in the Team log as "You ended a session of <member>" (the API's
- * `session-ended` row, the owner's since migration 859). From a device that logged in with just a username and password the API
- * refuses (403 `weak-session`), shown through CantDoThat as on Devices.
+ * `session-ended` row, the owner's since migration 859). Owner, 26 Nov 2026: no passwords and no
+ * weak sessions, so every login the owner holds may end a member's session.
  *
  * No Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts): kit parts and
  * existing classes only, no stylesheet of its own and no inline styles. Times through `When`
@@ -13,13 +13,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AuthApiError, type MemberSession } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
-import { CantDoThat } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { When } from '../../ui/When.js';
 import { authApi } from '../auth/authApi.js';
-import { weakSessionCantDo } from '../auth/refusals.js';
 
 // COPY-UNSIGNED (all of MEMBER_SESSIONS_COPY).
 export const MEMBER_SESSIONS_COPY = {
@@ -54,7 +51,7 @@ const C = MEMBER_SESSIONS_COPY;
 type Ask = { kind: 'one'; s: MemberSession } | { kind: 'all'; n: number };
 
 /** One member's sessions, behind a row that opens them. */
-export function MemberSessions({ member }: { member: { id: string; displayName: string } }) {
+export function MemberSessions({ member }: { member: { id: string; tradeTag: string } }) {
   return (
     <Disclosure summary={C.title} part="member-sessions">
       {(id) => <SessionList id={id} member={member} />}
@@ -62,15 +59,14 @@ export function MemberSessions({ member }: { member: { id: string; displayName: 
   );
 }
 
-function SessionList({ id, member }: { id: string; member: { id: string; displayName: string } }) {
-  const name = member.displayName;
+function SessionList({ id, member }: { id: string; member: { id: string; tradeTag: string } }) {
+  const name = member.tradeTag;
   const [sessions, setSessions] = useState<MemberSession[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ask, setAsk] = useState<Ask | null>(null);
-  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -98,10 +94,8 @@ function SessionList({ id, member }: { id: string; member: { id: string; display
         setNote(C.done.all(name));
       }
     } catch (e) {
-      const refused = weakSessionCantDo(e);
-      if (refused !== null) setCantDo(refused);
       // A session that already ended (or a member removed meanwhile) needs no words: the list reloads.
-      else if (!(e instanceof AuthApiError && e.status === 404)) setError(C.endFailed);
+      if (!(e instanceof AuthApiError && e.status === 404)) setError(C.endFailed);
     } finally {
       setBusy(false);
     }
@@ -189,7 +183,6 @@ function SessionList({ id, member }: { id: string; member: { id: string; display
           </Button>
         </div>
       </Sheet>
-      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.devices} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
     </div>
   );
 }

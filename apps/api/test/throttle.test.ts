@@ -3,8 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { DEVICE_COOKIE, deviceHash, ensureDeviceCookie, trustDevice } from '../src/auth/device.js';
 import {
-  QUIET_LOCK_AT, QUIET_LOCK_MS, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss,
-  visitorReset,
+  dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset,
 } from '../src/auth/throttle.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -29,7 +28,7 @@ beforeAll(async () => {
     const b = req.body as { accountId?: string; nameTag?: string };
     ensureDeviceCookie(req, reply);
     const account = b.accountId ? { id: b.accountId } : { nameTag: b.nameTag! };
-    return { key: await throttleKey(deps, req, 'password', account) };
+    return { key: await throttleKey(deps, req, 'recovery-code', account) };
   });
   app.post('/t/trust', async (req, reply) => {
     const b = req.body as { accountId: string };
@@ -82,11 +81,11 @@ const lockAlerts = async (accountId: string) =>
 describe('throttle', () => {
   it('builds keys from the method, the account and the device when trusted', async () => {
     const id = await seedAccount(deps, { loginName: name() });
-    expect(await keyFor({ accountId: id })).toBe(`password:${id}:anon`);
-    expect(await keyFor({ nameTag: 'nobody.here' })).toBe('password:name:nobody.here:anon');
+    expect(await keyFor({ accountId: id })).toBe(`recovery-code:${id}:anon`);
+    expect(await keyFor({ nameTag: 'nobody.here' })).toBe('recovery-code:name:nobody.here:anon');
     const dev = await trustedCookie(id);
-    expect(await keyFor({ accountId: id }, dev)).toMatch(new RegExp(`^password:${id}:dev:[0-9a-f]{64}$`));
-    expect(await keyFor({ nameTag: 'nobody.here' }, dev)).toBe('password:name:nobody.here:anon');
+    expect(await keyFor({ accountId: id }, dev)).toMatch(new RegExp(`^recovery-code:${id}:dev:[0-9a-f]{64}$`));
+    expect(await keyFor({ nameTag: 'nobody.here' }, dev)).toBe('recovery-code:name:nobody.here:anon');
   });
 
   it('slows down from the 4th failure, locks from the 10th with one alert, and forgets after 15 minutes', async () => {
@@ -116,7 +115,7 @@ describe('throttle', () => {
     expect(locked).toMatchObject({ status: 429, code: 'locked' });
     expect(locked!.extra!.retryAfterSeconds).toBeLessThanOrEqual(30);
     expect(locked!.extra!.retryAfterSeconds).toBeGreaterThan(0);
-    expect(await lockAlerts(id)).toEqual([{ detail: { method: 'password' } }]);
+    expect(await lockAlerts(id)).toEqual([{ detail: { method: 'recovery-code' } }]);
 
     after(31);
     await expect(throttleCheck(deps, key)).resolves.toBeUndefined();
@@ -218,55 +217,5 @@ describe('dailyCap', () => {
     await expect(dailyCap(deps, 'backup-totp:y', 5)).resolves.toBeUndefined();
     setNow(new Date('2026-10-18T00:00:00Z'));
     await expect(dailyCap(deps, 'backup-totp:x', 5)).resolves.toBeUndefined();
-  });
-});
-
-describe('password login: quiet lock (owner, 2026-10-23)', () => {
-  it('claims 10 tries in a row, then refuses quietly for 15 minutes after the 10th without counting', async () => {
-    const key = `password-login:name:${name()}:anon`;
-    for (let i = 1; i <= QUIET_LOCK_AT; i++) expect(await claimPasswordTry(deps, key)).toBe(i);
-    expect(await claimPasswordTry(deps, key)).toBeNull();
-    after(14 * 60);
-    expect(await claimPasswordTry(deps, key)).toBeNull();
-    expect(await failures(key)).toBe(QUIET_LOCK_AT);
-    after(60); // exactly 15 minutes after the 10th: a fresh streak
-    expect(QUIET_LOCK_MS).toBe(15 * 60_000);
-    expect(await claimPasswordTry(deps, key)).toBe(1);
-  });
-
-  it('a parallel burst gets exactly 10 tries', async () => {
-    const key = `password-login:name:${name()}:anon`;
-    const got = await Promise.all(Array.from({ length: 30 }, () => claimPasswordTry(deps, key)));
-    expect(got.filter((g) => g !== null).sort((a, b) => a! - b!)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  });
-
-  it('a streak ends 15 minutes after its last try, and a reset clears it', async () => {
-    const key = `password-login:name:${name()}:anon`;
-    for (let i = 0; i < 9; i++) await claimPasswordTry(deps, key);
-    after(15 * 60);
-    expect(await claimPasswordTry(deps, key)).toBe(1);
-    await throttleReset(deps, key);
-    expect(await claimPasswordTry(deps, key)).toBe(1);
-  });
-
-  it('the miss that reaches the lock adds one login-locked alert per streak', async () => {
-    const id = await seedAccount(deps, { loginName: name() });
-    const key = `password-login:${id}:anon`;
-    for (let i = 1; i <= QUIET_LOCK_AT; i++) await passwordMiss(deps, key, (await claimPasswordTry(deps, key))!, id);
-    await passwordMiss(deps, key, QUIET_LOCK_AT, id);
-    const { rows } = await deps.db.query("select detail from alerts where account_id = $1 and kind = 'login-locked'", [id]);
-    expect(rows).toEqual([{ detail: { method: 'password' } }]);
-  });
-
-  it('counts a browser’s misses on its device hash, whatever the name; a reset clears them', async () => {
-    const dev = Buffer.alloc(32, 9);
-    expect(await visitorMiss(deps, dev)).toBe(1);
-    expect(await visitorMiss(deps, dev)).toBe(2);
-    expect(await visitorMiss(deps, Buffer.alloc(32, 8))).toBe(1);
-    expect(await visitorMiss(deps, null)).toBe(1);
-    await visitorReset(deps, dev);
-    expect(await visitorMiss(deps, dev)).toBe(1);
-    after(15 * 60);
-    expect(await visitorMiss(deps, dev)).toBe(1);
   });
 });

@@ -68,5 +68,3 @@ export const PG_IMAGE = 'postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382
 export const MONEROD_RPC = `http://${HOST}:${PORTS.monerodRpc}`;
 export const MONEROD_RESTRICTED = `http://${HOST}:${PORTS.monerodRestricted}`;
 
-/** Every demo account's password (fake money, local only). */
-export const DEMO_PASSWORD = 'Demo-Monero-2026!';

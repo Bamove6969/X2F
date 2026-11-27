@@ -71,8 +71,8 @@ interface Poster {
 
 /** `name`'s poster summary on the buy offers for Zelle in USD, as `viewer` gets it from the API. */
 async function posterOf(viewer: Trader, name: string): Promise<Poster> {
-  const list = await viewer.api.ok<Array<{ poster: Poster & { displayName: string } }>>('GET', '/v1/offers?side=buy&method=ZELLE&currency=USD');
-  const mine = list.filter((o) => o.poster.displayName === name);
+  const list = await viewer.api.ok<Array<{ poster: Poster & { tradeTag: string } }>>('GET', '/v1/offers?side=buy&method=ZELLE&currency=USD');
+  const mine = list.filter((o) => o.poster.tradeTag === name);
   expect(mine).toHaveLength(1);
   return mine[0]!.poster;
 }
@@ -130,7 +130,7 @@ for (const [label, size] of SIZES) {
         // The smart card on SellerConfirm (Task 16): the seller's own OCR of the decrypted copy.
         const card = o.sellerPage.locator('[data-part="smart-proof"]');
         await expect(card).toHaveAttribute('data-state', 'checked', { timeout: 3 * 60_000 });
-        await expect(card.locator('[data-part="smart-proof-head"]')).toHaveText(`We checked ${o.buyer.displayName}'s screenshot`);
+        await expect(card.locator('[data-part="smart-proof-head"]')).toHaveText(`We checked ${o.buyer.tradeTag}'s screenshot`);
         const lines = card.locator('[data-part="smart-proof-line"]');
         await expect(lines.nth(0)).toHaveText(`Shows ${total}, the right amount`);
         await expect(lines.nth(0)).toHaveAttribute('data-tone', 'escrow');
@@ -166,8 +166,8 @@ for (const [label, size] of SIZES) {
         await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
         await shows(o.buyerPage, /RELEASED/, LONG, { mining: true });
         await payoutLanded(o, await untilState(o.seller, o.code, ['released']));
-        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.displayName}`));
-        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.displayName}`));
+        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.tradeTag}`));
+        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.tradeTag}`));
       });
     });
 
@@ -180,8 +180,8 @@ for (const [label, size] of SIZES) {
         await shows(o.sellerPage, /RELEASED/, LONG, { mining: true });
         await shows(o.buyerPage, /RELEASED/, LONG, { mining: true });
 
-        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.displayName}`));
-        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.displayName}`));
+        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.tradeTag}`));
+        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.tradeTag}`));
         await o.sellerPage.getByRole('radio', { name: '5 stars' }).click();
         await o.sellerPage.getByRole('button', { name: 'Submit rating' }).click();
         await o.buyerPage.getByRole('button', { name: 'Neutral, skip details' }).click();
@@ -199,11 +199,11 @@ for (const [label, size] of SIZES) {
 
         // Both reviews show on both profiles at once (R-007); the buyer's % positive is 100.
         for (const page of [o.sellerPage, o.buyerPage]) {
-          const buyerProfile = await profileText(page, o.buyer.displayName);
+          const buyerProfile = await profileText(page, o.buyer.tradeTag);
           expect(buyerProfile).toMatch(/1\s*completed trade/i);
           expect(buyerProfile).toMatch(/100\s*%/);
           expect(buyerProfile).not.toMatch(/No reviews yet/);
-          const sellerProfile = await profileText(page, o.seller.displayName);
+          const sellerProfile = await profileText(page, o.seller.tradeTag);
           expect(sellerProfile).toMatch(/1\s*completed trade/i);
           expect(sellerProfile).toMatch(/Neutral/);
         }
@@ -218,11 +218,11 @@ for (const [label, size] of SIZES) {
       const f = await contextFor(browser, fresh, size);
       try {
         // Fresh: Starter, New earned and Featured first, on the card in the caution tone.
-        let p = await posterOf(viewer, fresh.displayName);
+        let p = await posterOf(viewer, fresh.tradeTag);
         expect(p.stage).toBe('starter');
         expect(p.badges[0]).toBe('new');
         expect(p.featuredBadges).toBeGreaterThanOrEqual(1);
-        let shown = await offerCard(v.page, fresh.displayName);
+        let shown = await offerCard(v.page, fresh.tradeTag);
         await expect(shown.pills.first()).toHaveText('New');
         await expect(shown.pills.first()).toHaveAttribute('data-tone', 'caution');
 
@@ -244,17 +244,17 @@ for (const [label, size] of SIZES) {
         // Seeded: 19 completed trades (Plan 7's running totals of purged trades, which every count
         // reads: the stage's and the shown count's) on an account 31 days old, so only the 20th
         // trade stands between it and Graduated.
-        await sql("update accounts set created_at = now() - interval '31 days' where display_name = $1", [fresh.displayName]);
+        await sql("update accounts set created_at = now() - interval '31 days' where trade_tag = $1", [fresh.tradeTag]);
         await sql(
-          `insert into account_traded_totals (account_id, purged_completed, purged_sales) select id, 19, 19 from accounts where display_name = $1
+          `insert into account_traded_totals (account_id, purged_completed, purged_sales) select id, 19, 19 from accounts where trade_tag = $1
            on conflict (account_id) do update set purged_completed = 19, purged_sales = 19`,
-          [fresh.displayName],
+          [fresh.tradeTag],
         );
-        p = await posterOf(viewer, fresh.displayName);
+        p = await posterOf(viewer, fresh.tradeTag);
         expect(p.stage).toBe('building');
         expect(p.badges).toContain('new');
         expect(p.badges[0]).toBe('new');
-        shown = await offerCard(v.page, fresh.displayName);
+        shown = await offerCard(v.page, fresh.tradeTag);
         await expect(shown.pills.first()).toHaveText('New');
         await expect(shown.card).toContainText(/19\s*trades/);
       } finally {
@@ -272,17 +272,17 @@ for (const [label, size] of SIZES) {
         await payoutLanded(o, await untilState(o.seller, o.code, ['released']));
         // Its offer is listed again once it has rated (Task 3, P5-A4: a poster with a pending review
         // is left out of every list); the seller rates too, so its own browsing is not gated.
-        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.displayName}`));
+        await shows(o.buyerPage, new RegExp(`How was trading with ${o.seller.tradeTag}`));
         await o.buyerPage.getByRole('button', { name: 'Neutral, skip details' }).click();
-        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.displayName}`));
+        await shows(o.sellerPage, new RegExp(`How was trading with ${o.buyer.tradeTag}`));
         await o.sellerPage.getByRole('button', { name: 'Neutral, skip details' }).click();
         await expect.poll(async () => (await sql<{ n: string }>('select count(*) as n from reviews where trade_code = $1', [o.code]))[0]!.n, { timeout: 60_000 }).toBe('2');
-        const p = await posterOf(viewer, fresh.displayName);
+        const p = await posterOf(viewer, fresh.tradeTag);
         expect(p.stage).toBe('graduated');
         expect(p.badges).not.toContain('new');
         const mine = await fresh.api.ok<{ featured: string[]; earned: Array<{ id: string }> }>('GET', '/v1/account/badges');
         expect(mine.earned.map((b) => b.id)).not.toContain('new');
-        const shown = await offerCard(o.sellerPage, fresh.displayName);
+        const shown = await offerCard(o.sellerPage, fresh.tradeTag);
         await expect(shown.card).toContainText(/20\s*trades/);
         await expect(shown.pills.filter({ hasText: /^New$/ })).toHaveCount(0);
         await expect(shown.pills.first()).toBeVisible(); // its earned badges still show (10 trades)

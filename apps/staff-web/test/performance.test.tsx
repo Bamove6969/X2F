@@ -13,7 +13,7 @@ import { button, click, fakeApi, refused, render, settle } from './helpers.js';
 
 vi.mock('@simplewebauthn/browser', () => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 
-const OWNER = { displayName: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
+const OWNER = { tradeTag: 'lumen.k', role: 'owner', nav: NAV.owner, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
 const FIG = {
   cases: 0, firstReplyMin: null, rulingMin: null, overturned: 0, withinDeadlinePct: null, open: 0, payableCases: 0,
   settledWithinGoalPct: null, settledWithinDeadlinePct: null, appeals: 0, appealsWithinGoalPct: null,

@@ -29,13 +29,20 @@
  *
  * Someone outside the trade gets 404, as for an unknown trade. Owner-only, like the chat: a team
  * member gets 403 owner-only (proof-upload and proof-see-partner are waits-member-chat-key: members
- * hold no chat key that could open a proof).
+ * hold no chat key that could open a proof). One exception (owner 26 Nov 2026 18:41 UTC, Jess: "allow
+ * them to upload proof"): the PUT of a buyer's `proof` by a member holding Upload payment proof
+ * (`trades-upload-proof`) and the box that reads the trade (See active trades / See trade history,
+ * as every trade step a member takes), logged under the member's name (`proof-uploaded`) in the
+ * upload's transaction; without the box 403 `forbidden`, and `evidence` / `unblurred` stay 403
+ * `owner-only`. Contract: team/memberTrade.ts.
  */
 import { normalizeTradeCode } from '@x2f/core';
 import { PROOF_MAX_CIPHERTEXT, isProofId } from '@x2f/proof';
 import type { FastifyInstance, onRequestAsyncHookHandler } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
+import { assertMemberMay, TRADE_READ, tradePartAbility } from '../team/perms.js';
 import { EVIDENCE_MAX_PER_SIDE, PROOF_MAX_PER_SIDE, PROOF_MIN_CIPHERTEXT, type StoredProofKind, claimProofId, countProofs, insertProof, readableProof } from './store.js';
 
 const KINDS: readonly StoredProofKind[] = ['proof', 'evidence', 'unblurred'];
@@ -43,12 +50,16 @@ const KINDS: readonly StoredProofKind[] = ['proof', 'evidence', 'unblurred'];
 const PROOF_STATES = new Set(['secured', 'paid', 'refund_requested', 'disputed']);
 
 const requireTrader = requireSession({ kinds: ['trader'] });
+/** Owner 26 Nov 2026 18:41 UTC: the box that lets a member PUT the buyer's payment proof (team/memberTrade.ts). */
+const UPLOAD_PROOF = 'trades-upload-proof';
 /**
  * Review M1: the session is checked in an onRequest hook too, so a PUT with no live session is 401
  * before any of its body is read. The preHandler (the route lists' guard) checks it again after the
  * upload and records the activity; this early check does not touch the session.
  */
-const requireTraderFirst = requireSession({ kinds: ['trader'], touch: false }) as unknown as onRequestAsyncHookHandler;
+const requireTraderFirst = requireSession({ kinds: ['trader'], touch: false, member: UPLOAD_PROOF }) as unknown as onRequestAsyncHookHandler;
+/** The PUT's own session check: the account owner, or a member with Upload payment proof (only for `kind=proof`). */
+const requireUploader = requireSession({ kinds: ['trader'], member: UPLOAD_PROOF });
 /** Per account, after the early session check and before the body is read: 429 slow-down (PROOF_PUT_BUCKET). */
 const proofBudget: onRequestAsyncHookHandler = async (req) => req.server.budgets.proofPut.take(req.auth.accountId);
 /** The cap per side for each kind; an unblurred copy has none (one per moderator request). */
@@ -70,11 +81,16 @@ export function proofRoutes(app: FastifyInstance): void {
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: PROOF_MAX_CIPHERTEXT }, (_req, b, done) => done(null, b));
 
-    scope.put('/v1/trades/:code/proofs/:id', { onRequest: [requireTraderFirst, proofBudget], preHandler: requireTrader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
+    scope.put('/v1/trades/:code/proofs/:id', { onRequest: [requireTraderFirst, proofBudget], preHandler: requireUploader, bodyLimit: PROOF_MAX_CIPHERTEXT }, async (req, reply) => {
       const { code, id } = target(req);
       const q = req.query as Record<string, unknown>;
       const kind = q.kind;
       if (Object.keys(q).length !== 1 || typeof kind !== 'string' || !(KINDS as readonly string[]).includes(kind)) throw bad();
+      // A member: only the buyer's payment proof (evidence and the unblurred copy wait for member
+      // chat keys), and only on a trade their boxes let them read (as the trade events route).
+      const member = req.auth.memberId !== null;
+      if (member && kind !== 'proof') throw new ApiError(403, 'owner-only');
+      assertMemberMay(req.auth, TRADE_READ);
       const ciphertext = req.body;
       if (!Buffer.isBuffer(ciphertext) || ciphertext.length < PROOF_MIN_CIPHERTEXT || ciphertext.length > PROOF_MAX_CIPHERTEXT) throw bad();
       const deps = req.server.deps;
@@ -85,12 +101,13 @@ export function proofRoutes(app: FastifyInstance): void {
         await client.query('begin');
         try {
           // Only a party's row is locked: an outsider (or an unknown code) matches nothing and is 404.
-          const { rows } = await client.query<{ buyer_account_id: string; seller_account_id: string; state: string }>(
-            'select buyer_account_id, seller_account_id, state from trades where code = $1 and $2 in (buyer_account_id, seller_account_id) for update',
+          const { rows } = await client.query<{ buyer_account_id: string; seller_account_id: string; state: string; closed_at: Date | null }>(
+            'select buyer_account_id, seller_account_id, state, closed_at from trades where code = $1 and $2 in (buyer_account_id, seller_account_id) for update',
             [code, me],
           );
           const t = rows[0];
           if (!t) throw notFound();
+          assertMemberMay(req.auth, tradePartAbility(t.closed_at));
           const role = t.buyer_account_id === me ? 'buyer' : 'seller';
           /** The dispute (seq) whose request an unblurred copy answers. */
           let unblurredFor: number | null = null;
@@ -117,6 +134,10 @@ export function proofRoutes(app: FastifyInstance): void {
           if (cap !== null && (await countProofs(client, code, role, kind as StoredProofKind)) >= cap) throw new ApiError(409, 'too-many-proofs');
           if (!(await claimProofId(client, id, now))) throw new ApiError(409, 'proof-exists');
           await insertProof(client, { id, code, role, kind: kind as StoredProofKind, ciphertext, now });
+          // A member's upload is in the team log under their name, with the trade's amount (never the
+          // proof's id or size); auditMember re-reads the member live (removed 401, box gone 403,
+          // hours, band) and a refusal rolls the upload back. Nothing for the account owner.
+          if (member) await auditMember(client, req.auth, { action: 'proof-uploaded', tradeCode: code }, now);
           // Plan 5 Task 15: the asked side's "Sent to <mod> at …" (the dispute view's proofRequest.sentAt),
           // in this transaction, so the time exists exactly when the copy does. A time only.
           if (unblurredFor !== null) await client.query('update disputes set proof_request_sent_at = $3 where code = $1 and seq = $2', [code, unblurredFor, now]);

@@ -169,7 +169,6 @@ async function main(): Promise<void> {
     X2F_ORIGINS: origins.join(','),
     X2F_RP_ID: o.rpId,
     DATABASE_URL: pgUrl('x2f'),
-    X2F_LEAKED_LIST_PATH: s.leakedListPath,
     X2F_SERVER_KEY: s.serverKey,
     // The repo's snapshot plus the demo's software key (staff-mds.ts); real keys register as before.
     X2F_ATTESTATION_DIR: DEMO_MDS_DIR,
@@ -178,7 +177,6 @@ async function main(): Promise<void> {
     X2F_TERMS_VERSION: TERMS_TEXT_VERSION,
     X2F_PGP_SIGNING_KEY_PATH: s.pgpKeyPath,
     X2F_PGP_SIGNING_FINGERPRINT: s.pgpFingerprint,
-    X2F_PASSWORD_PEPPERS: s.passwordPeppers,
     X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
     X2F_TOTP_KEYS: s.totpKeys,
     X2F_LOGIN_NAME_KEYS: s.loginNameKeys,

@@ -37,7 +37,7 @@ import { BAN_RULES, banRule, checkBanTerm, type BanReasonCode } from '@x2f/staff
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
-import { lockAccount, withTx } from '../auth/hold.js';
+import { lockAccount, withTx } from '../auth/liveSession.js';
 import { requireSession } from '../auth/sessions.js';
 import { activeBans, unfinishedTrades } from '../banState.js';
 import { recordBan } from '../bans.js';
@@ -234,7 +234,7 @@ export function staffBanRoutes(app: FastifyInstance, o: StaffBanOptions = {}): v
 
 /** The trader's own ban notice (D-020, owner G39): what is in force and how to reach a moderator. */
 export function traderBanRoutes(app: FastifyInstance): void {
-  const pre = requireSession({ kinds: ['trader'], allowStaleTerms: true, allowRecovery: true, allowHeld: true, member: 'any' });
+  const pre = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' });
   app.get('/v1/account/ban', { preHandler: pre }, async (req) => {
     const { db, clock } = req.server.deps;
     const bans = await activeBans(db, req.auth.accountId, clock());

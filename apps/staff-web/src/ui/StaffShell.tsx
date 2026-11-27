@@ -173,7 +173,7 @@ export function StaffShell({ pages, notifications, security }: { pages: Partial<
               ) : null}
             </Link>
           ) : null}
-          <RoleChip username={who.displayName} role={who.role} />
+          <RoleChip username={who.tradeTag} role={who.role} />
           {who.role !== 'owner' ? (
             <>
               {/* Task 33 (D-045): the reminder that only a clock-out pays. COPY-UNSIGNED DESIGNER-REVIEW */}

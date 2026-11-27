@@ -8,7 +8,7 @@ import { App } from '../src/App.js';
 import { button, click, fakeApi, render, settle } from './helpers.js';
 
 const me = (role: 'owner' | 'senior' | 'mod' | 'helper') => ({
-  displayName: 'lumen.k',
+  tradeTag: 'lumen.k',
   role,
   nav: NAV[role],
   sessionEndsAt: new Date(Date.now() + 120 * 60_000).toISOString(),

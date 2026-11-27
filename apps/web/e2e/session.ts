@@ -8,7 +8,7 @@ export const INSIDE = { kind: 'trader', level: 'full', termsCurrent: true } as c
 
 /** A signed-in, set-up trader as `GET /v1/account/me` answers (the fields the screens read). */
 export const SIGNED_IN_ME = {
-  displayName: 'viewer_1',
+  tradeTag: 'viewer_1',
   needsLoginName: false,
   ...INSIDE,
   holdUntil: null,

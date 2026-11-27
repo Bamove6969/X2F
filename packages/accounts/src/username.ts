@@ -1,21 +1,21 @@
 /**
  * Name rules (spec 6.1, owner 2026-10-23). Every account has two names:
- * - the **display name**, public (offers, profiles, chat), and
- * - the **login name**, private: never shown to anyone, used only to log in with a password, a
+ * - the **Trade Tag**, public (offers, profiles, chat), and
+ * - the **login name**, private: never shown to anyone, used only to log in with a
  *   security key by name or a backup code.
  * Both are unique case-insensitively through `key`, and the two must differ case-insensitively.
  * - Length: a **new or changed** name of either kind is 8–20 characters (owner demo notes #126, the
- *   login name, and #127, the display name, 23 Nov 2026: `NEW_NAME_MIN`, `checkNewLoginName`,
- *   `checkNewDisplayName`). A name stored before then may be 5–7 characters: `checkLoginName` and
- *   `checkDisplayName` still take 5–20 (`NAME_MIN`), so such an account is still found by its names
+ *   login name, and #127, the Trade Tag, 23 Nov 2026: `NEW_NAME_MIN`, `checkNewLoginName`,
+ *   `checkNewTradeTag`). A name stored before then may be 5–7 characters: `checkLoginName` and
+ *   `checkTradeTag` still take 5–20 (`NAME_MIN`), so such an account is still found by its names
  *   and logs in as before.
  * - The login name: ASCII letters, digits, `.`, `-`, `_`, kept as typed.
- * - The display name (signup round 3, lead call, 13 Nov 2026; owner: "allow the majority of major
+ * - The Trade Tag (signup round 3, lead call, 13 Nov 2026; owner: "allow the majority of major
  *   characters, just not weird ones"; owner demo note #69: `$` and the like allowed): printable
  *   letters of any script, digits and `$ & ! ? . , ' - _ @ # % * + ( ) :`. **No spaces** in a new or
  *   changed name (owner demo note #108, 17 Nov 2026, newer than #69, wins on spaces:
- *   `checkNewDisplayName`, used by sign-up, staff and owner set-up and team member names). A name
- *   stored before #108 may hold single spaces: `checkDisplayName` still accepts them, so such a name
+ *   `checkNewTradeTag`, used by sign-up, staff and owner set-up and team member names). A name
+ *   stored before #108 may hold single spaces: `checkTradeTag` still accepts them, so such a name
  *   is still found, shown, blocked and nudged, and its account logs in as before (logins go by the
  *   private login name, which never held a space). It is normalised to NFC, trimmed, and its runs of
  *   spaces collapsed. Refused: control, format (zero-width, bidi controls), private-use and unassigned
@@ -28,7 +28,7 @@
  *   Bopomofo; a Cyrillic, Greek, Cherokee, Lisu or Armenian letter never sits among Latin ones).
  *
  * Look-alikes (F4, owner 2026-10-23): 0/o, 1/l/i and rn/m count as the same letters only when a
- * display name is compared against reserved words (here) and staff or owner names (the API, with
+ * Trade Tag is compared against reserved words (here) and staff or owner names (the API, with
  * `lookAlikeKey`). Two traders' names that only look alike are both allowed. Since signup round 3
  * the fold also drops accents, reads full-width forms as plain ones and Cyrillic or Greek
  * look-alike letters as Latin, and the reserved words are found between any non-letters. Since the
@@ -39,7 +39,7 @@
  * tools/confusables/gen.ts), so a reserved word or staff name spelt in any script's look-alikes
  * (ꓮꓓꓟꓲꓠ, Ꮪupport, mօderator) is found.
  *
- * New names (security follow-up, 23 Nov 2026): a new or changed display name is also refused
+ * New names (security follow-up, 23 Nov 2026): a new or changed Trade Tag is also refused
  * when its look-alike skeleton, with digits drawn like letters folded (5→s, 3→e ...), holds a
  * reserved word standing as its own word, starting or ending it, or making up half its letters,
  * unless that word is glued inside an ordinary word (`isReservedNewName`). Stored names keep the
@@ -59,7 +59,7 @@ export type NameCheck = { ok: true; name: string; key: string } | { ok: false; r
 
 export type NamesCheck =
   | { ok: true; display: { name: string; key: string }; login: { name: string; key: string } }
-  | { ok: false; field: 'displayName' | 'loginName'; reason: NameRefusal | 'same' };
+  | { ok: false; field: 'tradeTag' | 'loginName'; reason: NameRefusal | 'same' };
 
 import { CONFUSABLES_DATA } from './confusables.js';
 
@@ -108,7 +108,7 @@ const INVISIBLE = /\p{Default_Ignorable_Code_Point}/u;
 const HANGUL_FILLER = /[\u115F\u1160\u3164\uFFA0]/u;
 
 let confusables: Map<string, string> | null = null;
-/** The UTS #39 confusables (confusables.ts, Unicode 16.0.0): each character a display name may hold, to its prototype. */
+/** The UTS #39 confusables (confusables.ts, Unicode 16.0.0): each character a Trade Tag may hold, to its prototype. */
 function confusableMap(): Map<string, string> {
   if (confusables === null) {
     confusables = new Map();
@@ -151,7 +151,7 @@ export function lookAlikeKey(name: string): string {
 }
 
 /**
- * The key a display name is compared with staff and owner display names by (F4; review of
+ * The key a Trade Tag is compared with staff and owner Trade Tags by (F4; review of
  * third-signup-r3, M2): the look-alike fold with every non-letter and non-digit removed, as the
  * reserved-word check does, so `Mira,K`, `Mira K` and `Mira_K` all match the staff name `Mira.K`.
  */
@@ -186,7 +186,7 @@ function isReserved(key: string): boolean {
 }
 
 /**
- * The reserved words a **new or changed** display name is checked against (security follow-up, 23 Nov 2026:
+ * The reserved words a **new or changed** Trade Tag is checked against (security follow-up, 23 Nov 2026:
  * with the 8-20 minimum, `Support1`, `Owner123`, `Theadmin` or `5upport1` passed `isReserved`).
  * Wider than RESERVED_TOKENS, which stored names keep (a stored `Team_Bob` is still found).
  */
@@ -268,7 +268,7 @@ function occurrences(s: string, w: string): number[] {
 }
 
 /**
- * The reserved-word rule for a **new or changed** display name (security follow-up, 23 Nov 2026;
+ * The reserved-word rule for a **new or changed** Trade Tag (security follow-up, 23 Nov 2026;
  * login names are private and hold reserved words freely). On the name's look-alike skeleton (`newNameSkeleton`, digits that look like letters
  * folded too: `5upport1` reads `supportl`), a reserved word (NEW_RESERVED_WORDS) refuses the name
  * when it
@@ -328,7 +328,7 @@ function checkShape(input: string, min: number): NameCheck {
 /** Any white space: the plain space, tabs, line breaks, the no-break and ideographic spaces. */
 const WHITE_SPACE = /\s/u;
 
-/** Every character a stored display name may hold: letters, combining marks, decimal digits, the space (pre-#108 names only) and the listed symbols. */
+/** Every character a stored Trade Tag may hold: letters, combining marks, decimal digits, the space (pre-#108 names only) and the listed symbols. */
 const DISPLAY_CHARS = /^[\p{L}\p{M}\p{Nd} $&!?.,'\-_@#%*+():]+$/u;
 /** Letters of the right-to-left scripts (Bidi classes R and AL): Hebrew, Arabic, Syriac, Thaana, N'Ko and the rest. */
 const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
@@ -390,7 +390,7 @@ export function highlyRestrictive(name: string): boolean {
 }
 
 /**
- * The display name's script checks, for other names X2F shows back (owner demo note #226's wallet
+ * The Trade Tag's script checks, for other names X2F shows back (owner demo note #226's wallet
  * names, walletLabel.ts): true when the text holds an invisible character or Hangul filler, a letter
  * of a right-to-left script, a misplaced combining mark, or scripts mixed beyond UTS #39's "highly
  * restrictive" level (`highlyRestrictive`: a Cyrillic or Greek look-alike among Latin letters).
@@ -399,13 +399,13 @@ export function unsafeScripts(text: string): boolean {
   return INVISIBLE.test(text) || HANGUL_FILLER.test(text) || RTL.test(text) || BAD_MARK.test(text) || !highlyRestrictive(text);
 }
 
-/** NFC, trimmed, runs of spaces as one: a display name as stored. */
+/** NFC, trimmed, runs of spaces as one: a Trade Tag as stored. */
 function tidyName(input: string): string {
   return input.normalize('NFC').replace(/ {2,}/g, ' ').replace(/^ +| +$/g, '');
 }
 
 /**
- * The key two display names are compared by (security review of wip/lead-notes-all, L3): a full
+ * The key two Trade Tags are compared by (security review of wip/lead-notes-all, L3): a full
  * case fold with NFKC_Casefold's effect, NFKC (ligatures and full-width forms plain), upper then
  * lower case (ß and SS, ǅ and Ǆ alike), final sigma as sigma, NFKC again. The database's
  * display_key_fold (migration 810) is the same fold, checked on a corpus (signup-rules.test.ts).
@@ -415,21 +415,21 @@ function foldKey(name: string): string {
 }
 
 /**
- * The stored key of a display name taken as is, with no shape or reserved-word check (a name
- * looked up for a block, a note or a profile): tidied as `checkDisplayName` tidies it (L4: trimmed,
- * runs of spaces as one), then `foldKey`, so it equals the key `checkDisplayName` gives.
+ * The stored key of a Trade Tag taken as is, with no shape or reserved-word check (a name
+ * looked up for a block, a note or a profile): tidied as `checkTradeTag` tidies it (L4: trimmed,
+ * runs of spaces as one), then `foldKey`, so it equals the key `checkTradeTag` gives.
  */
 export function displayKeyOf(raw: string): string {
   return foldKey(tidyName(raw));
 }
 
 /**
- * A public display name as stored or looked up: normalised (NFC, trimmed, runs of spaces as one),
+ * A public Trade Tag as stored or looked up: normalised (NFC, trimmed, runs of spaces as one),
  * then the length, the characters (see the top of this file), then reserved words and their
  * look-alikes. It still accepts a single space inside, for names stored before owner note #108; a
- * name being chosen or changed goes through `checkNewDisplayName`, which refuses any space.
+ * name being chosen or changed goes through `checkNewTradeTag`, which refuses any space.
  */
-export function checkDisplayName(input: string): NameCheck {
+export function checkTradeTag(input: string): NameCheck {
   if (typeof input !== 'string') return { ok: false, reason: 'characters' };
   // Refuse huge input before normalising it.
   if (input.length > MAX_RAW_LENGTH) return { ok: false, reason: 'length' };
@@ -444,17 +444,17 @@ export function checkDisplayName(input: string): NameCheck {
 }
 
 /**
- * A display name being chosen or changed (owner demo note #108, 17 Nov 2026: "Do not allow spaces in
- * username or passwords or display names"): `checkDisplayName` first (so a reserved or malformed
+ * A Trade Tag being chosen or changed (owner demo note #108, 17 Nov 2026: "Do not allow spaces in
+ * username or passwords or Trade Tags"): `checkTradeTag` first (so a reserved or malformed
  * name keeps its own reason), then no space left inside the normalised name (spaces at the ends are
  * still trimmed off; other white space was already refused as `characters`), then at least
  * `NEW_NAME_MIN` (8) characters (owner demo note #127, 23 Nov 2026: "Also minimum of 8
  * characters"), then the new-name reserved-word rule (`isReservedNewName`: `Support1`, `Owner123`,
  * `5upport1`, `Theadmin` are refused; security follow-up, 23 Nov 2026). Only new and changed names go through this; a name stored before these rules (it
- * may hold a space, or be 5–7 characters) is still found and shown by `checkDisplayName`.
+ * may hold a space, or be 5–7 characters) is still found and shown by `checkTradeTag`.
  */
-export function checkNewDisplayName(input: string): NameCheck {
-  const r = checkDisplayName(input);
+export function checkNewTradeTag(input: string): NameCheck {
+  const r = checkTradeTag(input);
   if (r.ok && WHITE_SPACE.test(r.name)) return { ok: false, reason: 'spaces' };
   if (r.ok && !lengthOk(r.name, NEW_NAME_MIN)) return { ok: false, reason: 'length' };
   if (r.ok && isReservedNewName(r.name)) return { ok: false, reason: 'reserved' };
@@ -476,19 +476,19 @@ export function checkLoginName(input: string): NameCheck {
  * `POST /v1/account/login-name`, the sign-up's availability check): `checkLoginName`'s rules with
  * at least `NEW_NAME_MIN` (8) characters (owner demo note #126, 23 Nov 2026: "I want username
  * changed to minimum of 8 characters"). No reserved words: a login name is private, never shown
- * to anyone but its owner, so it cannot pass for staff (`isReservedNewName` is for display names).
+ * to anyone but its owner, so it cannot pass for staff (`isReservedNewName` is for Trade Tags).
  */
 export function checkNewLoginName(input: string): NameCheck {
   return checkShape(input, NEW_NAME_MIN);
 }
 
 /**
- * Both names of a new account: the display name first (`checkNewDisplayName`), then the login name
+ * Both names of a new account: the Trade Tag first (`checkNewTradeTag`), then the login name
  * (`checkNewLoginName`), then that they differ.
  */
-export function checkNames(displayName: string, loginName: string): NamesCheck {
-  const display = checkNewDisplayName(displayName);
-  if (!display.ok) return { ok: false, field: 'displayName', reason: display.reason };
+export function checkNames(tradeTag: string, loginName: string): NamesCheck {
+  const display = checkNewTradeTag(tradeTag);
+  if (!display.ok) return { ok: false, field: 'tradeTag', reason: display.reason };
   const login = checkNewLoginName(loginName);
   if (!login.ok) return { ok: false, field: 'loginName', reason: login.reason };
   if (display.key === login.key) return { ok: false, field: 'loginName', reason: 'same' };

@@ -96,8 +96,8 @@ export function deviceLabel(): string {
 // The signed-in staff member (Task 4)
 
 export interface Me {
-  /** Owner Q54: the public name (the API's `displayName`; the boards call it the username). */
-  displayName: string;
+  /** Owner Q54: the public name (the API's `tradeTag`; the boards call it the username). */
+  tradeTag: string;
   role: StaffRole;
   nav: NavItem[];
   /** The per-person boxes the owner ticked (older answers may lack it: none). */
@@ -160,7 +160,7 @@ export async function setupState(): Promise<SetupState> {
 }
 const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: 'POST', body: {} });
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
-export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
+export const setupAccount = (b: { tradeTag: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
   staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON; setupNonce?: string }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>
@@ -190,12 +190,12 @@ const invitePath = (token: string, rest = '') => `/staff/v1/invites/accept/${enc
 export const staffTerms = () => staffApi<{ version: string }>('/staff/v1/terms');
 export const inviteRead = (token: string) => staffApi<InviteView>(invitePath(token));
 /**
- * Owner Q54: the public name is `displayName` (the API refuses a field named username). Owner 9 Nov
+ * Owner Q54: the public name is `tradeTag` (the API refuses a field named username). Owner 9 Nov
  * 2026 (p11-14): everyone who gets a login signs the Terms, so the version accepted and the
  * signature given on the Terms step go with the names (400 `terms-not-accepted` when the version
  * changed meanwhile: the page shows the Terms again).
  */
-export const inviteAccount = (token: string, b: { displayName: string; loginName: string; acceptedTerms: string; termsSignature: TermsSignature }) =>
+export const inviteAccount = (token: string, b: { tradeTag: string; loginName: string; acceptedTerms: string; termsSignature: TermsSignature }) =>
   staffApi<{ ok: true }>(invitePath(token, '/account'), { method: 'POST', body: b });
 export const inviteKeyStart = (token: string, kind: 'security-key' | 'passkey') =>
   staffApi<{ options: PublicKeyCredentialCreationOptionsJSON }>(invitePath(token, '/key/start'), { method: 'POST', body: { kind } });
@@ -221,7 +221,7 @@ export interface FormItem {
   kind: 'complaint' | 'feedback' | 'recommendation';
   text: string;
   /**
-   * D-058: the sender's public display name (never the login name); null for an anonymous row. The
+   * D-058: the sender's public Trade Tag (never the login name); null for an anonymous row. The
    * API sends no raw account id (review m1, lead 12 Nov).
    */
   accountName: string | null;
@@ -289,7 +289,7 @@ export interface CompromisedItem {
   /** Whether the typed name matched a lockable account. */
   matched: boolean;
   /** The matched account's public name; null for no match or a team member's login. */
-  displayName: string | null;
+  tradeTag: string | null;
   locked: boolean;
 }
 
@@ -305,7 +305,7 @@ export interface CompromisedCase {
   comment: string | null;
   account: {
     id: string;
-    displayName: string | null;
+    tradeTag: string | null;
     kind: string;
     team: string | null;
     createdAt: string;
@@ -370,7 +370,7 @@ export interface PastRepClaim {
   fingerprint: string;
   keyId: string;
   signatureValid: true;
-  displayName: string;
+  tradeTag: string;
   createdAt: string;
   /** Review M2: the host of the page the archive copied, from the link itself; null when it does not say. */
   originalHost: string | null;
@@ -472,7 +472,7 @@ export const getPerformanceWeeks = (id: string) => staffApi<PerformanceWeeks>(`/
 export interface Member {
   accountId: string | null;
   inviteId: string | null;
-  displayName: string | null;
+  tradeTag: string | null;
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   grants: GrantablePerm[];
@@ -586,7 +586,7 @@ export const putFeeSweep = (next: FeeSweepChange, tapId: string) => staffApi<Fee
 /** Task 33: each member's unpaid net (`GET /staff/v1/pay/staff`, earnings.read: the owner). */
 export interface StaffPayRow {
   staffId: string;
-  displayName: string;
+  tradeTag: string;
   role: StaffRole;
   switchedOff: boolean;
   unpaidUsdCents: string;
@@ -640,7 +640,7 @@ export interface StaffAuditItem {
 }
 export interface StaffAudit {
   staffId: string;
-  displayName: string;
+  tradeTag: string;
   role: StaffRole;
   switchedOff: boolean;
   feeBp: number | null;
@@ -662,7 +662,7 @@ export const putStaffPay = (staffId: string, feeBp: number | null, tapId: string
 // ---------------------------------------------------------------------------------------------
 // One's own security (apps/api/src/staff/account.ts; perm self, every role, one's own account)
 
-export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'password' | 'totp' | 'recovery-codes';
+export type MethodType = 'pgp' | 'security-key' | 'passkey' | 'totp' | 'recovery-codes';
 export interface MethodEntry {
   type: MethodType;
   id: string;
@@ -856,7 +856,7 @@ export interface Queue {
 }
 
 export interface CaseTrader {
-  displayName: string;
+  tradeTag: string;
   completedTrades: number;
   positivePct: number | null;
 }
@@ -956,7 +956,7 @@ export type LimitWhat = { capUsd: number } | { stage: import('@x2f/staff').Limit
 export interface LimitRecommendation {
   id: string;
   accountId: string;
-  displayName: string;
+  tradeTag: string;
   capUsd: number | null;
   stage: import('@x2f/staff').LimitStage | null;
   /** Staff only: the trader never sees it. */
@@ -979,19 +979,18 @@ export const decideLimits = (accountId: string, recId: string, b: { approve: boo
     { method: 'POST', body: b },
   );
 // ---------------------------------------------------------------------------------------------
-// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts, holds.ts):
+// Account actions (spec 6.6, Plan 4 Task 27; apps/api staff/accountLookup.ts, bans.ts):
 // senior moderators and the owner (`accounts.ban`, `accounts.freeze`; the API checks every call).
 
 export type BanKind = 'trade' | 'site';
 export interface AccountStatus {
   bans: Array<{ id: string; kind: BanKind; reasonCode: import('@x2f/staff').BanReasonCode; until: string | null; permanent: boolean }>;
-  hold: { until: string; reason: string } | null;
   frozen: boolean;
   lien: boolean;
 }
 export interface LookedUpAccount {
   accountId: string;
-  displayName: string;
+  tradeTag: string;
   matchedBy: 'name' | 'code';
   side: Side | null;
   completedTrades: number;
@@ -1020,16 +1019,13 @@ export interface AccountBans {
 }
 
 const accountPath = (id: string, rest: string) => `/staff/v1/accounts/${encodeURIComponent(id)}${rest}`;
-/** A trader by public display name or trade code (exact matches only; each lookup is logged). */
+/** A trader by public Trade Tag or trade code (exact matches only; each lookup is logged). */
 export const lookupAccounts = (q: string) => staffApi<{ accounts: LookedUpAccount[] }>(`/staff/v1/accounts/lookup?q=${encodeURIComponent(q)}`);
 export const accountBans = (id: string) => staffApi<AccountBans>(accountPath(id, '/bans'));
 export const placeBan = (id: string, b: { banId: string; kind: BanKind; ruleId: string; until: string | null; note?: string; tapId: string }) =>
   staffApi<StaffBan>(accountPath(id, '/bans'), { method: 'POST', body: b });
 export const liftBan = (id: string, banId: string, tapId: string) =>
   staffApi<StaffBan>(accountPath(id, `/bans/${encodeURIComponent(banId)}/lift`), { method: 'POST', body: { tapId } });
-export const extendHold = (id: string, until: string) => staffApi<{ holdUntil: string }>(accountPath(id, '/hold/extend'), { method: 'POST', body: { until } });
-export const endHold = (id: string, via: 'secure-jabber' | null) =>
-  staffApi<unknown>(accountPath(id, '/hold/end'), { method: 'POST', body: via === null ? {} : { via } });
 
 export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-reply' | 'ignored-ruling' } | { side: Side; on: false }) =>
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });

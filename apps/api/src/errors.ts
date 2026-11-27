@@ -8,15 +8,13 @@ export type ApiErrorCode =
   | 'unsupported-media-type'
   | 'internal'
   | 'busy'
-  | 'display-name-invalid'
-  | 'display-name-reserved'
-  | 'display-name-taken'
+  | 'trade-tag-invalid'
+  | 'trade-tag-reserved'
+  | 'trade-tag-taken'
   | 'login-name-invalid'
   | 'names-unavailable'
   | 'names-same'
   | 'login-name-set'
-  | 'password-weak'
-  | 'password-leaked'
   | KeyRefusal
   | 'key-in-use'
   | 'challenge-expired'
@@ -29,33 +27,22 @@ export type ApiErrorCode =
   | 'wrong-account-kind'
   | 'confirm-required'
   | 'confirm-invalid'
-  | 'recovery-session'
-  | 'recovery-hold'
   // S-085 device-bound sessions (auth/deviceBound.ts): the bound cookie is missing or stale, the
   // signature over the challenge failed, the session has no key to prove.
   | 'session-proof-required'
   | 'session-proof-invalid'
   | 'not-bound'
-  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key,
-  // the staged changes are not the ones reviewed, too many changes, the trade partner's account has
-  // a temporary problem (never "hold" to the partner). No semicolon inside this type: the web's
-  // cantDoThat-lint reads the union up to the first one.
+  // A new device with nothing to approve it and no passkey, security key or PGP key. No semicolon
+  // inside this type: the web's cantDoThat-lint reads the union up to the first one.
   | 'approval-unavailable'
-  | 'changes-changed'
-  | 'too-many-changes'
   // Notes on traders (review 2026-11-09 m4): the account's notes are at NOTES_PER_ACCOUNT.
   | 'too-many-notes'
-  | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
-  // Owner, 16 Nov 2026: the authenticator app goes only with a password (@x2f/accounts
-  // METHOD_PARTNERS): no TOTP enrolment without a password, no password removal while TOTP is on.
-  | 'totp-needs-password'
-  | 'password-has-totp'
-  // Owner, 16 Nov 2026: a password does not stand alone (TOTP or a PGP key, passkey or security key with it).
-  | 'password-alone'
-  // Review M2: a password-only account's setup-only session, outside the routes that add a second method.
-  | 'second-method-required'
+  // Owner, 26 Nov 2026 (no passwords): a trader account holds at least two kinds of login method
+  // (@x2f/accounts enoughMethods). Removing one below that, ending sign-up without two, and every
+  // route but the ones that add a method once sign-up is over.
+  | 'two-methods-required'
   | 'webauthn-failed'
   // Owner 25 Nov security-key report: a key name outside checkKeyName (@x2f/accounts), with its `reason`.
   | 'key-name-invalid'
@@ -74,9 +61,6 @@ export type ApiErrorCode =
   // Plan 2 Task 16: new-device approval.
   | 'approval-ended'
   | 'too-many-devices'
-  // Plan 2 Task 17 (review round 2 N-I3, N-M3): a session whose login waits may not end, vet or
-  // hide what a stronger login does.
-  | 'weak-session'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
   // Plan 3, Task 4: posting and relisting offers.
@@ -214,6 +198,10 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // Owner question trades-release (26 Nov 2026): Release coins needs Hold trade keys (team/abilities.ts ABILITY_REQUIRES).
+  | 'release-needs-trade-keys'
+  // Owner 26 Nov 2026 18:41 UTC: Fund the escrow needs Hold trade keys too.
+  | 'fund-needs-trade-keys'
   // J-20 (owner p7-4, p7-11; review S-m4): a member's action on a trade or offer outside their
   // trade-size band, and a session end asked for past the member's working hours.
   | 'outside-trade-band'
@@ -236,8 +224,6 @@ export type ApiErrorCode =
   | 'all-three-methods-required'
   // D-070 (owner p11-19): a moderator or senior moderator holds a PGP key and a passkey.
   | 'moderator-methods-required'
-  // D-064: ending a recovery hold `via: 'secure-jabber'` on an account with no Jabber address proven before the hold.
-  | 'no-secure-jabber'
   // Plan 4 Task 27: a trade ban refuses posting and taking (409); a site ban refuses the trader app
   // but the notice and what finishes open trades (403, with kind, reasonCode, until); a second
   // standing ban of a kind (409); D-017's term rules (409).
@@ -307,6 +293,13 @@ export type ApiErrorCode =
   | 'ticket-closed'
   | 'too-many-tickets'
   | 'ticket-taken'
+  // Escrow-key sync (migration 864): an unlock method that makes no key (an authenticator code, or
+  // anything but prf / pgp); a trade copy without the holder's own wrap; a wrap to a reader the
+  // holder did not assign; a copy older than the stored one (409 { version }).
+  | 'unlock-method-not-allowed'
+  | 'holder-wrap-missing'
+  | 'reader-not-assigned'
+  | 'stale-version'
   // D-059 (J-14, ported): a trade one of whose accounts is locked by a compromised report takes no
   // trader or moderator event (409); a compromised report does not close while its lock holds (409).
   | 'trade-held'

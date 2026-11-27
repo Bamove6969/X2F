@@ -49,7 +49,7 @@ beforeEach(() => {
     calls.push(input);
     inits[input] = init;
     if (input.startsWith('/v1/team/log/export')) return exportAnswer();
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: meMember });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: meMember });
     if (input in pages) return json(200, pages[input]);
     if (input === '/v1/team/log/integrity') return json(200, { ok: true, entries: 3, brokenAt: null, head: { id: '3', hash: H } });
     if (input === `/v1/team/log/integrity?id=3&hash=${H}`) return json(200, { ok: true, entries: 3, brokenAt: null, head: { id: '3', hash: H }, fingerprint: { id: '3', matches: true } });

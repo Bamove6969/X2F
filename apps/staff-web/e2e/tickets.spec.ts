@@ -6,7 +6,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const H = 3_600_000;
-const HELPER = { displayName: 'hana', role: 'helper', nav: ['tickets'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
+const HELPER = { tradeTag: 'hana', role: 'helper', nav: ['tickets'], sessionEndsAt: new Date(Date.now() + 8 * H).toISOString() };
 const ID = '5d0c8f6e-4c1b-4a8e-9a57-0b3c2d1e4f60';
 const AT = new Date(Date.now() - 3 * H).toISOString();
 const TEXT = 'My Feather wallet does not show up.';

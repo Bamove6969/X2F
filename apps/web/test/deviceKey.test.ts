@@ -269,20 +269,20 @@ describe('api() and session-proof-required', () => {
 describe('the auth client', () => {
   it('sends X2F-Session-Key on POSTs, so the new session is bound', async () => {
     const spki = (await sessionKeyHeader())!;
-    const f = vi.fn(async () => json(401, { error: 'credentials-invalid', misses: 1 }));
+    const f = vi.fn(async () => json(401, { error: 'credentials-invalid' }));
     vi.stubGlobal('fetch', f);
-    const { passwordLogin } = await import('../src/screens/auth/authApi.js');
-    await passwordLogin('someone', 'pw').catch(() => undefined);
+    const { pgpLoginFinish } = await import('../src/screens/auth/authApi.js');
+    await pgpLoginFinish('c1', 'CODE').catch(() => undefined);
     const init = (f.mock.calls as unknown as [RequestInfo, RequestInit][])[0]![1];
     expect(new Headers(init.headers).get('x2f-session-key')).toBe(spki);
   });
 
   it('flag off: no header', async () => {
     vi.stubEnv('VITE_X2F_DEVICE_BOUND', '');
-    const f = vi.fn(async () => json(401, { error: 'credentials-invalid', misses: 1 }));
+    const f = vi.fn(async () => json(401, { error: 'credentials-invalid' }));
     vi.stubGlobal('fetch', f);
-    const { passwordLogin } = await import('../src/screens/auth/authApi.js');
-    await passwordLogin('someone', 'pw').catch(() => undefined);
+    const { pgpLoginFinish } = await import('../src/screens/auth/authApi.js');
+    await pgpLoginFinish('c1', 'CODE').catch(() => undefined);
     const init = (f.mock.calls as unknown as [RequestInfo, RequestInit][])[0]![1];
     expect(new Headers(init.headers).get('x2f-session-key')).toBeNull();
   });
@@ -298,8 +298,8 @@ describe('the auth client and renewal (MF1, MF2)', () => {
       if (url.endsWith('/challenge')) throw new TypeError('network');
       return json(401, { error: 'session-proof-required' });
     }));
-    const { passwordLogin } = await import('../src/screens/auth/authApi.js');
-    await passwordLogin('someone', 'pw').catch(() => undefined);
+    const { pgpLoginFinish } = await import('../src/screens/auth/authApi.js');
+    await pgpLoginFinish('c1', 'CODE').catch(() => undefined);
     expect(go).not.toHaveBeenCalled();
   });
 
@@ -315,8 +315,8 @@ describe('the auth client and renewal (MF1, MF2)', () => {
       calls++;
       return json(401, { error: 'session-proof-required' });
     }));
-    const { passwordLogin } = await import('../src/screens/auth/authApi.js');
-    await passwordLogin('someone', 'pw').catch(() => undefined);
+    const { pgpLoginFinish } = await import('../src/screens/auth/authApi.js');
+    await pgpLoginFinish('c1', 'CODE').catch(() => undefined);
     expect(calls).toBe(2);
     expect(go).toHaveBeenCalledTimes(1);
   });

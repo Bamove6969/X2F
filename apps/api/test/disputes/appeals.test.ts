@@ -164,7 +164,7 @@ describe('D-005: the trade view says until when this viewer may file an appeal',
       const loginId = await seedAccount(deps, { loginName: `apmember${++n}x`, kind: 'member' });
       const name = `ApMember${n}`;
       await deps.db.query(
-        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+        `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $5, $5)`,
         [team.id, name, name.toLowerCase(), abilities, deps.clock(), loginId],
       );
@@ -372,7 +372,7 @@ describe('D-011: no eligible reviewer', () => {
     const ok = await owner.b.get(`/staff/v1/disputes/${other.code}/appeal-reviewers`);
     expect(ok.statusCode, ok.body).toBe(200);
     const nameOf = async (id: string) =>
-      (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [id])).rows[0]!.display_name;
+      (await deps.db.query<{ trade_tag: string }>('select trade_tag from accounts where id = $1', [id])).rows[0]!.trade_tag;
     const body = ok.json() as { reviewers: Array<{ name: string }>; waiting: boolean };
     expect(body.waiting).toBe(false);
     expect(body.reviewers.map((r) => r.name).sort()).toEqual([await nameOf(ownerId), await nameOf(freshSenior.id)].sort());

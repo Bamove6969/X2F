@@ -1,35 +1,32 @@
 /**
  * The login screen (Task 30, P3-C4). Four ways in: PGP (paste your key, decrypt the message, paste
- * the code — no login name, owner 2026-10-23), a passkey, a security key, or a login name and
- * password. A password login may ask for an authenticator code. "Use a backup" leads to the
- * recovery-code / TOTP screen. A trader logging in on a new device while logged in elsewhere waits
+ * the code), a passkey, a security key, or (owner, 27 Nov 2026: "a user ID and otp because user ID
+ * is secret") the private login name with the authenticator app's 6-digit code. Owner, 26 Nov
+ * 2026: no passwords. An authenticator login still confirms changes with a key only (the confirm
+ * sheet never offers it). "Use a backup" leads to the recovery-code screen. A trader logging in on a new device while logged in elsewhere waits
  * for that device's approval (Plan 2 Task 16, `ApproveOnDevice`). After a login the Terms screen comes first when they have changed
  * (R10), otherwise the page returns to wherever the session expired (`returnTo`).
  */
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { loginWithPasskey, loginWithSecurityKey, type ApprovalWait, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
+import { AuthApiError, loginWithPasskey, loginWithSecurityKey, type ApprovalWait, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { ApproveOnDevice } from './ApproveOnDevice.js';
-import { afterLogin, authApi, deviceLabel, passwordLogin, pgpLoginFinish, pgpLoginStart } from './authApi.js';
-import { loginFailure, shouldSendAway } from './loginRules.js';
+import { afterLogin, authApi, deviceLabel, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { isExpired, loginCantDo, refusalText } from './refusals.js';
+import { LOGIN_RETRY_LATER, isTotpCode } from './loginRules.js';
+
+/** X2F itself could not answer (a 5xx): the neutral line, not one that blames the pasted key. */
+const serverDown = (e: unknown): boolean => e instanceof AuthApiError && e.status >= 500;
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
-import { PasswordInput } from '../../ui/PasswordInput.js';
 import { HelpLinks } from '../../ui/HelpLinks.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 
-/**
- * Where a visitor is sent once the server says this browser has missed the password about ten
- * times in a row (spec §6.3, owner 2026-10-23): off the site entirely, to a neutral page.
- */
-export const AWAY_URL = 'https://duckduckgo.com/';
-
-type Method = 'choose' | 'pgp' | 'passkey' | 'security-key' | 'password';
+type Method = 'choose' | 'pgp' | 'passkey' | 'security-key' | 'totp';
 
 export function Login() {
   const navigate = useNavigate();
@@ -42,7 +39,7 @@ export function Login() {
 
   const onLoggedIn = useCallback(() => void afterLogin((to) => navigate(to), returnTo), [navigate, returnTo]);
   const onCantDo = useCallback((e: unknown) => {
-    const c = loginCantDo(e, 'login');
+    const c = loginCantDo(e);
     if (c !== null) setCantDo(c);
     return c !== null;
   }, []);
@@ -79,8 +76,9 @@ export function Login() {
           <Button variant="secondary" onClick={() => setMethod('security-key')} data-method="security-key">
             Log in with a security key
           </Button>
-          <Button variant="secondary" onClick={() => setMethod('password')} data-method="password">
-            Log in with a password
+          {/* Owner, 27 Nov 2026 (the login name plus the authenticator code). COPY-UNSIGNED */}
+          <Button variant="secondary" onClick={() => setMethod('totp')} data-method="totp">
+            Log in with an authenticator app
           </Button>
         </div>
       ) : (
@@ -92,7 +90,7 @@ export function Login() {
       {method === 'pgp' ? <PgpLogin {...go} /> : null}
       {method === 'passkey' ? <PasskeyLogin {...go} /> : null}
       {method === 'security-key' ? <SecurityKeyLogin {...go} /> : null}
-      {method === 'password' ? <PasswordLogin {...go} /> : null}
+      {method === 'totp' ? <TotpLogin {...go} /> : null}
 
       {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.login} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
 
@@ -210,7 +208,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait, onCantDo 
 
 /**
  * PGP login, or (with `pendingId`) the PGP second step of a two-factor login. Owner G6 (7 Nov):
- * the login name goes with the key (the same field as the password login); a second step reuses
+ * the login name goes with the key; a second step reuses
  * the name its first step was given (`knownName`) and asks for it only when there was none.
  */
 function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }: Go & { pendingId?: string; knownName?: string }) {
@@ -232,7 +230,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }:
       setCopied(false);
     } catch (e) {
       // An expired or revoked key is turned away with the reason (spec 6.2); a wait says how long.
-      setError(refusalText(e, 'Could not send a login message for that key. Check the key and try again.'));
+      setError(serverDown(e) ? LOGIN_RETRY_LATER : refusalText(e, 'Could not send a login message for that key. Check the key and try again.'));
     } finally {
       setBusy(false);
     }
@@ -405,97 +403,63 @@ function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   );
 }
 
-function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
+/** A wrong login name or a wrong code: one sentence, never which one was wrong. COPY-UNSIGNED */
+export const TOTP_LOGIN_MISMATCH = "That login name and code don't match. Check both and try again.";
+
+/**
+ * Owner, 27 Nov 2026: the private login name plus the authenticator app's current 6-digit code.
+ * Log in stays disabled until six digits are typed (`isTotpCode`); a wrong name or code reads the
+ * same (`TOTP_LOGIN_MISMATCH`), a wait or an outage says so. A trader's login is `ok` or waits for
+ * a logged-in device (`approve-on-device`); the server never answers a second step here.
+ */
+function TotpLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [loginName, setLoginName] = useState('');
-  const [password, setPassword] = useState('');
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [totp, setTotp] = useState('');
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async () => {
+  const go = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await passwordLogin(loginName.trim(), password);
-      if (result.status === 'ok') {
-        onLoggedIn();
-        return;
-      }
-      if (result.status === 'approve-on-device') {
-        onWait(result);
-        return;
-      }
-      setPendingId(result.pendingId);
+      const result = await authApi.loginTotp({ loginName: loginName.trim(), code: code.replace(/\s/g, ''), deviceLabel: deviceLabel() });
+      if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
+      // not-a-refusal: an account state this screen cannot handle; staff support helps
+      else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
     } catch (e) {
-      // The server counts misses per browser, so neither a reload nor a method switch resets it.
-      if (shouldSendAway(e)) {
-        window.location.assign(AWAY_URL);
-        return;
-      }
-      // Any mismatch reads the same; an outage or a rate limit is not a miss.
-      if (!onCantDo(e)) setError(loginFailure(e));
+      if (onCantDo(e)) return;
+      // A used or old code reads like a wrong one: type the next code the app shows.
+      setCode('');
+      setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? TOTP_LOGIN_MISMATCH : serverDown(e) ? LOGIN_RETRY_LATER : refusalText(e, LOGIN_RETRY_LATER));
     } finally {
       setBusy(false);
     }
   };
-
-  const verify = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await authApi.loginSecondFactor({ pendingId: pendingId!, code: totp.trim() });
-      if (result.status === 'approve-on-device') onWait(result);
-      else onLoggedIn();
-    } catch (e) {
-      if (!onCantDo(e)) setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (pendingId !== null) {
-    return (
-      <section className="x2f-stack" data-part="password-totp">
-        <ErrorLine error={error} />
-        <div className="x2f-field">
-          <label className="x2f-label" htmlFor="login-totp">
-            Authenticator code
-          </label>
-          <input className="x2f-input" id="login-totp" inputMode="numeric" autoComplete="one-time-code" value={totp} onChange={(e) => setTotp(e.target.value)} />
-        </div>
-        <Button variant="primary" disabled={busy || totp.trim() === ''} onClick={() => void verify()} data-part="verify-totp">
-          Verify
-        </Button>
-      </section>
-    );
-  }
 
   return (
-    <section className="x2f-stack" data-part="password">
-      <ErrorLine error={error} part="login-error" />
+    <section className="x2f-stack" data-part="totp">
+      <ErrorLine error={error} />
       <div className="x2f-field">
-        <label className="x2f-label" htmlFor="login-name">
-          Login name
+        <label className="x2f-label" htmlFor="totp-login-name">
+          Your login name
         </label>
-        <input className="x2f-input" id="login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
-      </div>
-      <div className="x2f-field">
-        <label className="x2f-label" htmlFor="login-password">
-          Password
+        <input className="x2f-input" id="totp-login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
+        <label className="x2f-label" htmlFor="totp-login-code">
+          6-digit code
         </label>
-        <PasswordInput id="login-password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+        <input
+          className="x2f-input"
+          id="totp-login-code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
         />
+        {/* COPY-UNSIGNED */}
+        <p className="x2f-note">Type the code your authenticator app shows for X2F now.</p>
       </div>
-      <Button
-        variant="primary"
-        disabled={busy || loginName.trim() === '' || password === ''}
-        onClick={() => void submit()}
-        data-part="password-login"
-      >
+      <Button variant="primary" disabled={busy || loginName.trim() === '' || !isTotpCode(code)} onClick={() => void go()} data-part="totp-login">
         Log in
       </Button>
     </section>

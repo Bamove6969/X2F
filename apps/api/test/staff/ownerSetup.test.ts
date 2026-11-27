@@ -81,11 +81,11 @@ async function addPgp(b: StaffBrowser, deps: Deps, pair: Pair): Promise<LightMyR
 }
 
 /** Code and account; returns the browser holding the setup cookie. */
-async function begin(app: FastifyInstance, deps: Deps, displayName = 'lumen.kai', loginName = 'lumen-login'): Promise<StaffBrowser> {
+async function begin(app: FastifyInstance, deps: Deps, tradeTag = 'lumen.kai', loginName = 'lumen-login'): Promise<StaffBrowser> {
   const code = (await ensureSetupCode(deps))!;
   const b = new StaffBrowser(app);
   expect((await enterCode(b, code)).statusCode).toBe(200);
-  const acc = await b.post('/staff/v1/setup/account', { displayName, loginName });
+  const acc = await b.post('/staff/v1/setup/account', { tradeTag, loginName });
   expect(acc.statusCode, acc.body).toBe(201);
   return b;
 }
@@ -163,12 +163,12 @@ describe('the pending owner account', () => {
     const { token } = await insertSession(deps, rows[0]!.id, 'staff');
     expect(errorOf(await new StaffBrowser(app).withSession(token).get('/staff/v1/me'))).toBe('account-disabled');
 
-    const again = await b.post('/staff/v1/setup/account', { displayName: 'second.lumen', loginName: 'second-login' });
+    const again = await b.post('/staff/v1/setup/account', { tradeTag: 'second.lumen', loginName: 'second-login' });
     expect(again.statusCode, again.body).toBe(201);
-    const after = await deps.db.query<{ display_name: string }>("select display_name from accounts where kind = 'owner'");
-    expect(after.rows.map((r) => r.display_name)).toEqual(['second.lumen']);
+    const after = await deps.db.query<{ trade_tag: string }>("select trade_tag from accounts where kind = 'owner'");
+    expect(after.rows.map((r) => r.trade_tag)).toEqual(['second.lumen']);
     // The same names can be picked again (the replaced account is gone).
-    expect((await b.post('/staff/v1/setup/account', { displayName: 'first.lumen', loginName: 'first-login' })).statusCode).toBe(201);
+    expect((await b.post('/staff/v1/setup/account', { tradeTag: 'first.lumen', loginName: 'first-login' })).statusCode).toBe(201);
   });
 
   it('refuses names that break the account name rules', async () => {
@@ -176,7 +176,7 @@ describe('the pending owner account', () => {
     const code = (await ensureSetupCode(deps))!;
     const b = new StaffBrowser(app);
     await enterCode(b, code);
-    expect(errorOf(await b.post('/staff/v1/setup/account', { displayName: 'same.name', loginName: 'same.name' }))).toBe('names-same');
+    expect(errorOf(await b.post('/staff/v1/setup/account', { tradeTag: 'same.name', loginName: 'same.name' }))).toBe('names-same');
     expect((await b.post('/staff/v1/setup/account', {})).statusCode).toBe(400);
     const { rows } = await deps.db.query("select 1 from accounts where kind = 'owner'");
     expect(rows).toHaveLength(0);
@@ -184,24 +184,24 @@ describe('the pending owner account', () => {
 });
 
 describe('an owner name that looks like an existing trader or member (review lead-signup-rules-main M1)', () => {
-  it('is refused with 400 display-name-reserved and creates no owner; an unlike name works', async () => {
+  it('is refused with 400 trade-tag-reserved and creates no owner; an unlike name works', async () => {
     const { app, deps } = await fresh();
     const { seedAccount } = await import('../helpers/accounts.js');
-    const trader = await seedAccount(deps, { loginName: 'trader-login', displayName: 'Mira_Kay7' });
+    const trader = await seedAccount(deps, { loginName: 'trader-login', tradeTag: 'Mira_Kay7' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+      `insert into team_members (account_id, trade_tag, display_key, abilities, invite_expires_at, created_at)
        values ($1, 'Ren_Quinn7', 'ren_quinn7', '{offers-see}', $2, $2)`,
       [trader, new Date(T0.getTime() + HOUR)],
     );
     const code = (await ensureSetupCode(deps))!;
     const b = new StaffBrowser(app);
     expect((await enterCode(b, code)).statusCode).toBe(200);
-    for (const displayName of ['Mira.Kay7', 'M1ra-kay7', 'ren.quinn7', 'Re_nQuinn7']) {
-      const res = await b.post('/staff/v1/setup/account', { displayName, loginName: 'owner-login' });
-      expect({ displayName, status: res.statusCode, error: errorOf(res) }).toEqual({ displayName, status: 400, error: 'display-name-reserved' });
+    for (const tradeTag of ['Mira.Kay7', 'M1ra-kay7', 'ren.quinn7', 'Re_nQuinn7']) {
+      const res = await b.post('/staff/v1/setup/account', { tradeTag, loginName: 'owner-login' });
+      expect({ tradeTag, status: res.statusCode, error: errorOf(res) }).toEqual({ tradeTag, status: 400, error: 'trade-tag-reserved' });
     }
     expect((await deps.db.query("select 1 from accounts where kind = 'owner'")).rows).toHaveLength(0);
-    const ok = await b.post('/staff/v1/setup/account', { displayName: 'lumen.kai', loginName: 'owner-login' });
+    const ok = await b.post('/staff/v1/setup/account', { tradeTag: 'lumen.kai', loginName: 'owner-login' });
     expect(ok.statusCode, ok.body).toBe(201);
   });
 });
@@ -261,7 +261,7 @@ describe('keys and finish', () => {
 
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode, me.body).toBe(200);
-    expect(me.json()).toMatchObject({ displayName: 'lumen.kai', role: 'owner' });
+    expect(me.json()).toMatchObject({ tradeTag: 'lumen.kai', role: 'owner' });
 
     const { rows: owner } = await deps.db.query<{ id: string; disabled_at: Date | null }>("select id, disabled_at from accounts where kind = 'owner'");
     expect(owner).toHaveLength(1);
@@ -280,14 +280,14 @@ describe('keys and finish', () => {
       }
     }
     // A second owner cannot be created by any route, and a restart prints nothing.
-    expect(errorOf(await b.post('/staff/v1/setup/account', { displayName: 'other.lumen', loginName: 'other-login' }))).toBe('setup-locked');
+    expect(errorOf(await b.post('/staff/v1/setup/account', { tradeTag: 'other.lumen', loginName: 'other-login' }))).toBe('setup-locked');
     expect(await ensureSetupCode(deps)).toBeNull();
     const lines: string[] = [];
     const s = await startStaffApi(deps, { origin: STAFF_ORIGIN, host: '127.0.0.1', port: 0 }, { stderr: (l) => void lines.push(l), logStream: captureLogs().stream });
     await s.close();
     expect(lines).toEqual([]);
     await expect(
-      deps.db.query(`insert into accounts (display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
+      deps.db.query(`insert into accounts (trade_tag, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
                      values ('o2', 'o2', '\\x00', 1, 'owner', '\\x01', now())`),
     ).rejects.toThrow(/one_owner/);
     // The code never reached the structured log.

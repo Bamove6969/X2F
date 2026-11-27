@@ -8,6 +8,7 @@ import { MemberInvite, inviteFromHash } from '../src/screens/auth/MemberInvite.j
 import { Team, inviteLink } from '../src/screens/settings/Team.js';
 import { JOIN_COPY, rolesText } from '../src/screens/settings/teamCopy.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
+import { TEAM_KEYS_COPY } from '../src/screens/settings/tradeKeysCopy.js';
 import { fire, render } from './render.js';
 
 interface Call {
@@ -23,6 +24,7 @@ let teamStatus: number;
 let meMember: unknown;
 let teamMe: { status: number; body: unknown };
 let inviteReply: { status: number; body: unknown };
+let keyReaders: unknown;
 
 const CODE = 'A'.repeat(43);
 
@@ -34,10 +36,11 @@ beforeEach(() => {
   calls = [];
   teamStatus = 200;
   meMember = null;
+  keyReaders = null;
   teamMe = { status: 403, body: { error: 'forbidden' } };
   members = [
-    { id: 'm1', displayName: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
-    { id: 'm2', displayName: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+    { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    { id: 'm2', tradeTag: 'Basil', roles: ['offers', 'trades'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
   ];
   audit = [{ id: '1', at: '2026-10-30T08:00:00.000Z', memberId: 'm1', memberName: 'Aurora', action: 'mark-paid', tradeCode: 'AAAA-BBBB-CCCC-DDDD', detail: {} }];
   inviteReply = { status: 201, body: { id: 'm3', invite: CODE, expiresAt: '2026-10-31T10:00:00.000Z' } };
@@ -45,14 +48,15 @@ beforeEach(() => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: meMember });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: meMember });
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
+    if (input === '/v1/escrow-keys/readers') return keyReaders === null ? json(500, { error: 'internal' }) : json(200, keyReaders);
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team/me') return json(teamMe.status, teamMe.body);
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
     if (input === '/v1/team/members/m1/limits' && method === 'PUT') return json(200, { ...(members[0] as object), band: body?.band, hours: body?.hours });
-    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
+    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { tradeTag: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
     if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
     if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
     if (input === '/v1/team/join/finish') return json(201, { setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: '2026-10-31T10:00:00.000Z' });
@@ -99,6 +103,30 @@ describe('helpers', () => {
 });
 
 describe('Team (settings)', () => {
+  it('escrow-key sync: a member holding "Hold trade keys" shows whether they have a reader key yet', async () => {
+    members = [
+      { id: 'm1', tradeTag: 'Aurora', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm2', tradeTag: 'Basil', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm3', tradeTag: 'Cedar', roles: ['trades'], abilities: [], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    keyReaders = { readers: [{ id: 'r0', memberId: null, memberName: null, publicKey: 'a'.repeat(64) }, { id: 'r1', memberId: 'm1', memberName: 'Aurora', publicKey: 'b'.repeat(64) }] };
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    const line = (tag: string) => host.querySelector(`[data-member="${tag}"] [data-part="member-trade-keys"]`);
+    expect(line('Aurora')?.getAttribute('data-ready')).toBe('yes');
+    expect(line('Aurora')?.textContent).toBe(TEAM_KEYS_COPY.ready);
+    expect(line('Basil')?.getAttribute('data-ready')).toBe('no');
+    expect(line('Basil')?.textContent).toBe(TEAM_KEYS_COPY.waiting);
+    expect(line('Cedar')).toBeNull();
+  });
+
+  it('escrow-key sync: when the readers cannot be read, no reader line is shown', async () => {
+    members = [{ id: 'm1', tradeTag: 'Aurora', roles: ['trades'], abilities: ['trades-escrow-keys'], status: 'active', inviteExpiresAt: null, joinedAt: null, createdAt: '2026-10-29T09:00:00.000Z' }];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-part="member-trade-keys"]')).toBeNull();
+  });
+
   it('lists members with roles and status, the count, and the activity log', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -113,7 +141,7 @@ describe('Team (settings)', () => {
 
   it('a member whose boxes no role describes reads "Custom", not a role (review 2026-11-09 m3)', async () => {
     members = [
-      { id: 'm4', displayName: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm4', tradeTag: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -123,8 +151,8 @@ describe('Team (settings)', () => {
 
   it('S-105 (owner p11-25): each member shows how chats label them, the lead\'s name and a number, never their own name', async () => {
     members = [
-      { id: 'm1', displayName: 'Aurora', chatLabel: 'Calcium Assistant 1', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
-      { id: 'm2', displayName: 'Basil', chatLabel: 'Calcium Assistant 2', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+      { id: 'm1', tradeTag: 'Aurora', chatLabel: 'Calcium Assistant 1', roles: ['trades'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm2', tradeTag: 'Basil', chatLabel: 'Calcium Assistant 2', roles: ['offers'], status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -134,21 +162,9 @@ describe('Team (settings)', () => {
     expect(host.querySelector('#team-name-hint')?.textContent).toContain('Assistant');
   });
 
-  it('S-104 (owner p11-21): an invite from a username-and-password login shows the link and says its boxes wait as a draft', async () => {
-    inviteReply = { status: 201, body: { id: 'm3', invite: CODE, expiresAt: '2026-10-31T10:00:00.000Z', status: 'staged', changeId: 'ch1' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
-    expect(byPart(host, 'staged-note')).not.toBeNull();
-  });
-
   it('S-104: a member with no boxes yet says so instead of an empty role list', async () => {
     members = [
-      { id: 'm5', displayName: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
+      { id: 'm5', tradeTag: 'Eden', chatLabel: 'Calcium Assistant 1', roles: [], abilities: [], preset: null, custom: false, status: 'invited', inviteExpiresAt: '2026-10-31T10:00:00.000Z', joinedAt: null, createdAt: '2026-10-30T10:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -193,7 +209,7 @@ describe('Team (settings)', () => {
     await settle();
     const start = [...catalogueView().presets.find((p) => p.id === 'start')!.abilities];
     expect(start.length).toBeGreaterThan(0);
-    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { displayName: 'Cosmo', abilities: start } });
+    expect(calls.find((c) => c.url === '/v1/team/invites')).toEqual({ url: '/v1/team/invites', method: 'POST', body: { tradeTag: 'Cosmo', abilities: start } });
     expect(byPart(host, 'invite-url')?.textContent).toBe(`${window.location.origin}/team/join#${CODE}`);
   });
 
@@ -246,7 +262,7 @@ describe('Team (settings)', () => {
   it('a full team: Make an invite link is disabled with the board note, and tapping it opens nothing', async () => {
     members = [
       ...members,
-      { id: 'm3', displayName: 'Cedric', roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+      { id: 'm3', tradeTag: 'Cedric', roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
     ];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
@@ -271,36 +287,6 @@ describe('Team (settings)', () => {
     expect(byPart(host, 'team-full')).toBeNull();
   });
 
-  it("during the account's 24-hour hold a team change opens CantDoThat with the hold's sentence (owner 2026-10-30)", async () => {
-    inviteReply = { status: 403, body: { error: 'recovery-hold', holdUntil: '2026-10-31T10:00:00.000Z' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    const popup = byPart(document, 'cant-do-that');
-    expect(popup?.getAttribute('data-from')).toBe('recovery-hold');
-    expect(popup?.textContent).toContain('Your account is on a 24-hour hold');
-    expect(byPart(host, 'invite-url')).toBeNull();
-  });
-
-  it('a weak session inviting opens CantDoThat saying team changes need a stronger login (owner 1 Nov 2026)', async () => {
-    inviteReply = { status: 403, body: { error: 'weak-session' } };
-    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
-    await settle();
-    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
-    await settle();
-    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    const popup = byPart(document, 'cant-do-that');
-    expect(popup?.getAttribute('data-from')).toBe('weak-session');
-    expect(popup?.textContent).toContain("can't invite team members");
-    // Lead review 8 Nov: role changes and removals from such a device wait 24 hours; they are not refused.
-    expect(popup?.textContent).not.toContain('change their roles');
-    expect(byPart(host, 'invite-url')).toBeNull();
-  });
-
   it('a team member opening the screen gets owner-only through CantDoThat', async () => {
     teamStatus = 403;
     render(<MemoryRouter><Team /></MemoryRouter>);
@@ -313,7 +299,7 @@ describe('Team (settings)', () => {
     teamMe = {
       status: 200,
       body: {
-        name: 'Aurora', chatLabel: 'Calcium Assistant 1', lead: { displayName: 'Calcium' }, preset: null,
+        name: 'Aurora', chatLabel: 'Calcium Assistant 1', lead: { tradeTag: 'Calcium' }, preset: null,
         groups: [{ id: 'trades', label: 'Trades', boxes: [{ id: 'trades-see-active', label: 'See active trades', does: 'See open trades', always: false, ready: true }] }],
         limits: {
           band: { minAtomic: '500000000000', maxAtomic: '2000000000000' }, hours: { days: ['Mon', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' },

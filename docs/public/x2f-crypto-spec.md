@@ -31,7 +31,7 @@ Out of scope: a compromised trader device, the fiat leg of the trade (X2F never 
 
 X2F runs two separate services with separate databases. The **API** (accounts, trades, chat storage) has no access to the **moderation service**'s database.
 
-**The API holds:** accounts (login names only as HMAC tags, or sealed while a sign-up waits in its challenge, section 6; display names); public keys and WebAuthn credentials; PGP public keys, encrypted at rest (v4 keys, which are most keys in use, keep their user IDs, which may contain a name or email); password hashes; encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
+**The API holds:** accounts (login names only as HMAC tags, or sealed while a sign-up waits in its challenge, section 6; Trade Tags); public keys and WebAuthn credentials; PGP public keys, encrypted at rest (v4 keys, which are most keys in use, keep their user IDs, which may contain a name or email); encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
 
 **The moderation service holds, per trade:** the moderator's trade identity (Ed25519/X25519), its escrow wallet session (its one multisig key share), and that wallet's password. Per chat, it holds the moderator's chat identity. It also holds the long-term **moderation signing key**, whose public half is built into the apps. All of this is sealed with AES-256-GCM under `MOD_KEYSTORE_KEY`, with the trade or chat code as associated data. The wallet password is sealed under a separate HKDF subkey, in a separate table from the wallet session.
 
@@ -210,9 +210,9 @@ Known limits of the design:
   - The server stores only SHA-256 of the code. Only asking for codes is rate-limited, not guessing.
   - Accepted keys are RSA 4096+, Ed25519 and Ed448. They are stored encrypted (AES-256-GCM). User IDs are stripped only from v6 keys, and only where the key survives it. v4 keys, which are most keys in use, are stored whole, with their user IDs, which often hold a real name and email.
 - **Passkeys and security keys.** WebAuthn through SimpleWebAuthn, with origin and RP ID checks. Passkeys require user verification.
-- **Passwords.** Argon2id (64 MiB, t=3) over HMAC-SHA-256 of the password under a server-side pepper, checked against a leaked-password list kept on X2F's own server.
-- **TOTP.** Secrets are sealed under separate keys. TOTP cannot be an account's only login method; used alone it is a weak login, and security changes then wait 24 hours.
-- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). While a sign-up waits in its login challenge, the challenge keeps the login name sealed with AES-256-GCM under a server subkey (`login-seal`), never as plaintext. A stolen database alone does not reveal them. The display name is separate and public.
+- **No passwords.** X2F has no passwords. An account holds at least two kinds of login method among passkey, security key, PGP key and authenticator app (at most one authenticator app); recovery codes do not count.
+- **TOTP.** Secrets are sealed under separate keys. An authenticator app counts as one kind of login method but never logs in alone. There is no 24-hour hold: a recovery-code login is a full session that may change every login method for 1 hour.
+- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). While a sign-up waits in its login challenge, the challenge keeps the login name sealed with AES-256-GCM under a server subkey (`login-seal`), never as plaintext. A stolen database alone does not reveal them. The Trade Tag is separate and public.
 
 ## 7. Retention
 
@@ -281,7 +281,7 @@ An onion address protects users' network location and removes the certificate au
 - Relay join check: `apps/relay/src/server.ts`
 - Retention: `packages/trade/src/chat.ts` (`CHAT_*_DAYS`), `apps/api/src/chat/retention.ts`, `apps/api/src/trades/purge.ts`, `apps/api/src/retentionJobs.ts`
 - Proofs: `packages/proof/src/clean.ts`, `detect.ts`, `redact.ts`, `seal.ts`; `apps/web/src/proof/reencode.ts`
-- Logins: `apps/api/src/auth/pgp.ts`, `packages/accounts/src/loginCode.ts`, `packages/accounts/src/pgp.ts`, `apps/api/src/auth/webauthn.ts`, `apps/api/src/auth/password.ts`, `apps/api/src/auth/totp.ts`, `apps/api/src/accounts.ts` (`loginTag`, `sealNames`), `apps/api/src/config.ts` (`subkey`)
+- Logins: `apps/api/src/auth/pgp.ts`, `packages/accounts/src/loginCode.ts`, `packages/accounts/src/pgp.ts`, `apps/api/src/auth/webauthn.ts`, `apps/api/src/auth/totp.ts`, `apps/api/src/accounts.ts` (`loginTag`, `sealNames`), `apps/api/src/config.ts` (`subkey`)
 - CSP and origins: `apps/api/src/static/serve.ts` (`cspFor`); request logging: `apps/api/src/app.ts`
 - Design background: `docs/superpowers/specs/2026-10-14-x2f-design.md` sections 3, 4 and 6; `docs/security/research-2026-10-15-escrow-threats.md`
 - Planned membership keys: the design note "Trade chat: one key per trade, with members" (2026-11-08), not yet published in this repository

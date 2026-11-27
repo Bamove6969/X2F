@@ -31,7 +31,7 @@ const base: TradeView = {
   role: 'seller',
   poster: 'buyer',
   state: 'funding',
-  counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' },
+  counterparty: { tradeTag: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' },
   methodId: 'ZELLE',
   profile: { name: 'Zelle', whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' },
   amountAtomic: '1250000000000',
@@ -141,8 +141,8 @@ describe('TradeFund (seller)', () => {
     expect(host.querySelector('[data-username]')?.textContent).toBe('mira.k');
   });
 
-  it('never shows anything but the display name, even if an older field is also present', async () => {
-    current = { ...base, counterparty: { ...base.counterparty, displayName: 'Mira.K_', ...{ username: 'secret_login_1' } } };
+  it('never shows anything but the Trade Tag, even if an older field is also present', async () => {
+    current = { ...base, counterparty: { ...base.counterparty, tradeTag: 'Mira.K_', ...{ username: 'secret_login_1' } } };
     const host = await room();
     expect(host.textContent).toContain('Selling to Mira.K_');
     expect(host.textContent).not.toContain('secret_login_1');
@@ -232,7 +232,7 @@ describe('escrow check and the security check', () => {
     let host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on mira.k's screen.");
     expect([...host.querySelectorAll('[data-escrow-check] li')].map((l) => l.textContent)).toEqual(['amber', 'canal', 'violin', 'oxygen']);
-    current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
+    current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, tradeTag: 'satoshi_ghost' } };
     host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on satoshi_ghost's screen.");
   });
@@ -782,7 +782,7 @@ describe('review 2026-10-27 minors', () => {
 
 describe('the buyer before funding', () => {
   it('shows "Waiting for <seller> to fund" and no address, QR or wallet link', async () => {
-    current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
+    current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, tradeTag: 'satoshi_ghost' } };
     const host = await room();
     expect(host.textContent).toContain('Waiting for satoshi_ghost to fund');
     expect(host.textContent).toContain('$412.50 USD');
@@ -795,7 +795,7 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     ...base,
     role: 'buyer',
     funding: null,
-    counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' },
+    counterparty: { ...base.counterparty, tradeTag: 'satoshi_ghost' },
     ...over,
   });
   const button = (host: HTMLElement, label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label);

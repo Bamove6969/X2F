@@ -13,7 +13,7 @@ const ID = '3f2b6a1e-5c4d-4e8f-9a0b-1c2d3e4f5a6b';
 
 function profile(disputed: boolean) {
   return {
-    displayName: 'viewer_1',
+    tradeTag: 'viewer_1',
     self: true,
     memberSince: '2025-03',
     online: true,
@@ -34,7 +34,7 @@ function profile(disputed: boolean) {
 
 async function stub(page: Page): Promise<{ sent: unknown[] }> {
   const sent: unknown[] = [];
-  await signedIn(page, { displayName: 'viewer_1' });
+  await signedIn(page, { tradeTag: 'viewer_1' });
   await page.route('**/v1/traders/viewer_1', (r) => json(profile(sent.length > 0))(r));
   await page.route(`**/v1/reviews/${ID}/dispute`, (r) => {
     sent.push(r.request().postDataJSON());

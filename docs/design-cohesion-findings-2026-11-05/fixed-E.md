@@ -40,6 +40,6 @@
 
 ## Open questions for the owner
 - Staff pay rates (StaffSettings OPEN box): real per-case / monthly amounts, whether the 0.5% large-trade bonus and its cap stay; to settle with the lawyer.
-- What the buyer sees as the seller's Zelle contact (Desktop and Fold-Notes OPEN box): full contact, masked until tap, or a display name.
+- What the buyer sees as the seller's Zelle contact (Desktop and Fold-Notes OPEN box): full contact, masked until tap, or a Trade Tag.
 - StaffLog "Today / Yesterday" labels: keep relative days with "UTC" times, or switch to full "6 Nov 2026, 09:50 UTC" dates?
 - Fold-TriFold pane widths: the findings call 412 + 16 + 412 + 16 + 412 correct, but the board is 1280 wide (419 + 16 + 410 + 16 + 419); left as is, nothing crosses a hinge.

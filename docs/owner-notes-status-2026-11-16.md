@@ -32,8 +32,8 @@ Job 15 built no app code; the remaining notes are held elsewhere:
 
 ## Part 1: `owner-demo-notes-2026-11-12.jsonl` (48 Notes)
 
-1. **`9fe3fa43`** (`/setup`, `setup-terms`, `section:nth-of-type(2) > p:nth-of-type(2)`) — *"Public display name"*
-   - **DONE** — `apps/web/src/screens/setup/termsText.ts:76` names both `"a private username, which you type to log in and only you see, and a public display name, which is how other traders see you"`.
+1. **`9fe3fa43`** (`/setup`, `setup-terms`, `section:nth-of-type(2) > p:nth-of-type(2)`) — *"Public Trade Tag"*
+   - **DONE** — `apps/web/src/screens/setup/termsText.ts:76` names both `"a private username, which you type to log in and only you see, and a public Trade Tag, which is how other traders see you"`.
 
 2. **`4e04a245`** (`/setup`, `setup-terms`, `section:nth-of-type(2) > p:nth-of-type(3)`) — *"I don't want them to think they can't have team members so maybe some wording except if you choose to setup additional team members."*
    - **DONE** — `apps/web/src/screens/setup/termsText.ts:78` adds `"If you want others to help you trade, set them up as team members of your account: each team member gets their own login."`
@@ -243,8 +243,8 @@ Job 15 built no app code; the remaining notes are held elsewhere:
 21. **`0b68b013`** (`/setup`, `setup-terms`, `section:nth-of-type(9) > p:nth-of-type(2)`) — *"Should the word terms be capitalized?"*
     - **OWNER-QUESTION** — `apps/web/src/screens/setup/Terms.tsx:247`, `apps/staff-web/src/ui/TermsStep.tsx:102`, and `apps/web/src/screens/setup/termsText.ts:167` capitalise `"Terms"` (`COPY-UNSIGNED`). Asked as Q11 in `review-third-demo-r3-and-terms-r3b-2026-11-16.md` (comms); pointer in `docs/agy-owner-questions-notes-finish.md` §6.
 
-22. **`c8377ac8`** (`/setup/display-name`, `setup-display-name`, `div.x2f-field`) — *"There shouldn't be limitations on usernames or display names on characters. I tried to use a $ in my display name and it refused me and I don't want that. Allow the majority of major characters, just not weird ones that might trip up the system."*
-    - **DONE** — `packages/accounts/src/username.ts:138-162` and `apps/web/src/screens/setup/DisplayName.tsx:71-74` allow Unicode letters, digits, spaces, and `$ & ! ? . , ' - _ @ # % * + ( ) :` in display names while blocking invisible/control/RTL/mixed-script characters (login usernames keep ASCII `[A-Za-z0-9._-]` per `origin/comms:signup-r3-spec-2026-11-13.md:13`).
+22. **`c8377ac8`** (`/setup/trade-tag`, `setup-trade-tag`, `div.x2f-field`) — *"There shouldn't be limitations on usernames or Trade Tags on characters. I tried to use a $ in my Trade Tag and it refused me and I don't want that. Allow the majority of major characters, just not weird ones that might trip up the system."*
+    - **DONE** — `packages/accounts/src/username.ts:138-162` and `apps/web/src/screens/setup/TradeTag.tsx:71-74` allow Unicode letters, digits, spaces, and `$ & ! ? . , ' - _ @ # % * + ( ) :` in Trade Tags while blocking invisible/control/RTL/mixed-script characters (login usernames keep ASCII `[A-Za-z0-9._-]` per `origin/comms:signup-r3-spec-2026-11-13.md:13`).
 
 23. **`8e3c5a37`** (`/setup/login`, `setup-login`, `#_r_1_-totp`) — *"Why is this not setup yet?"*
     - **DONE** — Retracted in #24 (`8a11bb3d`); `totp` is now enabled by default on `/setup/login` because `pgp` is ticked (`apps/web/src/screens/setup/Login.tsx:92`).

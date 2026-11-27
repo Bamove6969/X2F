@@ -25,7 +25,7 @@ export const BLOCKED_PATH = '/settings/blocked';
 
 type State = { kind: 'idle' } | { kind: 'asking' } | { kind: 'busy' } | { kind: 'done' } | { kind: 'refused' } | { kind: 'error'; text: string };
 
-export function BlockAction({ displayName, onBlocked }: { displayName: string; onBlocked?: () => void }) {
+export function BlockAction({ tradeTag, onBlocked }: { tradeTag: string; onBlocked?: () => void }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const ask = useRef<HTMLParagraphElement>(null);
   const open = useRef<HTMLDivElement>(null);
@@ -49,14 +49,14 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
   const block = async () => {
     setState({ kind: 'busy' });
     try {
-      await blockTrader(displayName);
+      await blockTrader(tradeTag);
       go({ kind: 'done' }, 'done');
       onBlocked?.();
     } catch (e) {
       const refused = e instanceof ApiCallError && (e.status === 404 || e.status === 400);
       // A refusal: the popup takes focus itself, and closing it returns focus to "Block <name>".
       if (refused) go({ kind: 'refused' }, null);
-      else go({ kind: 'error', text: C.failed(displayName) }, 'open');
+      else go({ kind: 'error', text: C.failed(tradeTag) }, 'open');
     }
   };
 
@@ -64,7 +64,7 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
     return (
       <div data-part="block-done">
         <p className="x2f-note" role="status" tabIndex={-1} ref={done}>
-          {C.done(displayName)}
+          {C.done(tradeTag)}
         </p>
         {/* The kit's quiet button look on a router link (no new CSS). */}
         <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
@@ -82,12 +82,12 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
         </p>
       ) : null}
       <Button variant="quiet" onClick={() => go({ kind: 'asking' }, 'ask')} data-part="block-open">
-        {C.action(displayName)}
+        {C.action(tradeTag)}
       </Button>
       {/* Review I1: while the block is in flight the sheet stays (no Esc, close or backdrop), so it never looks cancelled and then lands. */}
       <Sheet
         open={asking}
-        title={C.confirmTitle(displayName)}
+        title={C.confirmTitle(tradeTag)}
         initialFocus="#block-ask-h"
         onClose={() => {
           if (state.kind !== 'busy') go({ kind: 'idle' }, 'open');
@@ -96,7 +96,7 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
         <div className="x2f-sheet__content" data-part="block-ask">
           <div className="x2f-stack">
             <p className="x2f-sheet__body" id="block-ask-h" tabIndex={-1} ref={ask}>
-              {C.confirmLead(displayName)}
+              {C.confirmLead(tradeTag)}
             </p>
             <ul className="x2f-sheet__list">
               {C.cant.map((t) => (
@@ -111,7 +111,7 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
           <p className="x2f-fine">{C.later}</p>
           <div className="x2f-sheet__actions">
             <Button variant="danger-outline" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
-              {C.action(displayName)}
+              {C.action(tradeTag)}
             </Button>
             <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => go({ kind: 'idle' }, 'open')}>
               {C.cancel}

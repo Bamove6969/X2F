@@ -30,7 +30,7 @@ const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)
 const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/login/compromised', '/team/join', '/help', '/help/faq'];
 const BEHIND = PATHS.filter((p) => !DOOR.includes(p));
 
-const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
+const FULL = { tradeTag: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 let me: { status: number; body: unknown };

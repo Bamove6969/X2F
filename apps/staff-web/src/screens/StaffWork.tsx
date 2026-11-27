@@ -77,7 +77,7 @@ export function StaffWork() {
   const t = data?.totals;
   return (
     <div className="x2f-stack" data-screen="staff-work">
-      <PageTitle title={data ? C.title(data.displayName) : C.title('')} />
+      <PageTitle title={data ? C.title(data.tradeTag) : C.title('')} />
       <Link to="/performance">{C.back}</Link>
       <div className="x2f-row" role="group" aria-label="Period">
         {C.periods.map((d) => (

@@ -28,7 +28,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     role: 'buyer',
     poster: 'seller',
     state: 'securing',
-    counterparty: { displayName: 'satoshi_ghost', completedTrades: 412, online: true, lastSeenAt: null, typicalMinutes: 6, positivePct: 99, badges: ['Trusted', 'Fast'], stage: 'graduated' },
+    counterparty: { tradeTag: 'satoshi_ghost', completedTrades: 412, online: true, lastSeenAt: null, typicalMinutes: 6, positivePct: 99, badges: ['Trusted', 'Fast'], stage: 'graduated' },
     methodId: 'ZELLE',
     profile: ZELLE,
     amountAtomic: '1250000000000',
@@ -265,8 +265,8 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     }
   });
 
-  it('the counterparty is shown by its public display name, in data-username', () => {
-    mount(props({ view: tradeView({ counterparty: { ...tradeView().counterparty, displayName: 'Satoshi.Ghost' } }) }));
+  it('the counterparty is shown by its public Trade Tag, in data-username', () => {
+    mount(props({ view: tradeView({ counterparty: { ...tradeView().counterparty, tradeTag: 'Satoshi.Ghost' } }) }));
     const names = [...document.querySelectorAll('[data-username]')].map((e) => e.textContent);
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names)).toEqual(new Set(['Satoshi.Ghost']));
@@ -782,7 +782,7 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
 
 describe("the seller's funded room (SellerWaiting)", () => {
   const seller = (over: Partial<TradeView> = {}) =>
-    tradeView({ ...SECURED, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' }, ...over });
+    tradeView({ ...SECURED, role: 'seller', counterparty: { ...tradeView().counterparty, tradeTag: 'mira.k' }, ...over });
 
   it("offers no cancel of any kind while waiting: no cancel-alone control and no Propose cancel (design proto review P2, 8 Nov)", async () => {
     for (const wide of [false, true]) {
@@ -1011,7 +1011,7 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it("the seller's waiting room says so too", () => {
-    mount(props({ view: tradeView({ ...grown, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' } }), escrow: grownEscrow() }), SellerWaiting);
+    mount(props({ view: tradeView({ ...grown, role: 'seller', counterparty: { ...tradeView().counterparty, tradeTag: 'mira.k' } }), escrow: grownEscrow() }), SellerWaiting);
     expect(document.querySelector('[data-grown]')!.textContent).toBe('Trade grew to 1.312500 XMR, mira.k now pays $433.13');
   });
 

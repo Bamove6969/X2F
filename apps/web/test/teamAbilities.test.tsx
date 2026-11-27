@@ -41,7 +41,7 @@ beforeEach(() => {
     const method = init.method ?? 'GET';
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ url: input, method, body });
-    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', displayName: 'Calcium', methods: ['pgp'], member: null });
+    if (input === '/v1/account/me') return json(200, { kind: 'trader', level: 'full', tradeTag: 'Calcium', methods: ['pgp'], member: null });
     if (input === '/v1/team/permissions') return json(200, catalogueView());
     if (input === '/v1/team' && method === 'GET') return json(200, { members, max: 3 });
     if (input === '/v1/team/audit') return json(200, []);
@@ -98,8 +98,10 @@ describe('the catalogue helpers', () => {
     const c = real();
     const all = allAbilities(c);
     const locked = all.filter((a) => !isTickable(a)).map((a) => a.id);
-    expect(locked).toEqual(expect.arrayContaining(['trades-release', 'trades-confirm-received', 'own-login-methods']));
+    expect(locked).toEqual(expect.arrayContaining(['trades-confirm-received', 'own-login-methods']));
     expect(locked).not.toContain('offers-edit-prices');
+    // Owner question trades-release: Release coins is a box the lead may tick now.
+    expect(locked).not.toContain('trades-release');
     const out = sendable(c, ['notes-add', ...locked, 'chat-read', 'offers-see', 'made-up-box', 'offers-see', 'trades-accept']);
     expect(out).toEqual(['offers-see', 'trades-accept', 'chat-read', 'notes-add']);
   });
@@ -186,13 +188,60 @@ describe('AbilityPicker', () => {
     expect(seen.at(-1)).toEqual(presetBoxes(c, 'offers'));
     expect(seen.at(-1)).toContain('offers-edit-prices');
   });
+
+  it('owner question trades-release: Release coins ticks on its own, and says it needs Hold trade keys until that is ticked too', async () => {
+    const c = real();
+    const seen: string[][] = [];
+    const alone = render(<Harness catalogue={c} start={['trades-release']} onChange={(v) => seen.push(v)} />);
+    openAll(alone.host);
+    await settle();
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(false);
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.checked).toBe(true);
+    expect(byPart(alone.host, 'release-needs-keys')?.textContent).toContain('Hold trade keys');
+    // Never ticked for the lead: the keys box stays as it was.
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-escrow-keys"]')!.checked).toBe(false);
+    const both = render(<Harness catalogue={c} start={['trades-release', 'trades-escrow-keys']} onChange={(v) => seen.push(v)} />);
+    openAll(both.host);
+    await settle();
+    expect(byPart(both.host, 'release-needs-keys')).toBeNull();
+    // In no preset.
+    for (const p of c.presets) expect(presetBoxes(c, p.id), p.id).not.toContain('trades-release');
+  });
+
+  it('owner 26 Nov 2026 18:41 UTC: Fund the escrow, Upload payment proof and Mark "I\'ve paid" are separate boxes the lead may tick, in no preset; Fund the escrow says it needs Hold trade keys', async () => {
+    const c = real();
+    const all = allAbilities(c);
+    expect(all).toHaveLength(65);
+    for (const id of ['trades-fund', 'trades-upload-proof', 'trades-mark-paid', 'trades-release']) {
+      expect(isTickable(all.find((a) => a.id === id)!), id).toBe(true);
+    }
+    for (const id of ['trades-fund', 'trades-upload-proof']) for (const p of c.presets) expect(presetBoxes(c, p.id), `${p.id} ${id}`).not.toContain(id);
+    const seen: string[][] = [];
+    const alone = render(<Harness catalogue={c} start={['trades-fund']} onChange={(v) => seen.push(v)} />);
+    openAll(alone.host);
+    await settle();
+    expect(alone.host.querySelector<HTMLInputElement>('input[data-box="trades-fund"]')!.checked).toBe(true);
+    expect(byPart(alone.host, 'fund-needs-keys')?.textContent).toContain('Hold trade keys');
+    expect(byPart(alone.host, 'release-needs-keys')).toBeNull();
+    const both = render(<Harness catalogue={c} start={['trades-fund', 'trades-escrow-keys']} onChange={(v) => seen.push(v)} />);
+    openAll(both.host);
+    await settle();
+    expect(byPart(both.host, 'fund-needs-keys')).toBeNull();
+    // Ticking Upload payment proof ticks nothing else (Mark "I've paid" stays its own box).
+    const proof = render(<Harness catalogue={c} start={[]} onChange={(v) => seen.push(v)} />);
+    openAll(proof.host);
+    await settle();
+    click(proof.host.querySelector('input[data-box="trades-upload-proof"]')!);
+    await settle();
+    expect(seen.at(-1)).toEqual(['trades-upload-proof']);
+  });
 });
 
 describe('Team: editing a member', () => {
   it('a member moved from the old Offers role shows its boxes; saving keeps the stored "Coming later" ones', async () => {
     const legacy = [...ROLE_ABILITIES.offers];
     expect(legacy).toContain('offers-edit-prices');
-    members = [{ id: 'm1', displayName: 'Aurora', roles: ['offers'], abilities: legacy, preset: null, custom: false, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' }];
+    members = [{ id: 'm1', tradeTag: 'Aurora', roles: ['offers'], abilities: legacy, preset: null, custom: false, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' }];
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();
     expect(host.querySelector('[data-member="Aurora"]')?.textContent).toContain('Offers · Active');
@@ -206,7 +255,10 @@ describe('Team: editing a member', () => {
     const prices = row.querySelector<HTMLInputElement>('input[data-box="offers-edit-prices"]')!;
     expect(prices.disabled).toBe(false);
     expect(prices.checked).toBe(true);
-    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(true);
+    // Owner question trades-release: Release coins can be ticked (off by default); confirming payment received stays the lead's.
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.disabled).toBe(false);
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-release"]')!.checked).toBe(false);
+    expect(row.querySelector<HTMLInputElement>('input[data-box="trades-confirm-received"]')!.disabled).toBe(true);
     click(row.querySelector('input[data-box="notes-view"]')!);
     await settle();
     click(byPart(host, 'save-boxes')!);
@@ -243,7 +295,7 @@ describe('notesAccessOf', () => {
 
 describe('TraderNotes', () => {
   it('asks nothing until opened; then lists the notes, signed, newest first', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     await settle();
     expect(calls.length).toBe(0);
     click(byPart(host, 'notes-open')!);
@@ -256,7 +308,7 @@ describe('TraderNotes', () => {
   });
 
   it('adds a note for that trader and shows it first', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     typeText(host.querySelector<HTMLTextAreaElement>('[data-part="note-input"]')!, '  Asked to move off-site.  ');
@@ -268,7 +320,7 @@ describe('TraderNotes', () => {
   });
 
   it('a blank note sends nothing', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     typeText(host.querySelector<HTMLTextAreaElement>('[data-part="note-input"]')!, '   ');
@@ -279,7 +331,7 @@ describe('TraderNotes', () => {
   });
 
   it('the owner deletes a note after a second tap', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     click(host.querySelector(`[data-note="${NOTE_B.id}"] [data-part="note-delete"]`)!);
@@ -292,7 +344,7 @@ describe('TraderNotes', () => {
   });
 
   it('a member with View only reads, with no add box and no Delete', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: true, add: false, remove: false }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: true, add: false, remove: false }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     expect(host.querySelectorAll('[data-part="notes-list"] li').length).toBe(2);
@@ -301,13 +353,13 @@ describe('TraderNotes', () => {
   });
 
   it('a member with Add only adds without reading the list; with neither box there is no panel', async () => {
-    const { host } = render(<TraderNotes displayName="nightowl_44" access={{ view: false, add: true, remove: false }} />);
+    const { host } = render(<TraderNotes tradeTag="nightowl_44" access={{ view: false, add: true, remove: false }} />);
     click(byPart(host, 'notes-open')!);
     await settle();
     expect(calls.some((c) => c.method === 'GET')).toBe(false);
     expect(byPart(host, 'notes-list')).toBeNull();
     expect(byPart(host, 'note-add')).not.toBeNull();
-    const none = render(<TraderNotes displayName="nightowl_44" access={{ view: false, add: false, remove: false }} />);
+    const none = render(<TraderNotes tradeTag="nightowl_44" access={{ view: false, add: false, remove: false }} />);
     expect(none.host.querySelector('[data-part="trader-notes"]')).toBeNull();
   });
 
@@ -315,7 +367,7 @@ describe('TraderNotes', () => {
     noteReply = { status: 409, body: { error: 'too-many-notes', max: 500 } };
     const { host } = render(
       <MemoryRouter>
-        <TraderNotes displayName="nightowl_44" access={{ view: true, add: true, remove: true }} />
+        <TraderNotes tradeTag="nightowl_44" access={{ view: true, add: true, remove: true }} />
       </MemoryRouter>,
     );
     click(byPart(host, 'notes-open')!);
