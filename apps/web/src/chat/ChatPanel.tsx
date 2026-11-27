@@ -105,6 +105,8 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   refused: "Couldn't send. Check your connection and try again.",
   // COPY-UNSIGNED (proof review M2): only a proof's send is ever uncertain, and the composer never sends one.
   uncertain: 'This may have been sent. Check the chat before you send it again.',
+  // COPY-UNSIGNED (private lanes): the moderator switched the private conversation, or the dispute closed, while the trader typed.
+  'mode-changed': "Not sent: the moderator's private conversation changed while you were typing. Check who will see it, then send again.",
   unavailable: "Couldn't send. Check your connection and try again.",
   'not-found': CHAT_CLOSED,
 };
@@ -300,12 +302,15 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     setSendError(null);
     setMention(null);
     try {
-      const s = await chatClient().send(chat, draft);
+      // The lane the trader is writing in: the worker refuses the line if the mode has changed since.
+      const s = await chatClient().send(chat, draft, toMod);
       sent(s);
       if (!alive.current) return;
       setDraft('');
     } catch (err) {
       if (alive.current) setSendError(failureOf(err));
+      // The draft stays; a fresh sync shows the mode as it now is (the tint and the system line).
+      if (err instanceof ChatFailed && err.code === 'mode-changed') void sync();
     } finally {
       if (alive.current) {
         setSending(false);

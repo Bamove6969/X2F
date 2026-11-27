@@ -172,7 +172,7 @@ describe('ChatPanel', () => {
     client.send.mockResolvedValueOnce(snap({ lines: [{ id: '1', from: 'buyer', text: 'Sending via Zelle now', at: null, mine: true, gapBefore: false }] }));
     act(() => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
     await flush();
-    expect(client.send).toHaveBeenCalledWith(CHAT, 'Sending via Zelle now');
+    expect(client.send).toHaveBeenCalledWith(CHAT, 'Sending via Zelle now', false);
     expect(host.querySelector('textarea')!.value).toBe('');
     expect(host.querySelector('li')?.textContent).toBe('You: Sending via Zelle now');
 
@@ -779,9 +779,9 @@ describe('ChatPanel: private moderator lanes (owner 27 Nov)', () => {
     type(box, 'only for you');
     submit(host);
     await flush();
-    // The worker decides where it goes (the engine's own reading of the mode): the page passes no option.
-    expect(client.send).toHaveBeenCalledWith(CHAT, 'only for you');
-    expect(client.send.mock.calls[0]).toHaveLength(2);
+    // The worker decides where it goes (the engine's own reading of the mode); the page says only
+    // which lane the trader wrote in, so the worker can refuse a line whose mode has changed.
+    expect(client.send).toHaveBeenCalledWith(CHAT, 'only for you', true);
     // The moderator switches it off: the tint and marker go.
     current = snap({ disputeOpen: true, privateMode: false, lines: [modeLine('1', 'on'), modeLine('2', 'off')] });
     act(() => emitChatLive(CHAT));
@@ -789,6 +789,21 @@ describe('ChatPanel: private moderator lanes (owner 27 Nov)', () => {
     expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
     expect(host.querySelector('form.x2f-chat__composer [data-private-marker]')).toBeNull();
     expect(host.querySelector('textarea')!.getAttribute('placeholder')).toBe('Message');
+  });
+
+  it('A1: a private draft refused as mode-changed stays in the box, says so plainly, and re-syncs to show the mode as it now is', async () => {
+    current = snap({ disputeOpen: true, privateMode: true, lines: [modeLine('1', 'on')] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    type(host.querySelector('textarea')!, 'only for you');
+    current = snap({ disputeOpen: true, privateMode: false, lines: [modeLine('1', 'on'), modeLine('2', 'off')] });
+    client.send.mockRejectedValueOnce(new ChatFailed('mode-changed'));
+    submit(host);
+    await flush();
+    expect(client.send).toHaveBeenCalledWith(CHAT, 'only for you', true);
+    expect(host.querySelector('.x2f-chat__error')?.textContent).toBe("Not sent: the moderator's private conversation changed while you were typing. Check who will see it, then send again.");
+    expect(host.querySelector('textarea')!.value).toBe('only for you');
+    expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
   });
 });
 

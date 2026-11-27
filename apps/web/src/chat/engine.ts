@@ -215,8 +215,10 @@ export interface ChatSnapshot {
 /**
  * `uncertain` (proof review M2, a proof only): the post got no answer from the API (the connection
  * dropped, or a 5xx), so the envelope may be stored and with the other side already.
+ * `mode-changed` (a line only): the moderator's private mode, read on the send's own sync, is not
+ * the one the trader wrote in (switched, or the dispute closed, while they typed). Nothing is sealed.
  */
-export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain';
+export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'bad-proof' | 'too-large' | 'slow-down' | 'refused' | 'uncertain' | 'mode-changed';
 
 export class ChatSendFailed extends Error {
   /** `cause`: the API's refusal behind a 'refused' (a 410 there erases the chat). */
@@ -231,8 +233,11 @@ export interface ChatEngine {
   /**
    * A line: in this trader's own lane (v3 under the lane key) while the moderator's private mode is
    * on (owner 27 Nov follow-up, the snapshot's `privateMode`), else the shared chat (v2).
+   * `expectPrivate`: the lane the trader wrote in (the panel's private tint). When it is given and the
+   * send's own sync reads the other lane, nothing is sent: 'mode-changed'. A private draft is never
+   * sealed for the shared chat, and a shared one never goes to the moderator alone.
    */
-  send(chat: string, text: string): Promise<ChatSnapshot>;
+  send(chat: string, text: string, expectPrivate?: boolean): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
@@ -1114,10 +1119,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     // moderator's private mode is on (a dispute open, the verified lane key held), the line goes into
     // this trader's own lane (v3); otherwise to the shared chat. A mode switch the API withholds
     // leaves a stale mode at worst: a line meant for the moderator alone never reaches the other trader.
-    send: (chat, text) =>
+    // The page says which lane the trader wrote in; if the mode switched (or the dispute closed)
+    // while they typed, the line is refused rather than sealed for the other lane.
+    send: (chat, text, expectPrivate) =>
       post(chat, async (a, x) => {
         const pk = lanes.get(chat);
-        if (pk === undefined || !privateOn(x.rec, x.view)) return sealChatMessage({ ...a, text });
+        const now = pk !== undefined && privateOn(x.rec, x.view);
+        if (expectPrivate !== undefined && expectPrivate !== now) throw new ChatSendFailed('mode-changed');
+        if (!now) return sealChatMessage({ ...a, text });
         const channel = await chatChannel(chat);
         return sealLaneMessage({ role: a.role, me: a.me, channel, laneState: x.rec.laneState ?? newLaneState(channel), text, pk });
       }),

@@ -841,7 +841,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
     await settle();
     expect(out.shift()).toMatchObject({ t: 'chat', id: 2, ok: true, snapshot: { phase: 'waiting' } });
     attest();
-    handler({ data: { t: 'chat-send', id: 3, chat, text: 'hi' } });
+    handler({ data: { t: 'chat-send', id: 3, chat, text: 'hi', expectPrivate: false } });
     await settle();
     const sent = out.shift() as { ok: boolean; snapshot: unknown };
     expect(sent.ok).toBe(true);
@@ -2260,16 +2260,49 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     expect((await e.sync(chat)).privateMode).toBe(true);
   });
 
-  it('the worker passes a send as it is: there is no private option on the page\'s side', async () => {
+  it('A1: a private draft is never sent to the shared chat after the mode changes (switched off, or the dispute closed), nor a shared one to the lane', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    api.add('mod', await modMode(true, 0, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(true);
+    // The trader types in the private composer; the moderator ends private mode meanwhile.
+    api.add('mod', await modMode(false, 1, pk), 'buyer');
+    await expect(e.send(chat, 'only for the mod', true)).rejects.toMatchObject({ code: 'mode-changed' });
+    expect(api.posted).toEqual([]);
+    // Back on; the dispute closes while the trader types.
+    api.add('mod', await modMode(true, 2, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(true);
+    api.view.disputeOpen = false;
+    await expect(e.send(chat, 'only for the mod', true)).rejects.toMatchObject({ code: 'mode-changed' });
+    expect(api.posted).toEqual([]);
+    // The other way: written for both traders, but private mode is now on.
+    api.view.disputeOpen = true;
+    await expect(e.send(chat, 'for both', false)).rejects.toMatchObject({ code: 'mode-changed' });
+    expect(api.posted).toEqual([]);
+    // A matching lane still sends.
+    await e.send(chat, 'only for the mod', true);
+    expect((api.posted as Array<{ v: number }>).map((p) => p.v)).toEqual([3]);
+    expect(JSON.stringify(api.posted)).not.toContain('only for the mod');
+  });
+
+  it('the worker passes the trader\'s lane with a send; it can only refuse, never pick the lane', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     const got: unknown[][] = [];
     const fake = { sync: async () => ({}) as never, send: async (...a: unknown[]) => (got.push(a), {} as never), sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: async () => [] };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
-    handler({ data: { t: 'chat-send', id: 1, chat, text: 'hi', private: true } });
+    handler({ data: { t: 'chat-send', id: 1, chat, text: 'hi', expectPrivate: true, private: true } });
     for (let i = 0; i < 200 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
-    expect(got).toEqual([[chat, 'hi']]);
+    expect(got).toEqual([[chat, 'hi', true]]);
+    // A send that does not say which lane it was written in is refused.
+    handler({ data: { t: 'chat-send', id: 2, chat, text: 'hi' } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(out[1]).toMatchObject({ id: 2, ok: false, error: 'refused' });
+    expect(got).toHaveLength(1);
   });
 
   it('never opens another lane: a v3 envelope for the seller is skipped', async () => {
