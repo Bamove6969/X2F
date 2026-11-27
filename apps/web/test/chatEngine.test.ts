@@ -2209,6 +2209,41 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     expect(JSON.parse(store.records.get(chat)!).privateMode).toBe(false);
   });
 
+  it('PR #44 follow-up: a chat.mode the moderator signed in the shared chat (v2, chat key) does not switch the mode; only the lane one does', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    api.add('mod', await sealChat({ trade: channel, from: 'mod', seq: 0, type: 'chat.mode', payload: { on: true }, tk: await tkOf(parts), me: mod }));
+    const snap = await e.sync(chat);
+    expect(snap.phase).toBe('ready');
+    expect(snap.privateMode).toBe(false);
+    expect(snap.lines.some((l) => l.mode !== undefined)).toBe(false);
+    await e.send(chat, 'still shared');
+    expect((api.posted[0] as { v: number }).v).toBe(2);
+    // The same switch in the own lane does take effect.
+    api.add('mod', await modMode(true, 0, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(true);
+  });
+
+  it('PR #44 follow-up: a trader-signed chat.mode off does not end the private mode the moderator switched on', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    api.add('mod', await modMode(true, 0, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(true);
+    const buyer = made[0]!;
+    api.add('buyer', await sealPrivate({ trade: channel, from: 'buyer', to: 'buyer', seq: 0, type: 'chat.mode', payload: { on: false }, pk, me: buyer }), 'buyer');
+    const snap = await e.sync(chat);
+    expect(snap.privateMode).toBe(true);
+    expect(snap.lines.map((l) => l.mode ?? null)).toEqual(['on']);
+    await e.send(chat, 'private still');
+    expect((api.posted[0] as { v: number; to?: string }).v).toBe(3);
+  });
+
   it('owner 27 Nov follow-up: a moderator chat.mode outside a dispute is held, as any moderator lane line, and the send stays shared', async () => {
     const e = engine();
     await e.sync(chat);

@@ -1926,6 +1926,58 @@ describe('lien recovery at take', () => {
       expect(await recovered(lien)).toBe((XMR / 2n).toString());
     });
 
+    // PR #43 tests: a lien paid across several sales, open at once, sharing one remainder; never more
+    // than is owed reaches the creditor, and the lien is repaid on the sale that clears it.
+    it('a lien paid across several sales: open sales share the remainder, the last funds only what is left, none over-collects', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const owed = XMR + XMR / 5n; // 1.2 XMR at 50% (these tests' rate) over 1 XMR sales
+      const lien = await lienOn(debtor, creditor, owed);
+      const codes = [await sellerPosts(debtor, await person()), await sellerPosts(debtor, await person()), await sellerPosts(debtor, await person())];
+      const extras = await Promise.all(codes.map(async (c) => (await tradeOf(c)).sellerLienRecoveryAtomic ?? 0n));
+      // 0.5 + 0.5 are held; the third sale funds only the 0.2 XMR left.
+      expect(extras).toEqual([XMR / 2n, XMR / 2n, XMR / 5n]);
+      expect(extras.reduce((s, e) => s + e, 0n)).toBe(owed);
+      // Each extra goes to the address the creditor signed for the lien.
+      for (const code of codes) {
+        expect((await deps.db.query<{ address: string }>(`select address from lien_recovery_holds where trade_code = $1 and debtor_side = 'seller'`, [code])).rows).toEqual([{ address: creditor.address }]);
+      }
+      // A fourth sale while those are open (the debtor takes a buy ad) funds nothing extra.
+      const buyAd = await postOffer(await person(), { side: 'buy' });
+      expect(await sellerPreview(debtor, buyAd, body(debtor, XMR))).toBe('0');
+      const fourth = await debtor.browser.post(`/v1/offers/${buyAd}/take`, { ...body(debtor, XMR), sellerLienRecoveryAtomic: '0' });
+      expect(fourth.statusCode, fourth.body).toBe(200);
+      const fourthCode = (fourth.json() as { code: string }).code;
+      expect(await sideHolds(fourthCode)).toEqual([]);
+      expect((await tradeOf(fourthCode)).sellerFundsAtomic).toBe(XMR);
+      // Each completed sale records its own extra; the last one repays the lien.
+      let total = 0n;
+      for (const [i, code] of codes.entries()) {
+        await driveTo(deps, await tradeOf(code), 'settling');
+        await applyEvent(deps, code, { type: 'settled', kind: 'release', txHash: `${i}f`.repeat(32) }, 'system');
+        total += extras[i]!;
+        expect(await recovered(lien)).toBe(total.toString());
+        expect(BigInt(await recovered(lien))).toBeLessThanOrEqual(owed);
+      }
+      expect((await deps.db.query('select status, repayment_code from liens where id = $1', [lien])).rows[0]).toEqual({ status: 'repaid', repayment_code: codes[2] });
+      // Once recorded the hold forgets the address (as the buyer side does).
+      for (const code of codes) expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'recovered' }]);
+    });
+
+    it('a lien smaller than one sale\'s extra: the sale funds exactly what is owed, and that sale repays it', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const owed = 123_456_789_012n; // 0.123456789012 XMR, under 50% of a 1 XMR sale
+      const lien = await lienOn(debtor, creditor, owed);
+      const code = await sellerPosts(debtor, await person());
+      expect(await sideHolds(code)).toEqual([{ lien, side: 'seller', amount: owed.toString(), status: 'open' }]);
+      expect((await tradeOf(code)).sellerFundsAtomic).toBe(escrowPlan({ amountAtomic: XMR, poster: 'seller' }).sellerFundsAtomic + owed);
+      await driveTo(deps, await tradeOf(code), 'settling');
+      await applyEvent(deps, code, { type: 'settled', kind: 'release', txHash: 'ee'.repeat(32) }, 'system');
+      expect(await recovered(lien)).toBe(owed.toString());
+      expect((await deps.db.query('select status from liens where id = $1', [lien])).rows[0]).toEqual({ status: 'repaid' });
+    });
+
     it('a ruling for the seller (a full reversal) releases the extra; one for the buyer records it', async () => {
       const debtor = await person();
       const creditor = await person();

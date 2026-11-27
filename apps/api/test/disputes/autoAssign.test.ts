@@ -372,3 +372,182 @@ describe('auto-assign: races and reassigning', () => {
     expect(c.rows.find((x) => x.code === code)).toMatchObject({ autoAssigned: false, mine: false });
   });
 });
+
+// Tests for PR #42 (added after the merge): how the timer spreads cases when several arrive together,
+// how the tie-break is ordered, and who is "on shift". The order the code uses
+// (autoAssign.ts onShiftCandidates): the fewest open assigned cases (status open, awaiting-approval
+// or appealed, latest round only), then the oldest `assigned_at` of any case ever assigned to them
+// (never assigned first), then the account id; cases are handed out oldest pool time first, then by
+// trade code, one transaction each, so every case sees the load the one before it left.
+describe('auto-assign: cases arriving together (PR #42 follow-up tests)', () => {
+  const assigneesOf = async (codes: string[]) => Promise.all(codes.map(async (c) => (await row(c)).assignee));
+
+  it('two cases due in the same pass go one to each of two idle moderators, never both to one', async () => {
+    const a = await onShift('mod');
+    const b = await onShift('mod');
+    const one = await openCase();
+    const two = await openCase();
+    setNow(at(15 * MIN));
+    await tick();
+    expect(new Set(await assigneesOf([one.code, two.code]))).toEqual(new Set([a.id, b.id]));
+    // Same pool time: the lower trade code goes first, to the lower id (both never assigned).
+    const [firstCode, secondCode] = [one.code, two.code].sort();
+    const [lo, hi] = [a.id, b.id].sort();
+    expect((await row(firstCode!)).assignee).toBe(lo);
+    expect((await row(secondCode!)).assignee).toBe(hi);
+    // Now one each, both assigned at the same instant: a full tie, the lower id gets the next one.
+    const three = await openCase(15 * MIN);
+    setNow(at(30 * MIN));
+    await tick();
+    expect((await row(three.code)).assignee).toBe(lo);
+  });
+
+  it('three cases and two idle moderators in one pass split 2 and 1, oldest case first', async () => {
+    const a = await onShift('mod');
+    const b = await onShift('mod');
+    const cases = [await openCase(), await openCase(MIN), await openCase(2 * MIN)];
+    setNow(at(17 * MIN));
+    await tick();
+    const got = await assigneesOf(cases.map((c) => c.code));
+    expect([a.id, b.id].map((id) => got.filter((x) => x === id).length).sort()).toEqual([1, 2]);
+    // The first two go one each; the third to whoever got the first (the less recently assigned).
+    expect(got[0]).not.toBe(got[1]);
+    expect(got[2]).toBe(got[0]);
+  });
+
+  it('two timer passes running at once (two API processes) still split two cases between two moderators', async () => {
+    const a = await onShift('mod');
+    const b = await onShift('mod');
+    const one = await openCase();
+    const two = await openCase();
+    setNow(at(15 * MIN));
+    await Promise.all([tick(), tick()]);
+    expect(new Set(await assigneesOf([one.code, two.code]))).toEqual(new Set([a.id, b.id]));
+    expect(await assignedLog(one.code)).toHaveLength(1);
+    expect(await assignedLog(two.code)).toHaveLength(1);
+  });
+
+  it('a busy moderator gets nothing while a less busy one is on shift, even with several cases due', async () => {
+    const busy = await onShift('mod');
+    const idle = await onShift('mod');
+    // `busy` already works two cases it took.
+    for (let i = 0; i < 2; i++) {
+      const c = await openCase();
+      expect((await busy.b.post(`/staff/v1/disputes/${c.code}/take`)).statusCode).toBe(200);
+    }
+    const one = await openCase();
+    const two = await openCase();
+    setNow(at(15 * MIN));
+    await tick();
+    // 2 vs 0: the idle one gets the first; 2 vs 1: and the second.
+    expect(await assigneesOf([one.code, two.code])).toEqual([idle.id, idle.id]);
+  });
+});
+
+describe('auto-assign: what counts as load and as the tie-break (PR #42 follow-up tests)', () => {
+  it('a closed case is not load, but it still counts as "last assigned": someone never assigned wins the tie', async () => {
+    const veteran = await onShift('mod');
+    const fresh = await onShift('mod');
+    const old = await openCase();
+    expect((await veteran.b.post(`/staff/v1/disputes/${old.code}/take`)).statusCode).toBe(200);
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [old.code, deps.clock()]);
+    const next = await openCase(MIN);
+    setNow(at(16 * MIN));
+    await tick();
+    expect((await row(next.code)).assignee).toBe(fresh.id);
+    // That one closes too: 0 open each; `veteran` was assigned longer ago, so it goes there.
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [next.code, deps.clock()]);
+    const third = await openCase(16 * MIN);
+    setNow(at(31 * MIN));
+    await tick();
+    expect((await row(third.code)).assignee).toBe(veteran.id);
+  });
+
+  it('an assigned case awaiting approval or appealed counts as load', async () => {
+    for (const status of ['awaiting-approval', 'appealed'] as const) {
+      const a = await onShift('mod');
+      const b = await onShift('mod');
+      // `lo` holds one case in this status; `hi` holds nothing, so it wins despite the higher id.
+      const [lo, hi] = [a, b].sort((x, y) => (x.id < y.id ? -1 : 1));
+      const held = await openCase();
+      expect((await lo!.b.post(`/staff/v1/disputes/${held.code}/take`)).statusCode).toBe(200);
+      await deps.db.query('update disputes set status = $2 where code = $1', [held.code, status]);
+      const next = await openCase(MIN);
+      setNow(at(16 * MIN));
+      await tick();
+      expect((await row(next.code)).assignee, status).toBe(hi!.id);
+      // A fresh day for the next status.
+      await deps.db.query(`update sessions set revoked_at = $1 where app = 'staff' and revoked_at is null`, [deps.clock()]);
+      await deps.db.query(`update disputes set paused_since = $1 where status <> 'closed' and paused_since is null`, [deps.clock()]);
+      base += 24 * H;
+      setNow(at(0));
+    }
+  });
+});
+
+describe('auto-assign: off shift is never assigned (PR #42 follow-up tests)', () => {
+  it('a moderator whose shift was clocked out while the session row is still live is off shift', async () => {
+    const { code } = await openCase();
+    const out = await onShift('mod');
+    await deps.db.query(`update staff_shifts set ended = 'clock-out', ended_at = $2 where session_id = $1`, [out.sessionId, deps.clock()]);
+    setNow(at(15 * MIN));
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+  });
+
+  it('a moderator signed in only to the trader app is off shift', async () => {
+    const { code } = await openCase();
+    const mod = (await seedStaff(deps, { role: 'mod' })).id;
+    await insertSession(deps, mod, 'trader');
+    setNow(at(15 * MIN));
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+  });
+
+  it('a moderator who clocks out between two passes gets nothing on the second; the new case stays in the pool', async () => {
+    const first = await openCase();
+    const mod = await onShift('mod');
+    setNow(at(15 * MIN));
+    await tick();
+    expect((await row(first.code)).assignee).toBe(mod.id);
+    await deps.db.query('update sessions set revoked_at = $2 where id = $1', [mod.sessionId, deps.clock()]);
+    const second = await openCase(15 * MIN);
+    setNow(at(H));
+    await tick();
+    expect((await row(second.code)).assignee).toBeNull();
+    // Their earlier case stays theirs (lead default).
+    expect((await row(first.code)).assignee).toBe(mod.id);
+  });
+
+  it('nobody on shift at all: several overdue cases all stay in the pool, nothing logged or pushed', async () => {
+    const cases = [await openCase(), await openCase(), await openCase()];
+    // A moderator exists but is not clocked in.
+    const idle = (await seedStaff(deps, { role: 'mod' })).id;
+    setNow(at(2 * H));
+    await tick();
+    for (const c of cases) {
+      expect((await row(c.code)).assignee).toBeNull();
+      expect(await assignedLog(c.code)).toEqual([]);
+    }
+    expect(await alertsOf(idle, 'dispute-auto-assigned')).toEqual([]);
+    expect(push.send.mock.calls.filter((c) => (c as unknown[])[0] === idle)).toEqual([]);
+  });
+
+  it("a moderator on shift who is the trade's seller is never assigned that trade's case", async () => {
+    const mod = await onShift('mod');
+    setNow(at(-2 * H));
+    const b = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: mod.id, buyerId: b.id, poster: 'seller' });
+    const t = await driveTo(deps, trade, 'paid');
+    setNow(at(0));
+    expect((await b.browser.post('/t/login', { accountId: b.id })).statusCode).toBe(200);
+    const res = await b.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' });
+    expect(res.statusCode, res.body).toBe(200);
+    setNow(at(15 * MIN));
+    await tick();
+    expect((await row(t.code)).assignee).toBeNull();
+    const other = await onShift('mod');
+    await tick();
+    expect((await row(t.code)).assignee).toBe(other.id);
+  });
+});

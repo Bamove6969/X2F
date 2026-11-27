@@ -613,6 +613,7 @@ describe('a site ban and the trade room\'s later routes (batch 10a, lead call 1)
     const offerChat = await insertChat({ offerId: await seedOffer(t.deps, id, 'seller'), buyerId: other, sellerId: id, tradeCode: null });
     const chatRoutes = (chat: string) => [
       ['GET', `/v1/chats/${chat}/key`, undefined],
+      ['GET', `/v1/chats/${chat}/lane`, undefined],
       ['POST', `/v1/chats/${chat}/key`, {}],
       ['POST', `/v1/chats/${chat}/grant`, {}],
     ] as const;

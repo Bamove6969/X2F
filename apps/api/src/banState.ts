@@ -168,7 +168,7 @@ const TRADE: readonly RegExp[] = [
   /^POST \/v1\/trades\/:code\/payment-proof$/,
 ];
 const CHAT: readonly RegExp[] = [
-  /^GET \/v1\/chats\/:chat(\/(attestation|envelopes|key))?$/,
+  /^GET \/v1\/chats\/:chat(\/(attestation|envelopes|key|lane))?$/,
   /^POST \/v1\/chats\/:chat\/(envelopes|identity|key|grant)$/,
 ];
 const NUDGE = 'POST /v1/nudges';
