@@ -629,6 +629,24 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
   });
 
+  it('fix-rate-spend: applying an older approval spends only that tap and older ones, keeping newer approvals unspent for subsequent trades', async () => {
+    const src = await sourceTrade();
+    const t50 = { rateBps: 5000, nonce: 'c1'.repeat(32) };
+    const t25 = { rateBps: 2500, nonce: 'c2'.repeat(32) };
+    const lienRates = { approvals: async () => [t50, t25] };
+
+    // In-flight trade reserved at 50% arrives after 25% was approved.
+    const a = await debtorTrade(rec(HALF), await sourceOf(src, { rateBps: 5000 }), creditorBuyer, { lienRates });
+    expect(a.signed).toBe(true);
+    await freeLienRecoveries(db, a.code);
+
+    // The newer 25% tap must not have been spent by trade a.
+    const QUARTER = 62_500_000_000n;
+    const b = await debtorTrade(rec(QUARTER), await sourceOf(src, { rateBps: 2500 }), creditorBuyer, { lienRates });
+    expect(b.signed).toBe(true);
+    expect(b.net.lienStatements[0]!.statement.rateBps).toBe(2500);
+  });
+
   it('pins the lien\'s parties on first sight: a later item naming another debtor or creditor for the same lien is refused', async () => {
     const src = await sourceTrade();
     const first = await debtorTrade(rec(FULL), await sourceOf(src, { lienId: LIEN }), creditorBuyer);
