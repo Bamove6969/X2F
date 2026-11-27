@@ -8,8 +8,9 @@
  * Two flows (design, tour-stops.md 12 Nov):
  * - `screens`: the page-by-page tours (staff, team member): "n of m" counts the stops of this page,
  *   Next becomes "Next screen" after a page's last stop, and "Finish" at the end.
- * - `story`: the trader's first-trade tour: "n of 19" counts the whole tour, Next never becomes
- *   "Next screen" (a stop on a new screen pushes it in), and the last stop reads "Done".
+ * - `story`: the trader's first-trade tour: "n of 19" counts the whole tour, Next becomes
+ *   "Next screen" after a page's last stop, and the last stop reads "Done" (owner note #47,
+ *   confirmed 26 Nov; this replaces tour-stops.md:91's "not used").
  *
  * Pure: the shell (TourProvider.tsx) owns the state, the navigation and the drawing.
  */
@@ -128,8 +129,7 @@ export const TOUR_LABELS = {
 /** The forward button's label at `pos`. */
 export function nextLabel(tour: TourDef, pos: TourPos): string {
   const next = nextPos(tour, pos);
-  if (tour.flow === 'story') return next === 'done' ? TOUR_LABELS.done : TOUR_LABELS.next;
-  if (next === 'done') return TOUR_LABELS.finish;
+  if (next === 'done') return tour.flow === 'story' ? TOUR_LABELS.done : TOUR_LABELS.finish;
   return next.page !== pos.page ? TOUR_LABELS.nextScreen : TOUR_LABELS.next;
 }
 

@@ -7,9 +7,14 @@
  * in the previous screen"; the links of note #42: FAQ, getting started, support, settings).
  *
  * Built to design's FirstScreen layout with the letter intro (wip/design-brief b3b8315b,
- * tour-motion.md §2), which the lead ruled replaces the owner's diagonal "Welcome to" (12 Nov): the
- * hero with the logo's letters springing in, "Welcome to X2F" and one line, Take the tour and Skip
- * and get started, the four links (only on screens 760+ tall), and the tab bar with no tab current.
+ * tour-motion.md §2) and the owner's diagonal "Welcome to" lead-in (12 Nov note #47): the hero with
+ * "Welcome to" stepping from the top-left down-right into the large centred logo's letters springing
+ * in, "Welcome to X2F" and one line, Take the tour and Skip and get started, the four links (visible
+ * across phone and shorter screens), and the tab bar with no tab current.
+ *
+ * The lead ruled (12 Nov) that the letter intro replaces the owner's diagonal "Welcome to", with the
+ * four links only on screens 760+ tall (tour-motion.md §2). Owner note #47, confirmed 26 Nov: both
+ * reversed to follow the note (docs/agy-owner-questions-landing.md, R1 and R3).
  *
  * `/welcome`, behind the front door. The first time a device opens `/sell` it comes here instead
  * (WelcomeGate); either choice marks it seen on this device (tour/welcomeSeen.ts). Settings keeps a
@@ -27,10 +32,13 @@ import { X2FMark } from './X2FMark.js';
 import './welcome.css';
 
 /**
- * COPY-UNSIGNED: design's line from the old intro scene 1 and her "Welcome to X2F"; the owner's two
- * choices ("tour", "skip and get started"); the four link names (his, note #42).
+ * COPY-UNSIGNED: the owner's diagonal "Welcome to" lead-in (note #47), design's line from the old
+ * intro scene 1 and her "Welcome to X2F"; the owner's two choices ("tour", "skip and get started");
+ * the four link names (his, note #42).
  */
 export const WELCOME_COPY = {
+  leadWelcome: 'Welcome',
+  leadTo: 'to',
   heading: 'Welcome to X2F',
   line: 'Swap Monero for cash, bank transfers or gift cards, person to person.',
   tour: 'Take the tour',
@@ -40,6 +48,9 @@ export const WELCOME_COPY = {
   links: HELP_LINKS,
   linksLabel: 'Help and settings',
 } as const;
+
+/** The heading's last word, the one shown; the words before it are the lead-in's. */
+const BRAND = 'X2F';
 
 export function WelcomeScreen() {
   const navigate = useNavigate();
@@ -54,10 +65,23 @@ export function WelcomeScreen() {
     <main className="x2f-hello" data-screen="welcome">
       <div className="x2f-hello__col">
         <figure className="x2f-hello__hero" data-part="welcome-hero">
+          <span className="x2f-hello__lead" data-part="welcome-lead" aria-hidden="true">
+            <span className="x2f-hello__lead-word" data-part="welcome-word-1">
+              {WELCOME_COPY.leadWelcome}
+            </span>{' '}
+            <span className="x2f-hello__lead-word" data-part="welcome-word-2">
+              {WELCOME_COPY.leadTo}
+            </span>
+          </span>
           <X2FMark />
         </figure>
         <div className="x2f-hello__text">
-          <h1 className="x2f-hello__h1">{WELCOME_COPY.heading}</h1>
+          {/* The lead-in above already shows "Welcome to" (owner note #47, confirmed 26 Nov): here it
+              stays for screen readers only, so the heading still reads "Welcome to X2F". */}
+          <h1 className="x2f-hello__h1">
+            <span className="x2f-sr-only">{WELCOME_COPY.heading.slice(0, -BRAND.length)}</span>
+            {BRAND}
+          </h1>
           <p className="x2f-hello__line">{WELCOME_COPY.line}</p>
         </div>
         <div className="x2f-hello__choices">
