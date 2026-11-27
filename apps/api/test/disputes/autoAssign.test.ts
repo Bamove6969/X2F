@@ -551,3 +551,49 @@ describe('auto-assign: off shift is never assigned (PR #42 follow-up tests)', ()
     expect((await row(t.code)).assignee).toBe(other.id);
   });
 });
+
+describe('auto-assign: round-2 escalation and settings bounds (#42)', () => {
+  it('a round-1 overdue alert does not suppress round-2 overdue alert when no eligible senior is on shift', async () => {
+    const { code, buyer } = await openCase();
+    const senior = (await seedStaff(deps, { role: 'senior' })).id;
+    // Round 1 goes past its 4h reply deadline with nobody on shift -> round-1 alert fires.
+    setNow(at(4 * H + MIN));
+    await tick();
+    expect((await row(code)).pool_alert_round).toBe(1);
+    expect((await alertsOf(ownerId, 'dispute-unassigned-overdue')).filter((d) => d.trade === code)).toEqual([{ trade: code, round: 1 }]);
+
+    // A moderator handles round 1 and publishes a ruling; buyer appeals.
+    const mod = await onShift('mod');
+    await publishRuling(deps, code, { outcome: 'release-to-buyer', staffId: mod.id });
+    await deps.db.query(`update sessions set revoked_at = $2 where id = $1`, [mod.sessionId, deps.clock()]);
+    setNow(at(5 * H));
+    const bb = new Browser(app);
+    expect((await bb.post('/t/login', { accountId: buyer })).statusCode).toBe(200);
+    expect((await bb.post(`/v1/trades/${code}/appeal`, { why: 'Need senior review.' })).statusCode).toBe(200);
+
+    // Round 2 goes past its reply deadline with no senior on shift -> round-2 alert fires once.
+    setNow(at(10 * H));
+    await tick();
+    await tick();
+    expect((await row(code)).pool_alert_round).toBe(2);
+    expect((await alertsOf(ownerId, 'dispute-unassigned-overdue')).filter((d) => d.trade === code)).toEqual([
+      { trade: code, round: 1 },
+      { trade: code, round: 2 },
+    ]);
+    expect((await alertsOf(senior, 'dispute-unassigned-overdue')).filter((d) => d.trade === code)).toEqual([
+      { trade: code, round: 1 },
+      { trade: code, round: 2 },
+    ]);
+  });
+
+  it('enforces owner-only access and exact 1..1440 minute boundaries on auto-assign settings', async () => {
+    const mod = await onShift('mod');
+    const senior = await onShift('senior');
+    const owner = await onShift('owner', ownerId);
+    expect((await mod.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 10 })).statusCode).toBe(403);
+    expect((await senior.b.send('PUT', '/staff/v1/settings', { autoAssignOn: false })).statusCode).toBe(403);
+    expect((await owner.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 1 })).statusCode).toBe(200);
+    expect((await owner.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 1440 })).statusCode).toBe(200);
+    expect((await owner.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 15.5 })).statusCode).toBe(400);
+  });
+});
