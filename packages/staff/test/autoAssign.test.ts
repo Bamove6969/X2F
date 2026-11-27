@@ -80,4 +80,20 @@ describe('autoAssignDispute', () => {
     expect(d.assignee).toBeNull();
     expect(d.seen).toEqual([]);
   });
+
+  test('refuses awaiting-approval, final, complying and closed statuses even with assignee cleared', () => {
+    const base = open();
+    for (const status of ['awaiting-approval', 'final', 'complying', 'closed'] as const) {
+      expect(mayAutoAssign({ ...base, status, assignee: null }, senior, at(2), S)).toBe(false);
+      expect(() => autoAssignDispute({ ...base, status, assignee: null }, senior, at(2), S)).toThrowError(expect.objectContaining({ code: 'wrong-state' }));
+    }
+  });
+
+  test('does not duplicate the assignee in seen when already recorded', () => {
+    const d = { ...open(), seen: [mod.id] };
+    const next = autoAssignDispute(d, mod, at(1), S);
+    expect(next.assignee).toBe(mod.id);
+    expect(next.seen).toEqual([mod.id]);
+  });
 });
+

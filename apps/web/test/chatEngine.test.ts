@@ -2305,14 +2305,22 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     expect(got).toHaveLength(1);
   });
 
-  it('never opens another lane: a v3 envelope for the seller is skipped', async () => {
-    await engine().sync(chat);
+  it('never opens another lane: a v3 envelope for the seller is skipped, and foreign chat.mode never toggles privateMode', async () => {
+    const e = engine();
+    await e.sync(chat);
     const parts = attest();
     api.view.disputeOpen = true;
     await lane(parts);
-    api.add('mod', await modPrivate('for the seller', 0, await newPrivateKey(), 'seller'), 'seller');
+    const sellerPk = await newPrivateKey();
+    api.add('mod', await modMode(true, 0, sellerPk, 'seller'), 'seller');
+    api.add('mod', await modPrivate('for the seller', 1, sellerPk, 'seller'), 'seller');
+    api.add('seller', await sealPrivate({ trade: channel, from: 'seller', to: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'seller private reply' }, pk: sellerPk, me: seller }), 'seller');
     await fromSeller('after', parts);
-    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
+    const snap = await e.sync(chat);
+    expect(snap.privateMode).toBe(false);
+    expect(snap.lines.map((l) => [l.text, l.mode ?? null])).toEqual([['after', null]]);
+    await e.send(chat, 'buyer shared');
+    expect((api.posted[0] as { v: number }).v).toBe(2);
   });
 
   it('a purge wipes the lane with the chat', async () => {
@@ -2327,3 +2335,4 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     expect(store.records.has(chat)).toBe(false);
   });
 });
+

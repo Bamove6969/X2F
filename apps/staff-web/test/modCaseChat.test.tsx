@@ -417,4 +417,28 @@ describe('ModCase: @mentions (owner 27 Nov follow-up)', () => {
     expect(part('chat-lines')!.querySelector('b')).toBeNull();
     expect(part('chat-lines')!.textContent).toContain('<b>bold</b>');
   });
+
+  it('highlights @mentions case-insensitively across shared and private lines, and preserves trailing text on mid-sentence insert', async () => {
+    const ta = await composer({
+      envelopes: async (w) => [
+        { id: '1', senderRole: 'buyer', envelope: await w.seal('buyer', 0, 'Paging @DMITRI_K and @NIGHTOWL_44'), at: 'a' },
+        { id: '2', senderRole: 'mod', envelope: await w.sealLane('mod', 'buyer', 0, 'Private note for @MIRA.K'), at: 'b', to: 'buyer' },
+      ],
+    });
+    const marks = [...part('chat-lines')!.querySelectorAll('[data-part="mention"]')].map((m) => m.textContent);
+    expect(marks).toEqual(['@DMITRI_K', '@NIGHTOWL_44', '@MIRA.K']);
+
+    // Mid-sentence insertion keeps the text after the caret.
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, 'Ask @mira soon');
+      ta.setSelectionRange(9, 9);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(options()).toEqual(['@mira.k']);
+    key(ta, 'Enter');
+    await settle();
+    expect(ta.value).toBe('Ask @mira.k  soon');
+    expect(picker()).toBeNull();
+  });
 });
+

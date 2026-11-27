@@ -929,4 +929,39 @@ describe('ChatPanel: @mentions (owner 27 Nov follow-up)', () => {
     expect(second!.querySelectorAll('[data-mention]')).toHaveLength(1);
     expect(withMentions('plain', ['Sam'])).toBe('plain');
   });
+
+  it('highlights @mentions inside private-mode lines and beside punctuation, leaving unknown names plain', async () => {
+    current = snap({
+      disputeOpen: true,
+      privateMode: true,
+      lines: [
+        { id: '1', from: 'mod', text: 'Hi @Sam, (@sarah.v) check @nobody.', at: null, mine: false, gapBefore: false, private: true },
+      ],
+    });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const row = host.querySelector('li.x2f-chat__line')!;
+    expect(row.hasAttribute('data-private')).toBe(true);
+    expect([...row.querySelectorAll('[data-mention]')].map((m) => m.textContent)).toEqual(['@Sam', '@sarah.v']);
+    expect(row.textContent).toContain('@nobody');
+  });
+
+  it('ArrowUp wraps to the last mention option and Enter inserts without losing trailing text', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const box = host.querySelector('textarea')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'please @ check');
+      box.setSelectionRange(8, 8);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(options(host).map((o) => o.textContent)).toEqual(['@sarah.v', '@Sam']);
+    key(box, 'ArrowUp');
+    expect(options(host)[1]!.getAttribute('aria-selected')).toBe('true');
+    key(box, 'Enter');
+    expect(box.value).toBe('please @Sam  check');
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+  });
 });
+
