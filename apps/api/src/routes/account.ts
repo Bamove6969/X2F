@@ -17,7 +17,6 @@ import type { PresetId, TeamRole } from '../team/abilities.js';
 import { endOnboarding, requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { revealDue } from '../auth/recovery.js';
-import { accountRating, type AccountRating } from '../auth/rating.js';
 import { requireLiveSessionInTx, withTx } from '../auth/liveSession.js';
 import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
@@ -63,13 +62,6 @@ export interface AccountOverview {
    * pays the 1% fee). For a team member, the type of the account they work for.
    */
   accountType: 'trader' | 'vendor';
-  /**
-   * Owner demo note #6 (16 Nov 2026): the trader account's rating by its login methods
-   * (auth/rating.ts `accountRating`; three levels, owner 17 Nov): `high` lets the trade screen add a
-   * payout address there and then; `medium` and `weak` add them in Settings. Null for a team member (their own
-   * login is always two factors; adding wallets is the account owner's) and for staff and owner accounts.
-   */
-  securityRating: AccountRating | null;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
@@ -310,7 +302,6 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
       (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     setupOnly: req.auth.setupOnly,
     accountType: row.account_type,
-    securityRating: member === null && row.kind === 'trader' ? accountRating(counts) : null,
     recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId),
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).

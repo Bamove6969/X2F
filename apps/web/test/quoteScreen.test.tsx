@@ -1275,7 +1275,8 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
   });
 
   async function addOnQuote(answered: string, listed: string) {
-    session.me = { securityRating: 'high' };
+    // Owner 27 Nov 2026: no security rating; the account's owner always gets the inline add.
+    session.me = {};
     stub.addWallet = () => {
       stub.wallets = [...WALLETS, added(listed)];
       return { status: 201, json: added(answered) };
@@ -1290,6 +1291,13 @@ describe('a new address added on the quote (owner note #6; the API never swaps a
     await settle();
     return r;
   }
+
+  it('a team member gets no inline add (wallets are the lead\'s), only the link to Your wallets', async () => {
+    session.me = { member: { name: 'Ana' } };
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(host.querySelector('[data-part="add-new-address"]')).toBeNull();
+    expect(host.querySelector('a.x2f-quote__add')).not.toBeNull();
+  });
 
   it('the address typed is the one picked, shown and recorded as the device\'s own', async () => {
     const { host } = await addOnQuote(TYPED, TYPED);

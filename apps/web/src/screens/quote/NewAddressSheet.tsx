@@ -12,11 +12,11 @@ import { walletNameHelp } from '../walletsCopy.js';
 import { recordTypedAddress } from '../walletRecord.js';
 import { DEFAULT_NEW_NAME, NEW_ADDRESS as C } from './addressCopy.js';
 
-// Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): a highly secure account (owner 17 Nov) adds a payout address
+// Owner demo note #6 (16 Nov 2026; docs/trade-wallet-note6.md): the account's owner adds a payout address
 // right on the quote, named, for this trade only or for future trades too. It is the same add as
 // Settings → Your wallets (`POST /v1/wallets`, one confirm-it's-you bound to the exact address, R17),
 // so the API alone decides what happens (owner, 26 Nov 2026: every confirm uses a key, so it is usable
-// at once and picked for this trade; a wait the API reports is still shown). The quote offers this sheet to a highly secure account alone; the API never trusts that.
+// at once and picked for this trade; a wait the API reports is still shown). The quote offers this sheet to the account's owner (never a team member); the API never trusts that.
 // The device never trusts the API's echo either: the wallet handed back must carry the exact address
 // typed here, else nothing is picked (lead, 17 Nov: the API never swaps an address the device did not show).
 

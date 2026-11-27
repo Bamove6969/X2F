@@ -1,10 +1,8 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router';
-import type { SecurityRating } from '@x2f/auth-client';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { APP_LABELS, takeableWallets, type WalletApp } from '../wallets-model.js';
 import { ONE_TIME_TAG } from '../walletsCopy.js';
-import { ADDRESS_TIP, DEFAULT_TAG, NEW_ADDRESS, addressRuleText } from './addressCopy.js';
+import { DEFAULT_TAG, NEW_ADDRESS, addressRuleText } from './addressCopy.js';
 import type { PickWallet } from './api.js';
 import './quote.css';
 
@@ -15,63 +13,12 @@ import './quote.css';
 // which asks the person to confirm it's them (X-4), and comes back here.
 // The app names and the usable filter come from the wallets screen's model (Task 29), so the
 // picker and Your wallets name and filter wallets the same way.
-// Owner demo note #6 (16 Nov 2026): the owner's question (`question`) and the rule for this account's
-// rating (`rating`, from the API's GET /v1/account/me) sit under the legend. A highly secure account (owner 17 Nov) gets
-// "Add a new address" on the quote itself (`onAddNew`, the new-address sheet); any other account keeps
-// the link to Settings → Your wallets. A one-time wallet says so.
-// Owner, 17 Nov 2026: the rating has three levels and only `high` gets the inline add; `weak` and
-// `medium` get a "?" (AddressTip) that explains why and links to the two ways forward. The default
+// Owner demo note #6 (16 Nov 2026): the owner's question (`question`) and the rule for adding a
+// new address sit under the legend. The account's owner gets "Add a new address" on the quote itself
+// (`onAddNew`, the new-address sheet); a team member keeps the link to Settings → Your wallets.
+// Owner, 27 Nov 2026: there is no security rating any more (every trader account holds two kinds of
+// login method, one a key), so no "?" tip and no rated words. A one-time wallet says so. The default
 // wallet (the API's `isDefault`) is marked; the quote picks it first.
-
-/**
- * The "?" for weak and medium accounts: a real button (tap, click, Enter or Space; never hover-only)
- * that shows and hides the explanation below it (aria-expanded, aria-controls). Escape closes it and
- * gives focus back to the "?".
- */
-function AddressTip({ rating, settingsHref }: { rating: 'weak' | 'medium'; settingsHref: string }) {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  const button = useRef<HTMLButtonElement>(null);
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || !open) return;
-    e.stopPropagation();
-    setOpen(false);
-    button.current?.focus();
-  };
-  return (
-    <span className="x2f-quote__tip" onKeyDown={onKey}>
-      <button
-        ref={button}
-        type="button"
-        className="x2f-quote__tip-button"
-        data-part="address-tip"
-        aria-label={ADDRESS_TIP.label}
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span aria-hidden="true">?</span>
-      </button>
-      {open ? (
-        <span id={panelId} className="x2f-quote__tip-panel" data-part="address-tip-panel">
-          <span>{ADDRESS_TIP.body(rating)}</span>
-          <span>
-            {ADDRESS_TIP.settings}{' '}
-            <Link to={settingsHref} className="x2f-link">
-              {ADDRESS_TIP.settingsLink}
-            </Link>
-          </span>
-          <span>
-            {ADDRESS_TIP.stronger}{' '}
-            <Link to="/settings/security" className="x2f-link">
-              {ADDRESS_TIP.strongerLink}
-            </Link>
-          </span>
-        </span>
-      ) : null}
-    </span>
-  );
-}
 
 /** The app's name for an app code from the API, or undefined for a code this build does not know. */
 function appLabel(app: string): string | undefined {
@@ -90,7 +37,6 @@ export function WalletPicker({
   onPick,
   addHref,
   question,
-  rating,
   onAddNew,
 }: {
   legend: string;
@@ -101,9 +47,7 @@ export function WalletPicker({
   addHref: string;
   /** Owner note #6: the question above the list (COPY-UNSIGNED, addressCopy.ts). */
   question?: string;
-  /** Owner note #6: the account's rating from the API; null when not known (an older API build). */
-  rating?: SecurityRating | null;
-  /** Owner note #6: opens the new-address sheet; given for a highly secure account only (owner 17 Nov). */
+  /** Owner note #6: opens the new-address sheet; given to the account's owner, never a team member. */
   onAddNew?: () => void;
 }) {
   const usable = takeableWallets(wallets);
@@ -114,8 +58,7 @@ export function WalletPicker({
       {question !== undefined ? (
         <div className="x2f-quote__address-rule" data-part="address-rule">
           <span className="x2f-quote__address-question">{question}</span>
-          <span className="x2f-quote__muted-sm">{addressRuleText(rating ?? null)}</span>
-          {rating === 'weak' || rating === 'medium' ? <AddressTip rating={rating} settingsHref={addHref} /> : null}
+          <span className="x2f-quote__muted-sm">{addressRuleText(onAddNew !== undefined)}</span>
         </div>
       ) : null}
       {usable.map((w) => {

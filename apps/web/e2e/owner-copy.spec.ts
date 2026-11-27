@@ -45,15 +45,16 @@ test('/setup/welcome: the lead line, three ticked items with the methods best to
     'Your account is ready. Buy and sell Monero using cash, bank transfers, gift cards, or any payment method you prefer, with every trade protected by 2-of-3 escrow.',
     'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
   ]);
-  // Owner #168: every login method, set up or not, a big check or cross each, then the level reached
-  // (no password since passwords were removed).
+  // Owner #168: every login method, set up or not, a big check or cross each (no password since
+  // passwords were removed; no level line since owner 27 Nov 2026).
   await expect(screen.locator('#welcome-logins-title')).toHaveText('Secure X2F login methods');
   await expect(screen.locator('[data-part="method-row"] .x2f-welcome__row-name')).toHaveText(['PGP key', 'Security key', 'Passkey', 'Authenticator app', 'Recovery code']);
   await expect(screen.locator('[data-part="method-state"]')).toHaveText(['Not set up', 'Set up', 'Not set up', 'Set up', 'Set up']);
   await expect(screen.locator('[data-part="mark-set"]')).toHaveCount(3);
   await expect(screen.locator('[data-part="mark-unset"]')).toHaveCount(2);
   expect((await screen.locator('[data-part="mark-set"]').first().boundingBox())!.width).toBeGreaterThanOrEqual(28);
-  await expect(screen.locator('.x2f-welcome__rating-line')).toHaveText('You have achieved level: Highly secure');
+  await expect(screen.locator('[data-part="security-rating"]')).toHaveCount(0);
+  await expect(screen).not.toContainText(/achieved level|Highly secure/);
   await expect(screen.locator('[data-part="check-wallet"] [data-part="check-title"]')).toHaveText('Payout wallet:');
   // Owner demo note #226: the wallet's own name first, then its app.
   await expect(screen.locator('[data-part="summary-wallet"]')).toHaveText('Wallet 1 · Cake Wallet …k3Fz');

@@ -463,18 +463,11 @@ const ENTRIES: readonly Entry[] = [
     sources: [`${WEB}/quote/addressCopy.ts:16 buy: 'If you buy with X2F`, `${WEB}/quote/addressCopy.ts:18 sell: 'If this trade is cancelled`],
   },
   {
-    id: 'security-rating',
-    topic: 'escrow',
-    q: 'What is my account\'s security rating?',
-    a: 'It is high when your account has a PGP key, a passkey or a security key, which every trader account has, and weak otherwise. The rating decides whether you can add a new payout address while you start a trade.',
-    sources: [`${AUTH}/rating.ts:22 return 'high'`, `${AUTH}/rating.ts:23 return 'weak'`, `${WEB}/quote/addressCopy.ts:26-36 addressRuleText`],
-  },
-  {
     id: 'new-address-in-trade',
     topic: 'escrow',
     q: 'Can I add a new payout address while I start a trade?',
-    a: 'Yes, if your account is rated high: the new address can be for this trade only or saved for future trades. Other accounts add new addresses in Settings, under Your wallets.',
-    sources: [`${WEB}/quote/addressCopy.ts:28 Your account is rated highly secure`, `${WEB}/quote/addressCopy.ts:31 New addresses are added in Settings, under Your wallets.`],
+    a: 'Yes: the new address can be for this trade only or saved for future trades. A team member adds no addresses; the account\'s owner adds them.', // COPY-UNSIGNED
+    sources: [`${WEB}/quote/addressCopy.ts:27 add a new one right here for the trade you are starting`, `${WEB}/quote/addressCopy.ts:27 can be for this trade only or saved for future trades`, `${WEB}/quote/Quote.tsx:185 session.me.member == null`],
   },
   {
     id: 'wallet-wait',

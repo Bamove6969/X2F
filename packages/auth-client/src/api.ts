@@ -177,18 +177,7 @@ export interface AccountOverview {
    * send it (read it with `isVendor`).
    */
   accountType?: AccountType;
-  /**
-   * Owner demo note #6 (16 Nov 2026) and his answers of 17 Nov: the trader account's rating by its
-   * login methods, decided by the API alone (apps/api/src/auth/rating.ts). `high` (a passkey, security
-   * key or PGP key) may add a payout address on the trade screen; `weak` (no key) adds them in
-   * Settings; `medium` is no longer given (it was a password with the authenticator app). Null for
-   * team members, staff and owner. Optional: older API builds do not send it (read it as not high).
-   */
-  securityRating?: SecurityRating | null;
 }
-
-/** Owner demo note #6: an account's rating by the login methods it holds. */
-export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /** The Away switch (owner, 26 Nov 2026): on since `since` (ISO), or off with `since` null. */
 export interface AwayState {

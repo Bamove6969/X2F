@@ -34,8 +34,8 @@ interface Stub {
    * is the market rate now (margin 0), else 409 price-changed.
    */
   take?: (body: TakeBody) => { status: number; json: unknown };
-  /** Owner demo note #6: the account's rating on GET /v1/account/me (absent: an older API build). */
-  securityRating?: 'weak' | 'medium' | 'high';
+  /** GET /v1/account/me for a team member (owner 27 Nov 2026: no rating; only a member gets no inline add). */
+  member?: boolean;
   /** Review B1: what GET /v1/account/liens/preview answers (the buyer's lien recovery); '0' by default. */
   lienRecovery?: string;
 }
@@ -60,7 +60,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
   await page.route('**/v1/account/me', (r) =>
     s.signedIn
-      ? r.fulfill({ json: { tradeTag: 'viewer_1', ...INSIDE, methods: ['pgp'], ...(s.securityRating ? { securityRating: s.securityRating } : {}) } })
+      ? r.fulfill({ json: { tradeTag: 'viewer_1', ...INSIDE, methods: ['pgp'], ...(s.member ? { member: { name: 'Ana' } } : {}) } })
       : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
@@ -119,7 +119,10 @@ const card = (page: Page) => page.locator('section[aria-label="What you get"]');
 
 test.describe('BuyQuote', () => {
   test('matches the BuyQuote board', async ({ page }) => {
-    await stubApi(page, base);
+    // The board draws "Add another wallet" (the link to Your wallets). Since owner 27 Nov 2026 (no
+    // security rating) the account's owner gets "Add a new address" in its place (the payout-address
+    // tests below), so the board is matched as a team member, who keeps the link.
+    await stubApi(page, { ...base, member: true });
     await page.goto(`${BUY}&amount=${B.amount}`);
     await page.getByRole('radio', { name: /Cake Wallet/ }).check();
     await expect(card(page)).toContainText('1.250000 XMR');
@@ -363,11 +366,12 @@ test.describe('BuyQuote', () => {
 test.describe('the payout address for this trade (owner demo note #6)', () => {
   const rule = (page: Page) => page.locator('[data-part="address-rule"]');
 
-  test('a highly secure account adds a named address for this trade only, right on the quote, and the take pays to it', async ({ page }) => {
-    const seen = await stubApi(page, { ...base, securityRating: 'high' });
+  test('the account adds a named address for this trade only, right on the quote, and the take pays to it (owner 27 Nov 2026: no rating)', async ({ page }) => {
+    const seen = await stubApi(page, base);
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(rule(page)).toContainText('If you buy with X2F, which wallet address should the XMR be sent to?');
-    await expect(rule(page)).toContainText('Your account is rated highly secure');
+    await expect(rule(page)).toContainText('add a new one right here for the trade you are starting');
+    await expect(rule(page)).not.toContainText(/rated|highly secure|security rating/i);
     await expect(page.locator('[data-part="address-tip"]')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Add a new address' }).click();
@@ -389,7 +393,7 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
   // an address added on the quote works at once. The sheet says so from the wallets rule, and an
   // address kept for future trades is picked for this one straight away.
   test('a new address kept for future trades works at once: the sheet says a key confirm makes it work now, and it is picked for this trade', async ({ page }) => {
-    const seen = await stubApi(page, { ...base, securityRating: 'high' });
+    const seen = await stubApi(page, base);
     await page.goto(`${BUY}&amount=${B.amount}`);
     await page.getByRole('button', { name: 'Add a new address' }).click();
     const sheet = page.getByRole('dialog', { name: 'Add a new address' });
@@ -409,27 +413,19 @@ test.describe('the payout address for this trade (owner demo note #6)', () => {
     expect(seen.takes.map((t) => t.walletId)).toEqual(['w-inline']);
   });
 
-  test('a medium account gets no inline add; the "?" opens why, by keyboard too, with the two ways forward (owner, 17 Nov)', async ({ page }) => {
-    await stubApi(page, { ...base, securityRating: 'medium' });
+  test('a team member gets no inline add and no "?" tip; new addresses are added in Settings (owner 27 Nov 2026)', async ({ page }) => {
+    await stubApi(page, { ...base, member: true });
     await page.goto(`${BUY}&amount=${B.amount}`);
-    await expect(rule(page)).toContainText('rated medium');
+    await expect(rule(page)).toContainText('New addresses are added in Settings, under Your wallets.');
+    await expect(rule(page)).not.toContainText(/rated|highly secure|security rating/i);
     await expect(page.getByRole('button', { name: 'Add a new address', exact: true })).toHaveCount(0);
-    const tip = page.getByRole('button', { name: 'Why is there no option to add a new address here?' });
-    await tip.focus();
-    await page.keyboard.press('Enter');
-    await expect(tip).toHaveAttribute('aria-expanded', 'true');
-    const panel = page.locator('[data-part="address-tip-panel"]');
-    await expect(panel).toContainText('security rating');
-    await expect(panel.getByRole('link', { name: /Your wallets/ })).toHaveAttribute('href', /^\/wallets\?add=1/);
-    await expect(panel.getByRole('link', { name: /login method/ })).toHaveAttribute('href', '/settings/security');
-    await page.keyboard.press('Escape');
-    await expect(tip).toHaveAttribute('aria-expanded', 'false');
-    await expect(tip).toBeFocused();
+    await expect(page.locator('[data-part="address-tip"]')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Add another wallet' })).toHaveAttribute('href', /^\/wallets\?add=1/);
   });
 
   test('the default wallet is picked first, and another can be picked instead (owner, 17 Nov)', async ({ page }) => {
     const wallets = B.wallets.map((w) => ({ ...w, isDefault: w.id === 'w-ledger' }));
-    const seen = await stubApi(page, { ...base, wallets, securityRating: 'weak' });
+    const seen = await stubApi(page, { ...base, wallets });
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(page.getByRole('radio', { name: /Ledger/ })).toBeChecked();
     await expect(page.locator('.x2f-quote__wallet', { hasText: 'Ledger' })).toContainText('Default');
@@ -581,7 +577,8 @@ for (const viewport of PHONE_VIEWPORTS) {
     });
 
     test('BuyQuote: parity and phone layout', async ({ page }) => {
-      await stubApi(page, base);
+      // As a team member, who keeps the board's "Add another wallet" (see "matches the BuyQuote board").
+      await stubApi(page, { ...base, member: true });
       await page.goto(`${BUY}&amount=${B.amount}`);
       await page.getByRole('radio', { name: /Cake Wallet/ }).check();
       await expect(card(page)).toContainText('1.250000 XMR');

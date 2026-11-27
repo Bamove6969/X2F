@@ -34,7 +34,8 @@ describe('/setup/welcome (owner, 12 Nov)', () => {
     expect(WELCOME_COPY.leadMore).toBe('Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.');
     // Owner demo note #168 (23 Nov): the 12 Nov checklist became every login method under one heading.
     expect(WELCOME_COPY.loginsTitle).toBe('Secure X2F login methods');
-    expect(WELCOME_COPY.verdict).toBe('You have achieved level:');
+    // Owner 27 Nov 2026: no level line (no low, medium and high security any more).
+    expect(WELCOME_COPY).not.toHaveProperty('verdict');
     expect(WELCOME_COPY.walletItem).toBe('Payout wallet:');
     expect(WELCOME_COPY.changeLater).toBe('Any information provided above can be changed later in Settings.');
     expect(WELCOME_COPY.nextLogin).toBe("Next, you'll log in for the first time and try the security methods you set up, which will welcome you to the X2F experience.");

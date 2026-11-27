@@ -179,9 +179,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const { signedIn, state, take } = useTake(offerId, onTakeRefused);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { tradeTag?: string }).tradeTag ?? null) : null;
-  // Owner demo note #6: the API's rating of the account (null when an older API sends none). Only a
-  // highly secure account (owner 17 Nov) is offered the new-address sheet; the API decides what an add does either way.
-  const rating = session.status === 'signed-in' ? (session.me.securityRating ?? null) : null;
+  // Owner demo note #6, and owner 27 Nov 2026 (no security rating: every trader account holds two
+  // kinds of login method, one a key): the account's owner is offered the new-address sheet; a team
+  // member (wallets are the lead's) is not. The API decides what an add does either way.
+  const canAddAddress = session.status === 'signed-in' && session.me.member == null;
   const [addingAddress, setAddingAddress] = useState(false);
   const [walletsTick, setWalletsTick] = useState(0);
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
@@ -507,8 +508,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             }}
             addHref={addWalletHref(false)}
             question={copy.adSide === 'sell' ? PAYOUT_QUESTION.buy : PAYOUT_QUESTION.sell}
-            rating={rating}
-            {...(rating === 'high' ? { onAddNew: () => setAddingAddress(true) } : {})}
+            {...(canAddAddress ? { onAddNew: () => setAddingAddress(true) } : {})}
           />
         ) : null}
         {addressSwapped ? (
@@ -516,7 +516,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             {NEW_ADDRESS.mismatch}
           </p>
         ) : null}
-        {addingAddress && rating === 'high' ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
+        {addingAddress && canAddAddress ? <NewAddressSheet onClose={() => setAddingAddress(false)} onDone={onNewAddress} /> : null}
         {signedIn === false ? (
           // Design review 8 Nov item 4: the wallet group is on the board before login too. There
           // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.

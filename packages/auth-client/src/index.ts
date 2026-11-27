@@ -52,7 +52,6 @@ export {
   type WalletApp,
   type WalletDraft,
   type WalletRule,
-  type SecurityRating,
   type WebAuthnKind,
 } from './api.js';
 export {

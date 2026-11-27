@@ -113,9 +113,11 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     // The authenticator app is there with its explanation.
     expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/6-digit code/);
     expect(METHODS.find((m) => m.id === 'totp')!.strength).toBe('medium');
-    // Owner, 26 Nov 2026: it counts as one of the two; 27 Nov: it logs in with the username, but never confirms.
+    // Owner, 26 Nov 2026: it counts as one of the two; 27 Nov: it logs in with the username, but never
+    // confirms, and no "Security Level" sentence (no low, medium and high security any more).
+    expect(host.querySelector('[data-method="totp"] [data-part="method-more"]')!.textContent).not.toMatch(/Security Level/i);
     expect(host.querySelector('[data-method="totp"] [data-part="method-more"]')!.textContent).toBe(
-      "Security Level: Medium. It counts as one of your two ways in, and with your username it logs you in, but it can't confirm changes or unlock your trade keys, so tick a PGP key, security key or passkey with it. You can add one authenticator app.",
+      "It counts as one of your two ways in, and with your username it logs you in, but it can't confirm changes or unlock your trade keys, so tick a PGP key, security key or passkey with it. You can add one authenticator app.",
     );
   });
 

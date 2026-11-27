@@ -12,9 +12,10 @@
  * (backup, first wallet) still runs in the sign-up session and its 30-minute window. Someone
  * already logged in, who opened setup only to add a wallet, stays logged in.
  *
- * Owner demo note 16 Nov #97: the screen also says what the account's security rating is, always
- * lists the username with the login methods, and
- * each checklist item links back to the setting where it can be changed or made more secure.
+ * Owner demo note 16 Nov #97: the screen always lists the username with the login methods, and
+ * each checklist item links back to the setting where it can be changed or made more secure. Owner,
+ * 27 Nov 2026: no security level any more (every trader account holds two kinds of login method,
+ * one a key), so the screen names no level.
  */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -39,13 +40,12 @@ export const WELCOME_COPY = {
   leadMore: 'Don’t see your preferred payment method? Send us feedback with as many details as you can (or a link with more info) so we can get it added quickly.',
   /**
    * Owner demo note #168 (23 Nov): every login method X2F offers under one bold, underlined heading,
-   * each with a big green check or red cross, ending in the level reached (the #167 rating line).
+   * each with a big green check or red cross (owner 27 Nov 2026: no level line any more).
    * COPY-UNSIGNED
    */
   loginsTitle: 'Secure X2F login methods',
   methodSet: 'Set up',
   methodNotSet: 'Not set up',
-  verdict: 'You have achieved level:',
   recoveryCode: 'Recovery code',
   walletItem: 'Payout wallet:',
   /** Under the checklist, in a bigger font (owner). */
@@ -57,9 +57,6 @@ export const WELCOME_COPY = {
   done: 'Done',
   /** Review 12 Nov, C1: what a screen reader hears for an item not done yet. */
   notDone: 'Not done yet',
-  /** Owner #97: how to make it more secure, for an account not yet highly secure. COPY-UNSIGNED */
-  ratingRaise: 'Add a passkey, a security key or a PGP key to make it highly secure.',
-  ratingLink: 'Make it more secure',
   /** Owner #97: the username is always a bullet point. COPY-UNSIGNED */
   username: 'Username',
   /** Owner #97: the link back to each setting. COPY-UNSIGNED */
@@ -67,16 +64,8 @@ export const WELCOME_COPY = {
   add: 'Add',
 } as const;
 
-/** The rating's words (the same levels as the trade screen's, owner 17 Nov). COPY-UNSIGNED */
-export const RATING_WORDS: Record<SecurityRating, string> = {
-  high: 'Highly secure',
-  medium: 'Medium',
-  weak: 'Weak',
-};
-
 /** Where each checklist item is changed later (owner #97). */
 export const WELCOME_LINKS = {
-  rating: '/settings/security',
   login: '/settings/security',
   recovery: '/settings/security',
   wallet: '/wallets',
@@ -86,8 +75,6 @@ export const WELCOME_LINKS = {
 export function walletAddPath(returnTo: string): string {
   return `/wallets?add=1&returnTo=${encodeURIComponent(returnTo)}`;
 }
-
-export type SecurityRating = 'weak' | 'medium' | 'high';
 
 /**
  * The login methods, best to worst (lead default, owner may reorder): a security key and a passkey
@@ -143,21 +130,6 @@ function methodsNow(me: Pick<Me, 'methods'>, flow: Pick<SetupState, 'registered'
   if (flow.registered) have.add(flow.method);
   if (flow.backup === 'security-key' || flow.backup === 'pgp') have.add(flow.backup);
   return have;
-}
-
-/**
- * The account's security rating (owner #97). The API's own rating wins when it sends one (GET
- * /v1/account/me `securityRating`, apps/api/src/auth/rating.ts on main); an API build without it
- * gets the same three rules applied to the methods here, for display only (it authorises nothing):
- * high with a PGP key, a passkey or a security key; weak otherwise (medium is never given since
- * owner 26 Nov 2026: it was a password with an authenticator app).
- */
-export function securityRating(me: Pick<Me, 'methods'> & { securityRating?: SecurityRating | null }, flow: Pick<SetupState, 'registered' | 'method' | 'backup'>): SecurityRating {
-  const sent = me.securityRating;
-  if (sent === 'high' || sent === 'medium' || sent === 'weak') return sent;
-  const have = methodsNow(me, flow);
-  if (have.has('pgp') || have.has('passkey') || have.has('security-key')) return 'high';
-  return 'weak';
 }
 
 export interface Checklist {
@@ -324,7 +296,6 @@ export function Welcome() {
 
   const name = tradeTagOf(me) || state.tradeTag;
   const c = checklist(me, wallets, state);
-  const rating = securityRating(me, state);
   const rows = methodRows(me, state);
 
   return (
@@ -349,7 +320,7 @@ export function Welcome() {
           <p className="x2f-start__lead">{WELCOME_COPY.leadMore}</p>
         </section>
         {/* Owner demo note #168 (23 Nov): every login method X2F offers, a big green check or red
-            cross each, ending in the level reached (#167: big, coloured by level). DESIGNER-REVIEW */}
+            cross each (owner 27 Nov 2026: no level line after them). DESIGNER-REVIEW */}
         <section className="x2f-welcome__logins" aria-labelledby="welcome-logins-title">
           <h2 className="x2f-welcome__logins-title" id="welcome-logins-title">
             {WELCOME_COPY.loginsTitle}
@@ -368,19 +339,6 @@ export function Welcome() {
               </li>
             ))}
           </ul>
-          <div className="x2f-welcome__rating" data-part="security-rating" data-rating={rating}>
-            <p className="x2f-welcome__rating-line" id="welcome-rating-title">
-              {WELCOME_COPY.verdict} <span data-part="rating-word">{RATING_WORDS[rating]}</span>
-            </p>
-            {rating !== 'high' ? (
-              <p className="x2f-welcome__rating-raise">
-                {WELCOME_COPY.ratingRaise}{' '}
-                <LeaveLink target={WELCOME_LINKS.rating} leave={leave} part="rating-link" disabled={leaving}>
-                  {WELCOME_COPY.ratingLink}
-                </LeaveLink>
-              </p>
-            ) : null}
-          </div>
         </section>
         <ul className="x2f-welcome__checks" aria-label="Your payout wallet">
           <li className="x2f-welcome__check" data-part="check-wallet">

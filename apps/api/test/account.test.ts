@@ -106,7 +106,6 @@ interface Me {
   suggestions: string[];
   session: { lengthHours: number | null; choices: number[]; expiresAt: string; canExtend: boolean; serverNow: string } | null;
   termsCurrent: boolean;
-  securityRating: 'weak' | 'high' | null;
 }
 
 async function me(b: Browser): Promise<Me> {
@@ -213,29 +212,15 @@ describe('GET /v1/account/me', () => {
       session: { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
       idleReminderMinutes: null,
       accountType: 'trader',
-      securityRating: 'high',
     });
+    // Owner 27 Nov 2026: no security rating any more (every trader account holds two kinds, one a key).
+    expect(res.json()).not.toHaveProperty('securityRating');
     await addTotp(id);
     const after = await me(b);
     expect(after.suggestions).toEqual([]);
     expect(after.hasBackup).toBe(true);
     expect(after.methods).toEqual(['passkey', 'totp']);
     expect((after as unknown as { setupOnly: boolean }).setupOnly).toBe(false);
-  });
-
-  it('rates the account weak or high by its login methods (owner demo note #6; no passwords since 26 Nov)', async () => {
-    const { id } = await account('trader', false);
-    const b = await loggedIn(id);
-    expect((await me(b)).securityRating).toBe('weak');
-    // A recovery code is a backup way in, not one of the other ways (docs/trade-wallet-note6.md Q6).
-    await addRecoveryCodes(id, 1);
-    await addTotp(id);
-    expect((await me(b)).securityRating).toBe('weak');
-    // A PGP key, passkey or security key: high.
-    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
-      id, randomBytes(20).toString('hex'), randomBytes(64), now,
-    ]);
-    expect((await me(b)).securityRating).toBe('high');
   });
 
   it('lists methods in a fixed order; spent recovery codes are not a method', async () => {
