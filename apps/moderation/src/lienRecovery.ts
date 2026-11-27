@@ -306,7 +306,8 @@ async function checkSide(w: LienWork, side: 'buyer' | 'seller', d: LienCheckDeps
   const current = pinned?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
   let spends: string[] = [];
   if (rateBps !== current) {
-    if (rateTaps.some((t) => t.rateBps === rateBps)) spends = rateTaps.map((t) => t.nonce);
+    const last = rateTaps.map((t) => t.rateBps).lastIndexOf(rateBps);
+    if (last !== -1) spends = rateTaps.slice(0, last + 1).map((t) => t.nonce);
     else if (!(await justReplaced(d, lienId, rateBps))) throw new LienRefused('rate-unverified');
   }
   return {
