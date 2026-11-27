@@ -376,7 +376,17 @@ describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', 
     const opened = (await deps.db.query<{ detail: string; trade_code: string | null }>(`select detail, trade_code from activity_log where action = 'lien.rate-review-opened'`)).rows
       .filter((e) => (JSON.parse(e.detail) as { requestId: string }).requestId === req.id);
     expect(opened.map((e) => e.trade_code)).toEqual([r.code]);
-    // Review item 4: while the dispute is open, the senior must have read its chat since the request.
+    // Review item 4: while the dispute is open and has a keyed chat, the senior must have read its chat since the request.
+    await deps.db.query(
+      `insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at)
+       select $1, offer_id, buyer_account_id, seller_account_id, code, $2 from trades where code = $3`,
+      [r.code, deps.clock(), r.code],
+    );
+    await deps.db.query(
+      `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at)
+       values ($1, repeat('a', 64), 'buyer', 'AAAA', 'AAAA', repeat('b', 128), $2)`,
+      [r.code, deps.clock()],
+    );
     expect(errorOf(await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('review-chat-first');
     // A chat read before the request does not count.
     await logAs(senior.id, r.code, new Date(deps.clock().getTime() - DAY));
@@ -385,6 +395,19 @@ describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', 
     await logAs((await staff('senior')).id, r.code, deps.clock());
     expect(errorOf(await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('review-chat-first');
     await logAs(senior.id, r.code, deps.clock());
+    const ok = await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {});
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await lienOf(r.code)).recovery_rate_bps).toBe(2500);
+  });
+
+  it('an open dispute with no keyed chat lets a senior approve a pending lower share without requiring chat.read (fix-rate-chatread)', async () => {
+    const r = await ruled({ mode: 'collect', rateBps: 2500, rateReason: LIEN_RATE_REASON_PREFILL });
+    const senior = await staff('senior');
+    const l = await lienOf(r.code);
+    const req = (await deps.db.query<{ id: string }>(
+      `select id::text from lien_rate_requests where lien_id = $1 and status = 'pending'`,
+      [l.id],
+    )).rows[0]!;
     const ok = await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {});
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(2500);

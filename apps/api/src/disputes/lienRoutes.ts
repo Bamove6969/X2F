@@ -192,15 +192,17 @@ export function lienRoutes(app: FastifyInstance): void {
     return withTx(db, async (c) => {
       const now = clock();
       const { lienId, r } = await pendingFor(c, req);
-      const lien = (await c.query<{ status: string; from_code: string; open: boolean }>(
-        `select l.status, l.from_code, exists (select 1 from disputes d where d.code = l.from_code and d.seq = l.dispute_seq and d.status <> 'closed') as open
+      const lien = (await c.query<{ status: string; from_code: string; open: boolean; keyed: boolean }>(
+        `select l.status, l.from_code,
+                exists (select 1 from disputes d where d.code = l.from_code and d.seq = l.dispute_seq and d.status <> 'closed') as open,
+                exists (select 1 from chat_keys k join chats c on c.code = k.chat where c.trade_code = l.from_code) as keyed
            from liens l where l.id = $1`,
         [lienId],
       )).rows[0]!;
       if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
-      // Review item 4: while the dispute is open, the decider has read its chat (the case's logged
-      // chat read) since the request was made. A closed dispute's chat is shut (OWNER p12-1).
-      if (lien.open) {
+      // Review item 4: while the dispute is open and has a keyed chat, the decider has read its chat
+      // (the case's logged chat read) since the request was made. A closed dispute's chat is shut (OWNER p12-1).
+      if (lien.open && lien.keyed) {
         const read = await c.query(
           `select 1 from activity_log where action = 'chat.read' and actor_id = $1 and trade_code = $2 and at >= $3 limit 1`,
           [me.id, lien.from_code, r.proposed_at],
