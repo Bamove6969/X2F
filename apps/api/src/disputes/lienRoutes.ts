@@ -48,7 +48,7 @@ interface RequestRow {
   reason: string;
   proposed_by: string;
   proposed_at: Date;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
   decided_by: string | null;
   decided_at: Date | null;
 }
@@ -135,9 +135,16 @@ export function lienRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     const requestId = await withTx(db, async (c) => {
       const now = clock();
-      const lien = (await c.query<{ status: string }>('select status from liens where id = $1 for update', [id])).rows[0];
+      const lien = (await c.query<{ status: string; waiting: boolean; off: boolean }>(
+        `select status, (grace_until is not null and collect_started_at is null) as waiting, repaid_off_platform_at is not null as off
+           from liens where id = $1 for update`,
+        [id],
+      )).rows[0];
       if (!lien) throw new ApiError(404, 'not-found');
-      if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      if ((lien.status !== 'active' && lien.status !== 'suspended') || lien.off) throw new ApiError(409, 'wrong-state');
+      // Review item 5: in its 7 days to pay the agreed way nothing is collected; the share is set with
+      // the switch to collecting (its tap names it), so no request waits on a lien that collects nothing.
+      if (lien.waiting) throw new ApiError(409, 'lien-in-grace');
       const pending = await c.query(`select 1 from lien_rate_requests where lien_id = $1 and status = 'pending'`, [id]);
       if ((pending.rowCount ?? 0) > 0) throw new ApiError(409, 'request-pending');
       const r = await c.query<{ id: string }>(

@@ -80,3 +80,30 @@ grant select (id, lien_id, proposed_bps, proposed_by, status, decided_by, decide
 -- count as told.
 alter table lien_rate_requests add column deciders_pushed_at timestamptz;
 update lien_rate_requests set deciders_pushed_at = proposed_at where status = 'pending';
+
+-- Review of feat/lien-grace item 7: a pending rate request dies with its lien. When a lien ends
+-- (repaid, void, uncollectible) or is paid off the platform, its pending request becomes `expired`
+-- (decided by nobody) and the deciders' `lien-rate-requested` alerts for it are marked seen. A
+-- trigger, so every way a lien ends is covered (disputes/lien.ts, recovery.ts, lienGrace.ts).
+alter table lien_rate_requests drop constraint lien_rate_requests_status_check;
+alter table lien_rate_requests add constraint lien_rate_requests_status_check check (status in ('pending', 'approved', 'rejected', 'expired'));
+alter table lien_rate_requests drop constraint lien_rate_requests_check;
+alter table lien_rate_requests add constraint lien_rate_requests_check check ((status in ('pending', 'expired')) = (decided_by is null));
+
+create function liens_expire_rate_requests() returns trigger
+  language plpgsql
+  set search_path = pg_catalog
+as $$
+declare
+  at timestamptz := coalesce(new.lifted_at, new.repaid_off_platform_at, new.changed_at, now());
+begin
+  update public.lien_rate_requests set status = 'expired', decided_at = at where lien_id = new.id and status = 'pending';
+  update public.alerts set seen_at = at
+   where kind = 'lien-rate-requested' and seen_at is null and detail ->> 'lienId' = new.id::text;
+  return null;
+end
+$$;
+create trigger liens_expire_rate_requests after update of status, repaid_off_platform_at on liens for each row
+  when ((new.status in ('repaid', 'void', 'uncollectible') and old.status in ('active', 'suspended'))
+     or (new.repaid_off_platform_at is not null and old.repaid_off_platform_at is null))
+  execute function liens_expire_rate_requests();

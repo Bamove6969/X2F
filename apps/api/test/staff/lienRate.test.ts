@@ -188,3 +188,32 @@ describe('review of feat/lien-grace item 4: opening a request to review it', () 
     expect((await deps.db.query(`select 1 from activity_log where action = 'lien.rate-review-opened' and actor_id = $1`, [modId])).rowCount).toBe(0);
   });
 });
+
+describe('review of feat/lien-grace items 5 and 7', () => {
+  it('a lien in its 7 days to pay the agreed way takes no rate request (409 lien-in-grace); after the switch it does', async () => {
+    const l = await lien();
+    await deps.db.query(`update liens set grace_method = 'PayPal again', grace_until = $2 where id = $1`, [l.id, new Date(T0.getTime() + 7 * 86_400_000)]);
+    expect(errorOf(await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'A quarter' }))).toBe('lien-in-grace');
+    await deps.db.query('update liens set collect_started_at = $2 where id = $1', [l.id, T0]);
+    expect((await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'A quarter' })).statusCode).toBe(201);
+  });
+
+  it('a pending request expires when its lien ends, and the deciders\' alerts for it are marked seen', async () => {
+    for (const end of [
+      `update liens set status = 'void', changed_at = $2, lifted_at = $2 where id = $1`,
+      `update liens set status = 'repaid', changed_at = $2, lifted_at = $2 where id = $1`,
+      `update liens set repaid_off_platform_at = $2 where id = $1`,
+    ]) {
+      const l = await lien();
+      const req = ((await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'A quarter' })).json() as { id: string }).id;
+      expect((await deps.db.query(`select 1 from alerts where kind = 'lien-rate-requested' and detail->>'requestId' = $1 and seen_at is null`, [req])).rowCount).toBeGreaterThan(0);
+      await deps.db.query(end, [l.id, T0]);
+      const r = (await deps.db.query<{ status: string; decided_by: string | null; decided_at: Date | null }>('select status, decided_by::text, decided_at from lien_rate_requests where id = $1', [req])).rows[0]!;
+      expect(r).toMatchObject({ status: 'expired', decided_by: null });
+      expect(r.decided_at).not.toBeNull();
+      expect((await deps.db.query(`select 1 from alerts where kind = 'lien-rate-requested' and detail->>'requestId' = $1 and seen_at is null`, [req])).rowCount).toBe(0);
+      // Nothing left to decide.
+      expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, {}))).toBe('wrong-state');
+    }
+  });
+});
