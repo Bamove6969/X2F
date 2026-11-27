@@ -1223,3 +1223,53 @@
   background: var(--x2f-private-bg);
   border: 1px solid var(--x2f-private);
 }
+
+/* Owner 27 Nov (follow-up): a private mode switch is a system line, not a message. DESIGNER-REVIEW */
+.x2f-staff-chat__system {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--x2f-space-1);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--x2f-private);
+}
+
+/* Owner 27 Nov (follow-up): @mentions, the picker under the composer and a mention in a line. DESIGNER-REVIEW */
+.x2f-staff-mentions {
+  position: relative;
+}
+
+.x2f-staff-mentions__list {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  top: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: var(--x2f-space-1) 0 0;
+  padding: var(--x2f-space-1) 0;
+  list-style: none;
+  background: var(--x2f-surface-raised);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-staff-mentions__option {
+  padding: var(--x2f-space-2) var(--x2f-space-3);
+  cursor: pointer;
+  color: var(--x2f-ink);
+  overflow-wrap: anywhere;
+}
+
+.x2f-staff-mentions__option--active {
+  background: var(--x2f-surface);
+  box-shadow: inset 3px 0 0 var(--x2f-mod);
+}
+
+.x2f-staff-mention {
+  background: none;
+  color: var(--x2f-mod);
+  font-weight: 600;
+}

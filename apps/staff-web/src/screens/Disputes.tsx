@@ -22,7 +22,7 @@ export function Disputes() {
       <Route path="limits" element={<LimitRecommendations role={who.role} />} />
       {/* Plan 5 Task 19: review disputes (perm reputation.review), under Disputes (lead default, DESIGNER-REVIEW). */}
       <Route path="reviews" element={<ReviewDisputes />} />
-      <Route path=":code" element={<ModCase role={who.role} />} />
+      <Route path=":code" element={<ModCase role={who.role} me={who.displayName} />} />
     </Routes>
   );
 }

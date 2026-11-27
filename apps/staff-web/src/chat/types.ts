@@ -39,7 +39,30 @@ export interface CaseChatAnswer {
   olderNotShown?: boolean;
 }
 
-export interface CaseChatLine {
+/**
+ * The lane control message's type (owner 27 Nov follow-up): `{type: 'chat.mode', payload: {on}}`,
+ * sealed by the moderator in a lane whenever "Talking to" changes. Written here so the page imports
+ * no crypto package.
+ */
+export const CHAT_MODE_TYPE = 'chat.mode';
+
+/** Owner 27 Nov (follow-up): the moderator turned private mode on or off in lane `to` (a system line, not a message). */
+export interface CaseChatModeLine {
+  kind: 'mode';
+  id: string;
+  from: 'mod';
+  to: Lane;
+  on: boolean;
+  at: string;
+  missingBefore: number;
+  text?: undefined;
+}
+
+export type CaseChatLine = CaseChatTextLine | CaseChatModeLine;
+
+/** A message line. */
+export interface CaseChatTextLine {
+  kind?: 'text';
   id: string;
   from: 'buyer' | 'seller' | 'mod';
   text: string;

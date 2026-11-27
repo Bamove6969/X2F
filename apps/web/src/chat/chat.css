@@ -299,35 +299,68 @@
   border-color: var(--x2f-private);
 }
 
-.x2f-chat__composer > .x2f-chat__private,
-.x2f-chat__sendto {
+.x2f-chat__composer > .x2f-chat__private {
   grid-column: 1 / -1;
 }
 
-.x2f-chat__sendto {
+/*
+ * Owner 27 Nov (follow-up): the moderator switched private mode on or off. A system line in the
+ * private colour, not a bubble.
+ */
+.x2f-chat__mode {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--x2f-space-2);
-  margin: 0;
-  padding: 0;
-  border: 0;
+  align-items: flex-start;
+  padding: var(--x2f-space-2) var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-private-bg);
+  color: var(--x2f-private);
 }
 
-.x2f-chat__sendto-option {
-  display: inline-flex;
-  gap: var(--x2f-space-2);
+.x2f-chat__mode .x2f-chat__private-icon {
+  margin-top: 0.2em;
+}
+
+/* @mentions: a known name in a line, and the picker the composer opens on "@". */
+.x2f-chat__mention {
+  font-weight: 600;
+  color: var(--x2f-mod);
+}
+
+/* The box and its @mention picker (which opens above it). */
+.x2f-chat__field {
+  position: relative;
+  min-width: 0;
+}
+
+.x2f-chat__mentions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 2;
+  min-width: min(100%, 16rem);
+  max-width: 100%;
+  margin: 0 0 var(--x2f-space-1);
+  padding: var(--x2f-space-1);
+  list-style: none;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-chat__mention-option {
+  display: flex;
   align-items: center;
   min-height: 44px;
   padding: 0 var(--x2f-space-3);
-  border: 1px solid var(--x2f-line);
+  border: 2px solid transparent;
   border-radius: var(--x2f-radius-sm);
-  background: var(--x2f-surface-raised);
-  color: var(--x2f-ink);
-  font-family: var(--x2f-label-family);
-  font-size: var(--x2f-label-size);
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-/* Selected: the 2px ink border on surface-raised (selection is never a colour). */
-.x2f-chat__sendto-option:has(input:checked) {
-  border: 2px solid var(--x2f-ink);
+/* The active option: the 2px ink border (selection is never a colour). */
+.x2f-chat__mention-option[aria-selected='true'] {
+  border-color: var(--x2f-ink);
 }

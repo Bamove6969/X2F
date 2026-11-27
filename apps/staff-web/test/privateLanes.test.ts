@@ -2,10 +2,10 @@
 // reader and the chat key worker: every lane key is opened with this device's key and pinned by its
 // pkh; v3 envelopes open under their lane's key with that lane's own replay guard and gap count; a
 // private message is sealed as v3 under the lane key with the lane countersign.
-import { newPrivateKey, openPrivate, ReplayGuard, signPrivateEnvelope, verifyModCountersign, verifyModPrivateCountersign, wrapPrivateKey } from '@x2f/protocol';
+import { newPrivateKey, openPrivate, ReplayGuard, sealChat, signPrivateEnvelope, verifyModCountersign, verifyModPrivateCountersign, wrapPrivateKey } from '@x2f/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ChatKeyError } from '../src/chat/types.js';
-import { CaseChatError, forget, openCaseChat, sealModMessage } from '../src/keys/reader.js';
+import { CaseChatError, forget, openCaseChat, sealModeMessage, sealModMessage } from '../src/keys/reader.js';
 import { memory, MOD_PUB, workerPair, world } from './chatWorld.js';
 
 let MOD = '';
@@ -112,5 +112,65 @@ describe('sealModMessage and the worker: a private message', () => {
     expect(JSON.stringify([v, p])).not.toContain(Buffer.from(w.pk.buyer).toString('hex'));
     keeper.forgetAll();
     expect(keeper.size).toBe(0);
+  });
+});
+
+describe('the lane mode (owner 27 Nov follow-up): `chat.mode` in a lane', () => {
+  it('opens a moderator `chat.mode` in a lane as a line of kind mode; anywhere else, or not exactly {on}, is counted, never shown', async () => {
+    const w = await world();
+    w.answer.envelopes = [
+      { id: '1', senderRole: 'mod', envelope: await w.sealMode('seller', 0, true), at: 'a', to: 'seller' },
+      { id: '2', senderRole: 'mod', envelope: await w.sealLane('mod', 'seller', 1, 'Only you.'), at: 'b', to: 'seller' },
+      { id: '3', senderRole: 'mod', envelope: await w.sealMode('seller', 2, false), at: 'c', to: 'seller' },
+      // A trader cannot switch the mode, nor is a payload other than exactly {on: boolean} a mode.
+      { id: '4', senderRole: 'seller', envelope: await w.sealMode('seller', 0, true, { from: 'seller' }), at: 'd', to: 'seller' },
+      { id: '5', senderRole: 'mod', envelope: await w.sealMode('buyer', 0, true, { payload: { on: 'yes' } }), at: 'e', to: 'buyer' },
+      { id: '6', senderRole: 'mod', envelope: await w.sealMode('buyer', 1, true, { payload: { on: true, text: 'x' } }), at: 'f', to: 'buyer' },
+      // In the shared chat (under TK) it is no mode.
+      { id: '7', senderRole: 'mod', envelope: await sealChat({ trade: w.channel, from: 'mod', seq: 0, type: 'chat.mode', payload: { on: true }, tk: w.tk, me: w.ids.mod }), at: 'g', to: null },
+    ];
+    const o = await openCaseChat(w.answer, w.device, MOD);
+    expect(o.lines).toEqual([
+      { kind: 'mode', id: '1', from: 'mod', to: 'seller', on: true, at: 'a', missingBefore: 0 },
+      { id: '2', from: 'mod', text: 'Only you.', at: 'b', missingBefore: 0, to: 'seller' },
+      { kind: 'mode', id: '3', from: 'mod', to: 'seller', on: false, at: 'c', missingBefore: 0 },
+    ]);
+    expect(o.unreadable).toBe(4);
+  });
+
+  it('sealModeMessage seals v3 {type: chat.mode, payload: {on}} in that lane only, with a lane countersign that verifies', async () => {
+    const w = await world();
+    const o = await openCaseChat(w.answer, w.device, MOD);
+    for (const on of [true, false]) {
+      const m = await sealModeMessage(o, 'buyer', on, w.device, new Date(NOW), 3);
+      expect({ to: m.to, seq: m.seq }).toEqual({ to: 'buyer', seq: 3 });
+      const body = { v: 3 as const, trade: w.channel, from: 'mod' as const, to: 'buyer' as const, seq: 3, nonce: m.nonce, ct: m.ct };
+      const cs = { chat: w.channel, to: 'buyer', seq: 3, nonce: m.nonce, ctSha256: m.ctSha256, requestId: m.requestId, issuedAt: m.issuedAt, sig: m.sig };
+      await expect(verifyModPrivateCountersign(cs, { body, signPublic: w.device.signPublic })).resolves.toBeDefined();
+      await expect(verifyModPrivateCountersign({ ...cs, to: 'seller' }, { body: { ...body, to: 'seller' }, signPublic: w.device.signPublic })).rejects.toThrow();
+      const env = await signPrivateEnvelope(body, w.ids.mod);
+      const opened = await openPrivate(env, { pk: w.pk.buyer, trade: w.channel, to: 'buyer', participants: w.participants, guard: new ReplayGuard(w.channel) });
+      expect({ type: opened.type, payload: opened.payload, from: opened.from }).toEqual({ type: 'chat.mode', payload: { on }, from: 'mod' });
+      await expect(openPrivate({ ...env, to: 'seller' }, { pk: w.pk.seller, trade: w.channel, to: 'seller', participants: w.participants, guard: new ReplayGuard(w.channel) })).rejects.toThrow();
+    }
+    await expect(sealModeMessage(o, 'buyer', 'yes' as never, w.device, new Date(NOW), 0)).rejects.toEqual(new CaseChatError('unreadable'));
+    forget(o);
+    await expect(sealModeMessage(o, 'buyer', true, w.device, new Date(NOW), 0)).rejects.toEqual(new CaseChatError('security'));
+  });
+
+  it('through the worker: sealMode crosses the boundary and refuses a bad lane, on, clock or handle', async () => {
+    const backend = memory();
+    const w = await world({ backend });
+    const { keys, keeper } = await workerPair({ backend, now: () => NOW });
+    const v = await keys.open(w.answer);
+    const m = await keys.sealMode(v.handle, 'seller', true, new Date(NOW), 0);
+    expect({ to: m.to, seq: m.seq }).toEqual({ to: 'seller', seq: 0 });
+    expect((await keys.sealMode(v.handle, 'seller', false, new Date(NOW), 1)).seq).toBe(1);
+    await expect(keys.sealMode(v.handle, 'mod' as never, true, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('unreadable'));
+    await expect(keys.sealMode(v.handle, 'buyer', 1 as never, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('unreadable'));
+    await expect(keys.sealMode(v.handle, 'buyer', true, new Date(NOW + 3_600_000), 0)).rejects.toEqual(new ChatKeyError('unreadable'));
+    await expect(keys.sealMode('0'.repeat(32), 'buyer', true, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('gone'));
+    expect(JSON.stringify(m)).not.toContain(Buffer.from(w.pk.seller).toString('hex'));
+    keeper.forgetAll();
   });
 });
