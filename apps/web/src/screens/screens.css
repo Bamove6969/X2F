@@ -277,6 +277,17 @@ textarea.x2f-textarea--tall {
   border-bottom: 1px solid var(--x2f-surface-raised);
 }
 
+/* A row that carries an open/close section (Team: a member's signed-in sessions) wraps it onto its
+   own full-width line, so the row never runs past the side at phone width. */
+.x2f-list__row:has(> .x2f-disclosure) {
+  flex-wrap: wrap;
+}
+
+.x2f-list__row > .x2f-disclosure {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
 /* The Jabber section's rows on Alerts (address, events) are links: 44 px tap targets (phone rule). */
 [data-part='jabber-alerts'] a.x2f-list__row {
   box-sizing: border-box;
