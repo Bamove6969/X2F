@@ -80,3 +80,26 @@ chat's moderator identity). The API never holds TK or PK.
 
 Colour: a violet private token (`--private` / `--private-bg`), day and night, distinct from teal
 (secured), amber (securing) and red (danger).
+
+## Owner 27 Nov (follow-up): the moderator switches private mode on and off; @mentions
+
+Replaces D2. Decided: D1 = the other trader sees nothing.
+
+- **Only the moderator starts private mode.** Choosing "Talking to <trader>" turns private mode ON with
+  that trader; choosing "Talking to both" (or the other trader) turns it OFF. The trader has no toggle:
+  while it is on, everything the trader sends goes into their lane (v3) automatically; when it is off,
+  back to the shared chat.
+- **The mode travels inside the lane, signed by the moderator**, so the API cannot fake or flip it: the
+  staff device seals a lane message `{type: 'chat.mode', payload: {on: true|false}}` (v3, from 'mod',
+  lane countersign as any lane message) whenever the dropdown changes (on to the newly chosen lane, off
+  to the lane left). A trader's mode = the latest `chat.mode` from the moderator in its own lane
+  (default off). If the API withholds one, the worst case is a stale mode, never a message the trader
+  sent privately reaching the other trader.
+- Rendering: a mode message is a system line, not a bubble. Trader: "The moderator started a private
+  conversation with you. Only you and the moderator see these messages." / "The moderator ended the
+  private conversation. Messages are seen by both traders again." Staff (audit): "Private mode on with
+  <username>" / "Private mode off with <username>". While on, the trader's composer is tinted with the
+  private marker and its placeholder says "Private message to the moderator".
+- **@mentions, everyone, every chat in a dispute:** typing `@` opens a picker with the moderator's
+  name and both trader usernames (filtered as you type; keyboard and tap). Choosing inserts
+  `@username `. In rendered lines, `@<known name>` is highlighted. Plain text only; nothing else changes.
