@@ -476,7 +476,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await client.query('begin');
       // Stamped with this service's clock (review lead-mod-purge m3): the trade shred's `young` compares it with the same clock.
       await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, a.attestation, a.sig, now()]);
-      for (const recovery of recoveries) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
+      const ordered = [...recoveries].sort((x, y) => {
+        const kx = `${x.source}:${x.creditor}`;
+        const ky = `${y.source}:${y.creditor}`;
+        return kx < ky ? -1 : kx > ky ? 1 : 0;
+      });
+      for (const recovery of ordered) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');

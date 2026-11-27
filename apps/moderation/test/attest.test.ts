@@ -37,7 +37,7 @@ import {
   type ModerationHandle,
   type WorkItem,
 } from '../src/main.js';
-import { freeLienRecoveries } from '../src/lienRecovery.js';
+import { checkLienRecoveries, freeLienRecoveries, LienRefused, recordLienRecovery } from '../src/lienRecovery.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -683,6 +683,69 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect(c.signed).toBe(true);
     expect(c.net.lienStatements[0]!.statement.rateBps).toBe(2500);
     expect(await spentNonces(lien2)).toEqual([e1.nonce, e2.nonce, e3.nonce]);
+  });
+
+  it('fix-lien-recovery-race: concurrent trades passing checkLienRecoveries before commit cannot overwrite a newer pinned rate with an older one', async () => {
+    const src = await sourceTrade();
+    const SIXTY = 150_000_000_000n;
+    const QUARTER = 62_500_000_000n;
+    const t60 = { rateBps: 6000, nonce: 'f1'.repeat(32) };
+    const t25 = { rateBps: 2500, nonce: 'f2'.repeat(32) };
+    const deps = {
+      enabled: true,
+      db,
+      feeWallet: '5'.repeat(95),
+      payrollWallet: '6'.repeat(95),
+      rulings: creditorBuyer,
+      rates: { approvals: async () => [t60, t25] },
+    };
+
+    const code60 = newTradeCode();
+    const code25 = newTradeCode();
+    const work60 = {
+      trade: code60,
+      terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: SIXTY.toString() } },
+      lienSource: await sourceOf(src, { rateBps: 6000 }),
+    };
+    const work25 = {
+      trade: code25,
+      terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: QUARTER.toString() } },
+      lienSource: await sourceOf(src, { rateBps: 2500 }),
+    };
+
+    // Both trades pass checkLienRecoveries before either enters the DB transaction.
+    const [rec60] = await checkLienRecoveries(work60, deps);
+    const [rec25] = await checkLienRecoveries(work25, deps);
+    expect(rec60).toBeDefined();
+    expect(rec25).toBeDefined();
+
+    const commitInTx = async (code: string, recovery: NonNullable<typeof rec25>) => {
+      const client = await db.connect();
+      try {
+        await client.query('begin');
+        await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, {}, 'sig', NOW]);
+        await recordLienRecovery(client, code, recovery, { signingSecret: modSign.secret, now: NOW });
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+
+    // The 25% trade commits first, pinning 2500 and spending both [t60, t25].
+    await commitInTx(code25, rec25!);
+
+    // The stale 60% trade now enters recordLienRecovery: must be refused and rolled back.
+    const err = await commitInTx(code60, rec60!).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LienRefused);
+    expect(err).toMatchObject({ reason: 'rate-unverified', message: 'lien-refused-rate-unverified' });
+
+    // mod_liens must stay pinned at 2500, and code60 must have no signed_terms or recovery row.
+    expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
+    expect((await db.query('select 1 from signed_terms where trade = $1', [code60])).rows).toEqual([]);
+    expect((await db.query('select trade from mod_lien_recoveries where lien_id = $1', [LIEN])).rows).toEqual([{ trade: code25 }]);
   });
 
   it('pins the lien\'s parties on first sight: a later item naming another debtor or creditor for the same lien is refused', async () => {
