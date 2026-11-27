@@ -1,4 +1,4 @@
-import { autoAssignDispute, can, DisputeRuleError, type Dispute, type Perm, type StaffRole } from '@x2f/staff';
+import { autoAssignDispute, can, DisputeRuleError, inWindow, validateHours, type Dispute, type Perm, type StaffRole } from '@x2f/staff';
 import type pg from 'pg';
 import { addAlert, addOwnerAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
@@ -79,14 +79,23 @@ export interface AutoAssignCandidate {
   lastAssignedAt: Date | null;
 }
 
+/** Fail-closed login-hours check (matches staff/guard.ts): valid hours containing `now` only. */
+function inLoginHours(raw: unknown, now: Date): boolean {
+  try {
+    return inWindow(validateHours(raw), now);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The staff on shift at `now` who could take a case, least busy first (then least recently
  * assigned, never assigned first, then id); `exclude` are the trade's parties. The machine's rules
  * for one case are applied by the caller.
  */
 export async function onShiftCandidates(q: Queryable, now: Date, exclude: readonly string[] = []): Promise<AutoAssignCandidate[]> {
-  const { rows } = await q.query<{ id: string; role: StaffRole; grants: Perm[]; load: number; last_at: Date | null }>(
-    `select m.account_id::text as id, m.role, m.grants::text[] as grants,
+  const { rows } = await q.query<{ id: string; role: StaffRole; grants: Perm[]; hours: unknown; load: number; last_at: Date | null }>(
+    `select m.account_id::text as id, m.role, m.grants::text[] as grants, m.hours,
             (select count(*)::int from disputes x
               where x.assignee = m.account_id and x.status = any($2::text[])
                 and x.seq = (select max(y.seq) from disputes y where y.code = x.code)) as load,
@@ -97,7 +106,7 @@ export async function onShiftCandidates(q: Queryable, now: Date, exclude: readon
     [now, LOAD_STATUSES, exclude, AUTO_ASSIGN_ROLES],
   );
   return rows
-    .filter((r) => can(r.role, 'disputes.handle', r.grants))
+    .filter((r) => can(r.role, 'disputes.handle', r.grants) && inLoginHours(r.hours, now))
     .map((r) => ({ id: r.id, role: r.role, grants: r.grants, load: r.load, lastAssignedAt: r.last_at }));
 }
 
@@ -131,15 +140,15 @@ async function assignOne(client: pg.PoolClient, d: Dispute, at: Date, got: (id: 
       continue;
     }
     const fresh = (
-      await client.query<{ role: StaffRole; grants: Perm[] }>(
-        `select m.role, m.grants::text[] as grants
+      await client.query<{ role: StaffRole; grants: Perm[]; hours: unknown }>(
+        `select m.role, m.grants::text[] as grants, m.hours
            from staff_members m join accounts a on a.id = m.account_id
           where m.account_id = $2 and ${ON_SHIFT_SQL} and m.role = any($3::text[])
             for share of m`,
         [at, c.id, AUTO_ASSIGN_ROLES],
       )
     ).rows[0];
-    if (fresh === undefined || !can(fresh.role, 'disputes.handle', fresh.grants)) continue;
+    if (fresh === undefined || !can(fresh.role, 'disputes.handle', fresh.grants) || !inLoginHours(fresh.hours, at)) continue;
     try {
       const updated = { ...c, role: fresh.role, grants: fresh.grants };
       next = autoAssignDispute(d, updated, at, s);
