@@ -147,8 +147,8 @@ export interface CheckedRecovery {
   debtor: string;
   creditorAccount: string;
   rateBps: number;
-  /** The nonces of the verified rate taps this recovery spends (applied: never again a reason for a rate change). */
-  rateTaps: string[];
+  /** Gate-verified rate approvals for this lien (oldest-first), re-checked against `mod_lien_rate_taps` under the lock. */
+  rateApprovals: ReadonlyArray<{ rateBps: number; nonce: string }>;
 }
 
 export interface LienCheckDeps {
@@ -302,19 +302,16 @@ async function checkSide(w: LienWork, side: 'buyer' | 'seller', d: LienCheckDeps
   if (sides === null) throw new LienRefused('no-authority');
   if (!sides.includes(creditor)) throw new LienRefused('not-creditor');
   // Rule 5 (Q1): the rate this service last applied (the default until then), or a change a
-  // senior's key tap approved that it has not applied yet (verified by its gate). Applying one spends
-  // that approval and the older ones, and leaves newer ones pending.
-  const rateTaps = await newRateTaps(d, lienId);
+  // senior's key tap or tapless approved request authorized that has not been applied yet (verified
+  // by its gate). Applying one spends that approval and the older ones, and leaves newer ones
+  // pending. Re-checked under the lock in `recordLienRecovery` so concurrent trades cannot pin a
+  // stale rate.
+  const rateApprovals = await validRateApprovals(d, lienId);
   const current = pinned?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
-  let spends: string[] = [];
-  if (rateBps !== current) {
-    const last = rateTaps.map((t) => t.rateBps).lastIndexOf(rateBps);
-    if (last !== -1) spends = rateTaps.slice(0, last + 1).map((t) => t.nonce);
-    else if (!(await justReplaced(d, lienId, rateBps))) throw new LienRefused('rate-unverified');
-  }
+  await resolveRateSpends(d.db, lienId, current, rateBps, rateApprovals);
   return {
     side, source: fromCode, creditor, amountAtomic: amount, owedAtomic: facts.recorded.amountAtomic, proceedsAtomic: proceeds,
-    lienId, debtor, creditorAccount, rateBps, rateTaps: spends,
+    lienId, debtor, creditorAccount, rateBps, rateApprovals,
   };
 }
 
@@ -326,8 +323,8 @@ async function checkSide(w: LienWork, side: 'buyer' | 'seller', d: LienCheckDeps
 export const LIEN_RATE_GRACE_HOURS = 24;
 
 /** Whether `rateBps` is the rate the lien's last applied change replaced, less than LIEN_RATE_GRACE_HOURS ago (this service's clock). */
-async function justReplaced(d: LienCheckDeps, lienId: string, rateBps: number): Promise<boolean> {
-  const { rows } = await d.db.query<{ from_rate_bps: number; recent: boolean }>(
+async function justReplaced(db: Pick<pg.Pool, 'query'>, lienId: string, rateBps: number): Promise<boolean> {
+  const { rows } = await db.query<{ from_rate_bps: number; recent: boolean }>(
     `select from_rate_bps, applied_at > now() - make_interval(hours => $2) as recent from mod_lien_rate_taps
       where lien_id = $1 order by applied_at desc, nonce limit 1`,
     [lienId, LIEN_RATE_GRACE_HOURS],
@@ -335,14 +332,37 @@ async function justReplaced(d: LienCheckDeps, lienId: string, rateBps: number): 
   return rows[0] !== undefined && rows[0].recent && rows[0].from_rate_bps === rateBps;
 }
 
-/** The gate-verified rate taps for `lienId` this service has not applied yet (`mod_lien_rate_taps`). */
-async function newRateTaps(d: LienCheckDeps, lienId: string): Promise<Array<{ rateBps: number; nonce: string }>> {
+/** The gate-verified rate approvals for `lienId` (oldest-first), filtered to valid rates. */
+async function validRateApprovals(d: LienCheckDeps, lienId: string): Promise<Array<{ rateBps: number; nonce: string }>> {
   if (d.rates == null) return [];
   const all = await d.rates.approvals(lienId);
-  if (all.length === 0) return [];
-  const { rows } = await d.db.query<{ nonce: string }>('select nonce from mod_lien_rate_taps where lien_id = $1', [lienId]);
-  const spent = new Set(rows.map((r) => r.nonce));
-  return all.filter((t) => !spent.has(t.nonce) && Number.isSafeInteger(t.rateBps) && t.rateBps >= 1 && t.rateBps <= LIEN_RECOVERY_MAX_BPS).map((t) => ({ ...t }));
+  return all
+    .filter((t) => Number.isSafeInteger(t.rateBps) && t.rateBps >= 1 && t.rateBps <= LIEN_RECOVERY_MAX_BPS)
+    .map((t) => ({ rateBps: t.rateBps, nonce: t.nonce }));
+}
+
+/**
+ * Rule 5 (Q1): resolves which unspent approvals `rateBps` spends against `currentRateBps`.
+ * Returns `[]` when `rateBps` matches `currentRateBps` or is within the grace period of the just-replaced rate;
+ * returns the nonces up to the last matching unspent approval otherwise; throws `LienRefused('rate-unverified')` if none verifies.
+ */
+async function resolveRateSpends(
+  db: Pick<pg.Pool, 'query'>,
+  lienId: string,
+  currentRateBps: number,
+  rateBps: number,
+  approvals: ReadonlyArray<{ rateBps: number; nonce: string }>,
+): Promise<string[]> {
+  if (rateBps === currentRateBps) return [];
+  if (approvals.length > 0) {
+    const { rows } = await db.query<{ nonce: string }>('select nonce from mod_lien_rate_taps where lien_id = $1', [lienId]);
+    const spent = new Set(rows.map((r) => r.nonce));
+    const unspent = approvals.filter((t) => !spent.has(t.nonce));
+    const last = unspent.map((t) => t.rateBps).lastIndexOf(rateBps);
+    if (last !== -1) return unspent.slice(0, last + 1).map((t) => t.nonce);
+  }
+  if (await justReplaced(db, lienId, rateBps)) return [];
+  throw new LienRefused('rate-unverified');
 }
 
 /**
@@ -360,6 +380,22 @@ export async function recordLienRecovery(
   sign: { signingSecret: Uint8Array; now: Date },
 ): Promise<{ statement: LienStatement; sig: string } | null> {
   await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`x2f-lien:${r.source}:${r.creditor}`]);
+  const kept = (
+    await c.query<{ source_code: string; creditor_side: string; debtor: string; creditor: string; amount_atomic: string; rate_bps: number }>(
+      'select source_code, creditor_side, debtor, creditor, amount_atomic::text, rate_bps from mod_liens where lien_id = $1 for update',
+      [r.lienId],
+    )
+  ).rows[0];
+  // Re-verify pinned lien fields (rule 4) and rate approvals (rule 5) under the lock.
+  if (
+    kept !== undefined &&
+    (kept.source_code !== r.source || kept.creditor_side !== r.creditor || kept.debtor !== r.debtor || kept.creditor !== r.creditorAccount ||
+      kept.amount_atomic !== r.owedAtomic.toString())
+  ) {
+    throw new LienRefused('lien-changed');
+  }
+  const current = kept?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
+  const spends = await resolveRateSpends(c, r.lienId, current, r.rateBps, r.rateApprovals);
   // Every recovery signed and not freed, but this one (a restart re-records the same trade and side).
   const sum = async (where: string, args: unknown[]): Promise<bigint> =>
     BigInt((await c.query<{ s: string }>(
@@ -374,11 +410,10 @@ export async function recordLienRecovery(
     ? expectedRecovery({ proceedsAtomic: r.proceedsAtomic, rateBps: r.rateBps, leftAtomic: left })
     : expectedSellerRecovery({ takeAmountAtomic: r.proceedsAtomic, rateBps: r.rateBps, leftAtomic: left });
   if (expected !== r.amountAtomic) throw new LienRefused('not-expected');
-  const kept = (await c.query<{ rate_bps: number }>('select rate_bps from mod_liens where lien_id = $1 for update', [r.lienId])).rows[0];
   let out: { statement: LienStatement; sig: string } | null = null;
   // First sight, or a rate change this recovery applies (it spends taps); a recovery at the rate just
   // replaced (the grace period) changes nothing kept.
-  if (kept === undefined || (r.rateTaps.length > 0 && kept.rate_bps !== r.rateBps)) {
+  if (kept === undefined || (spends.length > 0 && kept.rate_bps !== r.rateBps)) {
     const statement: LienStatement = {
       v: 1, lienId: r.lienId, fromCode: r.source, creditorSide: r.creditor, debtor: r.debtor, creditor: r.creditorAccount,
       amountAtomic: r.owedAtomic.toString(), rateBps: r.rateBps, issuedAt: sign.now.toISOString(),
@@ -397,11 +432,10 @@ export async function recordLienRecovery(
     [trade, r.side, r.lienId, r.source, r.creditor, r.amountAtomic.toString()],
   );
   // Q1: the rate taps this change applied are spent for the lien (an old approval is never replayed).
-  const from = kept?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
-  for (const nonce of r.rateTaps) {
+  for (const nonce of spends) {
     await c.query(
       'insert into mod_lien_rate_taps (nonce, lien_id, rate_bps, from_rate_bps, trade) values ($1, $2, $3, $4, $5) on conflict (nonce) do nothing',
-      [nonce, r.lienId, r.rateBps, from, trade],
+      [nonce, r.lienId, r.rateBps, current, trade],
     );
   }
   return out;
