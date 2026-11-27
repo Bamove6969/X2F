@@ -8,7 +8,7 @@ import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
-import { pushRateDeciders, runLienGraceLapses } from './lienGrace.js';
+import { pushRateDeciders, runLienGraceEscalations, runLienGraceLapses } from './lienGrace.js';
 import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
@@ -44,6 +44,8 @@ export const DISPUTE_TIMER_MS = 30_000;
  * 6. **Lien grace lapsed (owner 26 Nov 2026).** A lien given 7 days to pay the agreed way whose
  *    days passed without the person owed confirming payment is marked once, logged, and the
  *    moderator who ruled is told (in-app and pushed; the owner in-app) (`runLienGraceLapses`).
+ *    A lapse nobody switched or sent up within LIEN_LAPSE_ESCALATE_HOURS (48), or whose moderator is
+ *    no longer active staff, goes to the seniors and the owner (`runLienGraceEscalations`).
  *    Then the phone push for new lien rate requests (`pushRateDeciders`: one placed with a ruling
  *    has no route of its own to push from).
  *
@@ -126,6 +128,8 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   if (lapsed > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'dispute-comply-lapsed').catch(() => undefined);
   // Owner 26 Nov 2026 (grace): a lien's 7 days to pay the agreed way passed without the sign-off.
   n += await runLienGraceLapses(deps, failures);
+  // Review of feat/lien-grace item 2: a lapse nobody acted on goes to the seniors by itself.
+  n += await runLienGraceEscalations(deps, failures);
   // Coordinator follow-up 26 Nov 2026: a lower share proposed with a ruling reaches the deciders' phones.
   if (deps.push) await pushRateDeciders({ db: deps.db, clock: deps.clock, push: deps.push }).catch((e: unknown) => void failures.push(e));
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);

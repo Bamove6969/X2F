@@ -30,6 +30,12 @@ export const LIEN_GRACE_METHOD_MAX = 500;
  * `collect_started_at` with the lapse; apps/api/src/disputes/lienGrace.ts reads this one constant).
  */
 export const LIEN_LAPSE_STARTS_COLLECTING = false;
+/**
+ * Review of feat/lien-grace (lead default): a lapsed lien the moderator who ruled has neither switched
+ * nor sent up within this many hours goes to the senior moderators and the owner by itself; at once
+ * when that moderator is no longer active staff (switched off, removed, disabled) or unknown.
+ */
+export const LIEN_LAPSE_ESCALATE_HOURS = 48;
 
 /**
  * Owner addition, 26 Nov 2026 5:51 PM: with "Start collecting now" the moderator enters the share of

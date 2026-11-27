@@ -1,4 +1,4 @@
-import { LIEN_LAPSE_STARTS_COLLECTING, can, parseCollectRate } from '@x2f/staff';
+import { LIEN_LAPSE_ESCALATE_HOURS, LIEN_LAPSE_STARTS_COLLECTING, can, parseCollectRate } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { addAlert, addOwnerAlert } from '../alerts.js';
@@ -6,7 +6,7 @@ import { requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js'
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
-import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
+import type { OwnerAlertDeps } from '../push/ownerAlert.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { ownerDeviceOnly } from '../team/perms.js';
@@ -94,6 +94,58 @@ export async function runLienGraceLapses(deps: Pick<DisputeDeps, 'db' | 'clock'>
   if (deps.push !== undefined) {
     for (const who of new Set(told)) await deps.push.send(who, 'alert').catch(() => false);
   }
+  return n;
+}
+
+/**
+ * Review of feat/lien-grace items 2 and 6: a lapsed lien sent to the senior moderators and the owner
+ * (by its moderator, or by the timer) alerts each of them in-app (`lien-grace-escalated`, detail:
+ * trade, lienId), never `except` (the one who sent it). Returns who, for the push after the commit.
+ */
+async function alertEscalation(c: pg.PoolClient, a: { lienId: string; trade: string; except: string | null; now: Date }): Promise<string[]> {
+  const to = await rateDeciders(c, a.except ?? '00000000-0000-0000-0000-000000000000');
+  for (const who of to) await addAlert(c, who, 'lien-grace-escalated', { trade: a.trade, lienId: a.lienId }, a.now);
+  return to;
+}
+
+/** SQL over `liens l`: the moderator who ruled is not active staff now (unknown, switched off, removed, disabled). */
+const RULER_GONE_SQL = `(l.ruled_by is null or not exists (select 1 from staff_members m join accounts a on a.id = m.account_id
+   where m.account_id = l.ruled_by and m.switched_off_at is null and m.removed_at is null and a.disabled_at is null))`;
+
+/**
+ * Review of feat/lien-grace item 2 (dispute timer): a lapsed lien nobody acted on goes to the senior
+ * moderators and the owner by itself, once: `LIEN_LAPSE_ESCALATE_HOURS` after the lapse, or at once
+ * when the moderator who ruled is no longer active staff. Marked as an escalation by nobody
+ * (`grace_escalated_by` null), logged `lien.grace-escalated { auto: true }`, so the seniors' queue
+ * lists it; each senior and the owner is alerted in-app and pushed. Returns how many.
+ */
+export async function runLienGraceEscalations(deps: Pick<DisputeDeps, 'db' | 'clock'> & { push?: OwnerAlertDeps['push'] }, failures: unknown[]): Promise<number> {
+  const now = deps.clock();
+  const due = new Date(now.getTime() - LIEN_LAPSE_ESCALATE_HOURS * 3_600_000);
+  const WAITING = (dueParam: string) => `l.status = 'active' and l.grace_lapsed_at is not null and l.grace_escalated_at is null
+    and l.collect_started_at is null and l.repaid_off_platform_at is null and (l.grace_lapsed_at <= ${dueParam} or ${RULER_GONE_SQL})`;
+  const { rows } = await deps.db.query<{ id: string }>(`select l.id::text from liens l where ${WAITING('$1')} order by l.grace_lapsed_at, l.id limit 200`, [due]);
+  let n = 0;
+  const told = new Set<string>();
+  for (const { id } of rows) {
+    try {
+      const to = await withTx(deps.db, async (c) => {
+        const r = await c.query<{ from_code: string }>(`update liens l set grace_escalated_at = $3 where l.id = $1 and ${WAITING('$2')} returning l.from_code`, [id, due, now]);
+        const l = r.rows[0];
+        if (l === undefined) return null;
+        const who = await alertEscalation(c, { lienId: id, trade: l.from_code, except: null, now });
+        await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.grace-escalated', detail: { lienId: id, auto: true } });
+        return who;
+      });
+      if (to !== null) {
+        n++;
+        for (const who of to) told.add(who);
+      }
+    } catch (err) {
+      failures.push(err);
+    }
+  }
+  if (deps.push !== undefined) for (const who of told) await deps.push.send(who, 'alert').catch(() => false);
   return n;
 }
 
@@ -198,12 +250,12 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
       if (!mayDecide(req, l)) throw new ApiError(403, 'forbidden');
       if (l.status !== 'active' || !waitingGrace(l) || l.grace_lapsed_at === null || l.grace_escalated_at !== null) throw new ApiError(409, 'wrong-state');
       await c.query('update liens set grace_escalated_at = $2, grace_escalated_by = $3 where id = $1', [id, now, me.id]);
-      await addOwnerAlert(c, 'lien-grace-escalated', { trade: l.from_code, lienId: id }, now);
-      await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.grace-escalated', detail: { lienId: id } });
-      return { escalatedAt: now.toISOString() };
+      const told = await alertEscalation(c, { lienId: id, trade: l.from_code, except: me.id, now });
+      await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.grace-escalated', detail: { lienId: id, auto: false } });
+      return { out: { escalatedAt: now.toISOString() }, told };
     });
-    if (o.push !== undefined) await pushOwnerAlert({ db, push: o.push }, 'lien-grace-escalated').catch(() => undefined);
-    return out;
+    if (o.push !== undefined) for (const who of out.told) await o.push.send(who, 'alert').catch(() => false);
+    return out.out;
   });
 }
 

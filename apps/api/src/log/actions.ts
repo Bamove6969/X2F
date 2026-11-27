@@ -165,7 +165,7 @@ export const LOG_ACTIONS = {
   // agreed method stays on the lien (staff and the two traders), never in the log.
   'lien.grace-started': { lienId: 'id', graceUntil: 'iso' },
   'lien.grace-lapsed': { lienId: 'id' },
-  'lien.grace-escalated': { lienId: 'id' },
+  'lien.grace-escalated': { lienId: 'id', auto: 'bool' },
   'lien.collect-started': { lienId: 'id', lapsed: 'bool' },
   'lien.repaid-off-platform': { lienId: 'id' },
   // Owner change 5:53 PM: a senior (or the owner) opened a pending lower-rate request to review the chat.

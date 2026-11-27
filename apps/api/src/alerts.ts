@@ -91,7 +91,8 @@ export type AlertKind =
   // without the person owed confirming payment; to the moderator who ruled (also pushed) and the
   // owner. Detail: trade, lienId.
   | 'lien-grace-lapsed'
-  // Owner only: the moderator sent such a lien to a senior moderator or the owner. Detail: trade, lienId.
+  // Such a lien sent to the senior moderators and the owner (by its moderator, or by the timer after
+  // LIEN_LAPSE_ESCALATE_HOURS or when that moderator left); to each of them, pushed. Detail: trade, lienId.
   | 'lien-grace-escalated'
   // Coordinator follow-up 26 Nov 2026: a lower lien share waits for a senior moderator or the owner;
   // to each who may decide it (also pushed, once per request). Detail: trade, lienId, requestId.

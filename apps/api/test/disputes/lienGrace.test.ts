@@ -3,12 +3,12 @@
 // (a lower share is approved by a senior without a key tap, after reading the dispute's chat).
 // Real Postgres, the real propose route.
 import { createHash, randomUUID } from 'node:crypto';
-import { LIEN_GRACE_DAYS, LIEN_RATE_REASON_PREFILL, evidenceSha256, type KeyTapIntent } from '@x2f/staff';
+import { LIEN_GRACE_DAYS, LIEN_LAPSE_ESCALATE_HOURS, LIEN_RATE_REASON_PREFILL, evidenceSha256, type KeyTapIntent } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
-import { pushRateDeciders } from '../../src/disputes/lienGrace.js';
+import { pushRateDeciders, runLienGraceEscalations } from '../../src/disputes/lienGrace.js';
 import { pickRecovery } from '../../src/disputes/recovery.js';
 import { startDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
@@ -253,6 +253,64 @@ describe('the 7 days pass without the sign-off', () => {
     expect(sw.statusCode, sw.body).toBe(200);
     expect(sw.json()).toMatchObject({ rateRequest: 'pending' });
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(10_000);
+  });
+
+  // Review of feat/lien-grace items 2 and 6.
+  it('a lapse nobody acts on goes to the seniors and the owner by itself after 48 hours: once, alerted and pushed, in their queue', async () => {
+    await staff('owner');
+    const senior = await staff('senior');
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    const lapse = START.getTime() + LIEN_GRACE_DAYS * DAY + 1000;
+    setNow(new Date(lapse));
+    await tick();
+    const escalatedAt = async () => (await deps.db.query<{ at: Date | null; by: string | null }>('select grace_escalated_at as at, grace_escalated_by::text as by from liens where id = $1', [l.id])).rows[0]!;
+    setNow(new Date(lapse + LIEN_LAPSE_ESCALATE_HOURS * H - 1000));
+    await tick();
+    expect((await escalatedAt()).at).toBeNull();
+    setNow(new Date(lapse + LIEN_LAPSE_ESCALATE_HOURS * H + 1000));
+    const sent: string[] = [];
+    const push = { send: async (who: string) => (sent.push(who), true) };
+    expect(await runLienGraceEscalations({ db: deps.db, clock: deps.clock, push }, [])).toBeGreaterThanOrEqual(1);
+    expect(await escalatedAt()).toMatchObject({ by: null });
+    expect((await escalatedAt()).at).not.toBeNull();
+    expect((await logsOf('lien.grace-escalated')).filter((e) => (JSON.parse(e.detail) as { lienId: string }).lienId === l.id).map((e) => [e.actor_kind, JSON.parse(e.detail) as unknown]))
+      .toEqual([['system', { lienId: l.id, auto: true }]]);
+    const told = (await deps.db.query<{ a: string }>(`select account_id::text as a from alerts where kind = 'lien-grace-escalated' and detail->>'lienId' = $1`, [l.id])).rows.map((x) => x.a);
+    expect(told).toEqual(expect.arrayContaining([senior.id, ownerId!]));
+    expect(told).not.toContain(r.mod.id);
+    expect(sent).toEqual(expect.arrayContaining([senior.id, ownerId!]));
+    // Once.
+    expect(await runLienGraceEscalations({ db: deps.db, clock: deps.clock, push }, [])).toBe(0);
+    await fresh(senior);
+    const rows = ((await senior.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; graceLapsed: boolean }> }).rows;
+    expect(rows.find((q) => q.code === r.code)?.graceLapsed).toBe(true);
+  });
+
+  it('goes to the seniors at once when the moderator who ruled is no longer active staff', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await deps.db.query('update staff_members set switched_off_at = $2 where account_id = $1', [r.mod.id, deps.clock()]);
+    setNow(new Date(START.getTime() + LIEN_GRACE_DAYS * DAY + 1000));
+    await tick();
+    const row = (await deps.db.query<{ lapsed: Date | null; at: Date | null }>('select grace_lapsed_at as lapsed, grace_escalated_at as at from liens where id = $1', [l.id])).rows[0]!;
+    expect(row.lapsed).not.toBeNull();
+    expect(row.at).not.toBeNull();
+  });
+
+  it('a moderator\'s escalation alerts and pushes the seniors and the owner, never the one who sent it', async () => {
+    await staff('owner');
+    const senior = await staff('senior');
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    setNow(new Date(START.getTime() + LIEN_GRACE_DAYS * DAY + 1000));
+    await tick();
+    await fresh(r.mod);
+    expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/escalate`, {})).statusCode).toBe(200);
+    const told = (await deps.db.query<{ a: string }>(`select account_id::text as a from alerts where kind = 'lien-grace-escalated' and detail->>'lienId' = $1`, [l.id])).rows.map((x) => x.a);
+    expect(told).toEqual(expect.arrayContaining([senior.id, ownerId!]));
+    expect(told).not.toContain(r.mod.id);
+    expect((await logsOf('lien.grace-escalated')).map((e) => JSON.parse(e.detail) as unknown)).toContainEqual({ lienId: l.id, auto: false });
   });
 
   it('a moderator may switch a grace lien to collecting early', async () => {

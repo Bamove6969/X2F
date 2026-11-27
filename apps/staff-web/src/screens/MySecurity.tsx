@@ -130,6 +130,7 @@ const C = {
       // COPY-UNSIGNED (owner 26 Nov 2026): lien work waiting for this moderator.
       'lien-grace-lapsed': 'The 7 days to pay the agreed way passed on a lien you ruled',
       'lien-rate-requested': 'A lower share for a lien waits for your approval',
+      'lien-grace-escalated': 'A lien whose 7 days to pay passed waits for a senior moderator',
     } as Readonly<Record<string, string>>,
     other: 'Security alert',
     on: (device: string) => `On ${device}`,

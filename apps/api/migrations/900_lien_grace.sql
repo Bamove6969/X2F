@@ -50,7 +50,9 @@ alter table liens add constraint liens_grace_pair_check check ((grace_method is 
 alter table liens add constraint liens_grace_only_check check (
   grace_until is not null
   or (grace_lapsed_at is null and grace_escalated_at is null and collect_started_at is null and repaid_off_platform_at is null));
-alter table liens add constraint liens_grace_escalated_check check ((grace_escalated_at is null) = (grace_escalated_by is null));
+-- A staff escalation names who; the timer's own (LIEN_LAPSE_ESCALATE_HOURS, or the moderator who
+-- ruled is no longer active staff) names nobody.
+alter table liens add constraint liens_grace_escalated_check check (grace_escalated_by is null or grace_escalated_at is not null);
 alter table liens add constraint liens_grace_escalated_lapsed_check check (grace_escalated_at is null or grace_lapsed_at is not null);
 -- A staff switch carries who and the tap; a switch by the lapse itself (only if the owner turns on
 -- @x2f/staff LIEN_LAPSE_STARTS_COLLECTING) carries neither.

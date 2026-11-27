@@ -39,7 +39,7 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'sessions-ended': 'Sessions ended',
   // COPY-UNSIGNED (owner 26 Nov 2026, lien grace and shares).
   'lien-grace-lapsed': 'The 7 days to pay the agreed way passed without the person owed confirming',
-  'lien-grace-escalated': 'A moderator sent a lien whose 7 days passed to a senior moderator',
+  'lien-grace-escalated': 'A lien whose 7 days to pay passed waits for a senior moderator',
   'lien-rate-requested': 'A lower share for a lien waits for your approval',
 };
 export const alertTitle = (kind: string): string => ALERT_TITLES[kind] ?? 'Notice';
