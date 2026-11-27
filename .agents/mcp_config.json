@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "jetpost": {
+      "serverUrl": "https://www.jetpost.com/mcp"
+    }
+  }
+}
