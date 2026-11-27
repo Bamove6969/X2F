@@ -647,6 +647,44 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect(b.net.lienStatements[0]!.statement.rateBps).toBe(2500);
   });
 
+  it('fix-rate-spend: repeated rate [25%, 50%, 25%] uses the last matching index and spends exact nonces', async () => {
+    const QUARTER = 62_500_000_000n;
+    const spentNonces = async (lienId: string) =>
+      (await db.query<{ nonce: string }>('select nonce from mod_lien_rate_taps where lien_id = $1 order by nonce', [lienId])).rows.map((r) => r.nonce);
+
+    // Case 1: applying 25% against [25%, 50%, 25%] matches the last 25% approval and spends all three.
+    const src1 = await sourceTrade();
+    const d1 = { rateBps: 2500, nonce: 'd1'.repeat(32) };
+    const d2 = { rateBps: 5000, nonce: 'd2'.repeat(32) };
+    const d3 = { rateBps: 2500, nonce: 'd3'.repeat(32) };
+    const rates1 = { approvals: async () => [d1, d2, d3] };
+    const a = await debtorTrade(rec(QUARTER), await sourceOf(src1, { rateBps: 2500 }), creditorBuyer, { lienRates: rates1 });
+    expect(a.signed).toBe(true);
+    expect(await spentNonces(LIEN)).toEqual([d1.nonce, d2.nonce, d3.nonce]);
+    await freeLienRecoveries(db, a.code);
+    // The intermediate 50% tap was spent as older than the latest 25%, so 50% cannot be replayed.
+    const replay50 = await debtorTrade(rec(HALF), await sourceOf(src1, { rateBps: 5000 }), creditorBuyer, { lienRates: rates1 });
+    expect(replay50.signed).toBe(false);
+    expect(replay50.reasons).toContain('lien-refused-rate-unverified');
+
+    // Case 2: applying 50% against [25%, 50%, 25%] spends the first 25% and 50%, leaving the newer 25% pending.
+    const src2 = await sourceTrade();
+    const lien2 = randomUUID();
+    const e1 = { rateBps: 2500, nonce: 'e1'.repeat(32) };
+    const e2 = { rateBps: 5000, nonce: 'e2'.repeat(32) };
+    const e3 = { rateBps: 2500, nonce: 'e3'.repeat(32) };
+    const rates2 = { approvals: async () => [e1, e2, e3] };
+    const b = await debtorTrade(rec(HALF), await sourceOf(src2, { lienId: lien2, rateBps: 5000 }), creditorBuyer, { lienRates: rates2 });
+    expect(b.signed).toBe(true);
+    expect(await spentNonces(lien2)).toEqual([e1.nonce, e2.nonce]);
+    await freeLienRecoveries(db, b.code);
+    // The newer 25% approval (e3) is still pending and can be applied on a subsequent trade.
+    const c = await debtorTrade(rec(QUARTER), await sourceOf(src2, { lienId: lien2, rateBps: 2500 }), creditorBuyer, { lienRates: rates2 });
+    expect(c.signed).toBe(true);
+    expect(c.net.lienStatements[0]!.statement.rateBps).toBe(2500);
+    expect(await spentNonces(lien2)).toEqual([e1.nonce, e2.nonce, e3.nonce]);
+  });
+
   it('pins the lien\'s parties on first sight: a later item naming another debtor or creditor for the same lien is refused', async () => {
     const src = await sourceTrade();
     const first = await debtorTrade(rec(FULL), await sourceOf(src, { lienId: LIEN }), creditorBuyer);
