@@ -407,8 +407,8 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
     return [{ action: 'lien.recovery-released', detail: { lienId: hold.lien_id, amountAtomic: hold.amount_atomic } }];
   }
   const lien = (
-    await c.query<{ amount_atomic: string; fee_atomic: string; status: string }>(
-      'select amount_atomic::text, fee_atomic::text, status from liens where id = $1 for update',
+    await c.query<{ amount_atomic: string; fee_atomic: string; status: string; repaid_off_platform_at: Date | null }>(
+      'select amount_atomic::text, fee_atomic::text, status, repaid_off_platform_at from liens where id = $1 for update',
       [hold.lien_id],
     )
   ).rows[0]!;
@@ -418,7 +418,7 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
   const before = (
     await c.query<{ amount_atomic: string }>('select amount_atomic::text from lien_recoveries where lien_id = $1', [hold.lien_id])
   ).rows.map((r) => BigInt(r.amount_atomic));
-  const left = lienRemaining(BigInt(lien.amount_atomic), before);
+  const left = lien.repaid_off_platform_at !== null ? 0n : lienRemaining(BigInt(lien.amount_atomic), before);
   const paid = BigInt(hold.amount_atomic);
   // Review M2: a hold that stopped counting (its trade closed without coins for the whole watch)
   // and was paid after all, by a late-funded trade ruled for the buyer, can take the creditor past
