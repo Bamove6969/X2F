@@ -676,7 +676,7 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     async function sellerTrade(
       srec: { address: string; amountAtomic: bigint } | null,
       sellerLienSource: unknown,
-      over: { lienRecovery?: { address: string; amountAtomic: bigint }; lienSource?: unknown; lienRecoveryOn?: boolean } = {},
+      over: { lienRecovery?: { address: string; amountAtomic: bigint }; lienSource?: unknown; lienRecoveryOn?: boolean; lienRates?: ModerationDeps['lienRates'] } = {},
     ) {
       const code = newTradeCode();
       const buyer = await trader(code, 'buyer');
@@ -693,7 +693,11 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
       } as WorkItem;
       const net = fakeNetwork(() => [item]);
       const r = reasonsOf();
-      const done = await (await moderation(net.fetch, () => {}, r.log, { lienRulings: creditorBuyer, ...(over.lienRecoveryOn === false ? { lienRecovery: false } : {}) })).tick();
+      const done = await (await moderation(net.fetch, () => {}, r.log, {
+        lienRulings: creditorBuyer,
+        ...(over.lienRecoveryOn === false ? { lienRecovery: false } : {}),
+        ...(over.lienRates !== undefined ? { lienRates: over.lienRates } : {}),
+      })).tick();
       const signed = (await db.query('select 1 from signed_terms where trade = $1', [code])).rows.length === 1;
       return { code, done, signed, reasons: r.reasons, net, item, seller };
     }
@@ -776,6 +780,37 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
       );
       expect(same.signed).toBe(false);
       expect(same.reasons).toContain('lien-refused-wrong-address');
+    });
+
+    it('senior-approved lower share (#45) scales the seller extra, spends the request approval once, and rejects unapproved rates', async () => {
+      const src = await sourceTrade();
+      const quarter = (TAKE * 2500n) / 10_000n; // 0.0625 XMR
+      // Without an approval, a 25% seller recovery is refused.
+      const unapproved = await sellerTrade(rec(quarter), await sellerSourceOf(src, { rateBps: 2500 }));
+      expect(unapproved.signed).toBe(false);
+      expect(unapproved.reasons).toContain('lien-refused-rate-unverified');
+
+      // With a tap-less senior rate-request approval (`req:<lienId>:<reqId>`), 25% is accepted and pinned.
+      const reqNonce = `req:${LIEN}:${randomUUID()}`;
+      const lienRates = { approvals: async () => [{ rateBps: 2500, nonce: reqNonce }] };
+      const ok = await sellerTrade(rec(quarter), await sellerSourceOf(src, { rateBps: 2500 }), { lienRates });
+      expect(ok.signed).toBe(true);
+      expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
+      expect((await db.query('select nonce, rate_bps, from_rate_bps from mod_lien_rate_taps where lien_id = $1', [LIEN])).rows)
+        .toEqual([{ nonce: reqNonce, rate_bps: 2500, from_rate_bps: LIEN_DEFAULT_RATE_BPS }]);
+      await freeLienRecoveries(db, ok.code);
+
+      // Immediately after lowering 100% -> 25%, an in-flight sale reserved at 100% still passes during LIEN_RATE_GRACE_HOURS without reverting the pinned 25% rate.
+      const inFlight = await sellerTrade(rec(TAKE), await sellerSourceOf(src, { rateBps: LIEN_DEFAULT_RATE_BPS }), { lienRates });
+      expect(inFlight.signed).toBe(true);
+      expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
+      await freeLienRecoveries(db, inFlight.code);
+
+      // Past the 24-hour grace window, 100% without a new approval is refused.
+      await db.query(`update mod_lien_rate_taps set applied_at = now() - interval '25 hours' where lien_id = $1`, [LIEN]);
+      const expired = await sellerTrade(rec(TAKE), await sellerSourceOf(src, { rateBps: LIEN_DEFAULT_RATE_BPS }), { lienRates });
+      expect(expired.signed).toBe(false);
+      expect(expired.reasons).toContain('lien-refused-rate-unverified');
     });
   });
 

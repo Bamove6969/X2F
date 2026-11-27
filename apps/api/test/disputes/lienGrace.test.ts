@@ -467,3 +467,222 @@ describe('review of feat/lien-grace: the switch and the escalation', () => {
     expect(errorOf(await other.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId: await seedTap(deps, other.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 }) }))).toBe('forbidden');
   });
 });
+
+describe('lien grace & collect-now % edge cases (#45)', () => {
+  it('fee_atomic > 0: creditor /paid and staff /paid-off-platform keep status active while remainingAtomic is 0 and no further recovery reserves', async () => {
+    // Seller-posted ad -> seller-sends-xmr lien carries X2F's 1% fee (fee_atomic > 0).
+    async function sellerPostedDispute() {
+      setNow(START);
+      const seller = await newTrader();
+      const buyer = await newTrader();
+      const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      const t = await driveTo(deps, trade, 'paid');
+      const client = await deps.db.connect();
+      try {
+        await client.query('begin');
+        await startDispute(client, t, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: true, now: START, prices: null });
+        await client.query('commit');
+      } finally {
+        client.release();
+      }
+      const mod = await staff('mod');
+      expect((await mod.b.post(`/staff/v1/disputes/${t.code}/take`, {})).statusCode).toBe(200);
+      const rulingId = randomUUID();
+      const intent: KeyTapIntent = {
+        kind: 'ruling', step: 'propose', rulingId, code: t.code, round: 1, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' },
+        amountAtomic: AMOUNT.toString(), reasonSha256: sha(REASON), evidenceSha256: evidenceSha256(EVIDENCE), round1Id: null,
+      };
+      const tapId = await seedTap(deps, mod.id, intent);
+      const res = await mod.b.post(`/staff/v1/disputes/${t.code}/rulings`, {
+        rulingId, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' }, reason: REASON, evidence: EVIDENCE, tapId,
+        lienPlan: { mode: 'grace', method: METHOD },
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      return { seller, buyer, mod, code: t.code, lien: await lienOf(t.code) };
+    }
+
+    // Path 1: creditor signs off "I've been paid".
+    const d1 = await sellerPostedDispute();
+    expect(BigInt((await deps.db.query<{ f: string }>('select fee_atomic::text as f from liens where id = $1', [d1.lien.id])).rows[0]!.f)).toBeGreaterThan(0n);
+    await d1.buyer.browser.post('/t/login', { accountId: d1.buyer.id });
+    const paid1 = await d1.buyer.browser.post(`/v1/account/liens/${d1.lien.id}/paid`, {});
+    expect(paid1.statusCode, paid1.body).toBe(200);
+    expect(paid1.json()).toMatchObject({ status: 'active' });
+    const after1 = await lienOf(d1.code);
+    expect(after1.status).toBe('active');
+    expect(after1.repaid_off_platform_at).not.toBeNull();
+    expect(await reserveFor(after1)).toBe(0n);
+    const view1 = (await d1.buyer.browser.get('/v1/account/liens')).json() as { owedTo: Array<{ id: string; status: string; remainingAtomic: string; paidOffPlatform?: boolean }> };
+    expect(view1.owedTo.find((x) => x.id === d1.lien.id)).toMatchObject({ status: 'active', remainingAtomic: '0', paidOffPlatform: true });
+
+    // Path 2: staff marks paid off platform.
+    const d2 = await sellerPostedDispute();
+    const tapId = await seedTap(deps, d2.mod.id, { kind: 'lien-paid-off-platform', lienId: d2.lien.id });
+    const paid2 = await d2.mod.b.post(`/staff/v1/liens/${d2.lien.id}/paid-off-platform`, { tapId });
+    expect(paid2.statusCode, paid2.body).toBe(200);
+    expect(paid2.json()).toMatchObject({ status: 'active' });
+    const after2 = await lienOf(d2.code);
+    expect(after2.status).toBe('active');
+    expect(after2.repaid_off_platform_at).not.toBeNull();
+    expect(await reserveFor(after2)).toBe(0n);
+  });
+
+  it('two-person large-trade approval preserves lienPlan (both grace and lower collect-now %) through awaiting-approval', async () => {
+    // Drop large-trade limit to $1 so our 1 XMR trade requires a second person (awaiting-approval).
+    const prevLimit = (await deps.db.query<{ l: number }>('select large_trade_limit_usd as l from settings')).rows[0]!.l;
+    await deps.db.query('update settings set large_trade_limit_usd = 1');
+    try {
+      const senior = await staff('senior');
+
+      // Case A: grace plan waits in ruling_drafts and applies on senior approve.
+      const g = await disputed();
+      const modA = await staff('mod');
+      expect((await modA.b.post(`/staff/v1/disputes/${g.code}/take`, {})).statusCode).toBe(200);
+      const ridA = randomUUID();
+      const baseIntentA = {
+        kind: 'ruling' as const, rulingId: ridA, code: g.code, round: 1 as const, outcome: 'seller-sends-xmr' as const, accountAction: { kind: 'none' as const },
+        amountAtomic: AMOUNT.toString(), reasonSha256: sha(REASON), evidenceSha256: evidenceSha256(EVIDENCE), round1Id: null,
+      };
+      const propA = await modA.b.post(`/staff/v1/disputes/${g.code}/rulings`, {
+        rulingId: ridA, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' }, reason: REASON, evidence: EVIDENCE,
+        tapId: await seedTap(deps, modA.id, { ...baseIntentA, step: 'propose' }),
+        lienPlan: { mode: 'grace', method: METHOD },
+      });
+      expect(propA.statusCode, propA.body).toBe(200);
+      // Nothing placed yet while awaiting approval.
+      expect((await deps.db.query('select 1 from liens where from_code = $1', [g.code])).rowCount).toBe(0);
+      const appA = await senior.b.post(`/staff/v1/disputes/${g.code}/rulings/${ridA}/approve`, {
+        tapId: await seedTap(deps, senior.id, { ...baseIntentA, step: 'approve' }),
+      });
+      expect(appA.statusCode, appA.body).toBe(200);
+      const lienA = await lienOf(g.code);
+      expect(lienA.grace_method).toBe(METHOD);
+      expect(lienA.grace_until!.getTime()).toBe(START.getTime() + LIEN_GRACE_DAYS * DAY);
+      expect(lienA.ruled_by).toBe(modA.id);
+
+      // Case B: lower collect-now % plan waits in ruling_drafts and creates pending rate request on approve.
+      const c = await disputed();
+      const modB = await staff('mod');
+      expect((await modB.b.post(`/staff/v1/disputes/${c.code}/take`, {})).statusCode).toBe(200);
+      const ridB = randomUUID();
+      const baseIntentB = {
+        kind: 'ruling' as const, rulingId: ridB, code: c.code, round: 1 as const, outcome: 'seller-sends-xmr' as const, accountAction: { kind: 'none' as const },
+        amountAtomic: AMOUNT.toString(), reasonSha256: sha(REASON), evidenceSha256: evidenceSha256(EVIDENCE), round1Id: null,
+      };
+      const propB = await modB.b.post(`/staff/v1/disputes/${c.code}/rulings`, {
+        rulingId: ridB, outcome: 'seller-sends-xmr', accountAction: { kind: 'none' }, reason: REASON, evidence: EVIDENCE,
+        tapId: await seedTap(deps, modB.id, { ...baseIntentB, step: 'propose' }),
+        lienPlan: { mode: 'collect', rateBps: 3000, rateReason: 'Can afford 30%' },
+      });
+      expect(propB.statusCode, propB.body).toBe(200);
+      expect((await deps.db.query('select 1 from liens where from_code = $1', [c.code])).rowCount).toBe(0);
+      const appB = await senior.b.post(`/staff/v1/disputes/${c.code}/rulings/${ridB}/approve`, {
+        tapId: await seedTap(deps, senior.id, { ...baseIntentB, step: 'approve' }),
+      });
+      expect(appB.statusCode, appB.body).toBe(200);
+      const lienB = await lienOf(c.code);
+      expect(lienB.grace_until).toBeNull();
+      expect(lienB.recovery_rate_bps).toBe(10_000);
+      const req = (await deps.db.query<{ proposed_by: string; proposed_bps: number; reason: string; status: string }>(
+        'select proposed_by::text, proposed_bps, reason, status from lien_rate_requests where lien_id = $1',
+        [lienB.id],
+      )).rows[0]!;
+      expect(req).toEqual({ proposed_by: modB.id, proposed_bps: 3000, reason: 'Can afford 30%', status: 'pending' });
+    } finally {
+      await deps.db.query('update settings set large_trade_limit_usd = $1', [prevLimit]);
+    }
+  });
+
+  it('concurrent creditor /paid and staff /collect serialize cleanly so exactly one wins', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 });
+    const [paidRes, collectRes] = await Promise.all([
+      r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {}),
+      r.mod.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId }),
+    ]);
+    expect([paidRes.statusCode, collectRes.statusCode].sort()).toEqual([200, 409]);
+    const loser = paidRes.statusCode === 409 ? paidRes : collectRes;
+    expect(errorOf(loser)).toBe('wrong-state');
+    const after = await lienOf(r.code);
+    // Exactly one transition committed: never both paid-off-platform and collecting.
+    expect(Boolean(after.repaid_off_platform_at) !== Boolean(after.collect_started_at)).toBe(true);
+  });
+
+  it('creditor /paid enforces auth, owner-device, hold, and input boundaries', async () => {
+    const { seedAccount } = await import('../helpers/accounts.js');
+    const { Browser } = await import('../helpers/totp.js');
+
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+
+    // Stranger gets 404 (no existence leak), invalid UUID gets 404, extra body fields get 400.
+    const stranger = await newTrader();
+    await stranger.browser.post('/t/login', { accountId: stranger.id });
+    expect(errorOf(await stranger.browser.post(`/v1/account/liens/${l.id}/paid`, {}))).toBe('not-found');
+    expect(errorOf(await r.buyer.browser.post('/v1/account/liens/not-a-uuid/paid', {}))).toBe('not-found');
+    expect(errorOf(await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, { extra: 1 }))).toBe('bad-request');
+
+    // Team member on the creditor's account cannot sign off (ownerDeviceOnly -> 403 owner-only).
+    const memberId = await seedAccount(deps, { loginName: `lgmem${randomUUID().slice(0, 8)}`, kind: 'member' });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'LgMem', $2, $3, $4, $5, $4, $4)`,
+      [r.buyer.id, `lgmem${randomUUID().slice(0, 6)}`, ['trades-see-active'], deps.clock(), memberId],
+    );
+    const mb = new Browser(traderApp);
+    expect((await mb.post('/t/login', { accountId: memberId })).statusCode).toBe(200);
+    const asMember = await mb.post(`/v1/account/liens/${l.id}/paid`, {});
+    expect({ status: asMember.statusCode, error: errorOf(asMember) }).toEqual({ status: 403, error: 'owner-only' });
+
+    // Active account hold blocks creditor sign-off (requireNotHeld -> 403 account-hold).
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
+      [r.buyer.id, deps.clock(), new Date(deps.clock().getTime() + DAY)],
+    );
+    const held = await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {});
+    expect(held.statusCode).toBe(403);
+    expect((await lienOf(r.code)).repaid_off_platform_at).toBeNull();
+    await deps.db.query('delete from account_holds where account_id = $1', [r.buyer.id]);
+
+    // Once hold lifts, creditor sign-off succeeds.
+    expect((await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {})).statusCode).toBe(200);
+  });
+
+  it('POST /collect refuses invalid rateBps / rateReason values without consuming the tap', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 });
+    for (const bad of [
+      { tapId, rateBps: 0, rateReason: 'zero' },
+      { tapId, rateBps: -1, rateReason: 'neg' },
+      { tapId, rateBps: 10_001, rateReason: 'over' },
+      { tapId, rateBps: 25.5, rateReason: 'float' },
+      { tapId, rateBps: 2500 },
+      { tapId, rateBps: 2500, rateReason: '   ' },
+      { tapId, rateBps: 10_000, rateReason: 'reason not allowed at 100%' },
+    ]) {
+      const res = await r.mod.b.post(`/staff/v1/liens/${l.id}/collect`, bad);
+      expect(res.statusCode).toBe(400);
+      expect(errorOf(res)).toBe('bad-request');
+    }
+    expect((await deps.db.query('select used_at from key_taps where id = $1', [tapId])).rows[0]).toEqual({ used_at: null });
+    expect((await lienOf(r.code)).collect_started_at).toBeNull();
+  });
+
+  it('a closed dispute lets a senior approve a pending lower share without requiring chat.read', async () => {
+    const senior = await staff('senior');
+    const r = await ruled({ mode: 'collect', rateBps: 3500, rateReason: 'Can pay 35%' });
+    const l = await lienOf(r.code);
+    const req = (await deps.db.query<{ id: string }>(`select id::text from lien_rate_requests where lien_id = $1 and status = 'pending'`, [l.id])).rows[0]!;
+    // Close the dispute (e.g. after appeal window finishes): chat is shut so no chat.read is required.
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [r.code, deps.clock()]);
+    const view = (await senior.b.get(`/staff/v1/liens/${l.id}`)).json() as { chat: { code: string; disputeOpen: boolean } };
+    expect(view.chat).toEqual({ code: r.code, disputeOpen: false });
+    const ok = await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {});
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await lienOf(r.code)).recovery_rate_bps).toBe(3500);
+  });
+});

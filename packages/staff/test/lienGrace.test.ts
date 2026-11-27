@@ -7,6 +7,7 @@ import {
   LIEN_LAPSE_STARTS_COLLECTING,
   graceUntilOf,
   lienCollecting,
+  parseCollectRate,
   parseLienPlan,
   rulingMayPlaceLien,
   tapChallenge,
@@ -29,6 +30,7 @@ describe('lien grace (owner 26 Nov 2026)', () => {
     expect(lienCollecting({ graceUntil: t, collectStartedAt: t, repaidOffPlatformAt: null })).toBe(true);
     expect(lienCollecting({ graceUntil: t, collectStartedAt: null, repaidOffPlatformAt: t })).toBe(false);
     expect(lienCollecting({ graceUntil: null, collectStartedAt: null, repaidOffPlatformAt: t })).toBe(false);
+    expect(lienCollecting({ graceUntil: t, collectStartedAt: t, repaidOffPlatformAt: t })).toBe(false);
   });
 
   it('parses the plan strictly: collect, or grace with a 1..500 character method (trimmed)', () => {
@@ -49,16 +51,44 @@ describe('lien grace (owner 26 Nov 2026)', () => {
     ]) expect(parseLienPlan(bad)).toBeNull();
   });
 
+  it('parseCollectRate enforces 1..10000 integer bounds and reason rules (#45)', () => {
+    expect(parseCollectRate({})).toEqual({ mode: 'collect', rateBps: 10_000, rateReason: null });
+    expect(parseCollectRate({ rateBps: 10_000, rateReason: null })).toEqual({ mode: 'collect', rateBps: 10_000, rateReason: null });
+    expect(parseCollectRate({ rateBps: 1, rateReason: '  1 bps minimum  ' })).toEqual({ mode: 'collect', rateBps: 1, rateReason: '1 bps minimum' });
+    expect(parseCollectRate({ rateBps: 9999, rateReason: 'r'.repeat(500) })).toEqual({ mode: 'collect', rateBps: 9999, rateReason: 'r'.repeat(500) });
+    for (const bad of [
+      { rateBps: 0, rateReason: 'x' },
+      { rateBps: -100, rateReason: 'x' },
+      { rateBps: 10_001, rateReason: 'x' },
+      { rateBps: Number.NaN, rateReason: 'x' },
+      { rateBps: 5000.5, rateReason: 'x' },
+      { rateBps: '5000', rateReason: 'x' },
+      { rateBps: 5000 },
+      { rateBps: 5000, rateReason: '' },
+      { rateBps: 5000, rateReason: '   ' },
+      { rateBps: 5000, rateReason: 'r'.repeat(501) },
+      { rateBps: 5000, rateReason: 'bad\u0000char' },
+      { rateBps: 10_000, rateReason: '' },
+      { rateBps: 10_000, rateReason: 'unneeded' },
+    ]) {
+      expect(parseCollectRate(bad)).toBeNull();
+    }
+  });
+
   it('asks for the plan only on a ruling that may place a lien', () => {
     expect(rulingMayPlaceLien({ round: 1, afterRefund: true, round1: null }, 'seller-sends-xmr')).toBe(true);
+    expect(rulingMayPlaceLien({ round: 1, afterRefund: true, round1: null }, 'seller-returns-fiat')).toBe(false);
     expect(rulingMayPlaceLien({ round: 1, afterRefund: true, round1: null }, 'no-action')).toBe(false);
     expect(rulingMayPlaceLien({ round: 1, afterRefund: false, round1: null }, 'release-to-buyer')).toBe(false);
     // Round 2: an overturn of an escrow ruling, or of a paid order, or a new order to send the XMR.
     expect(rulingMayPlaceLien({ round: 2, afterRefund: false, round1: r1('release-to-buyer') }, 'refund-to-seller')).toBe(true);
+    expect(rulingMayPlaceLien({ round: 2, afterRefund: false, round1: r1('refund-to-seller') }, 'release-to-buyer')).toBe(true);
     expect(rulingMayPlaceLien({ round: 2, afterRefund: false, round1: r1('release-to-buyer') }, 'release-to-buyer')).toBe(false);
+    expect(rulingMayPlaceLien({ round: 2, afterRefund: true, round1: r1('seller-sends-xmr') }, 'seller-sends-xmr')).toBe(false);
     expect(rulingMayPlaceLien({ round: 2, afterRefund: true, round1: r1('seller-sends-xmr') }, 'no-action')).toBe(true);
     expect(rulingMayPlaceLien({ round: 2, afterRefund: true, round1: r1('no-action') }, 'seller-sends-xmr')).toBe(true);
     expect(rulingMayPlaceLien({ round: 2, afterRefund: true, round1: r1('seller-returns-fiat') }, 'no-action')).toBe(false);
+    expect(rulingMayPlaceLien({ round: 2, afterRefund: true, round1: null }, 'seller-sends-xmr')).toBe(false);
   });
 
   it('the lien-collect tap is a known kind bound to its lien', () => {
