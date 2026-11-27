@@ -139,6 +139,31 @@ test('the queue filters by status and age, counts what it shows and names the ol
   expect(problems).toEqual([]);
 });
 
+// Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": a free case says when the
+// timer assigns it, and one the timer gave this moderator says "Assigned to you automatically".
+test('the queue says when a free case is assigned automatically, and which case was assigned to you automatically', async ({ page }) => {
+  const problems = watchConsole(page);
+  await stub(page, MOD, {
+    'GET /staff/v1/disputes': {
+      settings: { firstResponseH: 4, largeTradeLimitUsd: 1000, autoAssign: { on: true, minutes: 15 } },
+      counts: { open: 3, overdue: 0, unassigned: 2, needApproval: 0 },
+      rows: [
+        row({ code: 'M3TB9HQZ6WCR1FXA', waitingMs: 5 * MIN, replyDueAt: at(3 * H), deadlineTone: 'due', autoAssignAt: at(10 * MIN + 30_000) }),
+        row({ code: 'P9VC6KE1YB4M2HJD', waitingMs: 20 * MIN, replyDueAt: at(3 * H), deadlineTone: 'due', autoAssignAt: at(-5 * MIN) }),
+        row({ code: 'K7M29QXA4FTR8WPN', waitingMs: 30 * MIN, replyDueAt: at(3 * H), deadlineTone: 'due', assignee: 'dmitri_k', mine: true, autoAssigned: true, autoAssignAt: null }),
+      ],
+    },
+  });
+  await page.goto('/disputes');
+  await expect(page.locator('[data-part="queue-lead"]')).toContainText('A case nobody takes within 15 minutes goes to the moderator on shift with the fewest open cases.');
+  await expect(page.locator('[data-part="queue-assignee"]')).toHaveText([
+    'Unassigned · assigned automatically in 10 min',
+    'Unassigned · assigned to the next moderator on shift',
+    'Assigned to you automatically',
+  ]);
+  expect(problems).toEqual([]);
+});
+
 test('the Overview\'s Today card reads the queue and the alerts, and links to them', async ({ page }) => {
   const problems = watchConsole(page);
   const calls = await stub(page, OWNER, {

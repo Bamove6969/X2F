@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import type { MarketPrices } from '../../src/price/market.js';
-import { startEarnings, summarizeEarnings, utcMonth, walletEndOf, type EarningsSnapshot, type EarningsWatch, type IncomingTransfer } from '../../src/staff/earnings.js';
+import { isoWeek, startEarnings, summarizeEarnings, summarizeTallies, tallyStart, tallyStarts, utcMonth, walletEndOf, type EarningsSnapshot, type EarningsWatch, type IncomingTransfer } from '../../src/staff/earnings.js';
 import { StaffBrowser, insertSession, seedStaff, staffApps } from '../helpers/staffApp.js';
 import { fakeAddress } from '../helpers/trades.js';
 
@@ -94,6 +94,80 @@ describe('summarizeEarnings', () => {
   });
 });
 
+describe('tallies by the day, the week and the month (owner 26 Nov 2026; UTC, weeks from Monday)', () => {
+  const NOW = new Date('2026-11-26T23:30:00Z'); // a Thursday; already Friday east of UTC
+  const tallies = { fee: [], payroll: [], sweptTxHashes: new Set<string>(), ledgerByDay: new Map(), usdCentsPerXmr: null, now: NOW };
+
+  it('weeks start on Monday and carry their ISO number (the year of their Thursday)', () => {
+    expect(tallyStart('week', '2026-11-26')).toBe('2026-11-23');
+    expect(tallyStart('week', '2026-11-23')).toBe('2026-11-23');
+    expect(tallyStart('week', '2026-11-29')).toBe('2026-11-23'); // Sunday ends the week
+    expect(isoWeek('2026-11-23')).toBe('2026-W48');
+    expect(isoWeek('2025-12-29')).toBe('2026-W01'); // its Thursday is 1 Jan 2026
+    expect(isoWeek('2020-12-28')).toBe('2020-W53');
+    expect(tallyStart('month', '2026-11-26')).toBe('2026-11-01');
+  });
+
+  it('the window is bounded: 31 days, 12 weeks, 12 months, the current one last', () => {
+    const d = tallyStarts('day', NOW);
+    expect([d.length, d[0], d[30]]).toEqual([31, '2026-10-27', '2026-11-26']);
+    const w = tallyStarts('week', NOW);
+    expect([w.length, w[0], w[11]]).toEqual([12, '2026-09-07', '2026-11-23']);
+    const m = tallyStarts('month', NOW);
+    expect([m.length, m[0], m[11]]).toEqual([12, '2025-12-01', '2026-11-01']);
+  });
+
+  it('by the day: each UTC day, empty ones too, the sweep apart; anything older is left out of the window', () => {
+    const SW = tx();
+    const { tallies: days, total } = summarizeTallies({
+      ...tallies,
+      period: 'day',
+      fee: [at('2026-11-26T23:59:59Z', 2n * XMR), at('2026-11-25T00:00:00Z', 9n, SW), at('2026-10-26T23:59:59Z', 100n)],
+      payroll: [at('2026-11-25T10:00:00Z', 3n)],
+      sweptTxHashes: new Set([SW]),
+      ledgerByDay: new Map([['2026-11-25', { trades: 2, netAtomic: 40n }], ['2026-10-01', { trades: 9, netAtomic: 1n }]]),
+    });
+    expect(days).toHaveLength(31);
+    expect(days.at(-1)).toMatchObject({ period: '2026-11-26', from: '2026-11-26', to: '2026-11-26', feeWalletAtomic: (2n * XMR).toString(), earnedAtomic: (2n * XMR).toString() });
+    expect(days.at(-2)).toMatchObject({ period: '2026-11-25', feeWalletAtomic: '0', sweptInAtomic: '9', payrollWalletAtomic: '3', earnedAtomic: '3', trades: 2, bookedNetAtomic: '40' });
+    expect(days[0]).toMatchObject({ period: '2026-10-27', earnedAtomic: '0', trades: 0 });
+    expect(total).toMatchObject({ period: 'last-31-days', from: '2026-10-27', to: '2026-11-26', earnedAtomic: (2n * XMR + 3n).toString(), sweptInAtomic: '9', trades: 2, bookedNetAtomic: '40' });
+  });
+
+  it('by the week: Monday 00:00 UTC opens a week, Sunday 23:59:59 closes it', () => {
+    const { tallies: weeks } = summarizeTallies({
+      ...tallies,
+      period: 'week',
+      fee: [at('2026-11-23T00:00:00Z', 5n), at('2026-11-22T23:59:59Z', 7n)],
+      ledgerByDay: new Map([['2026-11-29', { trades: 1, netAtomic: 2n }]]),
+    });
+    expect(weeks.slice(-2).map((w) => [w.period, w.from, w.to, w.feeWalletAtomic, w.trades])).toEqual([
+      ['2026-W47', '2026-11-16', '2026-11-22', '7', 0],
+      ['2026-W48', '2026-11-23', '2026-11-29', '5', 1],
+    ]);
+  });
+
+  it('by the month: the same months the monthly report gives, last 12 only, with a USD estimate', () => {
+    const fee = [at('2026-11-01T00:00:00Z', XMR), at('2026-10-31T23:59:59Z', 2n * XMR), at('2025-11-30T23:59:59Z', 4n * XMR)];
+    const { tallies: months, total } = summarizeTallies({ ...tallies, period: 'month', fee, usdCentsPerXmr: 15_000n });
+    expect(months.map((m) => m.period)).toEqual(['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11']);
+    expect(months.slice(-2).map((m) => [m.from, m.to, m.feeWalletAtomic, m.usdEstimateCents])).toEqual([
+      ['2026-10-01', '2026-10-31', (2n * XMR).toString(), '30000'],
+      ['2026-11-01', '2026-11-30', XMR.toString(), '15000'],
+    ]);
+    expect(months.find((m) => m.period === '2026-02')?.to).toBe('2026-02-28');
+    expect(total).toMatchObject({ period: 'last-12-months', earnedAtomic: (3n * XMR).toString() });
+    const monthly = summarizeEarnings({ ...none, fee }).months.filter((m) => m.month >= '2025-12');
+    expect(monthly.map((m) => [m.month, m.earnedAtomic])).toEqual(months.filter((m) => m.earnedAtomic !== '0').map((m) => [m.period, m.earnedAtomic]));
+  });
+
+  it('refuses an unknown period, a malformed ledger day and a negative price', () => {
+    expect(() => summarizeTallies({ ...tallies, period: 'year' as never })).toThrow(RangeError);
+    expect(() => summarizeTallies({ ...tallies, period: 'day', ledgerByDay: new Map([['2026-11', { trades: 1, netAtomic: 1n }]]) })).toThrow(RangeError);
+    expect(() => summarizeTallies({ ...tallies, period: 'day', usdCentsPerXmr: -1n })).toThrow(RangeError);
+  });
+});
+
 describe('walletEndOf', () => {
   it('is the last four characters of the address, and nothing else of it', () => {
     expect(walletEndOf('48abc9Fq2')).toBe('9Fq2');
@@ -165,6 +239,7 @@ describe('startEarnings (the 10-minute watch)', () => {
 let app: FastifyInstance;
 let deps: Deps;
 let close: () => Promise<void>;
+let setNow: (d: Date) => void;
 let ownerId: string;
 let snapshot: EarningsSnapshot = { fee: null, payroll: null };
 let usd: bigint | null = null;
@@ -177,7 +252,7 @@ const prices = { quote: () => (usd === null ? null : { usdCentsPerXmr: usd }) } 
 const asOwner = async () => new StaffBrowser(app).withSession((await insertSession(deps, ownerId, 'staff')).token);
 
 beforeAll(async () => {
-  ({ app, deps, close } = await staffApps({ earnings: watch, prices }, {}, { config: { feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET } }));
+  ({ app, deps, close, setNow } = await staffApps({ earnings: watch, prices }, {}, { config: { feeWallet: FEE_WALLET, payrollWallet: PAYROLL_WALLET } }));
   ownerId = (await seedStaff(deps, { role: 'owner' })).id;
   await deps.db.query(
     `insert into revenue_ledger (day, currency, kind, trades, fee_atomic, network_fee_atomic) values
@@ -232,5 +307,57 @@ describe('GET /staff/v1/earnings (owner only)', () => {
   it('refuses any query', async () => {
     const res = await (await asOwner()).get('/staff/v1/earnings?month=2026-11');
     expect(res.statusCode).toBe(400);
+  });
+
+  it('?period=day|week|month: the bounded tallies in UTC, the same wallet lines and all-time row; nothing that identifies a tx or address', async () => {
+    usd = 16_501n;
+    setNow(new Date('2026-11-20T12:00:00Z')); // a Friday
+    const syncedAt = new Date('2026-11-20T11:50:00Z');
+    snapshot = {
+      fee: { state: 'ready', syncedAt, transfers: [at('2026-11-03T05:00:00Z', XMR + 1n, FEE_TX), at('2026-11-10T00:00:00Z', 9n, SWEEP)] },
+      payroll: { state: 'ready', syncedAt, transfers: [at('2026-11-03T05:00:00Z', XMR), at('2026-10-31T23:59:59Z', 2n * XMR)] },
+    };
+    const owner = await asOwner();
+    const monthly = (await owner.get('/staff/v1/earnings')).json() as { allTime: unknown };
+
+    const day = await owner.get('/staff/v1/earnings?period=day');
+    expect(day.statusCode, day.body).toBe(200);
+    const d = day.json() as { timeZone: string; period: string; feeWallet: { walletEnd: string }; tallies: Array<Record<string, unknown>>; total: Record<string, unknown>; allTime: unknown; months?: unknown };
+    expect([d.timeZone, d.period, d.feeWallet.walletEnd, d.tallies.length]).toEqual(['UTC', 'day', FEE_WALLET.slice(-4), 31]);
+    expect(d.months).toBeUndefined();
+    expect(d.allTime).toEqual(monthly.allTime);
+    expect(d.tallies[0]).toMatchObject({ period: '2026-10-21' });
+    expect(d.tallies.at(-1)).toMatchObject({ period: '2026-11-20', earnedAtomic: '0' });
+    expect(d.tallies.find((t) => t.period === '2026-11-03')).toMatchObject({ feeWalletAtomic: (XMR + 1n).toString(), payrollWalletAtomic: XMR.toString(), trades: 3, bookedNetAtomic: (3n * XMR - 90n).toString() });
+    expect(d.tallies.find((t) => t.period === '2026-11-04')).toMatchObject({ trades: 1, bookedNetAtomic: (XMR + 7n - 30n).toString() });
+    expect(d.tallies.find((t) => t.period === '2026-11-10')).toMatchObject({ sweptInAtomic: '9', earnedAtomic: '0' });
+    expect(d.tallies.find((t) => t.period === '2026-10-31')).toMatchObject({ payrollWalletAtomic: (2n * XMR).toString() });
+    // 10 Oct is before the 31-day window: in all time, not in the window.
+    expect(d.total).toMatchObject({ period: 'last-31-days', from: '2026-10-21', to: '2026-11-20', trades: 4, earnedAtomic: (4n * XMR + 1n).toString() });
+
+    const week = (await owner.get('/staff/v1/earnings?period=week')).json() as { tallies: Array<Record<string, unknown>> };
+    expect(week.tallies).toHaveLength(12);
+    expect(week.tallies.at(-1)).toMatchObject({ period: '2026-W47', from: '2026-11-16', to: '2026-11-22' });
+    expect(week.tallies.find((t) => t.period === '2026-W45')).toMatchObject({ from: '2026-11-02', trades: 4, earnedAtomic: (2n * XMR + 1n).toString() });
+    expect(week.tallies.find((t) => t.period === '2026-W44')).toMatchObject({ from: '2026-10-26', payrollWalletAtomic: (2n * XMR).toString() });
+
+    const month = await owner.get('/staff/v1/earnings?period=month');
+    const m = month.json() as { tallies: Array<Record<string, unknown>>; total: Record<string, unknown> };
+    expect(m.tallies.map((t) => t.period).slice(-2)).toEqual(['2026-10', '2026-11']);
+    expect(m.tallies.at(-2)).toMatchObject({ trades: 2, payrollWalletAtomic: (2n * XMR).toString(), usdEstimateCents: '33002' });
+    expect(m.total).toMatchObject({ period: 'last-12-months', trades: 6 });
+
+    for (const res of [day, month]) {
+      expect(res.body).not.toContain(FEE_TX);
+      expect(res.body).not.toContain(SWEEP);
+      expect(res.body).not.toContain(FEE_WALLET);
+      expect(res.body).not.toContain(PAYROLL_WALLET);
+    }
+  });
+
+  it('refuses another period, and any other query beside it', async () => {
+    const owner = await asOwner();
+    expect((await owner.get('/staff/v1/earnings?period=year')).statusCode).toBe(400);
+    expect((await owner.get('/staff/v1/earnings?period=day&from=2026-11-01')).statusCode).toBe(400);
   });
 });

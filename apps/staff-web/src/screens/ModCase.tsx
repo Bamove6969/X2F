@@ -271,7 +271,8 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   }
   // Review p4t22 M1: a trade not priced in US dollars needs a second person whatever its value. COPY-UNSIGNED
   if (c.overLimit) chips.push(c.secondReason === 'non-usd' ? 'Needs a second approval: not in US dollars' : `Above the ${limitText(c.limitUsd)} limit`);
-  chips.push(c.assignedToYou ? 'Assigned to you' : c.assignee !== null ? `Assigned to ${c.assignee}` : 'Unassigned');
+  // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): the timer's assignment says so. COPY-UNSIGNED
+  chips.push(c.assignedToYou ? (c.autoAssigned === true ? 'Assigned to you automatically' : 'Assigned to you') : c.assignee !== null ? `Assigned to ${c.assignee}` : 'Unassigned');
 
   const take = async () => {
     setFault(null);
