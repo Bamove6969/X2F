@@ -77,13 +77,16 @@ export function lienRoutes(app: FastifyInstance): void {
     // review the dispute's chat first; logged once per request and person.
     const pending = requests.rows.find((r) => r.status === 'pending');
     if (pending !== undefined && canDecideRateRequest({ role: req.staff.role, id: req.staff.accountId }, pending.proposed_by)) {
+      // Review item 4: on the source trade, once per request and person (serialised by a lock on
+      // that pair, so two opens at once log one entry).
       await withTx(db, async (c) => {
+        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`lien-rate-review:${pending.id}:${req.staff.accountId}`]);
         const seen = await c.query(
           `select 1 from activity_log where action = 'lien.rate-review-opened' and actor_id = $1 and detail::jsonb ->> 'requestId' = $2 limit 1`,
           [req.staff.accountId, pending.id],
         );
         if ((seen.rowCount ?? 0) === 0) {
-          await appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'lien.rate-review-opened', detail: { lienId: id, requestId: pending.id } });
+          await appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: row.from_code, action: 'lien.rate-review-opened', detail: { lienId: id, requestId: pending.id } });
         }
       });
     }
@@ -182,8 +185,21 @@ export function lienRoutes(app: FastifyInstance): void {
     return withTx(db, async (c) => {
       const now = clock();
       const { lienId, r } = await pendingFor(c, req);
-      const lien = (await c.query<{ status: string }>('select status from liens where id = $1', [lienId])).rows[0]!;
+      const lien = (await c.query<{ status: string; from_code: string; open: boolean }>(
+        `select l.status, l.from_code, exists (select 1 from disputes d where d.code = l.from_code and d.seq = l.dispute_seq and d.status <> 'closed') as open
+           from liens l where l.id = $1`,
+        [lienId],
+      )).rows[0]!;
       if (lien.status !== 'active' && lien.status !== 'suspended') throw new ApiError(409, 'wrong-state');
+      // Review item 4: while the dispute is open, the decider has read its chat (the case's logged
+      // chat read) since the request was made. A closed dispute's chat is shut (OWNER p12-1).
+      if (lien.open) {
+        const read = await c.query(
+          `select 1 from activity_log where action = 'chat.read' and actor_id = $1 and trade_code = $2 and at >= $3 limit 1`,
+          [me.id, lien.from_code, r.proposed_at],
+        );
+        if ((read.rowCount ?? 0) === 0) throw new ApiError(409, 'review-chat-first');
+      }
       await c.query(`update lien_rate_requests set status = 'approved', decided_by = $2, decided_at = $3 where id = $1`, [r.id, me.id, now]);
       await c.query('update liens set recovery_rate_bps = $2 where id = $1', [lienId, r.proposed_bps]);
       await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'lien.rate-approved', detail: { lienId, requestId: r.id, rateBps: r.proposed_bps } });

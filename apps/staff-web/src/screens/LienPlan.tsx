@@ -2,7 +2,7 @@ import { LIEN_FULL_RATE_BPS, LIEN_GRACE_DAYS, LIEN_GRACE_METHOD_MAX, LIEN_RATE_R
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { collectLien, decideLienRate, escalateLien, lienView, paidOffPlatformLien, type CaseLien, type DisputeCase, type LienPlanView } from '../api.js';
-import { faultText } from '../refusals.js';
+import { faultText, refusalOf } from '../refusals.js';
 import { Button, ChoiceGroup, Notice } from '../ui/kit.js';
 import { hhmm, xmrShort } from './modModel.js';
 
@@ -220,7 +220,7 @@ function LienRow({ l, role, setTap, reload }: { l: CaseLien; role: StaffRole; se
       await decideLienRate(l.id, l.pendingRate.id, approve);
       await reload();
     } catch (e) {
-      setFault(faultText(e, 'The decision did not go through. Try again.'));
+      setFault(refusalOf(e)?.text ?? faultText(e, 'The decision did not go through. Try again.'));
     }
   };
 
@@ -260,7 +260,9 @@ function LienRow({ l, role, setTap, reload }: { l: CaseLien; role: StaffRole; se
             ) : (
               <>
                 <p className="x2f-staff-hint">
-                  {chat.disputeOpen ? 'Read the conversation in the chat on this case before you decide.' : 'The dispute is closed, so its chat stays shut; decide from the case.'}{' '}
+                  {chat.disputeOpen
+                    ? 'Open the chat on this case and read the conversation first: while the dispute is open, approving needs that.'
+                    : 'The dispute is closed, so its chat stays shut; decide from the case.'}{' '}
                   <Link className="x2f-link" to={`/disputes/${encodeURIComponent(chat.code)}`}>
                     The case
                   </Link>

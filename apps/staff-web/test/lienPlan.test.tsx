@@ -88,4 +88,22 @@ describe('LienPanel', () => {
     await click(button('Mark as paid outside X2F'));
     expect(setTap.mock.calls[0]![0].intent).toEqual({ kind: 'lien-paid-off-platform', lienId: LIEN });
   });
+
+  it('review item 4: approving before reading the open dispute\'s chat says to read it first', async () => {
+    fakeApi({
+      'GET /staff/v1/liens/:id': { body: { chat: { code: 'AAAA1111BBBB2222', disputeOpen: true } } },
+      'POST /staff/v1/liens/:id/rate/:req/approve': { status: 409, body: { error: 'review-chat-first' } },
+    });
+    const c = { liens: [lien({ grace: null, ruledByYou: false, pendingRate: { id: '5c2f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f', rateBps: 2500, reason: 'Can pay a quarter', proposedByYou: false } })] } as unknown as DisputeCase;
+    render(
+      <MemoryRouter>
+        <LienPanel c={c} role="senior" setTap={vi.fn()} reload={vi.fn(async () => undefined)} />
+      </MemoryRouter>,
+    );
+    await settle();
+    await click(button('Review the request'));
+    expect(document.querySelector('[data-part="lien-rate-request"]')?.textContent).toContain('approving needs that');
+    await click(button('Approve the lower share'));
+    expect(document.querySelector('[data-part="lien-rate-request"]')?.closest('li')?.textContent).toContain('Read the chat on this case first');
+  });
 });

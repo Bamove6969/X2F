@@ -10,6 +10,7 @@ import type { Deps } from '../../src/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { pushRateDeciders, runLienGraceEscalations } from '../../src/disputes/lienGrace.js';
 import { pickRecovery } from '../../src/disputes/recovery.js';
+import { appendLog } from '../../src/log/append.js';
 import { startDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
 import { parseKeyTapIntent } from '../../src/staff/keyTap.js';
@@ -118,6 +119,15 @@ async function fresh(s: { id: string; b: StaffBrowser }): Promise<void> {
 }
 
 const tick = () => disputeTimerJob().run(deps.db, deps.clock());
+/** The case's logged chat read by staff member `id` on trade `code` at `at` (as POST /staff/v1/disputes/:code/chat logs it). */
+async function logAs(id: string, code: string, at: Date): Promise<void> {
+  const c = await deps.db.connect();
+  try {
+    await appendLog(c, { at, actor: { kind: 'staff', id, role: 'senior' }, tradeCode: code, action: 'chat.read', detail: {} });
+  } finally {
+    c.release();
+  }
+}
 const logsOf = async (action: string) =>
   (await deps.db.query<{ detail: string; actor_kind: string }>('select detail, actor_kind from activity_log where action = $1 order by id', [action])).rows;
 
@@ -358,7 +368,18 @@ describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', 
     const view = (await senior.b.get(`/staff/v1/liens/${l.id}`)).json() as { chat: { code: string; disputeOpen: boolean } };
     expect(view.chat).toEqual({ code: r.code, disputeOpen: true });
     await senior.b.get(`/staff/v1/liens/${l.id}`);
-    expect((await logsOf('lien.rate-review-opened')).filter((e) => (JSON.parse(e.detail) as { requestId: string }).requestId === req.id)).toHaveLength(1);
+    const opened = (await deps.db.query<{ detail: string; trade_code: string | null }>(`select detail, trade_code from activity_log where action = 'lien.rate-review-opened'`)).rows
+      .filter((e) => (JSON.parse(e.detail) as { requestId: string }).requestId === req.id);
+    expect(opened.map((e) => e.trade_code)).toEqual([r.code]);
+    // Review item 4: while the dispute is open, the senior must have read its chat since the request.
+    expect(errorOf(await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('review-chat-first');
+    // A chat read before the request does not count.
+    await logAs(senior.id, r.code, new Date(deps.clock().getTime() - DAY));
+    expect(errorOf(await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('review-chat-first');
+    // Another senior's read does not count either.
+    await logAs((await staff('senior')).id, r.code, deps.clock());
+    expect(errorOf(await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('review-chat-first');
+    await logAs(senior.id, r.code, deps.clock());
     const ok = await senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {});
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(2500);

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { SESSION_COOKIE, StaffBrowser, TRADER_ORIGIN, errorOf, insertSession, logEntries, seedStaff, seedTap, staffApps } from '../helpers/staffApp.js';
-import { XMR } from '../helpers/trades.js';
+import { XMR, seedTrade } from '../helpers/trades.js';
 
 const T0 = new Date('2026-11-16T12:00:00Z');
 
@@ -31,13 +31,14 @@ beforeAll(async () => {
 });
 afterAll(async () => close());
 
-async function lien(amount = 2n * XMR): Promise<{ id: string; debtor: string; creditor: string }> {
+async function lien(amount = 2n * XMR, realTrade = false): Promise<{ id: string; debtor: string; creditor: string }> {
   const debtor = await seedAccount(deps, { loginName: `d${Math.random().toString(36).slice(2, 10)}` });
   const creditor = await seedAccount(deps, { loginName: `c${Math.random().toString(36).slice(2, 10)}` });
+  const code = realTrade ? (await seedTrade(deps, { sellerId: debtor, buyerId: creditor, poster: 'seller' })).trade.code : null;
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, created_at, changed_at)
-     values ($1, $2, $3, gen_random_uuid()::text, 1, 1, 'restitution', $4, $4) returning id::text`,
-    [debtor, creditor, amount.toString(), T0],
+     values ($1, $2, $3, coalesce($5, gen_random_uuid()::text), 1, 1, 'restitution', $4, $4) returning id::text`,
+    [debtor, creditor, amount.toString(), T0, code],
   );
   return { id: rows[0]!.id, debtor, creditor };
 }
@@ -169,5 +170,21 @@ describe('coordinator follow-up 26 Nov 2026: the people who may decide a request
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('review of feat/lien-grace item 4: opening a request to review it', () => {
+  it('is logged once per request and person, on the source trade, even when opened several times at once', async () => {
+    // A real source trade, as a ruling's lien has.
+    const l = await lien(2n * XMR, true);
+    const req = ((await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'A quarter' })).json() as { id: string }).id;
+    await Promise.all([1, 2, 3, 4].map(() => senior.get(`/staff/v1/liens/${l.id}`)));
+    const from = (await deps.db.query<{ c: string }>('select from_code as c from liens where id = $1', [l.id])).rows[0]!.c;
+    const rows = (await deps.db.query<{ trade_code: string | null; detail: string }>(`select trade_code, detail from activity_log where action = 'lien.rate-review-opened'`)).rows
+      .filter((e) => (JSON.parse(e.detail) as { requestId: string }).requestId === req);
+    expect(rows.map((e) => e.trade_code)).toEqual([from]);
+    // The proposer opening it logs nothing (they cannot decide it).
+    await mod.get(`/staff/v1/liens/${l.id}`);
+    expect((await deps.db.query(`select 1 from activity_log where action = 'lien.rate-review-opened' and actor_id = $1`, [modId])).rowCount).toBe(0);
   });
 });
