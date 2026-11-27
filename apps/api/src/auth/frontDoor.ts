@@ -81,6 +81,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/chats/:chat/attestation': 'one of my own chats (participants only)',
   'GET /v1/chats/:chat/envelopes': 'one of my own chats (participants only)',
   'GET /v1/chats/:chat/key': "one of my own chats' key record: wraps only, each opened only by its member's own key (participants only)",
+  'GET /v1/chats/:chat/lane': "my own private moderator lane's record in one of my own chats: a wrap only my own chat key opens (participants only)",
   'GET /v1/events': 'my own live events (per account and per trade, no marketplace broadcast)',
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",

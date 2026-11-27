@@ -634,3 +634,37 @@ export function applyDispute(
   }
   return fail('wrong-party');
 }
+
+/**
+ * Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": the timer gives a case
+ * nobody took in time to one staff member. The machine's own `assign` rules decide, read as if that
+ * person took the case themselves (`assign` with their own role, by them), so the timer never makes
+ * an assignment the machine would refuse a person: the status is `open` or `appealed`, the role may
+ * handle disputes (`can(role, 'disputes.handle')`), and an appeal goes only to a senior moderator
+ * or the owner who had no part in round 1 (R37: `round1.involved`, which holds round 1's proposer,
+ * approver and assignee). On top of the manual rule: the case must still be unassigned (a senior's
+ * own take may reassign; the timer never does), and round 1's proposer and approver are refused
+ * by name too. Throws `DisputeRuleError` as `applyDispute` does; returns the assigned dispute.
+ */
+export function autoAssignDispute(
+  d: Dispute,
+  staff: { id: string; role: StaffRole; grants?: readonly Perm[] },
+  now: Date,
+  s: DisputeSettings,
+): Dispute {
+  if (d.assignee !== null) return fail('wrong-state');
+  if (d.round === 2 && d.round1 !== null && (d.round1.proposer === staff.id || d.round1.approver === staff.id)) return fail('not-eligible');
+  const by: Actor = { kind: 'staff', id: staff.id, role: staff.role, ...(staff.grants ? { grants: staff.grants } : {}) };
+  return applyDispute(d, { type: 'assign', staffId: staff.id, role: staff.role }, by, now, s);
+}
+
+/** Whether `autoAssignDispute` would accept this person for the case (no throw). */
+export function mayAutoAssign(d: Dispute, staff: { id: string; role: StaffRole; grants?: readonly Perm[] }, now: Date, s: DisputeSettings): boolean {
+  try {
+    autoAssignDispute(d, staff, now, s);
+    return true;
+  } catch (err) {
+    if (err instanceof DisputeRuleError) return false;
+    throw err;
+  }
+}

@@ -548,6 +548,16 @@ export interface LinkSettings {
   communityMatrixUrl: string | null;
   communityTelegramUrl: string | null;
 }
+/**
+ * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): minutes a dispute may wait untaken
+ * before the timer assigns it (1 to 1440), and whether it does. No tap (they bind no ruling).
+ */
+export interface AutoAssignSettings {
+  autoAssignMin: number;
+  autoAssignOn: boolean;
+}
+export const putAutoAssign = (change: Partial<AutoAssignSettings>) => staffApi<RulingSettings & AutoAssignSettings>('/staff/v1/settings', { method: 'PUT', body: change });
+
 /** The links need no tap (apps/api/src/staff/settings.ts TAPPED). */
 export const putLinks = (change: Partial<LinkSettings>) => staffApi<RulingSettings & LinkSettings>('/staff/v1/settings', { method: 'PUT', body: change });
 
@@ -776,6 +786,29 @@ export interface EarningsReport {
   allTime: EarningsMonth;
 }
 export const earnings = () => staffApi<EarningsReport>('/staff/v1/earnings');
+/**
+ * Mirrors apps/api `EarningsTallies` (owner 26 Nov 2026: "tallies by the day, tallies by the week,
+ * and tallies by the month"): `GET /staff/v1/earnings?period=…`, the last 31 days, 12 ISO weeks
+ * (Monday first) or 12 months, cut in `timeZone` (UTC), every one listed, empty ones too.
+ */
+export type EarningsPeriod = 'day' | 'week' | 'month';
+export interface EarningsTally extends Omit<EarningsMonth, 'month'> {
+  /** `YYYY-MM-DD`, ISO `YYYY-Www` or `YYYY-MM`; the total's is `last-31-days` and so on. */
+  period: string;
+  from: string;
+  to: string;
+}
+export interface EarningsTallies {
+  feeWallet: EarningsWallet | null;
+  payrollWallet: EarningsWallet | null;
+  usdCentsPerXmr: string | null;
+  timeZone: string;
+  period: EarningsPeriod;
+  tallies: EarningsTally[];
+  total: EarningsTally;
+  allTime: EarningsMonth;
+}
+export const earningsTallies = (period: EarningsPeriod) => staffApi<EarningsTallies>(`/staff/v1/earnings?period=${period}`);
 
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
@@ -806,11 +839,20 @@ export interface QueueRow {
    * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
    */
   complyLapsed?: boolean;
+  /**
+   * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): when the timer gives this free case to
+   * the least-busy moderator on shift (later if nobody eligible is on shift); null when taken or
+   * auto-assign is off. Absent from an older API.
+   */
+  autoAssignAt?: string | null;
+  /** The current assignee got the case from the timer, not by taking it. Absent from an older API. */
+  autoAssigned?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];
   counts: { open: number; overdue: number; unassigned: number; needApproval: number };
-  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+  /** `autoAssign`: the owner's pool time (owner 26 Nov 2026); absent from an older API. */
+  settings: { firstResponseH: number; largeTradeLimitUsd: number; autoAssign?: { on: boolean; minutes: number } };
 }
 
 export interface CaseTrader {
@@ -879,6 +921,8 @@ export interface DisputeCase {
   limitUsd: number;
   assignee: string | null;
   assignedToYou: boolean;
+  /** Owner 26 Nov 2026: the current assignee got the case from the timer. Absent from an older API. */
+  autoAssigned?: boolean;
   proposedByYou: boolean;
   mayWork: boolean;
   traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
@@ -897,8 +941,12 @@ export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code
 /**
  * Design build task 9: a moderator message, sealed under the chat key and countersigned by this
  * device in the chat key worker (keys/reader.ts `sealModMessage`); the API never sees its text.
+ * A private message carries `to` (that trader's lane); a message to both has no `to` at all.
  */
-export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: sealed });
+export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => {
+  const { to, ...rest } = sealed;
+  return staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: to === undefined ? rest : { ...rest, to } });
+};
 /** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
 export const readCaseChat = (code: string, deviceKeyId: string) =>
   staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });

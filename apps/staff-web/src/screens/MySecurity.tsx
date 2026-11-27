@@ -124,6 +124,9 @@ const C = {
       'login-method-removed': 'A login method was removed',
       'sessions-ended': 'Other sessions were logged out',
       'staff-device-certified': 'A device was confirmed to read dispute chats',
+      // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"). COPY-UNSIGNED
+      'dispute-auto-assigned': 'Nobody took a dispute in time: it was assigned to you automatically',
+      'dispute-unassigned-overdue': 'A dispute is still unassigned past its reply deadline',
     } as Readonly<Record<string, string>>,
     other: 'Security alert',
     on: (device: string) => `On ${device}`,
@@ -184,6 +187,8 @@ const alertDetail = (a: MyAlert): string | null => {
   const parts: string[] = [];
   if (typeof d.method === 'string' && Object.hasOwn(C.methods.type, d.method)) parts.push(C.methods.type[d.method as MethodType]);
   if (typeof d.deviceLabel === 'string' && d.deviceLabel !== '') parts.push(C.alerts.on(d.deviceLabel));
+  // Owner 26 Nov 2026: the dispute alerts name their trade (codeText's groups of four).
+  if (typeof d.trade === 'string' && /^[0-9A-Z]{16}$/.test(d.trade)) parts.push(`Trade ${d.trade.replace(/(.{4})(?=.)/g, '$1-')}`);
   if (a.kind === 'sessions-ended' && typeof d.count === 'number' && Number.isInteger(d.count) && d.count >= 0) parts.push(C.alerts.count(d.count));
   return parts.length === 0 ? null : parts.join(' · ');
 };

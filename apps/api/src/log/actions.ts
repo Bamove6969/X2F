@@ -20,7 +20,7 @@ type Kind =
   | 'iso'
   /** 64 lower-case hex characters (a hash or a tx id). */
   | 'hex64'
-  /** A setting value as stored: a number, a decimal string or null. */
+  /** A setting value as stored: a number, a decimal string, an on/off switch (owner 26 Nov 2026: auto-assign) or null. */
   | 'setting';
 
 type Schema = Readonly<Record<string, Kind>>;
@@ -77,7 +77,9 @@ export const LOG_ACTIONS = {
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
-  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso' },
+  // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): `auto` marks the timer's assignment
+  // (actor system); a person's take carries no `auto`.
+  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso', auto: 'bool' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
   // Re-verify 43fbbb2f, R-I1: the seller's cancel refund landed on a dispute already past `open`
@@ -87,7 +89,8 @@ export const LOG_ACTIONS = {
   'chat.read': {},
   // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
   'chat.message-requested': {},
-  'chat.message-sent': { envelopeId: 'id' },
+  // Private moderator lanes: `to` names the lane (buyer or seller) of a private message; absent for a shared one.
+  'chat.message-sent': { envelopeId: 'id', to: 'id' },
   'proof.unblurred-requested': { side: 'id' },
   'proof.unblurred-opened': {},
   // Rulings and appeals (Tasks 12, 24). `ruling.final` records "Decision overruled" or "stands".
@@ -336,7 +339,7 @@ function fits(kind: Kind, v: unknown): boolean {
     case 'hex64':
       return typeof v === 'string' && HEX64.test(v);
     case 'setting':
-      return v === null || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && /^-?\d{1,30}(\.\d{1,12})?$/.test(v));
+      return v === null || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && /^-?\d{1,30}(\.\d{1,12})?$/.test(v));
   }
 }
 

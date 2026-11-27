@@ -19,18 +19,22 @@ import { SETTINGS_DEFAULTS, type Settings } from './settingsDefaults.js';
  */
 export { SETTINGS_DEFAULTS, type Settings };
 
-type NumberField = 'largeTradeLimitUsd' | 'firstResponseH' | 'appealWindowH';
+type NumberField = 'largeTradeLimitUsd' | 'firstResponseH' | 'appealWindowH' | 'autoAssignMin';
 type LinkField = 'moderatorContactUrl' | 'communityMatrixUrl' | 'communityTelegramUrl';
-type Field = NumberField | LinkField;
+type BooleanField = 'autoAssignOn';
+type Field = NumberField | LinkField | BooleanField;
 
 /** Whole-number bounds (Task 8), the same as migration 206's checks and `@x2f/staff`'s `checkHours`. */
 const BOUNDS: Readonly<Record<NumberField, readonly [number, number]>> = {
   largeTradeLimitUsd: [1, 1_000_000],
   firstResponseH: [1, 72],
   appealWindowH: [12, 168],
+  // Owner 26 Nov 2026 (auto-assign, migration 910): minutes in the pool, like the other minute timers.
+  autoAssignMin: [1, 1440],
 };
 const NUMBER_FIELDS = Object.keys(BOUNDS) as NumberField[];
 const LINK_FIELDS: readonly LinkField[] = ['moderatorContactUrl', 'communityMatrixUrl', 'communityTelegramUrl'];
+const BOOLEAN_FIELDS: readonly BooleanField[] = ['autoAssignOn'];
 /** The fields whose change needs a tap: they bind the moderation gate. */
 const TAPPED: readonly Field[] = ['largeTradeLimitUsd', 'appealWindowH'];
 
@@ -41,6 +45,8 @@ const COLUMN: Readonly<Record<Field, string>> = {
   moderatorContactUrl: 'moderator_contact_url',
   communityMatrixUrl: 'community_matrix_url',
   communityTelegramUrl: 'community_telegram_url',
+  autoAssignMin: 'auto_assign_min',
+  autoAssignOn: 'auto_assign_on',
 };
 
 /**
@@ -58,10 +64,12 @@ interface Row {
   moderator_contact_url: string | null;
   community_matrix_url: string | null;
   community_telegram_url: string | null;
+  auto_assign_min: number;
+  auto_assign_on: boolean;
 }
 
 const SELECT = `select large_trade_limit_usd, first_response_h, appeal_window_h, moderator_contact_url,
-                       community_matrix_url, community_telegram_url from settings where id = 1`;
+                       community_matrix_url, community_telegram_url, auto_assign_min, auto_assign_on from settings where id = 1`;
 
 function settingsOf(r: Row | undefined): Settings {
   if (!r) return { ...SETTINGS_DEFAULTS };
@@ -72,6 +80,8 @@ function settingsOf(r: Row | undefined): Settings {
     moderatorContactUrl: r.moderator_contact_url,
     communityMatrixUrl: r.community_matrix_url,
     communityTelegramUrl: r.community_telegram_url,
+    autoAssignMin: r.auto_assign_min,
+    autoAssignOn: r.auto_assign_on,
   };
 }
 
@@ -101,6 +111,9 @@ export function parseSettingsChange(body: unknown): { change: Partial<Settings>;
       const link = typeof v === 'string' ? (k === 'moderatorContactUrl' ? moderatorContactLink(v) : communityLink(v)) : null;
       if (link === null) throw badRequest(k);
       change[k as LinkField] = link;
+    } else if ((BOOLEAN_FIELDS as string[]).includes(k)) {
+      if (typeof v !== 'boolean') throw badRequest(k);
+      change[k as BooleanField] = v;
     } else {
       throw badRequest();
     }
@@ -161,7 +174,8 @@ export async function changeSettings(
  * `GET /staff/v1/settings` and `PUT /staff/v1/settings` (perm `settings.write`, the owner). The PUT
  * takes any of `largeTradeLimitUsd` (1–1,000,000), `firstResponseH` (1–72), `appealWindowH`
  * (12–168), `moderatorContactUrl`, `communityMatrixUrl`, `communityTelegramUrl` (https or null),
- * and `tapId` (required when the limit or the appeal window changes) → the settings after it.
+ * `autoAssignMin` (1–1440) and `autoAssignOn` (true or false; neither needs a tap: they bind no
+ * ruling), and `tapId` (required when the limit or the appeal window changes) → the settings after it.
  */
 export function staffSettingsRoutes(app: FastifyInstance): void {
   const perm = 'settings.write' as const;

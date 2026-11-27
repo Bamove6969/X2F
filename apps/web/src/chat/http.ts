@@ -80,7 +80,9 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs =
       const envelopes: ApiEnvelope[] = [];
       for (const e of list) {
         if (!isRecord(e) || typeof e.id !== 'string' || !ID.test(e.id) || typeof e.senderRole !== 'string') continue;
-        envelopes.push({ id: e.id, senderRole: e.senderRole, envelope: e.envelope, at: typeof e.at === 'string' ? e.at : null });
+        // Private lanes: `to` is the lane of a v3 envelope (the caller's own), null for a shared one.
+        const to = e.to === 'buyer' || e.to === 'seller' ? e.to : null;
+        envelopes.push({ id: e.id, senderRole: e.senderRole, envelope: e.envelope, at: typeof e.at === 'string' ? e.at : null, to });
       }
       return { envelopes, more: b?.more === true };
     },
@@ -89,6 +91,17 @@ export function httpChatApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs =
       if (res.status === 404) {
         const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
         if (b?.error === 'no-key') return null;
+      }
+      if (!res.ok) return fail(res);
+      const b = (await res.json()) as { record?: unknown } | null;
+      return b?.record ?? null;
+    },
+    async getLane(chat) {
+      // Private lanes: `GET …/lane` → `{ record }` for the caller's own role, or 404 `no-lane`.
+      const res = await call(path(chat, '/lane'));
+      if (res.status === 404) {
+        const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+        if (b?.error === 'no-lane') return null;
       }
       if (!res.ok) return fail(res);
       const b = (await res.json()) as { record?: unknown } | null;

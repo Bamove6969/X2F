@@ -75,6 +75,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/chats/:chat/attestation',
   'GET /v1/chats/:chat/envelopes',
   'GET /v1/chats/:chat/key',
+  'GET /v1/chats/:chat/lane', // private mod chat (#41): apps/web/src/chat/http.ts
   'GET /v1/currencies',
   'GET /v1/escrow-keys/reader', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts
   'GET /v1/escrow-keys/readers', // escrow-key sync (owner, 26 Nov 2026): apps/web/src/escrow/keySync.ts

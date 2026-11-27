@@ -31,7 +31,7 @@ describe('the chat key worker', () => {
   it('opens a chat to the lines to show under a handle: no key, no wrap opened, no secret in anything it answers', async () => {
     const { w, keys, keeper } = await setup();
     const v = await keys.open(w.answer);
-    expect(Object.keys(v).sort()).toEqual(['handle', 'lines', 'missing', 'nextSeq', 'olderNotShown', 'unreadable']);
+    expect(Object.keys(v).sort()).toEqual(['handle', 'lines', 'missing', 'nextSeq', 'nextSeqByLane', 'olderNotShown', 'unreadable']);
     expect(v.handle).toMatch(/^[0-9a-f]{32}$/);
     expect(v.lines.map((l) => [l.from, l.text])).toEqual([['buyer', 'I paid.'], ['seller', 'Not received.']]);
     expect(keeper.size).toBe(1);

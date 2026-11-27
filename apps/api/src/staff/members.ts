@@ -117,8 +117,9 @@ const OPEN_CASE_STATUSES = ['open', 'appealed'] as const;
  */
 export async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: FastifyRequest): Promise<void> {
   const { rows } = await c.query<{ code: string }>(
-    'update disputes set assignee = null where assignee = $1 and status = any($2::text[]) returning code',
-    [accountId, OPEN_CASE_STATUSES],
+    // Auto-assign (owner 26 Nov 2026, migration 910): back in the pool from now, not auto-assigned.
+    'update disputes set assignee = null, pooled_at = $3, auto_assigned = false where assignee = $1 and status = any($2::text[]) returning code',
+    [accountId, OPEN_CASE_STATUSES, req.server.deps.clock()],
   );
   for (const r of rows) {
     // Lead review 7 Nov: the system unassigns (a consequence of the switch-off, logged by its own entry).

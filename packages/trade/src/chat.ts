@@ -3,7 +3,7 @@
  * the browser's chatCrypto seals and opens; the API stores ciphertext only and checks the shape.
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
-import { CHAT_ENVELOPE_V2_KEYS, ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
+import { CHAT_ENVELOPE_V2_KEYS, CHAT_ENVELOPE_V3_KEYS, ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 
 /** The `type` inside every chat envelope's ciphertext. */
@@ -28,7 +28,7 @@ const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const HEX = /^[0-9a-f]+$/;
 const KEY_HEX = /^[0-9a-f]{64}$/;
 
-export type ChatEnvelopeErrorCode = 'bad-envelope' | 'wrong-channel' | 'wrong-sender' | 'too-large';
+export type ChatEnvelopeErrorCode = 'bad-envelope' | 'wrong-channel' | 'wrong-sender' | 'wrong-lane' | 'too-large';
 
 /** Messages name the problem, never a field's value. */
 export class ChatEnvelopeError extends Error {
@@ -140,6 +140,47 @@ export function checkChatEnvelopeV2(body: unknown, channel: string, sessionRole?
   const out: ChatEnvelopeV2Shape = { v: 2, trade, from: from as Role, seq, nonce: b64(nonce, 32, 'nonce'), ct: b64(ct, CHAT_BODY_MAX_BYTES, 'ct'), sig: hex(sig, 128, 'sig') };
   if (trade !== channel) throw new ChatEnvelopeError('wrong-channel', 'Envelope is for another channel');
   if (sessionRole !== undefined && from !== sessionRole) throw new ChatEnvelopeError('wrong-sender', 'Envelope sender is not the session role');
+  return out;
+}
+
+/** A v3 private lane envelope as the API stores it (@x2f/protocol's ChatEnvelopeV3; private-mod-chat-2026-11-27). */
+export interface ChatEnvelopeV3Shape {
+  v: 3;
+  trade: string;
+  from: Role;
+  to: 'buyer' | 'seller';
+  seq: number;
+  nonce: string;
+  ct: string;
+  sig: string;
+}
+
+/**
+ * The API's check of a posted v3 (private lane) envelope: the exact v3 key set, field types, at most
+ * CHAT_BODY_MAX_BYTES as JSON, `trade` the chat's channel, `from` the session's role, and `to` a lane
+ * (`buyer` or `seller`) whose sender is the moderator or that lane's own trader (`wrong-lane`
+ * otherwise: a trader writes only in its own lane). Like v1 and v2, it cannot check the signature or
+ * open anything.
+ */
+export function checkChatEnvelopeV3(body: unknown, channel: string, sessionRole?: Role): ChatEnvelopeV3Shape {
+  if (!isPlainObject(body) || !hasExactKeys(body, CHAT_ENVELOPE_V3_KEYS)) throw bad('envelope shape');
+  let json: string;
+  try {
+    json = JSON.stringify(body);
+  } catch {
+    throw bad('envelope');
+  }
+  if (new TextEncoder().encode(json).length > CHAT_BODY_MAX_BYTES) throw new ChatEnvelopeError('too-large', 'Envelope too large');
+  const { v, trade, from, to, seq, nonce, ct, sig } = body;
+  if (v !== 3) throw bad('v');
+  if (typeof trade !== 'string') throw bad('trade');
+  if (typeof from !== 'string' || !(ROLES as readonly string[]).includes(from)) throw bad('from');
+  if (to !== 'buyer' && to !== 'seller') throw bad('to');
+  if (!isValidSeq(seq)) throw bad('seq');
+  const out: ChatEnvelopeV3Shape = { v: 3, trade, from: from as Role, to, seq, nonce: b64(nonce, 32, 'nonce'), ct: b64(ct, CHAT_BODY_MAX_BYTES, 'ct'), sig: hex(sig, 128, 'sig') };
+  if (trade !== channel) throw new ChatEnvelopeError('wrong-channel', 'Envelope is for another channel');
+  if (sessionRole !== undefined && from !== sessionRole) throw new ChatEnvelopeError('wrong-sender', 'Envelope sender is not the session role');
+  if (from !== 'mod' && from !== to) throw new ChatEnvelopeError('wrong-lane', 'Envelope is for another lane');
   return out;
 }
 
