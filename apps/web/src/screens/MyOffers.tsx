@@ -218,7 +218,9 @@ export function MyOffers() {
           <p className="x2f-error" role="alert">
             Could not load your offers.
           </p>
-          <Button variant="secondary" onClick={() => void reload()}>
+          {/* DESIGN: owner 17 Nov black+orange rule: with the offers unloaded there is no "Post an offer"
+              bar, so Retry is the screen's one primary action (orange). */}
+          <Button variant="primary" onClick={() => void reload()} data-part="retry">
             Retry
           </Button>
         </div>

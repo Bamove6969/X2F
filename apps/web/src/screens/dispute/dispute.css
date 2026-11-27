@@ -33,12 +33,17 @@
 .dispute-footer {
   position: sticky;
   bottom: 0;
-  background: var(--x2f-ground);
+  /* DESIGN: owner 17 Nov floating button: "The orange button should be floating or on its own. It doesn't
+     need a background." No fill, no top line, no shadow: the button sits over the page's own ground. */
+  /* DESIGN: owner 17 Nov floating button (follow-up): no bar, but the cards that scroll under the
+     button fade out into the page's own ground above it, so no card edge touches the button. The
+     fade is the page colour only (no edge, no other shade): invisible as a shape. */
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-ground) 0%, transparent), var(--x2f-ground) 16px);
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
-  border-top: 1px solid var(--x2f-surface-raised);
+  /* 16 px of fade, then 16 px of the page colour above the button (owner 17 Nov follow-up). */
+  padding: 32px var(--x2f-space-4) var(--x2f-space-4);
 }
 .dispute-footer .x2f-button {
   width: 100%;

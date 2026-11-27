@@ -11,6 +11,7 @@ import { LinksSection } from './settings/LinksSection.js';
 import { StaffPaySection } from './settings/StaffPaySection.js';
 import { StarterLimitsSection } from './settings/StarterLimitsSection.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 /**
  * The owner's Settings page (Plan 4 Task 17, board StaffSettings; perm settings.write).
@@ -219,7 +220,8 @@ export function StaffSettings() {
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="settings-fault">
-          {fault}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+          <FaultLine text={fault} />
         </Notice>
       ) : null}
       <section aria-label="Rulings" className="x2f-staff-card x2f-stack">

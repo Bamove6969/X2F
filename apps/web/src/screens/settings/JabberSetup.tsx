@@ -13,6 +13,7 @@ import { authApi } from '../auth/authApi.js';
 import { refusalText } from '../auth/refusals.js';
 import { JABBER_COPY as C } from './jabberCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 type Step = 'address' | 'verify' | 'done';
 
@@ -37,6 +38,7 @@ export function JabberSetup() {
   const [resent, setResent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -46,7 +48,11 @@ export function JabberSetup() {
         setStatus(s);
         if (s.state === 'on' || s.state === 'paused') setStep('done');
       },
-      (e: unknown) => live && setError(jabberErrorText(e)),
+      (e: unknown) => {
+        if (!live) return;
+        setError(jabberErrorText(e));
+        setLoadFailed(true);
+      },
     );
     return () => {
       live = false;
@@ -57,6 +63,7 @@ export function JabberSetup() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setLoadFailed(false);
     try {
       await fn();
     } catch (e) {
@@ -102,7 +109,8 @@ export function JabberSetup() {
       {step !== 'done' ? <p className="x2f-note">{C.lead}</p> : null}
       {error !== null ? (
         <p className="x2f-error" role="alert">
-          {error}
+          {/* DESIGN: owner 17 Nov black+orange rule: a failed load's "Try again" is the orange retry (reloads the page). */}
+          {loadFailed ? <RetryLine text={error} data-part="jabber-retry" /> : error}
         </p>
       ) : null}
       {unavailable ? <p className="x2f-note" data-part="jabber-unavailable">{C.unavailable}</p> : null}

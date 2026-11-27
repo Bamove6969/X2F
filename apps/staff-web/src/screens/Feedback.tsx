@@ -5,6 +5,7 @@ import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 // No board yet (NEEDS_DESIGN; Claude Design owns the look): StaffLog's table styles. DESIGNER-REVIEW
 // Every sentence on this page is draft copy. COPY-UNSIGNED
@@ -73,7 +74,12 @@ export function Feedback() {
       <PageTitle title="Feedback">
         <p className="x2f-staff-page__lead">What traders tell X2F. A named message shows the sender's display name, so you can follow up. Each time you open this list, it's logged.</p>
       </PageTitle>
-      {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
+      {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+      {fault !== null ? (
+        <Notice tone="danger">
+          <FaultLine text={fault} />
+        </Notice>
+      ) : null}
       <h2 className="x2f-h2">How's X2F doing?</h2>
       {counts !== null ? (
         <ul className="x2f-staff-counts" aria-label="Last 30 days" data-part="mood-counts">

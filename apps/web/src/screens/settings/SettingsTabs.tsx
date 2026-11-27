@@ -106,6 +106,14 @@ export function SettingsPage({ tab, screen, children }: { tab: SettingsTab; scre
     <main className="x2f-screen x2f-settings" data-screen={screen} data-settings-tab={tab}>
       <h1 className="x2f-screen__title">{C.title}</h1>
       <SettingsTabs current={tab} />
+      {/* DESIGN: owner 17 Nov black+orange rule: the Settings tabs have no primary of their own, so their
+          orange accent is the Feedback screen's help line, a link. DESIGN: wording (COPY-UNSIGNED). */}
+      <p className="x2f-note" data-part="settings-help">
+        Looking for an answer?{' '}
+        <Link className="x2f-link" to="/help">
+          Help
+        </Link>
+      </p>
       <div className="x2f-settings__panel" data-part="settings-panel">
         {children}
       </div>

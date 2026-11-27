@@ -97,12 +97,24 @@ export function HelpTopic() {
   const link = !inside || t === null ? null : member && t.link?.owner === true ? (t.memberLink ?? null) : (t.link ?? null);
   const more = inside && !member && t?.more !== undefined ? t.more : null;
   const library = t === null ? 'none' : libraryOf(topic);
+  const home = t !== null && topic === '';
+  const backLink = (
+    <p className="x2f-screen__foot">
+      {/* COPY-UNSIGNED */}
+      <Link className="x2f-link" to={inside ? '/sell' : '/login'} data-part="help-back">
+        {inside ? HELP_BACK.in : HELP_BACK.out}
+      </Link>
+    </p>
+  );
   return (
     <main className="x2f-screen x2f-screen--roomy" data-screen={t === null ? 'help-unknown' : topic === '' ? 'help' : `help-${topic}`}>
       {/* COPY-UNSIGNED: the title of an unknown topic. */}
       <h1 className="x2f-screen__title">{t === null ? 'Help' : t.title}</h1>
       {/* COPY-UNSIGNED */}
       <p data-part="help-body">{body}</p>
+      {/* DESIGN: owner 17 Nov black+orange rule: on the library's home the long library pushes the foot's
+          way back below the fold, so it sits under the intro there instead (its orange link). */}
+      {home ? backLink : null}
       {link === null ? null : (
         <p>
           <Link className="x2f-button x2f-button--secondary" to={link.to} data-part="help-action">
@@ -127,12 +139,7 @@ export function HelpTopic() {
       ) : (
         <HelpLibrary key={topic} topic={library} />
       )}
-      <p className="x2f-screen__foot">
-        {/* COPY-UNSIGNED */}
-        <Link className="x2f-link" to={inside ? '/sell' : '/login'} data-part="help-back">
-          {inside ? HELP_BACK.in : HELP_BACK.out}
-        </Link>
-      </p>
+      {home ? null : backLink}
     </main>
   );
 }

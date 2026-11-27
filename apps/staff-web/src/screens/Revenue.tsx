@@ -6,6 +6,9 @@ import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
+
+const REVENUE_LOAD_FAULT = 'X2F could not load the revenue just now. Open the page again to try again.';
 
 // DESIGN: needs drawing. NEEDS_DESIGN_REVENUE: no board draws the owner's books yet (StaffOverview's
 // revenue card, growth, payroll and treasury are design's); plain kit pieces and StaffLog's table
@@ -120,7 +123,7 @@ export function Revenue() {
         if (live) setReport(r);
       },
       (e: unknown) => {
-        if (live) setFault(faultText(e, 'X2F could not load the revenue just now. Open the page again to try again.'));
+        if (live) setFault(faultText(e, REVENUE_LOAD_FAULT));
       },
     );
     return () => {
@@ -133,7 +136,8 @@ export function Revenue() {
       <PageTitle title="Revenue" />
       {fault !== null ? (
         <Notice tone="danger" data-part="revenue-fault">
-          {fault}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+          <FaultLine text={fault} reload={fault === REVENUE_LOAD_FAULT} />
         </Notice>
       ) : null}
       {report !== null ? (

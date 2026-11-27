@@ -14,6 +14,7 @@ import { PageTitle } from '../ui/StaffShell.js';
 import { WeekBars } from '../ui/WeekBars.js';
 import { WeekLine, fmtMinutes } from '../ui/WeekLine.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 const PERIOD_LABELS: Readonly<Record<PerformancePeriod, string>> = {
   '30d': 'Last 30 days',
@@ -81,7 +82,8 @@ export function StaffPerformance() {
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="performance-fault">
-          {fault}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+          <FaultLine text={fault} />
         </Notice>
       ) : null}
       <div className="x2f-perf__filters">

@@ -13,6 +13,7 @@ import {
 } from '@x2f/trade';
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL, fileURLToPath } from 'node:url';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Privacy } from '../src/screens/settings/Privacy.js';
 import { PRIVACY_COPY, PRIVACY_PATH } from '../src/screens/settings/privacyCopy.js';
@@ -30,7 +31,12 @@ describe('Privacy', () => {
   it('states the rule with the shared numbers, calls no API and offers no choices', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const { host } = render(<Privacy />);
+    // Owner 17 Nov black+orange rule: the screen's way back to Settings is a router link.
+    const { host } = render(
+      <MemoryRouter>
+        <Privacy />
+      </MemoryRouter>,
+    );
     const text = host.textContent ?? '';
     expect(host.querySelector('h1')!.textContent).toBe(PRIVACY_COPY.title);
     expect(text).toContain(`self-destructs ${TRADE_KEEP_DAYS} days after it ends`);

@@ -5,6 +5,7 @@ import { ScreenHeader } from '../../ui/ScreenHeader.js';
 import { ApiShapeError, CURRENCIES, adSide, currencyFrom, fetchMethods, formatMinor, type MethodLists, type MethodRow, type MethodSort, type Side } from './api.js';
 import { MethodPicker, methodShown } from './MethodPicker.js';
 import { methodUpToLine } from './methodTime.js';
+import { PostOfferLink } from './PostOfferLink.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
@@ -166,6 +167,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.methodSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
         </RadioChips>
+        <PostOfferLink side={side} currency={currency} />
       </header>
 
       <main className="x2f-browse__main">

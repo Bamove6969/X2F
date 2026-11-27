@@ -14,6 +14,7 @@ import { authApi } from '../auth/authApi.js';
 import { jabberErrorText } from './JabberSetup.js';
 import { JABBER_COPY as C } from './jabberCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 /** Words for a kind this build does not know: the kind is never shown raw. */
 const wordsOf = (kind: string): { label: string; note: string } =>
@@ -24,6 +25,7 @@ export function JabberEventsScreen() {
   const [events, setEvents] = useState<JabberEvents['events'] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -33,7 +35,11 @@ export function JabberEventsScreen() {
         setStatus(s);
         setEvents(e.events);
       },
-      (e: unknown) => live && setError(jabberErrorText(e)),
+      (e: unknown) => {
+        if (!live) return;
+        setError(jabberErrorText(e));
+        setLoadFailed(true);
+      },
     );
     return () => {
       live = false;
@@ -44,6 +50,7 @@ export function JabberEventsScreen() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setLoadFailed(false);
     try {
       setEvents((await authApi.setJabberEvent({ kind, on })).events);
     } catch (e) {
@@ -65,7 +72,8 @@ export function JabberEventsScreen() {
       <p className="x2f-note">{C.eventsLead}</p>
       {error !== null ? (
         <p className="x2f-error" role="alert">
-          {error}
+          {/* DESIGN: owner 17 Nov black+orange rule: a failed load's "Try again" is the orange retry (reloads the page). */}
+          {loadFailed ? <RetryLine text={error} data-part="jabber-events-retry" /> : error}
         </p>
       ) : null}
       {status !== null && !setUp ? (

@@ -830,6 +830,20 @@
   line-height: inherit;
 }
 
+/* DESIGN: owner 17 Nov black+orange rule: the jump line above the Terms box (Terms.tsx). */
+.x2f-terms__jump {
+  margin: 0;
+  font-size: 15px;
+  /* 24 px lines: each text button is a 24 px tall target (WCAG 2.5.8). */
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-terms__jump .x2f-start__textbutton {
+  font-size: inherit;
+  line-height: inherit;
+}
+
 /*
  * The Terms box. The staff invite's Terms step (apps/staff-web, unchanged) still scrolls it inside
  * its step card; in the trader app's setup frame it is a card in the page with no height limit or

@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { startRegistration } from '@simplewebauthn/browser';
 import { AuthApiError, type PgpChallenge, type TeamInviteView, type TermsSignature } from '@x2f/auth-client';
+import { HelpLinks } from '../../ui/HelpLinks.js';
 import { Button } from '../../ui/Button.js';
 import { JOIN_COPY as C } from '../settings/teamCopy.js';
 import { TermsScreen } from '../setup/Terms.js';
@@ -298,6 +299,9 @@ export function MemberInvite() {
           )}
         </>
       ) : null}
+      {/* DESIGN: owner 17 Nov black+orange rule: the front door's help links (orange), as on Login, so
+          the invite's loading and used-up states carry an orange accent of their own. */}
+      <HelpLinks />
     </main>
   );
 }

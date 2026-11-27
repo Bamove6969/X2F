@@ -634,8 +634,9 @@
   flex-direction: column;
   gap: var(--x2f-space-1);
   padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-2);
-  border-top: 1px solid var(--x2f-surface-raised);
-  background: var(--x2f-ground);
+  /* DESIGN: owner 17 Nov floating button: "The orange button should be floating or on its own. It doesn't
+     need a background." No fill, no top line, no shadow: the button sits over the page's own ground. */
+  background: transparent;
 }
 
 /* Windows high contrast drops gradient drawings: fall back to the native radio. */
