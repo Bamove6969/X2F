@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { pushRateDeciders, runLienGraceEscalations } from '../../src/disputes/lienGrace.js';
-import { pickRecovery } from '../../src/disputes/recovery.js';
+import { pickRecovery, settleRecovery } from '../../src/disputes/recovery.js';
 import { appendLog } from '../../src/log/append.js';
 import { startDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
@@ -829,5 +829,56 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     expect(dAfter.complied_at).not.toBeNull();
     const compliedLogs = await deps.db.query("select 1 from activity_log where trade_code = $1 and action = 'dispute.complied'", [r.code]);
     expect(compliedLogs.rowCount).toBe(1);
+  });
+
+  it('settleRecovery sets left = 0n when repaid_off_platform_at is set: records nothing and logs lien.over-recovered for full amount (fix-offplatform-left)', async () => {
+    const r = await ruled();
+    const l = await lienOf(r.code);
+    // Mark lien repaid off-platform via the staff route.
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId })).statusCode).toBe(200);
+    expect((await lienOf(r.code)).repaid_off_platform_at).not.toBeNull();
+
+    // Simulate a late-completing hold on another trade for the same debtor.
+    const paidAtomic = '100000';
+    const seller = await newTrader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, $3, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $4)`,
+      [l.id, trade.code, paidAtomic, deps.clock()],
+    );
+
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      const pending = await settleRecovery(c, trade.code, 'completed', true, deps.clock());
+      for (const entry of pending) {
+        await appendLog(c, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: trade.code, action: entry.action, detail: entry.detail });
+      }
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    // 1. Nothing recorded in lien_recoveries.
+    const recoveries = await deps.db.query('select 1 from lien_recoveries where lien_id = $1', [l.id]);
+    expect(recoveries.rowCount).toBe(0);
+
+    // 2. activity_log has lien.recovered (0 / 0) and lien.over-recovered (full paidAtomic).
+    const recoveredLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(recoveredLog).toContainEqual({ lienId: l.id, amountAtomic: '0', remainingAtomic: '0' });
+
+    const overLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.over-recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(overLog).toContainEqual({ lienId: l.id, amountAtomic: paidAtomic });
   });
 });
