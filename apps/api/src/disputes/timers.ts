@@ -8,6 +8,7 @@ import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
+import { runAutoAssign } from './autoAssign.js';
 import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
@@ -39,6 +40,10 @@ export const DISPUTE_TIMER_MS = 30_000;
  * 5. **Comply time lapsed (A6).** A `seller-sends-xmr` ruling whose comply time passed with no proof
  *    goes to a senior moderator or the owner (`runComplyLapses`: marked, logged, the owner alerted
  *    in-app and, once per pass with any lapse, by push).
+ * 6. **Auto-assign (owner 26 Nov 2026, "Pool first, auto-assign if untaken").** A case nobody took
+ *    within the owner's setting goes to the least-busy eligible staff member on shift, oldest first;
+ *    one still in the pool past its reply deadline alerts the owner and the senior moderators once
+ *    per round (`runAutoAssign`, autoAssign.ts). Each assignment counts as a change.
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
@@ -117,6 +122,7 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   n += lapsed;
   // Lead call (18 Nov): a lapse reaches the owner's phone too, through the owner-alert push path.
   if (lapsed > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'dispute-comply-lapsed').catch(() => undefined);
+  n += await runAutoAssign(deps, step);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }

@@ -23,6 +23,8 @@ let ownerId: string;
 const DEFAULTS = {
   largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48,
   moderatorContactUrl: null, communityMatrixUrl: null, communityTelegramUrl: null,
+  // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): lead defaults 15 minutes, on.
+  autoAssignMin: 15, autoAssignOn: true,
 };
 
 beforeAll(async () => {
@@ -169,6 +171,7 @@ describe('PUT /staff/v1/settings', () => {
       { firstResponseH: 0 }, { firstResponseH: 73 }, { appealWindowH: 11 }, { appealWindowH: 169 },
       { payModCaseUsd: 5 }, { firstResponseH: 5, extra: 1 }, { moderatorContactUrl: 'http://matrix.to/x' },
       { moderatorContactUrl: 'https://a b' }, { communityTelegramUrl: `https://t.me/${'a'.repeat(200)}` }, { firstResponseH: 5, tapId: 7 },
+      { autoAssignMin: 0 }, { autoAssignMin: 1441 }, { autoAssignMin: 2.5 }, { autoAssignMin: '15' }, { autoAssignOn: 'true' }, { autoAssignOn: 1 }, { autoAssignOn: null },
     ]) {
       const res = await put(body);
       expect({ status: res.statusCode, error: errorOf(res) }, JSON.stringify(body)).toEqual({ status: 400, error: 'bad-request' });
@@ -192,6 +195,9 @@ describe('PUT /staff/v1/settings', () => {
 describe('the defaults are one module, whatever loads first', () => {
   it('disputes/settings.ts carries the staff defaults when staff/settings.ts loads first', () => {
     expect(SETTINGS_DEFAULTS).toEqual(DEFAULTS);
-    expect(DISPUTE_DEFAULTS).toEqual({ largeTradeLimitUsd: DEFAULTS.largeTradeLimitUsd, firstResponseH: DEFAULTS.firstResponseH, appealWindowH: DEFAULTS.appealWindowH });
+    expect(DISPUTE_DEFAULTS).toEqual({
+      largeTradeLimitUsd: DEFAULTS.largeTradeLimitUsd, firstResponseH: DEFAULTS.firstResponseH, appealWindowH: DEFAULTS.appealWindowH,
+      autoAssignMin: DEFAULTS.autoAssignMin, autoAssignOn: DEFAULTS.autoAssignOn,
+    });
   });
 });

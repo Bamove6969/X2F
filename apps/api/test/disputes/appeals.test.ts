@@ -51,6 +51,10 @@ afterAll(async () => {
 // them involved in round 1).
 beforeEach(async () => {
   await deps.db.query(`update staff_members set switched_off_at = $1 where role <> 'owner' and switched_off_at is null`, [START]);
+  // These tests count the owner's pushes from the dispute timer. Auto-assign (owner 26 Nov 2026,
+  // test/disputes/autoAssign.test.ts) would hand the earlier tests' pooled cases to a senior on
+  // shift and alert on them; it is switched off here so only the no-reviewer alert is counted.
+  await deps.db.query('update settings set auto_assign_on = false');
 });
 
 const tradeOf = (code: string) => `/v1/trades/${code}`;
