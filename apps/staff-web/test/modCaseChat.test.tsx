@@ -340,6 +340,27 @@ describe('ModCase: the moderator switches private mode (owner 27 Nov follow-up)'
     await settle();
     expect(select().value).toBe('both');
   });
+
+  it('turns off every lane that is currently on when switching to both or to one of those lanes', async () => {
+    const bothOn = async (w: Awaited<ReturnType<typeof world>>) => [
+      { id: '1', senderRole: 'mod' as const, envelope: await w.sealMode('buyer', 0, true), at: 'a', to: 'buyer' as const },
+      { id: '2', senderRole: 'mod' as const, envelope: await w.sealMode('seller', 0, true), at: 'b', to: 'seller' as const },
+    ];
+    // 1. Both buyer and seller are on; switching to 'both' sends off to both lanes.
+    const first = await opened({ envelopes: bothOn });
+    await until(() => select().value === 'seller');
+    await choose('both');
+    await until(() => select().value === 'both' && !select().disabled);
+    expect(first.modes).toEqual([['buyer', false, 5], ['seller', false, 2]]);
+    cleanup();
+
+    // 2. Both buyer and seller are on; switching to 'buyer' only turns off 'seller' without re-sending on to 'buyer'.
+    const second = await opened({ envelopes: bothOn });
+    await until(() => select().value === 'seller');
+    await choose('buyer');
+    await until(() => select().value === 'buyer');
+    expect(second.modes).toEqual([['seller', false, 2]]);
+  });
 });
 
 describe('ModCase: @mentions (owner 27 Nov follow-up)', () => {
