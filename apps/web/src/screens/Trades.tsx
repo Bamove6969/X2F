@@ -23,11 +23,12 @@ import { publicName } from '../api/trade.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
 import { isCantDoCode, teamCantDoText, teamCantDoTitle, type CantDoCode } from '../ui/cantDoCodes.js';
+import { RetryButton } from '../ui/RetryButton.js';
 import { EmptyState } from '../ui/EmptyState.js';
 import { Notice } from '../ui/Notice.js';
 import { StatusChip } from '../ui/StatusChip.js';
 import { fetchTradeList, type TradeListItem, type TradeListStatus } from './trades/api.js';
-import { EMPTY, LOAD_FAILED, RETRY, SHOW_MORE, STATE_LABEL, TAB_LABEL, TRADES_TITLE, fiatLine, lastActedLine, sideLine, whenLine } from './trades/model.js';
+import { EMPTY, FIND_TRADE, LOAD_FAILED, RETRY, SHOW_MORE, STATE_LABEL, TAB_LABEL, TRADES_TITLE, fiatLine, lastActedLine, sideLine, whenLine } from './trades/model.js';
 import './browse/browse.css';
 import './screens.css';
 import './trades/trades.css';
@@ -131,12 +132,23 @@ export function Trades({ rowAction }: { rowAction?: (t: TradeListItem) => ReactN
         ) : load.kind === 'error' ? (
           <Notice tone="danger" data-part="error">
             {LOAD_FAILED}{' '}
-            <Button variant="quiet" onClick={() => setAttempt((n) => n + 1)} data-part="retry">
+            {/* DESIGN: owner 17 Nov black+orange rule: the retry in the kit's orange text-button style. */}
+            <RetryButton onClick={() => setAttempt((n) => n + 1)} data-part="retry">
               {RETRY}
-            </Button>
+            </RetryButton>
           </Notice>
         ) : load.kind === 'ready' && load.trades.length === 0 ? (
-          <EmptyState icon="list-check" title={EMPTY[tab].title} data-part="empty">
+          // DESIGN: owner 17 Nov black+orange rule: the empty list's orange way on, to the trade finder.
+          <EmptyState
+            icon="list-check"
+            title={EMPTY[tab].title}
+            data-part="empty"
+            action={
+              <Link className="x2f-link" to="/sell" data-part="find-trade">
+                {FIND_TRADE}
+              </Link>
+            }
+          >
             {EMPTY[tab].text}
           </EmptyState>
         ) : load.kind === 'ready' ? (

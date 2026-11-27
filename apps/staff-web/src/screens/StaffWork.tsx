@@ -10,6 +10,7 @@ import { fmtMinutes } from '../ui/WeekLine.js';
 import { centsText } from './settings/StaffPaySection.js';
 import { xmrText } from './staffFormat.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 /**
  * Owner 26 Nov 2026: one staff member's work and hours, for the owner's audit
@@ -86,7 +87,12 @@ export function StaffWork() {
           </Button>
         ))}
       </div>
-      {fault !== null ? <Notice tone="danger" data-part="work-fault">{fault}</Notice> : null}
+      {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+      {fault !== null ? (
+        <Notice tone="danger" data-part="work-fault">
+          <FaultLine text={fault} />
+        </Notice>
+      ) : null}
       {data && t ? (
         <>
           <section className="x2f-card x2f-stack" aria-label={C.totals} data-part="work-totals">

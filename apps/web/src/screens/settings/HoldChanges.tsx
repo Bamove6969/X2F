@@ -37,6 +37,7 @@ import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from '../auth/authApi.js';
 import { CHANGES_PATH, HOLD_COPY as C, MEMBER_HOLD_COPY as M, NEW_CODE_COPY, changeWords } from './holdCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 const CHANGED = 'x2f:hold-changed';
 /** The hold view sends no server time; the date beside the countdown is in UTC either way. */
@@ -265,7 +266,8 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
   if (failed) {
     return standalone ? (
       <p className="x2f-error" role="alert" data-part="changes-load-error">
-        {C.loadFailed}
+        {/* DESIGN: owner 17 Nov black+orange rule: the load error's orange retry (reloads the page). */}
+        <RetryLine text={C.loadFailed} data-part="changes-retry" />
       </p>
     ) : null;
   }

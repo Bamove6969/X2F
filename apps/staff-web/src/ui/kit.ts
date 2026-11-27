@@ -18,6 +18,8 @@ export { EmptyState } from '../../../web/src/ui/EmptyState.js';
 // Plan 5 Task 11: the past-reputation evidence link (a new tab, no referrer, no opener; https only).
 export { ExternalLink } from '../../../web/src/ui/ExternalLink.js';
 export { Icon, type IconName } from '../../../web/src/ui/icons.js';
+// DESIGN: owner 17 Nov black+orange rule: the orange retry on a load-fault line (ui/FaultLine.tsx).
+export { RetryButton } from '../../../web/src/ui/RetryButton.js';
 export { Notice } from '../../../web/src/ui/Notice.js';
 export { Sheet } from '../../../web/src/ui/Sheet.js';
 export { Switch } from '../../../web/src/ui/Switch.js';

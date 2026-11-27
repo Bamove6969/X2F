@@ -6,6 +6,7 @@ import { Icon } from '../../ui/icons.js';
 import { ApiShapeError, currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, sortOffers, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
 import { OfferCard } from './OfferCard.js';
 import { loadWithMarkup, marketUpdated, saveWithMarkup, withMarkupHint } from './offerAmounts.js';
+import { PostOfferLink } from './PostOfferLink.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
@@ -161,6 +162,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
         <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.offerSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
         </RadioChips>
+        <PostOfferLink side={side} currency={currency} method={methodId} />
       </header>
 
       <main className="x2f-browse__main x2f-browse__main--cards">

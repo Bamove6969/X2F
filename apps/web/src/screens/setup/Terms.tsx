@@ -248,6 +248,19 @@ export function TermsScreen({
           ))}
         </ul>
       </section>
+      {/* DESIGN: owner 17 Nov black+orange rule: the tick line's two orange text buttons, also above the
+          full Terms, so the Terms screens show an orange accent while their button waits, greyed, for
+          the tick (and a team member's signature). They scroll to the text as the tick line's do.
+          COPY-UNSIGNED: the jump line (the tick line's own two names). */}
+      <p className="x2f-terms__jump" data-part="terms-jump">
+        <button type="button" className="x2f-start__textbutton" onClick={() => show(null)} aria-controls="terms-text">
+          Terms of Service
+        </button>
+        <span aria-hidden="true"> · </span>
+        <button type="button" className="x2f-start__textbutton" onClick={() => show(PRIVACY_HEADING)} aria-controls="terms-privacy">
+          Privacy Policy
+        </button>
+      </p>
       <h2 className="x2f-terms__boxhead" id="terms-full-heading" tabIndex={-1} data-part="terms-full-heading">
         {fullHeading(version)}
       </h2>

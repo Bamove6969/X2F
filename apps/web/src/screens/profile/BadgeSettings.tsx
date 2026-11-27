@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { BadgeChips, BadgeSeal, badgeFromApi } from '../../ui/Badges.js';
 import { Button } from '../../ui/Button.js';
+import { RetryLine } from '../../ui/RetryButton.js';
 import { chooseBadge, fetchBadgeSettings, type BadgeSettings as Settings, type Visibility } from './api.js';
 import { BADGE_COPY as C } from './profileCopy.js';
 import '../screens.css';
@@ -57,7 +58,8 @@ export function BadgeSettings() {
       <h1 className="x2f-screen__title">{C.title}</h1>
       {error !== null ? (
         <p className="x2f-error" role="alert">
-          {error}
+          {/* DESIGN: owner 17 Nov black+orange rule: "Try again" (already in the line) is the orange retry. */}
+          {error === C.loadFailed ? <RetryLine text={error} data-part="badges-retry" /> : error}
         </p>
       ) : null}
       {settings === null ? null : (

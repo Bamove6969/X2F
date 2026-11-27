@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { AuthApiError } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
+import { HelpLinks } from '../../ui/HelpLinks.js';
 import { Notice } from '../../ui/Notice.js';
 import { BURNED_CODE_COPY as BURNED } from '../settings/holdCopy.js';
 import { afterLogin, authApi, deviceLabel } from './authApi.js';
@@ -92,6 +93,9 @@ export function BackupLogin() {
       <Button variant="primary" disabled={busy || loginName.trim() === '' || code.trim() === ''} onClick={() => void submit()} data-part="backup-login">
         Log in
       </Button>
+      {/* DESIGN: owner 17 Nov black+orange rule: the Login screen's help links (orange), so this screen
+          carries an orange accent of its own while "Log in" waits, greyed, for both fields. */}
+      <HelpLinks />
     </main>
   );
 }

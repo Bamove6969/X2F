@@ -46,6 +46,9 @@ import { PasswordInput } from '../../ui/PasswordInput.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 import { hasPasswordSpace, spaceProblem } from '../setup/names.js';
 import { KeyEmailNote, useKeyCheck } from '../setup/PgpKey.js';
+import { RetryLine } from '../../ui/RetryButton.js';
+
+const METHODS_LOAD_FAILED = 'Could not load your login methods.';
 
 const LABELS: Record<MethodType, string> = {
   pgp: 'PGP key',
@@ -107,7 +110,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   }, []);
 
   useEffect(() => {
-    void refresh().catch(() => setError('Could not load your login methods.'));
+    void refresh().catch(() => setError(METHODS_LOAD_FAILED));
   }, [refresh]);
 
   /**
@@ -186,7 +189,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       </h2>
       {error !== null ? (
         <p className="x2f-error" role="alert" data-part="methods-error">
-          {error}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load error's orange retry (reloads the page). */}
+          {error === METHODS_LOAD_FAILED ? <RetryLine text={error} data-part="methods-retry" /> : error}
         </p>
       ) : null}
       {staged > 0 ? <StagedNote key={staged} /> : null}

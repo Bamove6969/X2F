@@ -36,6 +36,9 @@ import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
+
+const DEVICES_LOAD_FAILED = 'Could not load your devices.';
 
 // COPY-UNSIGNED (all of DEVICES_COPY).
 const C = {
@@ -154,7 +157,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   }, []);
 
   useEffect(() => {
-    void refresh().catch(() => setError('Could not load your devices.'));
+    void refresh().catch(() => setError(DEVICES_LOAD_FAILED));
     // Staff and owner accounts have no device setting (403): the screen then shows the list only.
     authApi.getDeviceSettings().then(setSettings, () => undefined);
     // Staff, owner and backup sessions have no length (null): the field is then left out.
@@ -285,7 +288,8 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             </h2>
             {error !== null ? (
               <p className="x2f-error" role="alert">
-                {error}
+                {/* DESIGN: owner 17 Nov black+orange rule: the load error's orange retry (reloads the page). */}
+                {error === DEVICES_LOAD_FAILED ? <RetryLine text={error} data-part="devices-retry" /> : error}
               </p>
             ) : null}
             {max !== null && sessions !== null ? (

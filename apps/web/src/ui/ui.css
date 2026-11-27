@@ -292,6 +292,32 @@
   color: var(--x2f-monero-ink-hover);
 }
 
+/* A button that reads as a link (in a sentence: "Try again", "Suggest it"). Moved here from
+   browse.css so every screen can use it. DESIGN: owner 17 Nov black+orange rule: the kit's orange
+   text action, used for the retry on the load-error lines. */
+.x2f-text-button {
+  /* A tap target at least 32 px tall on phones; the negative margin keeps the line box as it was. */
+  display: inline-block;
+  padding: 6px 0;
+  margin: -6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.x2f-text-button:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-text-button:hover {
+  color: var(--x2f-monero-ink-hover);
+}
+
 /* A link that is the sentence's action (LoginApprove v2 board, "Devices"): 600, no underline,
    ink on hover, with a 44 px tall hit area. */
 .x2f-link--strong {
@@ -2658,6 +2684,20 @@
   line-height: 22px;
 }
 
+/* DESIGN: owner 17 Nov black+orange rule: an empty list's link (EmptyState action), 600, a 44 px target. */
+.x2f-empty__action {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.x2f-empty__action .x2f-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+
 /* Select all over select cards: its tick box sits on the cards' 44 px tick-box column. */
 .x2f-select-all {
   display: flex;
@@ -2797,13 +2837,15 @@
   border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  color: var(--x2f-ink);
+  /* DESIGN: owner 17 Nov black+orange rule: the tiles' labels in the kit's link orange, so the front
+     door's screens that show only these (Team join's used-up link) carry an orange accent. */
+  color: var(--x2f-monero-ink);
   text-decoration: none;
 }
 
 .x2f-help-links__link:hover {
   background: var(--x2f-surface-raised);
-  color: var(--x2f-ink);
+  color: var(--x2f-monero-ink-hover);
 }
 
 /* The trade header's wrapper (the brand row and the board's header), one block for the tabletop rule. */

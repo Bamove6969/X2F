@@ -5,6 +5,7 @@
  * question after every login (a team member finds it in both places).
  * Placement and words: DESIGN (no board yet; IDLE_COPY).
  */
+import { Link } from 'react-router';
 import { useEffect, useId, useState } from 'react';
 import { IDLE_REMINDER_MINUTES, isIdleReminderMinutes } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
@@ -56,6 +57,13 @@ export function IdleReminderScreen() {
   return (
     <main className="x2f-screen" data-screen="idle-reminder">
       <h1 className="x2f-screen__title">{C.title}</h1>
+      {/* DESIGN: owner 17 Nov black+orange rule: the screen saves on change and has no button, so its
+          orange accent is the way back to Settings, a link. DESIGN: wording (COPY-UNSIGNED). */}
+      <p className="x2f-note" data-part="idle-reminder-back">
+        <Link className="x2f-link" to="/settings/security">
+          Back to Settings
+        </Link>
+      </p>
       <section className="x2f-card">
         <div className="x2f-field" data-part="idle-reminder-field">
           <label className="x2f-label" htmlFor={id}>

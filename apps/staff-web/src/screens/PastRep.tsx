@@ -5,6 +5,7 @@ import { Button, CantDoThat, EmptyState, ExternalLink, Notice } from '../ui/kit.
 import { PageTitle, useMe } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 // Plan 5 Task 11. No board (DESIGN: not drawn; Claude Design owns the look): the staff kit's card,
 // field and table styles. DESIGNER-REVIEW
@@ -144,7 +145,10 @@ export function PastRep() {
       </PageTitle>
       {fault !== null ? (
         <div data-part="past-rep-fault">
-          <Notice tone="danger">{fault}</Notice>
+          <Notice tone="danger">
+            {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+            <FaultLine text={fault} />
+          </Notice>
         </div>
       ) : null}
       {refusal !== null ? <CantDoThat body={refusal.text} from={refusal.code} onClose={() => setRefusal(null)} /> : null}

@@ -20,6 +20,7 @@ import { Button } from '../../ui/Button.js';
 import { BLOCK_NOTE_MAX, blockTrader, fetchBlocked, setBlockNote, unblockTrader, type BlockedEntry } from './blockApi.js';
 import { BLOCK_COPY as C } from './blockCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 type Row = BlockedEntry & { unblocked: boolean };
 
@@ -133,7 +134,8 @@ export function Blocked() {
         ) : null}
         {loadFailed ? (
           <p className="x2f-error" role="alert">
-            {C.loadFailed}
+            {/* DESIGN: owner 17 Nov black+orange rule: "Reload the page" is the orange retry. */}
+            <RetryLine text={C.loadFailed} data-part="blocked-retry" />
           </p>
         ) : null}
         {error !== null ? (

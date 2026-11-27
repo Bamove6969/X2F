@@ -180,6 +180,12 @@
   color: var(--x2f-moderator);
 }
 
+/* DESIGN: owner 17 Nov black+orange rule: the eyebrow's shield is the brand orange, so the staff
+   door screens (owner setup, invite) carry orange too. An icon, not text: the label keeps its colour. */
+.x2f-staff-eyebrow svg {
+  color: var(--x2f-monero-ink);
+}
+
 .x2f-staff-solo__title {
   margin: 0;
   font-family: var(--x2f-display-family);

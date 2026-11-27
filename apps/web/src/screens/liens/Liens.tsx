@@ -13,6 +13,7 @@ import { ApiCallError } from '../../api/client.js';
 import { escrowClient } from '../../escrow/useEscrow.js';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
+import { RetryButton } from '../../ui/RetryButton.js';
 import { fetchWallets, type PickWallet } from '../quote/api.js';
 import { fetchLiens, setRecoveryAddress, type MyLiens, type OwedToMe } from './liensApi.js';
 import { LIENS_COPY as C, pctOf } from './liensCopy.js';
@@ -41,7 +42,19 @@ export function Liens() {
   return (
     <main className="screen">
       <h1>{C.title}</h1>
-      {failed && <p role="alert">{C.loadFailed}</p>}
+      {/* DESIGN: owner 17 Nov black+orange rule: "Try again" after the load-error line, the orange text button. */}
+      {failed && (
+        <p role="alert">
+          {C.loadFailed}{' '}
+          <RetryButton
+            data-part="liens-retry"
+            onClick={() => {
+              setFailed(false);
+              setReload((n) => n + 1);
+            }}
+          />
+        </p>
+      )}
       {data !== null && data.owes.length === 0 && data.owedTo.length === 0 && <p>{C.none}</p>}
       {data?.owes.map((l) => (
         <section key={l.id} aria-label={C.title} data-lien={l.id}>

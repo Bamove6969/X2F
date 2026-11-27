@@ -64,8 +64,11 @@ const ORANGE_ALLOWED = [
   // Links and text buttons (boards: a { color: var(--monero-ink) }).
   'ui/ui.css .x2f-link',
   'ui/ui.css .x2f-link:hover',
-  'screens/browse/browse.css .x2f-text-button',
-  'screens/browse/browse.css .x2f-text-button:hover',
+  'ui/ui.css .x2f-text-button',
+  'ui/ui.css .x2f-text-button:hover',
+  // Owner 17 Nov black+orange rule: the front door's help-link tiles' labels are links.
+  'ui/ui.css .x2f-help-links__link',
+  'ui/ui.css .x2f-help-links__link:hover',
   'screens/setup/setup.css .x2f-start__textbutton',
   'screens/setup/setup.css .x2f-start__textbutton:hover',
   // Sign-up v2: the PGP code step's "X2F's signing key" download is a link.

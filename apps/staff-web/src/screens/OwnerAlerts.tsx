@@ -4,6 +4,9 @@ import { faultText } from '../refusals.js';
 import { AlertsCountContext } from '../ui/alertsCount.js';
 import { Button, EmptyState, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
+import { FaultLine } from '../ui/FaultLine.js';
+
+const ALERTS_LOAD_FAULT = 'Your notifications could not be loaded. Try again.';
 
 /**
  * The owner's notifications page (O-040, owner Q35: "Owner notification when a currency drops or
@@ -56,7 +59,7 @@ export function OwnerAlerts() {
       setNext(r.next);
       setFault(null);
     } catch (e) {
-      setFault(faultText(e, 'Your notifications could not be loaded. Try again.'));
+      setFault(faultText(e, ALERTS_LOAD_FAULT));
     }
   };
   useEffect(() => {
@@ -96,7 +99,8 @@ export function OwnerAlerts() {
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="owner-alerts-fault">
-          {fault}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+          <FaultLine text={fault} reload={fault === ALERTS_LOAD_FAULT} />
         </Notice>
       ) : null}
       {items !== null && items.length === 0 ? (

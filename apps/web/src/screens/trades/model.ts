@@ -66,4 +66,6 @@ export const EMPTY: Readonly<Record<TradeListStatus, { title: string; text: stri
 
 export const LOAD_FAILED = 'Your trades could not be loaded.'; // COPY-UNSIGNED
 export const RETRY = 'Try again'; // COPY-UNSIGNED
+/** DESIGN: wording (owner 17 Nov black+orange rule): the empty list's link, the trade finder's own name. COPY-UNSIGNED. */
+export const FIND_TRADE = 'Find a trade';
 export const SHOW_MORE = 'Show more'; // COPY-UNSIGNED

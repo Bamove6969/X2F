@@ -414,3 +414,12 @@ textarea.x2f-textarea--tall {
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }
+
+/* DESIGN: owner 17 Nov black+orange rule and floating button: the compromised-account form is long,
+   so its one orange button (dimmed until the form is complete, owner note #191) floats at the bottom
+   of the view instead of waiting below the fold. */
+[data-screen='compromised'][data-step='form'] [data-part='compromised-send'] {
+  position: sticky;
+  bottom: var(--x2f-space-4);
+  z-index: 1;
+}

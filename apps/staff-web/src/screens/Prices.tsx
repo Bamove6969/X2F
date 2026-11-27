@@ -5,6 +5,7 @@ import { Button, Notice } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table } from '../ui/Table.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 // DESIGN: not drawn. The staff Prices page has no board yet (J-21; design draws it): plain kit
 // pieces and StaffLog's table styles until then. Every sentence on this page is draft copy.
@@ -55,7 +56,8 @@ export function Prices() {
       </PageTitle>
       {fault !== null ? (
         <Notice tone="danger" data-part="prices-fault">
-          {fault}
+          {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+          <FaultLine text={fault} />
         </Notice>
       ) : null}
       <Button variant="secondary" disabled={busy} onClick={() => void load()}>
