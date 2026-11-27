@@ -70,7 +70,7 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { purgedTagSql } from './retention.js';
-import { chatGrants, chatNotice, fallbackGrant } from './grants.js';
+import { chatGrants, chatNotice, fallbackGrant, IN_DISPUTE_SQL } from './grants.js';
 import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
@@ -371,7 +371,7 @@ export function chatRoutes(app: FastifyInstance): void {
     // Presence through the viewer-aware summary: hidden from a trader the other side blocked (review M5).
     const names = await traderSummaries(deps.db, [other], deps.clock(), req.auth.accountId);
     const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null; secured_at: Date | null }>(
-      `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
+      `select ${IN_DISPUTE_SQL('$2')} as disputed,
               exists (select 1 from chat_attestations a where a.chat = $1) as attested,
               (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine,
               (select t.secured_at from trades t where t.code = $2) as secured_at`,

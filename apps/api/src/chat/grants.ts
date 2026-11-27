@@ -103,13 +103,22 @@ export async function disputeGrant(q: Queryable, tradeCode: string, side: 'buyer
   };
 }
 
+/** SQL over a trade code expression: the trade is disputed or still has an open dispute (matches retention.ts). */
+export const IN_DISPUTE_SQL = (code: string) =>
+  `(exists (select 1 from trades t where t.code = ${code} and t.state = 'disputed') or exists (select 1 from disputes d where d.code = ${code} and d.status <> 'closed'))`;
+
+async function inDispute(q: Queryable, tradeCode: string | null): Promise<boolean> {
+  if (tradeCode === null) return false;
+  return (await q.query<{ ok: boolean }>(`select ${IN_DISPUTE_SQL('$1')} as ok`, [tradeCode])).rows[0]?.ok === true;
+}
+
 /**
  * The fallback grant: the counterparty's (T1 by proxy: the other side's grant is stored and not
  * accepted), or either side's on a stored dispute notice for the trade's current dispute while no
- * grant is accepted (T2, build task 7). Only while the trade is disputed, once per side.
+ * grant is accepted (T2, build task 7). Only while the trade is disputed or a dispute is open, once per side.
  */
 export async function fallbackGrant(q: Queryable, chat: string, tradeCode: string | null, side: 'buyer' | 'seller', raw: unknown, now: Date): Promise<void> {
-  const disputed = tradeCode !== null && (await q.query("select 1 from trades where code = $1 and state = 'disputed'", [tradeCode])).rows.length > 0;
+  const disputed = await inDispute(q, tradeCode);
   const k = await keyedChat(q, chat);
   if (!disputed || k === null) throw new ApiError(409, 'grant-not-needed');
   const g = await checkedGrant(k, side, raw, now);
@@ -154,7 +163,7 @@ export async function noticeCandidates(q: Queryable, limit: number): Promise<Arr
     `select c.code as chat, c.trade_code as trade, d.seq, d.opened_at, d.opened_by
        from chats c
        join chat_keys k on k.chat = c.code
-       join trades t on t.code = c.trade_code and t.state = 'disputed'
+       join trades t on t.code = c.trade_code
        join lateral (select seq, status, opened_at, opened_by from disputes where code = c.trade_code order by seq desc limit 1) d on d.status <> 'closed'
       where not exists (select 1 from chat_members m where m.chat = c.code and m.member_kind = 'mod' and m.removed_at is null and m.accepted is not null)
         and not exists (select 1 from chat_dispute_notices n where n.chat = c.code and n.dispute_seq = d.seq)
@@ -185,9 +194,8 @@ export async function storeNotice(q: Queryable, chat: string, raw: unknown, now:
     if (e instanceof ProtocolError) return 'bad';
     throw e;
   }
-  const disputed = row.trade_code !== null && (await q.query("select 1 from trades where code = $1 and state = 'disputed'", [row.trade_code])).rows.length > 0;
   const d = row.trade_code === null ? null : await currentDispute(q, row.trade_code);
-  if (!disputed || d === null || d.seq !== n.disputeSeq || d.openedBy !== n.openedBy || d.openedAt.getTime() !== Date.parse(n.openedAt)) return 'not-disputed';
+  if (d === null || d.seq !== n.disputeSeq || d.openedBy !== n.openedBy || d.openedAt.getTime() !== Date.parse(n.openedAt)) return 'not-disputed';
   await q.query('insert into chat_dispute_notices (chat, dispute_seq, notice, received_at) values ($1, $2, $3, $4) on conflict do nothing', [chat, n.disputeSeq, n, now]);
   return 'ok';
 }
