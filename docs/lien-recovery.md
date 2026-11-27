@@ -145,18 +145,29 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
   The senior reads the dispute's chat first: `GET /staff/v1/liens/:id` returns the source trade's
   code and whether its dispute is still open, the senior opens the case chat with the existing
   `POST /staff/v1/disputes/:code/chat` (seniors and the owner may join any disputed case; logged as
-  every staff chat read is), and opening a pending request they may decide is logged once per request
-  and person (`lien.rate-review-opened { lienId, requestId }`). The moderation service still refuses a
-  chat read once the dispute is closed (OWNER p12-1), so a request on a closed dispute is decided
-  without the chat (owner question below). The moderation service accepts an approved request as the
+  every staff chat read is, `chat.read`), and opening a pending request they may decide is logged on
+  the source trade once per request and person (`lien.rate-review-opened { lienId, requestId }`, under
+  an advisory lock on that pair). Enforced (review of feat/lien-grace item 4): while the dispute is
+  open, approve needs a `chat.read` by that decider on the source trade since the request was made,
+  otherwise 409 `review-chat-first`. The moderation service refuses a chat read once the dispute is
+  closed (OWNER p12-1), so a request on a closed dispute is decided from the case alone (lead answer:
+  fine). The moderation service accepts an approved request as the
   API records it (`lienRateRequestApprovals`, read through `x2f_mod_reader`, migration 900's grant):
   rate 1..10000, decided by the owner or a senior moderator in its own gate registry (joined, not
   switched off, not removed), never by the proposer; refusals log `gate.refused.lien-rate-self` /
   `gate.refused.lien-rate-role`. Each request counts once for the lien (`req:<lienId>:<id>`, spent in
-  `mod_lien_rate_taps` like a tap). A `lien-rate` tap stored before this change is still verified as
+  `mod_lien_rate_taps` like a tap). An approval goes dead if its senior leaves: the moderation
+  service checks the decider against its registry each time, so once that senior is switched off or
+  removed (before the rate was first applied) the API keeps naming the rate and the service refuses it
+  (`lien-refused-rate-unverified`, the trades wait unsigned) until another senior approves a new request. A `lien-rate` tap stored before this change is still verified as
   before. The rate just replaced stays good for `LIEN_RATE_GRACE_HOURS` (24), for a trade whose
   buyer accepted the figure before the change. A lien it pinned before migration 890 keeps the 50% it
   applied (see Q1). See Security for what this costs.
+- `POST .../rate` is refused while the lien waits in its 7 days to pay the agreed way (409
+  `lien-in-grace`; the share is set with the switch to collecting) or once it was paid off the
+  platform. A pending request expires (`expired`, decided by nobody) when its lien ends (repaid, void,
+  uncollectible) or is paid off the platform, and the deciders' alerts for it are marked seen
+  (migration 900's trigger `liens_expire_rate_requests`).
 - Who is told (owner via the coordinator, 26 Nov 2026: seniors are "requested and needed to just go
   in and approve"): every new rate request, from `POST .../rate`, a ruling's share or a switch to
   collecting, alerts each senior moderator and the owner who may decide it (switched on, not
@@ -195,10 +206,17 @@ the lien step reads it from the approved ruling's draft when it places the lien 
 
 - **The person owed signs off.** `POST /v1/account/liens/:id/paid` (the creditor's own trader
   session, the owner device, a live session checked in the transaction, never during a hold; anyone
-  else gets 404). Allowed while the lien waits in grace, before or after the deadline, until it is
-  switched to collecting. It sets `repaid_off_platform_at`, ends the lien as repaid (when it carries
+  else gets 404). Allowed while the lien is active and waits in grace, before or after the deadline,
+  until it is switched to collecting; refused while an appeal holds it (`suspended`, lead default,
+  owner question 7g). It sets `repaid_off_platform_at`, ends the lien as repaid (when it carries
   no fee, see NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY) and logs `lien.repaid-off-platform`. The account
-  view then shows nothing left.
+  view then shows nothing left (`paidOffPlatform: true`).
+- **Staff end it as paid off the platform** (review item 3): `POST /staff/v1/liens/:id/paid-off-platform
+  { tapId }`, by the moderator who ruled, or a senior / the owner, with a `lien-paid-off-platform` key
+  tap bound to the lien, on any active lien (in grace or collecting). Holds that stopped counting are
+  released first; one that still counts refuses it (409 `lien-recovery-in-flight`, as complied). Same
+  end as the sign-off, logged `lien.repaid-off-platform` with the staff actor. The staff site's lien
+  panel has "Mark as paid outside X2F".
 - **The debtor's view** (`GET /v1/account/liens`, `grace { mode, method, graceUntil, lapsed,
   paidOffPlatform }`, present only on a lien given grace): the deadline in their own time zone, the
   agreed way, and that the person owed must confirm. The creditor sees the same, with "I've been
@@ -212,13 +230,20 @@ the lien step reads it from the approved ruling's draft when it places the lien 
   - switches it to Collect now: `POST /staff/v1/liens/:id/collect { tapId, rateBps?, rateReason? }`,
     a `lien-collect` key tap bound to the lien and the share (`disputes.handle`), logged
     `lien.collect-started { lienId, lapsed }`; a share under 100% becomes a pending request as above
-    (409 `request-pending` if one is already pending). This is allowed before the 7 days are up too.
+    (409 `request-pending` if one is already pending, and nothing changes). This is allowed before
+    the 7 days are up too. The person owed is told (`lien-collecting`, in-app and pushed), and their
+    lien screen says why and asks for the wallet recoveries go to if none is set (review item 9).
   - or sends it to a senior moderator: `POST /staff/v1/liens/:id/escalate {}` (only after the lapse),
-    logged `lien.grace-escalated`, an owner alert (`lien-grace-escalated`, pushed), and the case shows
-    in the seniors' queue.
+    logged `lien.grace-escalated { auto: false }`. Each senior and the owner is alerted
+    (`lien-grace-escalated`, never the one who sent it) and pushed, and the case shows in the
+    seniors' queue.
+  - Nobody acts (review item 2): `LIEN_LAPSE_ESCALATE_HOURS` (48, lead default) after the lapse, or
+    at once when the moderator who ruled is no longer active staff (unknown, switched off, removed,
+    disabled), the timers escalate it themselves (`runLienGraceEscalations`; by nobody, logged
+    `lien.grace-escalated { auto: true }`), with the same alerts and pushes, once.
 - Migration 900's checks: a method and a deadline come together, an escalation needs a lapse, a
-  switch to collecting and a sign-off exclude each other, and a switch names its tap when it names
-  its staff member. The timers skip during maintenance, but the deadline does not move.
+  switch names its tap when it names its staff member. Paid off the platform needs no grace and may
+  follow a switch to collecting (staff may end a collecting lien so). The timers skip during maintenance, but the deadline does not move.
 
 ## Trader view
 
@@ -254,7 +279,9 @@ design draws it; a link to the screen from Settings is still missing).
    intent, only in the tapped request; (c) the person owed may sign off after the lapse but not once
    collecting started; (d) a lien carrying a fee stays active at nothing left after a sign-off
    (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY); (e) the deadline does not move for maintenance; (f) a senior
-   reviewing a rate request on a closed dispute cannot read its chat (OWNER p12-1).
+   reviewing a rate request on a closed dispute cannot read its chat (OWNER p12-1); (g) the person
+   owed cannot sign off while an appeal holds the lien (suspended). Lead answers 27 Nov: (b), (c), (e)
+   and (f) as built.
 
 ## Owner answers
 

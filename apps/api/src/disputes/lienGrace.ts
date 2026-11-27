@@ -38,11 +38,14 @@ import type { DisputeDeps } from './store.js';
  *   moderator who ruled, or a senior moderator / the owner): switches the lien to collecting, early
  *   or after the lapse, with a `lien-collect` key tap bound to the lien and the share entered (money
  *   starts to move). Owner addition 5:51 PM: a share under 100% (with its reason) becomes the lien's
- *   pending rate request (lien.ts `proposeLienRate`), for a senior's `lien-rate` tap; 100% applies
- *   until then. Logged `lien.collect-started`.
+ *   pending rate request (lien.ts `proposeLienRate`), for a senior to approve (no tap since 5:53 PM);
+ *   100% applies until then. Logged `lien.collect-started`; the person owed is alerted (`lien-collecting`).
  * - `POST /staff/v1/liens/:id/escalate {}` (the same people, after the lapse): sends it to a senior
- *   moderator or the owner (their queue lists it, as a comply lapse; the owner is alerted). Logged
- *   `lien.grace-escalated`.
+ *   moderator or the owner (their queue lists it, as a comply lapse; each is alerted and pushed).
+ *   Logged `lien.grace-escalated`. Nobody acting for LIEN_LAPSE_ESCALATE_HOURS, or a moderator who
+ *   left, escalates it by itself (`runLienGraceEscalations`).
+ * - `POST /staff/v1/liens/:id/paid-off-platform { tapId }` (the same people, `lien-paid-off-platform`
+ *   tap): ends any active lien as settled off the platform (review item 3).
  */
 
 /**
@@ -66,11 +69,11 @@ export async function runLienGraceLapses(deps: Pick<DisputeDeps, 'db' | 'clock'>
   for (const { id } of rows) {
     try {
       const ruler = await withTx(deps.db, async (c) => {
-        const r = await c.query<{ from_code: string; ruled_by: string | null }>(
+        const r = await c.query<{ from_code: string; ruled_by: string | null; creditor: string }>(
           `update liens set grace_lapsed_at = $2${LIEN_LAPSE_STARTS_COLLECTING ? ', collect_started_at = $2' : ''}
             where id = $1 and status = 'active' and grace_until <= $2
               and grace_lapsed_at is null and collect_started_at is null and repaid_off_platform_at is null
-            returning from_code, ruled_by::text`,
+            returning from_code, ruled_by::text, creditor_account_id::text as creditor`,
           [id, now],
         );
         const l = r.rows[0];
@@ -79,6 +82,7 @@ export async function runLienGraceLapses(deps: Pick<DisputeDeps, 'db' | 'clock'>
         await addOwnerAlert(c, 'lien-grace-lapsed', { trade: l.from_code, lienId: id }, now);
         await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.grace-lapsed', detail: { lienId: id } });
         if (LIEN_LAPSE_STARTS_COLLECTING) {
+          await addAlert(c, l.creditor, 'lien-collecting', { lienId: id }, now);
           await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.collect-started', detail: { lienId: id, lapsed: true } });
         }
         return l.ruled_by;
@@ -232,10 +236,15 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
       const requested = rate.rateReason !== null && (await proposeLienRate(c, { lienId: id, rateBps: rate.rateBps, reason: rate.rateReason, by: me.id, now, logCode: l.from_code }));
       if (rate.rateReason !== null && !requested) throw new ApiError(409, 'request-pending');
       await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.collect-started', detail: { lienId: id, lapsed: l.grace_lapsed_at !== null } });
-      return { mode: 'collect', collectStartedAt: now.toISOString(), rateRequest: requested ? 'pending' : null };
+      // Review item 9: the person owed hears that collecting started (and to choose their wallet).
+      await addAlert(c, l.creditor, 'lien-collecting', { lienId: id }, now);
+      return { mode: 'collect' as const, collectStartedAt: now.toISOString(), rateRequest: requested ? ('pending' as const) : null, creditor: l.creditor };
     });
-    if (out.rateRequest !== null && o.push !== undefined) await pushRateDeciders({ db, clock, push: o.push }).catch(() => 0);
-    return out;
+    if (o.push !== undefined) {
+      await o.push.send(out.creditor, 'alert').catch(() => false);
+      if (out.rateRequest !== null) await pushRateDeciders({ db, clock, push: o.push }).catch(() => 0);
+    }
+    return { mode: out.mode, collectStartedAt: out.collectStartedAt, rateRequest: out.rateRequest };
   });
 
   // Review of feat/lien-grace item 3: the traders settled it themselves; the moderator who ruled, or a

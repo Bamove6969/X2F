@@ -329,6 +329,10 @@ describe('the 7 days pass without the sign-off', () => {
     const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 });
     expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId })).statusCode).toBe(200);
     expect((await logsOf('lien.collect-started')).map((e) => JSON.parse(e.detail) as unknown)).toContainEqual({ lienId: l.id, lapsed: false });
+    // Review item 9: the person owed is told (in-app; pushed when the app has push).
+    const told = await deps.db.query<{ detail: unknown }>(`select detail from alerts where account_id = $1 and kind = 'lien-collecting'`, [l.creditor]);
+    expect(told.rows.map((x) => x.detail)).toEqual([{ lienId: l.id }]);
+    expect((await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'lien-collecting'`, [l.debtor])).rowCount).toBe(0);
     expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId: await seedTap(deps, r.mod.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 }) }))).toBe('wrong-state');
   });
 

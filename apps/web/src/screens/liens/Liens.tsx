@@ -89,7 +89,10 @@ export function Liens() {
               ) : l.grace?.mode === 'grace' ? (
                 <GraceOwedTo lien={l} onPaid={() => setReload((n) => n + 1)} />
               ) : (
-                <RecoveryAddress lien={l} onSet={() => setReload((n) => n + 1)} />
+                <>
+                  {l.grace?.mode === 'collect' ? <p data-part="grace-collecting">{C.graceCollecting}</p> : null}
+                  <RecoveryAddress lien={l} onSet={() => setReload((n) => n + 1)} />
+                </>
               )}
             </div>
           ))}

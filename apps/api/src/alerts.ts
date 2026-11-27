@@ -96,7 +96,11 @@ export type AlertKind =
   | 'lien-grace-escalated'
   // Coordinator follow-up 26 Nov 2026: a lower lien share waits for a senior moderator or the owner;
   // to each who may decide it (also pushed, once per request). Detail: trade, lienId, requestId.
-  | 'lien-rate-requested';
+  | 'lien-rate-requested'
+  // Review of feat/lien-grace item 9: to the person owed, a lien given 7 days to pay the agreed way
+  // is now collected from the debtor's later trades (choose the wallet recoveries go to). Also pushed.
+  // Detail: lienId.
+  | 'lien-collecting';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

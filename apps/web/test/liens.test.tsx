@@ -212,4 +212,11 @@ describe('grace: 7 days to pay the agreed way', () => {
     await press(host, LIENS_COPY.graceConfirmYes);
     expect(paid).toEqual(['l2']);
   });
+
+  it('review item 9: once switched to collecting, the person owed is told why and asked for the wallet', async () => {
+    const { host } = await screen({ owes: [], owedTo: [{ ...OWED_TO, grace: { ...GRACE, mode: 'collect', lapsed: true } }] });
+    expect(host.querySelector('[data-part="grace-collecting"]')?.textContent).toBe(LIENS_COPY.graceCollecting);
+    expect(host.textContent).toContain(LIENS_COPY.addressNeeded);
+    expect(host.textContent).not.toContain(LIENS_COPY.graceConfirm);
+  });
 });

@@ -42,6 +42,8 @@ export const LIENS_COPY = {
     `A moderator gave them until ${until} to pay you the way you both agreed: ${method}. Nothing is taken from their trades until then. Confirm here once you have received it.`,
   graceOwedToLapsed: (method: string) =>
     `The time to pay the agreed way (${method}) has passed. A moderator has been told. If you have been paid, confirm it here.`,
+  // Review item 9: the moderator switched a grace lien to collecting. COPY-UNSIGNED
+  graceCollecting: 'A moderator started collecting this from their later trades, since it was not paid the agreed way.',
   graceConfirm: "I've been paid",
   graceConfirmCheck: 'Only confirm once the money is in your account. This ends what they owe you for good.',
   graceConfirmYes: 'Yes, I have been paid in full',
