@@ -635,7 +635,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       nextSeq: g.nextSeq,
       attestation: att === undefined ? null : { attestation: att.attestation, sig: att.sig },
       record: { v: 1, chat: channel, tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig },
-      lanes: lanes.map((l) => ({ to: l.to, pkh: l.pkh, wrap: l.wrap, nextSeq: l.nextSeq })),
+      // The moderator-signed lane record goes with each lane: staff-web checks it itself, so a key
+      // and pkh of the API's own are refused there too.
+      lanes: lanes.map((l) => ({ to: l.to, pkh: l.pkh, wrap: l.wrap, nextSeq: l.nextSeq, record: l.record })),
       envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, to: e.to_role, envelope: e.envelope, at: e.created_at.toISOString() })),
       olderNotShown,
     };

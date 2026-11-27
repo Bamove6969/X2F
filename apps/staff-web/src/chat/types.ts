@@ -30,9 +30,10 @@ export interface CaseChatAnswer {
   record: unknown;
   /**
    * Private lanes (owner 27 Nov): each trader's lane key PK re-wrapped to this device, pinned by its
-   * `pkh`, and the moderator's next seq in that lane. Missing (an older API) is no lanes.
+   * `pkh`, the moderator's next seq in that lane, and the lane record the attested moderator signed
+   * (naming the lane and pkh; the reader refuses the lane without it). Missing (an older API) is no lanes.
    */
-  lanes?: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number }>;
+  lanes?: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }>;
   /** `to`: the lane of a private (v3) envelope, null (or missing) for the shared chat. */
   envelopes: Array<{ id: string; senderRole: string; envelope: unknown; at: string; to?: Lane | null }>;
   /** Review N11 (f): the chat has more envelopes than one read returns; these are the newest. */

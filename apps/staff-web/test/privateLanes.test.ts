@@ -2,7 +2,7 @@
 // reader and the chat key worker: every lane key is opened with this device's key and pinned by its
 // pkh; v3 envelopes open under their lane's key with that lane's own replay guard and gap count; a
 // private message is sealed as v3 under the lane key with the lane countersign.
-import { newPrivateKey, openPrivate, ReplayGuard, sealChat, signPrivateEnvelope, verifyModCountersign, verifyModPrivateCountersign, wrapPrivateKey } from '@x2f/protocol';
+import { generateIdentity, makePrivateLaneRecord, newPrivateKey, openPrivate, privateKeyHash, ReplayGuard, sealChat, signPrivateEnvelope, verifyModCountersign, verifyModPrivateCountersign, wrapPrivateKey } from '@x2f/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ChatKeyError } from '../src/chat/types.js';
 import { CaseChatError, forget, openCaseChat, sealModeMessage, sealModMessage } from '../src/keys/reader.js';
@@ -51,6 +51,33 @@ describe('openCaseChat: private lanes', () => {
     // No lanes (an older API) is just no lanes.
     const { lanes: _, ...old } = w.answer;
     expect((await openCaseChat(old, w.device, MOD)).lanes).toEqual({});
+  });
+
+  it('A2: refuses a lane whose key the API made up with a pkh of its own: the signed lane record must come from the attested moderator and name that lane and pkh', async () => {
+    const w = await world();
+    const [b, s] = w.answer.lanes!;
+    // The API's own key, wrapped to this device, with its own (matching) pkh: the hash check alone passes.
+    const fake = await newPrivateKey();
+    const fakeLane = { to: 'buyer' as const, pkh: await privateKeyHash(fake), wrap: await wrapPrivateKey(w.device.boxPublic, fake), nextSeq: 0 };
+    const stranger = await generateIdentity();
+    const strangerParts = { ...w.participants, mod: { signPublic: stranger.signPublic, boxPublic: stranger.boxPublic } };
+    const cases = [
+      // No record, or the real record (whose pkh is not the fake one).
+      { ...fakeLane, record: undefined },
+      { ...fakeLane, record: b!.record },
+      // A record for the fake key signed by someone other than the attested moderator.
+      { ...fakeLane, record: await makePrivateLaneRecord({ chat: w.channel, to: 'buyer', pk: fake, mod: stranger, participants: strangerParts }) },
+      // A real moderator record, but for the other lane, or another chat's channel.
+      { ...fakeLane, record: await makePrivateLaneRecord({ chat: w.channel, to: 'seller', pk: fake, mod: w.ids.mod, participants: w.participants }) },
+      { ...fakeLane, record: await makePrivateLaneRecord({ chat: (await world()).channel, to: 'buyer', pk: fake, mod: w.ids.mod, participants: w.participants }) },
+      // The real lane with the other lane's record.
+      { ...b!, record: s!.record },
+    ];
+    for (const l of cases) {
+      await expect(openCaseChat({ ...w.answer, lanes: [l, s!] as never }, w.device, MOD)).rejects.toEqual(new CaseChatError('security'));
+    }
+    // The real lanes, each with its own signed record, open.
+    expect(Object.keys((await openCaseChat(w.answer, w.device, MOD)).lanes).sort()).toEqual(['buyer', 'seller']);
   });
 
   it('a lane envelope filed in the wrong lane, under another lane\'s key, as shared, or with no lane key here, is counted, never shown; gaps count per lane', async () => {

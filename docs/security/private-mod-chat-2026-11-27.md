@@ -53,7 +53,8 @@ chat's moderator identity). The API never holds TK or PK.
   - `chat_private_lanes (chat references chats on delete cascade, to_role, pkh, record jsonb,
     created_at, primary key (chat, to_role))`; purge grants as `chat_keys`.
 - Staff `POST /staff/v1/disputes/:code/chat`: files each lane's `record` (upsert), answer gains
-  `lanes: [{ to, pkh, wrap, nextSeq }]`; every envelope item gains `to: 'buyer'|'seller'|null`. All
+  `lanes: [{ to, pkh, wrap, nextSeq, record }]` (the moderator-signed record, which staff-web
+  verifies itself against the attested moderator, lane and pkh); every envelope item gains `to: 'buyer'|'seller'|null`. All
   envelopes are returned (audit).
 - Staff `POST /staff/v1/disputes/:code/messages`: optional `to`; passed to moderation; stored with
   `to_role`, seq per lane; the live `chat` event goes only to that trader; log detail gains `to`.
@@ -65,7 +66,7 @@ chat's moderator identity). The API never holds TK or PK.
   (D2), else 400/409; seq per lane. Live event to that trader only (the moderator side reads on refresh).
 
 ### Staff web (apps/staff-web)
-- Worker `open()` unwraps every lane (pkh-pinned) and opens v3 envelopes per lane with its own guard;
+- Worker `open()` verifies each lane's signed record (attested moderator, same lane and pkh), then unwraps it (pkh-pinned) and opens v3 envelopes per lane with its own guard;
   `CaseChatLine` gains `to?: 'buyer'|'seller'`; `ChatView` gains `nextSeqByLane`.
 - `seal(handle, text, now, seq, to?)`: v3 + lane countersign when `to`; `SealedModMessage` gains `to?`.
 - ModCase: a "Talking to" dropdown above the composer: "Talking to both", "Talking to <seller
