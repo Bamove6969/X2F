@@ -21,6 +21,8 @@ export interface LienGrace {
 
 export interface OwedLien {
   grace?: LienGrace;
+  /** Ended as settled off the platform (by staff, or the person owed); nothing is left. */
+  paidOffPlatform?: true;
   id: string;
   status: 'active' | 'suspended';
   amountAtomic: bigint;
@@ -37,6 +39,7 @@ export interface OwedLien {
  */
 export interface OwedToMe {
   grace?: LienGrace;
+  paidOffPlatform?: true;
   id: string;
   status: 'active' | 'suspended' | 'repaid';
   amountAtomic: bigint;
@@ -73,20 +76,22 @@ const list = (v: unknown): unknown[] => {
   return v;
 };
 
-/** The optional grace, strictly; absent on a lien never given it. */
-function graceOf(l: Record<string, unknown>): { grace?: LienGrace } {
-  if (l.grace === undefined) return {};
+/** The optional grace, strictly; absent on a lien never given it. `paidOffPlatform`: staff or the person owed ended it as settled off the platform. */
+function graceOf(l: Record<string, unknown>): { grace?: LienGrace; paidOffPlatform?: true } {
+  if (l.paidOffPlatform !== undefined && l.paidOffPlatform !== true) throw new LiensShapeError('paidOffPlatform');
+  const paid = l.paidOffPlatform === true ? { paidOffPlatform: true as const } : {};
+  if (l.grace === undefined) return paid;
   const g = rec(l.grace);
   if (g.mode !== 'grace' && g.mode !== 'collect') throw new LiensShapeError('grace');
   const method = str(g, 'method');
   const graceUntil = str(g, 'graceUntil');
   if (Number.isNaN(Date.parse(graceUntil)) || typeof g.lapsed !== 'boolean' || typeof g.paidOffPlatform !== 'boolean') throw new LiensShapeError('grace');
-  return { grace: { mode: g.mode, method, graceUntil, lapsed: g.lapsed, paidOffPlatform: g.paidOffPlatform } };
+  return { ...paid, grace: { mode: g.mode, method, graceUntil, lapsed: g.lapsed, paidOffPlatform: g.paidOffPlatform } };
 }
 
 /** Rule 2 as the device can check it: recovered + remaining is what is owed, or nothing is left once paid off the platform. */
-function figuresOk(a: { amountAtomic: bigint; recoveredAtomic: bigint; remainingAtomic: bigint }, g: { grace?: LienGrace }): boolean {
-  if (g.grace?.paidOffPlatform === true) return a.remainingAtomic === 0n && a.recoveredAtomic <= a.amountAtomic;
+function figuresOk(a: { amountAtomic: bigint; recoveredAtomic: bigint; remainingAtomic: bigint }, g: { grace?: LienGrace; paidOffPlatform?: true }): boolean {
+  if (g.grace?.paidOffPlatform === true || g.paidOffPlatform === true) return a.remainingAtomic === 0n && a.recoveredAtomic <= a.amountAtomic;
   return a.recoveredAtomic + a.remainingAtomic === a.amountAtomic;
 }
 

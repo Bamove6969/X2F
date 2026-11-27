@@ -364,3 +364,81 @@ describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', 
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(2500);
   });
 });
+
+describe('review of feat/lien-grace: ending a lien as paid off the platform', () => {
+  it('staff (the moderator who ruled, with a tap bound to the lien) end a collecting lien; another moderator cannot; the traders see nothing left', async () => {
+    const r = await ruled();
+    const l = await lienOf(r.code);
+    const other = await staff('mod');
+    expect(errorOf(await other.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId: await seedTap(deps, other.id, { kind: 'lien-paid-off-platform', lienId: l.id }) }))).toBe('forbidden');
+    const wrong = await seedTap(deps, r.mod.id, { kind: 'lien-uncollectible', lienId: l.id });
+    expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId: wrong }))).toBe('tap-invalid');
+    const ok = await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId: await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id }) });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const after = await lienOf(r.code);
+    expect(after).toMatchObject({ status: 'repaid' });
+    expect(after.repaid_off_platform_at).not.toBeNull();
+    expect(await reserveFor(after)).toBe(0n);
+    expect((await logsOf('lien.repaid-off-platform')).map((e) => [e.actor_kind, JSON.parse(e.detail) as unknown])).toContainEqual(['staff', { lienId: l.id }]);
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+    const view = (await r.buyer.browser.get('/v1/account/liens')).json() as { owedTo: Array<{ id: string; remainingAtomic: string; paidOffPlatform?: boolean; grace?: unknown }> };
+    expect(view.owedTo.find((x) => x.id === l.id)).toMatchObject({ remainingAtomic: '0', paidOffPlatform: true });
+    expect(view.owedTo.find((x) => x.id === l.id)).not.toHaveProperty('grace');
+    // Once.
+    expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId: await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id }) }))).toBe('wrong-state');
+  });
+
+  it('is refused while a recovery that still counts is in flight (lien-recovery-in-flight), and the tap stays unused', async () => {
+    const r = await ruled();
+    const l = await lienOf(r.code);
+    const seller = await newTrader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, 1000, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $3)`,
+      [l.id, trade.code, deps.clock()],
+    );
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId }))).toBe('lien-recovery-in-flight');
+    expect((await deps.db.query('select used_at from key_taps where id = $1', [tapId])).rows[0]).toEqual({ used_at: null });
+    expect((await lienOf(r.code)).repaid_off_platform_at).toBeNull();
+  });
+
+  it('the person owed may still sign off after the lapse, but never while an appeal holds the lien (suspended)', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    setNow(new Date(START.getTime() + LIEN_GRACE_DAYS * DAY + 1000));
+    await tick();
+    expect((await lienOf(r.code)).grace_lapsed_at).not.toBeNull();
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+    await deps.db.query(`update liens set status = 'suspended', changed_at = $2 where id = $1`, [l.id, deps.clock()]);
+    expect(errorOf(await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {}))).toBe('wrong-state');
+    await deps.db.query(`update liens set status = 'active', changed_at = $2 where id = $1`, [l.id, deps.clock()]);
+    const ok = await r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {});
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+});
+
+describe('review of feat/lien-grace: the switch and the escalation', () => {
+  it('a share under 100% with the switch is a pending request; a second switch attempt while one is pending rolls back whole (409 request-pending)', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    // A request already pending (from the propose route) blocks a lower share with the switch.
+    await deps.db.query(`insert into lien_rate_requests (lien_id, proposed_bps, reason, proposed_by, proposed_at) values ($1, 5000, 'Half', $2, $3)`, [l.id, r.mod.id, deps.clock()]);
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-collect', lienId: l.id, rateBps: 2500 });
+    expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId, rateBps: 2500, rateReason: 'A quarter' }))).toBe('request-pending');
+    expect((await lienOf(r.code)).collect_started_at).toBeNull();
+    expect((await deps.db.query('select used_at from key_taps where id = $1', [tapId])).rows[0]).toEqual({ used_at: null });
+    expect((await logsOf('lien.collect-started')).filter((e) => (JSON.parse(e.detail) as { lienId: string }).lienId === l.id)).toHaveLength(0);
+  });
+
+  it('another moderator may neither switch nor send it up (403)', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    setNow(new Date(START.getTime() + LIEN_GRACE_DAYS * DAY + 1000));
+    await tick();
+    const other = await staff('mod');
+    expect(errorOf(await other.b.post(`/staff/v1/liens/${l.id}/escalate`, {}))).toBe('forbidden');
+    expect(errorOf(await other.b.post(`/staff/v1/liens/${l.id}/collect`, { tapId: await seedTap(deps, other.id, { kind: 'lien-collect', lienId: l.id, rateBps: 10_000 }) }))).toBe('forbidden');
+  });
+});

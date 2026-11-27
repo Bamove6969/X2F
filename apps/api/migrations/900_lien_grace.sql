@@ -46,10 +46,11 @@ alter table liens add column repaid_off_platform_at timestamptz;
 alter table liens add constraint liens_grace_method_check
   check (grace_method is null or char_length(grace_method) between 1 and 500);
 alter table liens add constraint liens_grace_pair_check check ((grace_method is null) = (grace_until is null));
--- Lapse, escalation, the switch and the sign-off only exist on a lien that was given the grace.
+-- Lapse, escalation and the switch only exist on a lien that was given the grace. Paid off the
+-- platform does not: staff may end any binding lien that way (`POST /staff/v1/liens/:id/paid-off-platform`).
 alter table liens add constraint liens_grace_only_check check (
   grace_until is not null
-  or (grace_lapsed_at is null and grace_escalated_at is null and collect_started_at is null and repaid_off_platform_at is null));
+  or (grace_lapsed_at is null and grace_escalated_at is null and collect_started_at is null));
 -- A staff escalation names who; the timer's own (LIEN_LAPSE_ESCALATE_HOURS, or the moderator who
 -- ruled is no longer active staff) names nobody.
 alter table liens add constraint liens_grace_escalated_check check (grace_escalated_by is null or grace_escalated_at is not null);
@@ -58,8 +59,8 @@ alter table liens add constraint liens_grace_escalated_lapsed_check check (grace
 -- @x2f/staff LIEN_LAPSE_STARTS_COLLECTING) carries neither.
 alter table liens add constraint liens_collect_check check (
   (collect_started_by is null) = (collect_tap is null) and (collect_started_by is null or collect_started_at is not null));
--- Paid off the platform and collecting never go together (the sign-off is refused once collecting).
-alter table liens add constraint liens_off_platform_check check (repaid_off_platform_at is null or collect_started_at is null);
+-- (The creditor's sign-off is refused once collecting; staff may still end a collecting lien as paid
+-- off the platform, so the two may go together.)
 
 -- The timer's read: grace liens whose days may have passed.
 create index liens_grace_due on liens (grace_until)

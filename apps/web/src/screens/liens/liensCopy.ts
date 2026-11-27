@@ -46,8 +46,9 @@ export const LIENS_COPY = {
   graceConfirmCheck: 'Only confirm once the money is in your account. This ends what they owe you for good.',
   graceConfirmYes: 'Yes, I have been paid in full',
   graceConfirmNo: 'Not yet',
-  gracePaid: 'You confirmed you were paid the agreed way. Nothing more is owed.',
-  gracePaidDebtor: 'The person you owed confirmed they were paid. Nothing more is owed.',
+  // Ended as paid outside X2F: the person owed confirmed it, or a moderator did once the two settled it.
+  gracePaid: 'This was paid outside X2F. Nothing more is owed to you.',
+  gracePaidDebtor: 'This was paid outside X2F. You owe nothing more.',
 } as const;
 
 /** A deadline for the lien screen, in the reader's own time zone. */

@@ -238,6 +238,26 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
     return out;
   });
 
+  // Review of feat/lien-grace item 3: the traders settled it themselves; the moderator who ruled, or a
+  // senior moderator / the owner, ends the lien as repaid off the platform, grace or collecting, with
+  // a `lien-paid-off-platform` key tap bound to it (it ends what is owed).
+  app.post('/staff/v1/liens/:id/paid-off-platform', handle, async (req) => {
+    const id = lienParam(req);
+    const b = bodyOf(req, ['tapId'], ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request', { field: 'tapId' });
+    const me = actorOf(req);
+    const { db, clock } = req.server.deps;
+    return withTx(db, async (c) => {
+      const now = clock();
+      const l = await lockLien(c, id);
+      if (l === undefined) throw new ApiError(404, 'not-found');
+      if (!mayDecide(req, l)) throw new ApiError(403, 'forbidden');
+      if (l.status !== 'active' || l.repaid_off_platform_at !== null) throw new ApiError(409, 'wrong-state');
+      await consumeKeyTap(c, b.tapId as string, me.id, { kind: 'lien-paid-off-platform', lienId: id }, now, { sessionId: req.auth.sessionId });
+      return endOffPlatform(c, id, l, now, me);
+    });
+  });
+
   app.post('/staff/v1/liens/:id/escalate', handle, async (req) => {
     const id = lienParam(req);
     bodyOf(req, []);
@@ -272,25 +292,33 @@ export function accountLienGraceRoutes(app: FastifyInstance): void {
       const l = await lockLien(c, id);
       // Only the person owed: anyone else (the debtor included) is told nothing about it.
       if (l === undefined || l.creditor !== me) throw new ApiError(404, 'not-found');
-      if ((l.status !== 'active' && l.status !== 'suspended') || !waitingGrace(l)) throw new ApiError(409, 'wrong-state');
-      // Never reserved while in grace; belt and braces, as `complied` (review M2): nothing in flight.
-      for (const h of await releaseStaleHolds(c, now, id)) {
-        await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
-      }
-      const open = await c.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [id]);
-      if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
-      // Settled in full off the platform. A lien that also carries X2F's 1% stays active recovering
-      // nothing more (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY, as `complied`); otherwise it is repaid.
-      const ends = BigInt(l.fee_atomic) === 0n;
-      await c.query(
-        `update liens set repaid_off_platform_at = $2${ends ? `, status = 'repaid', changed_at = $2, lifted_at = $2` : ''} where id = $1`,
-        [id, now],
-      );
+      // Review item 3 (lead default): never while an appeal holds the lien (`suspended`).
+      if (l.status !== 'active' || !waitingGrace(l)) throw new ApiError(409, 'wrong-state');
       const side = (
         await c.query<{ side: 'buyer' | 'seller' }>(`select case when buyer_account_id = $2 then 'buyer' else 'seller' end as side from trades where code = $1`, [l.from_code, me])
       ).rows[0]?.side;
-      await appendLog(c, { at: now, actor: side === undefined ? { kind: 'system' } : { kind: 'trader', side }, tradeCode: l.from_code, action: 'lien.repaid-off-platform', detail: { lienId: id } });
-      return { status: ends ? 'repaid' : 'active', repaidOffPlatformAt: now.toISOString() };
+      return endOffPlatform(c, id, l, now, side === undefined ? { kind: 'system' } : { kind: 'trader', side });
     });
   });
+}
+
+/**
+ * Ends lien `id` (locked as `l`) as settled in full off the platform: open holds that stopped
+ * counting are released first and one that still counts refuses it (`lien-recovery-in-flight`, as
+ * `complied`, review M2). A lien that also carries X2F's 1% stays active recovering nothing more
+ * (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY); otherwise it is repaid. Logged `lien.repaid-off-platform`.
+ */
+async function endOffPlatform(c: pg.PoolClient, id: string, l: LockedLien, now: Date, actor: Parameters<typeof appendLog>[1]['actor']) {
+  for (const h of await releaseStaleHolds(c, now, id)) {
+    await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
+  }
+  const open = await c.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [id]);
+  if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
+  const ends = BigInt(l.fee_atomic) === 0n;
+  await c.query(
+    `update liens set repaid_off_platform_at = $2${ends ? `, status = 'repaid', changed_at = $2, lifted_at = $2` : ''} where id = $1`,
+    [id, now],
+  );
+  await appendLog(c, { at: now, actor, tradeCode: l.from_code, action: 'lien.repaid-off-platform', detail: { lienId: id } });
+  return { status: ends ? 'repaid' : 'active', repaidOffPlatformAt: now.toISOString() };
 }

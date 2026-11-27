@@ -182,6 +182,9 @@ export type KeyTapIntent =
   // and to the share the moderator entered (owner 5:51 PM; under 100% it also needs a senior's
   // `lien-rate` tap before the moderation service applies it).
   | { kind: 'lien-collect'; lienId: string; rateBps: number }
+  // Review of feat/lien-grace item 3: staff end a lien as repaid off the platform (the traders settled
+  // it themselves), at any point while it binds; bound to the lien.
+  | { kind: 'lien-paid-off-platform'; lienId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -236,6 +239,7 @@ export const KEY_TAP_KINDS = [
   'lien-rate',
   'lien-uncollectible',
   'lien-collect',
+  'lien-paid-off-platform',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

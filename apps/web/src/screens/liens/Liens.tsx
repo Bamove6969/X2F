@@ -46,7 +46,7 @@ export function Liens() {
       {data?.owes.map((l) => (
         <section key={l.id} aria-label={C.title} data-lien={l.id}>
           {/* Owner 26 Nov 2026: 7 days to pay the agreed way (the deadline, the method, who confirms). */}
-          {l.grace?.paidOffPlatform === true ? (
+          {l.paidOffPlatform === true || l.grace?.paidOffPlatform === true ? (
             <p data-part="grace">{C.gracePaidDebtor}</p>
           ) : l.grace?.mode === 'grace' ? (
             <p data-part="grace">{l.grace.lapsed ? C.graceOwesLapsed(l.grace.method) : C.graceOwes(l.grace.method, deadlineText(l.grace.graceUntil))}</p>
@@ -82,7 +82,7 @@ export function Liens() {
                 <dt>{C.remaining}</dt>
                 <dd>{xmr(l.remainingAtomic)}</dd>
               </dl>
-              {l.grace?.paidOffPlatform === true ? (
+              {l.paidOffPlatform === true || l.grace?.paidOffPlatform === true ? (
                 <p data-part="grace">{C.gracePaid}</p>
               ) : l.status === 'repaid' ? (
                 <p>{C.repaid}</p>

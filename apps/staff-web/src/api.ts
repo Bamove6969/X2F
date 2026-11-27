@@ -921,6 +921,9 @@ export const collectLien = (lienId: string, b: { tapId: string; rateBps: number;
   staffApi<{ mode: 'collect'; rateRequest: 'pending' | null }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/collect`, { method: 'POST', body: b });
 /** Owner 26 Nov 2026: send a lapsed grace lien to a senior moderator or the owner. */
 export const escalateLien = (lienId: string) => staffApi<unknown>(`/staff/v1/liens/${encodeURIComponent(lienId)}/escalate`, { method: 'POST', body: {} });
+/** Review item 3: end a lien as paid outside X2F (tap `lien-paid-off-platform` bound to the lien). */
+export const paidOffPlatformLien = (lienId: string, tapId: string) =>
+  staffApi<{ status: string }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/paid-off-platform`, { method: 'POST', body: { tapId } });
 /** Opens the lien (a senior's open of a pending lower-rate request is logged, owner 5:53 PM). */
 export const lienView = (lienId: string) => staffApi<{ chat: { code: string; disputeOpen: boolean } }>(`/staff/v1/liens/${encodeURIComponent(lienId)}`);
 /** Owner change 5:53 PM: a senior or the owner decides a lower-rate request without a key tap, never its proposer. */

@@ -1,7 +1,7 @@
 import { LIEN_FULL_RATE_BPS, LIEN_GRACE_DAYS, LIEN_GRACE_METHOD_MAX, LIEN_RATE_REASON_PREFILL, can, parseCollectRate, parseLienPlan, type KeyTapIntent, type LienPlan, type StaffRole } from '@x2f/staff';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
-import { collectLien, decideLienRate, escalateLien, lienView, type CaseLien, type DisputeCase, type LienPlanView } from '../api.js';
+import { collectLien, decideLienRate, escalateLien, lienView, paidOffPlatformLien, type CaseLien, type DisputeCase, type LienPlanView } from '../api.js';
 import { faultText } from '../refusals.js';
 import { Button, ChoiceGroup, Notice } from '../ui/kit.js';
 import { hhmm, xmrShort } from './modModel.js';
@@ -140,8 +140,8 @@ export interface LienTap {
 /** The lien's grace in words. */
 export function graceLine(l: CaseLien, now = Date.now()): string | null {
   const g = l.grace;
+  if (g !== null && g.repaidOffPlatformAt !== null) return `Marked as paid outside X2F (${hhmm(g.repaidOffPlatformAt)}). Nothing more is collected.`;
   if (g === null || g.graceUntil === null) return null;
-  if (g.repaidOffPlatformAt !== null) return `The person owed confirmed they were paid the agreed way (${hhmm(g.repaidOffPlatformAt)}).`;
   if (g.collectStartedAt !== null) return `Was given ${LIEN_GRACE_DAYS} days to pay; collecting from later trades since ${hhmm(g.collectStartedAt)}.`;
   if (g.escalatedAt !== null) return `The ${LIEN_GRACE_DAYS} days passed without payment confirmed. Sent to a senior moderator at ${hhmm(g.escalatedAt)}.`;
   if (g.lapsedAt !== null || Date.parse(g.graceUntil) <= now) return `The ${LIEN_GRACE_DAYS} days passed on ${hhmm(g.graceUntil)} without the person owed confirming payment. Nothing is collected until you decide.`;
@@ -188,6 +188,24 @@ function LienRow({ l, role, setTap, reload }: { l: CaseLien; role: StaffRole; se
       setFault(faultText(e, 'It was not sent. Try again.'));
     }
   };
+  // Review item 3: the traders settled it themselves; a key tap bound to the lien ends it.
+  const paidOff = () => {
+    setFault(null);
+    setTap({
+      intent: { kind: 'lien-paid-off-platform', lienId: l.id },
+      title: 'Mark as paid outside X2F',
+      body: 'Tap your security key to end this lien: the person owed was paid outside X2F, so nothing more is collected.',
+      labels: { lienId: 'this lien' },
+      onDone: async (tapId) => {
+        try {
+          await paidOffPlatformLien(l.id, tapId);
+          await reload();
+        } catch (e) {
+          setFault(faultText(e, 'It was not marked as paid. Try again.'));
+        }
+      },
+    });
+  };
   const review = async () => {
     try {
       setChat((await lienView(l.id)).chat);
@@ -225,6 +243,11 @@ function LienRow({ l, role, setTap, reload }: { l: CaseLien; role: StaffRole; se
             </Button>
           ) : null}
         </div>
+      ) : null}
+      {l.status === 'active' && mayDecide && (g === null || g.repaidOffPlatformAt === null) ? (
+        <Button variant="secondary" data-part="lien-paid-off" onClick={paidOff}>
+          Mark as paid outside X2F
+        </Button>
       ) : null}
       {l.pendingRate !== null ? (
         <div data-part="lien-rate-request">

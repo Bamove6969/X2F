@@ -163,6 +163,10 @@ describe('grace: 7 days to pay the agreed way', () => {
     expect(parseLiens({ owes: [], owedTo: [paid] }).owedTo[0]!.remainingAtomic).toBe(0n);
     // Without the confirmation, remaining 0 does not add up.
     expect(() => parseLiens({ owes: [], owedTo: [{ ...paid, grace: GRACE }] })).toThrow(LiensShapeError);
+    // Review item 3: staff may end any lien as paid off the platform (no grace needed).
+    const staffEnded = { ...OWED_TO, status: 'repaid', remainingAtomic: '0', paidOffPlatform: true };
+    expect(parseLiens({ owes: [], owedTo: [staffEnded] }).owedTo[0]).toMatchObject({ paidOffPlatform: true, remainingAtomic: 0n });
+    expect(() => parseLiens({ owes: [], owedTo: [{ ...staffEnded, paidOffPlatform: false }] })).toThrow(LiensShapeError);
     for (const bad of [null, {}, { ...GRACE, mode: 'later' }, { ...GRACE, graceUntil: 'soon' }, { ...GRACE, lapsed: 'no' }, { ...GRACE, method: 3 }]) {
       expect(() => parseLiens({ owes: [{ ...OWES, grace: bad }], owedTo: [] })).toThrow(LiensShapeError);
     }

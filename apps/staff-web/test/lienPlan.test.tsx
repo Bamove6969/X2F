@@ -32,7 +32,7 @@ describe('the plan on the ruling form', () => {
     const before = Date.parse('2026-11-30T00:00:00Z');
     expect(graceLine(lien(), before)).toContain('Nothing is collected meanwhile');
     expect(graceLine(lien({ grace: grace({ lapsedAt: '2026-12-03T12:00:30.000Z' }) }), before)).toContain('Nothing is collected until you decide');
-    expect(graceLine(lien({ grace: grace({ repaidOffPlatformAt: '2026-11-28T12:00:00.000Z' }) }))).toContain('confirmed they were paid');
+    expect(graceLine(lien({ grace: grace({ repaidOffPlatformAt: '2026-11-28T12:00:00.000Z' }) }))).toContain('paid outside X2F');
     expect(graceLine(lien({ grace: null }))).toBeNull();
   });
 });
@@ -73,5 +73,19 @@ describe('LienPanel', () => {
     await click(button('Review the request'));
     await click(button('Approve the lower share'));
     expect(api.calls.filter((x) => x.method === 'POST').map((x) => [x.path, x.body])).toEqual([[`/staff/v1/liens/${LIEN}/rate/5c2f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f/approve`, {}]]);
+  });
+
+  it('review item 3: the moderator who ruled may mark a collecting lien as paid outside X2F, with a tap bound to the lien', async () => {
+    fakeApi({ 'POST /staff/v1/liens/:id/paid-off-platform': { body: { status: 'repaid' } } });
+    const setTap = vi.fn();
+    const c = { liens: [lien({ grace: grace({ collectStartedAt: '2026-11-27T12:00:00.000Z' }) })] } as unknown as DisputeCase;
+    render(
+      <MemoryRouter>
+        <LienPanel c={c} role="mod" setTap={setTap} reload={vi.fn(async () => undefined)} />
+      </MemoryRouter>,
+    );
+    await settle();
+    await click(button('Mark as paid outside X2F'));
+    expect(setTap.mock.calls[0]![0].intent).toEqual({ kind: 'lien-paid-off-platform', lienId: LIEN });
   });
 });

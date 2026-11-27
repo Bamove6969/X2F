@@ -241,10 +241,13 @@ export function accountLienRoutes(app: FastifyInstance): void {
     // method and the deadline; the person owed confirms "I've been paid" (`POST …/:id/paid`).
     const graces = await graceOf(db, rows.map((r) => r.id));
     // Absent (not null) on a lien never given the grace, so that answer is unchanged.
+    // Review item 3: staff may end any lien as paid off the platform; `paidOffPlatform: true` (absent
+    // otherwise) says why nothing is left, with or without a grace.
     const graceFor = (id: string) => {
       const g = graces.get(id);
-      if (g === undefined || g.graceUntil === null) return {};
-      return { grace: { mode: g.mode, method: g.method, graceUntil: g.graceUntil, lapsed: g.lapsedAt !== null, paidOffPlatform: g.repaidOffPlatformAt !== null } };
+      const paid = g?.repaidOffPlatformAt != null ? { paidOffPlatform: true as const } : {};
+      if (g === undefined || g.graceUntil === null) return paid;
+      return { ...paid, grace: { mode: g.mode, method: g.method, graceUntil: g.graceUntil, lapsed: g.lapsedAt !== null, paidOffPlatform: g.repaidOffPlatformAt !== null } };
     };
     const owes = rows
       .filter((x) => x.debtor === me && x.status !== 'repaid')

@@ -202,6 +202,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner 26 Nov 2026 5:43 PM (lien grace): switch to collecting (tapped), or send a lapsed one to a senior.
   { method: 'POST', url: '/staff/v1/liens/:id/collect', perm: 'disputes.handle', allowed: MODERATORS, body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   { method: 'POST', url: '/staff/v1/liens/:id/escalate', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  // Review item 3: end a lien as paid off the platform (tapped).
+  { method: 'POST', url: '/staff/v1/liens/:id/paid-off-platform', perm: 'disputes.handle', allowed: MODERATORS, body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
   // Plan 4 Task 24 (D-011): who may review an appeal; the owner only (review M1, lead call 12 Nov).
   { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'staff.manage', allowed: OWNER },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).

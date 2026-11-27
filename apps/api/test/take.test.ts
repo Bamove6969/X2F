@@ -1674,6 +1674,32 @@ describe('lien recovery at take', () => {
     expect((await seller.browser.get(`/v1/trades/${out.code}`)).json()).not.toHaveProperty('lienRecoveryAtomic');
   });
 
+  // Owner 26 Nov 2026 (lien grace; review of feat/lien-grace): a lien in its 7 days to pay the agreed
+  // way, or ended as paid off the platform, reserves nothing at take; once switched to collecting it does.
+  it('grace: nothing is reserved at take while the lien waits for payment the agreed way; after the switch it is', async () => {
+    const debtor = await person();
+    const creditor = await person();
+    const lien = await lienOn(debtor, creditor, 2n * XMR);
+    await deps.db.query(`update liens set grace_method = 'PayPal again', grace_until = $2 where id = $1`, [lien, new Date(deps.clock().getTime() + 7 * 86_400_000)]);
+    const during = await take(debtor, await postOffer(await person()), body(debtor, XMR));
+    expect(during.statusCode, during.body).toBe(200);
+    const d = during.json() as { code: string; lienRecoveryAtomic?: string };
+    expect(d.lienRecoveryAtomic).toBeUndefined();
+    expect(await holds(d.code)).toEqual([]);
+    await deps.db.query('update liens set collect_started_at = $2 where id = $1', [lien, deps.clock()]);
+    const after = (await take(debtor, await postOffer(await person()), body(debtor, XMR))).json() as { code: string; lienRecoveryAtomic?: string };
+    expect(after.lienRecoveryAtomic).toBe((XMR / 2n).toString());
+    expect(await holds(after.code)).toEqual([{ lien, amount: (XMR / 2n).toString(), address: creditor.address, status: 'open' }]);
+    // Ended as paid off the platform (the lien carries a fee, so it stays active): nothing more.
+    const debtor2 = await person();
+    const other = await lienOn(debtor2, creditor, 2n * XMR, { fee: 1n });
+    await deps.db.query('update liens set repaid_off_platform_at = $2 where id = $1', [other, deps.clock()]);
+    const none = await take(debtor2, await postOffer(await person()), body(debtor2, XMR));
+    expect(none.statusCode, none.body).toBe(200);
+    expect((none.json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBeUndefined();
+    expect(await holds((none.json() as { code: string }).code)).toEqual([]);
+  });
+
   it('partial: a second trade in progress reserves only what is not already reserved; nothing past the amount', async () => {
     const seller = await person();
     const debtor = await person();
