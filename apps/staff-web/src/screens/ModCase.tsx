@@ -433,6 +433,15 @@ export function modeFromLines(lines: readonly CaseChatLine[], has: (l: Lane) => 
   return pick;
 }
 
+/** Every lane whose latest mode line is on. */
+export function lanesOn(lines: readonly CaseChatLine[], has: (l: Lane) => boolean): Lane[] {
+  const latest: Partial<Record<Lane, boolean>> = {};
+  for (const l of lines) {
+    if (l.kind === 'mode') latest[l.to] = l.on;
+  }
+  return (['buyer', 'seller'] as const).filter((l) => latest[l] === true && has(l));
+}
+
 function LockIcon() {
   return (
     <svg className="x2f-staff-chat__lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -487,14 +496,13 @@ function MessageCard({ code, keys, device, opened, onSent, buyer, seller, names 
    */
   const change = async (next: TalkTo) => {
     if (device === null || opened === null || busy || next === talkTo) return;
-    const prev = talkTo;
-    const steps: Array<[Lane, boolean]> = [];
-    if (prev !== 'both') steps.push([prev, false]);
-    if (next !== 'both') steps.push([next, true]);
+    const onLanes = lanesOn(opened.lines, hasLane);
+    const steps: Array<[Lane, boolean]> = onLanes.filter((l) => l !== next).map((l) => [l, false]);
+    if (next !== 'both' && !onLanes.includes(next)) steps.push([next, true]);
+    if (steps.length === 0) return;
     setBusy(true);
     setNote(null);
     let view = opened;
-    let told: TalkTo = prev;
     try {
       for (const [l, on] of steps) {
         const from = view.nextSeqByLane[l];
@@ -507,11 +515,10 @@ function MessageCard({ code, keys, device, opened, onSent, buyer, seller, names 
           lines: [...view.lines, { kind: 'mode', id: res.id, from: 'mod', to: l, on, at: serverNow().toISOString(), missingBefore: 0 }],
         };
         onSent(view);
-        told = on ? l : 'both';
       }
       setTalkTo(next);
     } catch (e) {
-      setTalkTo(told);
+      setTalkTo(modeFromLines(view.lines, hasLane));
       setNote({ tone: 'danger', text: faultText(e, 'The change could not be sent just now. Try again.') });
     } finally {
       setBusy(false);
