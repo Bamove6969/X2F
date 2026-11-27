@@ -29,6 +29,8 @@ export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'tx-proof-check-stopped',
   // Review of feat/lockout, item 4: new compromised-account locks hit their hourly cap (a mass report?).
   'compromised-lock-cap',
+  // Owner 26 Nov 2026 (grace): a lapsed lien sent up by its moderator waits for a senior or the owner.
+  'lien-grace-escalated',
 ]);
 
 export interface OwnerAlertDeps {

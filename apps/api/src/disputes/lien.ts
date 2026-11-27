@@ -1,4 +1,4 @@
-import { lienCreditor, lienSteps, type Dispute, type LienCause, type LienRef, type LienSide, type LienStatus } from '@x2f/staff';
+import { graceUntilOf, lienCreditor, lienSteps, type Dispute, type LienCause, type LienRef, type LienSide, type LienStatus } from '@x2f/staff';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -38,6 +38,16 @@ import { releaseStaleHolds } from './recovery.js';
  * site_flags row counts as off).
  */
 export const LIENS_ON_SQL = `coalesce((select f.liens_enabled from site_flags f), false)`;
+
+/**
+ * SQL over lien alias `l`: whether the lien collects from the debtor's trades now (owner 26 Nov 2026,
+ * "Grace: 7 days to pay the agreed way"): not paid off the platform, and either never given the
+ * grace or switched to collecting (`collect_started_at`). A grace whose days passed does not collect
+ * until the moderator's switch (@x2f/staff LIEN_LAPSE_STARTS_COLLECTING). The twin of @x2f/staff
+ * `lienCollecting`; the one predicate the take's reserve reads (recovery.ts `pickRecovery`).
+ */
+export const LIEN_COLLECTING_SQL = (l: string) =>
+  `(${l}.repaid_off_platform_at is null and (${l}.grace_until is null or ${l}.collect_started_at is not null))`;
 
 /** SQL: whether account `p` (a parameter or column) has an active lien that binds (liens switched on). */
 export const ACTIVE_LIEN_SQL = (p: string) =>
@@ -123,18 +133,29 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
     switch (s.op) {
       case 'place': {
         const debtor = accountOf(s.debtor);
+        // Owner 26 Nov 2026 (grace): how the ruling that places the lien chose to have it paid.
+        const plan = await rulingLienPlan(client, next);
+        const graceUntil = plan.method === null ? null : graceUntilOf(now);
         const r = await client.query<{ id: string }>(
           `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause,
-             status, created_at, changed_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9)
+             status, created_at, changed_at, ruled_by, grace_method, grace_until)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $9, $10, $11, $12)
            on conflict (from_code, dispute_seq, round, debtor_account_id) do nothing returning id::text`,
-          [debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now],
+          [debtor, accountOf(lienCreditor(s.debtor)), s.amountAtomic.toString(), s.feeAtomic.toString(), next.code, next.seq, s.round, s.cause, now,
+            plan.ruledBy, plan.method, graceUntil],
         );
         if (r.rows[0]) {
           await appendLog(client, {
             at: now, actor: system, tradeCode: next.code, action: 'lien.placed',
             detail: { lienId: r.rows[0].id, accountId: debtor, amountAtomic: (s.amountAtomic + s.feeAtomic).toString(), cause: s.cause },
           });
+          if (graceUntil !== null) {
+            await appendLog(client, { at: now, actor: system, tradeCode: next.code, action: 'lien.grace-started', detail: { lienId: r.rows[0].id, graceUntil: graceUntil.toISOString() } });
+          }
+          // Owner addition 26 Nov 5:51 PM: "Start collecting now" at a share under 100%: the ruler's pending rate request.
+          if (plan.rateBps !== null && plan.rateReason !== null && plan.ruledBy !== null) {
+            await proposeLienRate(client, { lienId: r.rows[0].id, rateBps: plan.rateBps, reason: plan.rateReason, by: plan.ruledBy, now, logCode: next.code });
+          }
         }
         break;
       }
@@ -183,6 +204,50 @@ export async function applyLienRules(client: pg.PoolClient, prev: Dispute, next:
       }
     }
   }
+}
+
+/**
+ * Owner 26 Nov 2026 (grace): the plan of the ruling whose publishing places a lien, from its draft
+ * (`ruling_drafts.lien_grace_method`, sent with the proposal): the grace's "How they agreed to pay"
+ * text, or null for "Start collecting now" (also when the ruling has no draft, as before the
+ * decision). `ruledBy`: the ruling's proposer, told when the grace lapses.
+ */
+interface RulingLienPlan {
+  method: string | null;
+  rateBps: number | null;
+  rateReason: string | null;
+  ruledBy: string | null;
+}
+
+async function rulingLienPlan(client: pg.PoolClient, d: Dispute): Promise<RulingLienPlan> {
+  const r = d.ruling;
+  if (r === null) return { method: null, rateBps: null, rateReason: null, ruledBy: null };
+  const row = (
+    await client.query<{ method: string | null; rate: number | null; reason: string | null }>(
+      'select lien_grace_method as method, lien_rate_bps as rate, lien_rate_reason as reason from ruling_drafts where ruling_id = $1 and code = $2 and seq = $3',
+      [r.id, d.code, d.seq],
+    )
+  ).rows[0];
+  const staff = (await client.query('select 1 from accounts where id = $1', [r.proposer])).rowCount === 1;
+  return { method: row?.method ?? null, rateBps: row?.rate ?? null, rateReason: row?.reason ?? null, ruledBy: staff ? r.proposer : null };
+}
+
+/**
+ * Owner addition 26 Nov 2026 5:51 PM: a moderator's "Start collecting now" share under 100% (with the
+ * ruling, or with the switch from a grace) becomes the lien's pending rate request, as if proposed on
+ * `POST /staff/v1/liens/:id/rate`: the moderation service signs a lower rate only with a senior's
+ * `lien-rate` tap bound to the lien (apps/moderation lienRecovery.ts `lienRateTaps`), so a senior
+ * approves it there; until then the lien's current rate applies. Skipped (false) when one is pending.
+ */
+export async function proposeLienRate(c: pg.PoolClient, a: { lienId: string; rateBps: number; reason: string; by: string; now: Date; logCode: string | null }): Promise<boolean> {
+  const pending = await c.query(`select 1 from lien_rate_requests where lien_id = $1 and status = 'pending'`, [a.lienId]);
+  if ((pending.rowCount ?? 0) > 0) return false;
+  const r = await c.query<{ id: string }>(
+    'insert into lien_rate_requests (lien_id, proposed_bps, reason, proposed_by, proposed_at) values ($1, $2, $3, $4, $5) returning id::text',
+    [a.lienId, a.rateBps, a.reason, a.by, a.now],
+  );
+  await appendLog(c, { at: a.now, actor: { kind: 'system' }, tradeCode: a.logCode, action: 'lien.rate-proposed', detail: { lienId: a.lienId, requestId: r.rows[0]!.id, rateBps: a.rateBps } });
+  return true;
 }
 
 /**

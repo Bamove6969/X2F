@@ -1,4 +1,4 @@
-import { can, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
+import { can, rulingMayPlaceLien, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
@@ -52,6 +52,7 @@ import {
   xmrSix,
 } from './modModel.js';
 import { takeable } from './ModQueue.js';
+import { EMPTY_PLAN, LienPanel, LienPlanFields, planOf, planWords, type PlanDraft } from './LienPlan.js';
 import '../ui/staff.css';
 import { ProofLookFor } from '../ui/ProofCard.js';
 
@@ -218,6 +219,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
           {can(role, 'accounts.freeze') ? <AccountActionsCard code={c.code} role={role} /> : null}
           <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} reProposing={reProposing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
+          <LienPanel c={c} role={role} setTap={openTap} reload={load} />
         </div>
       </div>
 
@@ -800,10 +802,14 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
   const [fault, setFault] = useState<string | null>(null);
+  // Owner 26 Nov 2026: how a lien this ruling places is paid (asked only when it may place one).
+  const [planDraft, setPlanDraft] = useState<PlanDraft>(EMPTY_PLAN);
 
   const lines = evidenceLines(evidence);
   const evidenceOk = lines.length <= EVIDENCE_MAX && lines.every((l) => l.length <= EVIDENCE_LINE_MAX);
-  const ready = outcome !== null && reason.trim().length >= REASON_MIN && evidenceOk;
+  const asksPlan = outcome !== null && rulingMayPlaceLien({ round: replaces !== undefined ? 1 : c.round, afterRefund: c.afterRefund, round1: replaces !== undefined ? null : (c.ruling.round1 ?? null) }, outcome);
+  const plan = asksPlan ? planOf(planDraft) : null;
+  const ready = outcome !== null && reason.trim().length >= REASON_MIN && evidenceOk && (!asksPlan || plan !== null);
   const label = replaces !== undefined ? (c.overLimit ? 'Send new ruling for approval' : 'Send new ruling') : c.overLimit ? 'Send ruling for approval' : 'Send ruling';
   // A re-proposal is always a round 1 (review p4t22 N1).
   const round = replaces !== undefined ? 1 : c.round;
@@ -816,6 +822,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
     const rulingId = crypto.randomUUID();
     const text = reason;
     const ev = lines;
+    const lienPlan = plan ?? undefined;
     setTap({
       intent: rulingIntent('propose', { rulingId, code: c.code, round, round1Id, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
@@ -823,8 +830,9 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
       labels: rulingLabels(c, outcome),
       onDone: async (tapId) => {
         try {
-          if (replaces !== undefined) await reProposeRuling(c.code, replaces, { rulingId, outcome, reason: text, evidence: ev, tapId });
-          else await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId });
+          const extra = lienPlan !== undefined ? { lienPlan } : {};
+          if (replaces !== undefined) await reProposeRuling(c.code, replaces, { rulingId, outcome, reason: text, evidence: ev, tapId, ...extra });
+          else await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId, ...extra });
           await reload();
         } catch (e) {
           setFault(rulingFault(e, 'The ruling could not be sent just now. Try again.'));
@@ -861,6 +869,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
         {/* not-a-refusal: an input check on the evidence lines */}
         {!evidenceOk ? <p className="x2f-staff-hint">{`At most ${EVIDENCE_MAX} lines, each up to ${EVIDENCE_LINE_MAX} characters.`}</p> : null}
       </div>
+      {asksPlan ? <LienPlanFields value={planDraft} onChange={setPlanDraft} /> : null}
       {c.overLimit && c.secondReason === 'non-usd' ? (
         // Review p4t22 M1 (lead default, owner question OQ1). COPY-UNSIGNED
         <Notice tone="caution" title="Sent to a senior moderator or the owner for approval.">
@@ -981,6 +990,9 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
       <p>{outcome !== null ? OUTCOME_LABELS[outcome] : ''}</p>
       <p className="x2f-staff-hint">{`Proposed at ${hhmm(p.proposedAt)}.`}</p>
       <p>{p.reason}</p>
+      {outcome !== null && rulingMayPlaceLien({ round: c.round, afterRefund: c.afterRefund, round1: c.ruling.round1 ?? null }, outcome) ? (
+        <p data-part="approve-lien-plan">{`If it places a lien: ${planWords(p.lienPlan)}`}</p>
+      ) : null}
       {p.evidence.length > 0 ? (
         <ul>
           {p.evidence.map((e, i) => (

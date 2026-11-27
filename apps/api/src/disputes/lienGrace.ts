@@ -1,0 +1,222 @@
+import { LIEN_LAPSE_STARTS_COLLECTING, can, parseCollectRate } from '@x2f/staff';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type pg from 'pg';
+import { addAlert, addOwnerAlert } from '../alerts.js';
+import { requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
+import { requireSession } from '../auth/sessions.js';
+import { ApiError } from '../errors.js';
+import { appendLog } from '../log/append.js';
+import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
+import { consumeKeyTap } from '../staff/keyTap.js';
+import { requireStaff } from '../staff/guard.js';
+import { ownerDeviceOnly } from '../team/perms.js';
+import { proposeLienRate } from './lien.js';
+export { GRACE_WAITING_SQL, graceOf, remainingWith, type GraceView } from './lienCase.js';
+import { releaseStaleHolds } from './recovery.js';
+import { actorOf, body as bodyOf } from './staffRoutes.js';
+import type { DisputeDeps } from './store.js';
+
+/**
+ * Owner decision, 26 Nov 2026 5:43 PM Pacific (docs/lien-recovery.md "Grace: 7 days to pay the
+ * agreed way"; the rules in @x2f/staff lienGrace.ts):
+ *
+ * - The ruling that places a lien carries the moderator's plan (`lienPlan` on the propose route,
+ *   kept on `ruling_drafts.lien_grace_method`); `applyLienRules` (lien.ts) copies a grace onto the
+ *   lien it places: `grace_method`, `grace_until` = placed + 7 days, `ruled_by`.
+ * - While in grace nothing is reserved from the debtor's trades (lien.ts `LIEN_COLLECTING_SQL`, the
+ *   one predicate recovery.ts `pickRecovery` reads).
+ * - `POST /v1/account/liens/:id/paid`: the person owed (the creditor's own session on the account
+ *   owner's device, live, not during a hold) signs off "I've been paid": the lien is settled off the
+ *   platform in full (`repaid_off_platform_at`; status `repaid`, or `active` recovering nothing more
+ *   when it carries X2F's 1%, as `complied` does: NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY). Logged
+ *   `lien.repaid-off-platform`. Only while not collecting.
+ * - `runLienGraceLapses` (dispute timer): the days passed without the sign-off: marked once
+ *   (`grace_lapsed_at`), logged `lien.grace-lapsed`, the moderator who ruled is alerted (in-app and
+ *   pushed) and the case is in their queue; the owner is alerted in-app. Recovery does not start
+ *   (`LIEN_LAPSE_STARTS_COLLECTING`).
+ * - `POST /staff/v1/liens/:id/collect { tapId, rateBps?, rateReason? }` (`disputes.handle`: the
+ *   moderator who ruled, or a senior moderator / the owner): switches the lien to collecting, early
+ *   or after the lapse, with a `lien-collect` key tap bound to the lien and the share entered (money
+ *   starts to move). Owner addition 5:51 PM: a share under 100% (with its reason) becomes the lien's
+ *   pending rate request (lien.ts `proposeLienRate`), for a senior's `lien-rate` tap; 100% applies
+ *   until then. Logged `lien.collect-started`.
+ * - `POST /staff/v1/liens/:id/escalate {}` (the same people, after the lapse): sends it to a senior
+ *   moderator or the owner (their queue lists it, as a comply lapse; the owner is alerted). Logged
+ *   `lien.grace-escalated`.
+ */
+
+/**
+ * The dispute timer's step: each active lien whose grace passed without the creditor's sign-off or a
+ * switch is marked lapsed once, logged and the moderator who ruled told (in-app, and pushed when
+ * `push` is given; the owner in-app). With `LIEN_LAPSE_STARTS_COLLECTING` the lapse also starts
+ * collecting (the lead reading leaves it off). Each lien is its own transaction; a failure is kept
+ * in `failures` and the rest still run. Returns how many lapsed.
+ */
+export async function runLienGraceLapses(deps: Pick<DisputeDeps, 'db' | 'clock'> & { push?: OwnerAlertDeps['push'] }, failures: unknown[]): Promise<number> {
+  const now = deps.clock();
+  const { rows } = await deps.db.query<{ id: string }>(
+    `select id::text from liens
+      where status = 'active' and grace_until is not null and grace_until <= $1
+        and grace_lapsed_at is null and collect_started_at is null and repaid_off_platform_at is null
+      order by grace_until, id limit 200`,
+    [now],
+  );
+  let n = 0;
+  const told: string[] = [];
+  for (const { id } of rows) {
+    try {
+      const ruler = await withTx(deps.db, async (c) => {
+        const r = await c.query<{ from_code: string; ruled_by: string | null }>(
+          `update liens set grace_lapsed_at = $2${LIEN_LAPSE_STARTS_COLLECTING ? ', collect_started_at = $2' : ''}
+            where id = $1 and status = 'active' and grace_until <= $2
+              and grace_lapsed_at is null and collect_started_at is null and repaid_off_platform_at is null
+            returning from_code, ruled_by::text`,
+          [id, now],
+        );
+        const l = r.rows[0];
+        if (l === undefined) return undefined;
+        if (l.ruled_by !== null) await addAlert(c, l.ruled_by, 'lien-grace-lapsed', { trade: l.from_code, lienId: id }, now);
+        await addOwnerAlert(c, 'lien-grace-lapsed', { trade: l.from_code, lienId: id }, now);
+        await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.grace-lapsed', detail: { lienId: id } });
+        if (LIEN_LAPSE_STARTS_COLLECTING) {
+          await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: l.from_code, action: 'lien.collect-started', detail: { lienId: id, lapsed: true } });
+        }
+        return l.ruled_by;
+      });
+      if (ruler !== undefined) {
+        n++;
+        if (ruler !== null) told.push(ruler);
+      }
+    } catch (err) {
+      failures.push(err);
+    }
+  }
+  if (deps.push !== undefined) {
+    for (const who of new Set(told)) await deps.push.send(who, 'alert').catch(() => false);
+  }
+  return n;
+}
+
+interface LockedLien {
+  status: string;
+  creditor: string;
+  from_code: string;
+  fee_atomic: string;
+  ruled_by: string | null;
+  grace_until: Date | null;
+  grace_lapsed_at: Date | null;
+  grace_escalated_at: Date | null;
+  collect_started_at: Date | null;
+  repaid_off_platform_at: Date | null;
+}
+
+async function lockLien(c: pg.PoolClient, id: string): Promise<LockedLien | undefined> {
+  return (
+    await c.query<LockedLien>(
+      `select status, creditor_account_id::text as creditor, from_code, fee_atomic::text, ruled_by::text, grace_until, grace_lapsed_at,
+              grace_escalated_at, collect_started_at, repaid_off_platform_at
+         from liens where id = $1 for update`,
+      [id],
+    )
+  ).rows[0];
+}
+
+/** In grace or lapsed, never switched and never paid off the platform: the switch and the sign-off apply. */
+const waitingGrace = (l: LockedLien) => l.grace_until !== null && l.collect_started_at === null && l.repaid_off_platform_at === null;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function lienParam(req: FastifyRequest): string {
+  const v = (req.params as Record<string, unknown>).id;
+  if (typeof v !== 'string' || !UUID.test(v.toLowerCase())) throw new ApiError(404, 'not-found');
+  return v.toLowerCase();
+}
+
+/** The moderator whose ruling placed the lien, or a senior moderator / the owner (`rulings.approve`). */
+function mayDecide(req: FastifyRequest, l: LockedLien): boolean {
+  return l.ruled_by === req.staff.accountId || can(req.staff.role, 'rulings.approve', req.staff.grants);
+}
+
+export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps['push'] } = {}): void {
+  const handle = { preHandler: requireStaff('disputes.handle'), config: { perm: 'disputes.handle' as const } };
+
+  app.post('/staff/v1/liens/:id/collect', handle, async (req) => {
+    const id = lienParam(req);
+    const b = bodyOf(req, ['tapId', 'rateBps', 'rateReason'], ['tapId']);
+    if (typeof b.tapId !== 'string') throw new ApiError(400, 'bad-request', { field: 'tapId' });
+    const rate = parseCollectRate(b);
+    if (rate === null) throw new ApiError(400, 'bad-request', { field: 'rateBps' });
+    const me = actorOf(req);
+    const { db, clock } = req.server.deps;
+    return withTx(db, async (c) => {
+      const now = clock();
+      const l = await lockLien(c, id);
+      if (l === undefined) throw new ApiError(404, 'not-found');
+      if (!mayDecide(req, l)) throw new ApiError(403, 'forbidden');
+      if ((l.status !== 'active' && l.status !== 'suspended') || !waitingGrace(l)) throw new ApiError(409, 'wrong-state');
+      // Money starts to move: a key tap bound to this lien (as `lien-rate` and `lien-uncollectible`).
+      const tap = await consumeKeyTap(c, b.tapId as string, me.id, { kind: 'lien-collect', lienId: id, rateBps: rate.rateBps }, now, { sessionId: req.auth.sessionId });
+      await c.query('update liens set collect_started_at = $2, collect_started_by = $3, collect_tap = $4 where id = $1', [id, now, me.id, tap.id]);
+      const requested = rate.rateReason !== null && (await proposeLienRate(c, { lienId: id, rateBps: rate.rateBps, reason: rate.rateReason, by: me.id, now, logCode: l.from_code }));
+      if (rate.rateReason !== null && !requested) throw new ApiError(409, 'request-pending');
+      await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.collect-started', detail: { lienId: id, lapsed: l.grace_lapsed_at !== null } });
+      return { mode: 'collect', collectStartedAt: now.toISOString(), rateRequest: requested ? 'pending' : null };
+    });
+  });
+
+  app.post('/staff/v1/liens/:id/escalate', handle, async (req) => {
+    const id = lienParam(req);
+    bodyOf(req, []);
+    const me = actorOf(req);
+    const { db, clock } = req.server.deps;
+    const out = await withTx(db, async (c) => {
+      const now = clock();
+      const l = await lockLien(c, id);
+      if (l === undefined) throw new ApiError(404, 'not-found');
+      if (!mayDecide(req, l)) throw new ApiError(403, 'forbidden');
+      if (l.status !== 'active' || !waitingGrace(l) || l.grace_lapsed_at === null || l.grace_escalated_at !== null) throw new ApiError(409, 'wrong-state');
+      await c.query('update liens set grace_escalated_at = $2, grace_escalated_by = $3 where id = $1', [id, now, me.id]);
+      await addOwnerAlert(c, 'lien-grace-escalated', { trade: l.from_code, lienId: id }, now);
+      await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.grace-escalated', detail: { lienId: id } });
+      return { escalatedAt: now.toISOString() };
+    });
+    if (o.push !== undefined) await pushOwnerAlert({ db, push: o.push }, 'lien-grace-escalated').catch(() => undefined);
+    return out;
+  });
+}
+
+export function accountLienGraceRoutes(app: FastifyInstance): void {
+  app.post('/v1/account/liens/:id/paid', { preHandler: [requireSession({ kinds: ['trader'] }), ownerDeviceOnly, requireNotHeld] }, async (req) => {
+    const id = lienParam(req);
+    bodyOf(req, []);
+    const me = req.auth.accountId;
+    const { db, clock } = req.server.deps;
+    return withTx(db, async (c) => {
+      const now = clock();
+      // It ends what the creditor is owed: the session must still be live, under the account lock.
+      await requireLiveSessionInTx(c, req.auth, now);
+      const l = await lockLien(c, id);
+      // Only the person owed: anyone else (the debtor included) is told nothing about it.
+      if (l === undefined || l.creditor !== me) throw new ApiError(404, 'not-found');
+      if ((l.status !== 'active' && l.status !== 'suspended') || !waitingGrace(l)) throw new ApiError(409, 'wrong-state');
+      // Never reserved while in grace; belt and braces, as `complied` (review M2): nothing in flight.
+      for (const h of await releaseStaleHolds(c, now, id)) {
+        await appendLog(c, { at: now, actor: { kind: 'system' }, tradeCode: h.tradeCode, action: 'lien.recovery-released', detail: { lienId: h.lienId, amountAtomic: h.amountAtomic } });
+      }
+      const open = await c.query(`select 1 from lien_recovery_holds where lien_id = $1 and status = 'open' limit 1`, [id]);
+      if ((open.rowCount ?? 0) > 0) throw new ApiError(409, 'lien-recovery-in-flight');
+      // Settled in full off the platform. A lien that also carries X2F's 1% stays active recovering
+      // nothing more (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY, as `complied`); otherwise it is repaid.
+      const ends = BigInt(l.fee_atomic) === 0n;
+      await c.query(
+        `update liens set repaid_off_platform_at = $2${ends ? `, status = 'repaid', changed_at = $2, lifted_at = $2` : ''} where id = $1`,
+        [id, now],
+      );
+      const side = (
+        await c.query<{ side: 'buyer' | 'seller' }>(`select case when buyer_account_id = $2 then 'buyer' else 'seller' end as side from trades where code = $1`, [l.from_code, me])
+      ).rows[0]?.side;
+      await appendLog(c, { at: now, actor: side === undefined ? { kind: 'system' } : { kind: 'trader', side }, tradeCode: l.from_code, action: 'lien.repaid-off-platform', detail: { lienId: id } });
+      return { status: ends ? 'repaid' : 'active', repaidOffPlatformAt: now.toISOString() };
+    });
+  });
+}

@@ -62,11 +62,10 @@ describe('rate change requests', () => {
     expect(view.lien).toMatchObject({ rateBps: 10_000, remainingAtomic: (2n * XMR).toString() });
     expect(view.rateRequests).toMatchObject([{ status: 'pending', reason: 'Proceeds are their only income' }]);
 
-    // The senior approves with a tap bound to exactly this request and rate.
-    const wrongTap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: req, rateBps: 3000 });
-    expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, { tapId: wrongTap }))).toBe('tap-invalid');
+    // Owner change 26 Nov 2026 5:53 PM: the senior approves without a key tap (a body with one is refused).
     const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: req, rateBps: 2500 });
-    const ok = await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, { tapId: tap });
+    expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, { tapId: tap }))).toBe('bad-request');
+    const ok = await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, {});
     expect(ok.statusCode, ok.body).toBe(200);
     expect(await rate(l.id)).toBe(2500);
     // Decided once.
@@ -81,8 +80,7 @@ describe('rate change requests', () => {
   it('the proposer never decides their own request, even as a senior; a rejection keeps the rate', async () => {
     const l = await lien();
     const own = (await senior.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 4000, reason: 'Large debt' })).json() as { id: string };
-    const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: own.id, rateBps: 4000 });
-    expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${own.id}/approve`, { tapId: tap }))).toBe('forbidden');
+    expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${own.id}/approve`, {}))).toBe('forbidden');
     expect(errorOf(await senior.post(`/staff/v1/liens/${l.id}/rate/${own.id}/reject`, {}))).toBe('forbidden');
     const owner = await seedStaff(deps, { role: 'owner' });
     const ob = new StaffBrowser(app).withSession((await insertSession(deps, owner.id, 'staff')).token);
@@ -97,8 +95,7 @@ describe('rate change requests', () => {
     const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 10_000, reason: 'Hardship over' });
     expect(res.statusCode, res.body).toBe(201);
     const req = (res.json() as { id: string }).id;
-    const tap = await seedTap(deps, seniorId, { kind: 'lien-rate', lienId: l.id, requestId: req, rateBps: 10_000 });
-    expect((await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, { tapId: tap })).statusCode).toBe(200);
+    expect((await senior.post(`/staff/v1/liens/${l.id}/rate/${req}/approve`, {})).statusCode).toBe(200);
     expect(await rate(l.id)).toBe(10_000);
   });
 

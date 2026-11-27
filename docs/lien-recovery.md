@@ -14,7 +14,10 @@ buyer's accepted figure), record on settle, staff rate routes (`lien-rate` key t
 `GET /v1/account/liens`, its preview and the creditor's recovery address route; the moderation
 service checks, signs and pays it; the web quote shows it before the take, the devices verify it, and
 Settings → What you owe. Provisional owner answers of 17 Nov below; Q1/OQ1 (the rate) answered by
-the owner on 26 Nov 2026: 100%, default and ceiling (migration 890).
+the owner on 26 Nov 2026: 100%, default and ceiling (migration 890). Owner decision 26 Nov 2026
+(5:43, 5:51 and 5:53 PM), built on `feat/lien-grace` (migration 900): the ruling chooses how the lien
+is paid, "Collect now" (with a share, default 100%) or "7 days to pay the agreed way" (see "Grace"
+below), and a senior approves a lower share without a key tap.
 
 ## The owner's rules
 
@@ -137,16 +140,77 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
   request needs a reason, so any rate other than the 10000 default does, and so does going back to
   it; creates a pending request (logged `lien.rate-proposed`).
 - `POST /v1/staff/liens/:id/rate/:req/approve|reject` (`rulings.approve`, a senior or the owner, never
-  the proposer): logged `lien.rate-approved` / `lien.rate-rejected`. Changing a money rate is a
-  money-affecting staff action, so approve takes a `lien-rate` key tap bound to the lien, the
-  request and the rate (at most 100%, Q1). The moderation service verifies that tap itself with its
-  gate (`lienRateTaps`: the key it trusts for a senior or the owner, the WebAuthn assertion, a
-  nonce never used for anything else) before it signs any recovery at a rate other than the one it
-  last applied to the lien (the 100% default until then; a lien it pinned before migration 890 keeps
-  the 50% it applied, see Q1). Applying a tap spends it for the lien
-  (`mod_lien_rate_taps`): a compromised API can neither replay an old approval nor go back to the
-  default without a new tap. The rate just replaced stays good for `LIEN_RATE_GRACE_HOURS` (24), for a
-  trade whose buyer accepted the figure before the change. NEEDS_STAFF_WEB_LIEN_RATE: the staff site's screen and its KeyTapDialog caller are not built.
+  the proposer): logged `lien.rate-approved` / `lien.rate-rejected`. Owner change 26 Nov 2026
+  (5:53 PM): approve takes **no key tap** any more (body `{}`; a `tapId` is refused as a bad request).
+  The senior reads the dispute's chat first: `GET /staff/v1/liens/:id` returns the source trade's
+  code and whether its dispute is still open, the senior opens the case chat with the existing
+  `POST /staff/v1/disputes/:code/chat` (seniors and the owner may join any disputed case; logged as
+  every staff chat read is), and opening a pending request they may decide is logged once per request
+  and person (`lien.rate-review-opened { lienId, requestId }`). The moderation service still refuses a
+  chat read once the dispute is closed (OWNER p12-1), so a request on a closed dispute is decided
+  without the chat (owner question below). The moderation service accepts an approved request as the
+  API records it (`lienRateRequestApprovals`, read through `x2f_mod_reader`, migration 900's grant):
+  rate 1..10000, decided by the owner or a senior moderator in its own gate registry (joined, not
+  switched off, not removed), never by the proposer; refusals log `gate.refused.lien-rate-self` /
+  `gate.refused.lien-rate-role`. Each request counts once for the lien (`req:<lienId>:<id>`, spent in
+  `mod_lien_rate_taps` like a tap). A `lien-rate` tap stored before this change is still verified as
+  before. The rate just replaced stays good for `LIEN_RATE_GRACE_HOURS` (24), for a trade whose
+  buyer accepted the figure before the change. A lien it pinned before migration 890 keeps the 50% it
+  applied (see Q1). See Security for what this costs.
+- Staff site (built, replaces NEEDS_STAFF_WEB_LIEN_RATE): the case page's lien panel
+  (apps/staff-web `LienPlan.tsx`) shows each lien's grace, a pending lower share with "Review the
+  request" (loads the lien, links the case chat), then "Approve the lower share" / "Turn down the
+  request", with no tap.
+
+## Grace: 7 days to pay the agreed way (owner decision 26 Nov 2026, 5:43 PM)
+
+When a moderator rules a case that may place a lien (`rulingMayPlaceLien`, @x2f/staff), the ruling
+form asks how it is paid:
+
+- **Collect now** (today's behaviour): later trades of the person at fault pay it. With a share,
+  1..100%, default 100% (owner 5:51 PM). A share under 100% needs a reason and is **not** applied by
+  the ruling. It becomes a pending rate request proposed by the ruling moderator, with the reason
+  they keep or edit (the form pre-fills `LIEN_RATE_REASON_PREFILL`), for a senior to approve (above). Until
+  then 100% applies. The moderation service cannot verify a share chosen inside a ruling without a
+  senior, so this keeps one rule for every rate below 100%.
+- **7 days to pay the agreed way**: the moderator writes how the two traders agreed it is paid (1..500
+  characters, e.g. "New PayPal payment of $120"). `grace_until` is the ruling time plus
+  `LIEN_GRACE_DAYS` (7). Nothing is reserved meanwhile: recovery's `pickRecovery` skips a lien unless
+  `LIEN_COLLECTING_SQL` holds (never in grace, or switched to collecting, and never paid off the
+  platform).
+
+The plan rides with the proposal (`lienPlan` on `POST .../rulings` and re-propose; stored on the
+`ruling_drafts` row: `lien_grace_method`, `lien_rate_bps`, `lien_rate_reason`). It is not part of the
+ruling's signed intent, because the gate verifies that intent as it stands. The approver sees it, and
+the lien step reads it from the approved ruling's draft when it places the lien (`liens.ruled_by`,
+`grace_method`, `grace_until`; logged `lien.grace-started { lienId, graceUntil }`).
+
+- **The person owed signs off.** `POST /v1/account/liens/:id/paid` (the creditor's own trader
+  session, the owner device, a live session checked in the transaction, never during a hold; anyone
+  else gets 404). Allowed while the lien waits in grace, before or after the deadline, until it is
+  switched to collecting. It sets `repaid_off_platform_at`, ends the lien as repaid (when it carries
+  no fee, see NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY) and logs `lien.repaid-off-platform`. The account
+  view then shows nothing left.
+- **The debtor's view** (`GET /v1/account/liens`, `grace { mode, method, graceUntil, lapsed,
+  paidOffPlatform }`, present only on a lien given grace): the deadline in their own time zone, the
+  agreed way, and that the person owed must confirm. The creditor sees the same, with "I've been
+  paid" behind a confirm step (apps/web `GraceOwedTo`, COPY-UNSIGNED).
+- **The lapse.** The dispute timers (`runLienGraceLapses`, after the comply lapses) mark a lien whose
+  7 days passed without a sign-off once (`grace_lapsed_at`, logged `lien.grace-lapsed`). They alert
+  and push the moderator who ruled it (`lien-grace-lapsed`), and the case shows in their queue ("7
+  days to pay passed"). Nothing is collected yet: `LIEN_LAPSE_STARTS_COLLECTING` is `false` (the
+  lead's reading of the decision; one switch in @x2f/staff turns a lapse into collecting at 100%).
+  The moderator (or a senior / the owner) then either:
+  - switches it to Collect now: `POST /staff/v1/liens/:id/collect { tapId, rateBps?, rateReason? }`,
+    a `lien-collect` key tap bound to the lien and the share (`disputes.handle`), logged
+    `lien.collect-started { lienId, lapsed }`; a share under 100% becomes a pending request as above
+    (409 `request-pending` if one is already pending). This is allowed before the 7 days are up too.
+  - or sends it to a senior moderator: `POST /staff/v1/liens/:id/escalate {}` (only after the lapse),
+    logged `lien.grace-escalated`, an owner alert (`lien-grace-escalated`, pushed), and the case shows
+    in the seniors' queue.
+- Migration 900's checks: a method and a deadline come together, an escalation needs a lapse, a
+  switch to collecting and a sign-off exclude each other, and a switch names its tap when it names
+  its staff member. The timers skip during maintenance, but the deadline does not move.
 
 ## Trader view
 
@@ -177,6 +241,12 @@ design draws it; a link to the screen from Settings is still missing).
    default and the ceiling (Q1 below; migration 890).
 6. Moderation switch (re-review OQ3): keep `MOD_LIEN_RECOVERY` off until the owner signs the copy,
    the design and Q2-Q6 (Q1 answered 26 Nov 2026).
+7. Grace (26 Nov 2026, as built on the lead's reading; see "Grace"): (a) a lapse alone does not
+   start collecting (`LIEN_LAPSE_STARTS_COLLECTING`); (b) the plan is not in the ruling's signed
+   intent, only in the tapped request; (c) the person owed may sign off after the lapse but not once
+   collecting started; (d) a lien carrying a fee stays active at nothing left after a sign-off
+   (NEEDS_OWNER_LIEN_FEE_AFTER_COMPLY); (e) the deadline does not move for maintenance; (f) a senior
+   reviewing a rate request on a closed dispute cannot read its chat (OWNER p12-1).
 
 ## Owner answers
 
@@ -281,8 +351,22 @@ honest staff keys not. What now holds:
   unit, one to an address the creditor did not sign, at an unverified rate or for a buyer who is not the
   debtor is refused by moderation, and a buyer who accepted none or another figure refuses it too.
 
-What a compromised API can still do: delay a rate change a senior approved (by withholding the tap
-or naming the rate it replaced within the 24 hours), never apply a rate no senior approved; and name a real lien (one a verified ruling placed, with the
+- **The rate is now the API's word** (owner change 26 Nov 2026, 5:53 PM). A senior approves a lower
+  share without a key tap, so the moderation service trusts the API's record of an approved request
+  (it still checks the range, that a senior or the owner in its own registry decided it, and never
+  the proposer). A compromised API can therefore write an "approved" request of its own. A lower rate
+  only slows the creditor's recovery, and a fabricated request can at most put a lowered rate back to
+  100%. It can never raise the rate above 100% (`LIEN_RECOVERY_MAX_BPS`, checked by the moderation
+  service and every device), never redirect the money (the address is the one the creditor's device
+  signed), and never take more than the lien's remaining amount.
+- **Grace is the API's word too.** The moderation service does not know a lien is in grace; it
+  simply sees no recovery reserved. A compromised API could collect during the 7 days, or treat a
+  lien as paid off the platform. The debtor still sees and accepts each deduction on the quote before
+  the take, as for any recovery.
+
+What a compromised API can still do: delay a rate change a senior approved (by withholding the
+request or naming the rate it replaced within the 24 hours) or set any rate from 1% to 100% (above);
+and name a real lien (one a verified ruling placed, with the
 creditor's own signed address) against a buyer who does not owe it, since account ids are its word
 (pinned on first sight only). The money then goes to an address signed by the device of a side
 that a gate-verified ruling made a creditor, within that side's total and at a verified rate, and

@@ -6,7 +6,7 @@ import type { LogAction } from '../log/actions.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { RetentionJob } from '../retention.js';
-import { LIENS_ON_SQL } from './lien.js';
+import { LIEN_COLLECTING_SQL, LIENS_ON_SQL } from './lien.js';
 
 /**
  * Lien recovery (owner rules 16 Nov 2026; docs/lien-recovery.md; arithmetic in @x2f/staff
@@ -165,7 +165,7 @@ export async function pickRecovery(c: Queryable, a: RecoveryFacts, lock: boolean
             (select coalesce(sum(r.amount_atomic), 0) from lien_recoveries r where r.lien_id = l.id)::text as recovered,
             (select coalesce(sum(h.amount_atomic), 0) from lien_recovery_holds h where h.lien_id = l.id and ${HOLD_COUNTS_SQL('h', '$3')})::text as held
        from liens l
-      where l.debtor_account_id = $1 and l.status = 'active' and l.creditor_account_id <> $2
+      where l.debtor_account_id = $1 and l.status = 'active' and l.creditor_account_id <> $2 and ${LIEN_COLLECTING_SQL('l')}
       order by l.created_at, l.id
       ${lock ? 'for update of l' : ''}`,
     [a.buyerId, a.sellerId, closedBefore],

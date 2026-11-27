@@ -86,7 +86,13 @@ export type AlertKind =
   | 'tx-proof-check-stopped'
   // Owner only (review of feat/lockout, item 4): the site-wide cap on new compromised-account locks
   // was reached; a report was recorded without locking. Detail: the report's id.
-  | 'compromised-lock-cap';
+  | 'compromised-lock-cap'
+  // Owner 26 Nov 2026 (docs/lien-recovery.md "Grace"): a lien's 7 days to pay the agreed way passed
+  // without the person owed confirming payment; to the moderator who ruled (also pushed) and the
+  // owner. Detail: trade, lienId.
+  | 'lien-grace-lapsed'
+  // Owner only: the moderator sent such a lien to a senior moderator or the owner. Detail: trade, lienId.
+  | 'lien-grace-escalated';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

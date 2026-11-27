@@ -2,6 +2,7 @@ import type { PayrollWallet } from './staff/payrollWallet.js';
 import type { EarningsWatch, IncomeSource } from './staff/earnings.js';
 import fastifyCookie from '@fastify/cookie';
 import { accountLienRoutes } from './disputes/lienRoutes.js';
+import { accountLienGraceRoutes } from './disputes/lienGrace.js';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
@@ -384,6 +385,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   takeRoutes(app);
   // Lien recovery (owner 16 Nov 2026): what this account owes and is owed.
   accountLienRoutes(app);
+  // Owner 26 Nov 2026: the person owed confirms they were paid the agreed way (a grace lien).
+  accountLienGraceRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   chatRoutes(app);

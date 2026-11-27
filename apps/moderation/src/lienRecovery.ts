@@ -42,7 +42,11 @@ import { fromJson } from './shadow.js';
  *    this lien, verified by its gate (`LienRates`), that it has not applied before. A tap it has
  *    applied is spent for the lien: an API cannot replay an old approval, nor go back to the default
  *    once another rate was applied, without a new tap (the replaced rate stays good for
- *    LIEN_RATE_GRACE_HOURS, for trades the buyer accepted before the change);
+ *    LIEN_RATE_GRACE_HOURS, for trades the buyer accepted before the change). Owner change 26 Nov
+ *    2026 5:53 PM: a senior's approval no longer takes a tap, so an approved rate request as the API
+ *    records it also counts (`lienRateRequestApprovals`: 1..100%, decided by the owner or a senior in
+ *    this gate's registry, never the proposer, each request once). That rate is the API's word: a
+ *    compromised API can pick any rate from 1% to 100%, never above 100% and never to another address;
  * 6. the amount is exactly @x2f/trade `expectedRecovery` of the buyer's proceeds at that rate, on
  *    what is left of the lien (its amount less every recovery this service signed for it and has not
  *    seen end without paying), never past the source trade's XMR in total (`mod_lien_recoveries`,
@@ -364,16 +368,58 @@ export async function markLienStatementPosted(db: Pick<pg.Pool, 'query'>, lienId
  * was never used for anything else (it is bound here to this lien and rate). The registry is synced
  * first, so a switch-off already counts.
  */
-export function lienRateVerifier(o: { store: GateStore; source: GateSource; ctx: GateContext }): LienRates {
+export function lienRateVerifier(o: { store: GateStore; source: GateSource & { approvedRateRequests?: RateRequestSource }; ctx: GateContext }): LienRates {
   return {
     approvals: (lienId) =>
       o.store.exclusive(async () => {
         await syncRegistry(o.source, o.store.state, o.ctx);
         const ok = await lienRateTaps(o.store.state, await o.source.usedTaps(['lien-rate']), lienId, o.ctx);
+        // Owner 26 Nov 2026 5:53 PM: a senior approves without a key tap; the API's approved requests count too.
+        const asked = o.source.approvedRateRequests === undefined ? [] : lienRateRequestApprovals(o.store.state, await o.source.approvedRateRequests(lienId), lienId, o.ctx);
         await o.store.save();
-        return ok;
+        return [...ok, ...asked];
       }),
   };
+}
+
+type RateRequestSource = (lienId: string) => Promise<Array<{ id: string; rateBps: number; proposedBy: string; decidedBy: string | null }>>;
+
+/**
+ * Owner change, 26 Nov 2026 5:53 PM (docs/lien-recovery.md Security): a senior moderator (or the
+ * owner) approves a lower rate WITHOUT a security-key tap, after reading the dispute's chat. So an
+ * approved request is the API's word, and this service checks what it still can: the rate is
+ * 1..LIEN_RECOVERY_MAX_BPS, the decider is not the proposer, and the decider is the owner or a senior
+ * moderator who is joined, not switched off and not removed in this gate's own registry (rooted in
+ * the owner's pinned keys, not the API's staff rows). Each request counts once for the lien: its id
+ * stands in for a tap's nonce (`req:<id>`, spent in `mod_lien_rate_taps` when applied). A
+ * compromised API could write its own "approved" request: a lower rate only slows the creditor's
+ * recovery, and it can at most put a lowered rate back to 100%; it can never go above 100% or send
+ * the money elsewhere (the other checks of `checkLienRecovery`).
+ */
+export function lienRateRequestApprovals(
+  g: GateState,
+  requests: ReadonlyArray<{ id: string; rateBps: number; proposedBy: string; decidedBy: string | null }>,
+  lienId: string,
+  ctx: GateContext,
+): Array<{ rateBps: number; nonce: string }> {
+  if (g.ownerAccountId === null || g.stopped) return [];
+  const out: Array<{ rateBps: number; nonce: string }> = [];
+  for (const r of requests) {
+    if (!UUID.test(r.id) || !Number.isSafeInteger(r.rateBps) || r.rateBps < 1 || r.rateBps > LIEN_RECOVERY_MAX_BPS) continue;
+    const by = r.decidedBy;
+    if (by === null || by === r.proposedBy) {
+      ctx.log({ reason: 'gate.refused.lien-rate-self' });
+      continue;
+    }
+    const staff = Object.hasOwn(g.staff, by) ? g.staff[by] : undefined;
+    const senior = staff !== undefined && staff.role === 'senior' && staff.joined && !staff.revoked && !staff.removed;
+    if (by !== g.ownerAccountId && !senior) {
+      ctx.log({ reason: 'gate.refused.lien-rate-role' });
+      continue;
+    }
+    out.push({ rateBps: r.rateBps, nonce: `req:${lienId}:${r.id}` });
+  }
+  return out;
 }
 
 /** The pure part of `lienRateVerifier`, on gate state `g` and the API's stored `lien-rate` taps: every verified approval for `lienId`. Binds each nonce it relied on. */

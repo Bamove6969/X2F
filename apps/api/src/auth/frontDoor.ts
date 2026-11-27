@@ -137,6 +137,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/type': 'switches my own account to a vendor account; answers its type',
   // Lien recovery, provisional owner answer Q2 (17 Nov 2026): the address recoveries owed to me go to.
   'POST /v1/account/liens/:id/recovery-address': "sets where recoveries on a lien owed to me are paid, signed by my own device's identity in the disputed trade; no data back",
+  // Owner 26 Nov 2026 (lien grace): the person owed confirms they were paid the agreed way.
+  'POST /v1/account/liens/:id/paid': 'ends a lien owed to me as paid the agreed way; no data back',
   'POST /v1/confirm/password': 'a confirm token bound to my own session',
   'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
   'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',

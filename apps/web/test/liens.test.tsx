@@ -145,3 +145,67 @@ describe("the buyer's confirmed recovery travels to the escrow (ConfirmedTrade.l
     expect(posterRecovery({ ...v, lienRecoveryAtomic: '0' })).toBeNull();
   });
 });
+
+// Owner decision 26 Nov 2026 (5:43 PM): 7 days to pay the agreed way.
+describe('grace: 7 days to pay the agreed way', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+  const GRACE = { mode: 'grace', method: 'New PayPal payment of $120', graceUntil: '2026-12-03T12:00:00.000Z', lapsed: false, paidOffPlatform: false };
+
+  it('reads the grace strictly; once paid off the platform nothing is left (remaining 0 adds up)', () => {
+    const r = parseLiens({ owes: [{ ...OWES, grace: GRACE }], owedTo: [{ ...OWED_TO, grace: GRACE }] });
+    expect(r.owes[0]!.grace).toEqual(GRACE);
+    expect(r.owedTo[0]!.grace).toEqual(GRACE);
+    expect(parseLiens({ owes: [OWES], owedTo: [] }).owes[0]!.grace).toBeUndefined();
+    const paid = { ...OWED_TO, status: 'repaid', remainingAtomic: '0', grace: { ...GRACE, paidOffPlatform: true } };
+    expect(parseLiens({ owes: [], owedTo: [paid] }).owedTo[0]!.remainingAtomic).toBe(0n);
+    // Without the confirmation, remaining 0 does not add up.
+    expect(() => parseLiens({ owes: [], owedTo: [{ ...paid, grace: GRACE }] })).toThrow(LiensShapeError);
+    for (const bad of [null, {}, { ...GRACE, mode: 'later' }, { ...GRACE, graceUntil: 'soon' }, { ...GRACE, lapsed: 'no' }, { ...GRACE, method: 3 }]) {
+      expect(() => parseLiens({ owes: [{ ...OWES, grace: bad }], owedTo: [] })).toThrow(LiensShapeError);
+    }
+  });
+
+  async function screen(raw: unknown) {
+    vi.resetModules();
+    const paid: string[] = [];
+    vi.doMock('../src/session/useSession.js', () => ({ useSession: () => ({ status: 'signed-in' }) }));
+    vi.doMock('../src/screens/liens/liensApi.js', async (orig) => ({
+      ...(await orig<typeof import('../src/screens/liens/liensApi.js')>()),
+      fetchLiens: async () => parseLiens(raw),
+      confirmPaid: async (id: string) => void paid.push(id),
+    }));
+    const { Liens } = await import('../src/screens/liens/Liens.js');
+    const { host } = render(<Liens />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    return { host, paid };
+  }
+  const press = async (host: HTMLElement, label: string) => {
+    await act(async () => {
+      [...host.querySelectorAll('button')].find((b) => b.textContent === label)!.click();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+
+  it('the debtor sees the deadline, the method and that the person owed confirms; not the collecting notice', async () => {
+    const { host } = await screen({ owes: [{ ...OWES, grace: GRACE }], owedTo: [] });
+    const text = host.querySelector('[data-part="grace"]')!.textContent ?? '';
+    expect(text).toContain('New PayPal payment of $120');
+    expect(text).toContain('must confirm');
+    expect(host.textContent).not.toContain(LIENS_COPY.owesIntro('100%'));
+  });
+
+  it('the person owed confirms "I\'ve been paid" after a check; no recovery wallet is asked for meanwhile', async () => {
+    const { host, paid } = await screen({ owes: [], owedTo: [{ ...OWED_TO, grace: GRACE }] });
+    expect(host.textContent).not.toContain(LIENS_COPY.addressNeeded);
+    await press(host, LIENS_COPY.graceConfirm);
+    expect(paid).toEqual([]);
+    expect(host.textContent).toContain(LIENS_COPY.graceConfirmCheck);
+    await press(host, LIENS_COPY.graceConfirmYes);
+    expect(paid).toEqual(['l2']);
+  });
+});

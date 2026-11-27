@@ -16,6 +16,7 @@ import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { COMPLY_LAPSED_SQL, complianceOf, hasAfterRefundStatement } from './comply.js';
+import { GRACE_WAITING_SQL, caseLiens } from './lienCase.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
@@ -288,12 +289,17 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const lapsed = isSeniorOrOwner(req.staff.role)
       ? `(d.seq = (select max(x.seq) from disputes x where x.code = d.code) and ${COMPLY_LAPSED_SQL})`
       : 'false';
+    // Owner 26 Nov 2026 (grace): a lien's 7 days passed without the person owed confirming payment.
+    // The moderator who ruled finds the case in their queue; once they send it up, seniors and the owner do.
+    const graceWaiting = isSeniorOrOwner(req.staff.role)
+      ? `(${GRACE_WAITING_SQL(false, '$3::uuid')} or ${GRACE_WAITING_SQL(true, null)})`
+      : GRACE_WAITING_SQL(false, '$3::uuid');
     const { rows } = await deps.db.query<{
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       locked_currency: string; locked_cents_per_xmr: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
-      involved: string[] | null; comply_lapsed: boolean;
+      involved: string[] | null; comply_lapsed: boolean; grace_lapsed: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               t.locked_currency, t.locked_cents_per_xmr::text as locked_cents_per_xmr,
@@ -301,13 +307,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
               case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved,
-              ${COMPLY_LAPSED_SQL} as comply_lapsed
+              ${COMPLY_LAPSED_SQL} as comply_lapsed, (${GRACE_WAITING_SQL(false, null)} or ${GRACE_WAITING_SQL(true, null)}) as grace_lapsed
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
          left join accounts a on a.id = d.assignee
          left join accounts p on d.ruling ? 'proposer' and p.id::text = d.ruling->>'proposer'
-        where (${current} or ${lapsed}) and ${where}
+        where (${current} or ${lapsed} or ${graceWaiting}) and ${where}
         order by case when d.first_reply_at is null then d.reply_due_at else d.ruling_due_at end, d.opened_at, d.code
         limit $2`,
       [QUEUE_STATUSES, QUEUE_MAX, me],
@@ -358,6 +364,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
           // A6: the seller did not prove the ordered payment in time (senior moderators and the owner only).
           complyLapsed: r.comply_lapsed,
+          // Owner 26 Nov 2026: a lien's 7 days to pay passed; the moderator decides (collect or send up).
+          graceLapsed: r.grace_lapsed,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -509,6 +517,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         gateRefusal: await gateRefusalOf(deps.db, d, me.id),
       },
       freezes: await freezesOf(deps.db, t, code),
+      // Owner 26 Nov 2026: the dispute's liens, their grace, collecting share and pending rate request.
+      liens: await caseLiens(deps.db, code, d.seq, me.id),
     };
   });
 

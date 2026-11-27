@@ -196,8 +196,12 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // rate with a reason; a senior moderator or the owner approves it (tapped) or rejects it.
   { method: 'GET', url: '/staff/v1/liens/:id', perm: 'disputes.handle', allowed: MODERATORS },
   { method: 'POST', url: '/staff/v1/liens/:id/rate', perm: 'disputes.handle', allowed: MODERATORS, body: { rateBps: 2500, reason: 'Hardship' } },
-  { method: 'POST', url: '/staff/v1/liens/:id/rate/:req/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  // Owner 26 Nov 2026 5:53 PM: approve takes no tap.
+  { method: 'POST', url: '/staff/v1/liens/:id/rate/:req/approve', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: {} },
   { method: 'POST', url: '/staff/v1/liens/:id/rate/:req/reject', perm: 'rulings.approve', allowed: ['owner', 'senior'], body: {} },
+  // Owner 26 Nov 2026 5:43 PM (lien grace): switch to collecting (tapped), or send a lapsed one to a senior.
+  { method: 'POST', url: '/staff/v1/liens/:id/collect', perm: 'disputes.handle', allowed: MODERATORS, body: { tapId: '7c3f6a52-2f0e-4b8a-9d55-0a1b2c3d4e5f' } },
+  { method: 'POST', url: '/staff/v1/liens/:id/escalate', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
   // Plan 4 Task 24 (D-011): who may review an appeal; the owner only (review M1, lead call 12 Nov).
   { method: 'GET', url: '/staff/v1/disputes/:code/appeal-reviewers', perm: 'staff.manage', allowed: OWNER },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).

@@ -8,6 +8,7 @@ import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
+import { runLienGraceLapses } from './lienGrace.js';
 import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
@@ -39,6 +40,10 @@ export const DISPUTE_TIMER_MS = 30_000;
  * 5. **Comply time lapsed (A6).** A `seller-sends-xmr` ruling whose comply time passed with no proof
  *    goes to a senior moderator or the owner (`runComplyLapses`: marked, logged, the owner alerted
  *    in-app and, once per pass with any lapse, by push).
+ *
+ * 6. **Lien grace lapsed (owner 26 Nov 2026).** A lien given 7 days to pay the agreed way whose
+ *    days passed without the person owed confirming payment is marked once, logged, and the
+ *    moderator who ruled is told (in-app and pushed; the owner in-app) (`runLienGraceLapses`).
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
@@ -117,6 +122,8 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   n += lapsed;
   // Lead call (18 Nov): a lapse reaches the owner's phone too, through the owner-alert push path.
   if (lapsed > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'dispute-comply-lapsed').catch(() => undefined);
+  // Owner 26 Nov 2026 (grace): a lien's 7 days to pay the agreed way passed without the sign-off.
+  n += await runLienGraceLapses(deps, failures);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }
