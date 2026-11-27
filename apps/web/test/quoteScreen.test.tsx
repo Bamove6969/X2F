@@ -55,6 +55,7 @@ interface TakeBody {
   centsPerXmr: string;
   fiatCents: string;
   lienRecoveryAtomic?: string;
+  sellerLienRecoveryAtomic?: string;
 }
 
 interface Api {
@@ -77,6 +78,8 @@ interface Api {
   addWallet?: (body: Record<string, unknown>) => { status: number; json: unknown };
   /** Review B1: what `GET /v1/account/liens/preview` answers (the buyer's lien recovery); '0' by default. */
   lienRecovery?: string;
+  /** Owner 27 Nov 2026: the selling taker's extra for their own lien the preview answers; '0' by default. */
+  sellerLienRecovery?: string;
 }
 
 let stub: Api;
@@ -124,7 +127,7 @@ beforeEach(() => {
       return new Response(null, { status: url.pathname.endsWith('/skip') ? 204 : 201 });
     }
     if (/^\/v1\/trades\/[^/]+$/.test(url.pathname)) return json(200, { role: 'buyer' });
-    if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
+    if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0', sellerLienRecoveryAtomic: stub.sellerLienRecovery ?? '0' });
     const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
     if (take && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as TakeBody;
@@ -664,7 +667,7 @@ describe('BuyQuote', () => {
       if (url.pathname === '/v1/methods') return json(200, { live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'x', giftCard: false, offers: 0, bestRate: null }] });
       if (url.pathname === '/v1/price') return json(200, { currency: 'EUR', centsPerXmr: '30000', exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '33000' });
       if (url.pathname === '/v1/wallets') return json(200, WALLETS);
-      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
+      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0', sellerLienRecoveryAtomic: stub.sellerLienRecovery ?? '0' });
       return json(404, { error: 'not-found' });
     }) as typeof fetch;
     const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-ghost', 'EUR')}&amount=300`);
@@ -682,7 +685,7 @@ describe('a 0-decimal currency', () => {
       if (url.pathname === '/v1/methods') return json(200, { live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'x', giftCard: false, offers: 0, bestRate: null }] });
       if (url.pathname === '/v1/price') return json(200, { currency: 'JPY', centsPerXmr: '33000', exponent: 0, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '22000' });
       if (url.pathname === '/v1/wallets') return json(200, WALLETS);
-      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0' });
+      if (url.pathname === '/v1/account/liens/preview') return json(200, { lienRecoveryAtomic: stub.lienRecovery ?? '0', sellerLienRecoveryAtomic: stub.sellerLienRecovery ?? '0' });
       const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
       if (take && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as TakeBody;
@@ -734,6 +737,8 @@ describe('SellQuote', () => {
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Enter XMR')!, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('1.000000');
     type(host, '1.0000009');
+    // Owner 27 Nov 2026: Trade waits for the seller's lien figure for this amount (none here).
+    await settle();
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes[0]!.amountAtomic).toBe('1000000900000');
@@ -769,6 +774,42 @@ describe('SellQuote', () => {
     };
     expect(arrivedState).toEqual({ confirmed });
     expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
+  });
+
+  it('owner 27 Nov 2026: a seller who owes after a dispute sees the extra they send; Trade sends it and the device keeps it', async () => {
+    stub.sellerLienRecovery = '454545400000';
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000', sellerLienRecoveryAtomic: '454545400000' } });
+    const { host } = await open(SELL);
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Max')!, new MouseEvent('click', { bubbles: true }));
+    await pick(host, 'w-cake');
+    expect(host.querySelector('[data-part="seller-lien-recovery"]')?.textContent).toContain('Extra for what you owe');
+    expect(host.querySelector('[data-part="seller-lien-recovery"]')?.textContent).toContain('0.4545454');
+    // Review item 4: the headline is everything the seller sends, the extra included.
+    expect(host.querySelector('.x2f-quote__xmr')?.textContent).toContain('4.9999994');
+    const note = host.querySelector('[data-part="seller-lien-recovery-note"]')?.textContent ?? '';
+    expect(note).toContain('It goes to the person you owe when the trade completes; you get it back if the trade is refunded.');
+    // The buyer's figure is never read or shown on a sale.
+    expect(host.querySelector('[data-part="lien-recovery"]')).toBeNull();
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.sellerLienRecoveryAtomic).toBe('454545400000');
+    expect(stub.takes[0]!.lienRecoveryAtomic).toBeUndefined();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.sellerLienRecoveryAtomic).toBe(454_545_400_000n);
+  });
+
+  it('owner 27 Nov 2026: a seller with no lien sends 0; a take that fixed another extra than the one shown is not recorded', async () => {
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000', sellerLienRecoveryAtomic: '1000000000' } });
+    const { host } = await open(SELL);
+    await pick(host, 'w-cake');
+    type(host, '1');
+    await settle();
+    expect(host.querySelector('[data-part="seller-lien-recovery"]')).toBeNull();
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.sellerLienRecoveryAtomic).toBe('0');
+    expect(where(host)).toBeNull();
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toBeNull();
   });
 });
 

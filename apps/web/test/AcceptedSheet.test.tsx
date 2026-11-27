@@ -314,3 +314,56 @@ describe('AcceptedSheet re-review (gaps 1-3)', () => {
     expect(readConfirmed(EVENT.code)).toBeNull();
   });
 });
+
+describe('owner 27 Nov 2026: a poster who sells and owes after a dispute', () => {
+  const OWING: AcceptedTradeView = { ...VIEW, sellerLienRecoveryAtomic: '125000000000' };
+  it('sees the extra, sends it with the wallet, and the record carries it', async () => {
+    const posted: Array<[string, string, bigint | undefined]> = [];
+    const done: Array<[string, ConfirmedTrade]> = [];
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={async () => OWING}
+        submit={async (c, w, x) => void posted.push([c, w, x])} onDone={(code, confirmed) => done.push([code, confirmed])} onClose={() => undefined} />,
+    );
+    await flush();
+    const note = sheet().querySelector('[data-part="seller-lien-recovery"]')?.textContent ?? '';
+    expect(note).toContain('Extra for what you owe: 0.125000 XMR.');
+    expect(note).toContain('you get it back if the trade is refunded');
+    expect(sheet().querySelector('[data-part="lien-recovery"]')).toBeNull();
+    fire(sheet().querySelector('input[value="w1"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      button('Use this wallet').click();
+    });
+    await flush();
+    expect(posted).toEqual([[EVENT.code, 'w1', 125_000_000_000n]]);
+    expect(done[0]![1].sellerLienRecoveryAtomic).toBe(125_000_000_000n);
+    expect(readConfirmed(EVENT.code)?.sellerLienRecoveryAtomic).toBe(125_000_000_000n);
+  });
+  it('a malformed figure posts nothing', async () => {
+    const posted: string[] = [];
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={async () => ({ ...VIEW, sellerLienRecoveryAtomic: '0' })}
+        submit={async (_c, w) => void posted.push(w)} onDone={() => undefined} onClose={() => undefined} />,
+    );
+    await flush();
+    fire(sheet().querySelector('input[value="w1"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      button('Use this wallet').click();
+    });
+    await flush();
+    expect(posted).toEqual([]);
+  });
+  it('a poster with no lien posts the wallet alone', async () => {
+    const posted: unknown[][] = [];
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView}
+        submit={async (...a) => void posted.push(a)} onDone={() => undefined} onClose={() => undefined} />,
+    );
+    await flush();
+    fire(sheet().querySelector('input[value="w1"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      button('Use this wallet').click();
+    });
+    await flush();
+    expect(posted).toEqual([[EVENT.code, 'w1']]);
+  });
+});

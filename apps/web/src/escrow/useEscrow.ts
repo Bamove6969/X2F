@@ -125,6 +125,12 @@ export interface UseEscrow {
   handedOff: boolean;
   /** `EscrowStatus.restitution`: the seller's payment a ruling orders, from the attested terms only (absent: none). */
   restitution?: { address: string; amountAtomic: bigint } | null;
+  /**
+   * `EscrowStatus.sellerLienRecoveryAtomic`: to the seller only, the extra this escrow holds for the
+   * person they owe (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"), from the
+   * signed terms once attested, else what the user accepted; null or absent: none.
+   */
+  sellerLienRecoveryAtomic?: bigint | null;
   release(): Promise<void>;
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
@@ -211,6 +217,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     intentKind: status.intentKind,
     handedOff: status.handedOff,
     restitution: status.restitution ?? null,
+    sellerLienRecoveryAtomic: status.sellerLienRecoveryAtomic ?? null,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),

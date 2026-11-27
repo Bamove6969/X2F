@@ -129,6 +129,8 @@ export interface EscrowRecord {
   acceptedAtomic?: bigint | null;
   /** Lien recovery the buyer confirmed (ConfirmedTrade.lienRecoveryAtomic); absent = none. */
   lienRecoveryAtomic?: bigint;
+  /** Seller lien extra the seller confirmed (ConfirmedTrade.sellerLienRecoveryAtomic; owner 27 Nov 2026); absent = none. */
+  sellerLienRecoveryAtomic?: bigint;
   /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
   closedSeenAt?: number | null;
   /** Device clock (ms) when this device saw its OWN settle done and the escrow empty with nothing in the pool. */

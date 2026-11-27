@@ -37,6 +37,7 @@ import { ONE_KEY_ALONE } from './escrowCopy.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import { EDGE_TIP } from '../wallets-model.js';
+import { SELLER_LIEN_COPY } from '../liens/liensCopy.js';
 import './trade.css';
 
 export const GIFT_CARD_WARNING =
@@ -134,11 +135,14 @@ function HowEscrow({ view }: { view: TradeView }) {
   );
 }
 
-/** escrowPlan over this device's deal, or null for a deal it refuses. */
-function planOf(deal: TradeEscrow['deal']): { sellerFundsAtomic: bigint; feeAtomic: bigint } | null {
+/**
+ * escrowPlan over this device's deal and the seller's own lien recovery (the extra this device
+ * accepted, docs/lien-recovery.md "Debtor is the seller"), or null for a deal it refuses.
+ */
+function planOf(deal: TradeEscrow['deal'], sellerLienRecoveryAtomic: bigint | null | undefined): { sellerFundsAtomic: bigint; feeAtomic: bigint } | null {
   if (!deal) return null;
   try {
-    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster });
+    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster, sellerLienRecoveryAtomic: sellerLienRecoveryAtomic ?? 0n });
   } catch {
     return null;
   }
@@ -150,8 +154,8 @@ function planOf(deal: TradeEscrow['deal']): { sellerFundsAtomic: bigint; feeAtom
  * deal is known; the API's fee is only compared with it (`data-fee-check`; review 2026-10-27,
  * Minor 1). Before the deal is known the amount is the API's, for display, and no fee line shows.
  */
-function SellerQuote({ view, deal }: { view: TradeView; deal: TradeEscrow['deal'] }) {
-  const plan = planOf(deal);
+function SellerQuote({ view, deal, extra }: { view: TradeView; deal: TradeEscrow['deal']; extra: bigint | null | undefined }) {
+  const plan = planOf(deal, extra);
   const funds = plan?.sellerFundsAtomic ?? sellerFundsOf(view);
   const rate = `${formatFiat(BigInt(view.lockedRate.centsPerXmr), view.lockedRate.currency)} / XMR`;
   const feeCheck = plan && view.fee ? (BigInt(view.fee.atomic) === plan.feeAtomic ? 'ok' : 'differs') : 'unchecked';
@@ -164,10 +168,12 @@ function SellerQuote({ view, deal }: { view: TradeView; deal: TradeEscrow['deal'
       <div className="x2f-trade-quote__rows">
         <Row label="Rate (locked when the trade started)" value={rate} />
         {plan && deal?.poster === 'seller' ? <Row label="Includes X2F fee (1%, your ad)" value={`${formatXmr(plan.feeAtomic)} XMR`} check={feeCheck} /> : null}
+        {plan && extra !== null && extra !== undefined && extra > 0n ? <Row label={SELLER_LIEN_COPY.fundRow} value={`${formatXmrExact(extra)} XMR`} /> : null}
         <Row label="Network fee · set in your wallet" />
         <div className="x2f-trade-quote__rule" />
         <Row label="You receive" value={fiat(view, view.fiatCents)} total />
       </div>
+      {plan && extra !== null && extra !== undefined && extra > 0n ? <p className="x2f-muted" data-seller-lien="">{SELLER_LIEN_COPY.explain}</p> : null}
     </section>
   );
 }
@@ -250,7 +256,7 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
   // "Escrow funded" shows as soon as the API or this device sees the full amount, confirmed or
   // not; the mark that keeps it so across reloads is set only from confirmed coins (Minor 2), so a
   // 0-conf tx that disappears, on either reading, takes the screen back to funding.
-  const deviceFunds = escrow.deal ? planOf(escrow.deal)?.sellerFundsAtomic ?? null : null;
+  const deviceFunds = escrow.deal ? planOf(escrow.deal, escrow.sellerLienRecoveryAtomic)?.sellerFundsAtomic ?? null : null;
   const markNow = fundedForGood(view, { confirmedAtomic: escrow.confirmedAtomic, fundsAtomic: deviceFunds });
   const deviceSeesAll = escrow.receivedAtomic !== null && deviceFunds !== null && deviceFunds > 0n && escrow.receivedAtomic >= deviceFunds;
   const fundedNow = markNow || deviceSeesAll || isFunded(view);
@@ -356,7 +362,7 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
         ) : null}
         <GiftCard view={view} />
         {fallback}
-        <SellerQuote view={view} deal={escrow.deal} />
+        <SellerQuote view={view} deal={escrow.deal} extra={escrow.sellerLienRecoveryAtomic} />
         {settingUp && !funded ? null : <HowEscrow view={view} />}
         {!settingUp && escrow.checkWords ? <EscrowCheck view={view} words={escrow.checkWords} /> : null}
         {!funded && wallet === 'edge' ? <p className="x2f-muted x2f-tip">{EDGE_TIP}</p> : null}

@@ -8,7 +8,9 @@ import {
   buyerProceeds,
   escrowPlan,
   expectedRecovery,
+  expectedSellerRecovery,
   lienRecoveryCap,
+  sellerLienRecoveryCap,
   recoveryAddressValid,
   signLienStatement,
   type AttestedTerms,
@@ -55,6 +57,13 @@ import { fromJson } from './shadow.js';
  * at the verified rate, and the buyer's device refuses any figure the buyer did not accept on the
  * quote before the take.
  *
+ * Seller debtors (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the terms' separate
+ * `sellerLienRecovery` (extra the seller funds on top of amount + fee) is checked by the same rules,
+ * with the work item's `sellerLienSource` (naming this trade's seller, `sellerAccount`): rule 4 makes
+ * the lien's debtor this trade's SELLER, rule 6's figure is `expectedSellerRecovery` of the amount at
+ * take, and the address is never the buyer recovery's. Both recoveries of one trade are recorded with
+ * the attestation, each against its own lien (`mod_lien_recoveries.debtor_side`, migration 891).
+ *
  * Re-review N1: all of this runs only while this service's own switch is on (`MOD_LIEN_RECOVERY=on`,
  * off by default); while it is off every recovery is refused (`off`) and no lien statement is signed.
  *
@@ -83,14 +92,18 @@ export class LienRefused extends Error {
   }
 }
 
-/** The work item's claim of where its recovery comes from (apps/api internal/routes.ts); every field is the API's word. */
+/**
+ * The work item's claim of where its recovery comes from (apps/api internal/routes.ts); every field is
+ * the API's word. `lienSource` names this trade's buyer (`buyerAccount`); `sellerLienSource` (owner 27
+ * Nov 2026) has the same keys with `sellerAccount`, this trade's seller, in its place.
+ */
 export interface LienSource {
   fromCode: string;
   creditor: LienSide;
   lienId: string;
   debtorAccount: string;
   creditorAccount: string;
-  /** This trade's buyer account. */
+  /** This trade's buyer account (`sellerAccount` in a `sellerLienSource`). */
   buyerAccount: string;
   rateBps: number;
   /** Q2: the creditor device's signed statement of the address (RecoveryAddressStatement) and its signature. */
@@ -112,12 +125,17 @@ export interface LienRulings {
 
 /** A recovery this service may sign, to be recorded with the attestation (`recordLienRecovery`). */
 export interface CheckedRecovery {
+  /** Which party of this trade owes the lien: 'buyer' (`lienRecovery`) or 'seller' (`sellerLienRecovery`). */
+  side: 'buyer' | 'seller';
   source: string;
   creditor: LienSide;
   amountAtomic: bigint;
   /** The source trade's XMR, as the gate verified the rulings against it: the lien's most. */
   owedAtomic: bigint;
-  /** The buyer's proceeds on this trade, for the exact figure (`expectedRecovery`). */
+  /**
+   * The basis of the exact figure: the buyer's proceeds on this trade (`expectedRecovery`), or for a
+   * seller recovery the amount at take (`expectedSellerRecovery`).
+   */
   proceedsAtomic: bigint;
   lienId: string;
   debtor: string;
@@ -163,7 +181,7 @@ async function sourceFacts(db: Pick<pg.Pool, 'query'>, code: string, feeWallet: 
     trade = { amountAtomic: shadow.amountAtomic, feeAtomic: shadow.feeAtomic, sellerFundsAtomic: shadow.sellerFundsAtomic, poster: shadow.poster };
   } else {
     const take = BigInt(terms.deal.takeAmountAtomic);
-    const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster });
+    const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster, sellerLienRecoveryAtomic: terms.sellerLienRecovery === undefined ? 0n : BigInt(terms.sellerLienRecovery.amountAtomic) });
     trade = { amountAtomic: take, feeAtomic: plan.feeAtomic, sellerFundsAtomic: plan.sellerFundsAtomic, poster: terms.deal.poster };
   }
   try {
@@ -174,16 +192,41 @@ async function sourceFacts(db: Pick<pg.Pool, 'query'>, code: string, feeWallet: 
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SOURCE_KEYS = ['address', 'buyerAccount', 'creditor', 'creditorAccount', 'debtorAccount', 'fromCode', 'lienId', 'rateBps'].join(',');
+const SOURCE_KEYS: Record<'buyer' | 'seller', string> = {
+  buyer: ['address', 'buyerAccount', 'creditor', 'creditorAccount', 'debtorAccount', 'fromCode', 'lienId', 'rateBps'].join(','),
+  seller: ['address', 'creditor', 'creditorAccount', 'debtorAccount', 'fromCode', 'lienId', 'rateBps', 'sellerAccount'].join(','),
+};
+
+type LienWork = { trade: string; terms: AttestedTerms; lienSource?: unknown; sellerLienSource?: unknown };
 
 /**
- * Checks the work item's recovery (rules 1 to 5 above) against this service's own records. Null
+ * Checks the work item's buyer recovery (rules 1 to 5 above) against this service's own records. Null
  * when the terms carry none (and the item names no source); throws LienRefused otherwise. The exact
  * figure (rule 6) is checked by `recordLienRecovery`, under the lien's lock.
  */
-export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms; lienSource?: unknown }, d: LienCheckDeps): Promise<CheckedRecovery | null> {
-  const rec = w.terms.lienRecovery;
-  const src = w.lienSource;
+export async function checkLienRecovery(w: LienWork, d: LienCheckDeps): Promise<CheckedRecovery | null> {
+  return checkSide(w, 'buyer', d);
+}
+
+/** Owner 27 Nov 2026: the same checks for the terms' `sellerLienRecovery` and the item's `sellerLienSource`. */
+export async function checkSellerLienRecovery(w: LienWork, d: LienCheckDeps): Promise<CheckedRecovery | null> {
+  return checkSide(w, 'seller', d);
+}
+
+/** Both sides' checked recoveries (buyer first), each to be recorded with the attestation; throws LienRefused on either. */
+export async function checkLienRecoveries(w: LienWork, d: LienCheckDeps): Promise<CheckedRecovery[]> {
+  const out: CheckedRecovery[] = [];
+  for (const side of ['buyer', 'seller'] as const) {
+    const r = await checkSide(w, side, d);
+    if (r !== null) out.push(r);
+  }
+  return out;
+}
+
+async function checkSide(w: LienWork, side: 'buyer' | 'seller', d: LienCheckDeps): Promise<CheckedRecovery | null> {
+  const rec = side === 'buyer' ? w.terms.lienRecovery : w.terms.sellerLienRecovery;
+  const src = side === 'buyer' ? w.lienSource : w.sellerLienSource;
+  const partyKey = side === 'buyer' ? 'buyerAccount' : 'sellerAccount';
   if (rec === undefined) {
     if (src !== undefined) throw new LienRefused('bad-source');
     return null;
@@ -195,9 +238,9 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   const s = src as Record<string, unknown>;
   const fromCode = typeof s.fromCode === 'string' ? normalizeTradeCode(s.fromCode) : null;
   const creditor = s.creditor;
-  const ids = [s.lienId, s.debtorAccount, s.creditorAccount, s.buyerAccount];
+  const ids = [s.lienId, s.debtorAccount, s.creditorAccount, s[partyKey]];
   if (
-    Object.keys(s).sort().join(',') !== SOURCE_KEYS || fromCode === null || (creditor !== 'buyer' && creditor !== 'seller') ||
+    Object.keys(s).sort().join(',') !== SOURCE_KEYS[side] || fromCode === null || (creditor !== 'buyer' && creditor !== 'seller') ||
     !ids.every((x) => typeof x === 'string' && UUID.test(x)) || s.debtorAccount === s.creditorAccount ||
     typeof s.address !== 'object' || s.address === null || Array.isArray(s.address)
   ) {
@@ -207,15 +250,17 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   const lienId = s.lienId as string;
   const debtor = s.debtorAccount as string;
   const creditorAccount = s.creditorAccount as string;
-  // Rule 4: the lien's debtor is this trade's buyer.
-  if (debtor !== s.buyerAccount) throw new LienRefused('not-debtor');
+  // Rule 4: the lien's debtor is this trade's buyer (a seller recovery: its seller).
+  if (debtor !== s[partyKey]) throw new LienRefused('not-debtor');
   // Rule 5 (Q1): a rate outside 1..100% (LIEN_RECOVERY_MAX_BPS) is never signed.
   const rateBps = s.rateBps;
   if (typeof rateBps !== 'number' || !Number.isSafeInteger(rateBps) || rateBps < 1 || rateBps > LIEN_RECOVERY_MAX_BPS) throw new LienRefused('over-rate');
   const amount = BigInt(rec.amountAtomic);
-  const proceeds = buyerProceeds(w.terms.deal);
+  // The basis: the buyer's proceeds, or the seller's earnings (the amount at take, owner 27 Nov 2026).
+  const proceeds = side === 'buyer' ? buyerProceeds(w.terms.deal) : BigInt(w.terms.deal.takeAmountAtomic);
+  const cap = side === 'buyer' ? lienRecoveryCap(proceeds) : sellerLienRecoveryCap(proceeds);
   // The shared limits every co-signer applies (B1, B3, Q1, Q5); the exact figure comes later.
-  if (amount < LIEN_RECOVERY_MIN_ATOMIC || amount > lienRecoveryCap(proceeds)) throw new LienRefused('over-rate');
+  if (amount < LIEN_RECOVERY_MIN_ATOMIC || amount > cap) throw new LienRefused('over-rate');
   if (d.rulings === null) throw new LienRefused('no-authority');
   const facts = await sourceFacts(d.db, fromCode, d.feeWallet, d.payrollWallet);
   if (facts === null) throw new LienRefused('source-unknown');
@@ -227,7 +272,9 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
   await sodium.ready;
   if (
     !recoveryAddressValid(st, a.sig, signer) || st.fromCode !== fromCode || st.creditorSide !== creditor || st.address !== rec.address ||
-    rec.address === w.terms.buyerPayout || rec.address === w.terms.sellerRefund || rec.address === d.feeWallet || rec.address === d.payrollWallet
+    rec.address === w.terms.buyerPayout || rec.address === w.terms.sellerRefund || rec.address === d.feeWallet || rec.address === d.payrollWallet ||
+    // Owner 27 Nov 2026: one output per address, so never both recoveries to one.
+    (side === 'seller' && rec.address === w.terms.lienRecovery?.address)
   ) {
     throw new LienRefused('wrong-address');
   }
@@ -259,7 +306,7 @@ export async function checkLienRecovery(w: { trade: string; terms: AttestedTerms
     else if (!(await justReplaced(d, lienId, rateBps))) throw new LienRefused('rate-unverified');
   }
   return {
-    source: fromCode, creditor, amountAtomic: amount, owedAtomic: facts.recorded.amountAtomic, proceedsAtomic: proceeds,
+    side, source: fromCode, creditor, amountAtomic: amount, owedAtomic: facts.recorded.amountAtomic, proceedsAtomic: proceeds,
     lienId, debtor, creditorAccount, rateBps, rateTaps: spends,
   };
 }
@@ -306,13 +353,20 @@ export async function recordLienRecovery(
   sign: { signingSecret: Uint8Array; now: Date },
 ): Promise<{ statement: LienStatement; sig: string } | null> {
   await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`x2f-lien:${r.source}:${r.creditor}`]);
+  // Every recovery signed and not freed, but this one (a restart re-records the same trade and side).
   const sum = async (where: string, args: unknown[]): Promise<bigint> =>
-    BigInt((await c.query<{ s: string }>(`select coalesce(sum(amount_atomic), 0)::text as s from mod_lien_recoveries where ${where} and freed_at is null and trade <> $1`, [trade, ...args])).rows[0]!.s);
-  const forSource = await sum('source_code = $2 and creditor = $3', [r.source, r.creditor]);
+    BigInt((await c.query<{ s: string }>(
+      `select coalesce(sum(amount_atomic), 0)::text as s from mod_lien_recoveries where ${where} and freed_at is null and not (trade = $1 and debtor_side = $2)`,
+      [trade, r.side, ...args],
+    )).rows[0]!.s);
+  const forSource = await sum('source_code = $3 and creditor = $4', [r.source, r.creditor]);
   if (forSource + r.amountAtomic > r.owedAtomic) throw new LienRefused('over-owed');
-  const forLien = await sum('lien_id = $2', [r.lienId]);
+  const forLien = await sum('lien_id = $3', [r.lienId]);
   const left = r.owedAtomic > forLien ? r.owedAtomic - forLien : 0n;
-  if (expectedRecovery({ proceedsAtomic: r.proceedsAtomic, rateBps: r.rateBps, leftAtomic: left }) !== r.amountAtomic) throw new LienRefused('not-expected');
+  const expected = r.side === 'buyer'
+    ? expectedRecovery({ proceedsAtomic: r.proceedsAtomic, rateBps: r.rateBps, leftAtomic: left })
+    : expectedSellerRecovery({ takeAmountAtomic: r.proceedsAtomic, rateBps: r.rateBps, leftAtomic: left });
+  if (expected !== r.amountAtomic) throw new LienRefused('not-expected');
   const kept = (await c.query<{ rate_bps: number }>('select rate_bps from mod_liens where lien_id = $1 for update', [r.lienId])).rows[0];
   let out: { statement: LienStatement; sig: string } | null = null;
   // First sight, or a rate change this recovery applies (it spends taps); a recovery at the rate just
@@ -332,8 +386,8 @@ export async function recordLienRecovery(
     out = { statement, sig };
   }
   await c.query(
-    "insert into mod_lien_recoveries (trade, lien_id, source_code, creditor, amount_atomic) values ($1, $2, $3, $4, $5) on conflict (trade) where trade <> '' do nothing",
-    [trade, r.lienId, r.source, r.creditor, r.amountAtomic.toString()],
+    "insert into mod_lien_recoveries (trade, debtor_side, lien_id, source_code, creditor, amount_atomic) values ($1, $2, $3, $4, $5, $6) on conflict (trade, debtor_side) where trade <> '' do nothing",
+    [trade, r.side, r.lienId, r.source, r.creditor, r.amountAtomic.toString()],
   );
   // Q1: the rate taps this change applied are spent for the lien (an old approval is never replayed).
   const from = kept?.rate_bps ?? LIEN_DEFAULT_RATE_BPS;
@@ -413,13 +467,17 @@ export async function lienRateApproved(g: GateState, taps: readonly StoredTap[],
  * ruling for the buyer, after late coins on a trade it had seen refunded): the recovery counts
  * against its lien again, so this service never signs past what is owed.
  */
-export async function unfreeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string): Promise<void> {
-  await db.query('update mod_lien_recoveries set freed_at = null where trade = $1 and freed_at is not null', [trade]);
+export async function unfreeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string, side?: 'buyer' | 'seller'): Promise<void> {
+  await db.query('update mod_lien_recoveries set freed_at = null where trade = $1 and freed_at is not null and ($2::text is null or debtor_side = $2)', [trade, side ?? null]);
 }
 
-/** The watcher saw `trade` end without paying its recovery: it no longer counts against its lien. */
-export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string): Promise<void> {
-  await db.query('update mod_lien_recoveries set freed_at = now() where trade = $1 and freed_at is null', [trade]);
+/**
+ * The watcher saw `trade` end without paying its recovery: it no longer counts against its lien.
+ * `side` limits it to one side's row (owner 27 Nov 2026: a seller's extra on a trade closed with no
+ * coin is freed at once, as the API releases its hold).
+ */
+export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string, side?: 'buyer' | 'seller'): Promise<void> {
+  await db.query('update mod_lien_recoveries set freed_at = now() where trade = $1 and freed_at is null and ($2::text is null or debtor_side = $2)', [trade, side ?? null]);
 }
 
 /**

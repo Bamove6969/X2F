@@ -664,6 +664,121 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect(rows[0]!.n).toBe(1);
   });
 
+  // Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): a selling debtor's extra, in its
+  // own `sellerLienRecovery` with its own `sellerLienSource` (this trade's seller), checked by the same
+  // rules; the figure is expectedSellerRecovery of the amount at take.
+  describe('a seller who owes the lien (owner 27 Nov 2026)', () => {
+    const TAKE = 250_000_000_000n; // N_TERMS: 0.25 XMR at take; the lien (the source trade's XMR) is 0.25 XMR too
+    async function sellerSourceOf(src: { code: string; creditor: Identity }, over: Record<string, unknown> = {}) {
+      const { buyerAccount: _b, ...rest } = await sourceOf(src);
+      return { ...rest, sellerAccount: DEBTOR, ...over };
+    }
+    async function sellerTrade(
+      srec: { address: string; amountAtomic: bigint } | null,
+      sellerLienSource: unknown,
+      over: { lienRecovery?: { address: string; amountAtomic: bigint }; lienSource?: unknown; lienRecoveryOn?: boolean } = {},
+    ) {
+      const code = newTradeCode();
+      const buyer = await trader(code, 'buyer');
+      const seller = await trader(code, 'seller');
+      const terms: AttestedTerms = {
+        ...N_TERMS,
+        ...(over.lienRecovery !== undefined ? { lienRecovery: { address: over.lienRecovery.address, amountAtomic: over.lienRecovery.amountAtomic.toString() } } : {}),
+        ...(srec !== null ? { sellerLienRecovery: { address: srec.address, amountAtomic: srec.amountAtomic.toString() } } : {}),
+      };
+      const item = {
+        trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms,
+        ...(over.lienSource !== undefined ? { lienSource: over.lienSource } : {}),
+        ...(sellerLienSource !== undefined ? { sellerLienSource } : {}),
+      } as WorkItem;
+      const net = fakeNetwork(() => [item]);
+      const r = reasonsOf();
+      const done = await (await moderation(net.fetch, () => {}, r.log, { lienRulings: creditorBuyer, ...(over.lienRecoveryOn === false ? { lienRecovery: false } : {}) })).tick();
+      const signed = (await db.query('select 1 from signed_terms where trade = $1', [code])).rows.length === 1;
+      return { code, done, signed, reasons: r.reasons, net, item, seller };
+    }
+
+    it('signs exactly the expected extra to the creditor\'s signed address and records it as the seller\'s', async () => {
+      const src = await sourceTrade();
+      const n = await sellerTrade(rec(TAKE), await sellerSourceOf(src));
+      expect(n.done).toEqual([n.code]);
+      const report = n.net.reports.find((x) => x.attestation.trade === n.code)!;
+      expect(report.attestation.terms?.sellerLienRecovery).toEqual({ address: CREDITOR_ADDRESS, amountAtomic: TAKE.toString() });
+      expect(report.attestation.terms).not.toHaveProperty('lienRecovery');
+      const { rows } = await db.query('select debtor_side, lien_id, creditor, amount_atomic::text as amount from mod_lien_recoveries where trade = $1', [n.code]);
+      expect(rows).toEqual([{ debtor_side: 'seller', lien_id: LIEN, creditor: 'buyer', amount: TAKE.toString() }]);
+      expect(n.net.lienStatements[0]!.statement).toMatchObject({ lienId: LIEN, debtor: DEBTOR, rateBps: LIEN_DEFAULT_RATE_BPS });
+      // The seller's device accepts exactly the extra it confirmed, and none other.
+      const seller = n.item.participants.seller;
+      const base = { trade: n.code, role: 'seller' as const, signPublic: seller.signPublic, boxPublic: seller.boxPublic, ownAddress: N_TERMS.sellerRefund, identityCreatedAt: NOW.getTime() };
+      await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, sellerLienRecoveryAtomic: TAKE } })).resolves.toBeUndefined();
+      await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: DEAL })).rejects.toMatchObject({ code: 'wrong-terms' });
+    });
+
+    it('compromised API: a seller extra that is injected, inflated, mis-sourced or redirected is refused and nothing is signed', async () => {
+      const src = await sourceTrade();
+      const ok = await sellerSourceOf(src);
+      const cases: Array<[string, Awaited<ReturnType<typeof sellerTrade>>]> = [
+        ['lien-refused-off', await sellerTrade(rec(TAKE), ok, { lienRecoveryOn: false })],
+        ['lien-refused-no-source', await sellerTrade(rec(TAKE), undefined)],
+        ['lien-refused-bad-source', await sellerTrade(null, ok)],
+        // The buyer's source shape (buyerAccount) is not a seller source.
+        ['lien-refused-bad-source', await sellerTrade(rec(TAKE), await sourceOf(src))],
+        ['lien-refused-not-debtor', await sellerTrade(rec(TAKE), await sellerSourceOf(src, { sellerAccount: '33333333-3333-4333-8333-333333333333' }))],
+        ['lien-refused-not-expected', await sellerTrade(rec(TAKE - 1n), ok)],
+        ['lien-refused-over-rate', await sellerTrade(rec(TAKE + 1n), ok)],
+        ['lien-refused-over-rate', await sellerTrade(rec(LIEN_RECOVERY_MIN_ATOMIC - 1n), ok)],
+        ['lien-refused-wrong-address', await sellerTrade(rec(TAKE, '4'.padEnd(95, 'Z')), ok)],
+        ['lien-refused-wrong-address', await sellerTrade(rec(TAKE, N_TERMS.sellerRefund), await sellerSourceOf(src, { address: await signedAddress(src, src.creditor, N_TERMS.sellerRefund) }))],
+      ];
+      for (const [reason, c] of cases) {
+        expect(c.done, reason).toEqual([]);
+        expect(c.signed, reason).toBe(false);
+        expect(c.reasons, reason).toContain(reason);
+        expect(c.net.reports, reason).toEqual([]);
+      }
+    });
+
+    it('one remainder for buys and sales: after a buyer recovery the next sale\'s extra is exactly what is left; more is over-owed', async () => {
+      const src = await sourceTrade();
+      const a = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+      expect(a.signed).toBe(true);
+      const over = await sellerTrade(rec(TAKE), await sellerSourceOf(src));
+      expect(over.signed).toBe(false);
+      expect(over.reasons).toContain('lien-refused-over-owed');
+      const left = TAKE - FULL; // 0.010000000001 XMR: at least the 0.01 XMR floor
+      const b = await sellerTrade(rec(left), await sellerSourceOf(src));
+      expect(b.signed).toBe(true);
+    });
+
+    it('both parties owe: one trade carries both recoveries, each checked against its own lien and recorded by side', async () => {
+      const srcB = await sourceTrade();
+      const srcS = await sourceTrade();
+      const buyerLien = LIEN;
+      const sellerLien = randomUUID();
+      const BUYER_DEBTOR = '55555555-5555-4555-8555-555555555555';
+      const n = await sellerTrade(
+        rec(TAKE, '4'.padEnd(95, 'Q')),
+        await sellerSourceOf(srcS, { lienId: sellerLien, address: await signedAddress(srcS, srcS.creditor, '4'.padEnd(95, 'Q')) }),
+        { lienRecovery: rec(FULL), lienSource: await sourceOf(srcB, { lienId: buyerLien, debtorAccount: BUYER_DEBTOR, buyerAccount: BUYER_DEBTOR }) },
+      );
+      expect(n.done).toEqual([n.code]);
+      const terms = n.net.reports.find((x) => x.attestation.trade === n.code)!.attestation.terms!;
+      expect(terms.lienRecovery).toEqual({ address: CREDITOR_ADDRESS, amountAtomic: FULL.toString() });
+      expect(terms.sellerLienRecovery).toEqual({ address: '4'.padEnd(95, 'Q'), amountAtomic: TAKE.toString() });
+      const { rows } = await db.query('select debtor_side, lien_id from mod_lien_recoveries where trade = $1 order by debtor_side', [n.code]);
+      expect(rows).toEqual([{ debtor_side: 'buyer', lien_id: buyerLien }, { debtor_side: 'seller', lien_id: sellerLien }]);
+      // Never both to one address.
+      const same = await sellerTrade(
+        rec(TAKE),
+        await sellerSourceOf(srcS, { lienId: randomUUID() }),
+        { lienRecovery: rec(FULL), lienSource: await sourceOf(srcB, { lienId: randomUUID(), debtorAccount: BUYER_DEBTOR, buyerAccount: BUYER_DEBTOR }) },
+      );
+      expect(same.signed).toBe(false);
+      expect(same.reasons).toContain('lien-refused-wrong-address');
+    });
+  });
+
   it('the co-signing devices refuse what an API could get past nothing else: the buyer accepts only its own figure (review B1)', async () => {
     const src = await sourceTrade();
     const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);

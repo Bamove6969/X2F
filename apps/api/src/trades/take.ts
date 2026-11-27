@@ -22,7 +22,7 @@ import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { banHidesSql, tradeBanRefusal } from '../banState.js';
 import { LIEN_BLOCKS_SQL, lienBlocksTrading } from '../disputes/lien.js';
-import { releaseHoldAt, reserveRecovery } from '../disputes/recovery.js';
+import { checkSellerAccepted, chooseSellerRecovery, holdSellerRecovery, releaseHoldAt, reserveRecovery, sellerHoldAt } from '../disputes/recovery.js';
 import { appendLog } from '../log/append.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
@@ -108,14 +108,23 @@ interface TakeBody {
    * trade would reserve any other figure; a taker who sells never sends one.
    */
   lienRecoveryAtomic: bigint | null;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the extra
+   * a taking seller's quote showed and the seller accepted ('0' or absent: none). 409
+   * `lien-recovery-changed` when the trade would hold any other figure; a taker who buys never sends one.
+   */
+  sellerLienRecoveryAtomic: bigint | null;
 }
+
+const RECOVERY_FIGURE = /^(0|[1-9]\d{0,30})$/;
 
 function parseTake(body: unknown): TakeBody {
   if (!isObject(body)) throw bad();
-  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms' && k !== 'lienRecoveryAtomic').sort().join(',');
+  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms' && k !== 'lienRecoveryAtomic' && k !== 'sellerLienRecoveryAtomic').sort().join(',');
   if (keys !== 'amountAtomic,centsPerXmr,currency,fiatCents,methodId,walletId') throw bad();
-  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms, lienRecoveryAtomic } = body;
-  if (lienRecoveryAtomic !== undefined && (typeof lienRecoveryAtomic !== 'string' || !/^(0|[1-9]\d{0,30})$/.test(lienRecoveryAtomic))) throw bad();
+  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency, giftCardTerms, lienRecoveryAtomic, sellerLienRecoveryAtomic } = body;
+  if (lienRecoveryAtomic !== undefined && (typeof lienRecoveryAtomic !== 'string' || !RECOVERY_FIGURE.test(lienRecoveryAtomic))) throw bad();
+  if (sellerLienRecoveryAtomic !== undefined && (typeof sellerLienRecoveryAtomic !== 'string' || !RECOVERY_FIGURE.test(sellerLienRecoveryAtomic))) throw bad();
   if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) throw bad();
   if (typeof amountAtomic !== 'string' || !ATOMIC.test(amountAtomic)) throw bad();
@@ -123,14 +132,23 @@ function parseTake(body: unknown): TakeBody {
   if (typeof centsPerXmr !== 'string' || !PRICE.test(centsPerXmr)) throw bad();
   if (typeof cents !== 'string' || !CENTS.test(cents)) throw bad();
   return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency, giftCardTerms,
-    lienRecoveryAtomic: lienRecoveryAtomic === undefined ? null : BigInt(lienRecoveryAtomic as string) };
+    lienRecoveryAtomic: lienRecoveryAtomic === undefined ? null : BigInt(lienRecoveryAtomic as string),
+    sellerLienRecoveryAtomic: sellerLienRecoveryAtomic === undefined ? null : BigInt(sellerLienRecoveryAtomic as string) };
 }
 
-function parseWalletBody(body: unknown): string {
-  if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
+/**
+ * `{ walletId, sellerLienRecoveryAtomic? }`: the poster's wallet and, for a poster who sells, the
+ * extra for their lien they accepted on the accepted sheet ('0' or absent: none; owner 27 Nov 2026).
+ */
+function parseWalletBody(body: unknown): { walletId: string; sellerLienRecoveryAtomic: bigint | null } {
+  if (!isObject(body)) throw bad();
+  const keys = Object.keys(body).filter((k) => k !== 'sellerLienRecoveryAtomic');
+  if (keys.length !== 1 || keys[0] !== 'walletId') throw bad();
   const id = body.walletId;
   if (typeof id !== 'string' || !UUID.test(id)) throw bad();
-  return id;
+  const x = body.sellerLienRecoveryAtomic;
+  if (x !== undefined && (typeof x !== 'string' || !RECOVERY_FIGURE.test(x))) throw bad();
+  return { walletId: id, sellerLienRecoveryAtomic: x === undefined ? null : BigInt(x as string) };
 }
 
 /**
@@ -395,6 +413,20 @@ export function takeRoutes(app: FastifyInstance): void {
       });
 
       const poster = posterRole(r.side);
+      const sellerId = poster === 'seller' ? posterId : takerId;
+      const buyerId = poster === 'buyer' ? posterId : takerId;
+      // Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): a
+      // seller who owes a lien funds extra XMR for the person owed, on top of amount + fee. Chosen
+      // before the trade is built: it is part of what the escrow must hold (`sellerFundsAtomic`).
+      // A taking seller accepted the figure on the quote; a posting seller accepts it on the
+      // accepted sheet and sends it with the wallet route (`checkSellerAccepted`).
+      const sellerRecovery = await chooseSellerRecovery(c, {
+        buyerId, sellerId, now, takeAmountAtomic: b.amountAtomic,
+        ownAddresses: [wallet.address],
+        feeWallet: req.server.deps.config.feeWallet ?? null,
+        payrollWallet: req.server.deps.config.payrollWallet ?? null,
+        accepted: sellerId === takerId ? (b.sellerLienRecoveryAtomic ?? 0n) : null,
+      });
       // The chosen method's confirm window (its own, a gift card's, or the Custom method's: owner
       // F9, G50) and time to pay, fixed on the trade here (owner p9-4, p9-6).
       const profile = tradeProfile(method.methodId);
@@ -403,8 +435,8 @@ export function takeRoutes(app: FastifyInstance): void {
           code: newTradeCode(),
           offerId: id,
           poster,
-          sellerId: poster === 'seller' ? posterId : takerId,
-          buyerId: poster === 'buyer' ? posterId : takerId,
+          sellerId,
+          buyerId,
           methodId: method.methodId,
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
@@ -412,6 +444,7 @@ export function takeRoutes(app: FastifyInstance): void {
           payWindowMin: profile.payWindowMin,
           minFiatCents: limits.minFiatCents,
           maxFiatCents,
+          ...(sellerRecovery !== null ? { sellerLienRecoveryAtomic: sellerRecovery.amountAtomic } : {}),
         },
         now,
       );
@@ -429,6 +462,7 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      if (sellerRecovery !== null) await holdSellerRecovery(c, t.code, sellerRecovery, now);
       // Owner demo note #6: a one-time wallet is for this trade only (under the taker's account lock above).
       await useUpOneTimeWallet(c, takerId, wallet.id, t.code, now);
       // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
@@ -443,22 +477,29 @@ export function takeRoutes(app: FastifyInstance): void {
       const recovery = await reserveRecovery(c, {
         code: t.code, buyerId: t.buyerId, sellerId: t.sellerId, now,
         proceedsAtomic: poster === 'seller' ? t.amountAtomic : t.amountAtomic - plan.feeAtomic,
-        // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route).
-        ownAddresses: [sides.buyerPayout, sides.sellerRefund],
+        // Review B2: never to one of this trade's own addresses (the poster's comes later: the wallet route),
+        // nor to the seller recovery's (one output per address; owner 27 Nov 2026).
+        ownAddresses: [sides.buyerPayout, sides.sellerRefund, sellerRecovery?.address ?? null],
         feeWallet: req.server.deps.config.feeWallet ?? null,
         payrollWallet: req.server.deps.config.payrollWallet ?? null,
         // Review B1: a buying taker accepted this figure on the quote (none sent: none); the poster
         // buyer accepts it on their own screen before anything is signed (AcceptedSheet).
         accepted: t.buyerId === takerId ? (b.lienRecoveryAtomic ?? 0n) : null,
       });
+      // Last (append.ts M2): nothing is awaited after the log lock but the commit.
       if (recovery !== null) {
-        // Last (append.ts M2): nothing is awaited after the log lock but the commit.
         await appendLog(c, {
           at: now, actor: { kind: 'system' }, tradeCode: t.code, action: 'lien.recovery-reserved',
           detail: { lienId: recovery.lienId, amountAtomic: recovery.amountAtomic.toString() },
         });
       }
-      return { ...t, recovery };
+      if (sellerRecovery !== null) {
+        await appendLog(c, {
+          at: now, actor: { kind: 'system' }, tradeCode: t.code, action: 'lien.recovery-reserved',
+          detail: { lienId: sellerRecovery.lienId, amountAtomic: sellerRecovery.amountAtomic.toString(), side: 'seller' },
+        });
+      }
+      return { ...t, recovery, sellerRecovery };
     });
 
     // "<display name> accepted your offer" to the poster, after the commit and outside the
@@ -475,12 +516,14 @@ export function takeRoutes(app: FastifyInstance): void {
       maxFiatCents: trade.maxFiatCents.toString(),
       // Only to a taker who is the buyer (it is their proceeds); their device confirms it (ConfirmedDeal).
       ...(trade.recovery !== null && trade.buyerId === takerId ? { lienRecoveryAtomic: trade.recovery.amountAtomic.toString() } : {}),
+      // Owner 27 Nov 2026: only to a taker who is the seller (they fund it); their device confirms it.
+      ...(trade.sellerRecovery !== null && trade.sellerId === takerId ? { sellerLienRecoveryAtomic: trade.sellerRecovery.amountAtomic.toString() } : {}),
     };
   });
 
   app.post('/v1/trades/:code/wallet', { preHandler: requireTrader }, async (req, reply) => {
     const deps = req.server.deps;
-    const walletId = parseWalletBody(req.body);
+    const { walletId, sellerLienRecoveryAtomic } = parseWalletBody(req.body);
     const raw = (req.params as { code?: unknown }).code;
     const code = typeof raw === 'string' ? normalizeTradeCode(raw) : null;
     if (code === null) throw notFound();
@@ -508,8 +551,15 @@ export function takeRoutes(app: FastifyInstance): void {
       if (await lienBlocksTrading(c, me)) throw new ApiError(409, 'lien');
       // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
       await assertNoPendingReview(c, me, now);
+      // Owner 27 Nov 2026: a posting seller commits to fund the extra for their lien with this
+      // route, so it carries the figure they accepted on the accepted sheet (409 when it differs).
+      if (role === 'seller') checkSellerAccepted(t.sellerLienRecoveryAtomic ?? 0n, sellerLienRecoveryAtomic);
+      else if (sellerLienRecoveryAtomic !== null && sellerLienRecoveryAtomic !== 0n) throw bad();
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);
       const w = await pickWallet(c, me, walletId, now);
+      // The seller's extra is the funding plan the seller accepted, never released here: a poster
+      // wallet that is its creditor's address is refused instead (review B2 for the seller recovery).
+      if (await sellerHoldAt(c, code, w.address)) throw new ApiError(409, 'wallet-not-ready');
       // Once only, and only while in setup: the conditions stay in the UPDATE too.
       const r =
         role === 'seller'

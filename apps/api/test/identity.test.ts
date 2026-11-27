@@ -326,6 +326,41 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     expect(again.work.find((w) => w.trade === plain.code)).not.toHaveProperty('lienSource');
   });
 
+  it('owner 27 Nov 2026: a seller recovery is signed as its own `sellerLienRecovery` with its own source naming this trade\'s seller; a buyer recovery beside it is unchanged', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const src = await freshTrade();
+    const srcRow = (await deps.db.query<{ buyer_account_id: string; seller_account_id: string }>('select buyer_account_id::text, seller_account_id::text from trades where code = $1', [src.code])).rows[0]!;
+    const mk = async (debtor: string, creditor: string, side: 'buyer' | 'seller', address: string, creditorSide: 'buyer' | 'seller') => {
+      const statement = { v: 1, fromCode: src.code, creditorSide, address, issuedAt: now.toISOString() };
+      const lien = (await deps.db.query<{ id: string }>(
+        `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at,
+           recovery_rate_bps, creditor_address, creditor_address_statement, creditor_address_sig)
+         values ($1, $2, 100000000000, 0, $3, 1, 1, 'restitution', now(), now(), 10000, $4, $5, $6) returning id::text`,
+        [debtor, creditor, src.code, address, statement, 'ab'.repeat(64)],
+      )).rows[0]!.id;
+      await deps.db.query(
+        `insert into lien_recovery_holds (lien_id, trade_code, debtor_side, amount_atomic, rate_bps, address, address_statement, address_sig, created_at) values ($1, $2, $3, 20000000000, 10000, $4, $5, $6, now())`,
+        [lien, code, side, address, statement, 'ab'.repeat(64)],
+      );
+      return { lien, statement };
+    };
+    const sAddr = '4'.padEnd(95, 'T');
+    const bAddr = '4'.padEnd(95, 'U');
+    const s = await mk(seller.id, srcRow.buyer_account_id, 'seller', sAddr, 'buyer');
+    const b = await mk(buyer.id, srcRow.seller_account_id, 'buyer', bAddr, 'seller');
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+    const work = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string; terms: AttestedTerms; lienSource?: unknown; sellerLienSource?: unknown }> };
+    const item = work.work.find((w) => w.trade === code)!;
+    expect(item.terms.sellerLienRecovery).toEqual({ address: sAddr, amountAtomic: '20000000000' });
+    expect(item.terms.lienRecovery).toEqual({ address: bAddr, amountAtomic: '20000000000' });
+    expect(item.sellerLienSource).toEqual({
+      fromCode: src.code, creditor: 'buyer', lienId: s.lien, debtorAccount: seller.id, creditorAccount: srcRow.buyer_account_id,
+      sellerAccount: seller.id, rateBps: 10000, address: { statement: s.statement, sig: 'ab'.repeat(64) },
+    });
+    expect(item.lienSource).toMatchObject({ lienId: b.lien, buyerAccount: buyer.id, creditor: 'seller' });
+  });
+
   it('review B2: a trade whose recovery address is one of its own is not served as work (checked again before any signature)', async () => {
     const { code, buyer, seller } = await freshTrade();
     const src = await freshTrade();

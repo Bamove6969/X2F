@@ -248,6 +248,22 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     expect(rows).toEqual([{ network_fee_atomic: '20480000' }]);
   });
 
+  it('review item 5 (27 Nov 2026): a release whose signed terms pay lien recoveries books X2F\'s share among the creditor outputs too', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    // The signed terms carry both recoveries (only their presence counts here).
+    await deps.db.query(
+      `update trade_attestations set attestation = $2::jsonb where code = $1`,
+      [t.code, JSON.stringify({ terms: { lienRecovery: { address: 'a', amountAtomic: '10000000000' }, sellerLienRecovery: { address: 'b', amountAtomic: '10000000000' } } })],
+    );
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release', networkFeeAtomic: '30720001' });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ network_fee_atomic: string | null }>("select network_fee_atomic::text from revenue_booked where trade_code = $1 and kind = 'fee'", [t.code]);
+    // Five bearers (buyer, fee wallet, payroll, two creditors): X2F's two shares of 30720001.
+    expect(rows).toEqual([{ network_fee_atomic: '12288000' }]);
+  });
+
   it('settled with a network fee over the 0.01 XMR bound books X2F\'s share of the bound only (review M2, 16 Nov)', async () => {
     const t = await trade();
     await driveTo(deps, t, 'settling');
