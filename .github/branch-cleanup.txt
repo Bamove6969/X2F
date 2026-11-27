@@ -1,0 +1,6 @@
+# <sha> <branch>: deleted by "Delete merged branches" when run by hand. Empty after each run.
+a1015461af94a26639daa04afcf4fcb16410b5c0 wip/agy-landing
+b427426eb0003426b0ca0502ae40abe99288d222 wip/design-trusted-200
+4097d7ae198f95ede419937caf22a5715cc95404 wip/second-owner-ui-17nov
+b90cba9e7330b7a78a68cd799d080a1591597fb9 claude/project-thread-9tq0x5
+5f750416ca4099498cde30eeb91f183ac083ec39 claude/project-thread-lgudxm
