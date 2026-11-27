@@ -941,8 +941,12 @@ export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code
 /**
  * Design build task 9: a moderator message, sealed under the chat key and countersigned by this
  * device in the chat key worker (keys/reader.ts `sealModMessage`); the API never sees its text.
+ * A private message carries `to` (that trader's lane); a message to both has no `to` at all.
  */
-export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: sealed });
+export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => {
+  const { to, ...rest } = sealed;
+  return staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: to === undefined ? rest : { ...rest, to } });
+};
 /** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
 export const readCaseChat = (code: string, deviceKeyId: string) =>
   staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });

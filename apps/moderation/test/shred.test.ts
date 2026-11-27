@@ -153,6 +153,9 @@ describe('the shred pass', () => {
     await db.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3)', [randomBytes(16).toString('hex'), c.chat, T0]);
     // Review 22 Nov m5: the moderator's next chat seq goes with the chat too.
     await db.query('insert into mod_chat_seq (chat, next_seq) values ($1, 3)', [c.chat]);
+    // Owner 27 Nov (migration 897): a private lane and its seq go with the chat too.
+    await db.query("insert into mod_private_lanes (chat, lane, sealed, pkh, record) values ($1, 'buyer', $2, $3, '{}')", [c.chat, randomBytes(60), 'e'.repeat(64)]);
+    await db.query("insert into mod_private_lane_seq (chat, lane, next_seq) values ($1, 'buyer', 2)", [c.chat]);
 
     now = new Date(T0.getTime() + 31 * DAY);
     const net = fakeApi({ orders: () => [order(c.chat)] });
@@ -170,6 +173,8 @@ describe('the shred pass', () => {
     expect((await db.query('select 1 from mod_chat_notices where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_countersign_requests where chat = $1', [c.chat])).rows).toHaveLength(0);
     expect((await db.query('select 1 from mod_chat_seq where chat = $1', [c.chat])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_private_lanes where chat = $1', [c.chat])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_private_lane_seq where chat = $1', [c.chat])).rows).toHaveLength(0);
     const dump = await dumpAll();
     expect(dump).not.toContain(c.chat);
     expect(dump).not.toContain(c.participants.mod.signPublic);
