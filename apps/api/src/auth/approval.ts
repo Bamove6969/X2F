@@ -3,7 +3,7 @@
  * 2026-10-29b). Traders only (lead default): staff and owner logins already need two factors.
  *
  * - **When a login waits.** A trader login whose credentials passed (PGP, passkey, security key, or
- *   or a recovery code's full session never: that is `recovery.ts`) starts no session when the account already has an
+ *   login name plus authenticator code; a recovery code's full session never: that is `recovery.ts`) starts no session when the account already has an
  *   open full session on another device and either this browser is not trusted for the account
  *   (`isTrusted`) or the account is at its device limit (`max_devices`, default 3; 1 with "One
  *   device at a time"). Instead it gets `{ status: 'approve-on-device', approvalId, number,
@@ -58,8 +58,8 @@ export const APPROVALS_PER_HOUR = 10;
 export const DEFAULT_MAX_DEVICES = 3;
 export const APPROVAL_COOKIE = '__Host-x2f_approval';
 
-/** The trader login methods that can wait for approval. */
-export type ApprovalMethod = 'pgp' | 'passkey' | 'security-key';
+/** The trader login methods that can wait for approval (owner, 27 Nov 2026: the authenticator app's login too). */
+export type ApprovalMethod = 'pgp' | 'passkey' | 'security-key' | 'totp';
 
 export type ApprovalWait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string };
 
@@ -433,9 +433,10 @@ export interface ApprovalView {
   oneDevice: boolean;
   /**
    * J-23 (design note docs/security/multi-device-2026-11-09.md section 3.1 rule 2): whether a
-   * chat-key handover may be offered with this approval at all. Every login is a passkey, security
-   * key or PGP key now (owner, 26 Nov 2026), so it always may. Nothing rides on it yet: the
-   * handover gesture waits for owner p12-5.
+   * chat-key handover may be offered with this approval at all: only when the new device's own login
+   * was a key (passkey, security key or PGP). A login name plus authenticator code (owner, 27 Nov
+   * 2026) is not, so its approval offers no keys. Nothing rides on it yet: the handover gesture
+   * waits for owner p12-5.
    */
   keysOffered: boolean;
 }
@@ -462,7 +463,7 @@ async function views(deps: Deps, req: FastifyRequest, id: string | null): Promis
     expiresAt: r.expires_at.toISOString(),
     atLimit: !r.one_device && inUse >= max,
     oneDevice: r.one_device,
-    keysOffered: true,
+    keysOffered: r.method !== 'totp',
   }));
 }
 
@@ -541,7 +542,7 @@ async function decide(req: FastifyRequest) {
     await db.query(
       `update login_approvals set outcome = 'approved', decided_at = $2, decided_by = $3, expires_at = $4, ends = $5, end_session = $6, keys_offered = $7 where id = $1`,
       // J-23: the handover gate as it stood at the decision; nothing uses it yet (p12-5).
-      [id, now, sessionId, new Date(now.getTime() + APPROVAL_TTL_MS), ends, endId, true],
+      [id, now, sessionId, new Date(now.getTime() + APPROVAL_TTL_MS), ends, endId, row.method !== 'totp'],
     );
     return { outcome: 'approved' as const };
   });

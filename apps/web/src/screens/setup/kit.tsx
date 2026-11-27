@@ -12,8 +12,8 @@ import './setup.css';
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key';
 /**
  * What can be ticked on the login step (owner demo notes, 12 Nov 2026; owner 26 Nov 2026, no
- * passwords): the three login keys and an authenticator app, which counts as a kind but never logs
- * in by itself.
+ * passwords): the three login keys and an authenticator app, which counts as a kind and (owner,
+ * 27 Nov 2026) logs in with the username, but never confirms.
  */
 export type SignupMethod = LoginMethod | 'totp';
 /**

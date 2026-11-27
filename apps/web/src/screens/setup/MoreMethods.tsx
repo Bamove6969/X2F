@@ -165,9 +165,9 @@ export function AuthenticatorStep() {
   return (
     <ConfirmOpenProvider value={open}>
       <SetupFrame screen="setup-authenticator" step={3} footer={finish.required ? null : <Later onClick={finish.skip} />}>
-        {/* COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; the app counts as one of the two) */}
+        {/* COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; the app counts as one of the two; 27 Nov: it logs in with the username). not-a-refusal: explains what the app does on X2F */}
         <SetupIntro title="Add your authenticator app">
-          Your authenticator app shows a new 6-digit code every 30 seconds. It counts as one of your two ways in, but it never logs you in by itself.
+          Your authenticator app shows a new 6-digit code every 30 seconds. It counts as one of your two ways in. With your username it logs you in, but it can&apos;t confirm changes.
         </SetupIntro>
         <Totp prove={prove} onDone={finish.done} onCancel={finish.required ? undefined : finish.skip} />
         {confirmUi}

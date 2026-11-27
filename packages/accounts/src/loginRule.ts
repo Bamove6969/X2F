@@ -5,14 +5,16 @@
  * - There are no passwords. A trader account holds at least two different kinds of login method
  *   (`MIN_METHOD_KINDS`) from passkey, security key, PGP key and authenticator app (TOTP). It holds
  *   at most one authenticator app, and recovery codes never count.
- * - A passkey, a security key or a PGP key logs in on its own (`LOGIN_KEYS`). The authenticator app
- *   never does. Because there is only one authenticator app, two kinds always include a key, so
- *   every account can log in and can unlock its synced escrow keys.
+ * - A passkey, a security key or a PGP key logs in on its own (`LOGIN_KEYS`), and is the only kind
+ *   that confirms it's you or unlocks the synced escrow keys. Owner, 27 Nov 2026: the authenticator
+ *   app also logs a trader in, with the private login name (`POST /v1/login/totp`), but it never
+ *   confirms and never unlocks. Because there is only one authenticator app, two kinds always
+ *   include a key, so every account can confirm and can unlock its synced escrow keys.
  * - Staff, members and the owner keep their own two-factor pairs (api auth/methods.ts).
  */
 import type { MethodType } from './confirmAction.js';
 
-/** The methods that log in on their own. */
+/** The keys: they log in on their own, confirm, and unlock the synced escrow keys. */
 export const LOGIN_KEYS: ReadonlySet<MethodType> = new Set<MethodType>(['pgp', 'passkey', 'security-key']);
 
 /** The kinds that count toward the rule (recovery codes never do). */

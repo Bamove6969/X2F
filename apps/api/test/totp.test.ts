@@ -221,10 +221,12 @@ describe('TOTP enrolment', () => {
 
 /**
  * Owner, 26 Nov 2026 (no passwords): an account holds at most one authenticator app; it counts as a
- * kind of login method toward the two an account holds, and never logs in or confirms on its own.
+ * kind of login method toward the two an account holds, and never confirms. Owner, 27 Nov 2026: it
+ * logs in only with the private login name, at `POST /v1/login/totp` (below), never as a backup
+ * login (no recovery-code powers) and never as a second step.
  */
-describe('one authenticator app, never a login (owner 26 Nov 2026)', () => {
-  it('an authenticator code is no login: no backup login, no second-factor step, no confirm', async () => {
+describe('one authenticator app, never a backup or a confirm (owner 26-27 Nov 2026)', () => {
+  it('an authenticator code is no backup login, no second-factor step and no confirm', async () => {
     const { b, username } = await trader();
     const secret = await enrol(b);
     const other = new Browser(app);
@@ -408,5 +410,128 @@ describe('TOTP key store (FU-C, ASVS 2.8.2)', () => {
       deps.config.totpKeys = saved;
     }
     expect(await sealedOf(id)).toEqual(replacement);
+  });
+});
+
+/** A known authenticator secret written straight to `totp` (for kinds that cannot enrol: staff). Returns its base32. */
+async function seedTotp(id: string): Promise<string> {
+  const bytes = new Uint8Array(randomBytes(20));
+  await applyTotp(deps.db, id, sealSecret(deps, id, bytes), 0, now);
+  return new Secret({ buffer: bytes.buffer }).base32;
+}
+
+const totpLogin = (b: Browser, loginName: string, code: string) => b.post('/v1/login/totp', { loginName, code, deviceLabel: 'Firefox on Linux' });
+
+/**
+ * Owner, 27 Nov 2026 (Jess, 01:04 UTC): "Ours will just be a user ID and otp because user ID is
+ * secret". A trader logs in with the private login name plus the authenticator code: a normal full
+ * session, with approve-on-device, the throttle and the D-059 lock as every other login, and still
+ * never a confirm.
+ */
+describe('login name + authenticator code logs a trader in (owner 27 Nov 2026)', () => {
+  it('opens a full session when the account is logged in nowhere else; the code works once', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    await b.post('/v1/logout');
+    setNow(at(STEP_MS)); // the enrolment's step is used
+    const code = codeAt(secret, now);
+    const c = new Browser(app);
+    const res = await totpLogin(c, username, code);
+    expect([res.statusCode, res.json()]).toEqual([200, { status: 'ok' }]);
+    expect(c.cookies[SESSION_COOKIE]).toBeDefined();
+    expect((await c.get('/v1/account/me')).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ detail: { method: string } }>(`select detail from alerts where account_id = $1 and kind = 'new-login'`, [id]);
+    expect(rows.map((r) => r.detail.method)).toContain('totp');
+    // The same code again, from another browser: refused like a wrong code (no replay).
+    const replay = await totpLogin(new Browser(app), username, code);
+    expect([replay.statusCode, replay.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+  });
+
+  it('a new browser waits for approval on the logged-in device, and that approval offers no chat keys', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    const res = await totpLogin(c, username, codeAt(secret, now));
+    expect(res.statusCode).toBe(200);
+    const wait = res.json() as { status: string; approvalId: string };
+    expect(wait.status).toBe('approve-on-device');
+    expect(c.cookies[SESSION_COOKIE]).toBeUndefined();
+    const view = (await b.get(`/v1/account/approvals/${wait.approvalId}`)).json() as { keysOffered: boolean };
+    expect(view.keysOffered).toBe(false);
+    expect(await approvedLogin(deps, res, (url) => c.post(url))).toEqual({ status: 'ok' });
+    expect((await c.get('/v1/account/me')).statusCode).toBe(200);
+  });
+
+  it('a wrong code, a wrong name, an account without an app and a staff account all get the same refusal', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const plain = await trader();
+    const staffName = name('staff');
+    const staffId = await seedAccount(deps, { loginName: staffName, kind: 'staff' });
+    const staffSecret = await seedTotp(staffId);
+    const answers = [
+      await totpLogin(new Browser(app), username, wrongCodeAt(secret, now)),
+      await totpLogin(new Browser(app), `${username}x`, codeAt(secret, now)),
+      await totpLogin(new Browser(app), plain.username, codeAt(secret, now)),
+      await totpLogin(new Browser(app), staffName, codeAt(staffSecret, now)),
+      await totpLogin(new Browser(app), 'not a name!', '123456'),
+    ];
+    for (const r of answers) expect([r.statusCode, r.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+    // The trader's own code was never spent by those tries.
+    const ok = await totpLogin(new Browser(app), username, codeAt(secret, now));
+    expect((ok.json() as { status: string }).status).toBe('approve-on-device');
+  });
+
+  it('wrong codes slow down, then lock, with retryAfterSeconds; the right code waits too', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    const waits = [0, 0, 0, 2, 4, 8, 16, 30, 30, 0];
+    for (const [i, w] of waits.entries()) {
+      const res = await totpLogin(c, username, wrongCodeAt(secret, now));
+      expect(res.statusCode, `try ${i + 1}`).toBe(401);
+      if (i === 3) {
+        const slowed = await totpLogin(c, username, codeAt(secret, now));
+        expect(slowed.statusCode).toBe(429);
+        expect(slowed.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: 2 });
+      }
+      setNow(at(w * 1000 + 500));
+    }
+    const locked = await totpLogin(c, username, codeAt(secret, now));
+    expect(locked.statusCode).toBe(429);
+    expect(locked.json()).toMatchObject({ error: 'locked' });
+    expect((locked.json() as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(0);
+    const { rows } = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'login-locked' and detail->>'method' = 'totp'`, [id]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('a disabled account (the D-059 compromised lock sets disabled_at) is refused after the right code only', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [id, now]);
+    const wrong = await totpLogin(new Browser(app), username, wrongCodeAt(secret, now));
+    expect([wrong.statusCode, wrong.json()]).toEqual([401, { error: 'credentials-invalid' }]);
+    const c = new Browser(app);
+    const right = await totpLogin(c, username, codeAt(secret, now));
+    expect([right.statusCode, right.json()]).toEqual([403, { error: 'account-disabled' }]);
+    expect(c.cookies[SESSION_COOKIE]).toBeUndefined();
+  });
+
+  it('the session it opens still needs a key to confirm a change: there is no TOTP confirm', async () => {
+    const { username, b } = await trader();
+    const secret = await enrol(b);
+    await b.post('/v1/logout');
+    setNow(at(STEP_MS));
+    const c = new Browser(app);
+    expect((await totpLogin(c, username, codeAt(secret, now))).json()).toEqual({ status: 'ok' });
+    // Replacing the app (a login-method change) asks for a confirm, and the authenticator cannot give one.
+    const change = await c.post('/v1/account/totp/start', {});
+    expect([change.statusCode, change.json()]).toEqual([403, { error: 'confirm-required', action: 'add-method' }]);
+    setNow(at(STEP_MS));
+    expect((await c.post('/v1/confirm/totp', { code: codeAt(secret, now), action: { kind: 'add-method', method: 'totp' } })).statusCode).toBe(404);
   });
 });

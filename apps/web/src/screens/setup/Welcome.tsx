@@ -92,7 +92,7 @@ export type SecurityRating = 'weak' | 'medium' | 'high';
 /**
  * The login methods, best to worst (lead default, owner may reorder): a security key and a passkey
  * (phishing-proof hardware or device keys) first, then a PGP key and an authenticator app (it counts
- * as a kind but never logs in alone). The recovery codes are their own item.
+ * as a kind and logs in with the username, owner 27 Nov 2026, but never confirms). The recovery codes are their own item.
  */
 const BEST_FIRST: Array<{ id: MethodType; word: string }> = [
   { id: 'security-key', word: 'Security key' },

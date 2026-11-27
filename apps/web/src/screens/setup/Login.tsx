@@ -9,8 +9,8 @@
  *
  * Owner, 26 Nov 2026 (no passwords): at least two different kinds must be ticked
  * (`enoughMethods`, @x2f/accounts): any two of PGP key, security key, passkey and the
- * authenticator app. There is one authenticator app at most and it never logs in by itself, so
- * two kinds always include a key that does. The recovery code comes after and does not count.
+ * authenticator app. There is one authenticator app at most, and it logs in only with the
+ * username and never confirms (owner, 27 Nov 2026), so two kinds always include a key that does. The recovery code comes after and does not count.
  */
 import { useId, useState } from 'react';
 import { enoughMethods } from '@x2f/auth-client';
@@ -85,9 +85,9 @@ export const METHODS: MethodDef[] = [
     // Owner demo note #135 (23 Nov), his words; "below" made "on the next screen", since the code box is there.
     // not-a-refusal: explains how authenticator-app setup works
     desc: 'Scan the QR code using your preferred authenticator app to generate a 6-digit code that refreshes every 30 seconds. Enter the current code on the next screen to finish setup. If you cannot scan the QR code, you can enter the setup key manually.',
-    // COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; an authenticator app counts as one of the two).
+    // COPY-UNSIGNED (owner, 26 Nov 2026: no passwords; an authenticator app counts as one of the two; 27 Nov: it logs in with the username).
     // not-a-refusal: explains what an authenticator app does on X2F
-    more: 'Security Level: Medium. It counts as one of your two ways in, but it never logs you in by itself, so tick a PGP key, security key or passkey with it. You can add one authenticator app.',
+    more: "Security Level: Medium. It counts as one of your two ways in, and with your username it logs you in, but it can't confirm changes or unlock your trade keys, so tick a PGP key, security key or passkey with it. You can add one authenticator app.",
   },
 ];
 
@@ -126,7 +126,8 @@ const LEARN: readonly { key: LearnKey; label: string; text: string }[] = [
     key: 'otp',
     label: 'OTP',
     text:
-      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. On X2F an authenticator app counts as one of your two ways in, but it never logs you in by itself: you also need a PGP key, security key or passkey.',
+      // not-a-refusal: explains what an authenticator app does on X2F (owner, 27 Nov 2026)
+      'OTP means one-time password. You add X2F to an authenticator app, such as Aegis or 2FAS, by scanning a code once. From then on the app shows a new six-digit code every 30 seconds, and you type the current one when you log in. The codes come from a secret shared only between the app and X2F, and each one works only briefly, so a code someone sees over your shoulder is soon useless. On X2F an authenticator app counts as one of your two ways in. With your username it logs you in, but it can\'t confirm changes or unlock your trade keys: you also need a PGP key, security key or passkey.',
   },
 ];
 

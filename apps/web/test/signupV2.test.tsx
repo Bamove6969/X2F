@@ -113,9 +113,9 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
     // The authenticator app is there with its explanation.
     expect(host.querySelector('[data-method="totp"]')!.textContent).toMatch(/6-digit code/);
     expect(METHODS.find((m) => m.id === 'totp')!.strength).toBe('medium');
-    // Owner, 26 Nov 2026: it counts as one of the two, but never logs in by itself.
+    // Owner, 26 Nov 2026: it counts as one of the two; 27 Nov: it logs in with the username, but never confirms.
     expect(host.querySelector('[data-method="totp"] [data-part="method-more"]')!.textContent).toBe(
-      'Security Level: Medium. It counts as one of your two ways in, but it never logs you in by itself, so tick a PGP key, security key or passkey with it. You can add one authenticator app.',
+      "Security Level: Medium. It counts as one of your two ways in, and with your username it logs you in, but it can't confirm changes or unlock your trade keys, so tick a PGP key, security key or passkey with it. You can add one authenticator app.",
     );
   });
 
@@ -151,7 +151,7 @@ describe('/setup/login: tick every way you want to log in (owner, 12 Nov 2026)',
   });
 
   // Owner, 26 Nov 2026 (no passwords): at least two kinds; the authenticator app counts as one, but
-  // never alone, since it never logs in (the server refuses finishing sign-up otherwise, 409
+  // never alone, since it never confirms (the server refuses finishing sign-up otherwise, 409
   // two-methods-required).
   it('Continue needs two kinds: one key alone or the authenticator app alone cannot continue', () => {
     const host = show(<Login />, setup());
@@ -378,11 +378,11 @@ describe('/setup/authenticator: one of the two kinds (owner, 26 Nov 2026)', () =
     expect(api.go).toHaveBeenCalledWith('backup', { replace: true });
   });
 
-  it('says it never logs in by itself, and nothing about a password', async () => {
+  it('says it logs in with the username but never confirms (owner 27 Nov 2026), and nothing about a password', async () => {
     const host = show(<AuthenticatorStep />, setup({ methods: ['pgp', 'totp'], done: ['pgp'] }));
     await flush();
     const lead = host.querySelector('h1')!.parentElement!.textContent!;
-    expect(lead).toContain('it never logs you in by itself');
+    expect(lead).toContain("With your username it logs you in, but it can't confirm changes.");
     expect(lead).not.toMatch(/password/i);
   });
 });

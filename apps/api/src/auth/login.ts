@@ -21,7 +21,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export type LoginFactor =
   | { method: 'pgp'; fingerprint: string; fingerprints: string[] }
-  | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean };
+  | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean }
+  /**
+   * Owner, 27 Nov 2026: a trader's private login name plus the authenticator app's code
+   * (`totpLogin`, totp.ts). Traders only; it is in no staff, member or owner pair (`pairAllowed`).
+   */
+  | { method: 'totp' };
 
 /**
  * `approve-on-device` (Task 16): a trader's login from a new browser while the account is logged in
@@ -33,7 +38,7 @@ export type LoginResult = { status: 'ok' } | { status: 'second-factor'; pendingI
 export const PAIR_TTL_MS = 5 * 60_000;
 
 /**
- * The one way every PGP and WebAuthn login finish ends: runs `afterAuthenticate` (it may throw an
+ * The one way every PGP, WebAuthn and authenticator-app (TOTP, traders only) login finish ends: runs `afterAuthenticate` (it may throw an
  * `ApiError` before anything is created), refuses a disabled account, then:
  * - a trader: a full session (a `pendingId` → 400 `challenge-expired`: traders have no pending login);
  * - staff and the owner need two factors (R1; the one exception is owner G3's known device, through

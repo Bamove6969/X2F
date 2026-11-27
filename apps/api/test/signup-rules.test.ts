@@ -108,7 +108,7 @@ describe('S-012: a username with an authenticator code alone is no account and n
     expect((await b.post('/v1/account/totp/finish', { code: '123456' })).statusCode).toBe(401);
   });
 
-  it('a username with a correct authenticator code logs in nowhere: no backup login, no second factor', async () => {
+  it('a username with a correct authenticator code is no backup login and no second factor; it logs in only at /v1/login/totp (owner 27 Nov 2026)', async () => {
     const loginName = name('totp');
     const id = await seedAccount(deps, { loginName });
     const secret = await withTotp(id);
@@ -123,6 +123,10 @@ describe('S-012: a username with an authenticator code alone is no account and n
     expect(Object.keys(b.cookies)).not.toContain(SESSION_COOKIE);
     const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [id]);
     expect(rows).toEqual([]);
+    // Owner, 27 Nov 2026 ("a user ID and otp because user ID is secret"): the normal login route takes them.
+    const login = await b.post('/v1/login/totp', { loginName, code, deviceLabel: 'Test browser' });
+    expect([login.statusCode, login.json()]).toEqual([200, { status: 'ok' }]);
+    expect(Object.keys(b.cookies)).toContain(SESSION_COOKIE);
   });
 });
 

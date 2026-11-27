@@ -26,7 +26,7 @@ import { openKey } from './pgp.js';
 import { requireSession } from './sessions.js';
 import { requireLiveSessionInTx } from './liveSession.js';
 
-/** Methods that log in on their own (TOTP and recovery codes never do). */
+/** Methods that log in on their own and confirm (recovery codes never; the authenticator app logs a trader in with the login name, owner 27 Nov 2026, but never confirms). */
 export const PRIMARY: MethodType[] = ['pgp', 'passkey', 'security-key'];
 
 const ALL: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'totp', 'recovery-codes'];

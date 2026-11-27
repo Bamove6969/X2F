@@ -11,7 +11,7 @@
  *     (a fresh 32-byte salt per envelope; the credential id is its `ref`);
  *   - `pgp`: an OpenPGP message of the secret (64 hex) to the person's own PGP public key; they
  *     decrypt it in their own tool and paste the 64 hex back (X2F never sees a private PGP key, R8).
- *   An authenticator (TOTP) code is never a way in: it makes no key (the API and database refuse it).
+ *   An authenticator (TOTP) code never unlocks (it logs a trader in with the login name since owner 27 Nov 2026, but it makes no key: the API and database refuse it).
  * - Trade copy: on every write of a trade's local record (store.ts), `withKeySync` encrypts
  *   `{ record, password }` (the store's own encoding) under a fresh 32-byte content key with
  *   AES-256-GCM, the trade code and version bound in as additional data, and seals the content key

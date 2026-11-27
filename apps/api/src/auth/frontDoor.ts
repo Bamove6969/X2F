@@ -256,6 +256,7 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/login/pgp/finish': 'log in',
   'POST /v1/login/webauthn/start': 'log in',
   'POST /v1/login/webauthn/finish': 'log in',
+  'POST /v1/login/totp': 'log in (a trader: the private login name plus the authenticator code, owner 27 Nov 2026)',
   'POST /v1/login/backup': 'account recovery: recovery code login',
   'POST /v1/login/approval/:id/poll': 'log in on a new device: waits for the approval from a logged-in device (needs the secret approval id)',
   'POST /v1/login/approval/:id/cancel': 'log in on a new device: gives up waiting',

@@ -9,8 +9,9 @@
  *   on the account out, expires every open login approval and forgets every trusted device; the
  *   code used is replaced there by a new one, sealed in `recovery_code_reveals` until a session of
  *   the account owner opened after it shows it once (`POST /v1/account/recovery-code/reveal`;
- *   `GET /v1/account` `recoveryCodeToShow` is the reminder). An authenticator code alone is no
- *   backup login: 403 `method-not-allowed`.
+ *   `GET /v1/account` `recoveryCodeToShow` is the reminder). An authenticator code is no backup
+ *   login here (403 `method-not-allowed`): since owner 27 Nov 2026 it logs in as a normal login,
+ *   `POST /v1/login/totp` (totp.ts), with approve-on-device and none of the recovery code's powers.
  * - Recovery codes come only from `newRecoveryCode()` (320 bits from `getRandomValues`, bias-free)
  *   and are stored only as `recoveryCodeHash`: HMAC-SHA-256 under the current `X2F_RECOVERY_CODE_KEYS`
  *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
@@ -171,7 +172,8 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   req.server.budgets.start.take();
   const { loginName, kind, code, deviceLabel } = strings(req.body, ['loginName', 'kind', 'code', 'deviceLabel'] as const);
   if (kind !== 'totp' && kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
-  // Owner, 2 Nov 2026: an authenticator code alone never logs in.
+  // An authenticator code is never a backup login (no recovery powers): it logs in as a normal
+  // login at `POST /v1/login/totp` (owner, 27 Nov 2026).
   if (kind === 'totp') throw new ApiError(403, 'method-not-allowed');
   const name = loginNameLookup(deps.config, loginName);
   // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account (I-1).

@@ -1,7 +1,9 @@
 /**
- * The login screen (Task 30, P3-C4). Three ways in: PGP (paste your key, decrypt the message, paste
- * the code), a passkey or a security key. Owner, 26 Nov 2026: no passwords, and an authenticator
- * code never logs in. "Use a backup" leads to the recovery-code screen. A trader logging in on a new device while logged in elsewhere waits
+ * The login screen (Task 30, P3-C4). Four ways in: PGP (paste your key, decrypt the message, paste
+ * the code), a passkey, a security key, or (owner, 27 Nov 2026: "a user ID and otp because user ID
+ * is secret") the private login name with the authenticator app's 6-digit code. Owner, 26 Nov
+ * 2026: no passwords. An authenticator login still confirms changes with a key only (the confirm
+ * sheet never offers it). "Use a backup" leads to the recovery-code screen. A trader logging in on a new device while logged in elsewhere waits
  * for that device's approval (Plan 2 Task 16, `ApproveOnDevice`). After a login the Terms screen comes first when they have changed
  * (R10), otherwise the page returns to wherever the session expired (`returnTo`).
  */
@@ -14,7 +16,7 @@ import { Button } from '../../ui/Button.js';
 import { ApproveOnDevice } from './ApproveOnDevice.js';
 import { afterLogin, authApi, deviceLabel, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { isExpired, loginCantDo, refusalText } from './refusals.js';
-import { LOGIN_RETRY_LATER } from './loginRules.js';
+import { LOGIN_RETRY_LATER, isTotpCode } from './loginRules.js';
 
 /** X2F itself could not answer (a 5xx): the neutral line, not one that blames the pasted key. */
 const serverDown = (e: unknown): boolean => e instanceof AuthApiError && e.status >= 500;
@@ -24,7 +26,7 @@ import '../screens.css';
 import { HelpLinks } from '../../ui/HelpLinks.js';
 import { MessageBox } from '../../ui/MessageBox.js';
 
-type Method = 'choose' | 'pgp' | 'passkey' | 'security-key';
+type Method = 'choose' | 'pgp' | 'passkey' | 'security-key' | 'totp';
 
 export function Login() {
   const navigate = useNavigate();
@@ -74,6 +76,10 @@ export function Login() {
           <Button variant="secondary" onClick={() => setMethod('security-key')} data-method="security-key">
             Log in with a security key
           </Button>
+          {/* Owner, 27 Nov 2026 (the login name plus the authenticator code). COPY-UNSIGNED */}
+          <Button variant="secondary" onClick={() => setMethod('totp')} data-method="totp">
+            Log in with an authenticator app
+          </Button>
         </div>
       ) : (
         <Button variant="quiet" onClick={() => setMethod('choose')} data-part="back">
@@ -84,6 +90,7 @@ export function Login() {
       {method === 'pgp' ? <PgpLogin {...go} /> : null}
       {method === 'passkey' ? <PasskeyLogin {...go} /> : null}
       {method === 'security-key' ? <SecurityKeyLogin {...go} /> : null}
+      {method === 'totp' ? <TotpLogin {...go} /> : null}
 
       {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.login} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
 
@@ -391,6 +398,69 @@ function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
       </div>
       <Button variant="primary" disabled={busy || loginName.trim() === ''} onClick={() => void go()} data-part="security-key-login">
         Use a security key
+      </Button>
+    </section>
+  );
+}
+
+/** A wrong login name or a wrong code: one sentence, never which one was wrong. COPY-UNSIGNED */
+export const TOTP_LOGIN_MISMATCH = "That login name and code don't match. Check both and try again.";
+
+/**
+ * Owner, 27 Nov 2026: the private login name plus the authenticator app's current 6-digit code.
+ * Log in stays disabled until six digits are typed (`isTotpCode`); a wrong name or code reads the
+ * same (`TOTP_LOGIN_MISMATCH`), a wait or an outage says so. A trader's login is `ok` or waits for
+ * a logged-in device (`approve-on-device`); the server never answers a second step here.
+ */
+function TotpLogin({ onLoggedIn, onWait, onCantDo }: Go) {
+  const [loginName, setLoginName] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await authApi.loginTotp({ loginName: loginName.trim(), code: code.replace(/\s/g, ''), deviceLabel: deviceLabel() });
+      if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
+      // not-a-refusal: an account state this screen cannot handle; staff support helps
+      else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
+    } catch (e) {
+      if (onCantDo(e)) return;
+      // A used or old code reads like a wrong one: type the next code the app shows.
+      setCode('');
+      setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? TOTP_LOGIN_MISMATCH : serverDown(e) ? LOGIN_RETRY_LATER : refusalText(e, LOGIN_RETRY_LATER));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="x2f-stack" data-part="totp">
+      <ErrorLine error={error} />
+      <div className="x2f-field">
+        <label className="x2f-label" htmlFor="totp-login-name">
+          Your login name
+        </label>
+        <input className="x2f-input" id="totp-login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
+        <label className="x2f-label" htmlFor="totp-login-code">
+          6-digit code
+        </label>
+        <input
+          className="x2f-input"
+          id="totp-login-code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        {/* COPY-UNSIGNED */}
+        <p className="x2f-note">Type the code your authenticator app shows for X2F now.</p>
+      </div>
+      <Button variant="primary" disabled={busy || loginName.trim() === '' || !isTotpCode(code)} onClick={() => void go()} data-part="totp-login">
+        Log in
       </Button>
     </section>
   );

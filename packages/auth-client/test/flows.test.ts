@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { codeOf, decrypt, genKey, type Pair } from '../../../apps/api/test/helpers/pgpKeys.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../../../apps/api/test/helpers/softAuthenticator.js';
+import { codeAt, wrongCodeAt } from '../../../apps/api/test/helpers/totp.js';
 import {
   AuthApiError,
   addWebAuthnKey,
@@ -243,6 +244,24 @@ describe('onboarding', () => {
     const [j1, j2] = [jar(), jar()];
     await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
     await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
+  });
+
+  it('PGP sign-up, then an authenticator app; the login name plus its code logs in (owner 27 Nov 2026), a wrong one reads like a wrong name', async () => {
+    const own = jar();
+    const { username } = await registerPgp(own);
+    const { challengeId, secret } = await own.api.addTotpStart({});
+    await own.api.addTotpFinish({ challengeId, code: codeAt(secret, srv.now()) });
+    srv.advance(30_000); // the enrolment code's step is used
+    const wrongCode = apiError(await failure(jar().api.loginTotp({ loginName: username, code: wrongCodeAt(secret, srv.now()), deviceLabel: LABEL })));
+    const wrongName = apiError(await failure(jar().api.loginTotp({ loginName: `${username}x`, code: codeAt(secret, srv.now()), deviceLabel: LABEL })));
+    expect([wrongCode.status, wrongCode.code]).toEqual([401, 'credentials-invalid']);
+    expect([wrongName.status, wrongName.code]).toEqual([401, 'credentials-invalid']);
+    // The sign-up browser is still logged in, so the new browser is approved first (Task 16).
+    const fresh = jar();
+    await expect(approved(srv, fresh, fresh.api.loginTotp({ loginName: username, code: codeAt(secret, srv.now()), deviceLabel: LABEL }))).resolves.toEqual({ status: 'ok' });
+    // A change still asks for a key: the authenticator app never confirms.
+    const e = apiError(await failure(fresh.api.newRecoveryCodes({})));
+    expect([e.code, e.action]).toEqual(['confirm-required', 'new-recovery-codes']);
   });
 
   it('passkey sign-up through the ceremony wrapper', async () => {

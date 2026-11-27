@@ -60,7 +60,7 @@ const DEVICE_LABEL_MAX = 60;
 
 /** Every session is a full one (owner, 26 Nov 2026: a recovery-code login is a full session too). */
 export type SessionLevel = 'full';
-export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'recovery-code';
+export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'totp' | 'recovery-code';
 
 /** What `requireSession` puts on the request. */
 export interface AuthContext {

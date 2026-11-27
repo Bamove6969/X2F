@@ -1,5 +1,5 @@
-// Login screen (Task 30): one login per method (PGP, passkey, security key; no passwords since
-// 26 Nov 2026), an expired session returning to the same screen, and a stale-Terms login seeing the
+// Login screen (Task 30): one login per method (PGP, passkey, security key, and since owner 27 Nov
+// 2026 the login name with the authenticator app's code; no passwords since 26 Nov 2026), an expired session returning to the same screen, and a stale-Terms login seeing the
 // Terms screen first. WebAuthn (passkey, security key) runs against a CDP virtual authenticator — the
 // browser stand-in for Plan 2's soft authenticator. The API is stubbed per test with page.route.
 import { expect, test, type CDPSession, type Page, type Route } from '@playwright/test';
@@ -197,6 +197,59 @@ test('security-key login by login name via the virtual authenticator lands on re
   await page.click('[data-method="security-key"]');
   await page.fill('#sk-login-name', 'nightowl');
   await page.click('[data-part="security-key-login"]');
+  await expect(page).toHaveURL(/\/buy$/);
+});
+
+test('the login name and the authenticator code log in (owner 27 Nov 2026): Log in waits for six digits; a miss never says which was wrong', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview({ methods: ['passkey', 'totp'] })));
+  const sent: unknown[] = [];
+  let answer: 'miss' | 'wait' | 'ok' = 'miss';
+  await page.route('**/v1/login/totp', (r) => {
+    sent.push(r.request().postDataJSON());
+    if (answer === 'miss') return json({ error: 'credentials-invalid' }, 401)(r);
+    if (answer === 'wait') return json({ error: 'slow-down', retryAfterSeconds: 30 }, 429)(r);
+    return json({ status: 'ok' })(r);
+  });
+
+  await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
+  await page.click('[data-method="totp"]');
+  const login = page.locator('[data-part="totp-login"]');
+  await page.fill('#totp-login-name', 'nightowl');
+  await page.fill('#totp-login-code', '12345');
+  await expect(login).toBeDisabled();
+  await page.fill('#totp-login-code', '123 456');
+  await expect(login).toBeEnabled();
+  await login.click();
+  await expect(page.locator('[data-part="totp"] [role="alert"]')).toHaveText("That login name and code don't match. Check both and try again.");
+  // The used code is cleared, so Log in waits for the next one.
+  await expect(login).toBeDisabled();
+  answer = 'wait';
+  await page.fill('#totp-login-code', '654321');
+  await login.click();
+  await expect(page.locator('[data-part="totp"] [role="alert"]')).toHaveText('Too many tries. Try again in 1 minute.');
+  answer = 'ok';
+  await page.fill('#totp-login-code', '111111');
+  await login.click();
+  await expect(page).toHaveURL(/\/buy$/);
+  expect(sent[0]).toMatchObject({ loginName: 'nightowl', code: '123456' });
+});
+
+test('an authenticator login from a new browser waits for approval on the logged-in device', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview()));
+  const id = '44444444-4444-4444-8444-444444444444';
+  await page.route('**/v1/login/totp', json({ status: 'approve-on-device', approvalId: id, number: 42, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+  let polls = 0;
+  await page.route(`**/v1/login/approval/${id}/poll`, (r) => {
+    polls++;
+    return json(polls < 2 ? { status: 'waiting', expiresAt: new Date(Date.now() + 60_000).toISOString() } : { status: 'ok', loggedOut: [] })(r);
+  });
+  await page.goto('/login?returnTo=%2Fbuy');
+  await page.click('[data-method="totp"]');
+  await page.fill('#totp-login-name', 'nightowl');
+  await page.fill('#totp-login-code', '123456');
+  await page.click('[data-part="totp-login"]');
+  await expect(page.locator('[data-part="approve-number"]')).toHaveText('42');
+  await page.click('[data-part="approve-continue"]');
   await expect(page).toHaveURL(/\/buy$/);
 });
 

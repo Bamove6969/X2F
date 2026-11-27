@@ -573,6 +573,14 @@ export interface AuthApi {
    * 2026). The code is spent and a new one is shown once (`revealRecoveryCode`).
    */
   loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
+  /**
+   * `POST /v1/login/totp` (owner, 27 Nov 2026): a trader's private login name plus the authenticator
+   * app's current 6-digit code. A normal login: `ok`, or `approve-on-device` for a new browser while
+   * the account is logged in elsewhere. A wrong name or code is the same 401 `credentials-invalid`;
+   * too many misses 429 `slow-down` / `locked` with `retryAfterSeconds`. The session it opens still
+   * confirms changes with a key only.
+   */
+  loginTotp(b: { loginName: string; code: string; deviceLabel: string }): Promise<LoginResult>;
   registerPgpStart(b: { tradeTag: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ tradeTag: string }>;
   /**
@@ -873,6 +881,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     pollLoginApproval: (id) => post(`/v1/login/approval/${seg(id)}/poll`),
     cancelLoginApproval: (id) => done(post(`/v1/login/approval/${seg(id)}/cancel`)),
     loginBackup: (b) => post('/v1/login/backup', b),
+    loginTotp: (b) => post('/v1/login/totp', b),
     registerPgpStart: (b) => post('/v1/register/pgp/start', b),
     registerPgpFinish: (b) => post('/v1/register/pgp/finish', b),
     loginPgpStart: (b) => post('/v1/login/pgp/start', b),

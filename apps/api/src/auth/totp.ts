@@ -12,23 +12,34 @@
  *   the last accepted one, set in the same statement (no replay, even in parallel).
  * - Owner, 26 Nov 2026 (no passwords): one authenticator app per account (a new enrolment replaces
  *   the old one). It counts as one of the two kinds of login method a trader account holds
- *   (`@x2f/accounts` `enoughMethods`) but never logs in on its own.
+ *   (`@x2f/accounts` `enoughMethods`).
+ * - Owner, 27 Nov 2026 (Jess, 01:04 UTC, overriding "TOTP never logs in": "Ours will just be a user
+ *   ID and otp because user ID is secret"): a trader logs in with the private login name plus the
+ *   current code (`POST /v1/login/totp`, `totpLogin`). It is a normal full session, through
+ *   `completeLogin` like every other login (the disabled / D-059 lock check, approve-on-device for a
+ *   new browser). It never confirms anything (confirm.ts takes keys only), never unlocks the synced
+ *   trade keys (only passkey/security-key PRF or PGP do) and offers no chat-key handover. Staff,
+ *   members and the owner hold no authenticator app, so their login names take the unknown-name path.
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Secret, TOTP } from 'otpauth';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { AccountKind } from '@x2f/accounts';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { consumeChallenge } from './challenges.js';
+import { ensureDeviceCookie } from './device.js';
+import { completeLogin, type LoginResult } from './login.js';
 import { keyringBox, type SecretBox } from './keystore.js';
-import { methodAllowed } from './methods.js';
+import { allowedMethods, methodAllowed } from './methods.js';
 import { onlyIfNew, passedOnWindow, recheckWindowInTx, requireConfirm } from './confirm.js';
 import { requireLiveSessionInTx } from './liveSession.js';
 import { requireSession } from './sessions.js';
-import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { NIL_UUID, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 
 export const TOTP_SECRET_BYTES = 20;
 const PERIOD_S = 30;
@@ -286,6 +297,48 @@ export async function applyTotp(db: Queryable, accountId: string, secretEnc: Buf
 }
 
 /**
+ * `POST /v1/login/totp { loginName, code, deviceLabel }` (owner, 27 Nov 2026): the private login
+ * name plus the authenticator app's current code. Every miss is the same 401 `credentials-invalid`,
+ * whichever was wrong: an unknown name, an account of another kind (staff, members and the owner
+ * hold no authenticator app), an account without one, or a wrong code (the same lookup and the
+ * same code check against a throwaway secret, `dummyTotpCheck`). Guessing is slowed by the account's
+ * `totp` throttle key (an unknown name by its name tag), checked before the code: 429 `slow-down`
+ * or `locked` with `retryAfterSeconds`. A code works once (`verifyTotp`'s last accepted step, set in
+ * the same statement). Then `completeLogin`: a disabled account (a staff switch-off or the D-059
+ * compromised lock) is 403 `account-disabled`, and a new browser while the account is logged in
+ * elsewhere waits for approval (`approve-on-device`).
+ */
+async function totpLogin(req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> {
+  const deps = req.server.deps;
+  ensureDeviceCookie(req, reply);
+  req.server.budgets.start.take();
+  const b = body(req);
+  const loginName = str(b, 'loginName');
+  const code = str(b, 'code');
+  const deviceLabel = str(b, 'deviceLabel');
+  const name = loginNameLookup(deps.config, loginName);
+  // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account.
+  const found = (
+    await deps.db.query<{ id: string; kind: AccountKind; login_tag_key_id: number }>(
+      `select a.id, a.kind, a.login_tag_key_id from accounts a where ${loginTagMatch('a', 1)}`,
+      [name.candidates.ids, name.candidates.tags],
+    )
+  ).rows[0];
+  const account = found && allowedMethods(found.kind).includes('totp') ? found : undefined;
+  const key = await throttleKey(deps, req, 'totp', account ? { id: account.id } : { nameTag: name.tag });
+  await throttleCheck(deps, key);
+  const ok = await verifyTotp(deps, account?.id ?? NIL_UUID, code);
+  if (!ok || !account) {
+    await throttleFail(deps, key, account?.id ?? null);
+    throw new ApiError(401, 'credentials-invalid');
+  }
+  await throttleReset(deps, key);
+  const result = await completeLogin(deps, req, reply, { account: { id: account.id, kind: account.kind }, factor: { method: 'totp' }, deviceLabel });
+  await retagLoginName(deps, account, name.candidates.current);
+  return result;
+}
+
+/**
  * `POST /v1/account/totp/start|finish` (full session; a confirm token for `add-method:totp`
  * outside onboarding; `assertMethodAllowed` first, so staff and the owner are refused before any
  * token is spent, R2).
@@ -297,4 +350,5 @@ export function totpRoutes(app: FastifyInstance): void {
     enrolStart,
   );
   app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp')] }, enrolFinish);
+  app.post('/v1/login/totp', totpLogin);
 }

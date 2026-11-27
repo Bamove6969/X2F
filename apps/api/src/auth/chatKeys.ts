@@ -6,10 +6,13 @@
  *   to another device's X25519 public key and posts the box here; the receiving device fetches it
  *   over its own session and opens it with its device secret. The API stores and serves the sealed
  *   bytes exactly as posted and can open nothing (it holds no chat secret).
- * - Owner, 26 Nov 2026 (no passwords): every trader login is with a passkey, a security key or a PGP
- *   key (or the recovery code), so every live owner session may post and read (section 3.1 rule 2's
- *   "strong to strong" now always holds). Never a team member's session (`requireSession`: trader
- *   sessions, the account owner only; section 3.1 rule 4).
+ * - Owner, 26 Nov 2026 (no passwords): every live owner session may post and read. Never a team
+ *   member's session (`requireSession`: trader sessions, the account owner only; section 3.1 rule
+ *   4). Since owner 27 Nov 2026 a trader may also log in with the login name and an authenticator
+ *   code; such a session is not "strong" in section 3.1 rule 2's sense, but sessions do not record
+ *   their login method, so it is not told apart here. What holds it back: a box is readable only by
+ *   the device it was sealed to, and its login approval offers no keys (`keysOffered` false,
+ *   approval.ts). Open question for the owner: refuse these routes to such sessions outright.
  * - `POST /v1/account/chat-keys { recipientPublic, sealed, epoch }` → 201 `{ id, expiresAt }`.
  *   `recipientPublic` is 64 lower-case hex; `sealed` is base64url of 48 to 1024 bytes; `epoch` must
  *   be the account's current `chat_key_epoch` (400 `bad-request` with the current one otherwise).

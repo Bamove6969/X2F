@@ -15,7 +15,7 @@ describe('accountRating (owner demo note #6)', () => {
     ['a passkey alone', { passkey: 1 }, 'high'],
     ['a security key alone', { securityKey: 2 }, 'high'],
     ['every method', { totp: true, pgp: 2, passkey: 1, securityKey: 1, recoveryCodes: 1 }, 'high'],
-    ['an authenticator app alone (never used to log in)', { totp: true }, 'weak'],
+    ['an authenticator app alone (it logs in with the login name, owner 27 Nov 2026, but never confirms)', { totp: true }, 'weak'],
     ['recovery codes alone', { recoveryCodes: 1 }, 'weak'],
     ['no method at all (fails closed)', {}, 'weak'],
   ])('%s is %s', (_name, c, rating) => {
