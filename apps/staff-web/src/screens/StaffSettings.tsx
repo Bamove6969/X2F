@@ -5,6 +5,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Notice } from '../ui/kit.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle } from '../ui/StaffShell.js';
+import { AutoAssignSection } from './settings/AutoAssignSection.js';
 import { FeeSweepSection } from './settings/FeeSweepSection.js';
 import { LinksSection } from './settings/LinksSection.js';
 import { StaffPaySection } from './settings/StaffPaySection.js';
@@ -29,7 +30,8 @@ import '../ui/staff.css';
  * each with its own tap when it needs one.
  *
  * Spec 6.6 "Settings" (the rest of the owner's settings, no board draws them; DESIGNER-REVIEW):
- * below, each with its own outlined Save, are the starter limits (tap `starter-limits`), the
+ * below, each with its own outlined Save, are case assignment (owner 26 Nov 2026, "Pool first,
+ * auto-assign if untaken": the pool time and its switch, no tap), the starter limits (tap `starter-limits`), the
  * moderator contact and community links (no tap), the fee wallet's sweep (tap `fee-sweep`) and,
  * read only, the pay each staff member is owed (`settings/`).
  */
@@ -269,6 +271,7 @@ export function StaffSettings() {
         </Button>
       </div>
       {/* Spec 6.6 "Settings": each section below loads and saves on its own (no board draws them). */}
+      <AutoAssignSection />
       <StarterLimitsSection />
       <LinksSection />
       <FeeSweepSection />

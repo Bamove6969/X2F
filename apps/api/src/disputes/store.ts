@@ -127,6 +127,12 @@ const round1Json = (r: Round1 | null) => (r === null ? null : JSON.stringify({ .
  * Writes the machine's state back. The USD value and the limit snapshot are never rewritten, nor
  * are the appeal's side and time (`dispute_appeals`, written by the appeal route). Round 1's
  * trader-visible `appeal_until` follows `appealEndsAt` (a maintenance shift moves both).
+ *
+ * Auto-assign (owner 26 Nov 2026, migration 910), read from the row as it was before this write: a
+ * case that goes back to the pool (its assignee cleared, or round 2 opening unassigned) records
+ * when (`pooled_at`); a new assignee records when they got it (`assigned_at`); any change of
+ * assignee clears `auto_assigned` (the timer's own assignment writes the assignee and the mark
+ * before this runs, so it sees no change: disputes/autoAssign.ts).
  */
 export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date): Promise<void> {
   await client.query(
@@ -134,7 +140,10 @@ export async function saveDispute(client: pg.PoolClient, d: Dispute, now: Date):
        ruling = $9, round1 = $10, published_at = $11, appeal_ends_at = $12, comply_by = $13, executed_at = $14,
        complied_at = $15, overturned = $16, seen = $17::uuid[],
        closed_at = case when $3 = 'closed' then coalesce(closed_at, $18) end,
-       executed_round = $19
+       executed_round = $19,
+       pooled_at = case when $5::uuid is null and (assignee is not null or round is distinct from $4) then $18 else pooled_at end,
+       assigned_at = case when $5::uuid is not null and assignee is distinct from $5::uuid then $18 else assigned_at end,
+       auto_assigned = case when assignee is distinct from $5::uuid then false else auto_assigned end
      where code = $1 and seq = $2`,
     [d.code, d.seq, d.status, d.round, d.assignee, d.firstReplyAt, d.replyDueAt, d.rulingDueAt,
       d.ruling === null ? null : JSON.stringify(d.ruling), round1Json(d.round1), d.publishedAt, d.appealEndsAt, d.complyBy,

@@ -86,7 +86,13 @@ export type AlertKind =
   | 'tx-proof-check-stopped'
   // Owner only (review of feat/lockout, item 4): the site-wide cap on new compromised-account locks
   // was reached; a report was recorded without locking. Detail: the report's id.
-  | 'compromised-lock-cap';
+  | 'compromised-lock-cap'
+  // Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": to a staff member, a
+  // dispute nobody took in time was given to them by the timer. Detail: trade.
+  | 'dispute-auto-assigned'
+  // Same decision: to the owner and every senior moderator, once per round, a dispute still in the
+  // pool past its reply deadline (nobody eligible on shift). Detail: trade, round.
+  | 'dispute-unassigned-overdue';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

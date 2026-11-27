@@ -548,6 +548,16 @@ export interface LinkSettings {
   communityMatrixUrl: string | null;
   communityTelegramUrl: string | null;
 }
+/**
+ * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): minutes a dispute may wait untaken
+ * before the timer assigns it (1 to 1440), and whether it does. No tap (they bind no ruling).
+ */
+export interface AutoAssignSettings {
+  autoAssignMin: number;
+  autoAssignOn: boolean;
+}
+export const putAutoAssign = (change: Partial<AutoAssignSettings>) => staffApi<RulingSettings & AutoAssignSettings>('/staff/v1/settings', { method: 'PUT', body: change });
+
 /** The links need no tap (apps/api/src/staff/settings.ts TAPPED). */
 export const putLinks = (change: Partial<LinkSettings>) => staffApi<RulingSettings & LinkSettings>('/staff/v1/settings', { method: 'PUT', body: change });
 
@@ -829,11 +839,20 @@ export interface QueueRow {
    * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
    */
   complyLapsed?: boolean;
+  /**
+   * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): when the timer gives this free case to
+   * the least-busy moderator on shift (later if nobody eligible is on shift); null when taken or
+   * auto-assign is off. Absent from an older API.
+   */
+  autoAssignAt?: string | null;
+  /** The current assignee got the case from the timer, not by taking it. Absent from an older API. */
+  autoAssigned?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];
   counts: { open: number; overdue: number; unassigned: number; needApproval: number };
-  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+  /** `autoAssign`: the owner's pool time (owner 26 Nov 2026); absent from an older API. */
+  settings: { firstResponseH: number; largeTradeLimitUsd: number; autoAssign?: { on: boolean; minutes: number } };
 }
 
 export interface CaseTrader {
@@ -902,6 +921,8 @@ export interface DisputeCase {
   limitUsd: number;
   assignee: string | null;
   assignedToYou: boolean;
+  /** Owner 26 Nov 2026: the current assignee got the case from the timer. Absent from an older API. */
+  autoAssigned?: boolean;
   proposedByYou: boolean;
   mayWork: boolean;
   traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
