@@ -89,7 +89,10 @@ describe('the fixed texts', () => {
     expect(messageText({ kind: 'trade-attention' })).toBe(TRADE_ATTENTION_TEXT);
     expect(TRADE_ATTENTION_TEXT).toBe('A trade on your X2F account needs your attention.');
     // J-20 (owner p11-27, S-107): a team member's first login, to the team account. No name.
-    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention', 'team-member-first-login']);
+    expect(NOTICE_KINDS).toEqual([
+      'account-change', 'team-member-first-login',
+      'trade-started', 'trade-funded', 'trade-paid', 'trade-cancel-asked', 'trade-completed', 'trade-cancelled', 'trade-attention', 'trade-ruled',
+    ]);
     expect(messageText({ kind: 'team-member-first-login' })).toBe(TEAM_FIRST_LOGIN_TEXT);
     expect(TEAM_FIRST_LOGIN_TEXT).toBe('A team member logged in to your X2F account for the first time.');
     expect(() => messageText({ kind: 'wallet-added' } as never)).toThrow();
@@ -633,21 +636,93 @@ describe("a team member's first login tells the team account (J-20, owner p11-27
   });
 });
 
-describe('a dispute tells the payer (lead default 2026-11-08, same opt-in)', () => {
+describe('a dispute tells both sides (migration 920; was the payer only, lead default 2026-11-08), same opt-in', () => {
   for (const openedBy of ['buyer', 'seller', 'system'] as const) {
-    it(`opened by the ${openedBy}: the buyer gets the trade-attention sentence; the seller gets nothing`, async () => {
+    it(`opened by the ${openedBy}: buyer and seller each get the trade-attention sentence`, async () => {
       const buyer = await withJabber();
       const seller = await withJabber();
       const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
       const trade = await driveTo(deps, t.trade, 'paid');
       await deps.db.query('delete from jabber_outbox');
       await withTx(deps.db, (c) => startDispute(c, trade, { openedBy, reason: openedBy === 'system' ? 'escalated' : 'other', note: '', afterRefund: false, now: deps.clock(), prices: null }));
-      const { rows } = await deps.db.query<{ account_id: string; kind: string }>('select account_id, kind from jabber_outbox');
-      expect(rows).toEqual([{ account_id: buyer.id, kind: 'trade-attention' }]);
+      const { rows } = await deps.db.query<{ account_id: string; kind: string }>('select account_id, kind from jabber_outbox order by account_id');
+      expect(rows).toEqual([{ account_id: buyer.id, kind: 'trade-attention' }, { account_id: seller.id, kind: 'trade-attention' }].sort((a, b) => a.account_id.localeCompare(b.account_id)));
       await sendAll();
-      expect(sent).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
+      expect(sent.map((x) => x.to).sort()).toEqual([buyer.jid, seller.jid].sort());
+      expect(sent.every((x) => x.message.kind === 'trade-attention')).toBe(true);
     });
   }
+});
+
+describe('trade milestones (owner 27 Nov 2026, migration 920): each tells only the side it is for, with a fixed sentence', () => {
+  const kindsOf = async (id: string) =>
+    (await deps.db.query<{ kind: string }>('select kind from jabber_outbox where account_id = $1 order by id', [id])).rows.map((r) => r.kind);
+
+  it('the happy path: the poster hears of the new trade, the buyer of the escrow, the seller of the payment, both of the end', async () => {
+    const buyer = await withJabber();
+    const seller = await withJabber();
+    await deps.db.query('delete from jabber_outbox');
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    expect(await kindsOf(seller.id)).toEqual(['trade-started']);
+    expect(await kindsOf(buyer.id)).toEqual([]);
+    await driveTo(deps, t.trade, 'secured');
+    expect(await kindsOf(buyer.id)).toEqual(['trade-funded']);
+    await deps.db.query('delete from jabber_outbox');
+    const t2 = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
+    expect(await kindsOf(buyer.id)).toEqual(['trade-started']);
+    expect(await kindsOf(seller.id)).toEqual([]);
+    await driveTo(deps, t2.trade, 'released');
+    expect(await kindsOf(buyer.id)).toEqual(['trade-started', 'trade-funded', 'trade-completed']);
+    expect(await kindsOf(seller.id)).toEqual(['trade-paid', 'trade-completed']);
+    await sendAll();
+    const texts = sent.map((x) => messageText(x.message));
+    expect(texts).toContain('Someone started a new trade with you on X2F.');
+    expect(texts).toContain('A buyer marked a payment as sent on one of your X2F trades.');
+    expect(texts).toContain('One of your X2F trades is complete.');
+    // Never a trade code, amount or address in any sentence.
+    for (const text of texts) expect(text).not.toMatch(new RegExp(`${t2.code}|[0-9]{3,}`));
+  });
+
+  it('a cancel request tells the other side; a cancel or refund tells both', async () => {
+    const buyer = await withJabber();
+    const seller = await withJabber();
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, t.trade, 'secured');
+    await deps.db.query('delete from jabber_outbox');
+    await deps.db.query("update trades set cancel_proposed_by = 'buyer' where code = $1", [t.code]);
+    expect(await kindsOf(seller.id)).toEqual(['trade-cancel-asked']);
+    expect(await kindsOf(buyer.id)).toEqual([]);
+    await deps.db.query("update trades set state = 'refunded' where code = $1", [t.code]);
+    expect(await kindsOf(seller.id)).toEqual(['trade-cancel-asked', 'trade-cancelled']);
+    expect(await kindsOf(buyer.id)).toEqual(['trade-cancelled']);
+  });
+
+  it('a published ruling tells both sides', async () => {
+    const buyer = await withJabber();
+    const seller = await withJabber();
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    const trade = await driveTo(deps, t.trade, 'paid');
+    await withTx(deps.db, (c) => startDispute(c, trade, { openedBy: 'buyer', reason: 'other', note: '', afterRefund: false, now: deps.clock(), prices: null }));
+    await deps.db.query('delete from jabber_outbox');
+    await deps.db.query(
+      `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until)
+       select code, seq, 1, 'release-to-buyer', 'x', 'Mod', now(), now() + interval '1 day' from disputes where code = $1`,
+      [t.code],
+    );
+    expect(await kindsOf(buyer.id)).toEqual(['trade-ruled']);
+    expect(await kindsOf(seller.id)).toEqual(['trade-ruled']);
+  });
+
+  it('nothing for a side without Jabber on', async () => {
+    const buyer = await withJabber();
+    const seller = await trader();
+    await deps.db.query("update jabber_contacts set enabled = false where account_id = $1", [buyer.id]);
+    await deps.db.query('delete from jabber_outbox');
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
+    await driveTo(deps, t.trade, 'released');
+    expect(await kindsOf(buyer.id)).toEqual([]);
+    expect(await kindsOf(seller.id)).toEqual([]);
+  });
 });
 
 describe('review L4: an unproven typed address is purged 24 hours after its test message', () => {

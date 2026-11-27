@@ -10,7 +10,7 @@ import type { PreKeyLedger } from '@x2f/omemo';
 export const ACCOUNT_CHANGE_TEXT = 'An account change was made on your X2F account.';
 
 /**
- * Lead default (2026-11-08), same opt-in: to the payer when a dispute is opened on their trade.
+ * Lead default (2026-11-08), same opt-in: when a dispute is opened on a trade (both sides since migration 920).
  * COPY-UNSIGNED (the owner has not signed it; no board draws it).
  */
 export const TRADE_ATTENTION_TEXT = 'A trade on your X2F account needs your attention.';
@@ -22,8 +22,25 @@ export const TRADE_ATTENTION_TEXT = 'A trade on your X2F account needs your atte
  */
 export const TEAM_FIRST_LOGIN_TEXT = 'A team member logged in to your X2F account for the first time.';
 
-/** The notice kinds the outbox carries (`jabber_outbox.kind`, migrations 331 and 380); one fixed sentence each. */
-export const NOTICE_KINDS = ['account-change', 'trade-attention', 'team-member-first-login'] as const;
+/**
+ * Trade milestones (owner, 27 Nov 2026; migration 920), same opt-in, each on until the user turns
+ * it off. Fixed sentences: no trade code, amount, person, method or link. COPY-UNSIGNED (builder's words).
+ */
+export const TRADE_MILESTONE_TEXT = Object.freeze({
+  'trade-started': 'Someone started a new trade with you on X2F.',
+  'trade-funded': 'The coins for one of your X2F trades are locked in escrow. You can pay now.',
+  'trade-paid': 'A buyer marked a payment as sent on one of your X2F trades.',
+  'trade-cancel-asked': 'Your trade partner asked to cancel one of your X2F trades.',
+  'trade-completed': 'One of your X2F trades is complete.',
+  'trade-cancelled': 'One of your X2F trades was cancelled or refunded.',
+  'trade-ruled': 'A ruling was published on a dispute in one of your X2F trades.',
+});
+
+/** The notice kinds the outbox carries (`jabber_outbox.kind`, migrations 331, 380 and 920), in the order the picks page lists them; one fixed sentence each. */
+export const NOTICE_KINDS = [
+  'account-change', 'team-member-first-login',
+  'trade-started', 'trade-funded', 'trade-paid', 'trade-cancel-asked', 'trade-completed', 'trade-cancelled', 'trade-attention', 'trade-ruled',
+] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 /**
@@ -39,6 +56,7 @@ export const NOTICE_TEXT: Readonly<Record<NoticeKind, string>> = Object.freeze({
   'account-change': ACCOUNT_CHANGE_TEXT,
   'trade-attention': TRADE_ATTENTION_TEXT,
   'team-member-first-login': TEAM_FIRST_LOGIN_TEXT,
+  ...TRADE_MILESTONE_TEXT,
 });
 
 /** Who the message says it is from (XEP-0172 nickname; board: "X2F alerts"). */

@@ -58,10 +58,12 @@ const sendAll = () => sendDueNotices({ db: deps.db, clock: deps.clock, config: d
 const ALL_ON = {
   events: [
     { kind: 'account-change', on: true, canTurnOff: false },
-    { kind: 'trade-attention', on: true, canTurnOff: true },
     { kind: 'team-member-first-login', on: true, canTurnOff: false },
+    ...['trade-started', 'trade-funded', 'trade-paid', 'trade-cancel-asked', 'trade-completed', 'trade-cancelled', 'trade-attention', 'trade-ruled']
+      .map((kind) => ({ kind, on: true, canTurnOff: true })),
   ],
 };
+const allOnBut = (off: string) => ({ events: ALL_ON.events.map((e) => (e.kind === off ? { ...e, on: false } : e)) });
 const nudgeChange = (b: Browser) => b.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null });
 
 async function withJabber(jid = address()) {
@@ -77,12 +79,13 @@ async function withJabber(jid = address()) {
 async function dispute(buyerId: string, sellerId: string) {
   const t = await seedTrade(deps, { sellerId, buyerId, poster: 'seller' });
   const trade = await driveTo(deps, t.trade, 'paid');
+  await clearOutbox(buyerId);
   await withTx(deps.db, (c) => startDispute(c, trade, { openedBy: 'seller', reason: 'other', note: '', afterRefund: false, now: deps.clock(), prices: null }));
 }
 
 describe('the event list', () => {
   it("lists main's notice kinds in order, every one on until the user turns it off", async () => {
-    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention', 'team-member-first-login']);
+    expect(NOTICE_KINDS).toEqual(ALL_ON.events.map((e) => e.kind));
     const t = await trader();
     expect((await t.browser.get('/v1/account/jabber/events')).json()).toEqual(ALL_ON);
     // Nothing to pick before an address is proven.
