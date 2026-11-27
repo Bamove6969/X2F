@@ -961,6 +961,23 @@ describe('lien recoveries signed here are freed only by what the watcher sees (r
     await m.handle.stop();
   });
 
+  it('a trade closed before any escrow existed frees its recovery even when seen after a service restart', async () => {
+    const { net, fetch } = fakeNetwork();
+    const first = await moderation(fetch);
+    const code = newTradeCode();
+    net.work = [await work(code)];
+    await first.handle.tick();
+    await owing(code);
+    await first.handle.stop();
+
+    const again = await moderation(fetch);
+    net.states.set(code, 'cancelled');
+    await again.handle.watch();
+    expect(again.logs).toContain('watch-ended-no-escrow');
+    expect(await freed(code)).toBe(true);
+    await again.handle.stop();
+  });
+
   it('a released trade keeps it (the recovery was paid); an own sweep of unknown kind keeps it too', async () => {
     const { net, fetch } = fakeNetwork();
     const m = await moderation(fetch);
