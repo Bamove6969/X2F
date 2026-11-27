@@ -39,6 +39,13 @@
  *   system-styled line with its sender, in this panel's own wording (CHAT_NOTICES), never the
  *   line's text. Muted, never the moderator's violet: a trader's device sent it.
  *
+ * - Private moderator lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): a line
+ *   the engine opened in this trader's own lane (`private`) is drawn in the private colour
+ *   (--x2f-private on --x2f-private-bg) with a lock and "Private · only you and the moderator see
+ *   this". Owner D2: once the moderator has sent this trader a private line (`privateReply`), the
+ *   composer offers "Only moderator" / "Everyone", defaulting to "Only moderator" while the
+ *   moderator's latest line to them was private; a private composer is tinted and says so.
+ *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
@@ -69,6 +76,11 @@ export const CHAT_CLOSED = 'This chat has been closed.';
 export const MISSING_LINE = 'A message you saw earlier is no longer on the server.';
 // COPY-UNSIGNED (review payee-fields-2 m-4): the payer's line for a package this device could not show. not-a-refusal: a note in place of a chat line, not a rule the user ran into
 export const UNREADABLE_PAY_LINE = "Their payment details couldn't be shown. Ask them to send again.";
+// COPY-UNSIGNED (owner 27 Nov, private moderator chat): the marker on a private line and on the private composer.
+export const PRIVATE_MARKER = 'Private · only you and the moderator see this';
+// COPY-UNSIGNED (owner 27 Nov, D2): the composer's two choices once the moderator wrote to this trader privately.
+export const SEND_TO_MOD = 'Only moderator';
+export const SEND_TO_ALL = 'Everyone';
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
 
@@ -115,6 +127,12 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<ChatFailure | null>(null);
   const [announce, setAnnounce] = useState('');
+  /**
+   * Owner D2: the trader's own pick of "Only moderator" / "Everyone", kept only while the moderator's
+   * latest line is the one it was made under; a newer moderator line brings the default back.
+   */
+  const [pick, setPick] = useState<{ under: string | null; private: boolean } | null>(null);
+  const sendToId = useId();
   const alive = useRef(true);
   const seq = useRef(0);
   /** The chat whose sync is running (null: none), and whether another was asked for meanwhile. */
@@ -218,13 +236,20 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   }, [lineCount]);
 
   const empty = draft.trim() === '';
+  // Owner D2: the toggle only once the moderator sent this trader a private line (the engine's
+  // `privateReply`); the default follows whether the moderator's latest line to them was private.
+  const canPrivate = snap?.privateReply === true;
+  const lastMod = [...(snap?.lines ?? [])].reverse().find((l) => l.from === 'mod') ?? null;
+  const lastModId = lastMod?.id ?? null;
+  const privateDefault = lastMod?.private === true;
+  const toMod = canPrivate && (pick !== null && pick.under === lastModId ? pick.private : privateDefault);
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (sending || empty) return;
     setSending(true);
     setSendError(null);
     try {
-      const s = await chatClient().send(chat, draft);
+      const s = toMod ? await chatClient().send(chat, draft, { private: true }) : await chatClient().send(chat, draft);
       sent(s);
       if (!alive.current) return;
       setDraft('');
@@ -276,7 +301,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
             );
           }
           items.push(
-            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined} data-notice={l.notice}>
+            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined} data-notice={l.notice} data-private={l.private ? '' : undefined}>
+              {l.private ? <PrivateMarker /> : null}
               <span className="x2f-chat__who">
                 {l.from === 'mod' ? (
                   dispute !== undefined && snap?.disputeOpen === true && dispute.moderator ? (
@@ -359,15 +385,30 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
         )
       ) : null}
       {phase === 'ready' && !gone ? (
-        <form className="x2f-chat__composer" onSubmit={(e) => void onSubmit(e)}>
+        <form className="x2f-chat__composer" data-private={toMod ? '' : undefined} onSubmit={(e) => void onSubmit(e)}>
+          {canPrivate ? (
+            <fieldset className="x2f-chat__sendto" data-chat-sendto="">
+              {/* COPY-UNSIGNED (owner 27 Nov, D2): the toggle's name for screen readers. */}
+              <legend className="x2f-chat__hidden">Send to</legend>
+              <label className="x2f-chat__sendto-option" data-sendto="mod">
+                <input type="radio" name={sendToId} checked={toMod} onChange={() => setPick({ under: lastModId, private: true })} />
+                {SEND_TO_MOD}
+              </label>
+              <label className="x2f-chat__sendto-option" data-sendto="all">
+                <input type="radio" name={sendToId} checked={!toMod} onChange={() => setPick({ under: lastModId, private: false })} />
+                {SEND_TO_ALL}
+              </label>
+            </fieldset>
+          ) : null}
+          {toMod ? <PrivateMarker /> : null}
           <label className="x2f-chat__label">
-            <span className="x2f-chat__hidden">Message {name}</span>
+            <span className="x2f-chat__hidden">{toMod ? 'Private message to the moderator' : `Message ${name}`}</span>
             <textarea
               ref={box}
               className="x2f-chat__input"
               value={draft}
               rows={2}
-              placeholder="Message"
+              placeholder={toMod ? 'Private message' : 'Message'}
               onChange={(e) => setDraft(e.target.value)}
               readOnly={sending}
               aria-disabled={sending ? 'true' : undefined}
@@ -384,6 +425,19 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
         </form>
       ) : null}
     </section>
+  );
+}
+
+/** Private lanes: the lock and the words on a private line and on the private composer. */
+function PrivateMarker() {
+  return (
+    <span className="x2f-chat__private" data-private-marker="">
+      <svg className="x2f-chat__private-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </svg>
+      {PRIVATE_MARKER}
+    </span>
   );
 }
 
