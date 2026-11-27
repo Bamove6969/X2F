@@ -1,8 +1,8 @@
 import { cryptoReady } from '@x2f/protocol';
 import type { AttestationKey } from '@x2f/trade';
-import { CHAT_KEY_ERROR_CODES, type CaseChatAnswer, type ChatKeyErrorCode, type ChatView, type DevicePublic, type SealedModMessage } from '../chat/types.js';
+import { CHAT_KEY_ERROR_CODES, type CaseChatAnswer, type ChatKeyErrorCode, type Lane, type ChatView, type DevicePublic, type SealedModMessage } from '../chat/types.js';
 import { DeviceKeyError, staffDeviceKey, type DeviceKeyBackend, type StaffDeviceKey } from './deviceKey.js';
-import { CaseChatError, forget, openCaseChat, sealModMessage, type OpenedChat } from './reader.js';
+import { CaseChatError, forget, nextSeqByLane, openCaseChat, sealModMessage, type OpenedChat } from './reader.js';
 
 /**
  * Design build task 10 (design section 2.4 M4; review lead-mod-chat N10): the staff-web chat key
@@ -80,20 +80,24 @@ export class ChatKeeper {
     globalThis.crypto.getRandomValues(h);
     const handle = Array.from(h, (x) => x.toString(16).padStart(2, '0')).join('');
     this.#chats.set(handle, c);
-    return { handle, nextSeq: c.nextSeq, lines: c.lines, unreadable: c.unreadable, missing: c.missing, olderNotShown: c.olderNotShown };
+    return { handle, nextSeq: c.nextSeq, nextSeqByLane: nextSeqByLane(c), lines: c.lines, unreadable: c.unreadable, missing: c.missing, olderNotShown: c.olderNotShown };
   }
 
-  async seal(handle: string, text: string, issuedAt: string, seq: number): Promise<SealedModMessage> {
+  /** Seals `text` at `seq`: to both traders, or with `to` privately to that trader (its lane's key and seq). */
+  async seal(handle: string, text: string, issuedAt: string, seq: number, to?: Lane | null): Promise<SealedModMessage> {
     const c = typeof handle === 'string' && HANDLE.test(handle) ? this.#chats.get(handle) : undefined;
     if (c === undefined) throw new KeeperError('gone');
     const at = typeof issuedAt === 'string' && ISO_MS.test(issuedAt) ? Date.parse(issuedAt) : Number.NaN;
     if (!Number.isFinite(at) || Math.abs(at - this.#now()) > SEAL_CLOCK_SKEW_MS || !Number.isSafeInteger(seq) || seq < 0) throw new KeeperError('unreadable');
-    const sealed = await sealModMessage(c, text, await this.#key(), new Date(at), seq);
-    if (seq >= c.nextSeq) c.nextSeq = seq + 1;
+    if (to !== undefined && to !== null && to !== 'buyer' && to !== 'seller') throw new KeeperError('unreadable');
+    const lane = to ?? undefined;
+    const sealed = await sealModMessage(c, text, await this.#key(), new Date(at), seq, lane);
+    const l = lane === undefined ? c : c.lanes[lane]!;
+    if (seq >= l.nextSeq) l.nextSeq = seq + 1;
     return sealed;
   }
 
-  /** Wipes and drops an opened chat's key. */
+  /** Wipes and drops an opened chat's keys (the chat key and every lane key). */
   forget(handle: string): void {
     const c = typeof handle === 'string' ? this.#chats.get(handle) : undefined;
     if (c === undefined) return;
@@ -145,7 +149,7 @@ export function serveChatKeeper(keeper: ChatKeeper, ep: Endpoint): void {
         case 'open':
           return keeper.open(a[0] as CaseChatAnswer);
         case 'seal':
-          return keeper.seal(a[0] as string, a[1] as string, a[2] as string, a[3] as number);
+          return keeper.seal(a[0] as string, a[1] as string, a[2] as string, a[3] as number, a[4] as Lane | null | undefined);
         case 'forget':
           keeper.forget(a[0] as string);
           return null;

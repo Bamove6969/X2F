@@ -1179,3 +1179,47 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/*
+ * Private moderator lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): a private
+ * line and the composer while writing one are violet, distinct from teal (secured), amber
+ * (securing), red (danger) and the moderator purple. AA: --x2f-private on --x2f-private-bg is 7.7:1
+ * at night and 6.4:1 by day; ink on --x2f-private-bg 13.8:1 / 15.9:1. The same values are
+ * apps/web's tokens (design/design-system/tokens.json); these stand in until staff-web picks them up.
+ */
+:root,
+:root[data-theme=night] {
+  --x2f-private: #e59bf5;
+  --x2f-private-bg: #2b1f33;
+}
+
+:root[data-theme=day] {
+  --x2f-private: #8a2a9c;
+  --x2f-private-bg: #f7edf9;
+}
+
+.x2f-staff-chat__line--private {
+  padding: var(--x2f-space-2) var(--x2f-space-3);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-private-bg);
+  box-shadow: inset 3px 0 0 var(--x2f-private);
+}
+
+.x2f-staff-chat__private {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-private);
+}
+
+.x2f-staff-chat__lock {
+  flex: none;
+}
+
+.x2f-staff-compose--private {
+  background: var(--x2f-private-bg);
+  border: 1px solid var(--x2f-private);
+}

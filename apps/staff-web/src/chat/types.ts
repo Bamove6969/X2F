@@ -16,6 +16,9 @@ export const CASE_CHAT_READ_MAX = 5000;
  */
 export const MOD_TEXT_MAX_BYTES = 2000;
 
+/** A private lane: the one trader it is with (owner 27 Nov). */
+export type Lane = 'buyer' | 'seller';
+
 /** What `POST /staff/v1/disputes/:code/chat` answers: ciphertext only. */
 export interface CaseChatAnswer {
   chat: string;
@@ -25,7 +28,13 @@ export interface CaseChatAnswer {
   nextSeq: number;
   attestation: { attestation: unknown; sig: string } | null;
   record: unknown;
-  envelopes: Array<{ id: string; senderRole: string; envelope: unknown; at: string }>;
+  /**
+   * Private lanes (owner 27 Nov): each trader's lane key PK re-wrapped to this device, pinned by its
+   * `pkh`, and the moderator's next seq in that lane. Missing (an older API) is no lanes.
+   */
+  lanes?: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number }>;
+  /** `to`: the lane of a private (v3) envelope, null (or missing) for the shared chat. */
+  envelopes: Array<{ id: string; senderRole: string; envelope: unknown; at: string; to?: Lane | null }>;
   /** Review N11 (f): the chat has more envelopes than one read returns; these are the newest. */
   olderNotShown?: boolean;
 }
@@ -37,6 +46,8 @@ export interface CaseChatLine {
   at: string;
   /** Review N2: how many of this sender's messages are missing just before this line (0: none). */
   missingBefore: number;
+  /** A private line: only the moderator and this trader see it (every staff reader too). */
+  to?: Lane;
 }
 
 /** An opened chat as the page sees it: the worker keeps its key, under `handle`. */
@@ -44,6 +55,8 @@ export interface ChatView {
   /** The worker's name for this opened chat (no key material). */
   handle: string;
   nextSeq: number;
+  /** The moderator's next seq in each private lane the chat has (no entry: no such lane). */
+  nextSeqByLane: { buyer?: number; seller?: number };
   lines: CaseChatLine[];
   /** Envelopes that did not verify or open (shown as a count, never as text). */
   unreadable: number;
@@ -63,6 +76,8 @@ export interface SealedModMessage {
   requestId: string;
   issuedAt: string;
   sig: string;
+  /** A private message's lane (a v3 body, the lane countersign); absent for both traders. */
+  to?: Lane;
 }
 
 /** This browser's device key, its public halves only (what the person certifies). */
