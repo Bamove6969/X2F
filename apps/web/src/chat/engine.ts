@@ -66,14 +66,27 @@
  * - Erase on purge: when the API answers 410 `chat-purged` for a chat, its record and the lines in
  *   memory are erased; `sweep` checks every stored chat once per worker start. A 404 keeps the
  *   record (a block hides a chat with that same 404, and it may come back).
+ * - Private moderator lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): while a
+ *   dispute is open, once a lane is pinned, or when a v3 envelope comes, the engine reads this
+ *   trader's lane record (`GET …/lane`), checks it against the ATTESTED moderator identity for this
+ *   chat and this trader's lane, and opens its own copy of the lane key PK with the chat identity's
+ *   box key. PK follows TK's rules exactly: in this worker's memory only, wiped with TK on every
+ *   refusal, purge or erase; its fingerprint `pkh` pinned in the ChatRecord (`keep` never lets it go
+ *   backwards, another one stored fails closed), and a record that does not check out, of another
+ *   pkh, or gone once pinned is the `security` failure. v3 envelopes of the own lane open under PK
+ *   with the lane's own persisted guard (`laneState`, seq per lane); their lines carry `private`. A
+ *   v3 envelope before the lane record exists stops the cursor (it is read again later). The
+ *   trader's private reply (`send(…, { private: true })`, owner D2) is a v3 envelope from = to = its
+ *   own role, with the lane's own seq, only while a dispute is open and once the moderator sent this
+ *   trader at least one private line.
  */
 import type { Role } from '@x2f/core';
-import { chatKeyHash, isPlainObject, makeChatGrant, open, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { chatKeyHash, isPlainObject, makeChatGrant, open, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatEnvelopeV3, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { AttestationError, PayDetailsError, attestationKeys, checkChatEnvelopeV2, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ProofError, type ProofAttachedPayload, type ProofUnblurredPayload } from '@x2f/proof';
-import { ChatError, chatChannel, chatKeyOf, makeChatKey, newChatState, openChatMessage, sealChatMessage, sealChatNotice, sealPayDetails, sealProofAttached, sealProofUnblurred, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { ChatError, chatChannel, chatKeyOf, laneKeyOf, makeChatKey, newChatState, newLaneState, openChatMessage, openLaneMessage, sealChatMessage, sealChatNotice, sealLaneMessage, sealPayDetails, sealProofAttached, sealProofUnblurred, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatNoticeId } from './notices.js';
-import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
+import type { ChatRecord, ChatStore, LaneState, StoredChatReceipt } from './store.js';
 
 export interface ChatApiView {
   role: 'buyer' | 'seller';
@@ -94,6 +107,8 @@ export interface ApiEnvelope {
   senderRole: string;
   envelope: unknown;
   at?: string | null;
+  /** Private lanes: the lane a v3 envelope is in ('buyer' | 'seller'), null for a shared one. The API serves only the caller's own. */
+  to?: 'buyer' | 'seller' | null;
 }
 
 export interface ChatApi {
@@ -111,6 +126,11 @@ export interface ChatApi {
   postKey(chat: string, record: unknown): Promise<'ok' | 'exists'>;
   /** Build task 6: the counterparty's fallback grant (`POST …/grant`); 'not-needed' for 409 grant-not-needed. */
   postGrant(chat: string, grant: unknown): Promise<'ok' | 'not-needed'>;
+  /**
+   * Private lanes: the caller's own lane record (`GET …/lane`, unverified here), or null when there
+   * is none (404 no-lane). Absent: the API has no lanes (no lane is ever read).
+   */
+  getLane?(chat: string): Promise<unknown | null>;
 }
 
 export type ChatPhase = 'waiting' | 'ready' | 'other-device' | 'failed';
@@ -141,6 +161,11 @@ export interface ChatLine {
    * contents, e.g. a newer table's box): `text` is empty and the panel says to ask them to send again.
    */
   unreadablePay?: true;
+  /**
+   * Private lanes (owner 27 Nov): a line of this trader's own lane, opened under the lane key: only
+   * this trader and the moderator see it. The panel shows it in the private colour with its marker.
+   */
+  private?: true;
 }
 
 export interface ChatSnapshot {
@@ -171,6 +196,11 @@ export interface ChatSnapshot {
    * from the saved cursor, and the panel says "Loading more messages…".
    */
   more: boolean;
+  /**
+   * Private lanes, owner D2: this trader may reply privately. A dispute is open, the engine holds
+   * the verified lane key, and the moderator has sent this trader at least one private line.
+   */
+  privateReply?: boolean;
 }
 
 /**
@@ -189,7 +219,11 @@ export class ChatSendFailed extends Error {
 
 export interface ChatEngine {
   sync(chat: string): Promise<ChatSnapshot>;
-  send(chat: string, text: string): Promise<ChatSnapshot>;
+  /**
+   * `private`: a private reply to the moderator in this trader's own lane (v3 under the lane key,
+   * owner D2); 'not-ready' unless the snapshot's `privateReply` holds.
+   */
+  send(chat: string, text: string, opts?: { private?: boolean }): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
@@ -304,6 +338,15 @@ function headerOf(envelope: unknown, channel: string): { from: Role; seq: number
 /** Decision 16: thrown inside the read loop for any v1 envelope, so it is decided without being opened. */
 class V1InKeyedChat extends Error {}
 
+/** Private lanes: a v3 envelope (its `v` alone; everything else is openPrivate's). */
+const isV3 = (envelope: unknown): boolean => isPlainObject(envelope) && envelope.v === 3;
+/** Private lanes: a v3 envelope read while there is no lane record yet: the cursor stops before it. */
+class LaneNotYet extends Error {}
+/** Private lanes: the lane record did not check out (or changed, or went): the `security` failure. */
+class LaneRefused extends Error {}
+/** The gap markers' key: a lane line counts in its own (sender, lane) sequence, apart from the shared one. */
+const seqKey = (from: Role, to: 'buyer' | 'seller' | undefined): string => (to === undefined ? from : `${from}>${to}`);
+
 /**
  * Decision 16: whether a v1 envelope is signed by `from`'s attested identity, WITHOUT unwrapping it.
  * Plan 1's `open` checks the shape and the signature first and, for an envelope from the reader's own
@@ -346,10 +389,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   const keys = new Map<string, Uint8Array>();
   /** Review F6: when this worker first saw each counterparty grant (by its signature), its own clock. */
   const grantSeen = new Map<string, number>();
-  /** Review F7: the key's bytes are wiped before it is dropped (libsodium's memzero is a fill in JS). */
+  /** Private lanes: this trader's lane key PK per chat, in this worker's memory only, as TK. */
+  const lanes = new Map<string, Uint8Array>();
+  /** Review F7: the key's bytes are wiped before it is dropped (libsodium's memzero is a fill in JS). PK goes with TK. */
   const forgetKey = (chat: string): void => {
     keys.get(chat)?.fill(0);
     keys.delete(chat);
+    lanes.get(chat)?.fill(0);
+    lanes.delete(chat);
   };
   const erase = async (chat: string): Promise<void> => {
     sessions.delete(chat);
@@ -382,13 +429,16 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       refuse('another chat identity is stored for this chat');
     }
     if (stored.tkh !== undefined && rec.tkh !== undefined && stored.tkh !== rec.tkh) refuse('another chat key is pinned for this chat');
+    if (stored.pkh !== undefined && rec.pkh !== undefined && stored.pkh !== rec.pkh) refuse('another lane key is pinned for this chat');
     const tkh = stored.tkh ?? rec.tkh;
+    const pkh = stored.pkh ?? rec.pkh;
     const merged: ChatRecord = {
       ...rec,
       registered: stored.registered || rec.registered,
       attestation: stored.attestation ?? rec.attestation,
       ...(stored.identityCreatedAt !== undefined ? { identityCreatedAt: stored.identityCreatedAt } : {}),
       ...(tkh !== undefined ? { tkh } : {}),
+      ...(pkh !== undefined ? { pkh } : {}),
     };
     await d.store.save(merged);
     return merged;
@@ -416,26 +466,26 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
      * shown, so a gap before it (lines the relay dropped) goes onto that sender's next shown line.
      */
     const gaps = new Map<string, boolean>();
-    const carried = new Set<Role>();
+    const carried = new Set<string>();
     for (const m of sorted) {
       if (m.refused === true && !unshowable(m)) {
         // Review sanctions m-2: a gap before a package held so (m-1) goes onto the sender's next shown line.
-        if (refusedPkg(m) && m.gapBefore) carried.add(m.from);
+        if (refusedPkg(m) && m.gapBefore) carried.add(seqKey(m.from, m.to));
         continue;
       }
       if (m.away === true) {
-        if (m.gapBefore) carried.add(m.from);
+        if (m.gapBefore) carried.add(seqKey(m.from, m.to));
         continue;
       }
       if (withheld(m)) {
         // Review sanctions m-2: a package or evidence held until it may be shown keeps a gap before
         // it on the sender's next shown line meanwhile (its seq was taken, so that line has none).
-        if (m.gapBefore) carried.add(m.from);
+        if (m.gapBefore) carried.add(seqKey(m.from, m.to));
         continue;
       }
       if (!(session?.texts.has(m.id) === true || judged(m.id))) continue;
-      gaps.set(m.id, m.gapBefore || carried.has(m.from));
-      carried.delete(m.from);
+      gaps.set(m.id, m.gapBefore || carried.has(seqKey(m.from, m.to)));
+      carried.delete(seqKey(m.from, m.to));
     }
     return {
       phase,
@@ -446,12 +496,13 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       disputeOpen: view.disputeOpen,
       systemCalled: false,
       paySecured: view.tradeSecuredAt !== null,
+      privateReply: view.disputeOpen && rec !== null && lanes.has(rec.chat) && sorted.some((m) => m.from === 'mod' && m.to === rec.role),
       modOnlySentAt: sorted.filter((m) => m.away === true && m.from === view.role && m.at !== null).map((m) => m.at as string),
       // By the server's order: a moderator line held until a dispute opened is shown where it was posted.
       lines: sorted
         .filter((m) => gaps.has(m.id))
         .map((m): ChatLine => {
-          const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: gaps.get(m.id) === true };
+          const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: gaps.get(m.id) === true, ...(m.to !== undefined ? { private: true as const } : {}) };
           if (unshowable(m)) return { ...line, text: '', unreadablePay: true };
           const shown = session?.texts.get(m.id);
           if (shown === undefined) return { ...line, text: '', missing: true };
@@ -573,6 +624,45 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   }
 
   /**
+   * Private lanes: this trader's lane key PK, under the chat key's rules. The one in memory if
+   * there is one; else the API's lane record, which must be signed by the ATTESTED moderator for this
+   * chat's channel and name this trader's lane, and this device's copy must hash to its pkh, which is
+   * then pinned (`keep`) before the key is used. Null while there is no record and none was pinned.
+   * Throws LaneRefused for a record that does not check out, of another pkh, or gone once pinned.
+   */
+  async function laneOf(rec: ChatRecord, parts: Participants): Promise<{ pk: Uint8Array | null; rec: ChatRecord }> {
+    const have = lanes.get(rec.chat);
+    if (have) return { pk: have, rec };
+    if (d.api.getLane === undefined) return { pk: null, rec };
+    const raw = await d.api.getLane(rec.chat);
+    if (raw === null) {
+      if (rec.pkh !== undefined) throw new LaneRefused('the pinned lane record is gone');
+      return { pk: null, rec };
+    }
+    let got: { pk: Uint8Array; pkh: string };
+    try {
+      got = await laneKeyOf(raw, { channel: await chatChannel(rec.chat), role: rec.role, me: toIdentity(rec.identity), participants: parts });
+    } catch (e) {
+      if (e instanceof ProtocolError || e instanceof TypeError) throw new LaneRefused('the lane record does not check out', { cause: e });
+      throw e;
+    }
+    if (rec.pkh !== undefined && rec.pkh !== got.pkh) {
+      got.pk.fill(0);
+      throw new LaneRefused('the lane key is not the one this device pinned');
+    }
+    let pinned: ChatRecord;
+    try {
+      pinned = rec.pkh === got.pkh ? rec : await keep({ ...rec, pkh: got.pkh });
+    } catch (e) {
+      got.pk.fill(0);
+      if (e instanceof ProtocolError) throw new LaneRefused('another lane key is pinned', { cause: e });
+      throw e;
+    }
+    lanes.set(rec.chat, got.pk);
+    return { pk: got.pk, rec: pinned };
+  }
+
+  /**
    * Re-opens a line the guard already took (its receipt), for a re-read: with a fresh guard, and
    * only for the same envelope (its signature) from the same sender and seq. Null when it is not.
    */
@@ -590,6 +680,17 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
   }
 
+  /** Private lanes: `reopen` for a lane line's receipt: a fresh lane guard, the same signed envelope, sender, seq and lane. */
+  async function reopenLane(rec: ChatRecord, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string, pk: Uint8Array): Promise<Shown | null> {
+    try {
+      if (e.senderRole !== r.from || (r.sig !== null && sigOf(e.envelope) !== r.sig) || !isV3(e.envelope)) return null;
+      const o = await openLaneMessage(e.envelope, { role: rec.role, channel, participants: parts, laneState: newLaneState(channel), pk, modMayPost: true });
+      return o.message.from === r.from && o.message.seq === r.seq && o.message.to === r.to ? { text: o.message.text } : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Reads and opens the envelopes: from the start of the chat on its first sync in this worker (the
    * device keeps no text), else past the cursor. A line with a receipt is re-opened (`reopen`); one
@@ -602,6 +703,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const me = toIdentity(rec.identity);
     const channel = await chatChannel(rec.chat);
     let state: ChatState = rec.state ?? newChatState(channel);
+    // Private lanes: the lane's own guard and seq, saved with the record as `state` is.
+    let laneState: LaneState = rec.laneState ?? newLaneState(channel);
     const session = sessions.get(rec.chat);
     const shown = session?.texts ?? new Map<string, Shown>();
     const secured = view.tradeSecuredAt !== null;
@@ -618,12 +721,12 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const receipts = [...rec.receipts];
     const known = new Map(receipts.map((r) => [r.id, r]));
     let unread = false;
-    const lastSeq = new Map<Role, number>();
+    const lastSeq = new Map<string, number>();
     // A refused envelope's seq was never taken (the sender may reuse it), so it does not count, except
     // a package refused for its contents (review sanctions m-2): it is a line the payer sees, so the
     // sender's next line does not follow a gap. For the gap markers only; the guard never took it.
     // Never this device's own (review small-fu2 M-1): that one is no line, so it must not hide a gap.
-    for (const m of receipts) if (m.refused !== true || (m.refusedPay === true && m.from !== rec.role)) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
+    for (const m of receipts) if (m.refused !== true || (m.refusedPay === true && m.from !== rec.role)) lastSeq.set(seqKey(m.from, m.to), Math.max(lastSeq.get(seqKey(m.from, m.to)) ?? -1, m.seq));
     for (let page = 0, total = 0; page < MAX_PAGES && total < MAX_TOTAL_PAGES; total++) {
       const { envelopes, more } = await d.api.listEnvelopes(rec.chat, after);
       if (envelopes.some((e) => BigInt(e.id) > start)) page++;
@@ -633,12 +736,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const receipt = known.get(e.id);
         if (receipt) {
           if (receipt.refused !== true && receipt.away !== true && !shown.has(e.id)) {
-            const again = await reopen(rec, me, parts, e, receipt, channel, secured, view.disputeOpen, tk);
+            let again: Shown | null = null;
+            if (receipt.to !== undefined) {
+              const lk = await laneOf(rec, parts);
+              rec = lk.rec;
+              if (lk.pk !== null) again = await reopenLane(rec, parts, e, receipt, channel, lk.pk);
+            } else {
+              again = await reopen(rec, me, parts, e, receipt, channel, secured, view.disputeOpen, tk);
+            }
             if (again !== null) shown.set(e.id, again);
           }
           if (past && !held && cursor !== e.id) {
             cursor = e.id;
-            rec = await keep({ ...rec, cursor });
+            rec = await keep({ ...rec, laneState, cursor });
           }
           continue;
         }
@@ -647,46 +757,74 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         let advance = true;
         try {
           if (!ROLES_SET.has(e.senderRole)) throw new ChatError('bad-message', 'unknown sender');
-          // Decision 16: a v1 envelope is never opened in this (keyed) chat; it is decided in the catch below.
-          if (isV1(e.envelope)) throw new V1InKeyedChat();
-          const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen, evidenceAllowed: view.disputeOpen, tk };
-          let r: Awaited<ReturnType<typeof openChatMessage>>;
-          let withhold: 'pay' | 'evidence' | null = null;
-          try {
-            r = await openChatMessage(e.envelope, { ...args, payAllowed: secured });
-          } catch (err) {
-            // Not a message yet: a well-formed package while the trade is not secured (owner Q12), or
-            // evidence while no dispute is open (review M2). Take it into the guard but hold it, so
-            // the sender's later lines are not stuck behind it; anything else stays refused.
-            if ((secured && view.disputeOpen) || !(err instanceof ChatError && err.code === 'bad-message')) throw err;
-            r = await openChatMessage(e.envelope, { ...args, payAllowed: true, evidenceAllowed: true });
-            if (!secured && r.message.pay !== undefined) withhold = 'pay';
-            else if (!view.disputeOpen && r.message.proof?.kind === 'evidence') withhold = 'evidence';
-            else throw err;
+          if (isV3(e.envelope)) {
+            // Private lanes: only this trader's own lane opens (openPrivate checks `to`), under PK
+            // with the lane's own guard; before there is a lane record the cursor stops here.
+            const lk = await laneOf(rec, parts);
+            rec = lk.rec;
+            if (lk.pk === null) throw new LaneNotYet();
+            const r = await openLaneMessage(e.envelope, { role: rec.role, channel, participants: parts, laneState, pk: lk.pk, modMayPost: view.disputeOpen });
+            if (r.message.from !== e.senderRole) throw new ProtocolError('bad-signature', 'sender mismatch');
+            laneState = r.laneState;
+            const k = seqKey(r.message.from, r.message.to);
+            const prev = lastSeq.get(k);
+            const m: StoredChatReceipt = {
+              id: e.id,
+              from: r.message.from,
+              seq: r.message.seq,
+              sig: sigOf(e.envelope),
+              at: typeof e.at === 'string' ? e.at : null,
+              gapBefore: r.message.seq > (prev ?? -1) + 1,
+              to: r.message.to,
+            };
+            lastSeq.set(k, m.seq);
+            receipts.push(m);
+            known.set(m.id, m);
+            shown.set(m.id, { text: r.message.text });
+          } else {
+            // Decision 16: a v1 envelope is never opened in this (keyed) chat; it is decided in the catch below.
+            if (isV1(e.envelope)) throw new V1InKeyedChat();
+            const args = { role: rec.role, me, participants: parts, state, modMayPost: view.disputeOpen, evidenceAllowed: view.disputeOpen, tk };
+            let r: Awaited<ReturnType<typeof openChatMessage>>;
+            let withhold: 'pay' | 'evidence' | null = null;
+            try {
+              r = await openChatMessage(e.envelope, { ...args, payAllowed: secured });
+            } catch (err) {
+              // Not a message yet: a well-formed package while the trade is not secured (owner Q12), or
+              // evidence while no dispute is open (review M2). Take it into the guard but hold it, so
+              // the sender's later lines are not stuck behind it; anything else stays refused.
+              if ((secured && view.disputeOpen) || !(err instanceof ChatError && err.code === 'bad-message')) throw err;
+              r = await openChatMessage(e.envelope, { ...args, payAllowed: true, evidenceAllowed: true });
+              if (!secured && r.message.pay !== undefined) withhold = 'pay';
+              else if (!view.disputeOpen && r.message.proof?.kind === 'evidence') withhold = 'evidence';
+              else throw err;
+            }
+            // The signer and the server's record must agree (never trust one of them alone).
+            if (r.message.from !== e.senderRole) throw new ProtocolError('bad-signature', 'sender mismatch');
+            state = r.state;
+            const prev = lastSeq.get(r.message.from);
+            const m: StoredChatReceipt = {
+              id: e.id,
+              from: r.message.from,
+              seq: r.message.seq,
+              sig: sigOf(e.envelope),
+              at: typeof e.at === 'string' ? e.at : null,
+              // Senders start at seq 0, so a first line above 0 also follows missing ones (review M1).
+              gapBefore: r.message.seq > (prev ?? -1) + 1,
+              ...(withhold === 'pay' ? { heldPay: true as const } : withhold === 'evidence' ? { heldEvidence: true as const } : {}),
+            };
+            lastSeq.set(m.from, m.seq);
+            receipts.push(m);
+            known.set(m.id, m);
+            if (withhold === null) shown.set(m.id, shownOf(r.message));
           }
-          // The signer and the server's record must agree (never trust one of them alone).
-          if (r.message.from !== e.senderRole) throw new ProtocolError('bad-signature', 'sender mismatch');
-          state = r.state;
-          const prev = lastSeq.get(r.message.from);
-          const m: StoredChatReceipt = {
-            id: e.id,
-            from: r.message.from,
-            seq: r.message.seq,
-            sig: sigOf(e.envelope),
-            at: typeof e.at === 'string' ? e.at : null,
-            // Senders start at seq 0, so a first line above 0 also follows missing ones (review M1).
-            gapBefore: r.message.seq > (prev ?? -1) + 1,
-            ...(withhold === 'pay' ? { heldPay: true as const } : withhold === 'evidence' ? { heldEvidence: true as const } : {}),
-          };
-          lastSeq.set(m.from, m.seq);
-          receipts.push(m);
-          known.set(m.id, m);
-          if (withhold === null) shown.set(m.id, shownOf(r.message));
         } catch (err) {
+          // Private lanes: a lane record that does not check out fails the whole sync (`security`).
+          if (err instanceof LaneRefused) throw err;
           // A moderator line outside a dispute is tried again on a later sync: the cursor stops
           // before it (the guard did not move for it). A package before the trade is secured was
-          // held above. Nothing else can become valid later.
-          if (err instanceof ChatError && err.code === 'mod-not-allowed') advance = false;
+          // held above. Nothing else can become valid later. A lane line before its lane record: the same.
+          if ((err instanceof ChatError && err.code === 'mod-not-allowed') || err instanceof LaneNotYet) advance = false;
           else if (err instanceof V1InKeyedChat) {
             // Decision 16 (lead call 18 Nov, option i). R16: no v1 envelope is ever opened here, so no
             // sender can leave the moderator out of what this trader reads. While a dispute is open, a
@@ -741,7 +879,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         }
         if (!advance) held = true;
         if (!held) cursor = e.id;
-        rec = await keep({ ...rec, state, cursor, receipts: [...receipts] });
+        rec = await keep({ ...rec, state, laneState, cursor, receipts: [...receipts] });
       }
       unread = more;
       if (!more) break;
@@ -787,7 +925,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       if (e instanceof ProtocolError || e instanceof TypeError) return { snap: snapshot(rec, view, 'failed', 'security'), rec: null, parts: null, view };
       throw e;
     }
-    const read = await readAll(rec, view, parts, tk);
+    let read: { rec: ChatRecord; more: boolean };
+    try {
+      // Private lanes: the lane key is read while a dispute is open or once pinned (a v3 envelope
+      // asks for it in readAll too), so a private reply can be sealed and lane lines opened.
+      if (view.disputeOpen || rec.pkh !== undefined) ({ rec } = await laneOf(rec, parts));
+      read = await readAll(rec, view, parts, tk);
+    } catch (e) {
+      if (e instanceof LaneRefused) {
+        forgetKey(rec.chat);
+        return { snap: snapshot(rec, view, 'failed', 'security'), rec: null, parts: null, view };
+      }
+      throw e;
+    }
     rec = read.rec;
     const called = view.disputeOpen ? await fallbackGrant(rec, view, parts, tk) : { systemCalled: false };
     return { snap: { ...snapshot(rec, view, 'ready', null, read.more), ...called }, rec, parts, view, tk };
@@ -878,7 +1028,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    */
   function post(
     chat: string,
-    make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope | ChatEnvelopeV2; state: ChatState }>,
+    make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>, x: { rec: ChatRecord; view: ChatApiView }) => Promise<{ envelope: Envelope | ChatEnvelopeV2 | ChatEnvelopeV3; state?: ChatState; laneState?: LaneState }>,
     { secured = false, proof = false, dispute = false }: { secured?: boolean; proof?: boolean; dispute?: boolean } = {},
   ): Promise<ChatSnapshot> {
     return serial(chat, () => purging(chat, async () => {
@@ -889,14 +1039,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         if (dispute && !s.view.disputeOpen) throw new ChatSendFailed('not-ready');
         let sealed;
         try {
-          sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)), tk: s.tk });
+          sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)), tk: s.tk }, { rec: s.rec, view: s.view });
         } catch (e) {
           if (e instanceof ChatError && (e.code === 'bad-text' || e.code === 'too-large')) throw new ChatSendFailed(e.code);
           if (e instanceof PayDetailsError) throw new ChatSendFailed('bad-details', e);
           throw e;
         }
-        // Saved before posting: a seq is never used twice.
-        await keep({ ...s.rec, state: sealed.state });
+        // Saved before posting: a seq is never used twice (the lane's own seq too).
+        await keep({ ...s.rec, ...(sealed.state !== undefined ? { state: sealed.state } : {}), ...(sealed.laneState !== undefined ? { laneState: sealed.laneState } : {}) });
         try {
           await d.api.postEnvelope(chat, sealed.envelope);
         } catch (e) {
@@ -941,7 +1091,17 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       }
       return gone;
     },
-    send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
+    send: (chat, text, opts) =>
+      opts?.private === true
+        ? // Private lanes, owner D2: a reply in this trader's own lane, only while a dispute is open, the
+          // verified lane key is held and the moderator sent this trader a private line (the API checks the same).
+          post(chat, async (a, x) => {
+            const pk = lanes.get(chat);
+            if (!x.view.disputeOpen || pk === undefined || !x.rec.receipts.some((r) => r.from === 'mod' && r.to === x.rec.role)) throw new ChatSendFailed('not-ready');
+            const channel = await chatChannel(chat);
+            return sealLaneMessage({ role: a.role, me: a.me, channel, laneState: x.rec.laneState ?? newLaneState(channel), text, pk });
+          })
+        : post(chat, (a) => sealChatMessage({ ...a, text })),
     grant: (chat, disputeAt) => serial(chat, () => purging(chat, async () => {
       const s = await syncLocked(chat);
       if (s.snap.phase !== 'ready' || !s.rec || !s.parts || !s.tk) throw new ChatSendFailed('not-ready');

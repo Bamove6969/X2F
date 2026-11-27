@@ -1,5 +1,5 @@
 import { newTradeCode, type Role } from '@x2f/core';
-import { makeChatGrant, makeDisputeNotice, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { makeChatGrant, makeDisputeNotice, makeGrantAccepted, unwrapChatKey, verifyChatGrant, openChat, openChatKeyRecord, ProtocolError, ReplayGuard as Guard2, seal, sealChat, verifyChatKeyRecord, makeChatKeyRecord, newChatKey, newPrivateKey, makePrivateLaneRecord, privateKeyHash, sealPrivate, openPrivate, type ChatEnvelopeV2, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelopeV2, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { IDBFactory } from 'fake-indexeddb';
@@ -53,6 +53,14 @@ class FakeApi implements ChatApi {
   /** Build task 5: the chat's signed key record (first writer wins), as `GET/POST …/key`. */
   key: unknown = null;
   keyPosts: unknown[] = [];
+  /** Private lanes: the caller's own lane record, as `GET …/lane` (null: 404 no-lane). */
+  lane: unknown = null;
+  laneReads = 0;
+  async getLane() {
+    this.check();
+    this.laneReads++;
+    return this.lane;
+  }
   constructor(readonly chat: string) {}
   async getKey() {
     this.check();
@@ -94,11 +102,12 @@ class FakeApi implements ChatApi {
   async postEnvelope(_chat: string, envelope: unknown) {
     this.check();
     this.posted.push(envelope);
-    return this.add(this.view.role, envelope);
+    const v3 = (envelope as { v?: unknown; to?: unknown } | null)?.v === 3;
+    return this.add(this.view.role, envelope, v3 ? ((envelope as { to: 'buyer' | 'seller' }).to) : null);
   }
-  add(senderRole: string, envelope: unknown): string {
+  add(senderRole: string, envelope: unknown, to: 'buyer' | 'seller' | null = null): string {
     const id = String(this.nextId++);
-    this.envelopes.push({ id, senderRole, envelope, at: `2026-10-28T12:00:0${id.length}Z` });
+    this.envelopes.push({ id, senderRole, envelope, at: `2026-10-28T12:00:0${id.length}Z`, to });
     return id;
   }
 }
@@ -362,7 +371,7 @@ describe('chat engine: two tabs over one store (review m1)', () => {
     let bWaiting!: () => void;
     const bLoaded = new Promise<void>((r) => (bWaiting = r));
     const bound = (m: keyof ChatApi) => (api[m] as (...x: unknown[]) => Promise<unknown>).bind(api);
-    const slowApi = Object.fromEntries((['getChat', 'registerIdentity', 'listEnvelopes', 'postEnvelope', 'getKey', 'postKey', 'postGrant'] as const).map((m) => [m, bound(m)])) as unknown as ChatApi;
+    const slowApi = Object.fromEntries((['getChat', 'registerIdentity', 'listEnvelopes', 'postEnvelope', 'getKey', 'postKey', 'postGrant', 'getLane'] as const).map((m) => [m, bound(m)])) as unknown as ChatApi;
     slowApi.getAttestation = async () => {
       bWaiting();
       await new Promise((r) => setTimeout(r, 60));
@@ -2034,5 +2043,133 @@ describe('chat engine: decision 16, R16 holds for v1 text in a keyed chat', () =
     expect(api.posted.map((x) => (x as { v: number }).v)).toEqual([2, 1, 2]);
     expect(snap.lines.map((l) => l.text)).toEqual(['one', 'two']);
     expect(snap.modOnlySentAt).toHaveLength(1);
+  });
+});
+
+describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
+  /** The buyer's lane key, made by "moderation", and its record signed by `signer` (the attested mod by default). */
+  async function lane(parts: Participants, signer: Identity = mod, to: 'buyer' | 'seller' = 'buyer'): Promise<Uint8Array> {
+    const pk = await newPrivateKey();
+    const signerParts = signer === mod ? parts : { ...parts, mod: pub(signer) };
+    api.lane = await makePrivateLaneRecord({ chat: channel, to, pk, mod: signer, participants: signerParts });
+    return pk;
+  }
+  const modPrivate = (text: string, seq: number, pk: Uint8Array, to: 'buyer' | 'seller' = 'buyer') =>
+    sealPrivate({ trade: channel, from: 'mod', to, seq, type: 'chat.msg', payload: { text }, pk, me: mod });
+
+  it('opens a moderator lane line with a verified record: private, its own seq (no gap beside the shared one)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    api.add('mod', await sealChat({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'to both' }, tk: await tkOf(parts), me: mod }));
+    api.add('mod', await modPrivate('just you', 0, pk), 'buyer');
+    api.add('mod', await sealChat({ trade: channel, from: 'mod', seq: 1, type: 'chat.msg', payload: { text: 'both again' }, tk: await tkOf(parts), me: mod }));
+    const snap = await engine().sync(chat);
+    expect(snap.phase).toBe('ready');
+    expect(snap.lines.map((l) => [l.text, l.private === true, l.gapBefore])).toEqual([
+      ['to both', false, false],
+      ['just you', true, false],
+      ['both again', false, false],
+    ]);
+    expect(snap.privateReply).toBe(true);
+    // The pkh is pinned; PK itself never reaches the store, and no text does.
+    const stored = store.records.get(chat)!;
+    expect(JSON.parse(stored).pkh).toBe(await privateKeyHash(pk));
+    expect(stored).not.toContain('just you');
+    // A reload (new worker) opens the same line again from its receipt.
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.private === true])).toEqual([['to both', false], ['just you', true], ['both again', false]]);
+  });
+
+  it('refuses a lane record not signed by the attested moderator: security, nothing private shown or sealed', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts, await testIdentity());
+    api.add('mod', await modPrivate('forged lane', 0, pk), 'buyer');
+    const snap = await e.sync(chat);
+    expect(snap).toMatchObject({ phase: 'failed', problem: 'security' });
+    expect(snap.lines.some((l) => l.text === 'forged lane')).toBe(false);
+    await expect(e.send(chat, 'hi', { private: true })).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect(JSON.parse(store.records.get(chat)!).pkh).toBeUndefined();
+  });
+
+  it("refuses the other trader's lane record, and a pinned lane key that changes", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    await lane(parts, mod, 'seller');
+    expect((await engine().sync(chat)).problem).toBe('security');
+    await lane(parts);
+    expect((await engine().sync(chat)).phase).toBe('ready');
+    await lane(parts);
+    expect((await engine().sync(chat)).problem).toBe('security');
+  });
+
+  it('holds a lane line until the lane record exists, then shows it', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await newPrivateKey();
+    api.add('mod', await modPrivate('early', 0, pk), 'buyer');
+    expect((await engine().sync(chat)).lines).toEqual([]);
+    api.lane = await makePrivateLaneRecord({ chat: channel, to: 'buyer', pk, mod, participants: parts });
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.private])).toEqual([['early', true]]);
+  });
+
+  it('posts a private reply as v3 in its own lane, with a lane seq independent of the shared seq (owner D2)', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    await e.send(chat, 'shared one');
+    await e.send(chat, 'shared two');
+    // Before the moderator wrote to this trader privately, there is no private reply.
+    await expect(e.send(chat, 'too soon', { private: true })).rejects.toMatchObject({ code: 'not-ready' });
+    expect((await e.sync(chat)).privateReply).toBe(false);
+    api.add('mod', await modPrivate('just you', 0, pk), 'buyer');
+    expect((await e.sync(chat)).privateReply).toBe(true);
+    await e.send(chat, 'private one', { private: true });
+    const snap = await e.send(chat, 'private two', { private: true });
+    await e.send(chat, 'shared three');
+    const posted = api.posted as Array<{ v: number; seq: number; from: string; to?: string }>;
+    expect(posted.map((p) => [p.v, p.seq, p.from, p.to])).toEqual([
+      [2, 0, 'buyer', undefined],
+      [2, 1, 'buyer', undefined],
+      [3, 0, 'buyer', 'buyer'],
+      [3, 1, 'buyer', 'buyer'],
+      [2, 2, 'buyer', undefined],
+    ]);
+    expect(snap.lines.filter((l) => l.private).map((l) => [l.text, l.mine])).toEqual([['just you', false], ['private one', true], ['private two', true]]);
+    // The moderator opens it under PK; the chat key does not open it.
+    const guard = new Guard2(channel);
+    expect((await openPrivate(posted[2], { pk, trade: channel, to: 'buyer', participants: parts, guard })).payload).toEqual({ text: 'private one' });
+    await expect(openChat(posted[2], { tk: await tkOf(parts), trade: channel, participants: parts, guard: new Guard2(channel) })).rejects.toBeInstanceOf(ProtocolError);
+    expect(JSON.stringify(api.posted)).not.toContain('private one');
+  });
+
+  it('never opens another lane: a v3 envelope for the seller is skipped', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    await lane(parts);
+    api.add('mod', await modPrivate('for the seller', 0, await newPrivateKey(), 'seller'), 'seller');
+    await fromSeller('after', parts);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['after']);
+  });
+
+  it('a purge wipes the lane with the chat', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    await lane(parts);
+    await e.sync(chat);
+    api.gone = 410;
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
   });
 });

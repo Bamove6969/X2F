@@ -827,7 +827,7 @@ const ENTRIES: readonly Entry[] = [
     sources: [
       `${SPEC}:166 can decrypt a chat only after a trader's app has granted it TK`,
       'apps/web/src/chat/engine.ts:51 One key per chat, envelope v2',
-      "apps/web/src/chat/engine.ts:191 this trader's signed grant of the chat key to the chat's",
+      "apps/web/src/chat/engine.ts:232 this trader's signed grant of the chat key to the chat's",
       'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
     ],
   },

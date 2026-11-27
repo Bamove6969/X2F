@@ -22,7 +22,8 @@ export class ChatFailed extends Error {
 
 export interface ChatClient {
   sync(chat: string): Promise<ChatSnapshot>;
-  send(chat: string, text: string): Promise<ChatSnapshot>;
+  /** `private`: a private reply to the moderator (owner D2), sealed in the worker under the lane key. */
+  send(chat: string, text: string, opts?: { private?: boolean }): Promise<ChatSnapshot>;
   /** The payee's packaged payment details (J-08): sealed in the worker like any line. */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /** Plan 5 Task 15: the proof's `proof.attached` (its key), sealed in the worker. */
@@ -56,7 +57,7 @@ export function workerChatClient(w: Pick<Worker, 'postMessage' | 'addEventListen
     });
   return {
     sync: (chat) => ask({ t: 'chat-sync', chat }),
-    send: (chat, text) => ask({ t: 'chat-send', chat, text } as Omit<ToChatWorker, 'id'>),
+    send: (chat, text, opts) => ask({ t: 'chat-send', chat, text, ...(opts?.private === true ? { private: true } : {}) } as Omit<ToChatWorker, 'id'>),
     sendPay: (chat, pay) => ask({ t: 'chat-send-pay', chat, pay } as Omit<ToChatWorker, 'id'>),
     sendProof: (chat, proof) => ask({ t: 'chat-send-proof', chat, proof } as Omit<ToChatWorker, 'id'>),
     sendUnblurred: (chat, proof) => ask({ t: 'chat-send-unblurred', chat, proof } as Omit<ToChatWorker, 'id'>),

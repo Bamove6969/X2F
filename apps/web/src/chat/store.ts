@@ -16,6 +16,7 @@
  * Only the escrow worker opens it; secrets never cross postMessage.
  */
 import type { Role } from '@x2f/core';
+import type { ReplayGuardJSON } from '@x2f/protocol';
 import type { ChatState } from './chatCrypto.js';
 
 export const CHAT_DB = 'x2f-chat';
@@ -84,6 +85,18 @@ export interface StoredChatReceipt {
    * counts for the gap markers (review sanctions m-2), never for the guard.
    */
   refusedPay?: true;
+  /**
+   * Private moderator lane (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): a v3
+   * envelope of this trader's own lane, opened under the lane key PK (never TK). Its seq is the
+   * lane's own (per sender, apart from the shared seq). Only ever this device's own role.
+   */
+  to?: 'buyer' | 'seller';
+}
+
+/** The private lane's own ChatState half: the next lane seq this device seals with, and the lane's own ReplayGuard. */
+export interface LaneState {
+  nextSeq: number;
+  guard: ReplayGuardJSON;
 }
 
 export interface ChatRecord {
@@ -108,6 +121,13 @@ export interface ChatRecord {
    * or posted. Once set, a key record of any other tkh, or none, is the `security` failure.
    */
   tkh?: string;
+  /**
+   * Private lane (owner 27 Nov): the fingerprint (pkh, public) of this trader's lane key PK, pinned
+   * as `tkh` is: once set, a lane record of any other pkh, or none, is the `security` failure.
+   */
+  pkh?: string;
+  /** The private lane's seq counter and its own ReplayGuard (seq is per lane), saved as `state` is. */
+  laneState?: LaneState | null;
 }
 
 /**
