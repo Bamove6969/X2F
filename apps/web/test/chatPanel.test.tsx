@@ -805,6 +805,27 @@ describe('ChatPanel: private moderator lanes (owner 27 Nov)', () => {
     expect(host.querySelector('textarea')!.value).toBe('only for you');
     expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
   });
+  it('A1: a draft started in private mode stays private when a live sync turns the mode off before Send', async () => {
+    current = snap({ disputeOpen: true, privateMode: true, lines: [modeLine('1', 'on')] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    type(host.querySelector('textarea')!, 'only for you');
+    // The panel learns of the change while the trader is still typing.
+    current = snap({ disputeOpen: true, privateMode: false, lines: [modeLine('1', 'on'), modeLine('2', 'off')] });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
+    client.send.mockRejectedValueOnce(new ChatFailed('mode-changed'));
+    submit(host);
+    await flush();
+    // Send names the lane the draft was started in, so the worker refuses it rather than sealing it shared.
+    expect(client.send).toHaveBeenLastCalledWith(CHAT, 'only for you', true);
+    expect(host.querySelector('textarea')!.value).toBe('only for you');
+    // Having been told, a second Send is a fresh choice in the lane now shown.
+    submit(host);
+    await flush();
+    expect(client.send).toHaveBeenLastCalledWith(CHAT, 'only for you', false);
+  });
 });
 
 describe('ChatPanel: @mentions (owner 27 Nov follow-up)', () => {

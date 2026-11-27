@@ -251,6 +251,13 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   // Owner 27 Nov (follow-up): the moderator's private mode, as the worker read it. The worker sends
   // by its own reading on the sync it makes for the send; the tint tells the trader where lines go.
   const toMod = snap?.privateMode === true;
+  // The lane this draft was started in (A1): a live mode change while the trader types must not move the
+  // draft to another lane, so Send passes this, not the mode at the moment of pressing. null = no draft yet.
+  const draftLane = useRef<boolean | null>(null);
+  const draftChanged = (next: string): void => {
+    if (next.trim() === '') draftLane.current = null;
+    else if (draftLane.current === null) draftLane.current = toMod;
+  };
   // @mentions, in a chat with a dispute open: the moderator's name (once one joined) and the counterparty's.
   const names = snap?.disputeOpen === true ? mentionNames(dispute?.moderator ?? null, name) : [];
   const options = mention === null ? [] : names.filter((n) => n.toLowerCase().startsWith(mention.query.toLowerCase()));
@@ -303,14 +310,19 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     setMention(null);
     try {
       // The lane the trader is writing in: the worker refuses the line if the mode has changed since.
-      const s = await chatClient().send(chat, draft, toMod);
+      const s = await chatClient().send(chat, draft, draftLane.current ?? toMod);
       sent(s);
+      draftLane.current = null;
       if (!alive.current) return;
       setDraft('');
     } catch (err) {
       if (alive.current) setSendError(failureOf(err));
       // The draft stays; a fresh sync shows the mode as it now is (the tint and the system line).
-      if (err instanceof ChatFailed && err.code === 'mode-changed') void sync();
+      // Told plainly; the next Send is a fresh choice in the lane the composer now shows.
+      if (err instanceof ChatFailed && err.code === 'mode-changed') {
+        draftLane.current = null;
+        void sync();
+      }
     } finally {
       if (alive.current) {
         setSending(false);
@@ -488,6 +500,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
                 onChange={(e) => {
                   dismissed.current = null;
                   setDraft(e.target.value);
+                  draftChanged(e.target.value);
                   track(e.target.value, e.target.selectionStart);
                 }}
                 onSelect={(e) => track(e.currentTarget.value, e.currentTarget.selectionStart)}
