@@ -213,4 +213,60 @@ describe('the trade machine with a seller recovery', () => {
     const exact = apply(funding(X), chain(AMOUNT + FEE_AMOUNT + X, AMOUNT + FEE_AMOUNT + X, 10), 'system', at(5));
     expect(exact.amountAtomic).toBe(AMOUNT);
   });
+
+  test('buyer-ad growth with a seller recovery counts only funds above the extra and keeps the extra (#43)', () => {
+    const buyerAd = apply(
+      newTrade({ ...TAKE, poster: 'buyer', sellerLienRecoveryAtomic: X }, T0),
+      { type: 'setup-done', escrowAddress: '4Escrow' },
+      'system',
+      at(1),
+    );
+    expect(buyerAd.sellerFundsAtomic).toBe(AMOUNT + X);
+    // Amount alone (without the extra) does not secure a buyer ad either.
+    expect(apply(buyerAd, chain(AMOUNT, AMOUNT, 10), 'system', at(3)).state).toBe('funding');
+    const more = 50_000_000_000n;
+    const received = AMOUNT + X + more;
+    const t = apply(buyerAd, chain(received, received, 10), 'system', at(5));
+    expect(t.state).toBe('secured');
+    expect(t.amountAtomic).toBe(amountForFunds(received - X, 'buyer'));
+    expect(t.sellerLienRecoveryAtomic).toBe(X);
+    expect(t.sellerFundsAtomic).toBe(t.amountAtomic + X);
+  });
 });
+
+describe('seller lien rate & sweep edge cases (#43)', () => {
+  test('expectedSellerRecovery floors fractional bps shares and enforces exact 0.01 XMR minimum after scaling', () => {
+    // 1 bps of 100 XMR = 0.01 XMR (exact minimum) -> kept; 1 atomic below 100 XMR -> 0.
+    expect(expectedSellerRecovery({ takeAmountAtomic: 100_000_000_000_000n, rateBps: 1, leftAtomic: 100_000_000_000_000n })).toBe(LIEN_RECOVERY_MIN_ATOMIC);
+    expect(expectedSellerRecovery({ takeAmountAtomic: 99_999_999_999_999n, rateBps: 1, leftAtomic: 100_000_000_000_000n })).toBe(0n);
+    // 3333 bps of 1.25 XMR floors cleanly.
+    expect(expectedSellerRecovery({ takeAmountAtomic: AMOUNT, rateBps: 3333, leftAtomic: AMOUNT })).toBe((AMOUNT * 3333n) / 10_000n);
+    expect(() => expectedSellerRecovery({ takeAmountAtomic: -1n, rateBps: 5000, leftAtomic: X })).toThrow(RangeError);
+    expect(() => expectedSellerRecovery({ takeAmountAtomic: AMOUNT, rateBps: 25.5, leftAtomic: X })).toThrow(RangeError);
+  });
+
+  test('sweepMinimums handles dual-debtor release, lapse-refund, and moderator-cosigned refund kinds', () => {
+    const terms: AttestedTerms = {
+      deal: { poster: 'seller', takeAmountAtomic: AMOUNT.toString(), currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000', methodId: 'ZELLE', instructionsSha256: 'a'.repeat(64) },
+      payWindowMin: 90,
+      buyerPayout: BUYER,
+      sellerRefund: SELLER,
+      lienRecovery: { address: BUYER_CREDITOR, amountAtomic: '100000000000' },
+      sellerLienRecovery: { address: CREDITOR, amountAtomic: X.toString() },
+    };
+    expect(sweepMinimums({ kind: 'release', terms, feeWallet: FEE, payrollWallet: PAYROLL, sweptAtomic: AMOUNT + FEE_AMOUNT + X })).toEqual([
+      { address: BUYER, amountAtomic: AMOUNT - 100_000_000_000n, bearsNetworkFee: true },
+      { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
+      { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
+      { address: BUYER_CREDITOR, amountAtomic: 100_000_000_000n, bearsNetworkFee: true },
+      { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true },
+    ]);
+    expect(sweepMinimums({ kind: 'lapse-refund', terms, feeWallet: FEE, payrollWallet: PAYROLL, sweptAtomic: AMOUNT + FEE_AMOUNT + X })).toEqual([
+      { address: SELLER, amountAtomic: AMOUNT + FEE_AMOUNT + X },
+    ]);
+    for (const cosigned of ['auto-refund', 'buyer-cancel'] as const) {
+      expect(sweepMinimums({ kind: cosigned, terms, feeWallet: FEE, payrollWallet: PAYROLL, sweptAtomic: AMOUNT + FEE_AMOUNT + X })).toBeNull();
+    }
+  });
+});
+

@@ -2082,6 +2082,99 @@ describe('lien recovery at take', () => {
       expect(res.json()).toMatchObject({ error: 'wallet-not-ready' });
       expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'open' }]);
     });
+
+    it('concurrent takes against a selling debtor never over-reserve the remaining debt (#43)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const buyer1 = await person();
+      const buyer2 = await person();
+      const lien = await lienOn(debtor, creditor, (3n * XMR) / 4n);
+      const offer = await postOffer(debtor);
+      // Both 1 XMR takes at 50% would want 0.5 XMR each (1.0 XMR total), but only 0.75 XMR is owed.
+      const results = await allAtOnce([`select 1 from accounts where id = '${debtor.id}' for update`], 2, () => [
+        take(buyer1, offer, body(buyer1, XMR)),
+        take(buyer2, offer, body(buyer2, XMR)),
+      ]);
+      expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+      const codes = results.map((r) => (r.json() as { code: string }).code);
+      const amounts = (await Promise.all(codes.map(async (c) => (await sideHolds(c))[0]?.amount ?? '0'))).map((a) => BigInt(a)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      expect(amounts).toEqual([XMR / 4n, XMR / 2n]);
+      expect(amounts[0]! + amounts[1]!).toBe((3n * XMR) / 4n);
+      expect((await deps.db.query<{ sum: string }>(`select coalesce(sum(amount_atomic), 0)::text as sum from lien_recovery_holds where lien_id = $1 and status = 'open'`, [lien])).rows[0]!.sum).toBe(((3n * XMR) / 4n).toString());
+    });
+
+    it('cancelling a seller-lien sale in setup releases the hold immediately so the next sale reserves it (#43)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const b1 = await person();
+      const b2 = await person();
+      const lien = await lienOn(debtor, creditor, XMR / 2n);
+      const first = await taken(b1, await postOffer(debtor), body(b1, XMR));
+      expect(await sideHolds(first)).toEqual([{ lien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' }]);
+      // While `first` holds the entire 0.5 XMR debt, another sale reserves nothing.
+      const whileHeld = await taken(b2, await postOffer(debtor), body(b2, XMR));
+      expect(await sideHolds(whileHeld)).toEqual([]);
+      // Cancelling `first` in setup frees the 0.5 XMR hold at once.
+      expect((await applyEvent(deps, first, { type: 'buyer-cancel' }, 'buyer')).state).toBe('cancelled');
+      expect(await sideHolds(first)).toMatchObject([{ side: 'seller', status: 'released' }]);
+      const afterCancel = await sellerPosts(debtor, await person());
+      expect(await sideHolds(afterCancel)).toEqual([{ lien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' }]);
+    });
+
+    it('buyer view hides sellerLienRecoveryAtomic across setup, funding, secured, paid and released states (#43)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const buyer = await person();
+      await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, buyer);
+      const plan = escrowPlan({ amountAtomic: XMR, poster: 'seller' });
+      const extra = XMR / 2n;
+
+      const checkHidden = async (expectedBuyerReceived: bigint, expectedSellerReceived: bigint) => {
+        const bv = (await buyer.browser.get(`/v1/trades/${code}`)).json() as Record<string, unknown>;
+        const sv = (await debtor.browser.get(`/v1/trades/${code}`)).json() as Record<string, unknown>;
+        expect(bv).not.toHaveProperty('sellerLienRecoveryAtomic');
+        expect(bv.receivedAtomic).toBe(expectedBuyerReceived.toString());
+        expect(sv.sellerLienRecoveryAtomic).toBe(extra.toString());
+        expect(sv.receivedAtomic).toBe(expectedSellerReceived.toString());
+      };
+
+      await checkHidden(0n, 0n);
+      await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+      await checkHidden(0n, 0n);
+      // Partial funding equal to the extra: buyer still sees 0 received.
+      await applyEvent(deps, code, { type: 'chain', receivedAtomic: extra, unlockedAtomic: extra, confirmations: 10 }, 'system');
+      await checkHidden(0n, extra);
+      // Full funding: buyer sees only amount + fee, seller sees amount + fee + extra.
+      const full = plan.sellerFundsAtomic + extra;
+      await applyEvent(deps, code, { type: 'chain', receivedAtomic: full, unlockedAtomic: full, confirmations: 10 }, 'system');
+      await checkHidden(plan.sellerFundsAtomic, full);
+      await applyEvent(deps, code, { type: 'mark-paid', fiatCents: (await tradeOf(code)).fiatCents }, 'buyer');
+      await checkHidden(plan.sellerFundsAtomic, full);
+      await applyEvent(deps, code, { type: 'release-started' }, 'seller');
+      await checkHidden(plan.sellerFundsAtomic, full);
+      await applyEvent(deps, code, { type: 'settled', kind: 'release', txHash: 'ab'.repeat(32) }, 'system');
+      // After release the hold is recovered, so buyer still never sees sellerLienRecoveryAtomic.
+      expect((await buyer.browser.get(`/v1/trades/${code}`)).json()).not.toHaveProperty('sellerLienRecoveryAtomic');
+    });
+
+    it('two completed seller-lien sales repay the lien in full and mark it repaid (#43)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, XMR);
+      const sale1 = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(sale1), 'released');
+      expect(await recovered(lien)).toBe((XMR / 2n).toString());
+      expect((await deps.db.query('select status from liens where id = $1', [lien])).rows[0]).toEqual({ status: 'active' });
+
+      await seedReviews(deps, sale1);
+      const sale2 = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(sale2), 'released');
+      expect(await recovered(lien)).toBe(XMR.toString());
+      expect((await deps.db.query('select status, repayment_code from liens where id = $1', [lien])).rows[0]).toEqual({ status: 'repaid', repayment_code: sale2 });
+      const log = await deps.db.query<{ action: string }>(`select action from activity_log where trade_code = $1 and action like 'lien.%' order by id`, [sale2]);
+      expect(log.rows.map((r) => r.action)).toEqual(['lien.recovery-reserved', 'lien.recovered', 'lien.repaid']);
+    });
   });
 
   it('a completed trade records the recovery against the lien (rule 4: only on the settled payout), carries the rest forward, and repays at 0', async () => {
