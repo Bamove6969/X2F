@@ -57,7 +57,7 @@ export function Liens() {
             <dt>{C.rate}</dt>
             <dd>{pctOf(l.rateBps)}</dd>
           </dl>
-          <p>{C.sellNote}</p>
+          <p>{C.sellNote(pctOf(l.rateBps))}</p>
           <p>{C.fromTrade(l.fromCode)}</p>
         </section>
       ))}

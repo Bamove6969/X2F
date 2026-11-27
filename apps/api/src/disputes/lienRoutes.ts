@@ -8,7 +8,7 @@ import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
-import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, type LienFiguresRow } from './recovery.js';
+import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, pickSellerRecovery, type LienFiguresRow } from './recovery.js';
 import { applyLienUncollectible } from './lien.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
@@ -187,7 +187,11 @@ const ADDRESS_CLOCK_SKEW_MS = 5 * 60_000;
  *   no account ids, no addresses.
  * - `GET /v1/account/liens/preview?offerId&amountAtomic&walletId` (review B1): the recovery taking
  *   that offer for that amount to that wallet would reserve now (`pickRecovery`), for the buyer's
- *   quote to show and the buyer to accept; the take refuses any other figure.
+ *   quote to show and the buyer to accept; the take refuses any other figure. Owner 27 Nov 2026: a
+ *   taker who SELLS into a buy ad gets `sellerLienRecoveryAtomic` instead, the extra they would fund
+ *   for their own lien (`pickSellerRecovery`), for the seller's quote to show and the seller to
+ *   accept; the take refuses any other figure (409 `lien-recovery-changed`). A buyer is never told
+ *   of the seller's lien (the buyer's figure only leaves out an address the seller's recovery uses).
  * - `POST /v1/account/liens/:id/recovery-address { statement, sig }` (Q2): the creditor's device's
  *   signed "pay my recoveries to X" (@x2f/trade RecoveryAddressStatement), signed with its trade
  *   identity from the disputed trade; checked here against that identity, refused for an address
@@ -231,10 +235,19 @@ export function accountLienRoutes(app: FastifyInstance): void {
     const walletId = typeof q.walletId === 'string' ? q.walletId.toLowerCase() : '';
     if (!UUID.test(offerId) || amount === null || !UUID.test(walletId)) throw new ApiError(400, 'bad-request');
     const offer = (await db.query<{ account_id: string; side: string }>('select account_id::text, side from offers where id = $1', [offerId])).rows[0];
-    // Only a taker who buys from a seller's ad has proceeds here; anything else reserves nothing.
-    if (offer === undefined || offer.side !== 'sell' || offer.account_id === me) return { lienRecoveryAtomic: '0' };
+    if (offer === undefined || (offer.side !== 'sell' && offer.side !== 'buy') || offer.account_id === me) return { lienRecoveryAtomic: '0' };
     const w = (await db.query<{ address: string | null }>('select address from wallets where id = $1 and account_id = $2 and removed_at is null', [walletId, me])).rows[0];
-    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null], feeWallet: req.server.deps.config.feeWallet ?? null, payrollWallet: req.server.deps.config.payrollWallet ?? null, now: clock() }, false);
+    const wallets = { feeWallet: req.server.deps.config.feeWallet ?? null, payrollWallet: req.server.deps.config.payrollWallet ?? null };
+    const now = clock();
+    if (offer.side === 'buy') {
+      // A taker who sells: the extra for their own lien, as the take works it out (before the buyer's).
+      const s = await pickSellerRecovery(db, { buyerId: offer.account_id, sellerId: me, takeAmountAtomic: amount, ownAddresses: [w?.address ?? null], ...wallets, now }, false);
+      return { lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: (s?.amountAtomic ?? 0n).toString() };
+    }
+    // A taker who buys from a seller's ad: their proceeds' recovery. The take picks the seller's first
+    // and never pays both to one address, so its address is left out here too (nothing else of it).
+    const s = await pickSellerRecovery(db, { buyerId: me, sellerId: offer.account_id, takeAmountAtomic: amount, ownAddresses: [w?.address ?? null], ...wallets, now }, false);
+    const r = await pickRecovery(db, { buyerId: me, sellerId: offer.account_id, proceedsAtomic: amount, ownAddresses: [w?.address ?? null, s?.address ?? null], ...wallets, now }, false);
     return { lienRecoveryAtomic: (r?.amountAtomic ?? 0n).toString() };
   });
 

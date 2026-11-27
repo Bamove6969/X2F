@@ -37,7 +37,7 @@ export type TradeEscrow = UseEscrow;
  * danger). Besides the runtime's own codes, an API whose escrow address differs from the one this
  * device derived is one: a lying server must never steer the seller's coins.
  */
-export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress' | 'deal'>, view?: FundingFacts): boolean {
+export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress' | 'deal' | 'sellerLienRecoveryAtomic'>, view?: FundingFacts): boolean {
   if (e.error === 'participants-mismatch' || e.error === 'deal-mismatch') return true;
   const theirs = view?.funding?.escrowAddress ?? null;
   if (theirs !== null && e.escrowAddress !== null && theirs !== e.escrowAddress) return true;
@@ -46,7 +46,7 @@ export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress' |
   if (view?.funding) {
     if (!/^[0-9]{1,30}$/.test(view.funding.sellerFundsAtomic)) return true;
     if (e.deal) {
-      const mine = expectedFundsAtomic(e.deal);
+      const mine = expectedFundsAtomic(e.deal, e.sellerLienRecoveryAtomic ?? 0n);
       if (mine === null || view.poster !== e.deal.poster || BigInt(view.funding.sellerFundsAtomic) !== mine) return true;
     }
   }
@@ -61,13 +61,14 @@ export interface FundingFacts {
 
 /**
  * What the seller must fund, from this device's own deal (@x2f/trade escrowPlan: the amount at
- * take, plus the 1% fee when the seller posted the ad). Before funding the trade cannot have grown
- * (growth needs releasable coins, plan Revision 2026-10-21), so this is the whole amount. Null for
- * a deal escrowPlan refuses.
+ * take, plus the 1% fee when the seller posted the ad, plus the seller's own lien recovery: the
+ * extra this device accepted, docs/lien-recovery.md "Debtor is the seller"). Before funding the
+ * trade cannot have grown (growth needs releasable coins, plan Revision 2026-10-21), so this is
+ * the whole amount. Null for a deal escrowPlan refuses.
  */
-export function expectedFundsAtomic(deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint }): bigint | null {
+export function expectedFundsAtomic(deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint }, sellerLienRecoveryAtomic = 0n): bigint | null {
   try {
-    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster }).sellerFundsAtomic;
+    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster, sellerLienRecoveryAtomic }).sellerFundsAtomic;
   } catch {
     return null;
   }
@@ -81,7 +82,7 @@ export function expectedFundsAtomic(deal: { poster: 'seller' | 'buyer'; takeAmou
 export function verifiedFunding(e: TradeEscrow, view: FundingFacts): VerifiedFunding | null {
   if (e.phase !== 'ready' || e.error !== null || e.checkWords === null || e.escrowAddress === null || e.deal === null) return null;
   if (view.funding === null || integrityFailed(e, view)) return null;
-  const fundsAtomic = expectedFundsAtomic(e.deal);
+  const fundsAtomic = expectedFundsAtomic(e.deal, e.sellerLienRecoveryAtomic ?? 0n);
   if (fundsAtomic === null || fundsAtomic <= 0n) return null;
   return { address: e.escrowAddress, fundsAtomic, receivedAtomic: e.receivedAtomic };
 }

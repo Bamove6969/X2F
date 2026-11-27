@@ -106,6 +106,8 @@ export interface TradeRow {
    * weight, never returned.
    */
   usd_cents: string | null;
+  /** Migration 891 (owner 27 Nov 2026): the seller's lien recovery fixed at take, '0' for none. */
+  seller_lien_recovery_atomic?: string;
 }
 
 const big = (s: string): bigint => BigInt(s);
@@ -114,6 +116,7 @@ const bigOrNull = (s: string | null): bigint | null => (s === null ? null : BigI
 export function rowToTrade(r: TradeRow): Trade {
   const grownFromAtomic = bigOrNull(r.grown_from_atomic);
   const grownFromFiat = bigOrNull(r.grown_from_fiat_cents);
+  const sellerLien = r.seller_lien_recovery_atomic === undefined ? 0n : BigInt(r.seller_lien_recovery_atomic);
   return {
     code: r.code,
     offerId: r.offer_id,
@@ -124,6 +127,7 @@ export function rowToTrade(r: TradeRow): Trade {
     amountAtomic: big(r.amount_atomic),
     feeAtomic: big(r.fee_atomic),
     sellerFundsAtomic: big(r.seller_funds_atomic),
+    ...(sellerLien > 0n ? { sellerLienRecoveryAtomic: sellerLien } : {}),
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
@@ -244,6 +248,9 @@ export async function insertTrade(
     ['method_instructions', sides.methodInstructions ?? ''],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
     ['gift_card_terms', giftCardTerms],
+    // Owner 27 Nov 2026: written once, never changed (migration 891's trigger); none is the column's
+    // default 0, so the column is named only when there is an extra (older schemas in migration tests).
+    ...((t.sellerLienRecoveryAtomic ?? 0n) > 0n ? [['seller_lien_recovery_atomic', t.sellerLienRecoveryAtomic!.toString()] as [string, unknown]] : []),
   ];
   // Column names are the fixed literals above, never input.
   await q.query(

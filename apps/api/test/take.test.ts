@@ -1715,15 +1715,237 @@ describe('lien recovery at take', () => {
     }
   });
 
-  it('NEEDS_OWNER_SELLER_DEBTOR: a debtor who sells trades as usual and nothing is withheld (the owner has not ruled)', async () => {
-    const debtor = await person();
-    const creditor = await person();
-    const buyer = await person();
-    await lienOn(debtor, creditor, XMR);
-    const offer = await postOffer(debtor);
-    const res = await take(buyer, offer, body(buyer, XMR));
-    expect(res.statusCode, res.body).toBe(200);
-    expect(await holds((res.json() as { code: string }).code)).toEqual([]);
+  // Owner 27 Nov 2026, option (a) of docs/lien-recovery.md "Debtor is the seller": "Extra XMR on
+  // each sale: they keep selling, but each sale's escrow must also hold the lien payment, which goes
+  // to the person owed until it's paid off." The seller funds amount + fee + the extra; the extra is
+  // min(take × rate, left), nothing under 0.01 XMR; a completed trade pays it to the creditor and
+  // records it, every refund returns it and releases the hold.
+  describe('seller debtor (owner 27 Nov 2026)', () => {
+    const sideHolds = async (code: string) =>
+      (await deps.db.query<{ lien: string; side: string; amount: string; status: string }>(
+        `select lien_id::text as lien, debtor_side as side, amount_atomic::text as amount, status from lien_recovery_holds where trade_code = $1 order by debtor_side`, [code],
+      )).rows;
+    const tradeOf = async (code: string) => rowToTrade((await loadTradeRow(deps.db, code))!);
+    const recovered = async (lien: string) =>
+      (await deps.db.query<{ a: string }>('select coalesce(sum(amount_atomic), 0)::text as a from lien_recoveries where lien_id = $1', [lien])).rows[0]!.a;
+    const sellerPreview = async (who: Who, offerId: string, b: Record<string, unknown>): Promise<string> => {
+      const res = await who.browser.get(`/v1/account/liens/preview?offerId=${offerId}&amountAtomic=${String(b.amountAtomic)}&walletId=${String(b.walletId)}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return (res.json() as { sellerLienRecoveryAtomic?: string }).sellerLienRecoveryAtomic ?? 'none';
+    };
+    /** A seller who posts: the buyer takes; the seller accepts the figure on the sheet and sets up with it. */
+    const sellerPosts = async (debtor: Who, buyer: Who, amount = XMR) => {
+      const code = await taken(buyer, await postOffer(debtor), body(buyer, amount));
+      const view = (await debtor.browser.get(`/v1/trades/${code}`)).json() as { sellerLienRecoveryAtomic?: string };
+      const set = await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: debtor.wallet, ...(view.sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic: view.sellerLienRecoveryAtomic } : {}) });
+      expect(set.statusCode, set.body).toBe(204);
+      return code;
+    };
+
+    it('a posting seller: the extra is held (side seller), is part of what the escrow must hold, and only the seller sees it', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const buyer = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR);
+      const offer = await postOffer(debtor);
+      // The buyer's quote never shows the seller's lien: nothing of it for the buyer.
+      expect(await preview(buyer, offer, body(buyer, XMR))).toBe('0');
+      const code = await taken(buyer, offer, body(buyer, XMR));
+      // 50% (these tests' rate) of the earnings (the trade amount), within what is owed.
+      expect(await sideHolds(code)).toEqual([{ lien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' }]);
+      const t = await tradeOf(code);
+      const plan = escrowPlan({ amountAtomic: XMR, poster: 'seller' });
+      expect(t.sellerLienRecoveryAtomic).toBe(XMR / 2n);
+      expect(t.sellerFundsAtomic).toBe(plan.sellerFundsAtomic + XMR / 2n);
+      expect(t.amountAtomic).toBe(XMR);
+      const sv = (await debtor.browser.get(`/v1/trades/${code}`)).json() as { sellerLienRecoveryAtomic?: string; lienRecoveryAtomic?: string };
+      expect(sv.sellerLienRecoveryAtomic).toBe((XMR / 2n).toString());
+      expect(sv).not.toHaveProperty('lienRecoveryAtomic');
+      const bv = (await buyer.browser.get(`/v1/trades/${code}`)).json() as Record<string, unknown>;
+      expect(bv).not.toHaveProperty('sellerLienRecoveryAtomic');
+      expect(bv).not.toHaveProperty('lienRecoveryAtomic');
+      expect(bv.funding).toBeNull();
+      const log = await deps.db.query<{ action: string; detail: string }>(`select action, detail from activity_log where trade_code = $1 and action like 'lien.%'`, [code]);
+      expect(log.rows.map((r) => [r.action, JSON.parse(r.detail)])).toEqual([['lien.recovery-reserved', { lienId: lien, amountAtomic: (XMR / 2n).toString(), side: 'seller' }]]);
+      // Set-up carries the accepted figure: none, or another one, is 409 and nothing is set.
+      for (const shown of [undefined, '0', (XMR / 2n - 1n).toString()]) {
+        const res = await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: debtor.wallet, ...(shown === undefined ? {} : { sellerLienRecoveryAtomic: shown }) });
+        expect(res.statusCode, res.body).toBe(409);
+        expect(res.json()).toMatchObject({ error: 'lien-recovery-changed' });
+      }
+      expect((await loadTradeRow(deps.db, code))!.seller_refund).toBeNull();
+      expect((await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: debtor.wallet, sellerLienRecoveryAtomic: (XMR / 2n).toString() })).statusCode).toBe(204);
+      // Once set up the seller's view funds amount + fee + extra.
+      const funding = ((await debtor.browser.get(`/v1/trades/${code}`)).json() as { funding: { sellerFundsAtomic: string } }).funding;
+      expect(funding.sellerFundsAtomic).toBe((plan.sellerFundsAtomic + XMR / 2n).toString());
+    });
+
+    it('a taking seller: the quote shows the extra, the take refuses another figure (409) and answers with it; a buy ad funds amount + extra', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const poster = await person();
+      await lienOn(debtor, creditor, 2n * XMR);
+      const offer = await postOffer(poster, { side: 'buy' });
+      const b = body(debtor, XMR);
+      expect(await sellerPreview(debtor, offer, b)).toBe((XMR / 2n).toString());
+      for (const shown of [undefined, '0', (XMR / 2n + 1n).toString()]) {
+        const res = await debtor.browser.post(`/v1/offers/${offer}/take`, { ...b, ...(shown === undefined ? {} : { sellerLienRecoveryAtomic: shown }) });
+        expect(res.statusCode, res.body).toBe(409);
+        expect(res.json()).toMatchObject({ error: 'lien-recovery-changed' });
+      }
+      expect((await deps.db.query('select count(*)::int as n from trades where seller_account_id = $1 and state = $2', [debtor.id, 'setup'])).rows[0]).toEqual({ n: 0 });
+      const ok = await debtor.browser.post(`/v1/offers/${offer}/take`, { ...b, sellerLienRecoveryAtomic: (XMR / 2n).toString() });
+      expect(ok.statusCode, ok.body).toBe(200);
+      const out = ok.json() as { code: string; sellerLienRecoveryAtomic?: string; lienRecoveryAtomic?: string };
+      expect(out.sellerLienRecoveryAtomic).toBe((XMR / 2n).toString());
+      expect(out).not.toHaveProperty('lienRecoveryAtomic');
+      expect((await tradeOf(out.code)).sellerFundsAtomic).toBe(XMR + XMR / 2n);
+      // The poster (the buyer) sets up without any figure; one that is not 0 is refused.
+      expect((await poster.browser.post(`/v1/trades/${out.code}/wallet`, { walletId: poster.wallet, sellerLienRecoveryAtomic: '5' })).statusCode).toBe(400);
+      expect((await poster.browser.post(`/v1/trades/${out.code}/wallet`, { walletId: poster.wallet })).statusCode).toBe(204);
+      // A seller with no lien previews '0' and takes with '0' or nothing.
+      const clean = await person();
+      const offer2 = await postOffer(await person(), { side: 'buy' });
+      expect(await sellerPreview(clean, offer2, body(clean, XMR))).toBe('0');
+      const plain = await clean.browser.post(`/v1/offers/${offer2}/take`, { ...body(clean, XMR), sellerLienRecoveryAtomic: '0' });
+      expect(plain.statusCode, plain.body).toBe(200);
+    });
+
+    it('at the 100% default the extra is the whole trade amount, capped by what is still owed; under 0.01 XMR nothing (carried forward)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, 3n * XMR, { rate: LIEN_RECOVERY_MAX_BPS });
+      const code = await sellerPosts(debtor, await person());
+      expect(await sideHolds(code)).toEqual([{ lien, side: 'seller', amount: XMR.toString(), status: 'open' }]);
+      const debtor2 = await person();
+      await lienOn(debtor2, creditor, XMR / 4n, { rate: LIEN_RECOVERY_MAX_BPS });
+      expect((await sideHolds(await sellerPosts(debtor2, await person())))[0]!.amount).toBe((XMR / 4n).toString());
+      const debtor3 = await person();
+      await lienOn(debtor3, creditor, 9_999_999_999n, { rate: LIEN_RECOVERY_MAX_BPS });
+      const code3 = await sellerPosts(debtor3, await person());
+      expect(await sideHolds(code3)).toEqual([]);
+      expect((await tradeOf(code3)).sellerFundsAtomic).toBe(escrowPlan({ amountAtomic: XMR, poster: 'seller' }).sellerFundsAtomic);
+    });
+
+    it('funding: amount + fee alone does not secure the trade; the extra does; growth never counts it', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, await person());
+      const plan = escrowPlan({ amountAtomic: XMR, poster: 'seller' });
+      await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+      const short = await applyEvent(deps, code, { type: 'chain', receivedAtomic: plan.sellerFundsAtomic, unlockedAtomic: plan.sellerFundsAtomic, confirmations: 10 }, 'system');
+      expect(short.state).toBe('funding');
+      expect(short.amountAtomic).toBe(XMR);
+      const full = plan.sellerFundsAtomic + XMR / 2n;
+      const ok = await applyEvent(deps, code, { type: 'chain', receivedAtomic: full, unlockedAtomic: full, confirmations: 10 }, 'system');
+      expect(ok.state).toBe('secured');
+      expect(ok.amountAtomic).toBe(XMR);
+      expect(ok.grown).toBeNull();
+      // Stored as the trade record keeps it, and the column never changes.
+      await expect(deps.db.query('update trades set seller_lien_recovery_atomic = 0 where code = $1', [code])).rejects.toThrow(/never changes/);
+    });
+
+    it('a completed sale records the extra for the creditor (only on the settled payout); a refund releases it and records nothing', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, await person());
+      const t = await tradeOf(code);
+      await driveTo(deps, t, 'settling');
+      expect(await recovered(lien)).toBe('0');
+      await applyEvent(deps, code, { type: 'settled', kind: 'release', txHash: 'ab'.repeat(32) }, 'system');
+      expect(await recovered(lien)).toBe((XMR / 2n).toString());
+      expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'recovered' }]);
+      // A refunded sale: the extra went back to the seller, nothing recovered, the remainder free again.
+      await seedReviews(deps, code);
+      const code2 = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(code2), 'secured');
+      await applyEvent(deps, code2, { type: 'buyer-cancel' }, 'buyer');
+      await applyEvent(deps, code2, { type: 'settled', kind: 'buyer-cancel', txHash: 'cd'.repeat(32) }, 'system');
+      expect(await sideHolds(code2)).toMatchObject([{ side: 'seller', status: 'released' }]);
+      expect(await recovered(lien)).toBe((XMR / 2n).toString());
+    });
+
+    it('a ruling for the seller (a full reversal) releases the extra; one for the buyer records it', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(code), 'paid');
+      await deps.db.query(`update trades set state = 'disputed' where code = $1`, [code]);
+      await applyEvent(deps, code, { type: 'settled', kind: 'dispute-seller', txHash: 'ef'.repeat(32) }, 'system');
+      expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'released' }]);
+      expect(await recovered(lien)).toBe('0');
+      await seedReviews(deps, code);
+      const code2 = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(code2), 'paid');
+      await deps.db.query(`update trades set state = 'disputed' where code = $1`, [code2]);
+      await applyEvent(deps, code2, { type: 'settled', kind: 'dispute-buyer', txHash: '12'.repeat(32) }, 'system');
+      expect(await sideHolds(code2)).toMatchObject([{ side: 'seller', status: 'recovered' }]);
+      expect(await recovered(lien)).toBe((XMR / 2n).toString());
+    });
+
+    it('one remainder for buying and selling: a debtor who sells and buys never reserves more than is left', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, (3n * XMR) / 4n);
+      const sale = await sellerPosts(debtor, await person());
+      expect(await sideHolds(sale)).toEqual([{ lien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' }]);
+      const buy = await taken(debtor, await postOffer(await person()), body(debtor, XMR));
+      expect(await sideHolds(buy)).toEqual([{ lien, side: 'buyer', amount: (XMR / 4n).toString(), status: 'open' }]);
+      const sale2 = await sellerPosts(debtor, await person());
+      expect(await sideHolds(sale2)).toEqual([]);
+    });
+
+    it('both parties owe: the buyer\'s and the seller\'s recoveries are held independently on one trade and both recorded', async () => {
+      const seller = await person();
+      const buyer = await person();
+      const c1 = await person();
+      const c2 = await person();
+      const sLien = await lienOn(seller, c1, 2n * XMR);
+      const bLien = await lienOn(buyer, c2, 2n * XMR);
+      const code = await sellerPosts(seller, buyer);
+      expect(await sideHolds(code)).toEqual([
+        { lien: bLien, side: 'buyer', amount: (XMR / 2n).toString(), status: 'open' },
+        { lien: sLien, side: 'seller', amount: (XMR / 2n).toString(), status: 'open' },
+      ]);
+      expect(((await buyer.browser.get(`/v1/trades/${code}`)).json() as { lienRecoveryAtomic?: string }).lienRecoveryAtomic).toBe((XMR / 2n).toString());
+      await driveTo(deps, await tradeOf(code), 'released');
+      expect([await recovered(sLien), await recovered(bLien)]).toEqual([(XMR / 2n).toString(), (XMR / 2n).toString()]);
+    });
+
+    it('never one address for both: a creditor owed by both parties is paid by the seller\'s extra only; the creditor being the buyer reserves nothing', async () => {
+      const seller = await person();
+      const buyer = await person();
+      const creditor = await person();
+      await lienOn(seller, creditor, 2n * XMR);
+      await lienOn(buyer, creditor, 2n * XMR);
+      const offer = await postOffer(seller);
+      // The buyer's quote leaves out the address the seller's extra uses.
+      expect(await preview(buyer, offer, body(buyer, XMR))).toBe('0');
+      const code = await taken(buyer, offer, body(buyer, XMR));
+      expect((await sideHolds(code)).map((h) => h.side)).toEqual(['seller']);
+      const debtor = await person();
+      const owed = await person();
+      await lienOn(debtor, owed, 2n * XMR);
+      expect(await sideHolds(await taken(owed, await postOffer(debtor), body(owed, XMR)))).toEqual([]);
+    });
+
+    it('review B2 for the seller: a poster wallet that is the seller hold\'s creditor address is refused; the extra is never released for it', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const buyer = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR, { address: fakeAddress() });
+      const code = await taken(buyer, await postOffer(debtor), body(buyer, XMR));
+      const address = (await deps.db.query<{ a: string }>('select creditor_address as a from liens where id = $1', [lien])).rows[0]!.a;
+      const w = await addWallet(debtor.id);
+      await deps.db.query('update wallets set address = $2 where id = $1', [w.id, address]);
+      const res = await debtor.browser.post(`/v1/trades/${code}/wallet`, { walletId: w.id, sellerLienRecoveryAtomic: (XMR / 2n).toString() });
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toMatchObject({ error: 'wallet-not-ready' });
+      expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'open' }]);
+    });
   });
 
   it('a completed trade records the recovery against the lien (rule 4: only on the settled payout), carries the rest forward, and repays at 0', async () => {

@@ -14,7 +14,9 @@ buyer's accepted figure), record on settle, staff rate routes (`lien-rate` key t
 `GET /v1/account/liens`, its preview and the creditor's recovery address route; the moderation
 service checks, signs and pays it; the web quote shows it before the take, the devices verify it, and
 Settings → What you owe. Provisional owner answers of 17 Nov below; Q1/OQ1 (the rate) answered by
-the owner on 26 Nov 2026: 100%, default and ceiling (migration 890).
+the owner on 26 Nov 2026: 100%, default and ceiling (migration 890). The seller-debtor case answered
+by the owner on 27 Nov 2026, option (a), and built on `feat/seller-lien` (migration 891, both
+services; "Debtor is the seller" below).
 
 ## The owner's rules
 
@@ -112,23 +114,93 @@ stays on payout 0 (the buyer) and X2F's fee outputs, and the buyer's output alwa
 `MAX_NETWORK_FEE` + 1 atomic unit (`LIEN_BUYER_KEEPS_ATOMIC`, Q1). Under
 the owner's rule "each receiver pays its own payout network-fee share", the creditor's output is a
 receiving output and pays its own share at that merge: mark it `bearsNetworkFee: true` in both
-release lists (`payoutsFor`, `sweepMinimums`; insert the recovery output after the fee output). It is
+release lists (`payoutsFor`, `sweepMinimums`; insert the recovery output after the fee output), and
+the seller's recovery output too (27 Nov 2026: unmarked like the buyer's until then). It is
 safe to mark: Q5 never reserves less than 0.01 XMR (= `MAX_NETWORK_FEE`, the most any share can be),
 so wallet2 never sees a bearer not larger than its share. The ledger keeps recording the gross
 recovery (what the debtor gave up); the creditor receives that less its share, never more (rule 2).
 `feeWalletNetworkFee` there hard-codes two bearers (`networkFeeShares(fee, [true, true])[1]`) and must
 take the trade's real bearer list (and the tx-order permutation) once a third output bears a share.
 
-## Debtor is the seller (owner question)
+## Debtor is the seller (owner 27 Nov 2026, option (a))
 
-A selling debtor receives fiat off-platform, so no XMR can be withheld. Not built; options:
+The owner (Jess, 27 Nov 2026): "Extra XMR on each sale: they keep selling, but each sale's escrow
+must also hold the lien payment, which goes to the person owed until it's paid off." A selling
+debtor receives fiat off-platform, so nothing can be withheld from them; instead they fund extra.
 
-- (a) the seller funds escrow with `amount + fee + recovery`, and the release pays the recovery out of
-  the extra funding (needs the funding plan, the funding screens and the gate to carry it);
-- (b) keep a lien blocking the debtor's **selling** only (buy side recovers);
-- (c) nothing: a selling debtor repays only through buys.
+**The figure.** At take (before the trade row is written: the extra is part of the funding plan),
+if the seller has an active lien with something left and a creditor address as for the buyer case
+(Q2, review B2; also not the buyer's wallet and never the address the buyer's own recovery uses: one
+output per address), the API reserves
 
-As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
+    sellerRecovery = expectedSellerRecovery(take, rate, left)
+                   = min(floor(take × rate / 10000), left, sellerLienRecoveryCap(take)), or 0 when under 0.01 XMR
+
+(@x2f/trade `expectedSellerRecovery`), where `take` is the trade amount at take, `rate` the lien's
+(100% by default: the seller then funds the sale twice over until the lien is paid), and `left` as
+for the buyer (`free = remaining − open holds`, under the lien's row lock). `sellerLienRecoveryCap`
+is 100% of the take: there is no proceeds output to keep alive. Under 0.01 XMR nothing is reserved
+and the remainder carries forward (Q5). A lien whose creditor is this trade's buyer is skipped (the
+buyer cannot be paid twice in one set).
+
+**Where it lives.**
+- `lien_recovery_holds.debtor_side` (`'buyer'` | `'seller'`, migration 891; every earlier hold is
+  `'buyer'`): one hold per trade and side (unique `(trade_code, debtor_side)`), the side fixed like
+  the lien, trade and amount (the guard trigger). Holds and the ledger (`lien_recoveries`) are shared:
+  a trader who both buys and sells reserves against one remainder. Both parties of one trade may owe
+  liens; each is recovered on its own.
+- `trades.seller_lien_recovery_atomic` (0: none), written once at take and never changed (trigger
+  `trades_seller_lien_fixed`), so the funding plan stays what the seller accepted even if the hold is
+  later released. The machine's `Trade.sellerLienRecoveryAtomic` carries it.
+- `escrowPlan({ amountAtomic, poster, sellerLienRecoveryAtomic })`: `sellerFundsAtomic = amount (+ fee
+  on a seller's ad) + extra`. Every funding check reads it from there: the API's funding view and
+  monero: link, "funded"/underfunded/lapse in the machine, the web funding screen
+  (`expectedFundsAtomic`, `integrityFailed`, `verifiedFunding`, TradeFund `planOf`), the policy and the
+  gate. Growth never counts it: `grow` and the device's `deviceAmount` work out the size from the
+  balance less the extra.
+- Signed terms: an optional `sellerLienRecovery: { address, amountAtomic }`, separate from the
+  buyer's `lienRecovery` and absent when none (existing terms bytes unchanged). `ConfirmedDeal` gains
+  `sellerLienRecoveryAtomic`; `verifyAttestation` checks the limits and that the address is none of
+  the trade's and not `lienRecovery.address`, and on the seller's device that the figure is exactly
+  the one it accepted (none accepted: none).
+
+**Payouts.** `release` and `dispute-buyer` pay `[buyer, fee, payroll, buyer's recovery?, seller's
+recovery?, seller surplus]`: the buyer receives exactly what they would without the seller's lien,
+and the creditor gets the extra as its own output (not `bearsNetworkFee`, like the buyer's recovery
+output; see Network fee). Every refund (`mutual-cancel`, `buyer-cancel`, `auto-refund`,
+`lapse-refund`) and `dispute-seller` pays the whole balance, extra included, back to the seller.
+`sweepMinimums` counts the output on a release. The ledger records it only on the chain-observed
+settled release, per side (`settleRecovery` loops over both sides), as for the buyer.
+
+**The seller sees and accepts it first (B1 pattern).** A taker who sells into a buy ad: the quote
+reads `GET /v1/account/liens/preview` (for a buy ad it answers `sellerLienRecoveryAtomic`) and shows
+"Extra for what you owe" with the note "Extra for what you owe: X XMR. It goes to the person you owe
+when the trade completes; you get it back if the trade is refunded." Trade waits until it is read;
+the take sends `sellerLienRecoveryAtomic` and the API refuses any other figure with 409
+`lien-recovery-changed`. A poster who sells sees it on the accepted sheet and sends it with the
+wallet (`POST /v1/trades/:code/wallet { walletId, sellerLienRecoveryAtomic }`, 409 on any other
+figure; a buyer poster sending a non-zero one gets 400; a poster wallet equal to the seller hold's
+address gets 409 `wallet-not-ready`). The device keeps it (`ConfirmedTrade.sellerLienRecoveryAtomic`,
+seller only), shows it on the funding screen ("Includes extra for what you owe"), and its co-sign
+policy refuses signed terms with any other extra. The seller's TradeView alone carries
+`sellerLienRecoveryAtomic`; the buyer is never shown it (the buyer's preview only leaves out the
+address the seller's recovery uses). Settings → What you owe now says selling pays it back too.
+COPY-UNSIGNED; NEEDS_DESIGN_SELLER_LIEN (placed as a quote row and a note until design draws it).
+
+**Moderation.** The work item carries `sellerLienSource` (the keys of `lienSource`, with
+`sellerAccount` in place of `buyerAccount`); `checkLienRecoveries` checks each side the same way
+(the lien's debtor must be `sellerAccount`; cap `sellerLienRecoveryCap(take)`; basis the take; the
+address not the buyer recovery's) and `recordLienRecovery` keeps one `mod_lien_recoveries` row per
+trade and side (`debtor_side`, moderation migration 891). `MOD_LIEN_RECOVERY` still governs: off, a
+work item carrying either recovery is refused. The gate, the desk and the shadow build every set with
+the extra.
+
+**Known edges.** `applyLienVoid` or uncollectible releases a seller hold whose terms are not signed
+yet, but `trades.seller_lien_recovery_atomic` stays (fixed): the terms then carry no extra, the
+seller's device refuses them, and the trade never starts (as the buyer-side edge, Q6).
+NEEDS_PRIVACY_LIEN_DISCLOSURE now covers both ways: the buyer's device holds the seller's lien extra
+and creditor address in the attested terms (it co-signs the release), as the seller's device holds
+the buyer's.
 
 ## Staff flow
 
@@ -166,7 +238,8 @@ design draws it; a link to the screen from Settings is still missing).
 
 ## Owner questions
 
-1. Seller-debtor case (above).
+1. ~~Seller-debtor case.~~ Answered by the owner, 27 Nov 2026: option (a), extra on each sale
+   (built, "Debtor is the seller" above).
 2. A lien that carries X2F's 1%: once the creditor is paid, move the 1% into `fees_owed` and end the
    lien?
 3. Q2 to Q6 of the review: answered provisionally below, not yet confirmed. Q1 answered by the owner
@@ -223,7 +296,9 @@ one constant or one rule, so a different answer changes one place (plus its test
   device still holds both in the attested terms (one attestation for both parties, the co-signer needs
   the payout set to verify the release), so a seller who reads their own device's data learns that
   the buyer owes a lien, this recovery and the creditor's address. NEEDS_PRIVACY_LIEN_DISCLOSURE: say so
-  in the privacy notes (public crypto spec, section 3.2) before liens are switched on.
+  in the privacy notes (public crypto spec, section 3.2) before liens are switched on. The same holds
+  the other way for a seller's lien extra (`sellerLienRecovery`, 27 Nov 2026): the buyer is never shown
+  it, but the buyer's device holds it in the attested terms.
 - **Q4, what the creditor sees:** totals only (received, still to come), never the debtor's
   individual purchases (`GET /v1/account/liens`, review M4).
 - **Q5, small remainders:** a recovery under `LIEN_RECOVERY_MIN_ATOMIC` (0.01 XMR) is never reserved,

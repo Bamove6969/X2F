@@ -34,6 +34,13 @@
  * (`deviceAmount`). The runtime accepts the API's amount only from the amount at take up to that
  * device-grown size (growth can stop lower, at a starter cap) and passes it as `deal.amountAtomic`;
  * a TradeView whose amount or poster disagrees with `deal` refuses every outcome.
+ *
+ * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): the signed
+ * terms' `sellerLienRecovery` is extra the seller funded on top of amount + fee. Every expected set is
+ * worked out with it (`payoutsFor`: a completed trade pays it to the creditor, every refund to the
+ * seller), growth never counts it (`deviceAmount`), and the seller (the debtor) co-signs only signed
+ * terms whose extra is exactly the one it accepted before committing (`own.sellerLienRecoveryAtomic`).
+ * The buyer loses nothing by it and is not asked; its device still builds the same set.
  */
 import type { Outcome, Payout } from '@x2f/escrow';
 import { amountForFunds, escrowPlan, fiatCents, payoutsFor, rulingStatementValid, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
@@ -77,10 +84,11 @@ export interface Deal {
  * (funding, securing, secured, and before this device knows of "I've paid"); afterwards keep
  * the last value.
  */
-export function deviceAmount(d: Deal, currentAtomic: bigint, balance: bigint, unlocked: bigint): bigint {
+export function deviceAmount(d: Deal, currentAtomic: bigint, balance: bigint, unlocked: bigint, sellerLienRecoveryAtomic = 0n): bigint {
   const releasable = balance > 0n && balance === unlocked;
-  const currentFunds = escrowPlan({ amountAtomic: currentAtomic, poster: d.poster }).sellerFundsAtomic;
-  const basis = releasable ? balance : balance < currentFunds ? balance : currentFunds;
+  const currentFunds = escrowPlan({ amountAtomic: currentAtomic, poster: d.poster, sellerLienRecoveryAtomic }).sellerFundsAtomic;
+  // The seller's signed lien extra is never growth: the size is worked out on what is above it.
+  const basis = (releasable ? balance : balance < currentFunds ? balance : currentFunds) - sellerLienRecoveryAtomic;
   if (basis <= escrowPlan({ amountAtomic: d.takeAmountAtomic, poster: d.poster }).sellerFundsAtomic) return d.takeAmountAtomic;
   const candidate = amountForFunds(basis, d.poster);
   if (candidate <= d.takeAmountAtomic) return d.takeAmountAtomic;
@@ -93,14 +101,22 @@ export interface PolicyContext {
    * This device's own address: the buyer's payout, the seller's refund. `lienRecoveryAtomic`
    * (review B1, buyer only): the recovery the buyer accepted on the quote before the take (absent:
    * none); a buyer co-signs nothing whose signed terms carry any other figure.
+   * `sellerLienRecoveryAtomic` (owner 27 Nov 2026, seller only): the extra the seller accepted before
+   * committing (absent: none); a seller co-signs nothing whose signed terms carry any other figure.
    */
-  own: { payout?: string; refund?: string; lienRecoveryAtomic?: bigint };
+  own: { payout?: string; refund?: string; lienRecoveryAtomic?: bigint; sellerLienRecoveryAtomic?: bigint };
   /** From this device's own funds(), only when balance == unlocked. */
   balance: bigint;
   trade: PolicyTrade;
   deal: PolicyDeal;
   /** The addresses each side signed in its trade.terms signal. */
-  signedTerms: { payout: string; refund: string; lienRecovery?: { address: string; amountAtomic: bigint } };
+  signedTerms: {
+    payout: string;
+    refund: string;
+    lienRecovery?: { address: string; amountAtomic: bigint };
+    /** Owner 27 Nov 2026: the seller's signed lien extra (verified attestation only). */
+    sellerLienRecovery?: { address: string; amountAtomic: bigint };
+  };
   /**
    * Haveno review finding 2: the moderation service's ruling statement as the API served it
    * (`statement`, `sig`: untrusted, verified here), with what this device knows itself: the trade
@@ -146,7 +162,7 @@ function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
 }
 
 function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
-  const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
+  const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster, sellerLienRecoveryAtomic: c.signedTerms.sellerLienRecovery?.amountAtomic ?? 0n });
   return payoutsFor({
     kind,
     amountAtomic: c.deal.amountAtomic,
@@ -160,6 +176,7 @@ function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
     payrollWallet: c.trade.payrollWallet,
     // Lien recovery (docs/lien-recovery.md): a completed trade pays it from the buyer's proceeds.
     ...(c.signedTerms.lienRecovery !== undefined ? { lienRecovery: c.signedTerms.lienRecovery } : {}),
+    ...(c.signedTerms.sellerLienRecovery !== undefined ? { sellerLienRecovery: c.signedTerms.sellerLienRecovery } : {}),
   });
 }
 
@@ -175,9 +192,11 @@ function check(c: PolicyContext, o: Outcome): boolean {
   // Review B1: the buyer (the debtor) co-signs only signed terms whose recovery is exactly the one it
   // accepted before the take (none accepted: none), whatever the API or the signed terms say.
   if (c.role === 'buyer' && (c.signedTerms.lienRecovery?.amountAtomic ?? 0n) !== (c.own.lienRecoveryAtomic ?? 0n)) return false;
+  // Owner 27 Nov 2026: the seller (who funds the extra) co-signs only the extra it accepted.
+  if (c.role === 'seller' && (c.signedTerms.sellerLienRecovery?.amountAtomic ?? 0n) !== (c.own.sellerLienRecoveryAtomic ?? 0n)) return false;
 
   const state = c.trade.state;
-  const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
+  const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster, sellerLienRecoveryAtomic: c.signedTerms.sellerLienRecovery?.amountAtomic ?? 0n });
   const is = (kind: SettleKind | RulingKind, builder: Party, cosigner: Party): boolean => {
     if (o.builder !== builder || o.cosigner !== cosigner) return false;
     let want: Payout[];

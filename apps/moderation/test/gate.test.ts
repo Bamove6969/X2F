@@ -1849,6 +1849,49 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
   });
 });
 
+// Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): the seller funded extra for its
+// lien; a ruling for the buyer pays it to the creditor (the buyer's payout unchanged), one for the
+// seller returns it with the whole balance.
+describe('authorizeRuling with a seller lien recovery (owner 27 Nov 2026)', () => {
+  const CREDITOR = '4'.padEnd(95, 'K');
+  const X = 100_000_000_000n;
+  const withExtra = (): RecordedTerms => {
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller', sellerLienRecoveryAtomic: X });
+    return { ...recorded(41_250n), sellerFundsAtomic: plan.sellerFundsAtomic, sellerLienRecovery: { address: CREDITOR, amountAtomic: X } };
+  };
+  it('release-to-buyer: the buyer gets the full amount, the creditor the extra; refund-to-seller: the whole balance to the seller', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    const balance = BALANCE + X;
+    const b = ruling(mod);
+    expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: X }] },
+    });
+    const s = ruling(mod, { outcome: 'refund-to-seller' });
+    expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'seller', payouts: [{ address: SELLER, amountAtomic: balance }] },
+    });
+  });
+
+  it('an escrow short of the extra, or an extra the terms could not pay, makes the buyer\'s ruling bad-terms', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const b = ruling(mod);
+    expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: withExtra(), balanceAtomic: BALANCE }, ctx())).toEqual({ ok: false, reason: 'bad-terms' });
+    for (const sellerLienRecovery of [{ address: CREDITOR, amountAtomic: AMOUNT + 1n }, { address: SELLER, amountAtomic: X }]) {
+      const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller', sellerLienRecoveryAtomic: sellerLienRecovery.amountAtomic });
+      const c = ruling(mod);
+      expect(await authorizeRuling(w.gate, { ruling: c.ruling, taps: [tapBy(mod, c.intent('propose'))], recorded: { ...recorded(41_250n), sellerFundsAtomic: plan.sellerFundsAtomic, sellerLienRecovery }, balanceAtomic: plan.sellerFundsAtomic }, ctx()))
+        .toEqual({ ok: false, reason: 'bad-terms' });
+    }
+  });
+});
+
 // Q1 (owner answer, 26 Nov 2026): a lien's rate other than the 100% default is signed
 // only once the gate verified a senior moderator's (or the owner's) `lien-rate` key tap for it.
 describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => {

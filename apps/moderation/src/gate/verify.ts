@@ -3,7 +3,7 @@ import { verifyAuthenticationResponse, type AuthenticationResponseJSON } from '@
 import { normalizeTradeCode } from '@x2f/core';
 import type { Payout } from '@x2f/escrow';
 import { ESCROW_OUTCOMES, canonicalJson, gateUsdCents, tapChallenge, twoPersonRule, type AccountAction, type GateRefusal as StaffGateRefusal, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { attestedRecovery, payoutsFor, type AttestedTerms } from '@x2f/trade';
+import { attestedRecovery, attestedSellerRecovery, payoutsFor, type AttestedTerms } from '@x2f/trade';
 import type { GateState, PinnedCred } from './store.js';
 
 /**
@@ -171,6 +171,8 @@ export interface RecordedTerms {
   usdCents: bigint | null;
   /** Lien recovery from this process's own attested terms (docs/lien-recovery.md); absent: none. */
   lienRecovery?: { address: string; amountAtomic: bigint };
+  /** Seller lien recovery from the attested terms (owner 27 Nov 2026): part of `sellerFundsAtomic`; absent: none. */
+  sellerLienRecovery?: { address: string; amountAtomic: bigint };
 }
 
 /** The recorded terms from this process's attested terms and its own trade (the desk's shadow trade). */
@@ -197,6 +199,7 @@ export function recordedTerms(a: {
     payrollWallet: a.payrollWallet,
     usdCents,
     ...(a.terms.lienRecovery !== undefined ? { lienRecovery: attestedRecovery(a.terms)! } : {}),
+    ...(a.terms.sellerLienRecovery !== undefined ? { sellerLienRecovery: attestedSellerRecovery(a.terms)! } : {}),
   };
 }
 
@@ -476,6 +479,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
         payrollWallet: r.recorded.payrollWallet,
         // A release to the buyer completes the trade: the signed lien recovery is paid (payoutsFor).
         ...(r.recorded.lienRecovery !== undefined ? { lienRecovery: r.recorded.lienRecovery } : {}),
+        // Owner 27 Nov 2026: the seller's extra goes to its creditor for the buyer, back to the seller otherwise.
+        ...(r.recorded.sellerLienRecovery !== undefined ? { sellerLienRecovery: r.recorded.sellerLienRecovery } : {}),
       });
       settle = { payouts, winner };
     } catch {

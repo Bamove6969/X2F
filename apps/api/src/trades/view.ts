@@ -68,6 +68,13 @@ export interface TradeView {
    * confirms it (ConfirmedDeal.lienRecoveryAtomic) and accepts only signed terms that carry it.
    */
   lienRecoveryAtomic?: string;
+  /**
+   * Seller lien recovery (owner 27 Nov 2026, docs/lien-recovery.md "Debtor is the seller"): to the
+   * seller only, the extra XMR this trade's escrow holds for the person they owe (part of
+   * `funding.sellerFundsAtomic`); absent when none. Never in the buyer's view. The seller's device
+   * confirms it (ConfirmedDeal.sellerLienRecoveryAtomic) and accepts only signed terms that carry it.
+   */
+  sellerLienRecoveryAtomic?: string;
   txHash: string | null;
   takenAt: string;
   setupBy: string | null;
@@ -193,6 +200,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     dispute: t.dispute ? { by: t.dispute.by, at: t.dispute.at.toISOString() } : null,
     appealUntil: ctx.appealUntil ? ctx.appealUntil.toISOString() : null,
     ...(role === 'buyer' && typeof ctx.lienRecoveryAtomic === 'bigint' ? { lienRecoveryAtomic: ctx.lienRecoveryAtomic.toString() } : {}),
+    ...(role === 'seller' && (t.sellerLienRecoveryAtomic ?? 0n) > 0n ? { sellerLienRecoveryAtomic: t.sellerLienRecoveryAtomic!.toString() } : {}),
     txHash: t.txHash,
     takenAt: t.takenAt.toISOString(),
     setupBy: iso(t.setupBy),

@@ -673,3 +673,67 @@ describe('attested lien recovery: Q5 floor and an API that injects or inflates a
     ).rejects.toMatchObject({ code: 'wrong-terms' });
   });
 });
+
+// Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): an optional, separate
+// `sellerLienRecovery` the seller funds on top of amount + fee; the seller accepts exactly the figure
+// it confirmed, the buyer is not asked, and both refuse one an honest release could not pay.
+describe('attested seller lien recovery', () => {
+  const CREDITOR = '4'.padEnd(95, 'C');
+  const SREC = { address: CREDITOR, amountAtomic: '100000000000' }; // 0.1 XMR
+  const sellerDeal = (x: bigint): ConfirmedDeal => ({ ...DEAL, sellerLienRecoveryAtomic: x });
+  const signed = async (terms: AttestedTerms) => {
+    const t = await buildTrade();
+    const a: Attestation = { ...t.attestation, terms };
+    return { t, a, sig: resign(t, a) };
+  };
+
+  it('isAttestedTerms accepts it alone, with the buyer recovery, and refuses a malformed one', () => {
+    expect(isAttestedTerms({ ...TERMS, sellerLienRecovery: SREC })).toBe(true);
+    expect(isAttestedTerms({ ...TERMS, lienRecovery: { address: '4'.padEnd(95, 'D'), amountAtomic: '100000000000' }, sellerLienRecovery: SREC })).toBe(true);
+    for (const bad of [{}, { address: CREDITOR }, { ...SREC, amountAtomic: '0' }, { ...SREC, address: '' }, { ...SREC, extra: 1 }, null]) {
+      expect(isAttestedTerms({ ...TERMS, sellerLienRecovery: bad })).toBe(false);
+    }
+    expect(isAttestedTerms({ ...TERMS, sellerLienRecovery: SREC, other: 1 })).toBe(false);
+  });
+
+  it('terms without one keep their exact bytes (no key at all)', () => {
+    expect(Object.keys(TERMS)).not.toContain('sellerLienRecovery');
+  });
+
+  it('the seller accepts only the figure it confirmed; none confirmed means none attested', async () => {
+    const s = await signed({ ...TERMS, sellerLienRecovery: SREC });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller', { deal: sellerDeal(99_999_999_999n) }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller', { deal: sellerDeal(100_000_000_000n) }))).resolves.toBeUndefined();
+    const t = await buildTrade();
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'seller', { deal: sellerDeal(100_000_000_000n) }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('the buyer is not asked (it costs the buyer nothing), and a seller figure on the buyer device is ignored', async () => {
+    const s = await signed({ ...TERMS, sellerLienRecovery: SREC });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'buyer'))).resolves.toBeUndefined();
+  });
+
+  it('both devices refuse more than the amount at take (100%), under 0.01 XMR, or to a trade address or the buyer recovery address', async () => {
+    const over = await signed({ ...TERMS, sellerLienRecovery: { address: CREDITOR, amountAtomic: '250000000001' } });
+    await expect(verifyAttestation(over.a, over.sig, over.t.modSign.public, meOf(over.t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(over.a, over.sig, over.t.modSign.public, meOf(over.t, 'seller', { deal: sellerDeal(250_000_000_001n) }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    const full = await signed({ ...TERMS, sellerLienRecovery: { address: CREDITOR, amountAtomic: '250000000000' } });
+    await expect(verifyAttestation(full.a, full.sig, full.t.modSign.public, meOf(full.t, 'seller', { deal: sellerDeal(250_000_000_000n) }))).resolves.toBeUndefined();
+    const small = await signed({ ...TERMS, sellerLienRecovery: { address: CREDITOR, amountAtomic: '9999999999' } });
+    await expect(verifyAttestation(small.a, small.sig, small.t.modSign.public, meOf(small.t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    for (const address of [BUYER_PAYOUT, SELLER_REFUND]) {
+      const s = await signed({ ...TERMS, sellerLienRecovery: { address, amountAtomic: '100000000000' } });
+      await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+      await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller', { deal: sellerDeal(100_000_000_000n) }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    }
+    const same = await signed({ ...TERMS, lienRecovery: SREC, sellerLienRecovery: SREC });
+    await expect(verifyAttestation(same.a, same.sig, same.t.modSign.public, meOf(same.t, 'seller', { deal: sellerDeal(100_000_000_000n) }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('both debtors: each device checks its own figure', async () => {
+    const s = await signed({ ...TERMS, lienRecovery: { address: '4'.padEnd(95, 'D'), amountAtomic: '50000000000' }, sellerLienRecovery: SREC });
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'buyer', { deal: { ...DEAL, lienRecoveryAtomic: 50_000_000_000n } }))).resolves.toBeUndefined();
+    await expect(verifyAttestation(s.a, s.sig, s.t.modSign.public, meOf(s.t, 'seller', { deal: sellerDeal(100_000_000_000n) }))).resolves.toBeUndefined();
+  });
+});

@@ -815,7 +815,7 @@ test('53 an unfolded Fold (884x1104): the offers list (SellOffers)', async ({ pa
   await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
   await page.route('**/v1/wallets', json([...B.wallets]));
   await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
-  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0' }));
+  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
   await page.goto('/sell/ZELLE');
   // Two panes (Fold-Offers): the list picks, the quote is beside it.
   await expect(page.locator('[data-pane="side"] #quote-amount')).toBeVisible();
@@ -983,7 +983,7 @@ async function blockApi(page: Page): Promise<void> {
   await page.route('**/v1/offers?*', (r) => json(blocks.includes(B.offer.poster.displayName) ? [] : [B.offer])(r));
   await page.route('**/v1/wallets', json([...B.wallets]));
   await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
-  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0' }));
+  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
   await page.route('**/v1/account/blocks', (r) => {
     if (r.request().method() === 'POST') {
       blocks = [(r.request().postDataJSON() as { displayName: string }).displayName, ...blocks];
@@ -1047,7 +1047,7 @@ async function postApi(page: Page): Promise<void> {
   await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
   await page.route('**/v1/wallets', json([...B.wallets]));
   await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
-  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0' }));
+  await page.route('**/v1/account/liens/preview?*', json({ lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' }));
 }
 
 test('70 the buyer quote, a wallet picked', async ({ page }) => {
