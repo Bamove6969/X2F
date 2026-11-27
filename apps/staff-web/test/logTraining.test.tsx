@@ -199,6 +199,14 @@ describe('describeLog', () => {
     expect(describeLog({ action: 'chat.read', detail: {}, actor: { kind: 'system', role: null, id: null, name: null }, withheld: true })).toMatch(/not shown\)$/);
   });
 
+  it('renders boolean settings as on/off instead of not set', () => {
+    const d = (detail: Record<string, unknown>) => describeLog({ action: 'settings.changed', detail, actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' } });
+    expect(d({ field: 'autoAssignOn', from: true, to: false })).toBe('Changed automatic case assignment from on to off');
+    expect(d({ field: 'autoAssignOn', from: false, to: true })).toBe('Changed automatic case assignment from off to on');
+    expect(d({ field: 'autoAssignMin', from: 15, to: 30 })).toBe('Changed the automatic case assignment wait from 15 to 30 minutes');
+    expect(d({ field: 'otherFlag', from: true, to: false })).toBe('Changed the setting otherFlag from on to off');
+  });
+
   it('"When" is today, yesterday or the day', () => {
     const now = new Date(2026, 10, 18, 12, 0);
     expect(whenText(new Date(2026, 10, 18, 9, 50).toISOString(), now)).toBe('Today 09:50');
