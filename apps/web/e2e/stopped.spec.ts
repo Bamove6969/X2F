@@ -49,7 +49,7 @@ async function quoteApi(page: Page): Promise<void> {
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: [Q.offer] }));
   await page.route('**/v1/wallets', (r) => r.fulfill({ json: Q.wallets }));
   await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
-  await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0' } }));
+  await page.route('**/v1/account/liens/preview?*', (r) => r.fulfill({ json: { lienRecoveryAtomic: '0', sellerLienRecoveryAtomic: '0' } }));
   await page.route('**/v1/news', (r) => r.fulfill({ json: { items: [], serverNow: new Date().toISOString() } }));
 }
 

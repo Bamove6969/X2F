@@ -150,7 +150,8 @@ export const LOG_ACTIONS = {
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md). No reason text: it stays in
   // lien_rate_requests (Task 3: details never carry staff notes).
-  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount' },
+  // Owner 27 Nov 2026: `side` 'seller' for a selling debtor's extra (absent: the buyer's, as before).
+  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount', side: 'id' },
   'lien.recovered': { lienId: 'id', amountAtomic: 'amount', remainingAtomic: 'amount' },
   'lien.recovery-released': { lienId: 'id', amountAtomic: 'amount' },
   // Review M2: a late-paid recovery past what the lien still owed (the ledger records only what was owed).

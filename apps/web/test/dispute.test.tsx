@@ -211,6 +211,16 @@ describe('copy helpers', () => {
     const buyerAd = rulingCopy(ruled(), 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'buyer');
     expect(buyerAd.title).toBe(`${xmrInText(1_250_000_000_000n - plan.feeAtomic)} XMR goes to you`);
   });
+
+  it("review item 4 (owner 27 Nov 2026): a full reversal returns the seller's lien extra too, told to the seller only", () => {
+    const EXTRA = 250_000_000_000n;
+    expect(paidOutAtomic('refund-to-seller', '1250000000000', 'buyer', EXTRA)).toBe(1_250_000_000_000n + EXTRA);
+    expect(paidOutAtomic('release-to-buyer', '1250000000000', 'seller', EXTRA)).toBe(1_250_000_000_000n);
+    const refund = ruled({ outcome: 'refund-to-seller' });
+    expect(rulingCopy(refund, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN), 'buyer', EXTRA).title).toBe('1.500000 XMR goes to you');
+    // The buyer's copy never counts it, whatever it is handed.
+    expect(rulingCopy(refund, 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'buyer', EXTRA).title).toBe('1.250000 XMR goes to satoshi_ghost');
+  });
 });
 
 describe('ModeratorTag: the violet badge only inside a disputed trade', () => {

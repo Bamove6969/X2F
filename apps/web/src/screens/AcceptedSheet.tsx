@@ -6,7 +6,7 @@ import { matchesRecord } from './walletRecord.js';
 import { NEW_ADDRESS } from './quote/addressCopy.js';
 import type { LiveEvent } from '../api/events.js';
 import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
-import { LIEN_QUOTE_COPY } from './liens/liensCopy.js';
+import { LIEN_QUOTE_COPY, SELLER_LIEN_COPY } from './liens/liensCopy.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
@@ -40,6 +40,8 @@ export interface AcceptedTradeView {
   maxFiatCents: string;
   /** Lien recovery (owner 16 Nov 2026): the buyer's own view only; absent = none. */
   lienRecoveryAtomic?: string;
+  /** Seller lien recovery (owner 27 Nov 2026): the seller's own view only, the extra this trade's escrow holds for the person they owe; absent = none. */
+  sellerLienRecoveryAtomic?: string;
 }
 
 export async function loadAcceptedTrade(code: string): Promise<AcceptedTradeView> {
@@ -73,6 +75,15 @@ export function posterRecovery(v: AcceptedTradeView): bigint | undefined | null 
   return typeof v.lienRecoveryAtomic === 'string' && POSITIVE.test(v.lienRecoveryAtomic) ? BigInt(v.lienRecoveryAtomic) : null;
 }
 
+/**
+ * The extra the poster-seller's own view carries for their own lien (owner 27 Nov 2026,
+ * docs/lien-recovery.md "Debtor is the seller"): undefined when none, null when malformed.
+ */
+export function posterSellerRecovery(v: AcceptedTradeView): bigint | undefined | null {
+  if (v.sellerLienRecoveryAtomic === undefined) return undefined;
+  return typeof v.sellerLienRecoveryAtomic === 'string' && POSITIVE.test(v.sellerLienRecoveryAtomic) ? BigInt(v.sellerLienRecoveryAtomic) : null;
+}
+
 /** Where the sheet sends the poster: the trade room, carrying the ConfirmedTrade as router state (Task 22's seam). */
 export function acceptedNavigation(code: string, confirmed: ConfirmedTrade): [string, { state: { confirmed: ConfirmedTrade } }] {
   return [`/trade/${encodeURIComponent(code)}`, { state: { confirmed } }];
@@ -84,13 +95,16 @@ export async function loadPosterWallets(): Promise<AcceptedWallet[]> {
 }
 
 /**
- * `POST /v1/trades/:code/wallet { walletId }` → 204 (Task 5, apps/api/src/trades/take.ts: poster
- * only, in `setup`, once; 409 `no-wallet`, `wallet-not-ready`, `wrong-party`, `wrong-state`). This
+ * `POST /v1/trades/:code/wallet { walletId, sellerLienRecoveryAtomic? }` → 204 (Task 5,
+ * apps/api/src/trades/take.ts: poster only, in `setup`, once; 409 `no-wallet`, `wallet-not-ready`,
+ * `wrong-party`, `wrong-state`; a poster who sells sends the extra they were shown for their own
+ * lien, and any other figure is 409 `lien-recovery-changed`, owner 27 Nov 2026). This
  * is the only call site; Task 5's tests own the route, and Task 23 (trade room) checks the room
  * moves to "Setting up escrow" end to end (apps/web/e2e/accepted.spec.ts lands with it).
  */
-export async function postTradeWallet(code: string, walletId: string): Promise<void> {
-  await api(`/v1/trades/${encodeURIComponent(code)}/wallet`, { method: 'POST', body: { walletId } });
+export async function postTradeWallet(code: string, walletId: string, sellerLienRecoveryAtomic?: bigint): Promise<void> {
+  const body = sellerLienRecoveryAtomic === undefined ? { walletId } : { walletId, sellerLienRecoveryAtomic: sellerLienRecoveryAtomic.toString() };
+  await api(`/v1/trades/${encodeURIComponent(code)}/wallet`, { method: 'POST', body });
 }
 
 type Phase = 'loading' | 'pick' | 'sending' | 'rate' | 'done';
@@ -121,7 +135,7 @@ export function AcceptedSheet({
   onClose: () => void;
   loadWallets?: () => Promise<AcceptedWallet[]>;
   loadTrade?: (code: string) => Promise<AcceptedTradeView>;
-  submit?: (code: string, walletId: string) => Promise<void>;
+  submit?: (code: string, walletId: string, sellerLienRecoveryAtomic?: bigint) => Promise<void>;
   /** The rate-first content's loaders (tests). */
   rateFirst?: RateFirstLoaders;
 }) {
@@ -129,6 +143,7 @@ export function AcceptedSheet({
   const [wallets, setWallets] = useState<AcceptedWallet[]>([]);
   const [deal, setDeal] = useState<ConfirmedTrade['deal'] | null>(null);
   const [recovery, setRecovery] = useState<bigint | undefined | null>(undefined);
+  const [sellerRecovery, setSellerRecovery] = useState<bigint | undefined | null>(undefined);
   const [role, setRole] = useState<ConfirmedTrade['role'] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -155,6 +170,7 @@ export function AcceptedSheet({
         const d = posterDeal(view);
         setDeal(d);
         setRecovery(view.role === 'buyer' ? posterRecovery(view) : undefined);
+        setSellerRecovery(view.role === 'seller' ? posterSellerRecovery(view) : undefined);
         setRole(d ? view.role : null);
         if (!d) setFailed(true);
         setPhase('pick');
@@ -173,12 +189,18 @@ export function AcceptedSheet({
   const use = async () => {
     const wallet = wallets.find((w) => w.id === picked);
     if (!wallet || !deal || !role || !confirmableAddress(wallet.address)) return;
-    if (recovery === null) return;
-    const confirmed: ConfirmedTrade = { role, ownAddress: wallet.address, deal, ...(recovery !== undefined ? { lienRecoveryAtomic: recovery } : {}) };
+    if (recovery === null || sellerRecovery === null) return;
+    const confirmed: ConfirmedTrade = {
+      role, ownAddress: wallet.address, deal,
+      ...(recovery !== undefined ? { lienRecoveryAtomic: recovery } : {}),
+      ...(sellerRecovery !== undefined ? { sellerLienRecoveryAtomic: sellerRecovery } : {}),
+    };
     setFailed(false);
     setPhase('sending');
     try {
-      await submit(event.code, wallet.id);
+      // Owner 27 Nov 2026: a poster who sells sends the extra shown here, accepted with the wallet.
+      if (sellerRecovery !== undefined) await submit(event.code, wallet.id, sellerRecovery);
+      else await submit(event.code, wallet.id);
     } catch (e) {
       // Plan 5 Task 6, the rate-first gate (409 review-pending on the poster's wallet pick): rate
       // or skip the trades it counts here, then the same wallet pick goes again.
@@ -243,6 +265,13 @@ export function AcceptedSheet({
             // accepts it with the wallet; the device then takes only that figure.
             <p className="x2f-sheet__body" data-part="lien-recovery">
               {LIEN_QUOTE_COPY.sheet(`${formatXmrExact(recovery)} XMR`)}
+            </p>
+          ) : null}
+          {role === 'seller' && typeof sellerRecovery === 'bigint' && sellerRecovery > 0n ? (
+            // Owner 27 Nov 2026: the poster who sells sees the extra they send for what they owe,
+            // and accepts it with the wallet; the device then funds and signs only that figure.
+            <p className="x2f-sheet__body" data-part="seller-lien-recovery">
+              {SELLER_LIEN_COPY.sheet(`${formatXmrExact(sellerRecovery)} XMR`)}
             </p>
           ) : null}
           <p className="x2f-sheet__body">Pick the wallet for this trade. Escrow setup starts after that.</p>

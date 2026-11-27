@@ -70,7 +70,7 @@ export class LienRecoveryMismatchError extends Error {
 
 export interface TakeArgs {
   /** The quote as shown: amount, rate and total. */
-  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'methodId' | 'currency' | 'giftCardTerms' | 'lienRecoveryAtomic'>;
+  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'methodId' | 'currency' | 'giftCardTerms' | 'lienRecoveryAtomic' | 'sellerLienRecoveryAtomic'>;
   walletId: string | null;
   confirmed: ConfirmedTrade | null;
   /**
@@ -125,7 +125,11 @@ export function useTake(
             return;
           }
           // Review B1: a buyer keeps only the recovery it accepted on the quote (none: none).
-          if (confirmed.role === 'buyer' && (taken.lienRecoveryAtomic ?? 0n) !== (confirmed.lienRecoveryAtomic ?? 0n)) {
+          // Owner 27 Nov 2026: a seller likewise funds only the extra it accepted for its own lien.
+          if (
+            (confirmed.role === 'buyer' && (taken.lienRecoveryAtomic ?? 0n) !== (confirmed.lienRecoveryAtomic ?? 0n)) ||
+            (confirmed.role === 'seller' && (taken.sellerLienRecoveryAtomic ?? 0n) !== (confirmed.sellerLienRecoveryAtomic ?? 0n))
+          ) {
             updateQuote(offerId, { busy: false, error: new LienRecoveryMismatchError() });
             dropIfLeft(offerId);
             return;

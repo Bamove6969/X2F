@@ -220,3 +220,26 @@ describe('grace: 7 days to pay the agreed way', () => {
     expect(host.textContent).not.toContain(LIENS_COPY.graceConfirm);
   });
 });
+
+describe("owner 27 Nov 2026: the seller's accepted extra travels to the escrow (ConfirmedTrade.sellerLienRecoveryAtomic)", () => {
+  const base = { role: 'seller' as const, ownAddress: '4Seller', deal: { poster: 'buyer' as const, takeAmountAtomic: XMR, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 100_000n } };
+  it('is kept through the tab store; a buyer record carrying one is dropped', async () => {
+    const { readConfirmed, storeConfirmed } = await import('../src/screens/quote/confirmed.js');
+    storeConfirmed('AB12-CD34-EF56-GH70', { ...base, sellerLienRecoveryAtomic: XMR / 4n });
+    expect(readConfirmed('AB12-CD34-EF56-GH70')).toEqual({ ...base, sellerLienRecoveryAtomic: XMR / 4n });
+    storeConfirmed('AB12-CD34-EF56-GH71', { ...base, role: 'buyer', sellerLienRecoveryAtomic: XMR / 4n });
+    expect(readConfirmed('AB12-CD34-EF56-GH71')).toBeNull();
+  });
+  it("the poster-seller's sheet reads it from their own view; malformed is refused", async () => {
+    const { posterSellerRecovery } = await import('../src/screens/AcceptedSheet.js');
+    const v = { role: 'seller' as const, poster: 'seller' as const, amountAtomic: '1', grown: null, lockedRate: { currency: 'USD', centsPerXmr: '1' }, maxFiatCents: '1' };
+    expect(posterSellerRecovery(v)).toBeUndefined();
+    expect(posterSellerRecovery({ ...v, sellerLienRecoveryAtomic: '500' })).toBe(500n);
+    expect(posterSellerRecovery({ ...v, sellerLienRecoveryAtomic: '0' })).toBeNull();
+  });
+  it('the debtor is told that selling pays it back too, with extra they get back on a refund', () => {
+    expect(LIENS_COPY.sellNote('100%')).toContain('as much again as you sell');
+    expect(LIENS_COPY.sellNote('25%')).toContain('25% of what you sell');
+    expect(LIENS_COPY.sellNote('25%')).toContain('You get it back if the trade is refunded.');
+  });
+});

@@ -249,7 +249,8 @@ export function DisputeRuling({
   const r = dispute.ruling;
   if (r === null) throw new Error('DisputeRuling needs a ruling');
   const now = serverClock();
-  const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now, trade.poster);
+  const extra = trade.role === 'seller' && trade.sellerLienRecoveryAtomic !== undefined && /^[1-9][0-9]{0,29}$/.test(trade.sellerLienRecoveryAtomic) ? BigInt(trade.sellerLienRecoveryAtomic) : 0n;
+  const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now, trade.poster, extra);
   const chat = `/trade/${encodeURIComponent(trade.code)}/dispute?view=chat`;
   // The ruling orders the seller to send the XMR and the proof form is wired: Send proof is the primary.
   // Only with the attested address and amount: never a form that would send the seller to an address the API chose.

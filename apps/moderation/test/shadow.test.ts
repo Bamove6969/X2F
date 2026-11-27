@@ -66,3 +66,23 @@ describe('newShadow: the time to pay', () => {
     }
   });
 });
+
+// Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): the shadow's funding plan is the
+// signed one, the seller's extra included, so the moderation service never counts an escrow as
+// funded (or grown) on amount + fee alone.
+describe('newShadow: a seller lien recovery', () => {
+  const X = 100_000_000_000n;
+  const WITH: AttestedTerms = { ...TERMS, sellerLienRecovery: { address: '4'.padEnd(95, 'K'), amountAtomic: X.toString() } };
+  it('the shadow funds amount + fee + the signed extra; amount + fee alone stays funding', () => {
+    const plain = newShadow(CODE, TERMS, TAKEN);
+    const t = newShadow(CODE, WITH, TAKEN);
+    expect(t.sellerLienRecoveryAtomic).toBe(X);
+    expect(t.sellerFundsAtomic).toBe(plain.sellerFundsAtomic + X);
+    expect(plain).not.toHaveProperty('sellerLienRecoveryAtomic');
+    let s = applyShadow(t, { type: 'setup-done', escrowAddress: '5'.padEnd(95, 'E') }, 'system', at(1)).trade;
+    s = applyShadow(s, { type: 'chain', receivedAtomic: plain.sellerFundsAtomic, unlockedAtomic: plain.sellerFundsAtomic, confirmations: 10 }, 'system', at(5)).trade;
+    expect(s.state).toBe('funding');
+    expect(s.amountAtomic).toBe(t.amountAtomic);
+    expect(securedShadow(WITH).amountAtomic).toBe(t.amountAtomic);
+  });
+});

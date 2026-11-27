@@ -1031,4 +1031,23 @@ describe('lien recoveries signed here are freed only by what the watcher sees (r
     expect(await freed(code)).toBe(true);
     await m.handle.stop();
   });
+
+  it("owner 27 Nov 2026: a selling debtor's extra on an escrow cancelled without a coin is freed at once; a late coin makes it count again", async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await db.query(`update mod_lien_recoveries set debtor_side = 'seller' where trade = $1`, [code]);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    net.states.set(code, 'cancelled');
+    await m.handle.watch();
+    expect(await freed(code)).toBe(true);
+    // Late coins on the cancelled escrow: it counts again (they can still be ruled for the buyer).
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: 0n, incoming: [incoming(hash('a'), XMR, 0, false)] };
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    await m.handle.stop();
+  });
 });

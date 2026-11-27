@@ -159,6 +159,23 @@ describe('TradeFund (seller)', () => {
     expect(host.textContent).toContain('1.262500 XMR');
   });
 
+  it('owner 27 Nov 2026: a seller who owes sends the extra on top; the device funds, links and checks amount + extra', async () => {
+    const EXTRA = 125_000_000_000n;
+    current = { ...base, sellerLienRecoveryAtomic: String(EXTRA), funding: { ...base.funding!, sellerFundsAtomic: '1375000000000' } };
+    setTradeEscrowHook(() => verified({ sellerLienRecoveryAtomic: EXTRA }));
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    let host = await room();
+    expect(host.textContent).toContain('Includes extra for what you owe');
+    expect(host.textContent).toContain('0.125000 XMR');
+    expect(host.textContent).toContain('1.375000');
+    expect(host.querySelector('[data-seller-lien]')?.textContent).toBe('It goes to the person you owe when the trade completes; you get it back if the trade is refunded.');
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 1_375_000_000_000n));
+    // An API that asks for the extra this device never accepted: the security-check danger, no address.
+    setTradeEscrowHook(() => verified());
+    host = await room();
+    noFundingTraces(host);
+  });
+
   it('when short: "Received 1.000000 of 1.250000 XMR, send the rest"', async () => {
     current = { ...base, receivedAtomic: '1000000000000' };
     const host = await room();

@@ -14,7 +14,9 @@ buyer's accepted figure), record on settle, staff rate routes (`lien-rate` key t
 `GET /v1/account/liens`, its preview and the creditor's recovery address route; the moderation
 service checks, signs and pays it; the web quote shows it before the take, the devices verify it, and
 Settings → What you owe. Provisional owner answers of 17 Nov below; Q1/OQ1 (the rate) answered by
-the owner on 26 Nov 2026: 100%, default and ceiling (migration 890). Owner decision 26 Nov 2026
+the owner on 26 Nov 2026: 100%, default and ceiling (migration 890). The seller-debtor case answered
+by the owner on 27 Nov 2026, option (a), and built on `feat/seller-lien` (migration 891, both
+services; "Debtor is the seller" below). Owner decision 26 Nov 2026
 (5:43, 5:51 and 5:53 PM), built on `feat/lien-grace` (migration 900): the ruling chooses how the lien
 is paid, "Collect now" (with a share, default 100%) or "7 days to pay the agreed way" (see "Grace"
 below), and a senior approves a lower share without a key tap.
@@ -110,28 +112,132 @@ records only what was owed and logs `lien.over-recovered`.
 a system event only (tested), and its future route (NEEDS_TASK_12_TX_PROOF) must emit it only after
 the tx proof is checked on chain: the seller's "sent" claim and uploaded evidence are not receipt.
 
-**Network fee (review M5, merge with `wip/second-netfee-fixes`).** Not built here: the network fee
-stays on payout 0 (the buyer) and X2F's fee outputs, and the buyer's output always keeps at least
-`MAX_NETWORK_FEE` + 1 atomic unit (`LIEN_BUYER_KEEPS_ATOMIC`, Q1). Under
-the owner's rule "each receiver pays its own payout network-fee share", the creditor's output is a
-receiving output and pays its own share at that merge: mark it `bearsNetworkFee: true` in both
-release lists (`payoutsFor`, `sweepMinimums`; insert the recovery output after the fee output). It is
-safe to mark: Q5 never reserves less than 0.01 XMR (= `MAX_NETWORK_FEE`, the most any share can be),
-so wallet2 never sees a bearer not larger than its share. The ledger keeps recording the gross
-recovery (what the debtor gave up); the creditor receives that less its share, never more (rule 2).
-`feeWalletNetworkFee` there hard-codes two bearers (`networkFeeShares(fee, [true, true])[1]`) and must
-take the trade's real bearer list (and the tx-order permutation) once a third output bears a share.
+**Network fee (review M5; built 27 Nov 2026 with the seller case).** Under the owner's rule "each
+receiver pays its own payout network-fee share", every creditor output (the buyer's recovery and the
+seller's extra) is marked `bearsNetworkFee: true` in both release lists (`payoutsFor`,
+`sweepMinimums`), after X2F's fee outputs, so the buyer never pays the creditor's share. It is safe
+to mark: Q5 never reserves less than 0.01 XMR (= `MAX_NETWORK_FEE`, the most any share can be), so
+wallet2 never sees a bearer not larger than its share. The buyer's output still keeps at least
+`MAX_NETWORK_FEE` + 1 atomic unit (`LIEN_BUYER_KEEPS_ATOMIC`, Q1). The ledger keeps recording the
+gross recovery (what the debtor gave up); the creditor receives that less its share, never more
+(rule 2). `feeWalletNetworkFee(kind, fee, fee1pct, recoveryOutputs)` takes the real bearer list
+(buyer, X2F's outputs, 0-2 recovery outputs; the seller's surplus bears nothing and does not change
+X2F's shares, tested), and the API books it with the number of recoveries the attested terms carry.
+At most six outputs (buyer, fee, payroll, two creditors, surplus), the most `feeSplitLayout` takes;
+tested for every fee share in packages/trade sellerLien.test.ts.
 
-## Debtor is the seller (owner question)
+## Debtor is the seller (owner 27 Nov 2026, option (a))
 
-A selling debtor receives fiat off-platform, so no XMR can be withheld. Not built; options:
+The owner (Jess, 27 Nov 2026): "Extra XMR on each sale: they keep selling, but each sale's escrow
+must also hold the lien payment, which goes to the person owed until it's paid off." A selling
+debtor receives fiat off-platform, so nothing can be withheld from them; instead they fund extra.
 
-- (a) the seller funds escrow with `amount + fee + recovery`, and the release pays the recovery out of
-  the extra funding (needs the funding plan, the funding screens and the gate to carry it);
-- (b) keep a lien blocking the debtor's **selling** only (buy side recovers);
-- (c) nothing: a selling debtor repays only through buys.
+**The figure.** At take (before the trade row is written: the extra is part of the funding plan),
+if the seller has an active lien with something left and a creditor address as for the buyer case
+(Q2, review B2; also not the buyer's wallet and never the address the buyer's own recovery uses: one
+output per address), the API reserves
 
-As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
+    sellerRecovery = expectedSellerRecovery(take, rate, left)
+                   = min(floor(take × rate / 10000), left, sellerLienRecoveryCap(take)), or 0 when under 0.01 XMR
+
+(@x2f/trade `expectedSellerRecovery`), where `take` is the trade amount at take, `rate` the lien's
+(100% by default: the seller then funds the sale twice over until the lien is paid), and `left` as
+for the buyer (`free = remaining − open holds`, under the lien's row lock). `sellerLienRecoveryCap`
+is 100% of the take: there is no proceeds output to keep alive. Under 0.01 XMR nothing is reserved
+and the remainder carries forward (Q5). A lien whose creditor is this trade's buyer is skipped (the
+buyer cannot be paid twice in one set).
+
+**Where it lives.**
+- `lien_recovery_holds.debtor_side` (`'buyer'` | `'seller'`, migration 891; every earlier hold is
+  `'buyer'`): one hold per trade and side (unique `(trade_code, debtor_side)`), the side fixed like
+  the lien, trade and amount (the guard trigger). Holds and the ledger (`lien_recoveries`) are shared:
+  a trader who both buys and sells reserves against one remainder. Both parties of one trade may owe
+  liens; each is recovered on its own.
+- `trades.seller_lien_recovery_atomic` (0: none), written once at take and never changed (trigger
+  `trades_seller_lien_fixed`), so the funding plan stays what the seller accepted even if the hold is
+  later released. The machine's `Trade.sellerLienRecoveryAtomic` carries it.
+- `escrowPlan({ amountAtomic, poster, sellerLienRecoveryAtomic })`: `sellerFundsAtomic = amount (+ fee
+  on a seller's ad) + extra`. Every funding check reads it from there: the API's funding view and
+  monero: link, "funded"/underfunded/lapse in the machine, the web funding screen
+  (`expectedFundsAtomic`, `integrityFailed`, `verifiedFunding`, TradeFund `planOf`), the policy and the
+  gate. Growth never counts it: `grow` and the device's `deviceAmount` work out the size from the
+  balance less the extra.
+- Signed terms: an optional `sellerLienRecovery: { address, amountAtomic }`, separate from the
+  buyer's `lienRecovery` and absent when none (existing terms bytes unchanged). `ConfirmedDeal` gains
+  `sellerLienRecoveryAtomic`; `verifyAttestation` checks the limits and that the address is none of
+  the trade's and not `lienRecovery.address`, and on the seller's device that the figure is exactly
+  the one it accepted (none accepted: none).
+
+**Payouts.** `release` and `dispute-buyer` pay `[buyer, fee, payroll, buyer's recovery?, seller's
+recovery?, seller surplus]`: the buyer receives exactly what they would without the seller's lien,
+and the creditor gets the extra as its own output (bearing its own network-fee share, like the
+buyer's recovery output; see Network fee). Every refund (`mutual-cancel`, `buyer-cancel`, `auto-refund`,
+`lapse-refund`) and `dispute-seller` pays the whole balance, extra included, back to the seller.
+`sweepMinimums` counts the output on a release. The ledger records it only on the chain-observed
+settled release, per side (`settleRecovery` loops over both sides), as for the buyer.
+
+**The seller sees and accepts it first (B1 pattern).** A taker who sells into a buy ad: the quote
+reads `GET /v1/account/liens/preview` (for a buy ad it answers `sellerLienRecoveryAtomic`) and shows
+"Extra for what you owe" with the note "Extra for what you owe: X XMR. It goes to the person you owe
+when the trade completes; you get it back if the trade is refunded." Trade waits until it is read;
+the take sends `sellerLienRecoveryAtomic` and the API refuses any other figure with 409
+`lien-recovery-changed`. A poster who sells sees it on the accepted sheet and sends it with the
+wallet (`POST /v1/trades/:code/wallet { walletId, sellerLienRecoveryAtomic }`, 409 on any other
+figure; a buyer poster sending a non-zero one gets 400; a poster wallet equal to the seller hold's
+address gets 409 `wallet-not-ready`). The device keeps it (`ConfirmedTrade.sellerLienRecoveryAtomic`,
+seller only), shows it on the funding screen ("Includes extra for what you owe"), and its co-sign
+policy refuses signed terms with any other extra. The seller's TradeView alone carries
+`sellerLienRecoveryAtomic`; the buyer is never shown it (the buyer's preview only leaves out the
+address the seller's recovery uses). Settings → What you owe now says selling pays it back too.
+COPY-UNSIGNED; NEEDS_DESIGN_SELLER_LIEN (placed as a quote row and a note until design draws it).
+
+**Moderation.** The work item carries `sellerLienSource` (the keys of `lienSource`, with
+`sellerAccount` in place of `buyerAccount`); `checkLienRecoveries` checks each side the same way
+(the lien's debtor must be `sellerAccount`; cap `sellerLienRecoveryCap(take)`; basis the take; the
+address not the buyer recovery's) and `recordLienRecovery` keeps one `mod_lien_recoveries` row per
+trade and side (`debtor_side`, moderation migration 891). `MOD_LIEN_RECOVERY` still governs: off, a
+work item carrying either recovery is refused. The gate, the desk and the shadow build every set with
+the extra.
+
+**Review of `feat/seller-lien` (27 Nov 2026).**
+- *An unfunded sale never blocks recovery.* A seller's hold stops counting as soon as its trade
+  closes without a coin (`HOLD_COUNTS_SQL`), and `settleRecovery` releases it at once (logged
+  `lien.recovery-released`), instead of waiting out `WATCH_CLOSED_DAYS` as a buyer's hold does: a
+  selling debtor cannot hold the lien's remainder for 30 days by opening a sale and never funding it.
+  Late coins on that escrow, ruled for the buyer, still pay the signed extra, and the late-payout path
+  records it from the attested terms (`sellerLienRecovery`, tested). The moderation service mirrors
+  it: its watcher frees a seller-side `mod_lien_recoveries` row once the API reports the trade closed
+  and its own watch has seen no coin, and counts it again as soon as it sees a coin before a sweep.
+- *A lien voided or written off before a sale is signed* releases the seller hold (as for the buyer)
+  while `trades.seller_lien_recovery_atomic` stays fixed, so the sale could never start. The API's
+  timer loop (`stalledSellerLienSales`) closes such a sale, still in `setup`, with the machine's
+  no-fault `system-cancel` (logged `trade.system-cancel`; no strike against the seller, nothing was
+  funded). A signed sale is untouched and pays what its terms carry (Q6).
+- *The buyer never reads the extra:* the buyer's TradeView `receivedAtomic` leaves it out (what the
+  buyer would see without the lien, never below 0), so the cancel sheet and every buyer screen show
+  no trace of it. The seller's own figures include it: the buy-ad quote's headline (all that goes into
+  escrow; the extra keeps its row) and a refund ruling's "goes to you" figure.
+- *API and moderation disagreeing is a liveness edge, not a money one.* The API reserves the figure
+  from its holds and ledger; the moderation service recomputes it from its own signed, not-freed
+  recoveries (`recordLienRecovery`). Whenever they differ (a hold the API released that the
+  moderation service still counts, such as a seller hold freed by the API at close before the
+  watcher's next pass, or a late recovery one side has recorded and the other not yet), the work
+  item is refused (`lien-refused-*`) and the trade waits unsigned until they agree or the trade
+  times out; nothing is ever paid that the moderation service did not check. Lock order: a take
+  locks the seller's liens first, then the buyer's (`chooseSellerRecovery`, then `reserveRecovery`,
+  each under the lien rows' lock). Two concurrent takes whose debtors are swapped (A sells to B
+  while B sells to A, both owing) lock the same liens in opposite orders and can deadlock: Postgres
+  aborts one, that take fails and the person taps Trade again. Rare (both parties owe liens, two
+  trades at once) and safe; NEEDS_LEAD_LIEN_LOCK_ORDER if it should lock both sets in one sorted pass.
+- *`sellerAccount` is the API's word,* like `buyerAccount` (owner question 4): a compromised API can
+  point a real lien (one a verified ruling placed, with the creditor's own signed address) at a
+  seller who does not owe it. That seller's quote or accepted sheet still shows the extra and the
+  seller must accept it (their device refuses any other figure), and the money only ever goes to
+  that lien's real creditor's signed address, within the lien's remainder and at a verified rate.
+
+**Known edges.** NEEDS_PRIVACY_LIEN_DISCLOSURE now covers both ways: the buyer's device holds the
+seller's lien extra and creditor address in the attested terms (it co-signs the release), as the
+seller's device holds the buyer's.
 
 ## Staff flow
 
@@ -194,7 +300,8 @@ form asks how it is paid:
   senior, so this keeps one rule for every rate below 100%.
 - **7 days to pay the agreed way**: the moderator writes how the two traders agreed it is paid (1..500
   characters, e.g. "New PayPal payment of $120"). `grace_until` is the ruling time plus
-  `LIEN_GRACE_DAYS` (7). Nothing is reserved meanwhile: recovery's `pickRecovery` skips a lien unless
+  `LIEN_GRACE_DAYS` (7). Nothing is reserved meanwhile, from the debtor's buys or (since #43) their sales:
+  recovery.ts `pickFor`, which both `pickRecovery` and `pickSellerRecovery` use, skips a lien unless
   `LIEN_COLLECTING_SQL` holds (never in grace, or switched to collecting, and never paid off the
   platform).
 
@@ -263,7 +370,8 @@ design draws it; a link to the screen from Settings is still missing).
 
 ## Owner questions
 
-1. Seller-debtor case (above).
+1. ~~Seller-debtor case.~~ Answered by the owner, 27 Nov 2026: option (a), extra on each sale
+   (built, "Debtor is the seller" above).
 2. A lien that carries X2F's 1%: once the creditor is paid, move the 1% into `fees_owed` and end the
    lien?
 3. Q2 to Q6 of the review: answered provisionally below, not yet confirmed. Q1 answered by the owner
@@ -328,7 +436,9 @@ one constant or one rule, so a different answer changes one place (plus its test
   device still holds both in the attested terms (one attestation for both parties, the co-signer needs
   the payout set to verify the release), so a seller who reads their own device's data learns that
   the buyer owes a lien, this recovery and the creditor's address. NEEDS_PRIVACY_LIEN_DISCLOSURE: say so
-  in the privacy notes (public crypto spec, section 3.2) before liens are switched on.
+  in the privacy notes (public crypto spec, section 3.2) before liens are switched on. The same holds
+  the other way for a seller's lien extra (`sellerLienRecovery`, 27 Nov 2026): the buyer is never shown
+  it, but the buyer's device holds it in the attested terms.
 - **Q4, what the creditor sees:** totals only (received, still to come), never the debtor's
   individual purchases (`GET /v1/account/liens`, review M4).
 - **Q5, small remainders:** a recovery under `LIEN_RECOVERY_MIN_ATOMIC` (0.01 XMR) is never reserved,
