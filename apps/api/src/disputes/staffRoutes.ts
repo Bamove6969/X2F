@@ -1,6 +1,7 @@
 import { normalizeTradeCode } from '@x2f/core';
 import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, needsSecond, normalizeIncidentId, twoPersonRule, type Actor, type Dispute, type RulingOutcome } from '@x2f/staff';
-import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2 } from '@x2f/trade';
+import { hasExactKeys, isLane, isPlainObject, ProtocolError, verifyPrivateLaneRecord, type Lane } from '@x2f/protocol';
+import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2, checkChatEnvelopeV3 } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
@@ -172,6 +173,8 @@ const MOD_CODES: ReadonlyMap<string, number> = new Map<ApiErrorCode, number>([
   ['replayed', 409],
   ['stale-countersign', 409],
   ['bad-countersign', 400],
+  // Private lanes: a lane the moderation process has not made (it makes both on the first grant).
+  ['no-lane', 409],
 ]);
 
 /** A moderation refusal as the staff app sees it. */
@@ -558,13 +561,23 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     await caseTrade(deps.db, code);
     const { chat, channel } = await keyedChat(deps.db, code);
     const logEntryId = await logged(req, code, 'chat.read', {}, workable(req));
-    let g: { wrap: string; tkh: string; boxPublic: string; nextSeq: number };
+    let g: { wrap: string; tkh: string; boxPublic: string; nextSeq: number; lanes: unknown };
     try {
       g = await o.moderation.chatGrant({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId });
     } catch (err) {
       moderationError(err);
     }
     if (!HEX64.test(g.tkh) || !HEX64.test(g.boxPublic) || !B64.test(g.wrap)) throw new ApiError(502, 'moderation-unavailable');
+    const att = (await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [chat])).rows[0];
+    // Private lanes: every lane record is checked against the attested moderator before it is filed.
+    const lanes = await grantLanes(g.lanes, channel, att?.attestation);
+    for (const l of lanes) {
+      await deps.db.query(
+        `insert into chat_private_lanes (chat, to_role, pkh, record, created_at) values ($1, $2, $3, $4, $5)
+         on conflict (chat, to_role) do update set pkh = excluded.pkh, record = excluded.record`,
+        [chat, l.to, l.pkh, l.record, deps.clock()],
+      );
+    }
     // Design 2.2: the staff member's locked copy, filed against the chat (the API cannot open it).
     await deps.db.query(
       `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, log_entry_id)
@@ -573,14 +586,14 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
        do update set box_public = excluded.box_public, wrap = excluded.wrap, tkh = excluded.tkh, granted_at = excluded.granted_at, log_entry_id = excluded.log_entry_id`,
       [chat, `${req.staff.accountId}/${deviceKeyId}`, g.boxPublic, g.wrap, g.tkh, deps.clock(), logEntryId],
     );
-    const att = (await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [chat])).rows[0];
     const k = (await deps.db.query<{ tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
       'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
       [chat],
     )).rows[0]!;
     // Review N11 (f): the newest CHAT_READ_MAX envelopes, oldest first, and whether older ones exist.
-    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by chat_envelopes.id desc limit $2',
+    // Every envelope, both lanes included: the moderation-granted read is the audit path.
+    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; to_role: Lane | null; envelope: unknown; created_at: Date }>(
+      'select id::text as id, sender_role, to_role, envelope, created_at from chat_envelopes where chat = $1 order by chat_envelopes.id desc limit $2',
       [chat, CHAT_READ_MAX + 1],
     );
     const olderNotShown = newest.length > CHAT_READ_MAX;
@@ -593,7 +606,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       nextSeq: g.nextSeq,
       attestation: att === undefined ? null : { attestation: att.attestation, sig: att.sig },
       record: { v: 1, chat: channel, tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig },
-      envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, envelope: e.envelope, at: e.created_at.toISOString() })),
+      lanes: lanes.map((l) => ({ to: l.to, pkh: l.pkh, wrap: l.wrap, nextSeq: l.nextSeq })),
+      envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, to: e.to_role, envelope: e.envelope, at: e.created_at.toISOString() })),
       olderNotShown,
     };
   });
@@ -621,50 +635,58 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   // the caller's certified staff device, logged, signed as the moderator by the moderation process,
   // stored as the chat's mod envelope, and the dispute's reply (the first one stops the first-reply clock).
   app.post('/staff/v1/disputes/:code/messages', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
-    const b = body(req, ['deviceKeyId', 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig']);
-    if (typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
+    const b = body(req, [...MESSAGE_KEYS, 'to'], MESSAGE_KEYS);
+    if ((b.to !== undefined && !isLane(b.to)) || typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
       || typeof b.nonce !== 'string' || !B64.test(b.nonce) || typeof b.ct !== 'string' || !B64.test(b.ct) || b.ct.length > 90_000
       || typeof b.ctSha256 !== 'string' || !HEX64.test(b.ctSha256) || typeof b.requestId !== 'string' || !HEX32.test(b.requestId)
       || typeof b.issuedAt !== 'string' || !ISO_MS.test(b.issuedAt) || typeof b.sig !== 'string' || !HEX128.test(b.sig)) {
       throw new ApiError(400, 'bad-request');
     }
     const sealed = { seq: b.seq, nonce: b.nonce, ct: b.ct, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig };
+    const to: Lane | null = b.to === undefined ? null : (b.to as Lane);
     const deviceKeyId = b.deviceKeyId;
     const deps = req.server.deps;
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
     const { chat, channel } = await keyedChat(deps.db, code);
+    // Private lanes: the lane's record must be filed (a moderation-granted read files it), or its
+    // trader could never open what is sent there.
+    if (to !== null && (await deps.db.query('select 1 from chat_private_lanes where chat = $1 and to_role = $2', [chat, to])).rows.length === 0) {
+      throw new ApiError(409, 'no-lane');
+    }
     const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
     let envelope: unknown;
     try {
-      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed }));
+      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed, ...(to === null ? {} : { to }) }));
     } catch (err) {
       moderationError(err);
     }
     let env;
     try {
-      env = checkChatEnvelopeV2(envelope, channel, 'mod');
+      env = to === null ? checkChatEnvelopeV2(envelope, channel, 'mod') : checkChatEnvelopeV3(envelope, channel, 'mod');
     } catch (err) {
       if (err instanceof ChatEnvelopeError) throw new ApiError(502, 'moderation-unavailable');
       throw err;
     }
-    // Exactly the ciphertext the staff device sealed, nothing the moderation process changed.
-    const e = env as { seq: number; nonce: string; ct: string };
-    if (e.seq !== sealed.seq || e.nonce !== sealed.nonce || e.ct !== sealed.ct) throw new ApiError(502, 'moderation-unavailable');
+    // Exactly the ciphertext the staff device sealed, in the lane it named, nothing the moderation process changed.
+    const e = env as { seq: number; nonce: string; ct: string; to?: Lane };
+    if (e.seq !== sealed.seq || e.nonce !== sealed.nonce || e.ct !== sealed.ct || (e.to ?? null) !== to) throw new ApiError(502, 'moderation-unavailable');
     const me = actorOf(req);
     let id = '';
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
         workable(req)(d);
-        id = await storeModEnvelope(client, chat, env, now);
-        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: { envelopeId: id } });
+        id = await storeModEnvelope(client, chat, env, to, now);
+        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: to === null ? { envelopeId: id } : { envelopeId: id, to } });
+        // A private message is the dispute's reply as a shared one is.
         return applyDispute(d, { type: 'reply' }, me, now, await disputeSettings(client));
       });
     } catch (err) {
       ruleError(err);
     }
     await announce(req, code, t);
-    publish([t.buyer, t.seller], { type: 'chat', chat }, { closed: t.closed });
+    // A private message's hint goes to its lane's trader only (D1: the other sees nothing).
+    publish(to === null ? [t.buyer, t.seller] : [to === 'buyer' ? t.buyer : t.seller], { type: 'chat', chat }, { closed: t.closed });
     return reply.code(201).send({ id });
   });
 
@@ -915,17 +937,58 @@ async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, c
 
 /**
  * Stores the moderator's envelope in the trade chat (sender `mod`), under the chat row's lock, as
- * the trader route stores theirs: a seq at or below the last stored one is refused.
+ * the trader route stores theirs: a seq at or below the last stored one is refused. The seq is per
+ * lane (`to`, null for the shared chat). A private one leaves `last_message_at` alone, which the
+ * other trader's chat list shows (D1: the other trader sees nothing).
  */
-async function storeModEnvelope(client: pg.PoolClient, chat: string, env: { seq: number }, now: Date): Promise<string> {
+async function storeModEnvelope(client: pg.PoolClient, chat: string, env: { seq: number }, to: Lane | null, now: Date): Promise<string> {
   await client.query('select 1 from chats where code = $1 for update', [chat]);
-  const last = await client.query<{ seq: string | null }>("select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat]);
+  const last = await client.query<{ seq: string | null }>(
+    "select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = 'mod' and to_role is not distinct from $2",
+    [chat, to],
+  );
   const top = last.rows[0]?.seq;
   if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(502, 'moderation-unavailable');
   const ins = await client.query<{ id: string }>(
-    `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, 'mod', $2, $3, $4) returning id::text as id`,
-    [chat, env.seq, env, now],
+    `insert into chat_envelopes (chat, sender_role, to_role, seq, envelope, created_at) values ($1, 'mod', $2, $3, $4, $5) returning id::text as id`,
+    [chat, to, env.seq, env, now],
   );
-  await client.query('update chats set last_message_at = $2 where code = $1', [chat, now]);
+  if (to === null) await client.query('update chats set last_message_at = $2 where code = $1', [chat, now]);
   return ins.rows[0]!.id;
+}
+
+/** A moderator message's fields (`to`, the private lane, is optional). */
+const MESSAGE_KEYS = ['deviceKeyId', 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig'] as const;
+const LANE_KEYS = ['to', 'pkh', 'wrap', 'nextSeq', 'record'] as const;
+
+/**
+ * Private lanes (private-mod-chat-2026-11-27): the grant's `lanes`, each `{ to, pkh, wrap, nextSeq,
+ * record }` with a distinct lane, its record verified against the chat attestation's moderator for
+ * this channel and naming the same lane and pkh. Anything else is the moderation process's fault (502).
+ */
+async function grantLanes(raw: unknown, channel: string, attestation: unknown): Promise<Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }>> {
+  const fault = (): ApiError => new ApiError(502, 'moderation-unavailable');
+  if (!Array.isArray(raw) || raw.length > 2) throw fault();
+  const mod = isPlainObject(attestation) && isPlainObject(attestation['participants']) ? attestation['participants']['mod'] : undefined;
+  if (!isPlainObject(mod) || typeof mod['signPublic'] !== 'string' || typeof mod['boxPublic'] !== 'string') throw fault();
+  const participants = { mod: { signPublic: mod['signPublic'], boxPublic: mod['boxPublic'] } };
+  const out: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }> = [];
+  for (const l of raw as unknown[]) {
+    if (!isPlainObject(l) || !hasExactKeys(l, LANE_KEYS)) throw fault();
+    const { to, pkh, wrap, nextSeq, record } = l;
+    if (!isLane(to) || out.some((x) => x.to === to) || typeof pkh !== 'string' || !HEX64.test(pkh) || typeof wrap !== 'string' || !B64.test(wrap)
+      || typeof nextSeq !== 'number' || !Number.isSafeInteger(nextSeq) || nextSeq < 0) {
+      throw fault();
+    }
+    let rec;
+    try {
+      rec = await verifyPrivateLaneRecord(record, { chat: channel, participants });
+    } catch (e) {
+      if (e instanceof ProtocolError || e instanceof TypeError) throw fault();
+      throw e;
+    }
+    if (rec.to !== to || rec.pkh !== pkh) throw fault();
+    out.push({ to, pkh, wrap, nextSeq, record: rec });
+  }
+  return out;
 }

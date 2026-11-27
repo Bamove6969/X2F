@@ -291,6 +291,11 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
   'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  // Private moderator lanes (owner 27 Nov): the lane's own state, never a rule about the user.
+  'wrong-lane': 'a device check on a private moderator message (a fault)',
+  'no-lane': 'the moderator has no private line to this trader yet (the engine waits)',
+  'lane-not-open': 'the moderator has not written privately yet (the engine offers the private reply only after)',
+  'lane-closed': 'the dispute has closed, so the private line with the moderator has ended',
   // Design build task 4 (chat membership keys): the chat's signed key record; device faults or races, never refusals.
   'bad-key-record': 'a device check on the chat key (a fault)',
   'key-exists': 'the other side made the chat key first (the engine reads it)',

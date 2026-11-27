@@ -31,7 +31,16 @@
  *   The API cannot open any wrap: it stores and serves them.
  * - `POST /v1/chats/:chat/grant` (build task 6): the counterparty's fallback grant to the moderator
  *   (chat/grants.ts); the chat view lists every grant and its acceptance (`grants`).
- * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
+ * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, to, envelope, at }], more }`:
+ *   the shared envelopes (`to` null) and the caller's own private lane (`to` = its role), never the
+ *   other trader's lane.
+ * - Private moderator lanes (private-mod-chat-2026-11-27): `GET /v1/chats/:chat/lane` → `{ record }`,
+ *   the moderator-signed lane record for the caller's own role, or 404 `no-lane`. A keyed chat also
+ *   takes envelope v3 (`checkChatEnvelopeV3`) with `from` = `to` = the caller's role: 400
+ *   `wrong-lane` for another lane; 409 `no-lane` before the lane is filed, `lane-closed` when the
+ *   trade's latest dispute is closed (or there is none), `lane-not-open` until the moderator has
+ *   written in that lane (D2). Seq is per lane; the live event goes to the caller only, and a lane
+ *   message leaves `last_message_at` alone (the other trader's list shows it; D1).
  *
  * Write budgets per account (review M7, limits.ts): a new pre-trade chat takes from
  * CHAT_OPEN_BUCKET (reopening one does not), a stored envelope from CHAT_POST_BUCKET; an empty
@@ -52,7 +61,7 @@
  */
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { isPlainObject, ProtocolError, verifyChatKeyRecord } from '@x2f/protocol';
-import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2 } from '@x2f/trade';
+import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope, checkChatEnvelopeV2, checkChatEnvelopeV3 } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { banHidesSql } from '../banState.js';
@@ -427,13 +436,16 @@ export function chatRoutes(app: FastifyInstance): void {
     const keyed = (await deps.db.query('select 1 from chat_keys where chat = $1', [row.code])).rows.length > 0;
     // Decision 16: in a keyed chat, a v1 body is only ever the answer to a moderator's request (checked under the lock below).
     const v1InKeyed = keyed && isPlainObject(req.body) && req.body.v === 1;
+    // Private lanes: in a keyed chat a v3 body is a private reply to the moderator, in the caller's own lane.
+    const lane = keyed && isPlainObject(req.body) && req.body.v === 3 ? role : null;
     let env;
     try {
-      env = keyed && !v1InKeyed ? checkChatEnvelopeV2(req.body, await channelFor(row.code, 'chat'), role) : checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
+      const channel = await channelFor(row.code, 'chat');
+      env = lane !== null ? checkChatEnvelopeV3(req.body, channel, role) : keyed && !v1InKeyed ? checkChatEnvelopeV2(req.body, channel, role) : checkChatEnvelope(req.body, channel, role);
     } catch (e) {
       if (!(e instanceof ChatEnvelopeError)) throw e;
       if (e.code === 'too-large') throw new ApiError(413, 'bad-request');
-      if (e.code === 'wrong-channel' || e.code === 'wrong-sender') throw new ApiError(400, e.code);
+      if (e.code === 'wrong-channel' || e.code === 'wrong-sender' || e.code === 'wrong-lane') throw new ApiError(400, e.code);
       throw new ApiError(400, 'bad-request');
     }
     // The budget is taken only for a well-formed envelope (round-2 review m5): a client bug's
@@ -458,22 +470,37 @@ export function chatRoutes(app: FastifyInstance): void {
         )).rows;
         if (asked.length === 0) throw new ApiError(400, 'bad-request');
       }
+      if (lane !== null) {
+        // Private lanes, under the chat row's lock: the lane is filed, the trade's latest dispute is
+        // not closed, and the moderator has written in this lane (D2).
+        if ((await q.query('select 1 from chat_private_lanes where chat = $1 and to_role = $2', [row.code, lane])).rows.length === 0) throw new ApiError(409, 'no-lane');
+        const latest = row.trade_code === null ? undefined : (await q.query<{ status: string }>(
+          'select status from disputes where code = $1 order by seq desc limit 1',
+          [row.trade_code],
+        )).rows[0];
+        if (latest === undefined || latest.status === 'closed') throw new ApiError(409, 'lane-closed');
+        const opened = await q.query("select 1 from chat_envelopes where chat = $1 and sender_role = 'mod' and to_role = $2 limit 1", [row.code, lane]);
+        if (opened.rows.length === 0) throw new ApiError(409, 'lane-not-open');
+      }
+      // The seq is per lane: the shared chat (to_role null) and each private lane count apart.
       const last = await q.query<{ seq: string | null }>(
-        'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2',
-        [row.code, role],
+        'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2 and to_role is not distinct from $3',
+        [row.code, role, lane],
       );
       const top = last.rows[0]?.seq;
       if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(409, 'stale-seq');
       const ins = await q.query<{ id: string }>(
-        `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, $2, $3, $4, $5) returning id::text as id`,
-        [row.code, role, env.seq, env, now],
+        `insert into chat_envelopes (chat, sender_role, to_role, seq, envelope, created_at) values ($1, $2, $3, $4, $5, $6) returning id::text as id`,
+        [row.code, role, lane, env.seq, env, now],
       );
-      await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
+      if (lane === null) await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
       return ins.rows[0]!.id;
     });
     // Review trades-list I1: a trade's chat is that trade's part for members' streams; an offer chat has none.
     const part = row.trade_code === null ? {} : { closed: !(await tradeOpen(req.server.deps.db, row.trade_code)) };
-    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
+    // A private reply's hint goes to its sender only (the moderator side reads on refresh; D1).
+    const told = lane === null ? [row.buyer_account_id, row.seller_account_id] : [role === 'buyer' ? row.buyer_account_id : row.seller_account_id];
+    for (const account of told) req.server.events.publish(account, { type: 'chat', chat: row.code }, part);
     return reply.code(201).send({ id });
   });
 
@@ -530,19 +557,30 @@ export function chatRoutes(app: FastifyInstance): void {
     return { record: { v: 1, chat: await channelFor(row.code, 'chat'), tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig } };
   });
 
+  // Private lanes: the caller's own lane record (only that trader's chat identity opens its wrap).
+  app.get('/v1/chats/:chat/lane', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const { rows } = await deps.db.query<{ record: unknown }>('select record from chat_private_lanes where chat = $1 and to_role = $2', [row.code, role]);
+    if (!rows[0]) throw new ApiError(404, 'no-lane');
+    return { record: rows[0].record };
+  });
+
   app.get('/v1/chats/:chat/envelopes', { preHandler: requireTrader }, async (req) => {
     const deps = req.server.deps;
-    const { row } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const raw = (req.query as Record<string, unknown> | null)?.after;
     if (raw !== undefined && (typeof raw !== 'string' || !AFTER.test(raw))) throw new ApiError(400, 'bad-request');
     const after = raw ?? '0';
-    const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and chat_envelopes.id > $2 order by chat_envelopes.id limit $3`,
-      [row.code, after, ENVELOPE_PAGE + 1],
+    // The shared chat and the caller's own private lane only, never the other trader's (D1).
+    const { rows } = await deps.db.query<{ id: string; sender_role: string; to_role: ChatRole | null; envelope: unknown; created_at: Date }>(
+      `select id::text as id, sender_role, to_role, envelope, created_at from chat_envelopes
+        where chat = $1 and chat_envelopes.id > $2 and (to_role is null or to_role = $4) order by chat_envelopes.id limit $3`,
+      [row.code, after, ENVELOPE_PAGE + 1, role],
     );
     const page = rows.slice(0, ENVELOPE_PAGE);
     return {
-      envelopes: page.map((r) => ({ id: r.id, senderRole: r.sender_role, envelope: r.envelope, at: r.created_at.toISOString() })),
+      envelopes: page.map((r) => ({ id: r.id, senderRole: r.sender_role, to: r.to_role, envelope: r.envelope, at: r.created_at.toISOString() })),
       more: rows.length > ENVELOPE_PAGE,
     };
   });
