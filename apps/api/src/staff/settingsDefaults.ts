@@ -19,6 +19,13 @@ export interface Settings {
   /** The community links (Task 29); null = not set. */
   communityMatrixUrl: string | null;
   communityTelegramUrl: string | null;
+  /**
+   * Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": minutes a dispute may
+   * wait in the pool untaken before the timer gives it to the least-busy moderator on shift (lead
+   * default 15; 1..1440), and whether that runs at all (lead default on). Migration 910.
+   */
+  autoAssignMin: number;
+  autoAssignOn: boolean;
 }
 
 export const SETTINGS_DEFAULTS: Readonly<Settings> = {
@@ -28,4 +35,6 @@ export const SETTINGS_DEFAULTS: Readonly<Settings> = {
   moderatorContactUrl: null,
   communityMatrixUrl: null,
   communityTelegramUrl: null,
+  autoAssignMin: 15,
+  autoAssignOn: true,
 };
