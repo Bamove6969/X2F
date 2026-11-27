@@ -685,7 +685,7 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect(await spentNonces(lien2)).toEqual([e1.nonce, e2.nonce, e3.nonce]);
   });
 
-  it('fix-lien-recovery-race: concurrent trades passing checkLienRecoveries before commit cannot overwrite a newer pinned rate with an older one', async () => {
+  it('fix-lien-recovery-race: interleaved check-then-commit sequence cannot overwrite a newer pinned rate with an older one', async () => {
     const src = await sourceTrade();
     const SIXTY = 150_000_000_000n;
     const QUARTER = 62_500_000_000n;
@@ -746,6 +746,137 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     expect((await db.query('select rate_bps from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ rate_bps: 2500 }]);
     expect((await db.query('select 1 from signed_terms where trade = $1', [code60])).rows).toEqual([]);
     expect((await db.query('select trade from mod_lien_recoveries where lien_id = $1', [LIEN])).rows).toEqual([{ trade: code25 }]);
+  });
+
+  it('fix-lien-first-sight: in-tx lien-changed check rejects mismatched fields both when kept exists and on concurrent first-sight upsert', async () => {
+    const deps = {
+      enabled: true,
+      db,
+      feeWallet: '5'.repeat(95),
+      payrollWallet: '6'.repeat(95),
+      rulings: creditorBuyer,
+    };
+    const commitInTx = async (
+      code: string,
+      recovery: Awaited<ReturnType<typeof checkLienRecoveries>>[number],
+      beforeInsertModLiens?: () => Promise<void>,
+    ) => {
+      const client = await db.connect();
+      const wrapped = beforeInsertModLiens === undefined
+        ? client
+        : new Proxy(client, {
+            get(target, prop, receiver) {
+              if (prop === 'query') {
+                return async (...args: unknown[]) => {
+                  if (typeof args[0] === 'string' && args[0].includes('insert into mod_liens')) await beforeInsertModLiens();
+                  return (target.query as (...a: unknown[]) => unknown)(...args);
+                };
+              }
+              const v = Reflect.get(target, prop, receiver);
+              return typeof v === 'function' ? v.bind(target) : v;
+            },
+          });
+      try {
+        await client.query('begin');
+        await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, {}, 'sig', NOW]);
+        await recordLienRecovery(wrapped, code, recovery, { signingSecret: modSign.secret, now: NOW });
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+
+    // Sub-case 1: `kept !== undefined` field mismatch under the lock (interleaved checkLienRecoveries on same source).
+    const src = await sourceTrade();
+    const otherDebtor = '44444444-4444-4444-8444-444444444444';
+    const codeA = newTradeCode();
+    const codeB = newTradeCode();
+    const [recA] = await checkLienRecoveries(
+      { trade: codeA, terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: FULL.toString() } }, lienSource: await sourceOf(src) },
+      deps,
+    );
+    const [recB] = await checkLienRecoveries(
+      {
+        trade: codeB,
+        terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: FULL.toString() } },
+        lienSource: await sourceOf(src, { debtorAccount: otherDebtor, buyerAccount: otherDebtor }),
+      },
+      deps,
+    );
+    await commitInTx(codeA, recA!);
+    const errKept = await commitInTx(codeB, recB!).catch((e: unknown) => e);
+    expect(errKept).toBeInstanceOf(LienRefused);
+    expect(errKept).toMatchObject({ reason: 'lien-changed', message: 'lien-refused-lien-changed' });
+    expect((await db.query('select debtor from mod_liens where lien_id = $1', [LIEN])).rows).toEqual([{ debtor: DEBTOR }]);
+    expect((await db.query('select trade from mod_lien_recoveries where lien_id = $1', [LIEN])).rows).toEqual([{ trade: codeA }]);
+
+    // Sub-case 2: true concurrent first-sight race with same lienId but different source:creditor (different advisory locks).
+    const src1 = await sourceTrade();
+    const src2 = await sourceTrade();
+    const raceLien = randomUUID();
+    const code1 = newTradeCode();
+    const code2 = newTradeCode();
+    const [rec1] = await checkLienRecoveries(
+      { trade: code1, terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: FULL.toString() } }, lienSource: await sourceOf(src1, { lienId: raceLien }) },
+      deps,
+    );
+    const [rec2] = await checkLienRecoveries(
+      { trade: code2, terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: FULL.toString() } }, lienSource: await sourceOf(src2, { lienId: raceLien }) },
+      deps,
+    );
+    // Barrier ensures both connections pass `select ... from mod_liens for update` (seeing kept === undefined) before either inserts.
+    let arrived = 0;
+    let release!: () => void;
+    const bothAtInsert = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const waitAtInsert = async () => {
+      if (++arrived === 2) release();
+      await bothAtInsert;
+    };
+    const [r1, r2] = await Promise.allSettled([
+      commitInTx(code1, rec1!, waitAtInsert),
+      commitInTx(code2, rec2!, waitAtInsert),
+    ]);
+    const fulfilled = [r1, r2].filter((r) => r.status === 'fulfilled');
+    const rejected = [r1, r2].filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toBeInstanceOf(LienRefused);
+    expect(rejected[0]!.reason).toMatchObject({ reason: 'lien-changed', message: 'lien-refused-lien-changed' });
+    const pinned = (await db.query<{ source_code: string; from_code: string }>(`select source_code, statement ->> 'fromCode' as from_code from mod_liens where lien_id = $1`, [raceLien])).rows;
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]!.source_code).toBe(pinned[0]!.from_code);
+    expect((await db.query('select trade from mod_lien_recoveries where lien_id = $1', [raceLien])).rows).toHaveLength(1);
+  });
+
+  it('fix-lien-first-sight: mod_lien_rate_taps.applied_at uses clock_timestamp() rather than transaction start now()', async () => {
+    const src = await sourceTrade();
+    const t50 = { rateBps: 5000, nonce: 'f3'.repeat(32) };
+    const code = newTradeCode();
+    const [rec50] = await checkLienRecoveries(
+      { trade: code, terms: { ...N_TERMS, lienRecovery: { address: CREDITOR_ADDRESS, amountAtomic: HALF.toString() } }, lienSource: await sourceOf(src, { rateBps: 5000 }) },
+      { enabled: true, db, feeWallet: '5'.repeat(95), payrollWallet: '6'.repeat(95), rulings: creditorBuyer, rates: { approvals: async () => [t50] } },
+    );
+    const client = await db.connect();
+    try {
+      await client.query('begin');
+      const txStart = (await client.query<{ t: Date }>('select now() as t')).rows[0]!.t;
+      await new Promise((r) => setTimeout(r, 15));
+      await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, {}, 'sig', NOW]);
+      await recordLienRecovery(client, code, rec50!, { signingSecret: modSign.secret, now: NOW });
+      const appliedAt = (await client.query<{ applied_at: Date }>('select applied_at from mod_lien_rate_taps where lien_id = $1', [LIEN])).rows[0]!.applied_at;
+      await client.query('commit');
+      expect(appliedAt.getTime()).toBeGreaterThan(txStart.getTime());
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    } finally {
+      client.release();
+    }
   });
 
   it('pins the lien\'s parties on first sight: a later item naming another debtor or creditor for the same lien is refused', async () => {
@@ -899,6 +1030,30 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
       );
       expect(same.signed).toBe(false);
       expect(same.reasons).toContain('lien-refused-wrong-address');
+    });
+
+    it('fix-lien-first-sight: main.ts records multiple recoveries in deterministic source:creditor lock order', async () => {
+      const s1 = await sourceTrade();
+      const s2 = await sourceTrade();
+      const [low, high] = s1.code < s2.code ? [s1, s2] : [s2, s1];
+      const buyerLien = LIEN;
+      const sellerLien = randomUUID();
+      const BUYER_DEBTOR = '55555555-5555-4555-8555-555555555555';
+      // checkLienRecoveries returns buyer (high) before seller (low); main.ts must sort to low before high.
+      const n = await sellerTrade(
+        rec(TAKE, '4'.padEnd(95, 'Q')),
+        await sellerSourceOf(low, { lienId: sellerLien, address: await signedAddress(low, low.creditor, '4'.padEnd(95, 'Q')) }),
+        { lienRecovery: rec(FULL), lienSource: await sourceOf(high, { lienId: buyerLien, debtorAccount: BUYER_DEBTOR, buyerAccount: BUYER_DEBTOR }) },
+      );
+      expect(n.done).toEqual([n.code]);
+      const { rows } = await db.query<{ source_code: string; debtor_side: string }>(
+        'select source_code, debtor_side from mod_lien_recoveries where trade = $1 order by id',
+        [n.code],
+      );
+      expect(rows).toEqual([
+        { source_code: low.code, debtor_side: 'seller' },
+        { source_code: high.code, debtor_side: 'buyer' },
+      ]);
     });
 
     it('senior-approved lower share (#45) scales the seller extra, spends the request approval once, and rejects unapproved rates', async () => {

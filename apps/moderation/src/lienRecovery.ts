@@ -419,12 +419,19 @@ export async function recordLienRecovery(
       amountAtomic: r.owedAtomic.toString(), rateBps: r.rateBps, issuedAt: sign.now.toISOString(),
     };
     const sig = await signLienStatement(statement, sign.signingSecret);
-    await c.query(
+    const res = await c.query(
       `insert into mod_liens (lien_id, source_code, creditor_side, debtor, creditor, amount_atomic, rate_bps, statement, sig, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       on conflict (lien_id) do update set rate_bps = excluded.rate_bps, statement = excluded.statement, sig = excluded.sig, posted_at = null, updated_at = excluded.updated_at`,
+       on conflict (lien_id) do update
+         set rate_bps = excluded.rate_bps, statement = excluded.statement, sig = excluded.sig, posted_at = null, updated_at = excluded.updated_at
+         where mod_liens.source_code = excluded.source_code
+           and mod_liens.creditor_side = excluded.creditor_side
+           and mod_liens.debtor = excluded.debtor
+           and mod_liens.creditor = excluded.creditor
+           and mod_liens.amount_atomic = excluded.amount_atomic`,
       [r.lienId, r.source, r.creditor, r.debtor, r.creditorAccount, r.owedAtomic.toString(), r.rateBps, statement, sig, sign.now],
     );
+    if (res.rowCount === 0) throw new LienRefused('lien-changed');
     out = { statement, sig };
   }
   await c.query(
@@ -434,7 +441,7 @@ export async function recordLienRecovery(
   // Q1: the rate taps this change applied are spent for the lien (an old approval is never replayed).
   for (const nonce of spends) {
     await c.query(
-      'insert into mod_lien_rate_taps (nonce, lien_id, rate_bps, from_rate_bps, trade) values ($1, $2, $3, $4, $5) on conflict (nonce) do nothing',
+      'insert into mod_lien_rate_taps (nonce, lien_id, rate_bps, from_rate_bps, trade, applied_at) values ($1, $2, $3, $4, $5, clock_timestamp()) on conflict (nonce) do nothing',
       [nonce, r.lienId, r.rateBps, current, trade],
     );
   }
