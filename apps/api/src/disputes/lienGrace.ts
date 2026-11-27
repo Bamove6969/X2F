@@ -10,7 +10,7 @@ import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { ownerDeviceOnly } from '../team/perms.js';
-import { proposeLienRate } from './lien.js';
+import { proposeLienRate, rateDeciders } from './lien.js';
 export { GRACE_WAITING_SQL, graceOf, remainingWith, type GraceView } from './lienCase.js';
 import { releaseStaleHolds } from './recovery.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
@@ -97,6 +97,26 @@ export async function runLienGraceLapses(deps: Pick<DisputeDeps, 'db' | 'clock'>
   return n;
 }
 
+/**
+ * Coordinator follow-up 26 Nov 2026: the phone push for new rate requests, after the transaction
+ * that created them (and alerted the deciders in-app, lien.ts `alertRateDeciders`). Each pending
+ * request not pushed yet is claimed once (`deciders_pushed_at`), then each senior and the owner who
+ * may decide it gets the fixed `alert` push. Called by the routes that create a request and by the
+ * dispute timers (a request placed with a ruling). Returns how many requests were pushed.
+ */
+export async function pushRateDeciders(deps: Pick<DisputeDeps, 'db' | 'clock'> & { push: OwnerAlertDeps['push'] }): Promise<number> {
+  const { rows } = await deps.db.query<{ proposed_by: string }>(
+    `update lien_rate_requests set deciders_pushed_at = $1
+      where id in (select id from lien_rate_requests where status = 'pending' and deciders_pushed_at is null order by proposed_at, id limit 200 for update skip locked)
+      returning proposed_by::text`,
+    [deps.clock()],
+  );
+  const to = new Set<string>();
+  for (const r of rows) for (const who of await rateDeciders(deps.db, r.proposed_by)) to.add(who);
+  for (const who of to) await deps.push.send(who, 'alert').catch(() => false);
+  return rows.length;
+}
+
 interface LockedLien {
   status: string;
   creditor: string;
@@ -148,7 +168,7 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
     if (rate === null) throw new ApiError(400, 'bad-request', { field: 'rateBps' });
     const me = actorOf(req);
     const { db, clock } = req.server.deps;
-    return withTx(db, async (c) => {
+    const out = await withTx(db, async (c) => {
       const now = clock();
       const l = await lockLien(c, id);
       if (l === undefined) throw new ApiError(404, 'not-found');
@@ -162,6 +182,8 @@ export function lienGraceRoutes(app: FastifyInstance, o: { push?: OwnerAlertDeps
       await appendLog(c, { at: now, actor: me, tradeCode: l.from_code, action: 'lien.collect-started', detail: { lienId: id, lapsed: l.grace_lapsed_at !== null } });
       return { mode: 'collect', collectStartedAt: now.toISOString(), rateRequest: requested ? 'pending' : null };
     });
+    if (out.rateRequest !== null && o.push !== undefined) await pushRateDeciders({ db, clock, push: o.push }).catch(() => 0);
+    return out;
   });
 
   app.post('/staff/v1/liens/:id/escalate', handle, async (req) => {

@@ -69,3 +69,11 @@ create index liens_grace_due on liens (grace_until)
 -- `lienRateRequestApprovals`: the rate 1..10000, the decider not the proposer and a senior or the
 -- owner in its own owner-rooted registry). These columns only, never the reason.
 grant select (id, lien_id, proposed_bps, proposed_by, status, decided_by, decided_at) on lien_rate_requests to x2f_mod_reader;
+
+-- Coordinator follow-up 26 Nov 2026 (owner: seniors are "requested and needed to just go in and
+-- approve"): a new rate request alerts the seniors and the owner who may decide it, in-app in the
+-- same transaction (disputes/lien.ts `alertRateDeciders`) and on the phone once, after the commit
+-- (disputes/lienGrace.ts `pushRateDeciders`); this marks the push as done. Requests already pending
+-- count as told.
+alter table lien_rate_requests add column deciders_pushed_at timestamptz;
+update lien_rate_requests set deciders_pushed_at = proposed_at where status = 'pending';

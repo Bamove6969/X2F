@@ -3,7 +3,7 @@
 // it with a key tap, or rejects it; never the proposer; until approved the current rate applies.
 // Also the trader's own view (`GET /v1/account/liens`). Real Postgres.
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { SESSION_COOKIE, StaffBrowser, TRADER_ORIGIN, errorOf, insertSession, logEntries, seedStaff, seedTap, staffApps } from '../helpers/staffApp.js';
@@ -131,5 +131,43 @@ describe('GET /v1/account/liens (rules 1-3: what the debtor owes and the credito
     expect(JSON.stringify(c)).not.toContain(T0.toISOString());
     expect(JSON.stringify(c)).not.toContain('rateBps');
     expect(JSON.stringify(c)).not.toContain(l.debtor);
+  });
+});
+
+describe('coordinator follow-up 26 Nov 2026: the people who may decide a request are told', () => {
+  it('a new request alerts every senior and the owner, never the proposer nor a switched-off senior, in-app once and pushed once', async () => {
+    const owner = (await deps.db.query<{ id: string }>("select id::text from accounts where kind = 'owner'")).rows[0]?.id ?? (await seedStaff(deps, { role: 'owner' })).id;
+    const off = (await seedStaff(deps, { role: 'senior', switchedOff: true })).id;
+    const sent: string[] = [];
+    const spy = vi.spyOn(app.push, 'send').mockImplementation(async (who: string) => (sent.push(who), true));
+    try {
+      const l = await lien();
+      const res = await mod.post(`/staff/v1/liens/${l.id}/rate`, { rateBps: 2500, reason: 'Can afford a quarter' });
+      expect(res.statusCode, res.body).toBe(201);
+      const req = (res.json() as { id: string }).id;
+      const { rows } = await deps.db.query<{ account_id: string; detail: Record<string, unknown> }>(
+        `select account_id::text, detail from alerts where kind = 'lien-rate-requested' and detail->>'requestId' = $1`, [req],
+      );
+      const who = rows.map((r) => r.account_id);
+      expect(who).toEqual(expect.arrayContaining([seniorId, owner]));
+      expect(who).not.toContain(modId);
+      expect(who).not.toContain(off);
+      expect(new Set(who).size).toBe(who.length);
+      const from = (await deps.db.query<{ c: string }>('select from_code as c from liens where id = $1', [l.id])).rows[0]!.c;
+      expect(rows[0]!.detail).toEqual({ trade: from, lienId: l.id, requestId: req });
+      // Pushed after the commit, once per person and once per request.
+      expect(sent).toEqual(expect.arrayContaining([seniorId, owner]));
+      expect(sent).not.toContain(modId);
+      expect(new Set(sent).size).toBe(sent.length);
+      expect((await deps.db.query('select 1 from lien_rate_requests where id = $1 and deciders_pushed_at is not null', [req])).rowCount).toBe(1);
+      // A senior's own request never alerts that senior.
+      const l2 = await lien();
+      const res2 = await senior.post(`/staff/v1/liens/${l2.id}/rate`, { rateBps: 5000, reason: 'Half' });
+      const req2 = (res2.json() as { id: string }).id;
+      const mine = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'lien-rate-requested' and detail->>'requestId' = $2`, [seniorId, req2]);
+      expect(mine.rowCount).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { graceUntilOf, lienCreditor, lienSteps, type Dispute, type LienCause, type LienRef, type LienSide, type LienStatus } from '@x2f/staff';
 import type pg from 'pg';
+import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
@@ -235,9 +236,9 @@ async function rulingLienPlan(client: pg.PoolClient, d: Dispute): Promise<Ruling
 /**
  * Owner addition 26 Nov 2026 5:51 PM: a moderator's "Start collecting now" share under 100% (with the
  * ruling, or with the switch from a grace) becomes the lien's pending rate request, as if proposed on
- * `POST /staff/v1/liens/:id/rate`: the moderation service signs a lower rate only with a senior's
- * `lien-rate` tap bound to the lien (apps/moderation lienRecovery.ts `lienRateTaps`), so a senior
- * approves it there; until then the lien's current rate applies. Skipped (false) when one is pending.
+ * `POST /staff/v1/liens/:id/rate`: a senior moderator or the owner approves it there (no key tap
+ * since the owner change of 5:53 PM); until then the lien's current rate applies. The seniors and
+ * the owner who may decide it are alerted (`alertRateDeciders`). Skipped (false) when one is pending.
  */
 export async function proposeLienRate(c: pg.PoolClient, a: { lienId: string; rateBps: number; reason: string; by: string; now: Date; logCode: string | null }): Promise<boolean> {
   const pending = await c.query(`select 1 from lien_rate_requests where lien_id = $1 and status = 'pending'`, [a.lienId]);
@@ -246,8 +247,43 @@ export async function proposeLienRate(c: pg.PoolClient, a: { lienId: string; rat
     'insert into lien_rate_requests (lien_id, proposed_bps, reason, proposed_by, proposed_at) values ($1, $2, $3, $4, $5) returning id::text',
     [a.lienId, a.rateBps, a.reason, a.by, a.now],
   );
+  await alertRateDeciders(c, { lienId: a.lienId, requestId: r.rows[0]!.id, proposer: a.by, now: a.now });
   await appendLog(c, { at: a.now, actor: { kind: 'system' }, tradeCode: a.logCode, action: 'lien.rate-proposed', detail: { lienId: a.lienId, requestId: r.rows[0]!.id, rateBps: a.rateBps } });
   return true;
+}
+
+/**
+ * Who may decide a rate request proposed by `proposer` (@x2f/staff `canDecideRateRequest`): every
+ * senior moderator and the owner, switched on, not removed, their account not disabled, never the
+ * proposer. The owner account counts even without a staff row.
+ */
+export async function rateDeciders(q: Queryable, proposer: string): Promise<string[]> {
+  const { rows } = await q.query<{ id: string }>(
+    `select id from (
+       select m.account_id::text as id from staff_members m join accounts a on a.id = m.account_id
+        where m.role in ('senior', 'owner') and m.switched_off_at is null and m.removed_at is null and a.disabled_at is null
+       union
+       select id::text from accounts where kind = 'owner' and disabled_at is null
+     ) d where id <> $1 order by id`,
+    [proposer],
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Coordinator follow-up, 26 Nov 2026 (owner: seniors are "requested and needed to just go in and
+ * approve"): a new rate request, from a ruling, a switch to collecting or `POST .../rate`, alerts
+ * each senior and the owner who may decide it (`lien-rate-requested`, detail: trade, lienId,
+ * requestId; the staff site links it to the case's lien panel). Inside the request's own
+ * transaction, so once per request. The phone push follows after the commit
+ * (lienGrace.ts `pushRateDeciders`, from the route and the dispute timers).
+ */
+export async function alertRateDeciders(c: Queryable, a: { lienId: string; requestId: string; proposer: string; now: Date }): Promise<void> {
+  const l = (await c.query<{ from_code: string }>('select from_code from liens where id = $1', [a.lienId])).rows[0];
+  if (l === undefined) return;
+  for (const who of await rateDeciders(c, a.proposer)) {
+    await addAlert(c, who, 'lien-rate-requested', { trade: l.from_code, lienId: a.lienId, requestId: a.requestId }, a.now);
+  }
 }
 
 /**

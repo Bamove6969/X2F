@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import { pushRateDeciders } from '../../src/disputes/lienGrace.js';
 import { pickRecovery } from '../../src/disputes/recovery.js';
 import { startDispute } from '../../src/disputes/store.js';
 import { disputeTimerJob } from '../../src/disputes/timers.js';
@@ -272,6 +273,7 @@ describe('the 7 days pass without the sign-off', () => {
 
 describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', () => {
   it('a share under 100% becomes the ruler\'s pending request; a senior approves it without a tap after opening it (logged); never the proposer', async () => {
+    const senior = await staff('senior');
     const r = await ruled({ mode: 'collect', rateBps: 2500, rateReason: LIEN_RATE_REASON_PREFILL });
     expect(r.res.statusCode, r.res.body).toBe(200);
     const l = await lienOf(r.code);
@@ -282,7 +284,19 @@ describe('owner 5:51 and 5:53 PM: the collecting share chosen with the ruling', 
     )).rows[0]!;
     expect(req).toMatchObject({ proposed_by: r.mod.id, proposed_bps: 2500, reason: LIEN_RATE_REASON_PREFILL });
     expect(errorOf(await r.mod.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}))).toBe('forbidden');
-    const senior = await staff('senior');
+    // Coordinator follow-up 26 Nov 2026: the seniors who may decide it are alerted with the ruling,
+    // linked to the lien; never the proposer. The timers push them once.
+    const told = async (who: string) => (await deps.db.query<{ detail: unknown }>(
+      `select detail from alerts where account_id = $1 and kind = 'lien-rate-requested' and detail->>'requestId' = $2`, [who, req.id],
+    )).rows.map((x) => x.detail);
+    expect(await told(senior.id)).toEqual([{ trade: r.code, lienId: l.id, requestId: req.id }]);
+    expect(await told(r.mod.id)).toEqual([]);
+    const sent: string[] = [];
+    const push = { send: async (who: string) => (sent.push(who), true) };
+    expect(await pushRateDeciders({ db: deps.db, clock: deps.clock, push })).toBeGreaterThanOrEqual(1);
+    expect(sent).toContain(senior.id);
+    expect(sent).not.toContain(r.mod.id);
+    expect(await pushRateDeciders({ db: deps.db, clock: deps.clock, push })).toBe(0);
     const view = (await senior.b.get(`/staff/v1/liens/${l.id}`)).json() as { chat: { code: string; disputeOpen: boolean } };
     expect(view.chat).toEqual({ code: r.code, disputeOpen: true });
     await senior.b.get(`/staff/v1/liens/${l.id}`);

@@ -157,6 +157,14 @@ As built: (c), with tripwire `NEEDS_OWNER_SELLER_DEBTOR` (API test).
   before. The rate just replaced stays good for `LIEN_RATE_GRACE_HOURS` (24), for a trade whose
   buyer accepted the figure before the change. A lien it pinned before migration 890 keeps the 50% it
   applied (see Q1). See Security for what this costs.
+- Who is told (owner via the coordinator, 26 Nov 2026: seniors are "requested and needed to just go
+  in and approve"): every new rate request, from `POST .../rate`, a ruling's share or a switch to
+  collecting, alerts each senior moderator and the owner who may decide it (switched on, not
+  removed, never the proposer): `lien-rate-requested { trade, lienId, requestId }`, in-app in the
+  request's own transaction, so once per request (`alertRateDeciders`), then one phone push after
+  the commit (`pushRateDeciders`, claimed by `lien_rate_requests.deciders_pushed_at`; from the route,
+  and from the dispute timers for a request placed with a ruling). The staff site links the alert to
+  the case and its lien panel (My security for seniors, Notifications for the owner).
 - Staff site (built, replaces NEEDS_STAFF_WEB_LIEN_RATE): the case page's lien panel
   (apps/staff-web `LienPlan.tsx`) shows each lien's grace, a pending lower share with "Review the
   request" (loads the lien, links the case chat), then "Approve the lower share" / "Turn down the

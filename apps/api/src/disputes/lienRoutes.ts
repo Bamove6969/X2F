@@ -9,7 +9,8 @@ import { appendLog } from '../log/append.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { LIEN_FIGURES_SQL, lienFigures, pickRecovery, type LienFiguresRow } from './recovery.js';
-import { applyLienUncollectible } from './lien.js';
+import { alertRateDeciders, applyLienUncollectible } from './lien.js';
+import { pushRateDeciders } from './lienGrace.js';
 import { graceOf, remainingWith } from './lienCase.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { actorOf, body as bodyOf } from './staffRoutes.js';
@@ -141,9 +142,13 @@ export function lienRoutes(app: FastifyInstance): void {
         [id, b.rateBps, b.reason, me.id, now],
       );
       const requestId = r.rows[0]!.id;
+      // Coordinator follow-up 26 Nov 2026: the seniors and the owner who may decide it are told.
+      await alertRateDeciders(c, { lienId: id, requestId, proposer: me.id, now });
       await appendLog(c, { at: now, actor: me, tradeCode: null, action: 'lien.rate-proposed', detail: { lienId: id, requestId, rateBps: b.rateBps as number } });
       return requestId;
     });
+    const push = req.server.push as typeof req.server.push | undefined;
+    if (push !== undefined) await pushRateDeciders({ db, clock, push }).catch(() => 0);
     return reply.code(201).send({ id: requestId, status: 'pending' });
   });
 

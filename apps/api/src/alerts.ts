@@ -92,7 +92,10 @@ export type AlertKind =
   // owner. Detail: trade, lienId.
   | 'lien-grace-lapsed'
   // Owner only: the moderator sent such a lien to a senior moderator or the owner. Detail: trade, lienId.
-  | 'lien-grace-escalated';
+  | 'lien-grace-escalated'
+  // Coordinator follow-up 26 Nov 2026: a lower lien share waits for a senior moderator or the owner;
+  // to each who may decide it (also pushed, once per request). Detail: trade, lienId, requestId.
+  | 'lien-rate-requested';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,
