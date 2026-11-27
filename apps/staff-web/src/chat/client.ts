@@ -15,6 +15,11 @@ export interface ChatKeys {
    * With `to`: a private message to that trader only (its lane's key; `seq` is that lane's).
    */
   seal(handle: string, text: string, now: Date, seq: number, to?: Lane): Promise<SealedModMessage>;
+  /**
+   * Owner 27 Nov (follow-up): seals the lane control message `{type: 'chat.mode', payload: {on}}` to
+   * trader `to` (its lane's key; `seq` is that lane's), countersigned by this device, dated `now`.
+   */
+  sealMode(handle: string, to: Lane, on: boolean, now: Date, seq: number): Promise<SealedModMessage>;
   /** Wipes the opened chat's key in the worker. */
   forget(handle: string): void;
 }
@@ -58,6 +63,7 @@ export function connectChatKeys(ep: Endpoint): ChatKeys & { fail(code: ChatKeyEr
     device: () => ask<DevicePublic>('device', []),
     open: (answer) => ask<ChatView>('open', [answer]),
     seal: (handle, text, now, seq, to) => ask<SealedModMessage>('seal', to === undefined ? [handle, text, now.toISOString(), seq] : [handle, text, now.toISOString(), seq, to]),
+    sealMode: (handle, to, on, now, seq) => ask<SealedModMessage>('seal-mode', [handle, to, on, now.toISOString(), seq]),
     forget: (handle) => void ask('forget', [handle]).catch(() => undefined),
     fail(code) {
       dead = code;
@@ -77,7 +83,7 @@ export function browserChatKeys(): ChatKeys {
     worker = new Worker(new URL('../keys/chatWorker.ts', import.meta.url), { type: 'module', name: 'x2f-chat-keys' });
   } catch {
     const no = () => Promise.reject(new ChatKeyError('unavailable'));
-    return { device: no, open: no, seal: no, forget: () => undefined };
+    return { device: no, open: no, seal: no, sealMode: no, forget: () => undefined };
   }
   const keys = connectChatKeys(worker as unknown as Endpoint);
   // A worker that cannot start or dies: every call waiting, and every call after, is refused.

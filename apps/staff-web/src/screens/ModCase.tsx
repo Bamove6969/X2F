@@ -25,7 +25,8 @@ import {
 } from '../api.js';
 import { AccountCard } from './AccountActions.js';
 import { browserChatKeys, type ChatKeys } from '../chat/client.js';
-import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic, type Lane } from '../chat/types.js';
+import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic, type Lane, type SealedModMessage } from '../chat/types.js';
+import { MentionTextarea, mentionNodes } from '../ui/mentions.js';
 import { DeviceCard } from '../ui/DeviceCard.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
@@ -125,7 +126,13 @@ function rulingLabels(c: DisputeCase, outcome: RulingOutcome): Record<string, st
  * trader lines (disputes, cancel rate, last ratings) are not in the case answer. DESIGNER-REVIEW.
  * Sentences the board does not word are COPY-UNSIGNED.
  */
-export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat key worker (the page's own by default; tests give one). */ keys?: ChatKeys }) {
+export function ModCase({ role, keys: given, me }: {
+  role: StaffRole;
+  /** The chat key worker (the page's own by default; tests give one). */
+  keys?: ChatKeys;
+  /** The signed-in member's display name (for @mentions). */
+  me?: string;
+}) {
   const { code = '' } = useParams();
   const [c, setC] = useState<DisputeCase | null>(null);
   const [fault, setFault] = useState<string | null>(null);
@@ -165,6 +172,8 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
 
   const buyer = nameOf(c.traders.buyer, 'buyer');
   const seller = nameOf(c.traders.seller, 'seller');
+  // Owner 27 Nov (follow-up): who can be @mentioned: the moderator's own name and both traders' usernames.
+  const names = [me, c.traders.seller?.displayName, c.traders.buyer?.displayName].filter((n): n is string => typeof n === 'string' && n !== '');
   const live = c.status !== 'closed';
   const work = c.mayWork && live;
   const proposing = c.assignedToYou && ((c.round === 1 && c.status === 'open') || (c.round === 2 && c.status === 'appealed'));
@@ -207,8 +216,8 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
 
       <div className="x2f-staff-case">
         <div className="x2f-stack">
-          <ChatCard code={c.code} work={work} keys={keys} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
-          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} buyer={buyer} seller={seller} /> : null}
+          <ChatCard code={c.code} work={work} keys={keys} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} names={names} />
+          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} buyer={buyer} seller={seller} names={names} /> : null}
         </div>
         <div className="x2f-stack">
           <TradersCard c={c} />
@@ -306,7 +315,8 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
  * Design build task 9: the full chat, opened on this certified device. No board copy for these
  * states yet (A8): every string is COPY-UNSIGNED, DESIGNER-REVIEW.
  */
-function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer, seller }: {
+function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer, seller, names }: {
+  names: readonly string[];
   code: string;
   work: boolean;
   keys: ChatKeys;
@@ -362,10 +372,16 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
             <Fragment key={l.id}>
               {/* COPY-UNSIGNED. Review N2: where the server dropped or held back messages, shown where it happened. */}
               {l.missingBefore > 0 ? <li data-part="chat-missing">{`${l.missingBefore} message(s) missing here`}</li> : null}
-              {l.to === undefined ? (
+              {l.kind === 'mode' ? (
+                // Owner 27 Nov (follow-up): the moderator switched private mode, a system line (the owner's words).
+                <li data-part="chat-mode" data-private={l.to} data-on={String(l.on)} className="x2f-staff-chat__system">
+                  <LockIcon />
+                  {modeLine(l.on, l.to === 'buyer' ? buyer : seller)}
+                </li>
+              ) : l.to === undefined ? (
                 <li data-from={l.from}>
                   <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
-                  {l.text}
+                  {mentionNodes(l.text, names)}
                 </li>
               ) : (
                 // Private lanes (owner 27 Nov): the private colour and marker, for the moderator and every audit reader alike.
@@ -375,7 +391,7 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
                     {privateMarker(l.to === 'buyer' ? buyer : seller)}
                   </span>
                   <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
-                  {l.text}
+                  {mentionNodes(l.text, names)}
                 </li>
               )}
             </Fragment>
@@ -391,6 +407,30 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
 /** Private lanes (owner 27 Nov): the marker on a private line. COPY-UNSIGNED (the owner's words). */
 export const privateMarker = (name: string) => `Private · only ${name} sees this`;
 
+/** Owner 27 Nov (follow-up): a mode line in the staff (audit) view. The owner's words. */
+export const modeLine = (on: boolean, name: string) => (on ? `Private mode on with ${name}` : `Private mode off with ${name}`);
+
+/**
+ * Owner 27 Nov (follow-up): what "Talking to" starts at when the chat opens: a lane whose latest mode
+ * line is on (the latest such, should both be), else both.
+ */
+export function modeFromLines(lines: readonly CaseChatLine[], has: (l: Lane) => boolean): TalkTo {
+  const latest: Partial<Record<Lane, { on: boolean; i: number }>> = {};
+  lines.forEach((l, i) => {
+    if (l.kind === 'mode') latest[l.to] = { on: l.on, i };
+  });
+  let pick: TalkTo = 'both';
+  let at = -1;
+  for (const l of ['buyer', 'seller'] as const) {
+    const m = latest[l];
+    if (m !== undefined && m.on && m.i > at && has(l)) {
+      pick = l;
+      at = m.i;
+    }
+  }
+  return pick;
+}
+
 function LockIcon() {
   return (
     <svg className="x2f-staff-chat__lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -402,7 +442,21 @@ function LockIcon() {
 
 type TalkTo = 'both' | Lane;
 
-function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void; buyer: string; seller: string }) {
+/**
+ * Seals at `seq` and posts; where another moderator message went first (409 stale-seq), seals again
+ * once at the seq the moderation process names. Answers the id and the seq it went at.
+ */
+async function postSealed(code: string, seal: (seq: number) => Promise<SealedModMessage>, seq: number): Promise<{ id: string; seq: number }> {
+  try {
+    return { id: (await messageTraders(code, await seal(seq))).id, seq };
+  } catch (e) {
+    const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
+    if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
+    return { id: (await messageTraders(code, await seal(next))).id, seq: next };
+  }
+}
+
+function MessageCard({ code, keys, device, opened, onSent, buyer, seller, names }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void; buyer: string; seller: string; names: readonly string[] }) {
   const id = useId();
   const toId = useId();
   const [text, setText] = useState('');
@@ -417,22 +471,59 @@ function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { co
   const name = lane === 'buyer' ? buyer : seller;
   const other = lane === 'buyer' ? seller : buyer;
 
+  // Owner 27 Nov (follow-up): on open, "Talking to" starts where the chat's latest mode lines left it.
+  const handle = opened?.handle ?? null;
+  useEffect(() => {
+    if (opened !== null) setTalkTo(modeFromLines(opened.lines, hasLane));
+  }, [handle]);
+
+  /**
+   * Owner 27 Nov (follow-up): the mode travels inside the lane, sealed by this device. Before the
+   * change takes effect: off to the lane left (if it was one), then on to the lane chosen (if one).
+   * Where a send fails, "Talking to" goes back to what the traders were last told: the lane left
+   * when nothing went out, both once its off went out.
+   */
+  const change = async (next: TalkTo) => {
+    if (device === null || opened === null || busy || next === talkTo) return;
+    const prev = talkTo;
+    const steps: Array<[Lane, boolean]> = [];
+    if (prev !== 'both') steps.push([prev, false]);
+    if (next !== 'both') steps.push([next, true]);
+    setBusy(true);
+    setNote(null);
+    let view = opened;
+    let told: TalkTo = prev;
+    try {
+      for (const [l, on] of steps) {
+        const from = view.nextSeqByLane[l];
+        if (from === undefined) throw new ChatKeyError('security');
+        const h = view.handle;
+        const res = await postSealed(code, (seq) => keys.sealMode(h, l, on, serverNow(), seq), from);
+        view = {
+          ...view,
+          nextSeqByLane: { ...view.nextSeqByLane, [l]: res.seq + 1 },
+          lines: [...view.lines, { kind: 'mode', id: res.id, from: 'mod', to: l, on, at: serverNow().toISOString(), missingBefore: 0 }],
+        };
+        onSent(view);
+        told = on ? l : 'both';
+      }
+      setTalkTo(next);
+    } catch (e) {
+      setTalkTo(told);
+      setNote({ tone: 'danger', text: faultText(e, 'The change could not be sent just now. Try again.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const send = async () => {
     if (device === null || opened === null || !laneReady) return;
     setBusy(true);
     setNote(null);
     try {
-      let seq = lane === undefined ? opened.nextSeq : opened.nextSeqByLane[lane]!;
-      let res: { id: string };
-      try {
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
-      } catch (e) {
-        // Another moderator message went first: seal again at the seq the moderation process names, once.
-        const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
-        if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
-        seq = next;
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
-      }
+      const h = opened.handle;
+      const res = await postSealed(code, (s) => keys.seal(h, text, serverNow(), s, lane), lane === undefined ? opened.nextSeq : opened.nextSeqByLane[lane]!);
+      const seq = res.seq;
       const line = { id: res.id, from: 'mod' as const, text, at: serverNow().toISOString(), missingBefore: 0, ...(lane !== undefined ? { to: lane } : {}) };
       onSent(
         lane === undefined
@@ -455,7 +546,8 @@ function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { co
         <label className="x2f-label" htmlFor={toId}>
           Who sees it
         </label>
-        <select id={toId} className="x2f-input x2f-staff-select" data-part="talking-to" value={talkTo} disabled={busy} onChange={(e) => setTalkTo(e.target.value as TalkTo)}>
+        {/* Owner 27 Nov (follow-up): a change is sent to the traders first, so only with the chat open. */}
+        <select id={toId} className="x2f-input x2f-staff-select" data-part="talking-to" value={talkTo} disabled={busy || !ready} onChange={(e) => void change(e.target.value as TalkTo)}>
           <option value="both">Talking to both</option>
           <option value="seller" disabled={opened !== null && !hasLane('seller')}>{`Talking to ${seller}`}</option>
           <option value="buyer" disabled={opened !== null && !hasLane('buyer')}>{`Talking to ${buyer}`}</option>
@@ -472,7 +564,7 @@ function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { co
         <label className="x2f-label" htmlFor={id}>
           {lane === undefined ? 'Message both traders' : `Message ${name} privately`}
         </label>
-        <textarea id={id} className="x2f-textarea" rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
+        <MentionTextarea id={id} names={names} className="x2f-textarea" rows={3} maxLength={2000} value={text} onChange={setText} />
       </div>
       <Button variant="secondary" disabled={busy || !ready || !laneReady || !modTextOk(text)} onClick={() => void send()}>
         {lane === undefined ? 'Send' : `Send to ${name} only`}

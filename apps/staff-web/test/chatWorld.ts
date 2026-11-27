@@ -57,8 +57,11 @@ export async function world(o: { signer?: Uint8Array; chat?: string; backend?: D
   for (const to of ['buyer', 'seller'] as const) lanes.push({ to, pkh: await privateKeyHash(pk[to]), wrap: await wrapPrivateKey(device.boxPublic, pk[to]), nextSeq: 0 });
   const sealLane = (from: 'buyer' | 'seller' | 'mod', to: 'buyer' | 'seller', seq: number, text: string, key = pk[to]) =>
     sealPrivate({ trade: channel, from, to, seq, type: 'chat.msg', payload: { text }, pk: key, me: ids[from] });
+  // Owner 27 Nov (follow-up): the moderator's lane control message (or another sender's, or payload, to test refusals).
+  const sealMode = (to: 'buyer' | 'seller', seq: number, on: boolean, o: { from?: 'buyer' | 'seller' | 'mod'; payload?: unknown } = {}) =>
+    sealPrivate({ trade: channel, from: o.from ?? 'mod', to, seq, type: 'chat.mode', payload: 'payload' in o ? o.payload : { on }, pk: pk[to], me: ids[o.from ?? 'mod'] });
   const answer: CaseChatAnswer = { chat, channel, wrap: await wrapChatKey(device.boxPublic, tk), tkh: record.tkh, nextSeq: 0, attestation: { attestation, sig }, record, envelopes, lanes };
-  return { chat, channel, ids, participants, tk, pk, record, device, answer, seal, sealLane };
+  return { chat, channel, ids, participants, tk, pk, record, device, answer, seal, sealLane, sealMode };
 }
 
 /** Two ends of a message channel: each message is structured-cloned and delivered on a later task. */
