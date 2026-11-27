@@ -32,6 +32,8 @@ const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> =
   large_trade_limit_usd: { name: 'the large-trade limit', unit: 'USD' },
   first_response_h: { name: 'the first-reply time', unit: 'hours' },
   appeal_window_h: { name: 'the appeal window', unit: 'hours' },
+  autoAssignOn: { name: 'automatic case assignment' },
+  autoAssignMin: { name: 'the automatic case assignment wait', unit: 'minutes' },
   payModFeeBp: { name: "a moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
   paySeniorFeeBp: { name: "a senior moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
   payModDisputeUsdCents: { name: "a moderator's minimum per dispute", unit: 'US cents' },
@@ -41,7 +43,7 @@ const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> =
 };
 
 const groups = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-const num = (v: unknown) => (typeof v === 'number' ? groups(String(v)) : typeof v === 'string' ? groups(v) : 'not set');
+const num = (v: unknown) => (typeof v === 'boolean' ? (v ? 'on' : 'off') : typeof v === 'number' ? groups(String(v)) : typeof v === 'string' ? groups(v) : 'not set');
 /** Basis points of the fee as a percent of the fee; null = the role's default. */
 const pct = (v: unknown) => (typeof v === 'number' ? `${String(v / 100)}%` : "the role's default");
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
