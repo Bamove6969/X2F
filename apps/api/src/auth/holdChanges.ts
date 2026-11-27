@@ -70,7 +70,7 @@ export interface ChangeSummary {
   /** A member's new boxes (Job 1c): their ids in catalogue order, and each one's label (COPY-UNSIGNED, the catalogue's). */
   abilities?: string[];
   abilityLabels?: string[];
-  /** A wallet removed (owner p5-7): its label. */
+  /** A wallet removed (owner p5-7) or chosen as the default (review 17 Nov (b) B1): its label. */
   label?: string;
   /** J-20: a member's new trade-size band (null: no band) and working hours. */
   band?: { minAtomic: string; maxAtomic: string } | null;

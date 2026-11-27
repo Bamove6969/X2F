@@ -30,7 +30,7 @@ import {
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
 import { ChoiceGroup } from '../ui/Choice.js';
-import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, NOT_MATCHING, ONE_TIME_TAG, RENAME, walletNameHelp } from './walletsCopy.js';
+import { ADD_SWAPPED, DEFAULT_TAG, IN_USE_NOTE, IN_USE_WORD, KEEP_FOR, MAKE_DEFAULT, MAKE_DEFAULT_FAILED, MAKE_DEFAULT_WAITING, NOT_MATCHING, ONE_TIME_TAG, RENAME, walletNameHelp } from './walletsCopy.js';
 import { RenameSheet } from './WalletRename.js';
 import { matchesRecord, recordStagedAddress, recordTypedAddress } from './walletRecord.js';
 
@@ -523,10 +523,11 @@ function WalletsScreen() {
   async function makeDefault(w: WalletView) {
     setError(null);
     try {
+      // Owner Q12 (27 Nov 2026): applies at once from any login, never staged; the API alerts it.
       await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}/default`, { method: 'PUT', body: {} });
       void api<WalletView[]>('/v1/wallets').then(setWallets, () => undefined);
-    } catch {
-      setError(MAKE_DEFAULT_FAILED);
+    } catch (e) {
+      setError((e instanceof ApiCallError || e instanceof AuthApiError) && e.code === 'wallet-not-ready' ? MAKE_DEFAULT_WAITING : MAKE_DEFAULT_FAILED);
     }
   }
 

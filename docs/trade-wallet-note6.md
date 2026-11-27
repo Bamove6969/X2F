@@ -144,12 +144,20 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
      remote branch.
    - `effectiveDefault` (`wallets/routes.ts:72`) picks the chosen open wallet, else the only usable
      saved wallet, else none. `GET /v1/wallets` sends it as `isDefault`.
-   - `PUT /v1/wallets/:id/default` (`wallets/routes.ts:463,517`) is for the account owner only. It is
-     blocked during a hold and not staged, because it changes no address and no wait. It runs under the
-     account lock. It answers 404 for a wallet that is not open or not theirs, and 409 `wallet-one-time`.
-   - Route classification: `hold.ts:663` (exempt from the live-session check, with its reason) and
-     `hold.ts:709` (hold-blocked); `frontDoor.ts:160`; Jabber change path; `ApiErrorCode` and
-     `NOT_REFUSAL_CODES`; `setDefaultWallet` in auth-client.
+   - `PUT /v1/wallets/:id/default` (`defaultHandler`, `wallets/routes.ts`) is for the account owner
+     only. It changes no address and no wait, but it does change which address the quote and the
+     accepted sheet preselect, so (review 17 Nov (b), B1) it is a security change like a removal:
+     - the session is re-checked live under the account lock (`requireLiveSessionInTx`);
+     - a wallet still waiting is refused, 409 `wallet-not-ready`, and `effectiveDefault` only counts a
+       chosen wallet once it is usable, so one chosen while it waited never outranks a usable one;
+     - it applies at once from any login, never staged (owner Q12, 27 Nov 2026; `applyDefaultWallet`);
+     - the hold blocks it (403 `recovery-hold`);
+     - applied, it writes alert `wallet-default` (app, label, end of the address), once per change.
+     It answers 404 for a wallet that is not open or not theirs, and 409 `wallet-one-time`.
+   - Route classification: `SECURITY_CHANGE_ROUTES` and `HOLD_BLOCKED_ROUTES` (`hold.ts`); `frontDoor.ts:160`;
+     Jabber change path; `ApiErrorCode` and `NOT_REFUSAL_CODES`; `setDefaultWallet` in auth-client
+     (`Staged` on a 202). Settings offers "Make default" only on a usable saved wallet and shows the
+     waiting-changes note when the choice is staged.
    - Quote: picks the default first (`Quote.tsx:204`) and marks it "Default" (`WalletPicker.tsx:132`).
      A wallet in the URL wins, and any usable wallet can still be picked. The take still sends only a
      `walletId`.
@@ -243,7 +251,7 @@ with minors) M2-M5. Hold and confirm-wait rules are unchanged from main.
     own `usable_from <= now` rule), so a stolen session cannot silently pre-arm an address before the
     wait meant to let the user notice it is over. Removed, used-up and staged (no wallet yet) answer 404
     as before; one-time stays 409 `wallet-one-time`. Your wallets offers Make default only on a wallet
-    that works now. No alert added: that is Q12, still open. Tests: `apps/api/test/wallets.test.ts`
+    that works now. (Alert since review 17 Nov (b) B1; applied at once from any login, owner Q12 27 Nov.) Tests: `apps/api/test/wallets.test.ts`
     "the default payout wallet" (waiting refused until its wait is over; staged, removed, used up).
 21. **Behavioural tests for the default route** (review M2): refused during an account hold (403
     `recovery-hold`, nothing written; `wallets.test.ts`) and for a team member, even one with
@@ -328,7 +336,8 @@ Round 2 checks, for the record:
   but needs no confirm-it's-you and raises no in-app alert. A stolen session can only point it at a
   wallet already on the account (each of which passed its own wait and alert), and the quote always
   shows the picked wallet's name and address ending before Trade. Should a default change also send the
-  usual in-app alert? Recommended: yes (an alert, no extra confirm). Built: no alert.
+  usual in-app alert? **Owner answer (27 Nov 2026): apply at once from any login, with an alert.**
+  Built: alert `wallet-default`, the live-session check under the account lock; never staged.
 - **Q13 (Q7 follow-up).** Main's G13 counts only a usable PGP key (`usablePgp`, review-vendor M3).
   Recommended: rate the account the same way (an expired or revoked key does not make it high). Built:
   unchanged, pending Q7.

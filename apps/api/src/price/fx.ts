@@ -24,7 +24,17 @@ const SCALE_DIGITS = 18;
  * upstream that works over Tor and covers more than ~20 fiats was found (2026-10-24).
  */
 export const FX_SOURCE_NAMES = ['coinbase', 'bitpay', 'coingecko'] as const;
-export type FxSourceName = (typeof FX_SOURCE_NAMES)[number];
+
+/**
+ * Candidate sources (2026-11-02, docs/superpowers/specs/2026-11-02-price-feeds.md), used only when
+ * `FX_SOURCES` names them; adapters written from the vendors' public docs, NOT yet verified over Tor.
+ * Both publish once a (working) day, slower than the spec's "at least hourly", so each refuses an
+ * answer whose own published time is too old (owner calls OC1, OC3).
+ */
+export const CANDIDATE_FX_SOURCE_NAMES = ['frankfurter', 'erapi'] as const;
+export type FxSourceName = (typeof FX_SOURCE_NAMES)[number] | (typeof CANDIDATE_FX_SOURCE_NAMES)[number];
+const KNOWN_FX_SOURCES: readonly FxSourceName[] = [...FX_SOURCE_NAMES, ...CANDIDATE_FX_SOURCE_NAMES];
+const isApprovedFxSource = (n: FxSourceName): boolean => (FX_SOURCE_NAMES as readonly string[]).includes(n);
 
 /** The default `FX_SOURCES`: all three, in the approved trust order. */
 export const DEFAULT_FX_SOURCES: readonly FxSourceName[] = FX_SOURCE_NAMES;
@@ -145,11 +155,75 @@ function coingeckoFx(f: Fetch): FxSource {
   };
 }
 
-const BUILDERS: Readonly<Record<FxSourceName, (f: Fetch) => FxSource>> = { coinbase, bitpay, coingecko: coingeckoFx };
+const DAY_MS = 24 * 60 * 60_000;
 
-/** The named sources in the given (trust) order, fetching with `f` (tests pass a stub). */
-export function fxSources(names: readonly FxSourceName[], f: Fetch = fetch): FxSource[] {
-  return names.map((n) => BUILDERS[n](f));
+/** The candidates' published-age limits (owner call OC3): ECB data skips weekends and holidays. */
+export const CANDIDATE_FX_MAX_PUBLISHED_AGE_MS = Object.freeze({ frankfurter: 4 * DAY_MS, erapi: 2 * DAY_MS });
+/** How far ahead of the server clock erapi's published time may be (clock skew), review M2. */
+const CANDIDATE_FX_FUTURE_SLACK_MS = 5 * 60_000;
+
+/** USD-based `{ CODE: number }` rates to the kept map (USD itself and unknown codes dropped). */
+function usdBased(rates: Record<string, unknown>): Map<string, bigint> {
+  const out: Array<[string, bigint | null]> = [];
+  for (const [code, v] of Object.entries(rates)) {
+    if (!supported(code)) continue;
+    const text = numberText(v);
+    out.push([code, text === null ? null : decimalToScaled(text)]);
+  }
+  return keep(out);
+}
+
+/**
+ * Frankfurter (candidate, ECB reference rates): `{ base: 'USD', date: 'YYYY-MM-DD', rates: { EUR: 0.92 } }`.
+ * Refused once more than 4 days have passed since the end of the published day (UTC).
+ */
+function frankfurter(f: Fetch, clock: () => Date): FxSource {
+  const url = 'https://api.frankfurter.dev/v1/latest?base=USD';
+  return {
+    name: 'frankfurter',
+    async fetchRates(signal) {
+      const body = await getJson(f, url, signal);
+      // `rates` are scaled by `amount`: only 1 is read (review M3).
+      if (!isRecord(body) || body.base !== 'USD' || body.amount !== 1 || !isRecord(body.rates)) throw new Error('frankfurter: shape');
+      const day = typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? Date.parse(`${body.date}T00:00:00Z`) : Number.NaN;
+      if (!Number.isFinite(day)) throw new Error('frankfurter: no date');
+      const now = clock().getTime();
+      if (now - (day + DAY_MS) > CANDIDATE_FX_MAX_PUBLISHED_AGE_MS.frankfurter) throw new Error('frankfurter: old');
+      // A day after today (UTC) is in the future: refused (review M2).
+      if (day > now) throw new Error('frankfurter: future');
+      return usdBased(body.rates);
+    },
+  };
+}
+
+/**
+ * ExchangeRate-API's open endpoint (candidate): `{ result: 'success', base_code: 'USD',
+ * time_last_update_unix, rates: { EUR: 0.92 } }`. Refused once published more than 2 days ago.
+ */
+function erapi(f: Fetch, clock: () => Date): FxSource {
+  const url = 'https://open.er-api.com/v6/latest/USD';
+  return {
+    name: 'erapi',
+    async fetchRates(signal) {
+      const body = await getJson(f, url, signal);
+      if (!isRecord(body) || body.result !== 'success' || body.base_code !== 'USD' || !isRecord(body.rates)) throw new Error('erapi: shape');
+      const ts = body.time_last_update_unix;
+      if (typeof ts !== 'number' || !Number.isSafeInteger(ts) || ts <= 0) throw new Error('erapi: no time');
+      const age = clock().getTime() - ts * 1000;
+      if (age > CANDIDATE_FX_MAX_PUBLISHED_AGE_MS.erapi) throw new Error('erapi: old');
+      if (age < -CANDIDATE_FX_FUTURE_SLACK_MS) throw new Error('erapi: future'); // review M2
+      return usdBased(body.rates);
+    },
+  };
+}
+
+const BUILDERS: Readonly<Record<FxSourceName, (f: Fetch, clock: () => Date) => FxSource>> = {
+  coinbase, bitpay, coingecko: coingeckoFx, frankfurter, erapi,
+};
+
+/** The named sources in the given (trust) order, fetching with `f` (tests pass a stub); `clock` dates the candidates' answers. */
+export function fxSources(names: readonly FxSourceName[], f: Fetch = fetch, clock: () => Date = () => new Date()): FxSource[] {
+  return names.map((n) => BUILDERS[n](f, clock));
 }
 
 /** `FX_SOURCES`: comma-separated names, each known and once; the order IS the trust order. Unset or empty: the approved order. */
@@ -157,11 +231,17 @@ export function parseFxSources(raw: string | undefined): FxSourceName[] {
   if (raw === undefined || raw.trim() === '') return [...DEFAULT_FX_SOURCES];
   const out: FxSourceName[] = [];
   for (const n of raw.split(',').map((s) => s.trim())) {
-    const known = FX_SOURCE_NAMES.find((k) => k === n);
+    const known = KNOWN_FX_SOURCES.find((k) => k === n);
     if (!known || out.includes(known)) {
-      throw new Error(`config: FX_SOURCES is malformed (comma-separated, each once, in trust order, from: ${FX_SOURCE_NAMES.join(', ')})`);
+      throw new Error(`config: FX_SOURCES is malformed (comma-separated, each once, in trust order, from: ${KNOWN_FX_SOURCES.join(', ')})`);
     }
     out.push(known);
+  }
+  // Review M1, fail closed (relaxing it is part of owner calls OC1/OC3): the daily candidates only
+  // after every approved source named, and never without an approved one ahead of them.
+  const firstCandidate = out.findIndex((n) => !isApprovedFxSource(n));
+  if (firstCandidate === 0 || (firstCandidate !== -1 && out.slice(firstCandidate).some(isApprovedFxSource))) {
+    throw new Error('config: FX_SOURCES lists a candidate source ahead of (or without) an approved one (candidates go last)');
   }
   return out;
 }
@@ -175,7 +255,7 @@ export interface FxSettings {
 }
 
 export const FX_DEFAULTS = Object.freeze({
-  pollMs: 5 * 60_000,
+  pollMs: 60_000, // owner 27 Nov 2026: every minute (was 5 min)
   timeoutMs: 10_000, // over Tor the sources answered in 1.6–3.5 s
   staleAfterMs: 60 * 60_000,
   sanityBps: 1_000,

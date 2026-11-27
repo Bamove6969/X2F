@@ -7,10 +7,22 @@ import type { PriceQuote, PriceSource } from './feed.js';
  * lists XMR, needs no key, answers plain JSON, and was fetched over Tor on 2026-10-24). Each
  * parser is self-contained: swapping a source is one entry here plus its fixture test.
  */
-export const PRICE_SOURCE_NAMES = ['kraken', 'bitfinex', 'coingecko'] as const;
-export type PriceSourceName = (typeof PRICE_SOURCE_NAMES)[number];
+// Owner 27 Nov 2026: CoinGecko, the industry-standard price site, is listed first; the price is still the median of all three.
+export const PRICE_SOURCE_NAMES = ['coingecko', 'kraken', 'bitfinex'] as const;
 
-/** The default `PRICE_SOURCES`: all of them. */
+/**
+ * Candidate sources (2026-11-02, docs/superpowers/specs/2026-11-02-price-feeds.md): adapters written
+ * from the vendors' public docs, NOT yet verified over Tor, and used only when `PRICE_SOURCES` names
+ * them. Enabling one is an owner call (OC1: a vendor and privacy choice).
+ */
+export const CANDIDATE_PRICE_SOURCE_NAMES = ['coinpaprika'] as const;
+export type PriceSourceName = (typeof PRICE_SOURCE_NAMES)[number] | (typeof CANDIDATE_PRICE_SOURCE_NAMES)[number];
+const KNOWN_PRICE_SOURCES: readonly PriceSourceName[] = [...PRICE_SOURCE_NAMES, ...CANDIDATE_PRICE_SOURCE_NAMES];
+const isApprovedPriceSource = (n: PriceSourceName): boolean => (PRICE_SOURCE_NAMES as readonly string[]).includes(n);
+/** The exchanges among the sources (CoinGecko and CoinPaprika are aggregators): the median needs one. */
+export const PRICE_EXCHANGES = ['kraken', 'bitfinex'] as const;
+
+/** The default `PRICE_SOURCES`: the three approved ones (never a candidate). */
 export const DEFAULT_PRICE_SOURCES: readonly PriceSourceName[] = PRICE_SOURCE_NAMES;
 
 /** A source answer bigger than this is refused (the real ones are under 2 KiB). */
@@ -146,24 +158,59 @@ function coingecko(f: Fetch): PriceSource {
   };
 }
 
-const BUILDERS: Readonly<Record<PriceSourceName, (f: Fetch) => PriceSource>> = { kraken, bitfinex, coingecko };
+/**
+ * CoinPaprika (candidate, off by default): the XMR ticker with USD and EUR quotes, dated by its own
+ * `last_updated`. Shape from its public docs: `{ id: 'xmr-monero', last_updated: ISO, quotes: { USD: { price } } }`.
+ */
+const PAPRIKA_CURRENCIES = ['USD', 'EUR'] as const;
+function coinpaprika(f: Fetch): PriceSource {
+  const url = `https://api.coinpaprika.com/v1/tickers/xmr-monero?quotes=${PAPRIKA_CURRENCIES.join(',')}`;
+  return {
+    name: 'coinpaprika',
+    async fetchQuotes(signal) {
+      const body = await getJson(f, url, signal);
+      if (!isRecord(body) || body.id !== 'xmr-monero' || !isRecord(body.quotes)) throw new Error('coinpaprika: shape');
+      const ts = typeof body.last_updated === 'string' ? Date.parse(body.last_updated) : Number.NaN;
+      if (!Number.isFinite(ts) || ts <= 0) throw new Error('coinpaprika: no time');
+      const at = new Date(ts);
+      const out: PriceQuote[] = [];
+      for (const currency of PAPRIKA_CURRENCIES) {
+        const e = body.quotes[currency];
+        const q = toQuote(currency, isRecord(e) ? numberText(e.price) : null, at);
+        if (q) out.push(q);
+      }
+      return out.sort(byCurrency);
+    },
+  };
+}
+
+const BUILDERS: Readonly<Record<PriceSourceName, (f: Fetch) => PriceSource>> = { kraken, bitfinex, coingecko, coinpaprika };
 
 /** The named sources, fetching with `f` (tests pass a stub; production the global fetch). */
 export function priceSources(names: readonly PriceSourceName[], f: Fetch = fetch): PriceSource[] {
   return names.map((n) => BUILDERS[n](f));
 }
 
-/** `PRICE_SOURCES`: comma-separated names, each known and once; unset or empty means the defaults. */
+/** `PRICE_SOURCES`: comma-separated names, each known (approved or candidate) and once; unset or empty means the defaults. */
 export function parsePriceSources(raw: string | undefined): PriceSourceName[] {
   if (raw === undefined || raw.trim() === '') return [...DEFAULT_PRICE_SOURCES];
   const names = raw.split(',').map((s) => s.trim());
   const out: PriceSourceName[] = [];
   for (const n of names) {
-    const known = PRICE_SOURCE_NAMES.find((k) => k === n);
+    const known = KNOWN_PRICE_SOURCES.find((k) => k === n);
     if (!known || out.includes(known)) {
-      throw new Error(`config: PRICE_SOURCES is malformed (comma-separated, each once, from: ${PRICE_SOURCE_NAMES.join(', ')})`);
+      throw new Error(`config: PRICE_SOURCES is malformed (comma-separated, each once, from: ${KNOWN_PRICE_SOURCES.join(', ')})`);
     }
     out.push(known);
+  }
+  // Review M1, fail closed (relaxing it is part of owner call OC1): a candidate only after every
+  // approved source named, and at least one exchange (not only aggregators) behind the median.
+  const firstCandidate = out.findIndex((n) => !isApprovedPriceSource(n));
+  if (firstCandidate !== -1 && out.slice(firstCandidate).some(isApprovedPriceSource)) {
+    throw new Error('config: PRICE_SOURCES lists a candidate source ahead of an approved one (candidates go last)');
+  }
+  if (!out.some((n) => (PRICE_EXCHANGES as readonly string[]).includes(n))) {
+    throw new Error(`config: PRICE_SOURCES needs at least one exchange (${PRICE_EXCHANGES.join(', ')}), not only aggregators`);
   }
   return out;
 }

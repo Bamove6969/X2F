@@ -588,6 +588,9 @@ export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
 export const LIVE_SESSION_ROUTES: readonly string[] = [
   ...SECURITY_CHANGE_ROUTES,
   ...LIVE_SESSION_TRADING_ROUTES,
+  // B1 (review 17 Nov (b)): the default decides which address the trade screens pick first, so the
+  // session is re-checked live under the account lock; owner Q12 (27 Nov 2026): never staged, alerted.
+  'PUT /v1/wallets/:id/default',
   'POST /v1/account/approvals/:id',
   'DELETE /v1/account/sessions/:id',
   'DELETE /v1/account/recovery-sessions/:id',
@@ -701,8 +704,6 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/payment-proof': "the seller's proof of a payment a ruling ordered (Plan 4 Task 12); finishes an open dispute, creates no new obligation",
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
-  // Owner 17 Nov 2026 (note #6 Q1): the default payout wallet is only what the trade screen picks first.
-  'PUT /v1/wallets/:id/default': "which of the account's own saved wallets the trade screen picks first; changes no address, wait or security state, and every take still names its wallet",
   // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",

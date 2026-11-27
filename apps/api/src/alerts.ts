@@ -17,6 +17,9 @@ export type AlertKind =
   | 'wallet-restored'
   // Owner demo note #226: a wallet renamed (PUT /v1/wallets/:id/label). Detail: app, from, label, addressEnd.
   | 'wallet-renamed'
+  // Review of wip/third-trade-wallet 17 Nov (b) B1: the default payout wallet chosen (PUT /v1/wallets/:id/default,
+  // or applied after its 24 h wait). Detail: app, label, addressEnd.
+  | 'wallet-default'
   | 'device-key-added'
   // Task 16: new-device approval and "One device at a time".
   | 'login-approval'
@@ -46,6 +49,10 @@ export type AlertKind =
   | 'price-source-recovered'
   | 'market-prices-paused'
   | 'market-prices-resumed'
+  // Owner only, info (owner call OC6 b, awaiting confirmation): a currency moved to a backup price
+  // route, and back to its first route. Detail: currencies, message. Not pushed.
+  | 'price-route-backup'
+  | 'price-route-primary'
   // Owner only: the vendor auto-close hit its per-run cap (lead vendor review item 4).
   | 'auto-close-capped'
   // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published

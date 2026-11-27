@@ -1219,6 +1219,45 @@ describe('the default payout wallet (owner, 17 Nov 2026: answer to note #6 Q1)',
     expect((await makeDefault(b, c.id)).statusCode).toBe(204);
   });
 
+  it('B1: a waiting wallet chosen before the fix never outranks a usable one', async () => {
+    const { id, b } = await trader();
+    const { wallet: first } = await addConfirmed(b);
+    const { wallet: waiting } = await addConfirmed(b);
+    await deps.db.query('update wallets set is_default = true where id = $1', [waiting.id]);
+    expect((await list(b)).find((w) => w.id === waiting.id)!.isDefault).toBe(false);
+    expect(await defaults(b)).toEqual([first.id]);
+    // Its wait over, the choice stands.
+    setNow(at(DAY + 1000));
+    expect(await defaults(await relogin(id))).toEqual([waiting.id]);
+  });
+
+  it('B1: writes one wallet-default alert with the end of the address but never all of it', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    expect((await makeDefault(b, c.id)).statusCode).toBe(204);
+    const { rows } = await deps.db.query<{ detail: unknown }>(`select detail from alerts where account_id = $1 and kind = 'wallet-default'`, [id]);
+    expect(rows.map((r) => r.detail)).toEqual([{ app: 'feather', label: 'Main', addressEnd: c.addressEnd }]);
+    expect(JSON.stringify(rows)).not.toContain(c.address);
+    // Choosing the same default again changes nothing and tells nobody again.
+    expect((await makeDefault(b, c.id)).statusCode).toBe(204);
+    expect((await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'wallet-default'`, [id])).rows).toHaveLength(1);
+  });
+
+  it('Q12 (owner 27 Nov 2026): from a username-and-password login the choice applies at once (204), never staged, with its alert', async () => {
+    const { id, b, sessionId } = await trader();
+    await addConfirmed(b);
+    setNow(at(1000));
+    const { wallet: c } = await addReady(b);
+    await deps.db.query(`update sessions set strength = 'weak-single' where id = $1`, [sessionId]);
+    const res = await makeDefault(b, c.id);
+    expect(res.statusCode, res.body).toBe(204);
+    expect(await defaults(b)).toEqual([c.id]);
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [id])).rows).toEqual([]);
+    expect((await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'wallet-default'`, [id])).rows).toHaveLength(1);
+  });
+
   it('keeps one default per account even when two are chosen at once', async () => {
     const { id, b } = await trader();
     const { wallet: a } = await addConfirmed(b);

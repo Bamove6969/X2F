@@ -41,6 +41,8 @@ interface Stub {
   calls: Call[];
   /** Owner p5-7: a removal from a username-and-password login answers 202 staged. */
   removeStaged?: boolean;
+  /** Review 17 Nov (b) B1: PUT default answers this (default 204). */
+  defaultAnswer?: { status: number; json: unknown };
 }
 
 let stub: Stub;
@@ -78,7 +80,7 @@ beforeEach(() => {
         return json(a.status, a.json);
       }
       if (url === '/v1/wallets/rule') return json(200, stub.rule);
-      if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(204, null);
+      if (url.startsWith('/v1/wallets/') && url.endsWith('/default') && method === 'PUT') return json(stub.defaultAnswer?.status ?? 204, stub.defaultAnswer?.json ?? null);
       // Owner demo note #226: renaming a wallet.
       if (url.startsWith('/v1/wallets/') && url.endsWith('/label') && method === 'PUT') return json(204, null);
       if (url.startsWith('/v1/wallets/') && method === 'DELETE') return json(stub.removeStaged ? 202 : 204, { status: 'staged', changeId: 'c-1' });
@@ -414,6 +416,23 @@ describe('the default payout wallet in Your wallets (owner, 17 Nov 2026)', () =>
     expect(stub.calls.some((c) => c.method === 'PUT' && c.url === '/v1/wallets/w-other/default')).toBe(true);
     const after = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
     expect(after.map((r) => r.querySelector('[data-part="default"]') !== null)).toEqual([false, true, false]);
+  });
+  // Review of wip/third-trade-wallet 17 Nov (b), B1.
+  it('offers no Make default on a wallet still waiting', async () => {
+    const waiting: WalletView = { ...READY, id: 'w-wait', label: 'New', address: address('F', 'Qq1Zz9'), addressEnd: 'Qq1Zz9', usable: false, usableFrom: '2099-01-01T00:00:00.000Z', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, waiting];
+    await mount();
+    const rows = [...document.querySelectorAll<HTMLElement>('.x2f-wallet-row')];
+    expect(rows.map((r) => r.querySelector('[data-part="make-default"]') !== null)).toEqual([false, false]);
+  });
+
+  it('a 409 wallet-not-ready says the wallet is still waiting', async () => {
+    const other: WalletView = { ...READY, id: 'w-other', label: 'Spending', address: address('B', 'Mm2Kq9'), addressEnd: 'Mm2Kq9', isDefault: false };
+    stub.wallets = [{ ...READY, isDefault: true }, other];
+    stub.defaultAnswer = { status: 409, json: { error: 'wallet-not-ready' } };
+    await mount();
+    fire(document.querySelectorAll<HTMLElement>('[data-part="make-default"]')[0]!, new MouseEvent('click', { bubbles: true }));
+    await until(() => (document.body.textContent ?? '').includes('still waiting. You can make it the default'));
   });
 });
 
