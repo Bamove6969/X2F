@@ -633,6 +633,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
         // here has nothing to watch. modPartyPlan stops only a running party, so after a restart such
         // a row would watch for good; it stops watching the same way.
         if (!plan.start && !running.has(row.trade) && !starting.has(row.trade) && row.escrow_address === null && CLOSED_STATES.includes(apiState as (typeof CLOSED_STATES)[number])) {
+          await freeLienRecoveries(o.db, row.trade);
           await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
           o.log({ reason: 'watch-ended-no-escrow' });
           continue;
