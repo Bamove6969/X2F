@@ -5,7 +5,9 @@
  * choices and no API call: the rule is the same for everyone. No board yet (DESIGNER-REVIEW), so
  * only existing UI-kit classes, no styling of its own.
  */
+import { Link } from 'react-router';
 import { PRIVACY_COPY as C } from './privacyCopy.js';
+import { SETTINGS_HELP_PATH } from './settingsCopy.js';
 import '../screens.css';
 
 export { PRIVACY_PATH } from './privacyCopy.js';
@@ -14,6 +16,13 @@ export function Privacy() {
   return (
     <main className="x2f-screen" data-screen="privacy">
       <h1 className="x2f-screen__title">{C.title}</h1>
+      {/* DESIGN: owner 17 Nov black+orange rule: the screen has no button, so its orange accent is the way
+          back to Settings (Help, where it opens from), a link, as on Idle reminder. DESIGN: wording (COPY-UNSIGNED). */}
+      <p className="x2f-note" data-part="privacy-back">
+        <Link className="x2f-link" to={SETTINGS_HELP_PATH}>
+          Back to Settings
+        </Link>
+      </p>
       <section className="x2f-card" data-part="privacy-deleted" aria-labelledby="privacy-deleted-h">
         <h2 className="x2f-card__title" id="privacy-deleted-h">
           {C.deletedTitle}

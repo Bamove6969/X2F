@@ -346,7 +346,12 @@
   gap: 8px;
   margin-top: auto;
   padding: 12px 0 4px;
-  background: var(--x2f-ground);
+  /* DESIGN: owner 17 Nov floating button: "The orange button should be floating or on its own. It doesn't
+     need a background." No fill, no top line, no shadow: the button sits over the page's own ground. */
+  /* DESIGN: owner 17 Nov floating button (follow-up): no bar, but the cards that scroll under the
+     button fade out into the page's own ground above it, so no card edge touches the button. The
+     fade is the page colour only (no edge, no other shade): invisible as a shape. */
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-ground) 0%, transparent), var(--x2f-ground) 12px);
 }
 .x2f-ex__button,
 .x2f-ex__hold {
@@ -359,7 +364,12 @@
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-monero);
   color: var(--x2f-on-monero);
-  font-weight: 600;
+  /* DESIGN: owner 17 Nov button labels: as large as the 52 px button allows. */
+  font-size: var(--x2f-primary-fit, 25px);
+  font-weight: 700;
+  line-height: 1.15;
+  padding: 0 var(--x2f-space-4);
+  white-space: nowrap;
   transition: background-color 300ms;
 }
 .x2f-ex__button[data-state='ok'],

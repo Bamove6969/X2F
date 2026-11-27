@@ -39,6 +39,7 @@ import { JOIN_PATH, PICKER_COPY as P, TEAM_COPY as C, TEAM_PAGE_COPY as T, TEAM_
 import { TEAM_LOG_COPY, TEAM_LOG_PATH } from './teamLogCopy.js';
 import '../screens.css';
 import { hasSpace, spaceProblem } from '../setup/names.js';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 /** How many of the latest member actions this screen shows; the Team log has the rest. */
 const LOG_PREVIEW = 10;
@@ -367,7 +368,8 @@ export function Team() {
         ) : null}
         {state === 'load-failed' ? (
           <p className="x2f-error" role="alert">
-            {C.loadFailed}
+            {/* DESIGN: owner 17 Nov black+orange rule: "Reload the page" is the orange retry. */}
+            <RetryLine text={C.loadFailed} data-part="team-retry" />
           </p>
         ) : null}
         {state === 'loading' ? <p className="x2f-note">Loading…</p> : null}
@@ -579,7 +581,7 @@ export function Team() {
               </div>
             ) : null}
             {/* Team audit v2: the full log (filters, integrity check, team changes, logins, download). */}
-            <Link className="x2f-link" to={TEAM_LOG_PATH} data-part="team-log-link">
+            <Link className="x2f-button x2f-button--secondary" to={TEAM_LOG_PATH} data-part="team-log-link">
               {TEAM_LOG_COPY.title}
             </Link>
             {memberWork(log).length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}

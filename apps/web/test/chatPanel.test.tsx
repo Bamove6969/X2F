@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_NOTICE, ChatPanel, MISSING_LINE, OfferChatPanel, OTHER_DEVICE, PRIVATE_MARKER, SEND_TO_ALL, SEND_TO_MOD, TradeChatPanel } from '../src/chat/ChatPanel.js';
+import { CHAT_NOTICE, ChatPanel, MISSING_LINE, OfferChatPanel, OTHER_DEVICE, PRIVATE_MARKER, PRIVATE_MODE_OFF, PRIVATE_MODE_ON, PRIVATE_PLACEHOLDER, TradeChatPanel, mentionAt, withMentions } from '../src/chat/ChatPanel.js';
 import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
 import { CHAT_NOTICES } from '../src/chat/notices.js';
@@ -718,12 +718,12 @@ describe('ChatPanel: one sync in flight (review rev-small-fu, 21 Nov)', () => {
 describe('ChatPanel: private moderator lanes (owner 27 Nov)', () => {
   type Line = ChatSnapshot['lines'][number];
   const line = (id: string, from: Line['from'], text: string, priv = false): Line => ({ id, from, text, at: null, mine: from === 'buyer', gapBefore: false, ...(priv ? { private: true as const } : {}) });
+  const modeLine = (id: string, mode: 'on' | 'off'): Line => ({ id, from: 'mod', text: '', at: null, mine: false, gapBefore: false, private: true, mode });
   const submit = (host: HTMLElement) => act(() => host.querySelector('form.x2f-chat__composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
-  const sendTo = (host: HTMLElement, which: 'mod' | 'all') => host.querySelector<HTMLInputElement>(`[data-sendto="${which}"] input`)!;
 
   it('a private line carries the private colour hook and the lock marker; a shared one does not', async () => {
     expect(PRIVATE_MARKER).toBe('Private · only you and the moderator see this');
-    current = snap({ disputeOpen: true, privateReply: true, lines: [line('1', 'mod', 'To both'), line('2', 'mod', 'Just you', true)] });
+    current = snap({ disputeOpen: true, lines: [line('1', 'mod', 'To both'), line('2', 'mod', 'Just you', true)] });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: null }} />);
     await flush();
     const [shared, priv] = [...host.querySelectorAll('li.x2f-chat__line')];
@@ -734,53 +734,163 @@ describe('ChatPanel: private moderator lanes (owner 27 Nov)', () => {
     expect(priv!.querySelector('[data-private-marker] svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('no toggle until the moderator has written to this trader privately (privateReply)', async () => {
-    current = snap({ disputeOpen: true, privateReply: false, lines: [line('1', 'mod', 'To both')] });
+  it('owner 27 Nov follow-up: the moderator\'s switches are system lines, in the owner\'s words, not bubbles', async () => {
+    expect(PRIVATE_MODE_ON).toBe('The moderator started a private conversation with you. Only you and the moderator see these messages.');
+    expect(PRIVATE_MODE_OFF).toBe('The moderator ended the private conversation. Messages are seen by both traders again.');
+    current = snap({ disputeOpen: true, privateMode: false, lines: [modeLine('1', 'on'), line('2', 'mod', 'Just you', true), modeLine('3', 'off')] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    const modes = [...host.querySelectorAll('li.x2f-chat__mode')];
+    expect(modes.map((li) => [li.getAttribute('data-mode'), li.textContent])).toEqual([
+      ['on', PRIVATE_MODE_ON],
+      ['off', PRIVATE_MODE_OFF],
+    ]);
+    for (const li of modes) {
+      expect(li.classList.contains('x2f-chat__line')).toBe(false);
+      expect(li.querySelector('.x2f-chat__who')).toBeNull();
+    }
+    expect(host.querySelectorAll('li.x2f-chat__line')).toHaveLength(1);
+  });
+
+  it('owner 27 Nov follow-up: a new switch is announced in its own words', async () => {
+    current = snap({ disputeOpen: true, lines: [line('1', 'seller', 'hi')] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    current = snap({ disputeOpen: true, privateMode: true, lines: [line('1', 'seller', 'hi'), modeLine('2', 'on')] });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(PRIVATE_MODE_ON);
+  });
+
+  it('owner 27 Nov follow-up: there is no toggle; while private mode is on the composer is tinted, marked and says so, and a send is a plain send', async () => {
+    current = snap({ disputeOpen: true, privateMode: true, lines: [modeLine('1', 'on')] });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
     await flush();
     expect(host.querySelector('[data-chat-sendto]')).toBeNull();
-    expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
-    type(host.querySelector('textarea')!, 'hello');
-    submit(host);
-    await flush();
-    expect(client.send).toHaveBeenCalledWith(CHAT, 'hello');
-  });
-
-  it('defaults to Only moderator while the moderator\'s latest line was private, tinted and labelled; a send goes private', async () => {
-    current = snap({ disputeOpen: true, privateReply: true, lines: [line('1', 'mod', 'To both'), line('2', 'mod', 'Just you', true)] });
-    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
-    await flush();
-    expect([...host.querySelectorAll('[data-chat-sendto] label')].map((l) => l.textContent)).toEqual([SEND_TO_MOD, SEND_TO_ALL]);
-    expect(SEND_TO_MOD).toBe('Only moderator');
-    expect(SEND_TO_ALL).toBe('Everyone');
-    expect(sendTo(host, 'mod').checked).toBe(true);
+    expect(host.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+    expect(host.textContent).not.toContain('Only moderator');
+    expect(host.textContent).not.toContain('Everyone');
     const form = host.querySelector('form.x2f-chat__composer')!;
     expect(form.hasAttribute('data-private')).toBe(true);
     expect(form.querySelector('[data-private-marker]')?.textContent).toBe(PRIVATE_MARKER);
-    type(host.querySelector('textarea')!, 'only for you');
+    expect(PRIVATE_PLACEHOLDER).toBe('Private message to the moderator');
+    const box = host.querySelector('textarea')!;
+    expect(box.getAttribute('placeholder')).toBe(PRIVATE_PLACEHOLDER);
+    type(box, 'only for you');
     submit(host);
     await flush();
-    expect(client.send).toHaveBeenCalledWith(CHAT, 'only for you', { private: true });
-    // Everyone: a shared send, the tint gone.
-    act(() => sendTo(host, 'all').click());
-    expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
-    type(host.querySelector('textarea')!, 'for both');
-    submit(host);
-    await flush();
-    expect(client.send).toHaveBeenLastCalledWith(CHAT, 'for both');
-  });
-
-  it('defaults to Everyone when the moderator\'s latest line was shared, and a new moderator line brings the default back', async () => {
-    current = snap({ disputeOpen: true, privateReply: true, lines: [line('2', 'mod', 'Just you', true), line('3', 'mod', 'Both of you')] });
-    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
-    await flush();
-    expect(sendTo(host, 'all').checked).toBe(true);
-    act(() => sendTo(host, 'mod').click());
-    expect(sendTo(host, 'mod').checked).toBe(true);
-    // The moderator writes privately again: the pick made under the older line gives way to the default.
-    current = snap({ disputeOpen: true, privateReply: true, lines: [line('2', 'mod', 'Just you', true), line('3', 'mod', 'Both of you'), line('4', 'mod', 'Shared again')] });
+    // The worker decides where it goes (the engine's own reading of the mode): the page passes no option.
+    expect(client.send).toHaveBeenCalledWith(CHAT, 'only for you');
+    expect(client.send.mock.calls[0]).toHaveLength(2);
+    // The moderator switches it off: the tint and marker go.
+    current = snap({ disputeOpen: true, privateMode: false, lines: [modeLine('1', 'on'), modeLine('2', 'off')] });
     act(() => emitChatLive(CHAT));
     await flush();
-    expect(sendTo(host, 'all').checked).toBe(true);
+    expect(host.querySelector('form.x2f-chat__composer')!.hasAttribute('data-private')).toBe(false);
+    expect(host.querySelector('form.x2f-chat__composer [data-private-marker]')).toBeNull();
+    expect(host.querySelector('textarea')!.getAttribute('placeholder')).toBe('Message');
+  });
+});
+
+describe('ChatPanel: @mentions (owner 27 Nov follow-up)', () => {
+  const key = (el: HTMLElement, k: string) => act(() => void el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })));
+  const options = (host: HTMLElement) => [...host.querySelectorAll('[role="listbox"] [role="option"]')];
+  const said = (id: string, from: 'buyer' | 'seller' | 'mod', text: string) => ({ id, from, text, at: null, mine: from === 'buyer', gapBefore: false });
+
+  it('mentionAt finds the "@" the caret is in', () => {
+    expect(mentionAt('@', 1)).toEqual({ at: 0, query: '' });
+    expect(mentionAt('hi @sa', 6)).toEqual({ at: 3, query: 'sa' });
+    expect(mentionAt('mail@x', 6)).toBeNull();
+    expect(mentionAt('@sam hi', 7)).toBeNull();
+    expect(mentionAt('no at', 5)).toBeNull();
+  });
+
+  it('typing "@" opens a listbox with the moderator and the counterparty, filtered as typed; 44px option targets', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const box = host.querySelector('textarea')!;
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    type(box, 'hi @');
+    const list = host.querySelector('[role="listbox"]')!;
+    expect(list).not.toBeNull();
+    expect(options(host).map((o) => o.textContent)).toEqual(['@sarah.v', '@Sam']);
+    expect(box.getAttribute('aria-controls')).toBe(list.id);
+    expect(box.getAttribute('aria-activedescendant')).toBe(options(host)[0]!.id);
+    expect(options(host)[0]!.getAttribute('aria-selected')).toBe('true');
+    expect(options(host)[0]!.classList.contains('x2f-chat__mention-option')).toBe(true);
+    // The listbox is no part of the box's label.
+    expect(box.closest('label')!.contains(list)).toBe(false);
+    type(box, 'hi @sa');
+    expect(options(host).map((o) => o.textContent)).toEqual(['@sarah.v', '@Sam']);
+    type(box, 'hi @sam');
+    expect(options(host).map((o) => o.textContent)).toEqual(['@Sam']);
+    type(box, 'hi @x');
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('the 44px target is in the stylesheet', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/chat/chat.css'), 'utf8');
+    expect(css).toMatch(/\.x2f-chat__mention-option \{[^}]*min-height: 44px/);
+  });
+
+  it('arrows move the active option, Enter inserts "@name "; Escape closes', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const box = host.querySelector('textarea')!;
+    type(box, 'hello @');
+    key(box, 'ArrowDown');
+    expect(options(host)[1]!.getAttribute('aria-selected')).toBe('true');
+    expect(box.getAttribute('aria-activedescendant')).toBe(options(host)[1]!.id);
+    key(box, 'Enter');
+    expect(box.value).toBe('hello @Sam ');
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    // Enter chose; it did not send.
+    expect(client.send).not.toHaveBeenCalled();
+    type(box, 'hello @Sam @');
+    expect(host.querySelector('[role="listbox"]')).not.toBeNull();
+    key(box, 'Escape');
+    expect(host.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('a tap on an option inserts it', async () => {
+    current = snap({ disputeOpen: true });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const box = host.querySelector('textarea')!;
+    type(box, '@s');
+    act(() => (options(host)[0] as HTMLElement).click());
+    expect(box.value).toBe('@sarah.v ');
+  });
+
+  it('without a moderator on the record only the counterparty is offered; outside a dispute there is no picker', async () => {
+    current = snap({ disputeOpen: true });
+    const a = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    type(a.host.querySelector('textarea')!, '@');
+    expect(options(a.host).map((o) => o.textContent)).toEqual(['@Sam']);
+    a.unmount();
+    current = snap({ disputeOpen: false });
+    const b = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    type(b.host.querySelector('textarea')!, '@');
+    expect(b.host.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('highlights "@<known name>" in lines as React nodes, never HTML', async () => {
+    current = snap({ disputeOpen: true, lines: [said('1', 'mod', '@Sam please answer, @sarah.v here. Not @Samuel or me@Sam'), said('2', 'seller', '<b>@Sam</b>')] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
+    await flush();
+    const [first, second] = [...host.querySelectorAll('li.x2f-chat__line .x2f-chat__text')];
+    expect([...first!.querySelectorAll('[data-mention]')].map((m) => m.textContent)).toEqual(['@Sam', '@sarah.v']);
+    expect(first!.textContent).toBe('@Sam please answer, @sarah.v here. Not @Samuel or me@Sam');
+    expect(second!.querySelector('b')).toBeNull();
+    expect(second!.textContent).toBe('<b>@Sam</b>');
+    expect(second!.querySelectorAll('[data-mention]')).toHaveLength(1);
+    expect(withMentions('plain', ['Sam'])).toBe('plain');
   });
 });

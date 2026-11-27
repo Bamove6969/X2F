@@ -14,16 +14,25 @@ import { authApi } from '../auth/authApi.js';
 import { jabberErrorText } from './JabberSetup.js';
 import { JABBER_COPY as C } from './jabberCopy.js';
 import '../screens.css';
+import { RetryLine } from '../../ui/RetryButton.js';
 
 /** Words for a kind this build does not know: the kind is never shown raw. */
 const wordsOf = (kind: string): { label: string; note: string } =>
   Object.hasOwn(C.events, kind) ? C.events[kind as keyof typeof C.events] : { label: 'Other notices', note: '' };
+
+/** Trade milestones (owner 27 Nov 2026) in a card of their own, under the account notices. */
+const isTrade = (kind: string) => kind.startsWith('trade-');
+const GROUPS = [
+  { part: 'jabber-events', title: C.eventsRow, has: (k: string) => !isTrade(k) },
+  { part: 'jabber-events-trades', title: C.tradesRow, has: isTrade },
+] as const;
 
 export function JabberEventsScreen() {
   const [status, setStatus] = useState<JabberStatus | null>(null);
   const [events, setEvents] = useState<JabberEvents['events'] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -33,7 +42,11 @@ export function JabberEventsScreen() {
         setStatus(s);
         setEvents(e.events);
       },
-      (e: unknown) => live && setError(jabberErrorText(e)),
+      (e: unknown) => {
+        if (!live) return;
+        setError(jabberErrorText(e));
+        setLoadFailed(true);
+      },
     );
     return () => {
       live = false;
@@ -44,6 +57,7 @@ export function JabberEventsScreen() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setLoadFailed(false);
     try {
       setEvents((await authApi.setJabberEvent({ kind, on })).events);
     } catch (e) {
@@ -65,7 +79,8 @@ export function JabberEventsScreen() {
       <p className="x2f-note">{C.eventsLead}</p>
       {error !== null ? (
         <p className="x2f-error" role="alert">
-          {error}
+          {/* DESIGN: owner 17 Nov black+orange rule: a failed load's "Try again" is the orange retry (reloads the page). */}
+          {loadFailed ? <RetryLine text={error} data-part="jabber-events-retry" /> : error}
         </p>
       ) : null}
       {status !== null && !setUp ? (
@@ -77,45 +92,53 @@ export function JabberEventsScreen() {
         </section>
       ) : null}
       {setUp && events !== null ? (
-        <section className="x2f-card" data-part="jabber-events" aria-labelledby="je-list">
-          <h2 className="x2f-card__title" id="je-list">
-            {C.eventsRow}
-          </h2>
-          <ul className="x2f-list">
-            {events.map((e) => {
-              const id = `je-${e.kind}`;
-              const w = wordsOf(e.kind);
-              const described = [w.note ? `${id}-n` : null, e.canTurnOff ? null : 'je-always-on'].filter((x) => x !== null).join(' ');
-              return (
-                <li className="x2f-list__row" key={e.kind}>
-                  <Checkbox
-                    id={id} data-kind={e.kind} checked={e.on || !e.canTurnOff} disabled={busy || !e.canTurnOff}
-                    aria-describedby={described || undefined}
-                    onChange={(on) => {
-                      if (e.canTurnOff) void toggle(e.kind, on);
-                    }}
-                  />
-                  <span className="x2f-list__label">
-                    <label htmlFor={id}>{w.label}</label>
-                    {w.note ? (
-                      <>
-                        <br />
-                        <span className="x2f-list__time" id={`${id}-n`}>
-                          {w.note}
+        <>
+          {GROUPS.map((g) => {
+            const rows = events.filter((e) => g.has(e.kind));
+            if (rows.length === 0) return null;
+            return (
+              <section className="x2f-card" data-part={g.part} aria-labelledby={`je-${g.part}`} key={g.part}>
+                <h2 className="x2f-card__title" id={`je-${g.part}`}>
+                  {g.title}
+                </h2>
+                <ul className="x2f-list">
+                  {rows.map((e) => {
+                    const id = `je-${e.kind}`;
+                    const w = wordsOf(e.kind);
+                    const described = [w.note ? `${id}-n` : null, e.canTurnOff ? null : 'je-always-on'].filter((x) => x !== null).join(' ');
+                    return (
+                      <li className="x2f-list__row" key={e.kind}>
+                        <Checkbox
+                          id={id} data-kind={e.kind} checked={e.on || !e.canTurnOff} disabled={busy || !e.canTurnOff}
+                          aria-describedby={described || undefined}
+                          onChange={(on) => {
+                            if (e.canTurnOff) void toggle(e.kind, on);
+                          }}
+                        />
+                        <span className="x2f-list__label">
+                          <label htmlFor={id}>{w.label}</label>
+                          {w.note ? (
+                            <>
+                              <br />
+                              <span className="x2f-list__time" id={`${id}-n`}>
+                                {w.note}
+                              </span>
+                            </>
+                          ) : null}
                         </span>
-                      </>
-                    ) : null}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          {events.some((e) => !e.canTurnOff) ? (
-            <p className="x2f-note" id="je-always-on" data-part="jabber-events-always-on">
-              {C.alwaysOnNote}
-            </p>
-          ) : null}
-        </section>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {g.part === 'jabber-events' && rows.some((e) => !e.canTurnOff) ? (
+                  <p className="x2f-note" id="je-always-on" data-part="jabber-events-always-on">
+                    {C.alwaysOnNote}
+                  </p>
+                ) : null}
+              </section>
+            );
+          })}
+        </>
       ) : null}
     </main>
   );

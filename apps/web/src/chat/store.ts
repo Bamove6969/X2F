@@ -128,6 +128,11 @@ export interface ChatRecord {
   pkh?: string;
   /** The private lane's seq counter and its own ReplayGuard (seq is per lane), saved as `state` is. */
   laneState?: LaneState | null;
+  /**
+   * Owner 27 Nov (follow-up): the moderator's private mode with this trader, the `on` of the latest
+   * `chat.mode` the moderator signed in this trader's own lane (absent: off). Saved with `laneState`.
+   */
+  privateMode?: boolean;
 }
 
 /**

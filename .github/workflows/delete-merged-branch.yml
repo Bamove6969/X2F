@@ -1,0 +1,60 @@
+name: Delete merged branches
+
+# Owner rule (26 Nov 2026): branches only when needed, merged and deleted promptly.
+# 1. When a pull request from this repository merges, its branch is deleted (never main or comms).
+# 2. Run by hand to delete the branches listed in .github/branch-cleanup.txt, each only if it still
+#    points at the commit recorded there. Empty the list after a run.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  merged-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the merged branch if it has not moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -u
+          case "$BRANCH" in main|comms) echo "never deleting $BRANCH"; exit 0 ;; esac
+          enc=$(printf '%s' "$BRANCH" | jq -sRr @uri)
+          tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
+          if [ -z "$tip" ]; then echo "already gone"; exit 0; fi
+          if [ "$tip" != "$SHA" ]; then echo "SKIP: $BRANCH moved to $tip after the merge"; exit 0; fi
+          gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null && echo "deleted $BRANCH"
+
+  listed:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/branch-cleanup.txt
+          sparse-checkout-cone-mode: false
+      - name: Delete listed branches whose tip is unchanged
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          deleted=0; skipped=0; missing=0
+          while read -r sha branch; do
+            case "$sha" in ''|'#'*) continue ;; esac
+            case "$branch" in main|comms) echo "never deleting $branch"; continue ;; esac
+            enc=$(printf '%s' "$branch" | jq -sRr @uri)
+            tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
+            if [ -z "$tip" ]; then missing=$((missing+1)); continue; fi
+            if [ "$tip" != "$sha" ]; then echo "SKIP $branch: moved to $tip"; skipped=$((skipped+1)); continue; fi
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null; then deleted=$((deleted+1)); else echo "FAILED $branch"; fi
+          done < .github/branch-cleanup.txt
+          echo "deleted=$deleted skipped=$skipped already-gone=$missing"

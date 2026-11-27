@@ -14,7 +14,7 @@ import {
   type Participants,
 } from '@x2f/protocol';
 import { CHAT_MSG_TYPE, channelFor, verifyAttestationSignature, type Attestation, type AttestationKey } from '@x2f/trade';
-import { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine, type Lane, type SealedModMessage } from '../chat/types.js';
+import { CASE_CHAT_READ_MAX, CHAT_MODE_TYPE, modTextOk, type CaseChatAnswer, type CaseChatLine, type Lane, type SealedModMessage } from '../chat/types.js';
 import type { StaffDeviceKey } from './deviceKey.js';
 
 export { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine };
@@ -38,7 +38,9 @@ export { CASE_CHAT_READ_MAX, modTextOk, type CaseChatAnswer, type CaseChatLine }
  * answer names is opened with the same device key and must hash to its `pkh` (else the security
  * failure, as for TK); a v3 envelope is opened under its lane's PK with that lane's own replay
  * guard, and its gaps are counted per lane and sender as the shared chat's are. A lane envelope
- * with no PK here (or not opening) is unreadable, never shown.
+ * with no PK here (or not opening) is unreadable, never shown. Owner 27 Nov (follow-up): a lane's
+ * `chat.mode` envelope from the moderator (payload exactly `{on}`) is a line of kind 'mode'; a
+ * mode anywhere else (the shared chat, from a trader) is unreadable.
  * The chat key and lane keys are held in memory only (`OpenedChat.tk`, `.lanes`); `forget` wipes
  * them. Nothing is stored.
  * Design build task 10: this module runs only inside the chat key worker (keys/chatWorker.ts,
@@ -154,6 +156,18 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
     last.set(key, seq);
     missing += gap;
     carried += gap;
+    // Owner 27 Nov (follow-up): a lane's mode, signed by the moderator inside that lane; anywhere
+    // else (the shared chat, from a trader, any other payload) it is not a line.
+    if (o.type === CHAT_MODE_TYPE) {
+      const on = modeOf(o.payload);
+      if (lane === null || o.from !== 'mod' || e.senderRole !== 'mod' || on === null) {
+        unreadable += 1;
+        continue;
+      }
+      lines.push({ kind: 'mode', id: e.id, from: 'mod', to: lane, on, at: e.at, missingBefore: carried });
+      carried = 0;
+      continue;
+    }
     const p = o.payload as { text?: unknown } | null;
     if (o.type !== CHAT_MSG_TYPE || typeof p?.text !== 'string' || o.from !== e.senderRole) {
       unreadable += 1;
@@ -166,6 +180,14 @@ export async function openCaseChat(a: CaseChatAnswer, device: StaffDeviceKey, mo
 }
 
 const isLane = (v: unknown): v is Lane => v === 'buyer' || v === 'seller';
+
+/** A mode payload is exactly `{on: boolean}`; anything else is null. */
+function modeOf(p: unknown): boolean | null {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) return null;
+  const keys = Object.keys(p);
+  const on = (p as { on?: unknown }).on;
+  return keys.length === 1 && keys[0] === 'on' && typeof on === 'boolean' ? on : null;
+}
 
 /** The moderator's next seq in each lane the opened chat has. */
 export function nextSeqByLane(c: OpenedChat): { buyer?: number; seller?: number } {
@@ -190,24 +212,40 @@ export function forget(c: OpenedChat): void {
  */
 export async function sealModMessage(c: OpenedChat, text: string, device: StaffDeviceKey, now: Date, seq = c.nextSeq, to?: Lane): Promise<SealedModMessage> {
   if (!modTextOk(text)) throw new CaseChatError('unreadable');
-  const rid = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(rid);
-  const requestId = Array.from(rid, (x) => x.toString(16).padStart(2, '0')).join('');
-  if (to !== undefined) {
-    if (!isLane(to)) throw new CaseChatError('unreadable');
-    const lane = c.lanes[to];
-    // The lane must exist here and its key still be the one pinned (never sealed under a wiped key).
-    if (lane === undefined || lane.pk.every((x) => x === 0)) throw security();
-    if ((await privateKeyHash(lane.pk)) !== lane.pkh) throw security();
-    const body = await encryptPrivate({ trade: c.channel, from: 'mod', to, seq, type: CHAT_MSG_TYPE, payload: { text }, pk: lane.pk });
-    const cs = await makeModPrivateCountersign({ body, requestId, issuedAt: now.toISOString(), me: device.signer });
-    return { deviceKeyId: device.deviceKeyId, seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig, to };
-  }
+  if (to !== undefined) return sealInLane(c, to, CHAT_MSG_TYPE, { text }, device, now, seq);
   // The key must still be the chat's (never sealed under a wiped key).
   if (c.tk.every((x) => x === 0)) throw security();
   if ((await chatKeyHash(c.tk)) !== c.tkh) throw security();
   const body = await encryptChat({ trade: c.channel, from: 'mod', seq, type: CHAT_MSG_TYPE, payload: { text }, tk: c.tk });
   // Signed by the device's non-extractable Ed25519 key (review B1: subtle.sign).
-  const cs = await makeModCountersign({ body, requestId, issuedAt: now.toISOString(), me: device.signer });
+  const cs = await makeModCountersign({ body, requestId: newRequestId(), issuedAt: now.toISOString(), me: device.signer });
   return { deviceKeyId: device.deviceKeyId, seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
+}
+
+/**
+ * Owner 27 Nov (follow-up): the lane control message `{type: 'chat.mode', payload: {on}}`, sealed as
+ * any lane message (v3 under lane `to`'s key, from 'mod', the lane countersign), so a trader's mode
+ * is the moderator's signed word in its own lane and the API cannot fake, flip or move it.
+ */
+export async function sealModeMessage(c: OpenedChat, to: Lane, on: boolean, device: StaffDeviceKey, now: Date, seq: number): Promise<SealedModMessage> {
+  if (typeof on !== 'boolean') throw new CaseChatError('unreadable');
+  return sealInLane(c, to, CHAT_MODE_TYPE, { on }, device, now, seq);
+}
+
+function newRequestId(): string {
+  const rid = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(rid);
+  return Array.from(rid, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** Seals `{type, payload}` as v3 in lane `to` (from 'mod'), with the lane countersign. */
+async function sealInLane(c: OpenedChat, to: Lane, type: string, payload: unknown, device: StaffDeviceKey, now: Date, seq: number): Promise<SealedModMessage> {
+  if (!isLane(to)) throw new CaseChatError('unreadable');
+  const lane = c.lanes[to];
+  // The lane must exist here and its key still be the one pinned (never sealed under a wiped key).
+  if (lane === undefined || lane.pk.every((x) => x === 0)) throw security();
+  if ((await privateKeyHash(lane.pk)) !== lane.pkh) throw security();
+  const body = await encryptPrivate({ trade: c.channel, from: 'mod', to, seq, type, payload, pk: lane.pk });
+  const cs = await makeModPrivateCountersign({ body, requestId: newRequestId(), issuedAt: now.toISOString(), me: device.signer });
+  return { deviceKeyId: device.deviceKeyId, seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig, to };
 }

@@ -108,7 +108,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'How do I create an account?',
     // Owner demo note #187 (25 Nov 2026): agreeing is a tick, no signature.
     a: 'Tick the box to agree to the Terms, then choose a private username and a public display name. Pick a way to log in, save your recovery code, and add the first wallet your XMR is paid to.',
-    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:291 I have read and agree to the`],
+    sources: [`${WEB}/setup/SetupFlow.tsx:5-9 0 Terms`, `${WEB}/setup/Terms.tsx:304 I have read and agree to the`],
   },
   {
     id: 'personal-details',
@@ -117,7 +117,7 @@ const ENTRIES: readonly Entry[] = [
     // Owner demo note #187 (25 Nov 2026): no signature or name to agree to the Terms, just a tick.
     a: 'X2F asks for no email or phone number, and you agree to the Terms with a single tick box: there is nothing to sign. Your display name is shown to other traders, so pick one that does not identify you.',
     sources: [
-      `${WEB}/setup/Terms.tsx:291 I have read and agree to the`,
+      `${WEB}/setup/Terms.tsx:304 I have read and agree to the`,
       'apps/api/src/accounts.ts:342 absent → `null`',
       `${SPEC}:215 The display name is separate and public`,
     ],
@@ -361,7 +361,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How do I send my payment details?',
     a: 'In the trade chat, the payment details form asks for the details your payment method needs, then sends them to the other trader in one message.',
-    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:449 PAY_DETAILS_TITLE'],
+    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:588 PAY_DETAILS_TITLE'],
   },
   {
     id: 'trade-chat',
@@ -566,10 +566,10 @@ const ENTRIES: readonly Entry[] = [
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
         sources: [
           'apps/staff-web/src/screens/ModCase.tsx:87-89 the traders, the payment proof, the escrow',
-          'apps/staff-web/src/screens/ModCase.tsx:529 Request unblurred proof from',
+          'apps/staff-web/src/screens/ModCase.tsx:622 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
-          'apps/staff-web/src/screens/ModCase.tsx:522 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
+          'apps/staff-web/src/screens/ModCase.tsx:615 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
           'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
         ],
       },
@@ -827,7 +827,7 @@ const ENTRIES: readonly Entry[] = [
     sources: [
       `${SPEC}:166 can decrypt a chat only after a trader's app has granted it TK`,
       'apps/web/src/chat/engine.ts:51 One key per chat, envelope v2',
-      "apps/web/src/chat/engine.ts:232 this trader's signed grant of the chat key to the chat's",
+      "apps/web/src/chat/engine.ts:241 this trader's signed grant of the chat key to the chat's",
       'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
     ],
   },
@@ -870,7 +870,7 @@ const ENTRIES: readonly Entry[] = [
     q: 'Do I sign anything to agree to the Terms?',
     a: 'No. You agree with a single tick box, and nothing is drawn or typed. A team member signs once when joining a team; that signature is stored sealed with their own login and never shown to anyone.',
     sources: [
-      `${WEB}/setup/Terms.tsx:291 I have read and agree to the`,
+      `${WEB}/setup/Terms.tsx:304 I have read and agree to the`,
       'apps/api/src/termsSignature.ts:5 A team member at join',
       'apps/api/src/termsSignature.ts:20 It is never shown to other users',
       'apps/api/src/termsSignature.ts:37 At rest it is sealed',

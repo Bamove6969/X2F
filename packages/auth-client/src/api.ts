@@ -602,7 +602,9 @@ export interface JabberStatus {
 }
 
 /** W-021: the Jabber notice kinds a user can turn on or off (`NOTICE_KINDS` in apps/api jabber/sender.ts; J-20 adds the first login). The page lists whatever the API answers. */
-export type JabberEventKind = 'account-change' | 'trade-attention' | 'team-member-first-login';
+export type JabberEventKind =
+  | 'account-change' | 'team-member-first-login'
+  | 'trade-started' | 'trade-funded' | 'trade-paid' | 'trade-cancel-asked' | 'trade-completed' | 'trade-cancelled' | 'trade-attention' | 'trade-ruled';
 
 /** W-021 (owner p11-27): which events send a Jabber notice (`GET /v1/account/jabber/events`), every kind in the server's order. */
 export interface JabberEvents {

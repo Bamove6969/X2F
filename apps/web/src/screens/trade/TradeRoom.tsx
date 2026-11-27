@@ -87,7 +87,7 @@
  *   moves the focus to its composer once the chat is ready.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
@@ -105,6 +105,9 @@ import { FileAppeal } from '../dispute/FileAppeal.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
+import { TRADES_TITLE } from '../trades/model.js';
+import { Logo } from '../../ui/Logo.js';
+import './trade.css';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
 import { SettleWait } from './settleWait.js';
@@ -247,6 +250,24 @@ export function StatusCard({ view, serverClock, member = false }: { view: TradeV
   );
 }
 
+// DESIGN: owner 17 Nov black+orange rule: the room's bare states (loading, not found, failed, the
+// security check) have no header of their own on a phone, so they lead with the logo. The logo's dot
+// does not count as the screen's orange (lead, 17 Nov): once the room has answered, the state ends
+// with an orange link back to the trade list.
+function BareRoom({ children, busy, mismatch }: { children?: ReactNode; busy?: boolean; mismatch?: boolean }) {
+  return (
+    <main data-screen="trade" className="x2f-trade-bare" aria-busy={busy ? 'true' : undefined} data-trade-mismatch={mismatch ? '' : undefined}>
+      <Logo size={24} decorative />
+      {children}
+      {busy ? null : (
+        <Link className="x2f-link" to="/trades" data-part="bare-trades">
+          {TRADES_TITLE}
+        </Link>
+      )}
+    </main>
+  );
+}
+
 export function TradeRoom() {
   const session = useSession();
   const { code = '' } = useParams();
@@ -256,19 +277,19 @@ export function TradeRoom() {
   const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
   useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
-  if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
+  if (load.kind === 'loading') return <BareRoom busy />;
   if (load.kind === 'missing') {
     return (
-      <main data-screen="trade">
+      <BareRoom>
         <p role="alert">Trade not found.</p>
-      </main>
+      </BareRoom>
     );
   }
   if (load.kind === 'failed') {
     return (
-      <main data-screen="trade">
+      <BareRoom>
         <p role="alert">Couldn't load this trade. Check your connection and try again.</p>
-      </main>
+      </BareRoom>
     );
   }
   // The API answered with another trade's view (a compromised or buggy API): fail closed before
@@ -277,15 +298,15 @@ export function TradeRoom() {
   const own = normalizeTradeCode(code);
   if (own === null || normalizeTradeCode(load.view.code) !== own) {
     return (
-      <main data-screen="trade" data-trade-mismatch="">
+      <BareRoom mismatch>
         <p role="alert">Security check failed: X2F answered with a different trade. Nothing is signed or sent from this page. Don't fund or release this trade until it shows correctly.</p>
-      </main>
+      </BareRoom>
     );
   }
   // Plan 2 Task 18 (review I1, I2): a team member's device never runs the escrow (only the
   // account owner's device can, until Plan 3 Task 42's member keys): wait for the session first, so
   // the escrow worker never boots on a member's device, then show the member's room.
-  if (session.status === 'loading') return <main data-screen="trade" aria-busy="true" />;
+  if (session.status === 'loading') return <BareRoom busy />;
   if (memberOf(session) !== null) return <MemberRoom code={own} view={load.view} refresh={refresh} />;
   // The escrow starts only once the API has shown this trade to this account (review of the
   // landing, Minor 1): a visitor, a staff account or a wrong code never boots the escrow worker or

@@ -27,6 +27,7 @@ import { SessionTraderNotes } from '../settings/TraderNotes.js';
 import { DISPUTE_COPY } from '../review/copy.js';
 import { fetchProfile, type PublicReview, type TraderProfile } from './api.js';
 import { PROFILE_COPY as C } from './profileCopy.js';
+import { FIND_TRADE } from '../trades/model.js';
 import '../screens.css';
 import './profile.css';
 
@@ -223,12 +224,23 @@ function Loaded({ load, retry }: { load: Load; retry: () => void }) {
       <h1 className="x2f-screen__title">{C.title}</h1>
       {load.kind === 'loading' ? <p className="x2f-note">{C.loading}</p> : null}
       {load.kind === 'missing' ? <p className="x2f-note">{C.notFound}</p> : null}
+      {/* DESIGN: owner 17 Nov black+orange rule: a name that finds no trader gets the empty trade list's
+          orange way on, a link (FIND_TRADE, COPY-UNSIGNED). */}
+      {load.kind === 'missing' ? (
+        <p className="x2f-note" data-part="find-trade">
+          <Link className="x2f-link" to="/sell">
+            {FIND_TRADE}
+          </Link>
+        </p>
+      ) : null}
       {load.kind === 'failed' ? (
         <>
           <p className="x2f-error" role="alert">
             {C.loadFailed}
           </p>
-          <Button variant="secondary" onClick={retry}>
+          {/* DESIGN: owner 17 Nov black+orange rule: with the profile unloaded, Try again is the screen's one
+              primary action (orange), as on My offers. */}
+          <Button variant="primary" onClick={retry} data-part="retry">
             {C.retry}
           </Button>
         </>

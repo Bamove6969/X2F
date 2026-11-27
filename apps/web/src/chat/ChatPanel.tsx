@@ -42,9 +42,16 @@
  * - Private moderator lanes (owner 27 Nov, docs/security/private-mod-chat-2026-11-27.md): a line
  *   the engine opened in this trader's own lane (`private`) is drawn in the private colour
  *   (--x2f-private on --x2f-private-bg) with a lock and "Private · only you and the moderator see
- *   this". Owner D2: once the moderator has sent this trader a private line (`privateReply`), the
- *   composer offers "Only moderator" / "Everyone", defaulting to "Only moderator" while the
- *   moderator's latest line to them was private; a private composer is tinted and says so.
+ *   this". Owner 27 Nov (follow-up, replaces D2): only the moderator switches private mode; its
+ *   signed switch (`mode`) is a system line here, and while it is on (`privateMode`) the composer
+ *   is tinted with the marker and says "Private message to the moderator". The trader has no
+ *   toggle: the worker decides where each line goes.
+ *
+ * - @mentions (owner 27 Nov follow-up), in a chat with a dispute open: typing "@" opens a listbox
+ *   of the names this panel knows, the moderator's (DisputeRoom's `dispute.moderator`, once one
+ *   joined) and the counterparty's, filtered as typed; arrows, Enter or Tab, Escape, or a tap.
+ *   Choosing writes "@name ". This trader's own name is not offered (the panel does not hold it).
+ *   In the lines, "@<known name>" is highlighted, built as React nodes (never HTML).
  *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
@@ -52,7 +59,7 @@
  */
 import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payNoteFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
 import { ChatProof } from '../screens/proof/ChatProof.js';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
 import { formatDateTime as utcDateTime } from '../ui/dates.js';
@@ -78,9 +85,11 @@ export const MISSING_LINE = 'A message you saw earlier is no longer on the serve
 export const UNREADABLE_PAY_LINE = "Their payment details couldn't be shown. Ask them to send again.";
 // COPY-UNSIGNED (owner 27 Nov, private moderator chat): the marker on a private line and on the private composer.
 export const PRIVATE_MARKER = 'Private · only you and the moderator see this';
-// COPY-UNSIGNED (owner 27 Nov, D2): the composer's two choices once the moderator wrote to this trader privately.
-export const SEND_TO_MOD = 'Only moderator';
-export const SEND_TO_ALL = 'Everyone';
+// COPY-UNSIGNED (owner 27 Nov follow-up, given word for word): the system lines for the moderator's private mode switch.
+export const PRIVATE_MODE_ON = 'The moderator started a private conversation with you. Only you and the moderator see these messages.';
+export const PRIVATE_MODE_OFF = 'The moderator ended the private conversation. Messages are seen by both traders again.';
+// COPY-UNSIGNED (owner 27 Nov follow-up, given word for word): the composer's placeholder while private mode is on.
+export const PRIVATE_PLACEHOLDER = 'Private message to the moderator';
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
 
@@ -127,12 +136,12 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<ChatFailure | null>(null);
   const [announce, setAnnounce] = useState('');
-  /**
-   * Owner D2: the trader's own pick of "Only moderator" / "Everyone", kept only while the moderator's
-   * latest line is the one it was made under; a newer moderator line brings the default back.
-   */
-  const [pick, setPick] = useState<{ under: string | null; private: boolean } | null>(null);
-  const sendToId = useId();
+  /** @mentions: the "@" being typed (its place in the draft and the text after it), or null; the active option. */
+  const [mention, setMention] = useState<{ at: number; query: string } | null>(null);
+  const [active, setActive] = useState(0);
+  /** The "@" (its place) whose picker Escape closed: it stays closed until the draft changes. */
+  const dismissed = useRef<number | null>(null);
+  const pickerId = useId();
   const alive = useRef(true);
   const seq = useRef(0);
   /** The chat whose sync is running (null: none), and whether another was asked for meanwhile. */
@@ -156,7 +165,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     }
     const grew = newest !== seen.current;
     // Review R1: a package is read with this reader's own labels, never the line's text.
-    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.notice !== undefined ? CHAT_NOTICES[incoming.notice] : incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
+    if (incoming?.mode !== undefined) setAnnounce(incoming.mode === 'on' ? PRIVATE_MODE_ON : PRIVATE_MODE_OFF);
+    else if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.notice !== undefined ? CHAT_NOTICES[incoming.notice] : incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
     seen.current = newest ?? -1n;
     return grew;
   }, []);
@@ -236,20 +246,61 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   }, [lineCount]);
 
   const empty = draft.trim() === '';
-  // Owner D2: the toggle only once the moderator sent this trader a private line (the engine's
-  // `privateReply`); the default follows whether the moderator's latest line to them was private.
-  const canPrivate = snap?.privateReply === true;
-  const lastMod = [...(snap?.lines ?? [])].reverse().find((l) => l.from === 'mod') ?? null;
-  const lastModId = lastMod?.id ?? null;
-  const privateDefault = lastMod?.private === true;
-  const toMod = canPrivate && (pick !== null && pick.under === lastModId ? pick.private : privateDefault);
+  // Owner 27 Nov (follow-up): the moderator's private mode, as the worker read it. The worker sends
+  // by its own reading on the sync it makes for the send; the tint tells the trader where lines go.
+  const toMod = snap?.privateMode === true;
+  // @mentions, in a chat with a dispute open: the moderator's name (once one joined) and the counterparty's.
+  const names = snap?.disputeOpen === true ? mentionNames(dispute?.moderator ?? null, name) : [];
+  const options = mention === null ? [] : names.filter((n) => n.toLowerCase().startsWith(mention.query.toLowerCase()));
+  const pickerOpen = options.length > 0;
+  const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
+  const track = (value: string, caret: number | null): void => {
+    const found = mentionAt(value, caret ?? value.length);
+    const m = found !== null && found.at === dismissed.current ? null : found;
+    if (m?.query !== mention?.query || m?.at !== mention?.at) setActive(0);
+    setMention(m);
+  };
+  const choose = (n: string): void => {
+    if (mention === null) return;
+    const el = box.current;
+    const insert = `@${n} `;
+    const end = mention.at + 1 + mention.query.length;
+    const next = draft.slice(0, mention.at) + insert + draft.slice(end);
+    const caret = mention.at + insert.length;
+    setDraft(next);
+    setMention(null);
+    setActive(0);
+    if (el) {
+      el.focus();
+      // After React writes the new value: the caret goes just past the inserted name.
+      requestAnimationFrame(() => el.setSelectionRange(caret, caret));
+    }
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (!pickerOpen) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((activeIndex + step + options.length) % options.length);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      const n = options[activeIndex];
+      if (n === undefined) return;
+      e.preventDefault();
+      choose(n);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      dismissed.current = mention?.at ?? null;
+      setMention(null);
+    }
+  };
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (sending || empty) return;
     setSending(true);
     setSendError(null);
+    setMention(null);
     try {
-      const s = toMod ? await chatClient().send(chat, draft, { private: true }) : await chatClient().send(chat, draft);
+      const s = await chatClient().send(chat, draft);
       sent(s);
       if (!alive.current) return;
       setDraft('');
@@ -300,6 +351,16 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
               </li>,
             );
           }
+          if (l.mode !== undefined) {
+            // Owner 27 Nov (follow-up): the moderator's signed private mode switch, a system line.
+            items.push(
+              <li key={l.id} className="x2f-chat__mode" data-mode={l.mode}>
+                <LockIcon />
+                <span>{l.mode === 'on' ? PRIVATE_MODE_ON : PRIVATE_MODE_OFF}</span>
+              </li>,
+            );
+            return items;
+          }
           items.push(
             <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined} data-notice={l.notice} data-private={l.private ? '' : undefined}>
               {l.private ? <PrivateMarker /> : null}
@@ -339,7 +400,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
                       ) : null}
                     </>
                   ) : (
-                    l.text
+                    withMentions(l.text, names)
                   )}
                 </span>
               )}
@@ -386,34 +447,52 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
       ) : null}
       {phase === 'ready' && !gone ? (
         <form className="x2f-chat__composer" data-private={toMod ? '' : undefined} onSubmit={(e) => void onSubmit(e)}>
-          {canPrivate ? (
-            <fieldset className="x2f-chat__sendto" data-chat-sendto="">
-              {/* COPY-UNSIGNED (owner 27 Nov, D2): the toggle's name for screen readers. */}
-              <legend className="x2f-chat__hidden">Send to</legend>
-              <label className="x2f-chat__sendto-option" data-sendto="mod">
-                <input type="radio" name={sendToId} checked={toMod} onChange={() => setPick({ under: lastModId, private: true })} />
-                {SEND_TO_MOD}
-              </label>
-              <label className="x2f-chat__sendto-option" data-sendto="all">
-                <input type="radio" name={sendToId} checked={!toMod} onChange={() => setPick({ under: lastModId, private: false })} />
-                {SEND_TO_ALL}
-              </label>
-            </fieldset>
-          ) : null}
           {toMod ? <PrivateMarker /> : null}
-          <label className="x2f-chat__label">
-            <span className="x2f-chat__hidden">{toMod ? 'Private message to the moderator' : `Message ${name}`}</span>
-            <textarea
-              ref={box}
-              className="x2f-chat__input"
-              value={draft}
-              rows={2}
-              placeholder={toMod ? 'Private message' : 'Message'}
-              onChange={(e) => setDraft(e.target.value)}
-              readOnly={sending}
-              aria-disabled={sending ? 'true' : undefined}
-            />
-          </label>
+          <div className="x2f-chat__field">
+            {/* @mentions: the listbox sits beside the label, so it is no part of the box's name. */}
+            {pickerOpen ? (
+              // COPY-UNSIGNED (owner 27 Nov follow-up): the picker's name for screen readers.
+              <ul id={pickerId} className="x2f-chat__mentions" role="listbox" aria-label="Mention someone">
+                {options.map((n, i) => (
+                  <li
+                    key={n}
+                    id={`${pickerId}-${i}`}
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    className="x2f-chat__mention-option"
+                    // Keeps the caret in the box, so a tap chooses without losing the draft's place.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => choose(n)}
+                  >
+                    @{n}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <label className="x2f-chat__label">
+              <span className="x2f-chat__hidden">{toMod ? PRIVATE_PLACEHOLDER : `Message ${name}`}</span>
+              <textarea
+                ref={box}
+                className="x2f-chat__input"
+                value={draft}
+                rows={2}
+                placeholder={toMod ? PRIVATE_PLACEHOLDER : 'Message'}
+                aria-autocomplete={names.length > 0 ? 'list' : undefined}
+                aria-controls={pickerOpen ? pickerId : undefined}
+                aria-activedescendant={pickerOpen ? `${pickerId}-${activeIndex}` : undefined}
+                onChange={(e) => {
+                  dismissed.current = null;
+                  setDraft(e.target.value);
+                  track(e.target.value, e.target.selectionStart);
+                }}
+                onSelect={(e) => track(e.currentTarget.value, e.currentTarget.selectionStart)}
+                onKeyDown={onKeyDown}
+                onBlur={() => setMention(null)}
+                readOnly={sending}
+                aria-disabled={sending ? 'true' : undefined}
+              />
+            </label>
+          </div>
           <button type="submit" className="x2f-chat__send" aria-disabled={sending || empty ? 'true' : undefined}>
             Send
           </button>
@@ -428,17 +507,77 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   );
 }
 
+/** Private lanes: the lock on a private line, the private composer and a mode line. */
+function LockIcon() {
+  return (
+    <svg className="x2f-chat__private-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
 /** Private lanes: the lock and the words on a private line and on the private composer. */
 function PrivateMarker() {
   return (
     <span className="x2f-chat__private" data-private-marker="">
-      <svg className="x2f-chat__private-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <rect x="5" y="11" width="14" height="10" rx="2" />
-        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-      </svg>
+      <LockIcon />
       {PRIVATE_MARKER}
     </span>
   );
+}
+
+/** @mentions: the names offered, the moderator's first; empty and repeated names left out. */
+export function mentionNames(moderator: string | null, counterparty: string): string[] {
+  const out: string[] = [];
+  for (const n of [moderator, counterparty]) if (n !== null && n.trim() !== '' && !out.includes(n)) out.push(n);
+  return out;
+}
+
+const WORD = /[\p{L}\p{N}_]/u;
+const SPACE = /\s/u;
+
+/**
+ * @mentions: the "@" the caret is in, with the text typed after it: an "@" at the start or after
+ * white space, and no white space between it and the caret. Null when the caret is in no mention.
+ */
+export function mentionAt(value: string, caret: number): { at: number; query: string } | null {
+  const before = value.slice(0, caret);
+  const at = before.lastIndexOf('@');
+  if (at < 0 || (at > 0 && !SPACE.test(before.charAt(at - 1)))) return null;
+  const query = before.slice(at + 1);
+  return SPACE.test(query) ? null : { at, query };
+}
+
+/**
+ * @mentions: a line's text with every "@<known name>" in its own highlighted span (the longest
+ * name first, not inside a longer word). React nodes only: the text is never read as HTML.
+ */
+export function withMentions(text: string, names: readonly string[]): ReactNode {
+  if (names.length === 0 || !text.includes('@')) return text;
+  const sorted = [...names].sort((a, b) => b.length - a.length);
+  const out: ReactNode[] = [];
+  let plain = '';
+  let i = 0;
+  while (i < text.length) {
+    const starts = text.charAt(i) === '@' && (i === 0 || !WORD.test(text.charAt(i - 1)));
+    const hit = starts ? sorted.find((n) => text.startsWith(n, i + 1) && !WORD.test(text.charAt(i + 1 + n.length))) : undefined;
+    if (hit === undefined) {
+      plain += text.charAt(i);
+      i++;
+      continue;
+    }
+    if (plain !== '') out.push(plain);
+    plain = '';
+    out.push(
+      <span key={i} className="x2f-chat__mention" data-mention="">
+        @{hit}
+      </span>,
+    );
+    i += 1 + hit.length;
+  }
+  if (plain !== '') out.push(plain);
+  return out;
 }
 
 /** A package's plain text with this reader's labels (renderPayDetailsText); the title alone if a box is unknown here. */

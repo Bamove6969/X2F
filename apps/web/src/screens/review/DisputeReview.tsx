@@ -130,7 +130,9 @@ export function DisputeReview({ send = disputeReview }: { send?: (id: string, re
           </Button>
         </form>
       ) : null}
-      <Link className="x2f-button x2f-button--secondary" to="/profile" data-part="dispute-back">
+      {/* DESIGN: owner 17 Nov black+orange rule: with no review to dispute (missing, or already sent), the way
+          back is the screen's one action, so it is the primary (orange). */}
+      <Link className={`x2f-button ${review === null && state.kind !== 'loading' ? 'x2f-button--primary' : 'x2f-button--secondary'}`} to="/profile" data-part="dispute-back">
         {C.cancel}
       </Link>
     </main>

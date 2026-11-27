@@ -63,7 +63,7 @@ describe('openCaseChat: gaps (review N2)', () => {
     for (const [i, [from, seq]] of seqs.entries()) envelopes.push({ id: String(i + 1), senderRole: from, envelope: await w.seal(from, seq, `${from} ${seq}`), at: 'a' });
     return { w, answer: { ...w.answer, envelopes } };
   }
-  const shown = (o: { lines: Array<{ text: string; missingBefore: number }> }) => o.lines.map((l) => [l.text, l.missingBefore]);
+  const shown = (o: { lines: Array<{ text?: string | undefined; missingBefore: number }> }) => o.lines.map((l) => [l.text, l.missingBefore]);
 
   it('no gap when every sender runs from 0 without a hole', async () => {
     const { w, answer } = await chatOf([['buyer', 0], ['seller', 0], ['buyer', 1], ['mod', 0], ['seller', 1]]);

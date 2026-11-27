@@ -7,6 +7,7 @@ import { KeyTapDialog } from '../ui/KeyTapDialog.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import { Table, type Column } from '../ui/Table.js';
 import '../ui/staff.css';
+import { FaultLine } from '../ui/FaultLine.js';
 
 /**
  * Owner 26 Nov 2026: every trade not deleted yet, by status (`GET /staff/v1/trades/status`,
@@ -127,7 +128,12 @@ export function TradeStatus() {
           </Button>
         ))}
       </div>
-      {fault !== null ? <Notice tone="danger" data-part="trade-status-fault">{fault}</Notice> : null}
+      {/* DESIGN: owner 17 Nov black+orange rule: the load fault's retry is the orange text button. */}
+      {fault !== null ? (
+        <Notice tone="danger" data-part="trade-status-fault">
+          <FaultLine text={fault} />
+        </Notice>
+      ) : null}
       <div className="x2f-staff-scroll">
         <Table label={C.label} columns={columns} rows={rows} rowKey={(t) => t.code} empty={C.empty} />
       </div>

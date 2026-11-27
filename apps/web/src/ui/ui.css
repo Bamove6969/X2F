@@ -16,9 +16,11 @@
   cursor: pointer;
 }
 
-/* Owner 16 Nov 2026 (fonts D + sizing): the button keeps its size; its label is bigger and bold,
-   on one line, with the 16 px side padding and at least 14 px above and below kept clear. On a
-   narrow phone the label stops growing (down to 17 px) before it reaches the sides. */
+/* Owner 16 Nov 2026 (fonts D + sizing): the button keeps its size; its label is bold, on one line.
+   DESIGN: owner 17 Nov button labels: "as much font as possible... bigger and wider, but never touch
+   the top or the sides". 27 px (cap height about half the 56 px button, 12 px+ clear above and
+   below, 16 px at the sides); a long label on a narrow phone is stepped down to fit, never under
+   17 px (ui/fitPrimaryLabels.ts sets --x2f-primary-fit). */
 .x2f-button--primary {
   height: 56px;
   padding: 0 var(--x2f-space-4);
@@ -26,10 +28,26 @@
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-monero);
   color: var(--x2f-on-monero);
-  font-size: clamp(17px, calc(13px + 1.8vw), 20px);
   font-weight: 700;
-  line-height: 26px;
   white-space: nowrap;
+}
+
+/* Two classes, so a screen's own one-class rule for its button cannot shrink the label again (owner
+   17 Nov button labels). Not the landing's ways or the sign-up steps' main button: they are the
+   bigger 68 px buttons of owner demo notes #172/#173/#192 (25 Nov) and keep their own label size. */
+.x2f-button.x2f-button--primary:not(.x2f-landing__way, .x2f-start__foot *) {
+  font-size: var(--x2f-primary-fit, 27px);
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+/* DESIGN: owner 17 Nov, CAPS variant to look at (not decided, off by default): one switch,
+   <html data-button-case="upper">, draws every orange button's label in capitals, bold, a little
+   tracked; ui/fitPrimaryLabels.ts refits it so it still never reaches the sides. */
+:root[data-button-case='upper'] .x2f-button.x2f-button--primary,
+:root[data-button-case='upper'] .x2f-ex__button {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .x2f-button--secondary {
@@ -271,6 +289,32 @@
 }
 
 .x2f-link:hover {
+  color: var(--x2f-monero-ink-hover);
+}
+
+/* A button that reads as a link (in a sentence: "Try again", "Suggest it"). Moved here from
+   browse.css so every screen can use it. DESIGN: owner 17 Nov black+orange rule: the kit's orange
+   text action, used for the retry on the load-error lines. */
+.x2f-text-button {
+  /* A tap target at least 32 px tall on phones; the negative margin keeps the line box as it was. */
+  display: inline-block;
+  padding: 6px 0;
+  margin: -6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.x2f-text-button:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-text-button:hover {
   color: var(--x2f-monero-ink-hover);
 }
 
@@ -2218,9 +2262,14 @@
   /* Edge to edge across the screen's 16 px gutters, and down over its 24 px bottom padding. */
   margin-inline: calc(-1 * var(--x2f-space-4));
   margin-bottom: calc(-1 * var(--x2f-space-6));
-  padding: var(--x2f-space-4);
-  border-top: 1px solid var(--x2f-surface-raised);
-  background: var(--x2f-ground);
+  /* 16 px of fade, then 16 px of the page colour above the button (owner 17 Nov follow-up). */
+  padding: 32px var(--x2f-space-4) var(--x2f-space-4);
+  /* DESIGN: owner 17 Nov floating button: "The orange button should be floating or on its own. It doesn't
+     need a background." No fill, no top line, no shadow: the button sits over the page's own ground. */
+  /* DESIGN: owner 17 Nov floating button (follow-up): no bar, but the cards that scroll under the
+     button fade out into the page's own ground above it, so no card edge touches the button. The
+     fade is the page colour only (no edge, no other shade): invisible as a shape. */
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-ground) 0%, transparent), var(--x2f-ground) 16px);
 }
 
 [data-shell='phone']:has(> .x2f-bottom-nav) .x2f-action-bar {
@@ -2635,6 +2684,20 @@
   line-height: 22px;
 }
 
+/* DESIGN: owner 17 Nov black+orange rule: an empty list's link (EmptyState action), 600, a 44 px target. */
+.x2f-empty__action {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.x2f-empty__action .x2f-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+
 /* Select all over select cards: its tick box sits on the cards' 44 px tick-box column. */
 .x2f-select-all {
   display: flex;
@@ -2774,13 +2837,15 @@
   border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  color: var(--x2f-ink);
+  /* DESIGN: owner 17 Nov black+orange rule: the tiles' labels in the kit's link orange, so the front
+     door's screens that show only these (Team join's used-up link) carry an orange accent. */
+  color: var(--x2f-monero-ink);
   text-decoration: none;
 }
 
 .x2f-help-links__link:hover {
   background: var(--x2f-surface-raised);
-  color: var(--x2f-ink);
+  color: var(--x2f-monero-ink-hover);
 }
 
 /* The trade header's wrapper (the brand row and the board's header), one block for the tabletop rule. */

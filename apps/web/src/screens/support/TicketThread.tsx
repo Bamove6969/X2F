@@ -94,7 +94,15 @@ export function TicketThread() {
       back={{ label: TICKET_COPY.back, to: TICKETS_PATH }}
       busy={load.kind === 'loading'}
       footer={
-        t === null ? undefined : closed ? (
+        // DESIGN: owner 17 Nov black+orange rule: a ticket that is missing or could not load offers
+        // "Open a ticket" as its primary, as a closed one does.
+        t === null ? (
+          load.kind === 'missing' || load.kind === 'failed' ? (
+            <Link className="x2f-button x2f-button--primary" data-primary="" to={NEW_TICKET_PATH} data-part="open-ticket">
+              {TICKET_COPY.open}
+            </Link>
+          ) : undefined
+        ) : closed ? (
           <Link className="x2f-button x2f-button--primary" data-primary="" to={NEW_TICKET_PATH} data-part="open-ticket">
             {TICKET_COPY.open}
           </Link>

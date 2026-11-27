@@ -32,3 +32,14 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* DESIGN: owner 17 Nov black+orange rule and floating button: the new ticket's long form pushed its
+   one orange button below the fold, so Send floats at the bottom, over the page's own ground (the
+   Post offer footer's fade: no bar, no top line, no shadow). */
+[data-screen='ticket-new'] .x2f-flow__footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 32px;
+  border-top: 0;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-ground) 0%, transparent), var(--x2f-ground) 16px);
+}

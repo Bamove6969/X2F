@@ -206,6 +206,14 @@ export function Feedback() {
         <section className="x2f-stack">
           <h1 className="x2f-h2">Tell us what you think</h1>
           <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+          {/* DESIGN: owner 17 Nov black+orange rule: an orange link of the screen's own while Send waits,
+              greyed, for a message. DESIGN: wording (COPY-UNSIGNED): the line and its link to Help. */}
+          <p className="x2f-note" data-part="feedback-help">
+            Looking for an answer?{' '}
+            <Link className="x2f-link" to="/help">
+              Help
+            </Link>
+          </p>
         </section>
         {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
           <p className="x2f-note" data-part="feedback-login-first">

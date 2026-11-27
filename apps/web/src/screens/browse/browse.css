@@ -141,6 +141,22 @@
   padding: 0 14px 0 44px;
 }
 
+/* DESIGN: owner 17 Nov black+orange rule: the "Post an offer" link under the sort chips
+   (PostOfferLink.tsx), a 44 px tall target on its own line. */
+.x2f-browse__post {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.x2f-browse__post .x2f-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: -12px 0;
+  font-weight: 600;
+}
+
 /* Sort chips (Main, SellOffers boards). */
 .x2f-browse__sorts {
   display: flex;
@@ -360,29 +376,6 @@ a.x2f-method:last-of-type {
   font-size: 14px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
-}
-
-.x2f-text-button {
-  /* A tap target at least 32 px tall on phones; the negative margin keeps the line box as it was. */
-  display: inline-block;
-  padding: 6px 0;
-  margin: -6px 0;
-  border: 0;
-  background: transparent;
-  color: var(--x2f-monero-ink);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.x2f-text-button:focus-visible {
-  outline: 2px solid var(--x2f-ink);
-  outline-offset: 2px;
-  border-radius: var(--x2f-radius-sm);
-}
-
-.x2f-text-button:hover {
-  color: var(--x2f-monero-ink-hover);
 }
 
 /* SellOffers header (v2): the back button on its own 44 px row, then the "34 buyers · USD" line,

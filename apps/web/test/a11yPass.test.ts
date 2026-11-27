@@ -39,8 +39,9 @@ describe('a11y pass - Job 8', () => {
       expect(css).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--x2f-ink\)/);
     });
 
-    it('.x2f-text-button in browse.css has explicit focus-visible outline', () => {
-      const css = readSrc('screens/browse/browse.css');
+    // .x2f-text-button moved to the kit's ui.css (owner 17 Nov black+orange rule: every screen's retry).
+    it('.x2f-text-button in ui.css has explicit focus-visible outline', () => {
+      const css = readSrc('ui/ui.css');
       expect(css).toMatch(/\.x2f-text-button:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--x2f-ink\)/);
     });
   });

@@ -2072,7 +2072,8 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
       ['just you', true, false],
       ['both again', false, false],
     ]);
-    expect(snap.privateReply).toBe(true);
+    // A private line alone is no private mode: only the moderator's signed chat.mode switches it.
+    expect(snap.privateMode).toBe(false);
     // The pkh is pinned; PK itself never reaches the store, and no text does.
     const stored = store.records.get(chat)!;
     expect(JSON.parse(stored).pkh).toBe(await privateKeyHash(pk));
@@ -2091,7 +2092,7 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     const snap = await e.sync(chat);
     expect(snap).toMatchObject({ phase: 'failed', problem: 'security' });
     expect(snap.lines.some((l) => l.text === 'forged lane')).toBe(false);
-    await expect(e.send(chat, 'hi', { private: true })).rejects.toMatchObject({ code: 'not-ready' });
+    await expect(e.send(chat, 'hi')).rejects.toMatchObject({ code: 'not-ready' });
     expect(api.posted).toHaveLength(0);
     expect(JSON.parse(store.records.get(chat)!).pkh).toBeUndefined();
   });
@@ -2119,22 +2120,28 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
     expect((await engine().sync(chat)).lines.map((l) => [l.text, l.private])).toEqual([['early', true]]);
   });
 
-  it('posts a private reply as v3 in its own lane, with a lane seq independent of the shared seq (owner D2)', async () => {
+  const modMode = (on: boolean, seq: number, pk: Uint8Array, to: 'buyer' | 'seller' = 'buyer', payload: unknown = { on }) =>
+    sealPrivate({ trade: channel, from: 'mod', to, seq, type: 'chat.mode', payload, pk, me: mod });
+
+  it('owner 27 Nov follow-up: the moderator\'s chat.mode drives where a send goes: v3 in the own lane while on, v2 when off, lane seq apart from the shared seq', async () => {
     const e = engine();
     await e.sync(chat);
     const parts = attest();
     api.view.disputeOpen = true;
     const pk = await lane(parts);
     await e.send(chat, 'shared one');
-    await e.send(chat, 'shared two');
-    // Before the moderator wrote to this trader privately, there is no private reply.
-    await expect(e.send(chat, 'too soon', { private: true })).rejects.toMatchObject({ code: 'not-ready' });
-    expect((await e.sync(chat)).privateReply).toBe(false);
+    // A private line from the moderator alone does not switch the mode (D2 is gone).
     api.add('mod', await modPrivate('just you', 0, pk), 'buyer');
-    expect((await e.sync(chat)).privateReply).toBe(true);
-    await e.send(chat, 'private one', { private: true });
-    const snap = await e.send(chat, 'private two', { private: true });
-    await e.send(chat, 'shared three');
+    expect((await e.sync(chat)).privateMode).toBe(false);
+    await e.send(chat, 'shared two');
+    api.add('mod', await modMode(true, 1, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(true);
+    await e.send(chat, 'private one');
+    const snap = await e.send(chat, 'private two');
+    expect(snap.privateMode).toBe(true);
+    api.add('mod', await modMode(false, 2, pk), 'buyer');
+    expect((await e.sync(chat)).privateMode).toBe(false);
+    const after = await e.send(chat, 'shared three');
     const posted = api.posted as Array<{ v: number; seq: number; from: string; to?: string }>;
     expect(posted.map((p) => [p.v, p.seq, p.from, p.to])).toEqual([
       [2, 0, 'buyer', undefined],
@@ -2143,12 +2150,91 @@ describe('chat engine: private moderator lanes (owner 27 Nov)', () => {
       [3, 1, 'buyer', 'buyer'],
       [2, 2, 'buyer', undefined],
     ]);
-    expect(snap.lines.filter((l) => l.private).map((l) => [l.text, l.mine])).toEqual([['just you', false], ['private one', true], ['private two', true]]);
-    // The moderator opens it under PK; the chat key does not open it.
+    // The switches are lines of their own (system lines in the panel), private, empty, with no gap.
+    expect(after.lines.map((l) => [l.text, l.mode ?? null, l.private === true, l.gapBefore])).toEqual([
+      ['shared one', null, false, false],
+      ['just you', null, true, false],
+      ['shared two', null, false, false],
+      ['', 'on', true, false],
+      ['private one', null, true, false],
+      ['private two', null, true, false],
+      ['', 'off', true, false],
+      ['shared three', null, false, false],
+    ]);
+    // The moderator opens a private line under PK; the chat key does not open it.
     const guard = new Guard2(channel);
     expect((await openPrivate(posted[2], { pk, trade: channel, to: 'buyer', participants: parts, guard })).payload).toEqual({ text: 'private one' });
     await expect(openChat(posted[2], { tk: await tkOf(parts), trade: channel, participants: parts, guard: new Guard2(channel) })).rejects.toBeInstanceOf(ProtocolError);
     expect(JSON.stringify(api.posted)).not.toContain('private one');
+  });
+
+  it('owner 27 Nov follow-up: the mode is saved with the lane state, and a reload (new worker) shows the same switches and sends the same way', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    api.add('mod', await modMode(true, 0, pk), 'buyer');
+    await engine().sync(chat);
+    expect(JSON.parse(store.records.get(chat)!).privateMode).toBe(true);
+    const fresh = engine();
+    const snap = await fresh.sync(chat);
+    expect(snap.privateMode).toBe(true);
+    expect(snap.lines.map((l) => l.mode)).toEqual(['on']);
+    await fresh.send(chat, 'still private');
+    expect((api.posted[0] as { v: number }).v).toBe(3);
+    // Once the dispute is closed nothing goes into the lane, whatever the last switch said.
+    api.view.disputeOpen = false;
+    expect((await fresh.sync(chat)).privateMode).toBe(false);
+    await fresh.send(chat, 'shared now');
+    expect((api.posted[1] as { v: number }).v).toBe(2);
+  });
+
+  it('owner 27 Nov follow-up: a chat.mode a trader signed, or a malformed one, is ignored: no line, the mode stays off, sends stay shared', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    const buyer = made[0]!;
+    api.add('buyer', await sealPrivate({ trade: channel, from: 'buyer', to: 'buyer', seq: 0, type: 'chat.mode', payload: { on: true }, pk, me: buyer }), 'buyer');
+    api.add('mod', await modMode(true, 0, pk, 'buyer', { on: 'yes' }), 'buyer');
+    api.add('mod', await modMode(true, 0, pk, 'buyer', { on: true, extra: 1 }), 'buyer');
+    api.add('mod', await modPrivate('then this', 0, pk), 'buyer');
+    const snap = await e.sync(chat);
+    expect(snap.phase).toBe('ready');
+    expect(snap.privateMode).toBe(false);
+    expect(snap.lines.map((l) => [l.text, l.mode ?? null])).toEqual([['then this', null]]);
+    await e.send(chat, 'shared');
+    expect((api.posted[0] as { v: number }).v).toBe(2);
+    expect(JSON.parse(store.records.get(chat)!).privateMode).toBe(false);
+  });
+
+  it('owner 27 Nov follow-up: a moderator chat.mode outside a dispute is held, as any moderator lane line, and the send stays shared', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const pk = await lane(parts);
+    await e.sync(chat);
+    api.view.disputeOpen = false;
+    api.add('mod', await modMode(true, 0, pk), 'buyer');
+    const snap = await e.sync(chat);
+    expect(snap.privateMode).toBe(false);
+    expect(snap.lines).toEqual([]);
+    api.view.disputeOpen = true;
+    expect((await e.sync(chat)).privateMode).toBe(true);
+  });
+
+  it('the worker passes a send as it is: there is no private option on the page\'s side', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const got: unknown[][] = [];
+    const fake = { sync: async () => ({}) as never, send: async (...a: unknown[]) => (got.push(a), {} as never), sendPay: async () => ({}) as never, sendProof: async () => ({}) as never, sendUnblurred: async () => ({}) as never, sendNotice: async () => ({}) as never, grant: async () => ({}) as never, prepare: async () => ({}) as never, sweep: async () => [] };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    handler({ data: { t: 'chat-send', id: 1, chat, text: 'hi', private: true } });
+    for (let i = 0; i < 200 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(got).toEqual([[chat, 'hi']]);
   });
 
   it('never opens another lane: a v3 envelope for the seller is skipped', async () => {
