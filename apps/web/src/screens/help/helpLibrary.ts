@@ -566,10 +566,10 @@ const ENTRIES: readonly Entry[] = [
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
         sources: [
           'apps/staff-web/src/screens/ModCase.tsx:87-89 the traders, the payment proof, the escrow',
-          'apps/staff-web/src/screens/ModCase.tsx:529 Request unblurred proof from',
+          'apps/staff-web/src/screens/ModCase.tsx:622 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
-          'apps/staff-web/src/screens/ModCase.tsx:522 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
+          'apps/staff-web/src/screens/ModCase.tsx:615 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
           'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
         ],
       },
