@@ -57,9 +57,10 @@ export interface MemberLimitsView {
 
 /**
  * OWNER QUESTION p11-136 (review F8 / Q4): does a member see their own band and hours? The lead's
- * recommendation is yes, so this is on: `GET /v1/account/me`'s `member.limits` carries them and the
- * web's Team screen shows a member "Your limits". Off: `/me` leaves `limits` out (the web then
- * shows nothing; a member learns a limit only from a refusal). Enforcement is the same either way.
+ * recommendation is yes, so this is on: `GET /v1/account/me`'s `member.limits` and `GET /v1/team/me`'s
+ * `limits` (team/access.ts) carry them and the web shows a member "Your access" (MyAccess.tsx). Off:
+ * both leave `limits` out (the web then shows none; a member learns a limit only from a refusal).
+ * Enforcement is the same either way.
  */
 export const MEMBER_SEES_OWN_LIMITS: boolean = true;
 
@@ -285,6 +286,9 @@ export async function assertInsideBand(q: Queryable, band: TradeBand | null, on:
  * closes their streams after the commit).
  */
 export async function applyLimits(q: Queryable, accountId: string, memberId: string, limits: MemberLimits, now: Date): Promise<string[]> {
+  // Review 26 Nov (finding 3): lock the member's sessions before the team_members write, whose
+  // trigger takes the team log's lock; a logout locks its session row and then waits on that lock.
+  await q.query('select 1 from sessions where member_id = $1 and revoked_at is null order by id for update', [memberId]);
   const { rows } = await q.query(
     `update team_members set band_min_atomic = $3, band_max_atomic = $4, hours = $5
       where id = $1 and account_id = $2 and removed_at is null and (joined_at is not null or invite_expires_at > $6) returning id`,

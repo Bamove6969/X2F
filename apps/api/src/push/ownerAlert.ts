@@ -27,6 +27,10 @@ export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>([
   'tx-proof-check-stuck',
   // Re-review w1: the checker stopped at its cap; only a restart brings it back.
   'tx-proof-check-stopped',
+  // Review of feat/lockout, item 4: new compromised-account locks hit their hourly cap (a mass report?).
+  'compromised-lock-cap',
+  // Owner 26 Nov 2026 (auto-assign): a dispute is still unassigned past its reply deadline.
+  'dispute-unassigned-overdue',
 ]);
 
 export interface OwnerAlertDeps {

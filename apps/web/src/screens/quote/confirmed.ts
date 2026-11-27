@@ -94,8 +94,16 @@ export function readConfirmed(code: string): ConfirmedTrade | null {
     if (r === null || o.role !== 'buyer') return null;
     lienRecoveryAtomic = r;
   }
+  // Seller lien recovery (seller only, docs/lien-recovery.md "Debtor is the seller"): the same.
+  let sellerLienRecoveryAtomic: bigint | undefined;
+  if (o.sellerLienRecoveryAtomic !== undefined) {
+    const r = bigString(o.sellerLienRecoveryAtomic);
+    if (r === null || o.role !== 'seller') return null;
+    sellerLienRecoveryAtomic = r;
+  }
   return {
     role: o.role, ownAddress: o.ownAddress, deal: { poster: deal.poster, takeAmountAtomic, currency: deal.currency, centsPerXmr, maxFiatCents },
     ...(lienRecoveryAtomic !== undefined ? { lienRecoveryAtomic } : {}),
+    ...(sellerLienRecoveryAtomic !== undefined ? { sellerLienRecoveryAtomic } : {}),
   };
 }

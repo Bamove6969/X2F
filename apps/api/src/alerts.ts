@@ -90,7 +90,30 @@ export type AlertKind =
   | 'tx-proof-check-stuck'
   // Owner only (re-review w1): the checker gave up on its third stuck wallet; every proof answers 503
   // until the API is restarted. Once.
-  | 'tx-proof-check-stopped';
+  | 'tx-proof-check-stopped'
+  // Owner only (review of feat/lockout, item 4): the site-wide cap on new compromised-account locks
+  // was reached; a report was recorded without locking. Detail: the report's id.
+  | 'compromised-lock-cap'
+  // Owner 26 Nov 2026 (docs/lien-recovery.md "Grace"): a lien's 7 days to pay the agreed way passed
+  // without the person owed confirming payment; to the moderator who ruled (also pushed) and the
+  // owner. Detail: trade, lienId.
+  | 'lien-grace-lapsed'
+  // Such a lien sent to the senior moderators and the owner (by its moderator, or by the timer after
+  // LIEN_LAPSE_ESCALATE_HOURS or when that moderator left); to each of them, pushed. Detail: trade, lienId.
+  | 'lien-grace-escalated'
+  // Coordinator follow-up 26 Nov 2026: a lower lien share waits for a senior moderator or the owner;
+  // to each who may decide it (also pushed, once per request). Detail: trade, lienId, requestId.
+  | 'lien-rate-requested'
+  // Review of feat/lien-grace item 9: to the person owed, a lien given 7 days to pay the agreed way
+  // is now collected from the debtor's later trades (choose the wallet recoveries go to). Also pushed.
+  // Detail: lienId.
+  | 'lien-collecting'
+  // Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken": to a staff member, a
+  // dispute nobody took in time was given to them by the timer. Detail: trade.
+  | 'dispute-auto-assigned'
+  // Same decision: to the owner and every senior moderator, once per round, a dispute still in the
+  // pool past its reply deadline (nobody eligible on shift). Detail: trade, round.
+  | 'dispute-unassigned-overdue';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

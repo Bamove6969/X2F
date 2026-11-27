@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import type { IncomingTransfer } from './earnings.js';
 
 /**
  * Owner, 26 Nov 2026: X2F's hot payroll wallet (wallet 2). Every completed trade pays half of its
@@ -25,6 +26,12 @@ export interface PayrollWallet {
   transfer(a: { address: string; amountAtomic: bigint; feeFromAmount: boolean }): Promise<{ txHash: string; feeAtomic: bigint | null }>;
   /** The wallet's primary address (account 0, address 0). */
   primaryAddress(): Promise<string>;
+  /**
+   * The owner's earnings (staff/earnings.ts): every confirmed incoming transfer to account 0 (the
+   * wallet-rpc's `get_transfers` `in` list: what arrived in a block; change from its own sends is
+   * not listed). Read-only. Optional so the test doubles that only pay need not implement it.
+   */
+  incoming?(): Promise<IncomingTransfer[]>;
 }
 
 /** The wallet answered with an error: it built and sent nothing (low balance, locked coins, a bad address). */
@@ -153,6 +160,20 @@ export function moneroPayrollWallet(config: PayrollWalletConfig, io: RpcIO = {})
       const r = await call('get_address', '{"account_index":0,"address_index":[0]}');
       if (typeof r.address !== 'string') throw new Error('payroll wallet: bad address');
       return r.address;
+    },
+    async incoming() {
+      const r = await call('get_transfers', '{"in":true,"account_index":0}');
+      const list = r.in === undefined ? [] : r.in;
+      if (!Array.isArray(list)) throw new Error('payroll wallet: bad transfers');
+      return list.map((t: unknown): IncomingTransfer => {
+        const e = (t ?? {}) as Record<string, unknown>;
+        const atomic = amountOf(e.amount);
+        const ts = e.timestamp;
+        if (typeof e.txid !== 'string' || !HEX64.test(e.txid) || atomic === null || atomic <= 0n || typeof ts !== 'number' || !Number.isSafeInteger(ts) || ts <= 0) {
+          throw new Error('payroll wallet: bad transfer');
+        }
+        return { txHash: e.txid, at: new Date(ts * 1000), atomic };
+      });
     },
     async transfer(a) {
       if (!MONERO_ADDRESS.test(a.address)) throw new PayrollWalletRefused(-2, 'bad destination');

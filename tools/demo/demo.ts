@@ -182,6 +182,7 @@ async function main(): Promise<void> {
     X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
     X2F_TOTP_KEYS: s.totpKeys,
     X2F_LOGIN_NAME_KEYS: s.loginNameKeys,
+    X2F_TICKET_KEYS: s.ticketKeys,
     X2F_TRAINING_ID_KEY: s.trainingIdKey,
     X2F_VAPID_PUBLIC: s.vapidPublic,
     X2F_VAPID_PRIVATE: s.vapidPrivate,

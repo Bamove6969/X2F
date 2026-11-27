@@ -794,6 +794,34 @@ describe('a recovery-code login', () => {
     expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).toBeNull();
   });
 
+  it("D-059 (J-14 review S1, ported): a hold ending while a compromised-account lock holds the trade keeps the partner's recorded cancel until the unlock", async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    const state = async () => (await deps.db.query<{ state: string; settling: string | null; p: Date | null }>('select state, settling, paused_at as p from trades where code = $1', [s.code])).rows[0]!;
+    const asked = async () => (await deps.db.query<{ c: Date | null }>('select cancel_requested_at as c from held_trades where code = $1', [s.code])).rows.map((x) => x.c !== null);
+    expect((await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    expect(await asked()).toEqual([true]);
+    // The held seller's account is then reported compromised and locked (D-059), over the hold.
+    await deps.db.query('insert into account_locks (account_id, ticket_id, locked_at, set_disabled) values ($1, null, $2, false)', [t.id, now]);
+    // The hold ends: the lock still holds the trade, so nothing resumes and the recorded cancel waits.
+    expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect(await state()).toMatchObject({ state: 'secured', settling: null });
+    expect((await state()).p).not.toBeNull();
+    expect(await asked()).toEqual([true]);
+    // Staff unlock: the next pass resumes the trade and carries out the cancel, once.
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [t.id, now]);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect(await state()).toEqual({ state: 'settling', settling: 'buyer-cancel', p: null });
+    expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rows).toHaveLength(0);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    const logged = await deps.db.query<{ action: string }>("select action from activity_log where trade_code = $1 and action = 'trade.buyer-cancel'", [s.code]);
+    expect(logged.rows).toHaveLength(1);
+  });
+
   it('lead review item 4: a hold ending during maintenance resumes its trade once maintenance is over', async () => {
     const t = await ownerWithCode();
     const partner = await trader();

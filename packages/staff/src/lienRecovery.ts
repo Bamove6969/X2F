@@ -7,13 +7,14 @@ import { can, type StaffRole } from './roles.js';
  *
  * 1. Partial recovery: a trade recovers what its proceeds allow; the rest carries forward.
  * 2. No double compensation: the creditor never receives more than the lien's amount.
- * 3. Option b: the debtor keeps trading and their proceeds are deducted at the lien's rate, 50%
- *    by default. A moderator may propose another rate with a reason; a senior moderator (or the
+ * 3. Option b: the debtor keeps trading and their proceeds are deducted at the lien's rate, 100%
+ *    by default (owner 26 Nov 2026: "100% of their earnings are pulled until they pay back in
+ *    full"; the buyer's output keeps only what the payout needs, @x2f/trade lienRecoveryCap). A moderator may propose another rate with a reason; a senior moderator (or the
  *    owner) decides; until approved the current rate applies.
  */
 
-/** The owner's default: 50% of the debtor's proceeds, in basis points. */
-export const DEFAULT_RECOVERY_RATE_BPS = 5000;
+/** The owner's default (26 Nov 2026): 100% of the debtor's proceeds, in basis points (as @x2f/trade LIEN_DEFAULT_RATE_BPS). */
+export const DEFAULT_RECOVERY_RATE_BPS = 10_000;
 /** The longest reason a rate change request may carry. */
 export const RATE_REASON_MAX = 500;
 

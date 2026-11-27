@@ -33,6 +33,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
       'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
       'idle_reminder_minutes',
+      // Away (856, owner 26 Nov 2026): the person's own switch, shown on their public profile; a change.
+      'away_since',
     ],
     bookkeeping: {
       had_wallet: 'set with the first wallet, which notifies through wallets',
@@ -114,6 +116,10 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       'recovery_rate_bps',
       // Owner 26 Nov 2026 (migration 851): the write-off, set with the status change to uncollectible.
       'written_off_by', 'written_off_tap',
+      // Owner 26 Nov 2026 (migration 900): 7 days to pay the agreed way, its lapse, the moderator's
+      // switch to collecting and the creditor's "I've been paid" are changes to the debtor's lien.
+      'ruled_by', 'grace_method', 'grace_until', 'grace_lapsed_at', 'grace_escalated_at', 'grace_escalated_by',
+      'collect_started_at', 'collect_started_by', 'collect_tap', 'repaid_off_platform_at',
     ],
     bookkeeping: {
       // Q2 (migration 820): where the CREDITOR's recoveries go, set by the creditor's own signed
@@ -204,7 +210,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'login_approvals.account_id': 'a new device asking to log in (push and alert)',
   'push_subscriptions.account_id': 'a browser subscribing to pushes, renewed by the browser itself',
   'name_keys.account_id': 'kept by a trigger from accounts (which notifies)',
-  'team_audit.account_id': "the team's audit log, written with the member change (team_members notifies)",
   'offers.account_id': 'trading, not the account',
   'trades.seller_account_id': 'trading, not the account',
   'trades.buyer_account_id': 'trading, not the account',
@@ -246,9 +251,13 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'feedback_form.account_id': 'feedback sent to X2F',
   // Plan 4 Task 30: support tickets. A ticket is the trader's own question to staff, not a change to
   // the account; who took it and which staff member wrote a line are staff-side.
-  'tickets.account_id': "a support ticket the account's owner opened to X2F staff",
+  'tickets.account_id': "a support ticket the account's owner (or a team member) opened to X2F staff, or a compromised report naming it (the lock it starts sets accounts.disabled_at, which notifies)",
   'tickets.taken_by': 'the staff member working a ticket (staff side)',
   'ticket_messages.staff_id': 'the staff member who wrote a ticket reply (staff side, never shown to the trader)',
+  // D-059 (migration 860, J-14 ported; lead default, owner p11-119 pattern): the compromised-account
+  // lock record. The lock sets accounts.disabled_at and the unlock clears it, which notify.
+  'account_locks.account_id': 'the compromised-account lock record; the lock sets accounts.disabled_at and the unlock clears it, which notify',
+  'account_locks.unlocked_by': 'the staff member who lifted a lock (staff side)',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   // J-06 (migration 400; lead default): the person a lien is owed to; the dispute's own notices tell them.
@@ -260,5 +269,9 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   // Plan 4 Task 19 (migration 750; lead call 18 Nov 2026): silent.
   // Owner 26 Nov 2026 (migration 851): the owner's stamp on a write-off; the debtor is notified by the lien's change.
   'liens.written_off_by': 'the owner who wrote a lien off as uncollectible (the debtor is notified by the change to their lien)',
+  // Owner 26 Nov 2026 (migration 900): staff stamps on a lien's grace; the debtor is notified by the lien's change.
+  'liens.ruled_by': 'the moderator whose ruling placed a lien (the debtor is notified by the lien itself)',
+  'liens.grace_escalated_by': 'the moderator who sent a lapsed grace lien to a senior (the debtor is notified by the lien\'s change)',
+  'liens.collect_started_by': 'the staff member who switched a grace lien to collecting (the debtor is notified by the lien\'s change)',
   'training_cases.marked_by': "the curator's (owner's) stamp on a training case, not a change to that account; marking is logged as staff.training-marked",
 };

@@ -3,7 +3,7 @@
  * the browser's chatCrypto seals and opens; the API stores ciphertext only and checks the shape.
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
-import { CHAT_ENVELOPE_V2_KEYS, ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
+import { CHAT_ENVELOPE_V2_KEYS, CHAT_ENVELOPE_V3_KEYS, ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
 
 /** The `type` inside every chat envelope's ciphertext. */
@@ -28,7 +28,7 @@ const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const HEX = /^[0-9a-f]+$/;
 const KEY_HEX = /^[0-9a-f]{64}$/;
 
-export type ChatEnvelopeErrorCode = 'bad-envelope' | 'wrong-channel' | 'wrong-sender' | 'too-large';
+export type ChatEnvelopeErrorCode = 'bad-envelope' | 'wrong-channel' | 'wrong-sender' | 'wrong-lane' | 'too-large';
 
 /** Messages name the problem, never a field's value. */
 export class ChatEnvelopeError extends Error {
@@ -143,6 +143,47 @@ export function checkChatEnvelopeV2(body: unknown, channel: string, sessionRole?
   return out;
 }
 
+/** A v3 private lane envelope as the API stores it (@x2f/protocol's ChatEnvelopeV3; private-mod-chat-2026-11-27). */
+export interface ChatEnvelopeV3Shape {
+  v: 3;
+  trade: string;
+  from: Role;
+  to: 'buyer' | 'seller';
+  seq: number;
+  nonce: string;
+  ct: string;
+  sig: string;
+}
+
+/**
+ * The API's check of a posted v3 (private lane) envelope: the exact v3 key set, field types, at most
+ * CHAT_BODY_MAX_BYTES as JSON, `trade` the chat's channel, `from` the session's role, and `to` a lane
+ * (`buyer` or `seller`) whose sender is the moderator or that lane's own trader (`wrong-lane`
+ * otherwise: a trader writes only in its own lane). Like v1 and v2, it cannot check the signature or
+ * open anything.
+ */
+export function checkChatEnvelopeV3(body: unknown, channel: string, sessionRole?: Role): ChatEnvelopeV3Shape {
+  if (!isPlainObject(body) || !hasExactKeys(body, CHAT_ENVELOPE_V3_KEYS)) throw bad('envelope shape');
+  let json: string;
+  try {
+    json = JSON.stringify(body);
+  } catch {
+    throw bad('envelope');
+  }
+  if (new TextEncoder().encode(json).length > CHAT_BODY_MAX_BYTES) throw new ChatEnvelopeError('too-large', 'Envelope too large');
+  const { v, trade, from, to, seq, nonce, ct, sig } = body;
+  if (v !== 3) throw bad('v');
+  if (typeof trade !== 'string') throw bad('trade');
+  if (typeof from !== 'string' || !(ROLES as readonly string[]).includes(from)) throw bad('from');
+  if (to !== 'buyer' && to !== 'seller') throw bad('to');
+  if (!isValidSeq(seq)) throw bad('seq');
+  const out: ChatEnvelopeV3Shape = { v: 3, trade, from: from as Role, to, seq, nonce: b64(nonce, 32, 'nonce'), ct: b64(ct, CHAT_BODY_MAX_BYTES, 'ct'), sig: hex(sig, 128, 'sig') };
+  if (trade !== channel) throw new ChatEnvelopeError('wrong-channel', 'Envelope is for another channel');
+  if (sessionRole !== undefined && from !== sessionRole) throw new ChatEnvelopeError('wrong-sender', 'Envelope sender is not the session role');
+  if (from !== 'mod' && from !== to) throw new ChatEnvelopeError('wrong-lane', 'Envelope is for another lane');
+  return out;
+}
+
 /**
  * The bytes a chat identity's proof signs: "x2f/chat-identity/v1\0" + normalized chat code +
  * "\0" + role + "\0" + signPublic + boxPublic (each exactly 64 lower-case hex characters). The same rule as Task 8's trade identity proof,
@@ -192,6 +233,14 @@ export interface ChatRetentionFacts {
   disputeClosedAt: Date | null;
   createdAt: Date;
   lastMessageAt: Date | null;
+  /**
+   * Owner 26 Nov 2026 (as the trade row, retention.ts `lienOpen`): a lien from this trade's
+   * disputes is unpaid (`liens.status` active or suspended). Its chat and payment proofs are then
+   * kept, however old, until the lien ends.
+   */
+  lienOpen?: boolean;
+  /** When the last lien from this trade ended (`liens.lifted_at`), or null; kept CHAT_AFTER_DISPUTE_DAYS after it. */
+  lienEndedAt?: Date | null;
 }
 
 const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinite(d.getTime());
@@ -203,7 +252,9 @@ const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinit
  * - a trade that was never disputed: CHAT_AFTER_CLOSE_DAYS (30) days after it closes;
  * - a trade that had a dispute: CHAT_AFTER_DISPUTE_DAYS (90) days after the dispute closes, so one
  *   opened inside the 30 days stops the 30-day erasure;
- * - a pre-trade chat: CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation).
+ * - a pre-trade chat: CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation);
+ * - never while a lien from the trade is unpaid (owner 26 Nov 2026, as `tradeDeleteAt`); once it
+ *   has ended, no sooner than CHAT_AFTER_DISPUTE_DAYS (90) days after it ended.
  *
  * "A dispute closes" is the machine's `closed` status, the only one with a `disputes.closed_at`. It
  * comes after the appeal: `published` is the 48-hour appeal window (the coins have moved and the
@@ -218,8 +269,11 @@ const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinit
  */
 export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
   const nullable = (d: Date | null): boolean => d === null || valid(d);
+  const lienEndedAt = c.lienEndedAt ?? null;
   if (
     c.disputeOpen ||
+    c.lienOpen === true ||
+    !nullable(lienEndedAt) ||
     !valid(now) ||
     !valid(c.createdAt) ||
     !nullable(c.lastMessageAt) ||
@@ -230,9 +284,16 @@ export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
   }
   if (c.tradeLinked) {
     if (!valid(c.tradeClosedAt)) return false;
-    if (!c.disputed) return now.getTime() > c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
-    if (!valid(c.disputeClosedAt)) return false;
-    return now.getTime() > Math.max(c.disputeClosedAt.getTime(), c.tradeClosedAt.getTime()) + CHAT_AFTER_DISPUTE_DAYS * DAY_MS;
+    let at: number;
+    if (!c.disputed) {
+      at = c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
+    } else {
+      if (!valid(c.disputeClosedAt)) return false;
+      at = Math.max(c.disputeClosedAt.getTime(), c.tradeClosedAt.getTime()) + CHAT_AFTER_DISPUTE_DAYS * DAY_MS;
+    }
+    // Owner 26 Nov 2026: a lien that ended keeps the chat CHAT_AFTER_DISPUTE_DAYS after it ended.
+    if (lienEndedAt !== null) at = Math.max(at, lienEndedAt.getTime() + CHAT_AFTER_DISPUTE_DAYS * DAY_MS);
+    return now.getTime() > at;
   }
   const last = c.lastMessageAt ?? c.createdAt;
   if (!valid(last)) return false;

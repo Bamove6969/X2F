@@ -12,6 +12,7 @@
     "start": "tsx src/main.ts",
     "rewrap-totp": "tsx src/tools/rewrap-totp.ts",
     "rewrap-jabber": "tsx src/tools/rewrap-jabber.ts",
+    "rewrap-tickets": "tsx src/tools/rewrap-tickets.ts",
     "tag-login-names": "tsx src/tools/tag-login-names.ts",
     "news": "tsx src/tools/news.ts"
   },

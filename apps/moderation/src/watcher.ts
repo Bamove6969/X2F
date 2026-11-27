@@ -507,6 +507,12 @@ export function createWatcher(o: WatcherOptions): Watcher {
       else await unfreeLienRecoveries(o.db, row.trade);
     }
     if (!step.watching && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade);
+    // Owner 27 Nov 2026 (review of feat/seller-lien, item 1): a selling debtor's extra on a trade that
+    // closed with no coin stops counting at once, as the API releases its hold, so an unfunded trade
+    // cannot block the lien's recovery for the whole watch. Any coin this watcher then sees before a
+    // sweep makes it count again (late coins can still be ruled for the buyer, paying it).
+    else if (CLOSED_STATES.includes(item.state as TradeState) && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade, 'seller');
+    else if (!neverFunded(step.state) && step.state.sweepTxs.length === 0) await unfreeLienRecoveries(o.db, row.trade, 'seller');
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
     const desk = desks.get(row.trade);

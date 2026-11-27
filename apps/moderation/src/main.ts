@@ -7,7 +7,7 @@ import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channe
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms, checkWork } from './attest.js';
-import { checkLienRecovery, LienRefused, markLienStatementPosted, recordLienRecovery, unpostedLienStatements, type LienRates, type LienRulings } from './lienRecovery.js';
+import { checkLienRecoveries, LienRefused, markLienStatementPosted, recordLienRecovery, unpostedLienStatements, type LienRates, type LienRulings } from './lienRecovery.js';
 import { loadChatIdentity, loadEscrow, loadParty, saveChatIdentity, saveParty, sweepTag, walletPassword } from './keystore.js';
 import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type TradeShredOrder, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
@@ -467,7 +467,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
     // Review B1: a lien recovery is signed only when this service's own records back it.
     await checkWork({ ...w, trade: code });
-    const recovery = await checkLienRecovery({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, payrollWallet: o.payrollWallet, rulings: lienRulingsDep, rates: lienRatesDep });
+    // Owner 27 Nov 2026: the buyer's and the seller's recoveries, each checked by the same rules.
+    const recoveries = await checkLienRecoveries({ ...w, trade: code }, { enabled: o.lienRecovery === true, db: o.db, feeWallet: o.feeWallet, payrollWallet: o.payrollWallet, rulings: lienRulingsDep, rates: lienRatesDep });
     const a = await attestTrade({ ...w, trade: code }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
     const sealed: SealedParty = { v: 1, trade: code, role: 'mod', me: toHexIdentity(a.mod), participants: a.participants };
     const client = await o.db.connect();
@@ -475,7 +476,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await client.query('begin');
       // Stamped with this service's clock (review lead-mod-purge m3): the trade shred's `young` compares it with the same clock.
       await client.query('insert into signed_terms (trade, attestation, sig, created_at) values ($1, $2, $3, $4)', [code, a.attestation, a.sig, now()]);
-      if (recovery !== null) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
+      for (const recovery of recoveries) await recordLienRecovery(client, code, recovery, { signingSecret: o.signingSecret, now: now() });
       await saveParty(client, o.keystoreKey, code, sealed);
       await walletPassword(client, o.keystoreKey, code);
       await client.query('commit');
@@ -715,6 +716,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('delete from mod_countersign_requests where chat = $1', [chat]);
           // Review lead-mod-purge m5: the moderator's next chat seq for the chat.
           await client.query('delete from mod_chat_seq where chat = $1', [chat]);
+          // Owner 27 Nov (migration 897): the chat's sealed private lane keys and the moderator's lane seqs.
+          await client.query('delete from mod_private_lanes where chat = $1', [chat]);
+          await client.query('delete from mod_private_lane_seq where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');

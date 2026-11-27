@@ -87,6 +87,10 @@ export type ApiErrorCode =
   | 'lien'
   // Lien recovery (owner 16 Nov 2026): a lien already has a rate change request waiting.
   | 'request-pending'
+  // Review of feat/lien-grace item 4: approve a lower lien share only after reading the open dispute's chat.
+  | 'review-chat-first'
+  // Review item 5: a lien in its 7 days to pay the agreed way takes its share with the switch to collecting.
+  | 'lien-in-grace'
   // Review M2: complied (a lien repaid directly) while a trade still carries a signed recovery for it.
   | 'lien-recovery-in-flight'
   // Review B1: the take would reserve a lien recovery other than the one the buyer's quote showed.
@@ -142,6 +146,12 @@ export type ApiErrorCode =
   | 'stale-seq'
   | 'wrong-channel'
   | 'wrong-sender'
+  // Private moderator lanes (private-mod-chat-2026-11-27): a v3 envelope for another lane, a lane
+  // never filed, a lane the moderator has not written in yet (D2), a lane whose dispute closed.
+  | 'wrong-lane'
+  | 'no-lane'
+  | 'lane-not-open'
+  | 'lane-closed'
   // Design build task 4 (chat membership keys): the signed key record.
   | 'bad-key-record'
   | 'key-exists'
@@ -300,7 +310,11 @@ export type ApiErrorCode =
   // TICKET_OPEN_AT_ONCE tickets not closed (409); another staff member has taken the ticket (409).
   | 'ticket-closed'
   | 'too-many-tickets'
-  | 'ticket-taken';
+  | 'ticket-taken'
+  // D-059 (J-14, ported): a trade one of whose accounts is locked by a compromised report takes no
+  // trader or moderator event (409); a compromised report does not close while its lock holds (409).
+  | 'trade-held'
+  | 'account-locked';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

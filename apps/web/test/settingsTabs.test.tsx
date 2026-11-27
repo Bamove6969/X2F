@@ -1,20 +1,21 @@
 // @vitest-environment happy-dom
 // Owner demo note #101 (16 Nov 2026): "The entire settings area is completely ugly, doesn't stick
-// to brand, and should be broken into tabs". Settings is four tabs (Security, Alerts, Account,
-// Help), each its own route; every settings screen stays at its route, under its tab; old
+// to brand, and should be broken into tabs". Settings is five tabs (Security, Alerts, Account,
+// Preferences, Help), each its own route; every settings screen stays at its route, under its tab; old
 // Security deep links to a section that moved are sent on to its tab.
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountSettings, AlertsSettings, MovedSectionRedirect, SettingsTabs, movedSection, useHashTarget } from '../src/screens/settings/SettingsTabs.js';
 import { HelpSettings } from '../src/screens/settings/Security.js';
-import { ACCOUNT_PATH, ALERTS_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_TABS, settingsTabOf } from '../src/screens/settings/settingsCopy.js';
+import { ACCOUNT_PATH, ALERTS_PATH, PREFERENCES_PATH, SECURITY_PATH, SETTINGS_HELP_PATH, SETTINGS_TABS, settingsTabOf } from '../src/screens/settings/settingsCopy.js';
 import { BLOCKED_PATH } from '../src/screens/settings/BlockAction.js';
 import { TEAM_PATH } from '../src/screens/settings/teamCopy.js';
 import { ACCOUNT_TYPE_PATH } from '../src/screens/settings/accountTypeCopy.js';
 import { DEVICES_PATH } from '../src/screens/settings/devicesCopy.js';
 import { CHANGES_PATH } from '../src/screens/settings/holdCopy.js';
 import { IDLE_REMINDER_PATH } from '../src/screens/auth/sessionCopy.js';
+import { PRIVACY_PATH } from '../src/screens/settings/privacyCopy.js';
 import { TourProvider } from '../src/tour/TourProvider.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
@@ -55,13 +56,13 @@ function Where() {
 }
 
 describe('note #101: which tab each settings screen is under', () => {
-  it('every existing settings route keeps a tab, and the tabs are the four pages', () => {
-    expect(SETTINGS_TABS.map((t) => t.to)).toEqual([SECURITY_PATH, ALERTS_PATH, ACCOUNT_PATH, SETTINGS_HELP_PATH]);
+  it('every existing settings route keeps a tab, and the tabs are the five pages', () => {
+    expect(SETTINGS_TABS.map((t) => t.to)).toEqual([SECURITY_PATH, ALERTS_PATH, ACCOUNT_PATH, PREFERENCES_PATH, SETTINGS_HELP_PATH]);
     const under: [string, string][] = [
       [SECURITY_PATH, 'security'], [CHANGES_PATH, 'security'], [DEVICES_PATH, 'security'], [IDLE_REMINDER_PATH, 'security'],
       [ALERTS_PATH, 'alerts'], ['/settings/jabber', 'alerts'], ['/settings/jabber/events', 'alerts'],
       [ACCOUNT_PATH, 'account'], [ACCOUNT_TYPE_PATH, 'account'], [TEAM_PATH, 'account'], [BLOCKED_PATH, 'account'],
-      [SETTINGS_HELP_PATH, 'help'],
+      [PREFERENCES_PATH, 'preferences'], [SETTINGS_HELP_PATH, 'help'], [PRIVACY_PATH, 'help'],
     ];
     for (const [path, tab] of under) expect(settingsTabOf(path), path).toBe(tab);
     expect(settingsTabOf('/settings/account-typo')).toBeNull();
@@ -79,7 +80,7 @@ describe('note #101: which tab each settings screen is under', () => {
     expect(nav.classList.contains('x2f-segment')).toBe(true);
     const links = [...nav.querySelectorAll('a')];
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-      ['Security', SECURITY_PATH], ['Alerts', ALERTS_PATH], ['Account', ACCOUNT_PATH], ['Help', SETTINGS_HELP_PATH],
+      ['Security', SECURITY_PATH], ['Alerts', ALERTS_PATH], ['Account', ACCOUNT_PATH], ['Preferences', PREFERENCES_PATH], ['Help', SETTINGS_HELP_PATH],
     ]);
     expect(links.filter((a) => a.getAttribute('aria-current') === 'page').map((a) => a.textContent)).toEqual(['Alerts']);
   });
@@ -110,7 +111,7 @@ describe('note #101: the tab pages', () => {
     expect(host.querySelector('[aria-current="page"]')!.textContent).toBe('Alerts');
   });
 
-  it('Help holds the tour replay and the way back to the welcome screen', async () => {
+  it('Help holds the tour replay, the way back to the welcome screen and the way on to Privacy', async () => {
     const { host } = render(
       <MemoryRouter initialEntries={[SETTINGS_HELP_PATH]}>
         <TourProvider>
@@ -121,6 +122,8 @@ describe('note #101: the tab pages', () => {
     await flush();
     expect(host.querySelector('[data-part="tour-replay"]')).not.toBeNull();
     expect(host.querySelector('[data-part="welcome-link"]')).not.toBeNull();
+    // Plan 7 Task 4: the way on to Settings → Privacy.
+    expect(host.querySelector('[data-part="privacy-link"]')!.getAttribute('href')).toBe(PRIVACY_PATH);
     expect(host.querySelector('[aria-current="page"]')!.textContent).toBe('Help');
   });
 });

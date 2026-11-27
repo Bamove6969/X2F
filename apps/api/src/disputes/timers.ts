@@ -3,10 +3,13 @@ import type { Deps } from '../app.js';
 import { appendLog } from '../log/append.js';
 import { pushOwnerAlert, type OwnerAlertDeps } from '../push/ownerAlert.js';
 import { syncNoReviewerAlert } from './appeals.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { startRetention, type RetentionJob } from '../retention.js';
 import { disputeSettings } from './settings.js';
 import { withDispute, type DisputeDeps } from './store.js';
 import { runComplyLapses, runPendingProofs } from './comply.js';
+import { pushRateDeciders, runLienGraceEscalations, runLienGraceLapses } from './lienGrace.js';
+import { runAutoAssign } from './autoAssign.js';
 import type { TxProofCheck } from './txProof.js';
 
 /** How often the dispute timers run (Plan 4 Task 10). */
@@ -20,6 +23,10 @@ export const DISPUTE_TIMER_MS = 30_000;
  *    no appeal window closes during maintenance. Once maintenance is off, each paused dispute's
  *    running deadlines (reply, ruling, appeal window, comply-by) move by the time it was paused
  *    (`shiftDeadlines`), once.
+ *    D-059 (J-14, ported; owner "open trades are PAUSED (all timers stop)"): outside maintenance, a
+ *    dispute whose trade's buyer or seller account is locked by a "My account has been compromised"
+ *    report is paused the same way, from the later of the lock and its opening, and is resumed (its
+ *    deadlines shifted) only once no lock holds the trade.
  * 2. **Window closed.** A published round 1 whose `appealEndsAt` has passed with no appeal
  *    becomes final (`window-closed`, by the system), logged as `ruling.final`. Coins already
  *    moved at the ruling (A1 dropped): this only ends the one chance to appeal.
@@ -34,6 +41,18 @@ export const DISPUTE_TIMER_MS = 30_000;
  * 5. **Comply time lapsed (A6).** A `seller-sends-xmr` ruling whose comply time passed with no proof
  *    goes to a senior moderator or the owner (`runComplyLapses`: marked, logged, the owner alerted
  *    in-app and, once per pass with any lapse, by push).
+ * 6. **Auto-assign (owner 26 Nov 2026, "Pool first, auto-assign if untaken").** A case nobody took
+ *    within the owner's setting goes to the least-busy eligible staff member on shift, oldest first;
+ *    one still in the pool past its reply deadline alerts the owner and the senior moderators once
+ *    per round (`runAutoAssign`, autoAssign.ts). Each assignment counts as a change.
+ *
+ * 6. **Lien grace lapsed (owner 26 Nov 2026).** A lien given 7 days to pay the agreed way whose
+ *    days passed without the person owed confirming payment is marked once, logged, and the
+ *    moderator who ruled is told (in-app and pushed; the owner in-app) (`runLienGraceLapses`).
+ *    A lapse nobody switched or sent up within LIEN_LAPSE_ESCALATE_HOURS (48), or whose moderator is
+ *    no longer active staff, goes to the seniors and the owner (`runLienGraceEscalations`).
+ *    Then the phone push for new lien rate requests (`pushRateDeciders`: one placed with a ruling
+ *    has no route of its own to push from).
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
  * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
@@ -51,19 +70,34 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
     return r.rowCount ?? 0;
   }
   let n = 0;
+  const held = await deps.db.query(
+    `update disputes d set paused_since = greatest(d.opened_at, (
+         select max(l.locked_at) from account_locks l join trades t on t.code = d.code
+          where l.unlocked_at is null and l.account_id in (t.seller_account_id, t.buyer_account_id)))
+      where d.paused_since is null and d.status <> 'closed'
+        and exists (select 1 from trades t where t.code = d.code and ${tradeHeldSql('t')})`,
+  );
+  n += held.rowCount ?? 0;
   const failures: unknown[] = [];
   const step = (run: () => Promise<unknown>) => stepOne(run, failures);
-  const paused = await deps.db.query<{ code: string; seq: number }>('select code, seq from disputes where paused_since is not null');
+  const paused = await deps.db.query<{ code: string; seq: number }>(
+    `select d.code, d.seq from disputes d where d.paused_since is not null
+        and not exists (select 1 from trades t where t.code = d.code and ${tradeHeldSql('t')})`,
+  );
   for (const p of paused.rows) {
     if (await step(() => withDispute(deps, p, async (d, client, at, rec) => {
       if (rec.pausedSince === null) return d;
+      // Re-read in the dispute's transaction: a lock placed since the list was read keeps it paused.
+      const still = await client.query(`select 1 from trades t where t.code = $1 and ${tradeHeldSql('t')}`, [d.code]);
+      if ((still.rowCount ?? 0) > 0) return d;
       await client.query('update disputes set paused_since = null where code = $1 and seq = $2', [d.code, d.seq]);
       const ms = Math.max(0, at.getTime() - rec.pausedSince.getTime());
       return shiftDeadlines(d, rec.pausedSince, ms);
     }))) n++;
   }
   const due = await deps.db.query<{ code: string; seq: number }>(
-    `select code, seq from disputes where status = 'published' and appeal_ends_at <= $1 and paused_since is null`,
+    `select d.code, d.seq from disputes d where d.status = 'published' and d.appeal_ends_at <= $1 and d.paused_since is null
+        and not exists (select 1 from trades t where t.code = d.code and ${tradeHeldSql('t')})`,
     [now],
   );
   for (const p of due.rows) {
@@ -97,6 +131,13 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
   n += lapsed;
   // Lead call (18 Nov): a lapse reaches the owner's phone too, through the owner-alert push path.
   if (lapsed > 0 && deps.push) await pushOwnerAlert({ db: deps.db, push: deps.push }, 'dispute-comply-lapsed').catch(() => undefined);
+  // Owner 26 Nov 2026 (grace): a lien's 7 days to pay the agreed way passed without the sign-off.
+  n += await runLienGraceLapses(deps, failures);
+  // Review of feat/lien-grace item 2: a lapse nobody acted on goes to the seniors by itself.
+  n += await runLienGraceEscalations(deps, failures);
+  // Coordinator follow-up 26 Nov 2026: a lower share proposed with a ruling reaches the deciders' phones.
+  if (deps.push) await pushRateDeciders({ db: deps.db, clock: deps.clock, push: deps.push }).catch((e: unknown) => void failures.push(e));
+  n += await runAutoAssign(deps, step);
   if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }

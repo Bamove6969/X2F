@@ -5,7 +5,7 @@ export { canonicalJson } from './canonical.js';
 // The trade code as `tapChallenge` reads a ruling's (the staff site compares a case's code with its address, review X3-1).
 export { normalizeTradeCode } from '@x2f/core';
 // Plan 4 Task 31: the support-ticket categories and limits, for the staff web app's queue.
-export { TICKET_BODY_MAX, TICKET_CATEGORIES, type TicketCategory, type TicketStatus } from '@x2f/core';
+export { COMPROMISED_METHODS, TICKET_BODY_MAX, TICKET_CATEGORIES, compromisedTicketLabel, type CompromisedMethod, type TicketCategory, type TicketStatus } from '@x2f/core';
 export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
@@ -62,6 +62,8 @@ export {
   RULING_DEADLINE_H,
   RULING_GOAL_H,
   applyDispute,
+  autoAssignDispute,
+  mayAutoAssign,
   gateUsdCents,
   limitUsdCentsOf,
   markSeen,
@@ -119,6 +121,21 @@ export {
   type LienStatus,
   type LienStep,
 } from './lien.js';
+export {
+  LIEN_GRACE_DAYS,
+  LIEN_GRACE_METHOD_MAX,
+  LIEN_FULL_RATE_BPS,
+  LIEN_LAPSE_ESCALATE_HOURS,
+  LIEN_LAPSE_STARTS_COLLECTING,
+  LIEN_RATE_REASON_PREFILL,
+  graceUntilOf,
+  parseCollectRate,
+  lienCollecting,
+  parseLienPlan,
+  rulingMayPlaceLien,
+  type LienGraceFacts,
+  type LienPlan,
+} from './lienGrace.js';
 export {
   MANUAL_MASK,
   MAX_TEXT,

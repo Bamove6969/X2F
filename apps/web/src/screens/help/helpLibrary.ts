@@ -141,7 +141,7 @@ const ENTRIES: readonly Entry[] = [
       `${AUTH}/totp.ts:176 totp-needs-password`,
       `${AUTH}/methods.ts:426 password-has-totp`,
       `${AUTH}/methods.ts:436 password-alone`,
-      'apps/web/src/ui/cantDoCodes.ts:552 A password needs the authenticator app or another way to log in.',
+      'apps/web/src/ui/cantDoCodes.ts:601 A password needs the authenticator app or another way to log in.',
     ],
   },
   {
@@ -283,7 +283,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How long does the seller have to fund the escrow?',
     a: '30 minutes from when the escrow is ready. If it is not fully funded in time, the trade ends and anything already sent goes back to the seller.',
-    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:186-190 lapse-refund`],
+    sources: [`${T}/timers.ts:8 fundMin: 30`, `${M}:424-427 return { ...t, state: 'lapsed'`, `${T}/payouts.ts:291-295 lapse-refund`],
     facts: ['fundMinutes'],
   },
   {
@@ -331,7 +331,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'Can I cancel a trade as the buyer?',
     a: 'Yes, at any time until you tap "I\'ve paid". If the escrow was already funded, the XMR goes back to the seller.',
-    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:188 case 'buyer-cancel':`],
+    sources: [`${M}:640-645 case 'buyer-cancel'`, `${T}/payouts.ts:292 case 'buyer-cancel':`],
   },
   {
     id: 'seller-cancel',
@@ -361,7 +361,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'trading',
     q: 'How do I send my payment details?',
     a: 'In the trade chat, the payment details form asks for the details your payment method needs, then sends them to the other trader in one message.',
-    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:371 PAY_DETAILS_TITLE'],
+    sources: [`${T}/payFields.ts:76 PAY_FIELDS`, 'apps/web/src/chat/ChatPanel.tsx:449 PAY_DETAILS_TITLE'],
   },
   {
     id: 'trade-chat',
@@ -523,8 +523,8 @@ const ENTRIES: readonly Entry[] = [
     a: 'Yes. Every Monero payment pays a small fee to the Monero network, and it is separate from X2F\'s 1% fee. When the escrow pays out, each payout pays the network fee for itself, taken from it: on a completed trade the buyer\'s payout and X2F\'s 1% fee payout each pay their own share, and on a refund or cancel the seller\'s payout pays it.',
     sources: [
       `${T}/payouts.ts:7-13 Who pays the payout's network fee`,
-      `${T}/payouts.ts:181-182 bearsNetworkFee: true`,
-      `${T}/payouts.ts:194 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
+      `${T}/payouts.ts:284-285 bearsNetworkFee: true`,
+      `${T}/payouts.ts:299 return out([{ address: f.sellerRefund, amountAtomic: balance }]);`,
       'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares',
     ],
     facts: ['feePercent'],
@@ -566,10 +566,10 @@ const ENTRIES: readonly Entry[] = [
         a: 'The trade, the escrow and both traders, and the messages written in the dispute. The moderator can write to both of you there, and can request unblurred proof: a copy of your payment proof with nothing blurred, sealed for the moderator only, though the moderator\'s screens do not open it yet. The moderator can also open the trade\'s full chat, on a confirmed staff device.',
         sources: [
           'apps/staff-web/src/screens/ModCase.tsx:87-89 the traders, the payment proof, the escrow',
-          'apps/staff-web/src/screens/ModCase.tsx:444 Request unblurred proof from',
+          'apps/staff-web/src/screens/ModCase.tsx:529 Request unblurred proof from',
           `${WEB}/dispute/seams.tsx:99 proofUploadOn() || request === null`,
           'apps/web/src/proof/upload.ts:359 Seal `proof.unblurred` to the moderator only',
-          'apps/staff-web/src/screens/ModCase.tsx:437 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
+          'apps/staff-web/src/screens/ModCase.tsx:522 NEEDS_P5_PROOF_ENVELOPE: the proof itself is not readable here yet',
           'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
         ],
       },
@@ -827,7 +827,7 @@ const ENTRIES: readonly Entry[] = [
     sources: [
       `${SPEC}:166 can decrypt a chat only after a trader's app has granted it TK`,
       'apps/web/src/chat/engine.ts:51 One key per chat, envelope v2',
-      "apps/web/src/chat/engine.ts:191 this trader's signed grant of the chat key to the chat's",
+      "apps/web/src/chat/engine.ts:232 this trader's signed grant of the chat key to the chat's",
       'apps/staff-web/src/screens/ModCase.tsx:96-97 "Open the full chat" asks the API for the chat key re-wrapped to this',
     ],
   },
@@ -900,7 +900,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor sells?',
     a: 'The vendor puts the trade amount plus 1% into the escrow. The buyer receives the trade amount less the Monero network fee for their own payout, and X2F\'s 1% pays the network fee for its own payout.',
-    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:178 const toBuyer`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 a.poster === 'seller' ? feeAtomic`, `${T}/payouts.ts:279 const toBuyer`, `${T}/payouts.ts:284-285 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {
@@ -908,7 +908,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'How is the fee paid when the vendor buys?',
     a: 'The seller puts the trade amount into the escrow. The vendor receives the trade amount minus 1%, and less the Monero network fee for their own payout.',
-    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:178 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:181-182 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
+    sources: [`${T}/money.ts:125 sellerFundsAtomic`, `${T}/payouts.ts:279 f.amountAtomic - f.feeAtomic`, `${T}/payouts.ts:284-285 bearsNetworkFee: true`, 'packages/escrow/src/verify.ts:190 const want = p.amountAtomic - shares'],
     facts: ['feePercent'],
   },
   {
@@ -916,7 +916,7 @@ const ENTRIES: readonly Entry[] = [
     topic: 'fees',
     q: 'When is the fee taken?',
     a: 'When a trade completes, as the XMR leaves the escrow. A cancelled or refunded trade pays no X2F fee: everything in the escrow goes back to the seller, less the Monero network fee.',
-    sources: [`${T}/payouts.ts:174-186 case 'release':`, `${T}/payouts.ts:192-194 Every refund`, `${T}/payouts.ts:14-15 A refund's one`, 'packages/escrow/src/verify.ts:163 the marked payouts, else payouts[0]'],
+    sources: [`${T}/payouts.ts:275-290 case 'release':`, `${T}/payouts.ts:296-298 Every refund`, `${T}/payouts.ts:14-15 A refund's one`, 'packages/escrow/src/verify.ts:163 the marked payouts, else payouts[0]'],
   },
   {
     id: 'fee-dispute',

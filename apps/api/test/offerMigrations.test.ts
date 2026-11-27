@@ -195,7 +195,10 @@ describe('migration 770: owner 12 Nov: Russian anything is banned (RUB, SBP, MIR
 
       await migrate(db);
 
-      expect(await tradeRow()).toEqual(tradeBefore);
+      // Migration 891 (owner 27 Nov 2026) adds the seller's lien extra to every trade, 0 for none.
+      const { seller_lien_recovery_atomic: sellerLien, ...after } = await tradeRow();
+      expect(sellerLien).toBe('0');
+      expect(after).toEqual(tradeBefore);
 
       const offers = await db.query<{ id: string; status: string; updated_at: Date }>('select id, status, updated_at from offers');
       for (const o of offers.rows) {

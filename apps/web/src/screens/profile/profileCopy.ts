@@ -20,6 +20,8 @@ export const PROFILE_COPY = {
   // Board: "Trader profile".
   title: 'Trader profile',
   // Board: "Online · member since Mar 2025". COPY-UNSIGNED: the offline form.
+  /** Owner 26 Nov 2026: shown while the trader's Away switch is on. COPY-UNSIGNED */
+  away: 'Away',
   presence: (online: boolean, since: string) => `${online ? 'Online' : 'Offline'} · member since ${monthName(since)}`,
   // Board stat labels.
   completed: 'completed trades',

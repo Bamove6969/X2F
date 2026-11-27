@@ -11,8 +11,8 @@ import { REVIEW_PENDING_CODE } from '../../ui/cantDoCodes.js';
 import { RateFirstSheet, type RateFirstCleared } from '../review/RateFirstSheet.js';
 import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
-import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, previewLienRecovery, type PickWallet } from './api.js';
-import { LIEN_QUOTE_COPY } from '../liens/liensCopy.js';
+import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, previewLienRecovery, previewSellerLienRecovery, type PickWallet } from './api.js';
+import { LIEN_QUOTE_COPY, SELLER_LIEN_COPY } from '../liens/liensCopy.js';
 import { GiftCardTerms } from '../giftcard/GiftCardRules.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
@@ -289,13 +289,15 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   // purchase pays to the person they owe before the take, and accepts it by tapping Trade; the take
   // sends that figure and the API refuses any other (409 lien-recovery-changed). Read for this
   // amount and wallet only; until it is read (or when it could not be), Trade waits (fails closed).
+  // Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): a taker who sells into a buy ad
+  // likewise sees and accepts the extra they fund for their own lien (`sellerLien` below).
   const lienAmount = q?.kind === 'ok' ? q.amountAtomic : null;
-  const lienKey = signedIn === true && copy.adSide === 'sell' && lienAmount !== null && pickedWallet !== null ? `${offerId}|${lienAmount}|${pickedWallet.id}|${lienNonce}` : null;
+  const lienKey = signedIn === true && lienAmount !== null && pickedWallet !== null ? `${copy.adSide}|${offerId}|${lienAmount}|${pickedWallet.id}|${lienNonce}` : null;
   const [lienRead, setLienRead] = useState<{ key: string; atomic: bigint | null } | null>(null);
   useEffect(() => {
     if (lienKey === null || lienAmount === null || pickedWallet === null) return;
     const ac = new AbortController();
-    previewLienRecovery(offerId, lienAmount, pickedWallet.id, ac.signal).then(
+    (copy.adSide === 'sell' ? previewLienRecovery : previewSellerLienRecovery)(offerId, lienAmount, pickedWallet.id, ac.signal).then(
       (atomic) => setLienRead({ key: lienKey, atomic }),
       () => {
         if (!ac.signal.aborted) setLienRead({ key: lienKey, atomic: null });
@@ -304,9 +306,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
     return () => ac.abort();
     // lienKey names everything the read depends on.
   }, [lienKey]);
-  const lien = lienKey !== null && lienRead?.key === lienKey ? lienRead : null;
-  /** The recovery the buyer accepts by tapping Trade: 0 when none, null while unknown. */
-  const lienAccepted: bigint | null = lienKey === null ? 0n : (lien?.atomic ?? null);
+  const read = lienKey !== null && lienRead?.key === lienKey ? lienRead : null;
+  /** The buyer's read (a sell ad) and the seller's (a buy ad): only one side's figure is ever read. */
+  const lien = copy.adSide === 'sell' ? read : null;
+  const sellerLien = copy.adSide === 'buy' ? read : null;
+  /** The figure the taker accepts by tapping Trade (the buyer's recovery or the seller's extra): 0 when none, null while unknown. */
+  const lienAccepted: bigint | null = lienKey === null ? 0n : (read?.atomic ?? null);
 
   if (offer.kind === 'loading') return <Main className="x2f-quote" data-screen="quote" aria-busy="true" />;
   if (o === null) {
@@ -367,6 +372,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate, ok.range) },
           // Review B1: the recovery shown here and accepted with the tap; the device takes only it.
           ...(copy.adSide === 'sell' && lienAccepted !== null && lienAccepted > 0n ? { lienRecoveryAtomic: lienAccepted } : {}),
+          // Owner 27 Nov 2026: the seller's extra shown here and accepted with the tap; the device funds only it.
+          ...(copy.adSide === 'buy' && lienAccepted !== null && lienAccepted > 0n ? { sellerLienRecoveryAtomic: lienAccepted } : {}),
         }
       : null;
   /** The Trade button's take, at the quote shown now (also resumed after the rate-first sheet). */
@@ -377,6 +384,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency,
       // Review B1: a buying taker sends the recovery it was shown (0: none) and accepted by tapping.
       ...(copy.adSide === 'sell' && signedIn === true && lienAccepted !== null ? { lienRecoveryAtomic: lienAccepted } : {}),
+      // Owner 27 Nov 2026: a selling taker sends the extra it was shown (0: none).
+      ...(copy.adSide === 'buy' && signedIn === true && lienAccepted !== null ? { sellerLienRecoveryAtomic: lienAccepted } : {}),
     };
     take({
       quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
@@ -418,7 +427,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const cantDo = state.error === null ? null : takeCantDo(state.error);
   const cantDoOpen = cantDo !== null && closedError !== state.error;
 
-  const headlineAtomic = ok ? copy.headlineXmr(ok) : 0n;
+  // Owner 27 Nov 2026 (review item 4): a seller who owes sends the extra too, so the headline is all
+  // that goes into escrow; the extra keeps its own row.
+  const sellerExtra = sellerLien !== null && sellerLien.atomic !== null && sellerLien.atomic > 0n ? sellerLien.atomic : 0n;
+  const headlineAtomic = ok ? copy.headlineXmr(ok) + sellerExtra : 0n;
   // The board's 6 places ("1.250000"); exact only for a figure the person sends (headlineExact).
   // data-long (more than 6 places) takes the smaller size so 12 places fit a phone card.
   const headlineFigure = copy.headlineExact ? xmrText(headlineAtomic) : formatXmr(headlineAtomic);
@@ -561,6 +573,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
                 <span className="x2f-quote__mono">{xmrText(lien.atomic)} XMR</span>
               </div>
             ) : null}
+            {sellerLien !== null && sellerLien.atomic !== null && sellerLien.atomic > 0n ? (
+              <div className="x2f-quote__row" data-part="seller-lien-recovery">
+                <span className="x2f-quote__muted">{SELLER_LIEN_COPY.row}</span>
+                <span className="x2f-quote__mono">{xmrText(sellerLien.atomic)} XMR</span>
+              </div>
+            ) : null}
             <div className="x2f-quote__rule" />
             <div className="x2f-quote__row x2f-quote__row--total">
               <span>{copy.total(methodName)}</span>
@@ -582,6 +600,12 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           </Notice>
         ) : null}
         {lienKey !== null && lien !== null && lien.atomic === null ? <p className="x2f-quote__note">{LIEN_QUOTE_COPY.failed}</p> : null}
+        {sellerLien !== null && sellerLien.atomic !== null && sellerLien.atomic > 0n ? (
+          <Notice tone="info">
+            <span data-part="seller-lien-recovery-note">{SELLER_LIEN_COPY.note(`${xmrText(sellerLien.atomic)} XMR`)}</span>
+          </Notice>
+        ) : null}
+        {sellerLien !== null && sellerLien.atomic === null ? <p className="x2f-quote__note">{SELLER_LIEN_COPY.failed}</p> : null}
         <QuoteBands offer={o} quote={q} market={marketNow} />
         <Notice tone="info">
           {copy.footnote(poster)}

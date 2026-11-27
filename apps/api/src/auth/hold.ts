@@ -594,6 +594,8 @@ export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
   'POST /v1/offers',
   'PATCH /v1/offers/:id',
   'POST /v1/account/offers/status',
+  // Owner 26 Nov 2026: the Away switch pauses and turns back on offers (offers/away.ts, through switchOfferStatus).
+  'PUT /v1/account/away',
   'POST /v1/trades/:code/events',
 ];
 
@@ -620,6 +622,10 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/team/members/:id',
   // J-20: a member's trade-size band and working hours (team/limits.ts; the lock is the account's).
   'PUT /v1/team/members/:id/limits',
+  // Ending a member's signed-in sessions from the Team screen (team/memberSessions.ts; the lock is
+  // the account's, then the member's sessions, as a removal).
+  'DELETE /v1/team/members/:id/sessions/:sessionId',
+  'DELETE /v1/team/members/:id/sessions',
   // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
   'PUT /v1/account/type',
   // Hold model v3: submitting and cancelling the changes waiting their 24 h (holdRoutes.ts), and
@@ -643,6 +649,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Lien recovery (review B1/Q2): the creditor's signed address its recoveries are paid to
   // (disputes/lienRoutes.ts; the lock is the account's).
   'POST /v1/account/liens/:id/recovery-address',
+  // Owner 26 Nov 2026 (lien grace): the person owed confirms they were paid the agreed way
+  // (disputes/lienGrace.ts; the lock is the lien's row).
+  'POST /v1/account/liens/:id/paid',
 ];
 
 /**
@@ -727,6 +736,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
  */
 export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/sessions/:id',
+  // A member's sessions from the Team screen: a weak session may not end them at all, as it may not
+  // through DELETE /v1/account/sessions/:id (team/memberSessions.ts).
+  'DELETE /v1/team/members/:id/sessions/:sessionId',
+  'DELETE /v1/team/members/:id/sessions',
   // Review round 3 R3-M2, round 4 R4-M1 (lead decision 2026-10-30): a weak full session cancels a
   // backup session only when the weak session is the older of the two.
   'DELETE /v1/account/recovery-sessions/:id',
@@ -778,6 +791,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   ...CHAT_KEY_WRITE_ROUTES,
   // Lien recovery (review B1/Q2): where a creditor's recoveries are paid is not changed during a hold.
   'POST /v1/account/liens/:id/recovery-address',
+  // Owner 26 Nov 2026 (lien grace): nor is a debt owed to the account signed off as paid.
+  'POST /v1/account/liens/:id/paid',
 ];
 
 /**

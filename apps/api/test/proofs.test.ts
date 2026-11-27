@@ -432,6 +432,45 @@ describe('retention: proofs go with the trade, on the chat rule', () => {
     expect(await stored(id)).toBeUndefined();
   });
 
+  it('a lien (owner 26 Nov 2026): kept while unpaid (active or suspended); once it ends, 90 days after it ended', async () => {
+    const { buyer, seller, code } = await tradeIn('paid');
+    const id = newProofId();
+    await put(buyer, code, id, 'proof');
+    await openDispute(code);
+    await deps.db.query(`update trades set state = 'refunded', closed_at = $2 where code = $1`, [code, at(DAY)]);
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, at(3 * DAY)]);
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at)
+       values ($1, $2, 1000, $3, 1, 1, 'restitution', 'active', $4, $4) returning id::text`,
+      [seller.id, buyer.id, code, at(2 * DAY)],
+    )).rows[0]!.id;
+    await purgeProofs(deps.db, at(400 * DAY));
+    expect(await stored(id)).toBeDefined();
+    await deps.db.query("update liens set status = 'suspended' where id = $1", [lien]);
+    await purgeProofs(deps.db, at(400 * DAY));
+    expect(await stored(id)).toBeDefined();
+    await deps.db.query("update liens set status = 'uncollectible', lifted_at = $2, changed_at = $2, written_off_by = $3 where id = $1", [lien, at(300 * DAY), buyer.id]);
+    await purgeProofs(deps.db, at(390 * DAY));
+    expect(await stored(id)).toBeDefined();
+    await purgeProofs(deps.db, at(390 * DAY + 1));
+    expect(await stored(id)).toBeUndefined();
+  });
+
+  it('the delete keeps the proofs of a trade with an unpaid lien even when the rule says due (checked again under the lock)', async () => {
+    const { buyer, seller, code } = await tradeIn('paid');
+    const id = newProofId();
+    await put(buyer, code, id, 'proof');
+    await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, at(DAY)]);
+    await deps.db.query(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, from_code, dispute_seq, round, cause, status, created_at, changed_at)
+       values ($1, $2, 1000, $3, 1, 1, 'restitution', 'active', $4, $4)`,
+      [seller.id, buyer.id, code, at(DAY)],
+    );
+    const removed = await purgeProofs(deps.db, at(500 * DAY), (_facts, _now, rowCode) => rowCode === code);
+    expect(removed).toBe(0);
+    expect(await stored(id)).toBeDefined();
+  });
+
   it('review M2: a dispute not yet committed makes the purge wait on the trade, and the proofs stay', async () => {
     const { buyer, code } = await tradeIn('paid');
     const id = newProofId();

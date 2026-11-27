@@ -4,10 +4,29 @@ import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import sodium from 'libsodium-wrappers';
 import { normalizeTradeCode } from '@x2f/core';
-import { ProtocolError, signChatEnvelope, unwrapChatKey, verifyChatGrant, verifyModCountersign, wrapChatKey, type ChatEnvelopeV2Body, type Participants } from '@x2f/protocol';
+import {
+  isLane,
+  makePrivateLaneRecord,
+  newPrivateKey,
+  privateKeyHash,
+  ProtocolError,
+  signChatEnvelope,
+  signPrivateEnvelope,
+  unwrapChatKey,
+  verifyChatGrant,
+  verifyModCountersign,
+  verifyModPrivateCountersign,
+  verifyPrivateLaneRecord,
+  wrapChatKey,
+  wrapPrivateKey,
+  type ChatEnvelopeV2Body,
+  type ChatEnvelopeV3Body,
+  type Lane,
+  type Participants,
+} from '@x2f/protocol';
 import { CHAT_AFTER_DISPUTE_DAYS, channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
 import type pg from 'pg';
-import { loadChatIdentity, type Queryable } from '../keystore.js';
+import { loadChatIdentity, loadPrivateLane, savePrivateLane, type Queryable } from '../keystore.js';
 import type { ApiView } from './apiView.js';
 import { DEVICE_KEY_ID, NO_CERTIFIED_DEVICES, OWNER_NEEDS_DISPUTE, onCase, type DeviceCertificates, type StaffDirectory } from './grant.js';
 
@@ -36,13 +55,19 @@ export type { ApiView } from './apiView.js';
  * 6. the device key id is certified to them and live at this process's clock (403 `device-not-certified`);
  * 7. the chat is one this process attested (404 `no-chat`).
  *
- * - `POST /internal/chat/grant` → 200 `{ wrap, tkh, boxPublic, nextSeq }`: then the accepted trader
+ * - `POST /internal/chat/grant` → 200 `{ wrap, tkh, boxPublic, nextSeq, lanes }`: then the accepted trader
  *   grant this process recorded (`mod_chat_grants`) is read back from the API, verified again against
  *   the attested traders and this process's recorded signature and tkh (409 `no-grant`), its wrap is
  *   opened with the chat's sealed moderator identity to a key of that tkh, re-wrapped to the device's
- *   certified box key (`crypto_box_seal`), and the key wiped. Only then, in one statement, the entry
- *   is used up and a `mod_chat_access` row (`grant`) written (a replay finds the entry used).
- * - `POST /internal/chat/send` (+ `seq, nonce, ct, ctSha256, requestId, issuedAt, sig`) → 200 `{ envelope }`:
+ *   certified box key (`crypto_box_seal`), and the key wiped. Owner 27 Nov (private lanes): `lanes`
+ *   is `[{ to, pkh, wrap, nextSeq, record }]` for `to` buyer then seller, each lane made on the chat's
+ *   first grant (PK random, sealed in `mod_private_lanes` under MOD_KEYSTORE_KEY; `record` the lane
+ *   record, PK sealed to `to`'s attested box key and signed with the chat's moderator identity, which
+ *   the API files), `wrap` PK re-wrapped to the device's certified box key (every grant is an audit
+ *   read of both lanes), `nextSeq` the moderator's next seq in that lane; every PK is wiped after use.
+ *   Only then, in one statement, the entry is used up and a `mod_chat_access` row (`grant`) written
+ *   (a replay finds the entry used).
+ * - `POST /internal/chat/send` (+ `seq, nonce, ct, ctSha256, requestId, issuedAt, sig`, optional `to`) → 200 `{ envelope }`:
  *   the countersign (x2f/mod-countersign/v1, lead 18 Nov) must verify by the device's certified
  *   signing key over this exact message (400 `bad-countersign`), its issuedAt be at most 5 minutes
  *   old and 1 minute ahead (403 `stale-countersign`), its requestId never seen (403 `replayed`; review
@@ -50,8 +75,14 @@ export type { ApiView } from './apiView.js';
  *   reason is spent), and `seq` this chat's next moderator seq (409 `stale-seq`, with `nextSeq`). The
  *   countersign binds the nonce too (review N7). Then, in one transaction,
  *   the entry is used, the seq taken and a `mod_chat_access` row (`send`) written;
- *   then the envelope is signed as `from: 'mod'` with the chat's moderator identity. This process
- *   never decrypts it: it signs only what a staff device on the case sealed and signed.
+ *   then the envelope is signed as `from: 'mod'` with the chat's moderator identity. With `to`
+ *   ('buyer' | 'seller', owner 27 Nov), the same in that private lane: the body is envelope v3
+ *   `{v:3, trade, from:'mod', to, seq, nonce, ct}`, the countersign the lane one
+ *   (x2f/mod-countersign-private/v1, binding `to`, so the API cannot move it to the other lane), the
+ *   lane made by a grant (409 `no-lane`), `seq` that lane's next moderator seq (`mod_private_lane_seq`,
+ *   409 `stale-seq` with `nextSeq`), the access row carrying `lane`, and the envelope signed by
+ *   `signPrivateEnvelope`. This process never decrypts either: it signs only what a staff device on
+ *   the case sealed and signed.
  *
  * Every request carries `X-X2F-Internal` (hex HMAC-SHA-256 under MOD_INTERNAL_SECRET of
  * `modInternalMacInput`) and `X-X2F-Internal-Ts` within 30 s of this process's clock; else 401.
@@ -85,10 +116,11 @@ const CASE_KEYS = ['code', 'logEntryId', 'staffAccountId', 'deviceKeyId'] as con
 const ROUTES = {
   // The API commits one `chat.read` per read, with the staff member as its actor (lead 18 Nov: the
   // activity log until the per-trade audit, design task 12; `mod_chat_access` is authoritative).
-  '/internal/chat/grant': { action: 'chat.read', keys: [...CASE_KEYS] },
+  '/internal/chat/grant': { action: 'chat.read', keys: [...CASE_KEYS], optional: [] },
   // The API commits `chat.message-requested` before asking, and `chat.message-sent {envelopeId}`
   // once it stored the envelope (review 8 Nov M-2); only the first authorises a send.
-  '/internal/chat/send': { action: 'chat.message-requested', keys: [...CASE_KEYS, 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig'] },
+  // Owner 27 Nov: `to` names a private lane (envelope v3); without it, the shared chat (v2).
+  '/internal/chat/send': { action: 'chat.message-requested', keys: [...CASE_KEYS, 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig'], optional: ['to'] },
 } as const;
 type RoutePath = keyof typeof ROUTES;
 
@@ -157,7 +189,8 @@ function parse(path: RoutePath, body: string): Parsed {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new Refusal(400, 'bad-request');
   const o = v as Record<string, unknown>;
   const keys = ROUTES[path].keys as readonly string[];
-  if (Object.keys(o).length !== keys.length || !keys.every((k) => Object.hasOwn(o, k))) throw new Refusal(400, 'bad-request');
+  const optional = ROUTES[path].optional as readonly string[];
+  if (!keys.every((k) => Object.hasOwn(o, k)) || !Object.keys(o).every((k) => keys.includes(k) || optional.includes(k))) throw new Refusal(400, 'bad-request');
   const code = typeof o.code === 'string' ? normalizeTradeCode(o.code) : null;
   if (code === null || typeof o.logEntryId !== 'string' || !LOG_ID.test(o.logEntryId)) throw new Refusal(400, 'bad-request');
   if (typeof o.staffAccountId !== 'string' || !UUID.test(o.staffAccountId) || typeof o.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(o.deviceKeyId)) throw new Refusal(400, 'bad-request');
@@ -221,6 +254,46 @@ async function nextSeqOf(d: InternalDeps, chat: string): Promise<number> {
   return rows[0] === undefined ? 0 : Number(rows[0].next_seq);
 }
 
+/** A lane's next moderator seq (envelope v3: seq per (from, to) lane). */
+async function laneSeqOf(d: InternalDeps, chat: string, lane: Lane): Promise<number> {
+  const { rows } = await d.db.query<{ next_seq: string }>('select next_seq::text from mod_private_lane_seq where chat = $1 and lane = $2', [chat, lane]);
+  return rows[0] === undefined ? 0 : Number(rows[0].next_seq);
+}
+
+const LANES: readonly Lane[] = ['buyer', 'seller'];
+
+/**
+ * Owner 27 Nov: both private lanes of the chat, made on its first grant, each with PK re-wrapped to
+ * the device's certified box key. A lane is made once (first insert wins, then read back, so racing
+ * grants agree on one PK); its stored record is checked again (moderator signature, this channel,
+ * the stored pkh) and PK against its pkh before any wrap. Every PK is wiped after use.
+ */
+async function laneGrants(d: InternalDeps, c: Awaited<ReturnType<typeof attestedChat>>, boxPublic: string) {
+  const out: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: Record<string, unknown> }> = [];
+  for (const to of LANES) {
+    let lane = await loadPrivateLane(d.db, d.keystoreKey, c.chat, to);
+    if (lane === null) {
+      const pk = await newPrivateKey();
+      try {
+        const record = await makePrivateLaneRecord({ chat: c.channel, to, pk, mod: c.mod, participants: c.participants });
+        await savePrivateLane(d.db, d.keystoreKey, c.chat, to, pk, record.pkh, record);
+      } finally {
+        sodium.memzero(pk);
+      }
+      lane = await loadPrivateLane(d.db, d.keystoreKey, c.chat, to);
+      if (lane === null) throw new Error('moderation: a private lane was not stored');
+    }
+    try {
+      const rec = await verifyPrivateLaneRecord(lane.record, { chat: c.channel, participants: c.participants });
+      if (rec.to !== to || rec.pkh !== lane.pkh || (await privateKeyHash(lane.pk)) !== lane.pkh) throw new Error('moderation: a private lane does not match its record');
+      out.push({ to, pkh: lane.pkh, wrap: await wrapPrivateKey(boxPublic, lane.pk), nextSeq: await laneSeqOf(d, c.chat, to), record: lane.record });
+    } finally {
+      sodium.memzero(lane.pk);
+    }
+  }
+  return out;
+}
+
 /** `/internal/chat/grant` (design build task 9): every check, the re-wrap, then the use and the record together. */
 async function grant(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse): Promise<void> {
   const { e, device, c } = await caseChecks(d, '/internal/chat/grant', b, now);
@@ -251,6 +324,7 @@ async function grant(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse)
     }
   }
   if (wrap === null) throw new Refusal(409, 'no-grant');
+  const lanes = await laneGrants(d, c, device.boxPublic);
   // One statement: the entry is used up and the access recorded together, or neither (a replay finds the entry used).
   const { rowCount } = await d.db.query(
     `with u as (insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing returning id)
@@ -259,26 +333,36 @@ async function grant(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse)
     [b.logEntryId, e.action, b.code, c.chat, now, b.staffId, b.deviceKeyId],
   );
   if (rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
-  answer(res, 200, { wrap, tkh, boxPublic: device.boxPublic, nextSeq: await nextSeqOf(d, c.chat) });
+  answer(res, 200, { wrap, tkh, boxPublic: device.boxPublic, nextSeq: await nextSeqOf(d, c.chat), lanes });
 }
 
-/** `/internal/chat/send` (design build task 9, the countersign): every check, then the use, the request id, the seq and the record in one transaction. */
+/**
+ * `/internal/chat/send` (design build task 9, the countersign; owner 27 Nov, a lane with `to`): every
+ * check, then the use, the request id, the seq and the record in one transaction.
+ */
 async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse): Promise<void> {
   const o = b.o;
   if (typeof o.seq !== 'number' || !Number.isSafeInteger(o.seq) || o.seq < 0 || typeof o.nonce !== 'string' || typeof o.ct !== 'string') throw new Refusal(400, 'bad-request');
+  const to: Lane | null = Object.hasOwn(o, 'to') ? (isLane(o.to) ? o.to : null) : null;
+  if (Object.hasOwn(o, 'to') && to === null) throw new Refusal(400, 'bad-request');
   const { e, device, c } = await caseChecks(d, '/internal/chat/send', b, now);
-  const body: ChatEnvelopeV2Body = { v: 2, trade: c.channel, from: 'mod', seq: o.seq, nonce: o.nonce, ct: o.ct };
+  const wire = { chat: c.channel, seq: o.seq, nonce: o.nonce, ctSha256: o.ctSha256, requestId: o.requestId, issuedAt: o.issuedAt, sig: o.sig };
+  const shared: ChatEnvelopeV2Body = { v: 2, trade: c.channel, from: 'mod', seq: o.seq, nonce: o.nonce, ct: o.ct };
+  const lane: ChatEnvelopeV3Body | null = to === null ? null : { v: 3, trade: c.channel, from: 'mod', to, seq: o.seq, nonce: o.nonce, ct: o.ct };
   let cs;
   try {
-    // By the device's CERTIFIED signing key (the gate's record), over this channel, seq and ciphertext.
-    cs = await verifyModCountersign({ chat: c.channel, seq: o.seq, nonce: o.nonce, ctSha256: o.ctSha256, requestId: o.requestId, issuedAt: o.issuedAt, sig: o.sig }, { body, signPublic: device.signPublic });
+    // By the device's CERTIFIED signing key (the gate's record), over this channel, seq and ciphertext;
+    // for a lane, the lane countersign (x2f/mod-countersign-private/v1), which binds `to` as well.
+    cs = lane === null
+      ? await verifyModCountersign(wire, { body: shared, signPublic: device.signPublic })
+      : await verifyModPrivateCountersign({ ...wire, to }, { body: lane, signPublic: device.signPublic });
   } catch (err) {
     if (err instanceof ProtocolError || err instanceof TypeError) throw new Refusal(400, 'bad-countersign');
     throw err;
   }
   // Review N6: a countersign that verified is spent at once, in its own committed statement, before
-  // any later check can refuse it (freshness, the seq): one refused for a seq that is not next can
-  // never be shown again once the seq catches up. Staff-web seals a retry with a new requestId.
+  // any later check can refuse it (freshness, the lane, the seq): one refused for a seq that is not
+  // next can never be shown again once the seq catches up. Staff-web seals a retry with a new requestId.
   const fresh = await d.db.query('insert into mod_countersign_requests (request_id, chat, at) values ($1, $2, $3) on conflict (request_id) do nothing', [cs.requestId, c.chat, now]);
   if (fresh.rowCount !== 1) throw new Refusal(403, 'replayed');
   const age = now.getTime() - Date.parse(cs.issuedAt);
@@ -286,7 +370,7 @@ async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse):
   // Signed only once everything is taken, so a refused send signs nothing; checked before it is taken.
   let envelope;
   try {
-    envelope = await signChatEnvelope(body, c.mod);
+    envelope = lane === null ? await signChatEnvelope(shared, c.mod) : await signPrivateEnvelope(lane, c.mod);
   } catch (err) {
     if (err instanceof ProtocolError || err instanceof TypeError) throw new Refusal(400, 'bad-request');
     throw err;
@@ -296,14 +380,25 @@ async function send(d: InternalDeps, b: Parsed, now: Date, res: ServerResponse):
     await client.query('begin');
     const used = await client.query('insert into used_log_entries (id, action, trade) values ($1, $2, $3) on conflict (id) do nothing', [b.logEntryId, e.action, b.code]);
     if (used.rowCount !== 1) throw new Refusal(403, 'log-entry-invalid');
-    await client.query('insert into mod_chat_seq (chat, next_seq) values ($1, 0) on conflict (chat) do nothing', [c.chat]);
-    const { rows } = await client.query<{ next_seq: string }>('select next_seq::text from mod_chat_seq where chat = $1 for update', [c.chat]);
-    const next = Number(rows[0]!.next_seq);
-    if (o.seq !== next) throw new Refusal(409, 'stale-seq', { nextSeq: next });
-    await client.query('update mod_chat_seq set next_seq = next_seq + 1 where chat = $1', [c.chat]);
+    let next: number;
+    if (to === null) {
+      await client.query('insert into mod_chat_seq (chat, next_seq) values ($1, 0) on conflict (chat) do nothing', [c.chat]);
+      const { rows } = await client.query<{ next_seq: string }>('select next_seq::text from mod_chat_seq where chat = $1 for update', [c.chat]);
+      next = Number(rows[0]!.next_seq);
+      if (o.seq !== next) throw new Refusal(409, 'stale-seq', { nextSeq: next });
+      await client.query('update mod_chat_seq set next_seq = next_seq + 1 where chat = $1', [c.chat]);
+    } else {
+      // The lane is made by a grant (the staff device holds PK only from one); none: nothing to seal under.
+      if ((await client.query('select 1 from mod_private_lanes where chat = $1 and lane = $2', [c.chat, to])).rows.length === 0) throw new Refusal(409, 'no-lane');
+      await client.query('insert into mod_private_lane_seq (chat, lane, next_seq) values ($1, $2, 0) on conflict (chat, lane) do nothing', [c.chat, to]);
+      const { rows } = await client.query<{ next_seq: string }>('select next_seq::text from mod_private_lane_seq where chat = $1 and lane = $2 for update', [c.chat, to]);
+      next = Number(rows[0]!.next_seq);
+      if (o.seq !== next) throw new Refusal(409, 'stale-seq', { nextSeq: next });
+      await client.query('update mod_private_lane_seq set next_seq = next_seq + 1 where chat = $1 and lane = $2', [c.chat, to]);
+    }
     await client.query(
-      `insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action) values ($1, $2, $3, $4, $5, $6, 'send')`,
-      [c.chat, b.code, now, b.staffId, b.deviceKeyId, b.logEntryId],
+      `insert into mod_chat_access (chat, trade, at, staff_id, device_key_id, log_entry_id, action, lane) values ($1, $2, $3, $4, $5, $6, 'send', $7)`,
+      [c.chat, b.code, now, b.staffId, b.deviceKeyId, b.logEntryId, to],
     );
     await client.query('commit');
   } catch (err) {

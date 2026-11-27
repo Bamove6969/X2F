@@ -5,6 +5,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
 import { settleRecovery } from '../disputes/recovery.js';
@@ -105,6 +106,8 @@ export interface TradeRow {
    * weight, never returned.
    */
   usd_cents: string | null;
+  /** Migration 891 (owner 27 Nov 2026): the seller's lien recovery fixed at take, '0' for none. */
+  seller_lien_recovery_atomic?: string;
 }
 
 const big = (s: string): bigint => BigInt(s);
@@ -113,6 +116,7 @@ const bigOrNull = (s: string | null): bigint | null => (s === null ? null : BigI
 export function rowToTrade(r: TradeRow): Trade {
   const grownFromAtomic = bigOrNull(r.grown_from_atomic);
   const grownFromFiat = bigOrNull(r.grown_from_fiat_cents);
+  const sellerLien = r.seller_lien_recovery_atomic === undefined ? 0n : BigInt(r.seller_lien_recovery_atomic);
   return {
     code: r.code,
     offerId: r.offer_id,
@@ -123,6 +127,7 @@ export function rowToTrade(r: TradeRow): Trade {
     amountAtomic: big(r.amount_atomic),
     feeAtomic: big(r.fee_atomic),
     sellerFundsAtomic: big(r.seller_funds_atomic),
+    ...(sellerLien > 0n ? { sellerLienRecoveryAtomic: sellerLien } : {}),
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
@@ -243,6 +248,9 @@ export async function insertTrade(
     ['method_instructions', sides.methodInstructions ?? ''],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
     ['gift_card_terms', giftCardTerms],
+    // Owner 27 Nov 2026: written once, never changed (migration 891's trigger); none is the column's
+    // default 0, so the column is named only when there is an extra (older schemas in migration tests).
+    ...((t.sellerLienRecoveryAtomic ?? 0n) > 0n ? [['seller_lien_recovery_atomic', t.sellerLienRecoveryAtomic!.toString()] as [string, unknown]] : []),
   ];
   // Column names are the fixed literals above, never input.
   await q.query(
@@ -373,6 +381,25 @@ export async function applyEvent(
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
+      // D-059 (J-14, ported): while the buyer's or the seller's account is locked by a compromised
+      // report, no trader event moves the trade (the other party's neither); system events (chain,
+      // reports, the timer's pause) still apply. Read under the trade's row lock. Nor does a system
+      // `resume`: a recovery-code hold's end (trades/held.ts) or maintenance's end resumes the trades
+      // it paused, and a trade the lock also holds must stay paused until staff unlock it (409
+      // `trade-held`, which only those system paths see).
+      // Review of feat/lockout, item 5 (lead default, owner question pending): the other trader must
+      // not learn of the lock, so a party's event is refused as on any paused trade (409
+      // `wrong-state`, the machine's answer, with the room's ordinary pause copy), and opening a
+      // dispute goes through as it does on any paused trade (owner G7: a paused trade's parties still
+      // reach a moderator); the dispute is then paused with the trade (disputes/timers.ts), and staff
+      // with `rulings.approve` may still rule on it (disputes/rulings.ts).
+      if (by !== 'system' || e.type === 'resume') {
+        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
+        if (held.rows[0]?.held === true) {
+          if (by === 'system') throw new ApiError(409, 'trade-held');
+          if (e.type !== 'open-dispute') throw new ApiError(409, 'wrong-state');
+        }
+      }
       const prev = rowToTrade(row);
       // Review of wip/third-trade-wallet 17 Nov (b), B2: a trade in setup that used up a one-time
       // wallet may give it back below (`restoreOneTimeWallets`), which locks the wallet owner's
@@ -452,6 +479,7 @@ export async function applyEvent(
               e.type === 'settled' ? (next.state === 'released' && (e.kind === 'release' || e.kind === 'dispute-buyer') ? 'completed' : 'refunded') : 'closed',
               next.escrowAddress !== null,
               now,
+              next.receivedAtomic,
             )
           : [];
       if (within) await within(client, prev, next, now);

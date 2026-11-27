@@ -1,6 +1,7 @@
 import { normalizeTradeCode } from '@x2f/core';
 import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, appealReviewers, applyDispute, markSeen, needsSecond, normalizeIncidentId, twoPersonRule, type Actor, type Dispute, type RulingOutcome } from '@x2f/staff';
-import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2 } from '@x2f/trade';
+import { hasExactKeys, isLane, isPlainObject, ProtocolError, verifyPrivateLaneRecord, type Lane } from '@x2f/protocol';
+import { ChatEnvelopeError, channelFor, checkChatEnvelopeV2, checkChatEnvelopeV3 } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
@@ -9,14 +10,17 @@ import type { EventBus, LiveEvent, PublishOptions } from '../events/bus.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 import { appendLog } from '../log/append.js';
 import { requireStaff } from '../staff/guard.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { getMethod } from '../methods/profiles.js';
 import { traderSummaries } from '../traders/summary.js';
 import { cancelFigures } from '../traders/tradedTotal.js';
 import { ModerationError, type ModerationClient } from './moderationClient.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { COMPLY_LAPSED_SQL, complianceOf, hasAfterRefundStatement } from './comply.js';
+import { GRACE_WAITING_SQL, caseLiens } from './lienCase.js';
 import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.js';
 import { disputeSettings } from './settings.js';
+import { POOL_SINCE_SQL } from './autoAssign.js';
 import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
 
 /**
@@ -171,6 +175,8 @@ const MOD_CODES: ReadonlyMap<string, number> = new Map<ApiErrorCode, number>([
   ['replayed', 409],
   ['stale-countersign', 409],
   ['bad-countersign', 400],
+  // Private lanes: a lane the moderation process has not made (it makes both on the first grant).
+  ['no-lane', 409],
 ]);
 
 /** A moderation refusal as the staff app sees it. */
@@ -287,12 +293,17 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const lapsed = isSeniorOrOwner(req.staff.role)
       ? `(d.seq = (select max(x.seq) from disputes x where x.code = d.code) and ${COMPLY_LAPSED_SQL})`
       : 'false';
+    // Owner 26 Nov 2026 (grace): a lien's 7 days passed without the person owed confirming payment.
+    // The moderator who ruled finds the case in their queue; once they send it up, seniors and the owner do.
+    const graceWaiting = isSeniorOrOwner(req.staff.role)
+      ? `(${GRACE_WAITING_SQL(false, '$3::uuid')} or ${GRACE_WAITING_SQL(true, null)})`
+      : GRACE_WAITING_SQL(false, '$3::uuid');
     const { rows } = await deps.db.query<{
       code: string; incident_id: string; status: string; round: number; amount_atomic: string; usd_cents: string; limit_usd_cents: string;
       locked_currency: string; locked_cents_per_xmr: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
-      involved: string[] | null; comply_lapsed: boolean;
+      involved: string[] | null; comply_lapsed: boolean; pooled_since: Date; auto_assigned: boolean; grace_lapsed: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               t.locked_currency, t.locked_cents_per_xmr::text as locked_cents_per_xmr,
@@ -300,13 +311,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
               case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved,
-              ${COMPLY_LAPSED_SQL} as comply_lapsed
+              ${COMPLY_LAPSED_SQL} as comply_lapsed, ${POOL_SINCE_SQL} as pooled_since, d.auto_assigned, (${GRACE_WAITING_SQL(false, null)} or ${GRACE_WAITING_SQL(true, null)}) as grace_lapsed
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
          left join accounts a on a.id = d.assignee
          left join accounts p on d.ruling ? 'proposer' and p.id::text = d.ruling->>'proposer'
-        where (${current} or ${lapsed}) and ${where}
+        where (${current} or ${lapsed} or ${graceWaiting}) and ${where}
         order by case when d.first_reply_at is null then d.reply_due_at else d.ruling_due_at end, d.opened_at, d.code
         limit $2`,
       [QUEUE_STATUSES, QUEUE_MAX, me],
@@ -325,7 +336,11 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     // Plan 4 Task 18 (ModQueue): the header's first-reply time and the footer's large-trade limit.
     const settings = await disputeSettings(deps.db);
     return {
-      settings: { firstResponseH: settings.firstResponseH, largeTradeLimitUsd: settings.largeTradeLimitUsd },
+      settings: {
+        firstResponseH: settings.firstResponseH, largeTradeLimitUsd: settings.largeTradeLimitUsd,
+        // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): the owner's pool time.
+        autoAssign: { on: settings.autoAssignOn, minutes: settings.autoAssignMin },
+      },
       rows: rows.map((r) => {
         const usdCents = BigInt(r.usd_cents);
         const approval = r.status === 'awaiting-approval'
@@ -357,6 +372,15 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           noReviewer: r.status === 'appealed' && appealReviewers(candidates, r.involved ?? []).length === 0,
           // A6: the seller did not prove the ordered payment in time (senior moderators and the owner only).
           complyLapsed: r.comply_lapsed,
+          // Owner 26 Nov 2026: a lien's 7 days to pay passed; the moderator decides (collect or send up).
+          graceLapsed: r.grace_lapsed,
+          // Owner 26 Nov 2026: when the timer gives this free case to the least-busy moderator on
+          // shift (it may be later: nobody eligible on shift); null when taken, or auto-assign is off.
+          autoAssignAt: settings.autoAssignOn && r.assignee === null && (r.status === 'open' || r.status === 'appealed')
+            ? new Date(r.pooled_since.getTime() + settings.autoAssignMin * 60_000).toISOString()
+            : null,
+          // The current assignee got it from the timer ("Assigned to you automatically").
+          autoAssigned: r.assignee !== null && r.auto_assigned,
         };
       }),
       counts: { open: c.open, overdue: c.overdue, unassigned: c.unassigned, needApproval: c.need_approval },
@@ -428,19 +452,24 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     // J-21 (owner T-017): each trader's ONE cancel figure, every kind together: moderators only,
     // so never inside the public summaries.
     const cancels = await cancelFigures(deps.db, [t.buyer, t.seller]);
-    const extra = await deps.db.query<{ incident_id: string; note: string; assignee_name: string | null }>(
-      `select d.incident_id, d.note, a.${PUBLIC_NAME_COLUMN} as assignee_name
+    const extra = await deps.db.query<{ incident_id: string; note: string; assignee_name: string | null; auto_assigned: boolean }>(
+      `select d.incident_id, d.note, a.${PUBLIC_NAME_COLUMN} as assignee_name, d.auto_assigned
          from disputes d left join accounts a on a.id = d.assignee where d.code = $1 and d.seq = $2`,
       [code, d.seq],
     );
     const x = extra.rows[0]!;
     // G37: who took the case and when, and when they first opened it (from the log, never a copy).
-    const taken = await deps.db.query<{ at: Date; name: string | null; opened_at: Date | null }>(
-      `select l.at, a.${PUBLIC_NAME_COLUMN} as name,
-              (select min(o.at) from activity_log o where o.trade_code = l.trade_code and o.action = 'case.opened' and o.actor_id = l.actor_id and o.at >= $2) as opened_at
-         from activity_log l left join accounts a on a.id = l.actor_id
-        where l.trade_code = $1 and l.action = 'dispute.assigned' and l.at >= $2
-        order by l.id desc limit 1`,
+    // Owner 26 Nov 2026: the timer's assignment (actor system) names its assignee in the detail.
+    const taken = await deps.db.query<{ at: Date; name: string | null; opened_at: Date | null; auto: boolean }>(
+      `with l as (
+         select l.at, l.trade_code, l.id, l.actor_kind = 'system' as auto,
+                case when l.actor_kind = 'system' then (l.detail::jsonb->>'staffId')::uuid else l.actor_id end as who
+           from activity_log l
+          where l.trade_code = $1 and l.action = 'dispute.assigned' and l.at >= $2
+          order by l.id desc limit 1)
+       select l.at, l.auto, a.${PUBLIC_NAME_COLUMN} as name,
+              (select min(o.at) from activity_log o where o.trade_code = l.trade_code and o.action = 'case.opened' and o.actor_id = l.who and o.at >= $2) as opened_at
+         from l left join accounts a on a.id = l.who`,
       [code, d.round === 2 && d.appealedAt !== null ? d.appealedAt : d.openedAt],
     );
     const tk = taken.rows[0];
@@ -471,10 +500,12 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       limitUsd: Number(d.limitUsdCents / 100n),
       assignee: x.assignee_name,
       assignedToYou: d.assignee === me.id,
+      // Owner 26 Nov 2026: the current assignee got the case from the timer, nobody having taken it.
+      autoAssigned: d.assignee !== null && x.auto_assigned,
       // Plan 4 Task 18 (ModCase): the waiting proposal is the viewer's own, so staff-web never
       // offers its proposer the approval (the route refuses it too: 409 `same-person`).
       proposedByYou: d.status === 'awaiting-approval' && d.ruling?.proposer === me.id,
-      taken: tk ? { by: tk.name, at: tk.at.toISOString(), openedAt: tk.opened_at?.toISOString() ?? null } : null,
+      taken: tk ? { by: tk.name, at: tk.at.toISOString(), openedAt: tk.opened_at?.toISOString() ?? null, auto: tk.auto } : null,
       mayWork: mayWork(d, req),
       moderator: r.moderatorName !== null && r.moderatorJoinedAt !== null ? { name: r.moderatorName, joinedAt: r.moderatorJoinedAt.toISOString() } : null,
       traders: { buyer: summaries.get(t.buyer) ?? null, seller: summaries.get(t.seller) ?? null },
@@ -508,6 +539,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         gateRefusal: await gateRefusalOf(deps.db, d, me.id),
       },
       freezes: await freezesOf(deps.db, t, code),
+      // Owner 26 Nov 2026: the dispute's liens, their grace, collecting share and pending rate request.
+      liens: await caseLiens(deps.db, code, d.seq, me.id),
     };
   });
 
@@ -557,13 +590,23 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     await caseTrade(deps.db, code);
     const { chat, channel } = await keyedChat(deps.db, code);
     const logEntryId = await logged(req, code, 'chat.read', {}, workable(req));
-    let g: { wrap: string; tkh: string; boxPublic: string; nextSeq: number };
+    let g: { wrap: string; tkh: string; boxPublic: string; nextSeq: number; lanes: unknown };
     try {
       g = await o.moderation.chatGrant({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId });
     } catch (err) {
       moderationError(err);
     }
     if (!HEX64.test(g.tkh) || !HEX64.test(g.boxPublic) || !B64.test(g.wrap)) throw new ApiError(502, 'moderation-unavailable');
+    const att = (await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [chat])).rows[0];
+    // Private lanes: every lane record is checked against the attested moderator before it is filed.
+    const lanes = await grantLanes(g.lanes, channel, att?.attestation);
+    for (const l of lanes) {
+      await deps.db.query(
+        `insert into chat_private_lanes (chat, to_role, pkh, record, created_at) values ($1, $2, $3, $4, $5)
+         on conflict (chat, to_role) do update set pkh = excluded.pkh, record = excluded.record`,
+        [chat, l.to, l.pkh, l.record, deps.clock()],
+      );
+    }
     // Design 2.2: the staff member's locked copy, filed against the chat (the API cannot open it).
     await deps.db.query(
       `insert into chat_members (chat, member_kind, member_ref, box_public, wrap, tkh, trigger, granted_by, granted_at, sig, log_entry_id)
@@ -572,14 +615,14 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
        do update set box_public = excluded.box_public, wrap = excluded.wrap, tkh = excluded.tkh, granted_at = excluded.granted_at, log_entry_id = excluded.log_entry_id`,
       [chat, `${req.staff.accountId}/${deviceKeyId}`, g.boxPublic, g.wrap, g.tkh, deps.clock(), logEntryId],
     );
-    const att = (await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [chat])).rows[0];
     const k = (await deps.db.query<{ tkh: string; created_by_role: string; wrap_buyer: string; wrap_seller: string; sig: string }>(
       'select tkh, created_by_role, wrap_buyer, wrap_seller, sig from chat_keys where chat = $1',
       [chat],
     )).rows[0]!;
     // Review N11 (f): the newest CHAT_READ_MAX envelopes, oldest first, and whether older ones exist.
-    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
-      'select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 order by chat_envelopes.id desc limit $2',
+    // Every envelope, both lanes included: the moderation-granted read is the audit path.
+    const { rows: newest } = await deps.db.query<{ id: string; sender_role: string; to_role: Lane | null; envelope: unknown; created_at: Date }>(
+      'select id::text as id, sender_role, to_role, envelope, created_at from chat_envelopes where chat = $1 order by chat_envelopes.id desc limit $2',
       [chat, CHAT_READ_MAX + 1],
     );
     const olderNotShown = newest.length > CHAT_READ_MAX;
@@ -592,7 +635,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       nextSeq: g.nextSeq,
       attestation: att === undefined ? null : { attestation: att.attestation, sig: att.sig },
       record: { v: 1, chat: channel, tkh: k.tkh, by: k.created_by_role, wrapBuyer: k.wrap_buyer, wrapSeller: k.wrap_seller, sig: k.sig },
-      envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, envelope: e.envelope, at: e.created_at.toISOString() })),
+      lanes: lanes.map((l) => ({ to: l.to, pkh: l.pkh, wrap: l.wrap, nextSeq: l.nextSeq })),
+      envelopes: envs.map((e) => ({ id: e.id, senderRole: e.sender_role, to: e.to_role, envelope: e.envelope, at: e.created_at.toISOString() })),
       olderNotShown,
     };
   });
@@ -620,50 +664,58 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   // the caller's certified staff device, logged, signed as the moderator by the moderation process,
   // stored as the chat's mod envelope, and the dispute's reply (the first one stops the first-reply clock).
   app.post('/staff/v1/disputes/:code/messages', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
-    const b = body(req, ['deviceKeyId', 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig']);
-    if (typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
+    const b = body(req, [...MESSAGE_KEYS, 'to'], MESSAGE_KEYS);
+    if ((b.to !== undefined && !isLane(b.to)) || typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
       || typeof b.nonce !== 'string' || !B64.test(b.nonce) || typeof b.ct !== 'string' || !B64.test(b.ct) || b.ct.length > 90_000
       || typeof b.ctSha256 !== 'string' || !HEX64.test(b.ctSha256) || typeof b.requestId !== 'string' || !HEX32.test(b.requestId)
       || typeof b.issuedAt !== 'string' || !ISO_MS.test(b.issuedAt) || typeof b.sig !== 'string' || !HEX128.test(b.sig)) {
       throw new ApiError(400, 'bad-request');
     }
     const sealed = { seq: b.seq, nonce: b.nonce, ct: b.ct, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig };
+    const to: Lane | null = b.to === undefined ? null : (b.to as Lane);
     const deviceKeyId = b.deviceKeyId;
     const deps = req.server.deps;
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
     const { chat, channel } = await keyedChat(deps.db, code);
+    // Private lanes: the lane's record must be filed (a moderation-granted read files it), or its
+    // trader could never open what is sent there.
+    if (to !== null && (await deps.db.query('select 1 from chat_private_lanes where chat = $1 and to_role = $2', [chat, to])).rows.length === 0) {
+      throw new ApiError(409, 'no-lane');
+    }
     const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
     let envelope: unknown;
     try {
-      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed }));
+      ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed, ...(to === null ? {} : { to }) }));
     } catch (err) {
       moderationError(err);
     }
     let env;
     try {
-      env = checkChatEnvelopeV2(envelope, channel, 'mod');
+      env = to === null ? checkChatEnvelopeV2(envelope, channel, 'mod') : checkChatEnvelopeV3(envelope, channel, 'mod');
     } catch (err) {
       if (err instanceof ChatEnvelopeError) throw new ApiError(502, 'moderation-unavailable');
       throw err;
     }
-    // Exactly the ciphertext the staff device sealed, nothing the moderation process changed.
-    const e = env as { seq: number; nonce: string; ct: string };
-    if (e.seq !== sealed.seq || e.nonce !== sealed.nonce || e.ct !== sealed.ct) throw new ApiError(502, 'moderation-unavailable');
+    // Exactly the ciphertext the staff device sealed, in the lane it named, nothing the moderation process changed.
+    const e = env as { seq: number; nonce: string; ct: string; to?: Lane };
+    if (e.seq !== sealed.seq || e.nonce !== sealed.nonce || e.ct !== sealed.ct || (e.to ?? null) !== to) throw new ApiError(502, 'moderation-unavailable');
     const me = actorOf(req);
     let id = '';
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
         workable(req)(d);
-        id = await storeModEnvelope(client, chat, env, now);
-        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: { envelopeId: id } });
+        id = await storeModEnvelope(client, chat, env, to, now);
+        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: to === null ? { envelopeId: id } : { envelopeId: id, to } });
+        // A private message is the dispute's reply as a shared one is.
         return applyDispute(d, { type: 'reply' }, me, now, await disputeSettings(client));
       });
     } catch (err) {
       ruleError(err);
     }
     await announce(req, code, t);
-    publish([t.buyer, t.seller], { type: 'chat', chat }, { closed: t.closed });
+    // A private message's hint goes to its lane's trader only (D1: the other sees nothing).
+    publish(to === null ? [t.buyer, t.seller] : [to === 'buyer' ? t.buyer : t.seller], { type: 'chat', chat }, { closed: t.closed });
     return reply.code(201).send({ id });
   });
 
@@ -719,8 +771,19 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         if (on) {
           if (d.status === 'closed') throw new ApiError(409, 'wrong-state');
           if (active.rows.length > 0) throw new ApiError(409, 'wrong-state');
-          // g62: no freeze while maintenance holds the dispute's timers.
-          if (rec.pausedSince !== null || !(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
+          // g62: no freeze while maintenance holds the dispute's timers. D-059, review of feat/lockout
+          // item 1 (lead default, owner question pending): a trade held only by a compromised-account
+          // lock (maintenance off, so its `paused_since` is the lock's) may still be frozen, so a party
+          // cannot stall their dispute for good by reporting their own account; logged
+          // `dispute.lock-override`. The silence rule (`freezeAllowed`) still applies.
+          if (await tradeHeld(client, code)) {
+            const m = await client.query<{ maintenance: boolean }>('select maintenance_since is not null as maintenance from site_flags for share');
+            if (m.rows[0]?.maintenance !== false) throw new ApiError(409, 'freeze-not-allowed');
+            await log(client, { at: now, actor: me, tradeCode: code, action: 'dispute.lock-override', detail: { step: 'freeze' } });
+          } else if (rec.pausedSince !== null) {
+            throw new ApiError(409, 'freeze-not-allowed');
+          }
+          if (!(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
           await client.query(
             `insert into trading_holds (account_id, created_at, kind, dispute_code, dispute_seq, side, reason, placed_by)
              values ($1, $2, 'freeze', $3, $4, $5, $6, $7)`,
@@ -805,6 +868,12 @@ function staffFreezeLiftRoute(app: FastifyInstance, o: StaffDisputeDeps): void {
     }
     return reply.code(204).send();
   });
+}
+
+/** D-059: whether the buyer's or the seller's account is locked by a compromised report. */
+async function tradeHeld(q: Queryable, code: string): Promise<boolean> {
+  const { rows } = await q.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [code]);
+  return rows[0]?.held === true;
 }
 
 /** Whether a moderator may freeze `side` now (owner 2026-11-02). */
@@ -897,17 +966,58 @@ async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, c
 
 /**
  * Stores the moderator's envelope in the trade chat (sender `mod`), under the chat row's lock, as
- * the trader route stores theirs: a seq at or below the last stored one is refused.
+ * the trader route stores theirs: a seq at or below the last stored one is refused. The seq is per
+ * lane (`to`, null for the shared chat). A private one leaves `last_message_at` alone, which the
+ * other trader's chat list shows (D1: the other trader sees nothing).
  */
-async function storeModEnvelope(client: pg.PoolClient, chat: string, env: { seq: number }, now: Date): Promise<string> {
+async function storeModEnvelope(client: pg.PoolClient, chat: string, env: { seq: number }, to: Lane | null, now: Date): Promise<string> {
   await client.query('select 1 from chats where code = $1 for update', [chat]);
-  const last = await client.query<{ seq: string | null }>("select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat]);
+  const last = await client.query<{ seq: string | null }>(
+    "select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = 'mod' and to_role is not distinct from $2",
+    [chat, to],
+  );
   const top = last.rows[0]?.seq;
   if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(502, 'moderation-unavailable');
   const ins = await client.query<{ id: string }>(
-    `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, 'mod', $2, $3, $4) returning id::text as id`,
-    [chat, env.seq, env, now],
+    `insert into chat_envelopes (chat, sender_role, to_role, seq, envelope, created_at) values ($1, 'mod', $2, $3, $4, $5) returning id::text as id`,
+    [chat, to, env.seq, env, now],
   );
-  await client.query('update chats set last_message_at = $2 where code = $1', [chat, now]);
+  if (to === null) await client.query('update chats set last_message_at = $2 where code = $1', [chat, now]);
   return ins.rows[0]!.id;
+}
+
+/** A moderator message's fields (`to`, the private lane, is optional). */
+const MESSAGE_KEYS = ['deviceKeyId', 'seq', 'nonce', 'ct', 'ctSha256', 'requestId', 'issuedAt', 'sig'] as const;
+const LANE_KEYS = ['to', 'pkh', 'wrap', 'nextSeq', 'record'] as const;
+
+/**
+ * Private lanes (private-mod-chat-2026-11-27): the grant's `lanes`, each `{ to, pkh, wrap, nextSeq,
+ * record }` with a distinct lane, its record verified against the chat attestation's moderator for
+ * this channel and naming the same lane and pkh. Anything else is the moderation process's fault (502).
+ */
+async function grantLanes(raw: unknown, channel: string, attestation: unknown): Promise<Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }>> {
+  const fault = (): ApiError => new ApiError(502, 'moderation-unavailable');
+  if (!Array.isArray(raw) || raw.length > 2) throw fault();
+  const mod = isPlainObject(attestation) && isPlainObject(attestation['participants']) ? attestation['participants']['mod'] : undefined;
+  if (!isPlainObject(mod) || typeof mod['signPublic'] !== 'string' || typeof mod['boxPublic'] !== 'string') throw fault();
+  const participants = { mod: { signPublic: mod['signPublic'], boxPublic: mod['boxPublic'] } };
+  const out: Array<{ to: Lane; pkh: string; wrap: string; nextSeq: number; record: unknown }> = [];
+  for (const l of raw as unknown[]) {
+    if (!isPlainObject(l) || !hasExactKeys(l, LANE_KEYS)) throw fault();
+    const { to, pkh, wrap, nextSeq, record } = l;
+    if (!isLane(to) || out.some((x) => x.to === to) || typeof pkh !== 'string' || !HEX64.test(pkh) || typeof wrap !== 'string' || !B64.test(wrap)
+      || typeof nextSeq !== 'number' || !Number.isSafeInteger(nextSeq) || nextSeq < 0) {
+      throw fault();
+    }
+    let rec;
+    try {
+      rec = await verifyPrivateLaneRecord(record, { chat: channel, participants });
+    } catch (e) {
+      if (e instanceof ProtocolError || e instanceof TypeError) throw fault();
+      throw e;
+    }
+    if (rec.to !== to || rec.pkh !== pkh) throw fault();
+    out.push({ to, pkh, wrap, nextSeq, record: rec });
+  }
+  return out;
 }

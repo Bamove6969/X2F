@@ -94,6 +94,9 @@ export type KeyTapIntent =
   // kind, its rule and its end (null = lifetime); and lifting one.
   | { kind: 'ban-account'; accountId: string; banId: string; banKind: 'trade' | 'site'; ruleId: string; until: string | null; issuedAt?: string }
   | { kind: 'lift-ban'; accountId: string; banId: string; issuedAt?: string }
+  // D-059 (J-14, ported): lifting the lock a "My account has been compromised" report put on an
+  // account (perm accounts.freeze: a senior moderator or the owner), bound to the account and the report.
+  | { kind: 'unlock-account'; accountId: string; ticketId: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string; issuedAt?: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number; issuedAt?: string }
   // Chat membership design task 8 (design section 4, lead 18 Nov): a staff member certifies one of
@@ -174,6 +177,14 @@ export type KeyTapIntent =
   | { kind: 'lien-rate'; lienId: string; requestId: string; rateBps: number }
   // Owner 26 Nov 2026: the owner writes a lien off as uncollectible (it ends; the trade can then go).
   | { kind: 'lien-uncollectible'; lienId: string }
+  // Owner 26 Nov 2026 (5:43 PM, docs/lien-recovery.md "Grace"): a lien given 7 days to pay the agreed
+  // way is switched to collecting from the debtor's later trades (money starts to move), bound to it
+  // and to the share the moderator entered (owner 5:51 PM; under 100% it also needs a senior's
+  // `lien-rate` tap before the moderation service applies it).
+  | { kind: 'lien-collect'; lienId: string; rateBps: number }
+  // Review of feat/lien-grace item 3: staff end a lien as repaid off the platform (the traders settled
+  // it themselves), at any point while it binds; bound to the lien.
+  | { kind: 'lien-paid-off-platform'; lienId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -207,6 +218,7 @@ export const KEY_TAP_KINDS = [
   'reset-staff-security',
   'ban-account',
   'lift-ban',
+  'unlock-account',
   'add-owner-key',
   'settings',
   'add-pgp-key',
@@ -226,6 +238,8 @@ export const KEY_TAP_KINDS = [
   'banner-publish',
   'lien-rate',
   'lien-uncollectible',
+  'lien-collect',
+  'lien-paid-off-platform',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

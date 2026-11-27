@@ -230,3 +230,23 @@ export function oldestWaiting<R extends { code: string; deadlineTone: DeadlineTo
   }
   return best;
 }
+
+// Owner decision (Jess, 26 Nov 2026), "Pool first, auto-assign if untaken". COPY-UNSIGNED
+
+/**
+ * The queue's line for a case's assignee: "Unassigned" plus how long until the timer assigns it
+ * (or that it waits for someone on shift once the time has passed), "Assigned to you automatically"
+ * when the timer gave it to this person, else "You" or the assignee's name.
+ */
+export function assigneeText(
+  r: { assignee: string | null; mine: boolean; autoAssigned?: boolean; autoAssignAt?: string | null },
+  now: Date,
+): string {
+  if (r.assignee === null) {
+    if (r.autoAssignAt === undefined || r.autoAssignAt === null) return 'Unassigned';
+    const left = Date.parse(r.autoAssignAt) - now.getTime();
+    return left > 0 ? `Unassigned · assigned automatically in ${span(left)}` : 'Unassigned · assigned to the next moderator on shift';
+  }
+  if (r.mine) return r.autoAssigned === true ? 'Assigned to you automatically' : 'You';
+  return r.autoAssigned === true ? `${r.assignee} (assigned automatically)` : r.assignee;
+}

@@ -30,6 +30,8 @@ export interface WorkItem {
    * signed (lienRecovery.ts `LienSource`).
    */
   lienSource?: unknown;
+  /** Owner 27 Nov 2026: with a `terms.sellerLienRecovery`, its source, as `lienSource` with `sellerAccount` (lienRecovery.ts). */
+  sellerLienSource?: unknown;
 }
 
 /** A chat both traders registered a chat identity for (`GET /internal/v1/chat-work`, Task 20). */

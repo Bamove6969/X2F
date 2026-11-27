@@ -20,7 +20,7 @@ type Kind =
   | 'iso'
   /** 64 lower-case hex characters (a hash or a tx id). */
   | 'hex64'
-  /** A setting value as stored: a number, a decimal string or null. */
+  /** A setting value as stored: a number, a decimal string, an on/off switch (owner 26 Nov 2026: auto-assign) or null. */
   | 'setting';
 
 type Schema = Readonly<Record<string, Kind>>;
@@ -77,7 +77,9 @@ export const LOG_ACTIONS = {
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
-  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso' },
+  // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): `auto` marks the timer's assignment
+  // (actor system); a person's take carries no `auto`.
+  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso', auto: 'bool' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
   // Re-verify 43fbbb2f, R-I1: the seller's cancel refund landed on a dispute already past `open`
@@ -87,7 +89,8 @@ export const LOG_ACTIONS = {
   'chat.read': {},
   // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
   'chat.message-requested': {},
-  'chat.message-sent': { envelopeId: 'id' },
+  // Private moderator lanes: `to` names the lane (buyer or seller) of a private message; absent for a shared one.
+  'chat.message-sent': { envelopeId: 'id', to: 'id' },
   'proof.unblurred-requested': { side: 'id' },
   'proof.unblurred-opened': {},
   // Rulings and appeals (Tasks 12, 24). `ruling.final` records "Decision overruled" or "stands".
@@ -147,7 +150,8 @@ export const LOG_ACTIONS = {
   'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Lien recovery (owner 16 Nov 2026, docs/lien-recovery.md). No reason text: it stays in
   // lien_rate_requests (Task 3: details never carry staff notes).
-  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount' },
+  // Owner 27 Nov 2026: `side` 'seller' for a selling debtor's extra (absent: the buyer's, as before).
+  'lien.recovery-reserved': { lienId: 'id', amountAtomic: 'amount', side: 'id' },
   'lien.recovered': { lienId: 'id', amountAtomic: 'amount', remainingAtomic: 'amount' },
   'lien.recovery-released': { lienId: 'id', amountAtomic: 'amount' },
   // Review M2: a late-paid recovery past what the lien still owed (the ledger records only what was owed).
@@ -161,6 +165,15 @@ export const LOG_ACTIONS = {
   'lien.rate-proposed': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-approved': { lienId: 'id', requestId: 'id', rateBps: 'number' },
   'lien.rate-rejected': { lienId: 'id', requestId: 'id' },
+  // Owner 26 Nov 2026 (5:43 PM; docs/lien-recovery.md "Grace"): 7 days to pay the agreed way. The
+  // agreed method stays on the lien (staff and the two traders), never in the log.
+  'lien.grace-started': { lienId: 'id', graceUntil: 'iso' },
+  'lien.grace-lapsed': { lienId: 'id' },
+  'lien.grace-escalated': { lienId: 'id', auto: 'bool' },
+  'lien.collect-started': { lienId: 'id', lapsed: 'bool' },
+  'lien.repaid-off-platform': { lienId: 'id' },
+  // Owner change 5:53 PM: a senior (or the owner) opened a pending lower-rate request to review the chat.
+  'lien.rate-review-opened': { lienId: 'id', requestId: 'id' },
   // Recommended account limits (Task 26).
   'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id', fromCode: 'id' },
   'limits.decided': { recId: 'id', approved: 'bool', fromCode: 'id' },
@@ -253,6 +266,16 @@ export const LOG_ACTIONS = {
   'ticket.opened': { ticketId: 'id' },
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
+  // D-059 (J-14, ported): a "My account has been compromised" report locked the account (by the
+  // system, at the sender's word); a senior moderator or the owner read a report (with the locked
+  // account's open trades and the sender's comment), lifted its lock, or closed it. Ids only.
+  'account.locked': { accountId: 'uuid', ticketId: 'id' },
+  'account.unlocked': { accountId: 'uuid', ticketId: 'id' },
+  'account.report-viewed': { ticketId: 'id' },
+  'account.report-closed': { ticketId: 'id' },
+  // Review of feat/lockout, item 1: staff ruled on (`propose`, `approve`, `second-approval`,
+  // `re-propose`, `send-back`) or froze (`freeze`) a trade held only by a compromised-account lock.
+  'dispute.lock-override': { step: 'id' },
   'training.copy-saved': {},
   // D-058 (lead 12 Nov): a staff member opened a page of the feedback form list, which names the
   // sender of a named row; how many rows on that page were named (never who).
@@ -326,7 +349,7 @@ function fits(kind: Kind, v: unknown): boolean {
     case 'hex64':
       return typeof v === 'string' && HEX64.test(v);
     case 'setting':
-      return v === null || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && /^-?\d{1,30}(\.\d{1,12})?$/.test(v));
+      return v === null || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && /^-?\d{1,30}(\.\d{1,12})?$/.test(v));
   }
 }
 

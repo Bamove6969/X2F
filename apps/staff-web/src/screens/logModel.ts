@@ -112,7 +112,10 @@ function sentence(
     case 'trade.tick': return 'A trade deadline passed';
     // Disputes and the case.
     case 'dispute.opened': return `Dispute opened${d.afterRefund === true ? ' after the refund' : ''}`;
-    case 'dispute.assigned': return e.actor.kind === 'staff' ? 'Took the case' : `Assigned the case to ${who('staffId', 'a moderator')}`;
+    // Owner 26 Nov 2026: `auto` is the timer's assignment of a case nobody took in time. COPY-UNSIGNED
+    case 'dispute.assigned':
+      if (d.auto === true) return `Nobody took the case in time; assigned it automatically to ${who('staffId', 'a moderator')}`;
+      return e.actor.kind === 'staff' ? 'Took the case' : `Assigned the case to ${who('staffId', 'a moderator')}`;
     case 'dispute.unassigned': return `The case went back to the queue; ${who('staffId', 'its moderator')} left it`;
     case 'dispute.refund-after-ruling': return 'The seller was refunded after a ruling; the case needs a new ruling';
     case 'dispute.complied': return 'The seller sent the XMR the ruling asked for';
@@ -168,6 +171,13 @@ function sentence(
     case 'lien.voided': return 'A lien was cancelled';
     case 'lien.uncollectible': return 'Wrote a lien off as uncollectible';
     case 'lien.repaid': return 'A lien was repaid';
+    // Owner 26 Nov 2026: 7 days to pay the agreed way. COPY-UNSIGNED
+    case 'lien.grace-started': return 'Gave the person at fault 7 days to pay the agreed way';
+    case 'lien.grace-lapsed': return 'The 7 days to pay passed without the person owed confirming payment';
+    case 'lien.grace-escalated': return 'Sent an unpaid lien to a senior moderator';
+    case 'lien.collect-started': return 'Started collecting a lien from the later trades of the person at fault';
+    case 'lien.repaid-off-platform': return 'The person owed confirmed they were paid the agreed way';
+    case 'lien.rate-review-opened': return 'Opened a request for a lower lien rate to review the case';
     case 'fee.owed': return `An account owes the 1% fee: ${xmr(d.amountAtomic) || 'the fee'}`;
     case 'limits.recommended': return `Recommended account limits${typeof d.capUsd === 'number' ? ` of ${num(d.capUsd)} USD` : ''}`;
     case 'limits.decided': return d.approved === true ? 'Approved the recommended limits' : 'Turned down the recommended limits';
@@ -233,6 +243,13 @@ function sentence(
     case 'news.deleted': return 'Deleted a news post';
     case 'ticket.replied': return 'Replied to a support ticket';
     case 'ticket.closed': return 'Closed a support ticket';
+    // COPY-UNSIGNED (D-059: the "My account has been compromised" lockout).
+    case 'account.locked': return 'Locked an account on a "my account was compromised" report';
+    case 'account.unlocked': return 'Unlocked an account after a "my account was compromised" report';
+    case 'account.report-viewed': return 'Read a "my account was compromised" report';
+    case 'account.report-closed': return 'Closed a "my account was compromised" report';
+    // COPY-UNSIGNED (review of feat/lockout, item 1).
+    case 'dispute.lock-override': return d.step === 'freeze' ? 'Froze a party on a trade paused by a compromised-account lock' : 'Worked a ruling on a trade paused by a compromised-account lock';
     case 'training.copy-saved': return 'Saved a training case';
     case 'feedback.form-opened': return 'Opened the feedback messages';
     case 'log.checkpoint': return 'Activity log checkpoint';

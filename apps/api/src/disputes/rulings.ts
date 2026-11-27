@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
   AFTER_REFUND_OUTCOMES,
+  can,
   ESCROW_OUTCOMES,
   DisputeRuleError,
   applyDispute,
   evidenceSha256,
+  parseLienPlan,
   type AccountAction,
+  type LienPlan,
   type Dispute,
   type GateValue,
   type KeyTapIntent,
@@ -21,6 +24,7 @@ import { consumeKeyTap } from '../staff/keyTap.js';
 import { requireStaff } from '../staff/guard.js';
 import { disputeSettings } from './settings.js';
 import { gateValueOf, withDispute, type DisputeRecord } from './store.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { rulingExtras } from './rulingDrafts.js';
 import { actorOf, body as bodyOf, codeOf as caseCodeOf, ruleError } from './staffRoutes.js';
 
@@ -114,6 +118,21 @@ function parseAction(v: unknown): AccountAction {
   return v as AccountAction;
 }
 
+/**
+ * Owner 26 Nov 2026 (5:43 and 5:51 PM): how a lien this ruling places is paid (optional; absent:
+ * collect now at 100%, as before). Stored on the draft, applied when the ruling places the lien
+ * (lien.ts). Not part of the ruling's signed intent: the moderation gate verifies that intent as it
+ * stands, so the plan rides in the same request the proposer's tap authorises (lead call; see
+ * docs/lien-recovery.md "Grace"). The columns: the grace text, or a rate under 100% with its reason.
+ */
+function lienPlanColumns(v: unknown): [string | null, number | null, string | null] {
+  if (v === undefined) return [null, null, null];
+  const p: LienPlan | null = parseLienPlan(v);
+  if (p === null) throw new ApiError(400, 'bad-request', { field: 'lienPlan' });
+  if (p.mode === 'grace') return [p.method, null, null];
+  return p.rateReason === null ? [null, null, null] : [null, p.rateBps, p.rateReason];
+}
+
 interface DraftRow {
   ruling_id: string;
   round: 1 | 2;
@@ -198,8 +217,28 @@ async function publishDecided(client: pg.PoolClient, next: Dispute, draft: Draft
  * site's maintenance switch is on, or during the emergency stop. A missing site_flags row counts as
  * both (as the offers' guard).
  */
-async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord): Promise<void> {
+async function assertNotPaused(client: pg.PoolClient, rec: DisputeRecord, o?: { req: FastifyRequest; now: Date; step: string }): Promise<void> {
+  // D-059 (J-14 re-verify M1, ported): a compromised-account lock on either party holds the trade
+  // from the lock's commit on, before the dispute timers' next pass sets `paused_since`.
+  const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [rec.dispute.code]);
+  if (held.rows[0]?.held === true) {
+    // Review of feat/lockout, item 1 (lead default, owner question pending): a party must not stall
+    // their dispute for good by reporting their own account compromised. A trade held only by a lock
+    // (maintenance off, so `paused_since` outside maintenance is the lock's) may still be ruled on by
+    // staff with `rulings.approve` (a senior moderator or the owner), logged `dispute.lock-override`.
+    if (o !== undefined && can(o.req.staff.role, 'rulings.approve', o.req.staff.grants)) {
+      await assertSiteRunning(client);
+      await appendLog(client, { at: o.now, actor: actorOf(o.req), tradeCode: rec.dispute.code, action: 'dispute.lock-override', detail: { step: o.step } });
+      return;
+    }
+    throw new ApiError(409, 'dispute-paused');
+  }
   if (rec.pausedSince !== null) throw new ApiError(409, 'dispute-paused');
+  await assertSiteRunning(client);
+}
+
+/** Maintenance (409 `dispute-paused`) and the emergency stop (409 `trading-paused`), read `for share`. */
+async function assertSiteRunning(client: pg.PoolClient): Promise<void> {
   // Lead follow-up: the site's maintenance switch too, so nothing gets through before the timer
   // has marked the dispute paused. Both flags `for share`: a switch being set waits for this or is seen.
   const { rows } = await client.query<{ paused: boolean; maintenance: boolean }>(
@@ -243,7 +282,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
   });
 
   app.post('/staff/v1/disputes/:code/rulings', handle, async (req) => {
-    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId', 'lienPlan'], ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    const plan = lienPlanColumns(b.lienPlan);
     if (typeof b.rulingId !== 'string' || !UUID.test(b.rulingId)) throw new ApiError(400, 'bad-request');
     if (typeof b.outcome !== 'string' || !OUTCOMES.includes(b.outcome)) throw new ApiError(400, 'bad-request');
     if (!isText(b.reason, REASON_MAX)) throw new ApiError(400, 'bad-request');
@@ -261,7 +301,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'propose' });
         const amountAtomic = await tradeAmount(client, code);
         // The tap first: a tap that is not for exactly this ruling writes nothing.
         await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: d.round, round1Id: d.round1?.id ?? null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
@@ -270,9 +310,9 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const gate = await gateValue(client, code, s.largeTradeLimitUsd);
         const next = applyDispute(d, { type: 'propose', gate, ruling: { id: rulingId, outcome, accountAction: NONE, proposer: me.id } }, me, now, s);
         const ins = await client.query(
-          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,
-          [rulingId, code, d.seq, d.round, reason, JSON.stringify(evidence), me.id, now],
+          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at, lien_grace_method, lien_rate_bps, lien_rate_reason)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) on conflict do nothing`,
+          [rulingId, code, d.seq, d.round, reason, JSON.stringify(evidence), me.id, now, ...plan],
         );
         if (ins.rowCount !== 1) throw new ApiError(409, 'wrong-state');
         await appendLog(client, { at: now, actor: me, tradeCode: code, action: 'ruling.proposed', detail: rulingDetail({ id: rulingId, outcome }, d.round, amountAtomic) });
@@ -307,7 +347,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'approve' });
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const amountAtomic = await tradeAmount(client, code);
         const r = d.ruling!;
@@ -343,7 +383,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'second-approval' });
         const r1 = d.round === 1 ? d.ruling : d.round1;
         if (typeof id !== 'string' || !UUID.test(id) || r1 === null || r1.id !== id) throw new ApiError(409, 'wrong-state');
         const refused = await latestRefusal(client, code);
@@ -385,7 +425,8 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
    * dispute (lead default, owner question).
    */
   app.post('/staff/v1/disputes/:code/rulings/:id/re-propose', approver, async (req) => {
-    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    const b = bodyOf(req, ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId', 'lienPlan'], ['rulingId', 'outcome', 'accountAction', 'reason', 'evidence', 'tapId']);
+    const plan = lienPlanColumns(b.lienPlan);
     if (typeof b.rulingId !== 'string' || !UUID.test(b.rulingId)) throw new ApiError(400, 'bad-request');
     if (typeof b.outcome !== 'string' || !OUTCOMES.includes(b.outcome)) throw new ApiError(400, 'bad-request');
     if (!isText(b.reason, REASON_MAX)) throw new ApiError(400, 'bad-request');
@@ -403,7 +444,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 're-propose' });
         if (typeof id !== 'string' || !UUID.test(id) || d.round !== 1 || d.ruling === null || d.ruling.id !== id) throw new ApiError(409, 'wrong-state');
         const refused = await latestRefusal(client, code);
         if (refused === null || refused.rulingId !== id || refused.reason !== 'revoked') throw new ApiError(409, 'not-refused');
@@ -414,9 +455,9 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
         const amountAtomic = await tradeAmount(client, code);
         await consumeKeyTap(client, tapId, me.id, rulingIntent('propose', { rulingId, code, round: 1, round1Id: null, outcome, amountAtomic, reason, evidence }), now, { sessionId: req.auth.sessionId });
         const ins = await client.query(
-          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at)
-           values ($1, $2, $3, 1, $4, $5, $6, $7) on conflict do nothing`,
-          [rulingId, code, d.seq, reason, JSON.stringify(evidence), me.id, now],
+          `insert into ruling_drafts (ruling_id, code, seq, round, reason, evidence, proposer, proposed_at, lien_grace_method, lien_rate_bps, lien_rate_reason)
+           values ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10) on conflict do nothing`,
+          [rulingId, code, d.seq, reason, JSON.stringify(evidence), me.id, now, ...plan],
         );
         if (ins.rowCount !== 1) throw new ApiError(409, 'wrong-state');
         // The withdrawn round 1 is no longer the traders' ruling; the new one is, once published.
@@ -441,7 +482,7 @@ export function staffRulingRoutes(app: FastifyInstance, o: StaffRulingDeps = {})
     const me = actorOf(req);
     try {
       await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
-        await assertNotPaused(client, rec);
+        await assertNotPaused(client, rec, { req, now, step: 'send-back' });
         const draft = await waiting(client, d, (req.params as { id?: unknown }).id);
         const next = applyDispute(d, { type: 'send-back' }, me, now, await disputeSettings(client));
         await client.query(

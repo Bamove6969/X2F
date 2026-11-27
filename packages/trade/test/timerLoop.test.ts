@@ -140,6 +140,31 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(decide([open], at(5), at(6), new Set([open.code])).events.map((e) => e.event)).toEqual([{ type: 'pause' }]);
   });
 
+  // J-14 (owner D-059): a trade of an account locked by a "My account has been compromised" ticket
+  // is paused at once and stays paused (all timers stop) until staff unlock the account, whatever
+  // maintenance does.
+  test('a locked trade (its account is locked) is paused, never resumed, never ticked, and resumes once it is no longer locked', () => {
+    const open = secured();
+    const locked = new Set([open.code]);
+    const none = new Set<string>();
+    expect(decide([open], null, at(5), none, locked).events).toEqual([{ code: open.code, event: { type: 'pause' }, at: at(5) }]);
+    const paused = sys(open, { type: 'pause' }, at(5));
+    // Maintenance off: an ordinary paused trade would resume; a held one does not.
+    expect(decide([paused], null, at(200), none, locked).events).toEqual([]);
+    // Maintenance on, then off again: still nothing for the held trade, even far past payBy.
+    expect(decide([paused], at(100), at(300), none, locked).events).toEqual([]);
+    expect(decide([paused], null, at(400), none, locked).events).toEqual([]);
+    // Unlocked (no longer held): it resumes and its deadlines move by the whole pause.
+    expect(decide([paused], null, at(400)).events).toEqual([{ code: paused.code, event: { type: 'resume' }, at: at(400) }]);
+    const resumed = sys(paused, { type: 'resume' }, at(400));
+    expect(resumed.payBy).toEqual(at(2 + TIMERS.payMin + 395));
+    // A closed trade has no timer, held or not.
+    // Past the setup window (setupMin, 60 since J-04): the request lapses and closes.
+    const closed = sys(taken('ZZZZ2345EFGH6789'), { type: 'tick' }, at(TIMERS.setupMin + 1));
+    expect(closed.closedAt).not.toBeNull();
+    expect(decide([closed], null, at(TIMERS.setupMin + 2), none, new Set([closed.code])).events).toEqual([]);
+  });
+
   test('maintenance on for 20 min moves payBy by 20 min and no tick fires meanwhile', () => {
     let trades = [secured()];
     const payBy = trades[0]!.payBy!;

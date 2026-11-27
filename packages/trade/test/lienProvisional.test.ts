@@ -19,10 +19,11 @@ import {
 } from '../src/index.js';
 
 /**
- * Lien recovery, provisional owner answers of 17 Nov 2026 (docs/lien-recovery.md "Provisional owner
- * answers"): Q1 a rate of at most 90% and the buyer always keeps MAX_NETWORK_FEE + 0.01 XMR; Q5 a
- * recovery below 0.01 XMR is never paid (the remainder carries forward); Q2 the creditor's device
- * signs the address its recoveries go to; B1 the moderation service signs the lien it checked.
+ * Lien recovery limits (docs/lien-recovery.md "Owner answers"): Q1 (owner, 26 Nov 2026) a rate of at
+ * most 100%, 100% by default, and the buyer's output always keeps MAX_NETWORK_FEE + 1 atomic unit
+ * (what the payout needs to work); Q5 a recovery below 0.01 XMR is never paid (the remainder carries
+ * forward); Q2 the creditor's device signs the address its recoveries go to; B1 the moderation
+ * service signs the lien it checked.
  */
 const XMR = 1_000_000_000_000n;
 const BUYER = '4Buyer';
@@ -39,50 +40,52 @@ const release = (amount: bigint, recovery: bigint) => {
   });
 };
 
-describe('Q1/Q5: the provisional limits (one constant each)', () => {
-  it('90% at most, 50% by default; the buyer keeps MAX_NETWORK_FEE + 0.01 XMR; nothing under 0.01 XMR is paid', () => {
-    expect(LIEN_RECOVERY_MAX_BPS).toBe(9000);
-    expect(LIEN_DEFAULT_RATE_BPS).toBe(5000);
-    expect(LIEN_BUYER_KEEPS_ATOMIC).toBe(MAX_NETWORK_FEE + XMR / 100n);
+describe('Q1/Q5: the limits (one constant each)', () => {
+  it('owner 26 Nov 2026: 100% at most and by default; the buyer keeps MAX_NETWORK_FEE + 1; nothing under 0.01 XMR is paid', () => {
+    expect(LIEN_RECOVERY_MAX_BPS).toBe(10_000);
+    expect(LIEN_DEFAULT_RATE_BPS).toBe(10_000);
+    expect(LIEN_BUYER_KEEPS_ATOMIC).toBe(MAX_NETWORK_FEE + 1n);
     expect(LIEN_RECOVERY_MIN_ATOMIC).toBe(XMR / 100n);
   });
 
-  it('lienRecoveryCap: 90% of the proceeds, reduced so the buyer keeps the floor; 0 when nothing fits', () => {
-    expect(lienRecoveryCap(XMR)).toBe((XMR * 9n) / 10n);
-    // 0.1 XMR: 90% would leave 0.01 XMR, under the 0.02 XMR floor: reduced to fit.
+  it('lienRecoveryCap: all of the proceeds less the buyer\'s floor; 0 when nothing fits', () => {
+    expect(lienRecoveryCap(XMR)).toBe(XMR - LIEN_BUYER_KEEPS_ATOMIC);
     expect(lienRecoveryCap(XMR / 10n)).toBe(XMR / 10n - LIEN_BUYER_KEEPS_ATOMIC);
     expect(lienRecoveryCap(LIEN_BUYER_KEEPS_ATOMIC)).toBe(0n);
     expect(lienRecoveryCap(0n)).toBe(0n);
   });
 
   it('expectedRecovery = min(floor(proceeds × rate / 10000), what is left, the cap); below 0.01 XMR it is 0 (carried forward)', () => {
+    // The default: everything left, up to the cap.
+    expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: LIEN_DEFAULT_RATE_BPS, leftAtomic: 10n * XMR })).toBe(XMR - LIEN_BUYER_KEEPS_ATOMIC);
+    expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: LIEN_DEFAULT_RATE_BPS, leftAtomic: XMR / 4n })).toBe(XMR / 4n);
+    expect(expectedRecovery({ proceedsAtomic: XMR / 10n, rateBps: LIEN_DEFAULT_RATE_BPS, leftAtomic: XMR })).toBe(XMR / 10n - LIEN_BUYER_KEEPS_ATOMIC);
+    // A lower rate a senior approved.
     expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: 5000, leftAtomic: 10n * XMR })).toBe(XMR / 2n);
     expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: 5000, leftAtomic: XMR / 4n })).toBe(XMR / 4n);
     expect(expectedRecovery({ proceedsAtomic: 3n, rateBps: 5000, leftAtomic: XMR })).toBe(0n);
-    expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: 9000, leftAtomic: XMR })).toBe((XMR * 9n) / 10n);
-    // Reduced to fit the buyer's floor.
-    expect(expectedRecovery({ proceedsAtomic: XMR / 10n, rateBps: 9000, leftAtomic: XMR })).toBe(XMR / 10n - LIEN_BUYER_KEEPS_ATOMIC);
     // A remainder smaller than 0.01 XMR is never paid: it carries forward.
     expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: 5000, leftAtomic: XMR / 100n - 1n })).toBe(0n);
     expect(expectedRecovery({ proceedsAtomic: XMR, rateBps: 5000, leftAtomic: XMR / 100n })).toBe(XMR / 100n);
-    // Nothing fits: skipped.
-    expect(expectedRecovery({ proceedsAtomic: LIEN_BUYER_KEEPS_ATOMIC + 1n, rateBps: 9000, leftAtomic: XMR })).toBe(0n);
+    // Nothing fits (or less than 0.01 XMR does): skipped.
+    expect(expectedRecovery({ proceedsAtomic: LIEN_BUYER_KEEPS_ATOMIC + 1n, rateBps: 10_000, leftAtomic: XMR })).toBe(0n);
+    expect(expectedRecovery({ proceedsAtomic: LIEN_BUYER_KEEPS_ATOMIC, rateBps: 10_000, leftAtomic: XMR })).toBe(0n);
     // A rate above the cap is never applied (fails closed), nor a malformed one.
-    expect(() => expectedRecovery({ proceedsAtomic: XMR, rateBps: 9001, leftAtomic: XMR })).toThrow(RangeError);
+    expect(() => expectedRecovery({ proceedsAtomic: XMR, rateBps: 10_001, leftAtomic: XMR })).toThrow(RangeError);
     expect(() => expectedRecovery({ proceedsAtomic: XMR, rateBps: 0, leftAtomic: XMR })).toThrow(RangeError);
     expect(() => expectedRecovery({ proceedsAtomic: XMR, rateBps: 5000, leftAtomic: -1n })).toThrow(RangeError);
   });
 
-  it('PROBE-B3 as a test: payoutsFor (every co-signer and the gate) refuses a set that leaves the buyer under the floor, above 90%, or under 0.01 XMR', () => {
+  it('PROBE-B3 as a test: payoutsFor (every co-signer and the gate) refuses a set that leaves the buyer no more than the largest network fee, or under 0.01 XMR', () => {
     // The review's probe: an approved 10000 bps reserved XMR - 1 for a 1 XMR trade.
     expect(() => release(XMR, XMR - 1n)).toThrow(/bad recovery amount/);
-    expect(() => release(XMR, (XMR * 9n) / 10n + 1n)).toThrow(/bad recovery amount/);
-    expect(release(XMR, (XMR * 9n) / 10n)[0]).toEqual({ address: BUYER, amountAtomic: XMR / 10n, bearsNetworkFee: true });
+    expect(() => release(XMR, XMR - MAX_NETWORK_FEE)).toThrow(/bad recovery amount/);
+    expect(release(XMR, XMR - LIEN_BUYER_KEEPS_ATOMIC)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC, bearsNetworkFee: true });
     const small = XMR / 10n;
     expect(release(small, small - LIEN_BUYER_KEEPS_ATOMIC)[0]).toEqual({ address: BUYER, amountAtomic: LIEN_BUYER_KEEPS_ATOMIC, bearsNetworkFee: true });
     expect(() => release(small, small - LIEN_BUYER_KEEPS_ATOMIC + 1n)).toThrow(/bad recovery amount/);
     expect(() => release(XMR, XMR / 100n - 1n)).toThrow(/bad recovery amount/);
-    expect(release(XMR, XMR / 100n)[3]).toEqual({ address: CREDITOR, amountAtomic: XMR / 100n });
+    expect(release(XMR, XMR / 100n)[3]).toEqual({ address: CREDITOR, amountAtomic: XMR / 100n, bearsNetworkFee: true });
   });
 });
 
@@ -98,14 +101,15 @@ describe('B1: the moderation service\'s signed lien statement', () => {
     mod = sodium.crypto_sign_keypair();
   });
 
-  it('verifies only under the moderation key, unchanged; a rate above 90% is never a statement', async () => {
+  it('verifies only under the moderation key, unchanged; a rate above 100% is never a statement', async () => {
     const sig = await signLienStatement(S, mod.privateKey);
     const pub = sodium.to_hex(mod.publicKey);
     expect(lienStatementValid(S, sig, pub)).toBe(true);
     expect(lienStatementValid({ ...S, amountAtomic: '1000000000001' }, sig, pub)).toBe(false);
     expect(lienStatementValid({ ...S, debtor: S.creditor }, sig, pub)).toBe(false);
     expect(lienStatementValid(S, sig, sodium.to_hex(sodium.crypto_sign_keypair().publicKey))).toBe(false);
-    await expect(signLienStatement({ ...S, rateBps: 9001 }, mod.privateKey)).rejects.toThrow(TypeError);
+    expect(lienStatementValid({ ...S, rateBps: 10_000 }, await signLienStatement({ ...S, rateBps: 10_000 }, mod.privateKey), pub)).toBe(true);
+    await expect(signLienStatement({ ...S, rateBps: 10_001 }, mod.privateKey)).rejects.toThrow(TypeError);
     await expect(signLienStatement({ ...S, extra: 1 } as unknown as LienStatement, mod.privateKey)).rejects.toThrow(TypeError);
   });
 });

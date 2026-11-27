@@ -4,7 +4,8 @@ import type { GateState } from '../gate/store.js';
 
 /**
  * Design build task 9 (design-chat-membership-keys-2026-11-08; lead 18 Nov): who may be granted a
- * disputed trade's chat key, and who may send as the moderator, by this process's own records.
+ * disputed trade's chat key (and, owner 27 Nov, its private lane keys), and who may send as the
+ * moderator (in the shared chat or a lane), by this process's own records.
  * `server.ts` runs these checks for `POST /internal/chat/grant` and `POST /internal/chat/send`.
  */
 

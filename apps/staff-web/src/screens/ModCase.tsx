@@ -1,4 +1,4 @@
-import { can, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
+import { can, rulingMayPlaceLien, type KeyTapIntent, type RulingOutcome, type StaffRole } from '@x2f/staff';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import {
@@ -25,7 +25,7 @@ import {
 } from '../api.js';
 import { AccountCard } from './AccountActions.js';
 import { browserChatKeys, type ChatKeys } from '../chat/client.js';
-import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic } from '../chat/types.js';
+import { ChatKeyError, modTextOk, type CaseChatLine, type ChatView, type DevicePublic, type Lane } from '../chat/types.js';
 import { DeviceCard } from '../ui/DeviceCard.js';
 import { faultText } from '../refusals.js';
 import { KeyTapDialog } from '../ui/KeyTapDialog.js';
@@ -52,6 +52,7 @@ import {
   xmrSix,
 } from './modModel.js';
 import { takeable } from './ModQueue.js';
+import { EMPTY_PLAN, LienPanel, LienPlanFields, planOf, planWords, type PlanDraft } from './LienPlan.js';
 import '../ui/staff.css';
 import { ProofLookFor } from '../ui/ProofCard.js';
 
@@ -208,7 +209,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
       <div className="x2f-staff-case">
         <div className="x2f-stack">
           <ChatCard code={c.code} work={work} keys={keys} device={device} onDevice={setDevice} opened={opened} onOpened={setOpened} buyer={buyer} seller={seller} />
-          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} /> : null}
+          {work ? <MessageCard code={c.code} keys={keys} device={device} opened={opened} onSent={(o) => setOpened(o)} buyer={buyer} seller={seller} /> : null}
         </div>
         <div className="x2f-stack">
           <TradersCard c={c} />
@@ -218,6 +219,7 @@ export function ModCase({ role, keys: given }: { role: StaffRole; /** The chat k
           {c.mayWork ? <LimitsCard c={c} buyer={buyer} seller={seller} /> : null}
           {can(role, 'accounts.freeze') ? <AccountActionsCard code={c.code} role={role} /> : null}
           <RulingCard c={c} proposing={proposing} approving={approving} rescuing={rescuing} reProposing={reProposing} buyer={buyer} seller={seller} setTap={openTap} reload={load} />
+          <LienPanel c={c} role={role} setTap={openTap} reload={load} />
         </div>
       </div>
 
@@ -271,7 +273,8 @@ function CaseChips({ c, role, onTaken }: { c: DisputeCase; role: StaffRole; onTa
   }
   // Review p4t22 M1: a trade not priced in US dollars needs a second person whatever its value. COPY-UNSIGNED
   if (c.overLimit) chips.push(c.secondReason === 'non-usd' ? 'Needs a second approval: not in US dollars' : `Above the ${limitText(c.limitUsd)} limit`);
-  chips.push(c.assignedToYou ? 'Assigned to you' : c.assignee !== null ? `Assigned to ${c.assignee}` : 'Unassigned');
+  // Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): the timer's assignment says so. COPY-UNSIGNED
+  chips.push(c.assignedToYou ? (c.autoAssigned === true ? 'Assigned to you automatically' : 'Assigned to you') : c.assignee !== null ? `Assigned to ${c.assignee}` : 'Unassigned');
 
   const take = async () => {
     setFault(null);
@@ -361,10 +364,22 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
             <Fragment key={l.id}>
               {/* COPY-UNSIGNED. Review N2: where the server dropped or held back messages, shown where it happened. */}
               {l.missingBefore > 0 ? <li data-part="chat-missing">{`${l.missingBefore} message(s) missing here`}</li> : null}
-              <li data-from={l.from}>
-                <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
-                {l.text}
-              </li>
+              {l.to === undefined ? (
+                <li data-from={l.from}>
+                  <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+                  {l.text}
+                </li>
+              ) : (
+                // Private lanes (owner 27 Nov): the private colour and marker, for the moderator and every audit reader alike.
+                <li data-from={l.from} data-private={l.to} className="x2f-staff-chat__line--private">
+                  <span className="x2f-staff-chat__private" data-part="chat-private">
+                    <LockIcon />
+                    {privateMarker(l.to === 'buyer' ? buyer : seller)}
+                  </span>
+                  <span className="x2f-staff-chat__who">{`${who(l.from)}: `}</span>
+                  {l.text}
+                </li>
+              )}
             </Fragment>
           ))}
           {opened.unreadable > 0 ? <li data-part="chat-unreadable">{`${opened.unreadable} message(s) did not open on this device.`}</li> : null}
@@ -375,32 +390,59 @@ function ChatCard({ code, work, keys, device, onDevice, opened, onOpened, buyer,
   );
 }
 
-function MessageCard({ code, keys, device, opened, onSent }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void }) {
+/** Private lanes (owner 27 Nov): the marker on a private line. COPY-UNSIGNED (the owner's words). */
+export const privateMarker = (name: string) => `Private · only ${name} sees this`;
+
+function LockIcon() {
+  return (
+    <svg className="x2f-staff-chat__lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+type TalkTo = 'both' | Lane;
+
+function MessageCard({ code, keys, device, opened, onSent, buyer, seller }: { code: string; keys: ChatKeys; device: DevicePublic | null; opened: ChatView | null; onSent: (o: ChatView) => void; buyer: string; seller: string }) {
   const id = useId();
+  const toId = useId();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [talkTo, setTalkTo] = useState<TalkTo>('both');
   const [note, setNote] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const ready = device !== null && opened !== null;
+  const lane: Lane | undefined = talkTo === 'both' ? undefined : talkTo;
+  const hasLane = (l: Lane) => opened?.nextSeqByLane?.[l] !== undefined;
+  // A lane the opened chat does not have is never sent to.
+  const laneReady = lane === undefined || hasLane(lane);
+  const name = lane === 'buyer' ? buyer : seller;
+  const other = lane === 'buyer' ? seller : buyer;
 
   const send = async () => {
-    if (device === null || opened === null) return;
+    if (device === null || opened === null || !laneReady) return;
     setBusy(true);
     setNote(null);
     try {
-      let seq = opened.nextSeq;
+      let seq = lane === undefined ? opened.nextSeq : opened.nextSeqByLane[lane]!;
       let res: { id: string };
       try {
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
       } catch (e) {
         // Another moderator message went first: seal again at the seq the moderation process names, once.
         const next = e instanceof StaffApiError ? e.extra.nextSeq : undefined;
         if (codeOf(e) !== 'stale-seq' || typeof next !== 'number') throw e;
         seq = next;
-        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq));
+        res = await messageTraders(code, await keys.seal(opened.handle, text, serverNow(), seq, lane));
       }
-      onSent({ ...opened, nextSeq: seq + 1, lines: [...opened.lines, { id: res.id, from: 'mod', text, at: serverNow().toISOString(), missingBefore: 0 }] });
+      const line = { id: res.id, from: 'mod' as const, text, at: serverNow().toISOString(), missingBefore: 0, ...(lane !== undefined ? { to: lane } : {}) };
+      onSent(
+        lane === undefined
+          ? { ...opened, nextSeq: seq + 1, lines: [...opened.lines, line] }
+          : { ...opened, nextSeqByLane: { ...opened.nextSeqByLane, [lane]: seq + 1 }, lines: [...opened.lines, line] },
+      );
       setText('');
-      setNote({ tone: 'ok', text: 'Sent and logged.' });
+      setNote({ tone: 'ok', text: lane === undefined ? 'Sent and logged.' : `Sent to ${name} only, and logged.` });
     } catch (e) {
       setNote({ tone: 'danger', text: faultText(e, 'The message could not be sent just now. Try again.') });
     } finally {
@@ -409,18 +451,36 @@ function MessageCard({ code, keys, device, opened, onSent }: { code: string; key
   };
 
   return (
-    <section className="x2f-card" data-part="message">
+    <section className={lane === undefined ? 'x2f-card' : 'x2f-card x2f-staff-compose--private'} data-part="message" data-private={lane}>
+      {/* Private lanes (owner 27 Nov): who sees the next message, above the composer. The owner's words. */}
+      <div className="x2f-field">
+        <label className="x2f-label" htmlFor={toId}>
+          Who sees it
+        </label>
+        <select id={toId} className="x2f-input x2f-staff-select" data-part="talking-to" value={talkTo} disabled={busy} onChange={(e) => setTalkTo(e.target.value as TalkTo)}>
+          <option value="both">Talking to both</option>
+          <option value="seller" disabled={opened !== null && !hasLane('seller')}>{`Talking to ${seller}`}</option>
+          <option value="buyer" disabled={opened !== null && !hasLane('buyer')}>{`Talking to ${buyer}`}</option>
+        </select>
+      </div>
+      {lane !== undefined ? (
+        // COPY-UNSIGNED: said every time a private message is being written, so it is never sent by mistake.
+        <p className="x2f-staff-chat__private" data-part="compose-private">
+          <LockIcon />
+          {`Private: only ${name} sees this. ${other} sees nothing of it.`}
+        </p>
+      ) : null}
       <div className="x2f-field">
         <label className="x2f-label" htmlFor={id}>
-          Message both traders
+          {lane === undefined ? 'Message both traders' : `Message ${name} privately`}
         </label>
         <textarea id={id} className="x2f-textarea" rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} />
       </div>
-      <Button variant="secondary" disabled={busy || !ready || !modTextOk(text)} onClick={() => void send()}>
-        Send
+      <Button variant="secondary" disabled={busy || !ready || !laneReady || !modTextOk(text)} onClick={() => void send()}>
+        {lane === undefined ? 'Send' : `Send to ${name} only`}
       </Button>
       {/* Board ModCase's line, always shown (parity); until the chat is open, how to write (COPY-UNSIGNED). */}
-      <p className="x2f-staff-hint">Your messages show the X2F Moderator badge to both traders.</p>
+      <p className="x2f-staff-hint">{lane === undefined ? 'Your messages show the X2F Moderator badge to both traders.' : `Your message shows the X2F Moderator badge to ${name}.`}</p>
       {ready ? null : <p className="x2f-staff-hint">Open the full chat on this device to write to both traders.</p>}
       {note !== null ? (note.tone === 'ok' ? <p className="x2f-staff-ok">{note.text}</p> : <Notice tone="danger">{note.text}</Notice>) : null}
     </section>
@@ -800,10 +860,14 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
   const [fault, setFault] = useState<string | null>(null);
+  // Owner 26 Nov 2026: how a lien this ruling places is paid (asked only when it may place one).
+  const [planDraft, setPlanDraft] = useState<PlanDraft>(EMPTY_PLAN);
 
   const lines = evidenceLines(evidence);
   const evidenceOk = lines.length <= EVIDENCE_MAX && lines.every((l) => l.length <= EVIDENCE_LINE_MAX);
-  const ready = outcome !== null && reason.trim().length >= REASON_MIN && evidenceOk;
+  const asksPlan = outcome !== null && rulingMayPlaceLien({ round: replaces !== undefined ? 1 : c.round, afterRefund: c.afterRefund, round1: replaces !== undefined ? null : (c.ruling.round1 ?? null) }, outcome);
+  const plan = asksPlan ? planOf(planDraft) : null;
+  const ready = outcome !== null && reason.trim().length >= REASON_MIN && evidenceOk && (!asksPlan || plan !== null);
   const label = replaces !== undefined ? (c.overLimit ? 'Send new ruling for approval' : 'Send new ruling') : c.overLimit ? 'Send ruling for approval' : 'Send ruling';
   // A re-proposal is always a round 1 (review p4t22 N1).
   const round = replaces !== undefined ? 1 : c.round;
@@ -816,6 +880,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
     const rulingId = crypto.randomUUID();
     const text = reason;
     const ev = lines;
+    const lienPlan = plan ?? undefined;
     setTap({
       intent: rulingIntent('propose', { rulingId, code: c.code, round, round1Id, outcome, amountAtomic: c.escrow.amountAtomic, reason: text, evidence: ev }),
       title: label,
@@ -823,8 +888,9 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
       labels: rulingLabels(c, outcome),
       onDone: async (tapId) => {
         try {
-          if (replaces !== undefined) await reProposeRuling(c.code, replaces, { rulingId, outcome, reason: text, evidence: ev, tapId });
-          else await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId });
+          const extra = lienPlan !== undefined ? { lienPlan } : {};
+          if (replaces !== undefined) await reProposeRuling(c.code, replaces, { rulingId, outcome, reason: text, evidence: ev, tapId, ...extra });
+          else await proposeRuling(c.code, { rulingId, outcome, reason: text, evidence: ev, tapId, ...extra });
           await reload();
         } catch (e) {
           setFault(rulingFault(e, 'The ruling could not be sent just now. Try again.'));
@@ -861,6 +927,7 @@ function ProposeForm({ c, buyer, seller, setTap, reload, replaces }: { c: Disput
         {/* not-a-refusal: an input check on the evidence lines */}
         {!evidenceOk ? <p className="x2f-staff-hint">{`At most ${EVIDENCE_MAX} lines, each up to ${EVIDENCE_LINE_MAX} characters.`}</p> : null}
       </div>
+      {asksPlan ? <LienPlanFields value={planDraft} onChange={setPlanDraft} /> : null}
       {c.overLimit && c.secondReason === 'non-usd' ? (
         // Review p4t22 M1 (lead default, owner question OQ1). COPY-UNSIGNED
         <Notice tone="caution" title="Sent to a senior moderator or the owner for approval.">
@@ -981,6 +1048,9 @@ function ApprovePanel({ c, setTap, reload }: { c: DisputeCase; setTap: (t: Tap) 
       <p>{outcome !== null ? OUTCOME_LABELS[outcome] : ''}</p>
       <p className="x2f-staff-hint">{`Proposed at ${hhmm(p.proposedAt)}.`}</p>
       <p>{p.reason}</p>
+      {outcome !== null && rulingMayPlaceLien({ round: c.round, afterRefund: c.afterRefund, round1: c.ruling.round1 ?? null }, outcome) ? (
+        <p data-part="approve-lien-plan">{`If it places a lien: ${planWords(p.lienPlan)}`}</p>
+      ) : null}
       {p.evidence.length > 0 ? (
         <ul>
           {p.evidence.map((e, i) => (

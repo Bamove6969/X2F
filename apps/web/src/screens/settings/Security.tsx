@@ -19,8 +19,10 @@ import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
+import { MyAccess } from './MyAccess.js';
 import { MovedSectionRedirect, SettingsPage, SettingsRow, useKnownMember } from './SettingsTabs.js';
 import { SETTINGS_COPY } from './settingsCopy.js';
+import { PRIVACY_COPY, PRIVACY_PATH } from './privacyCopy.js';
 import { useSession } from '../../session/useSession.js';
 import { SECOND_METHOD_MESSAGE, SECOND_METHOD_TITLE } from '../../ui/cantDoCodes.js';
 import '../screens.css';
@@ -127,6 +129,8 @@ function SecurityScreen() {
                 <p className="x2f-note">{SECOND_METHOD_MESSAGE}</p>
               </section>
             ) : null}
+            {/* A team member lands here (no Account tab): their own access, read only (MyAccess.tsx). */}
+            {member && !setupOnly ? <MyAccess /> : null}
             {!member ? (
               <>
                 <HoldBanner />
@@ -166,13 +170,24 @@ function SecurityScreen() {
   );
 }
 
-/** Settings → Help: the guided tour and the way back to the welcome screen (moved off Security). */
+/** Settings → Help: the guided tour, the way back to the welcome screen (moved off Security) and the way on to Privacy. */
 export function HelpSettings() {
   // Order #2 m1: a team member gets the welcome link but not the owner's tour replay.
   const { ready, member } = useKnownMember();
   return (
     <SettingsPage tab="help" screen="settings-help">
       {ready ? <HelpCard member={member} /> : null}
+      {/* Plan 7 Task 4: Settings → Privacy, for everyone (a team member's trades self-destruct too). */}
+      <section className="x2f-card" data-part="privacy-card" aria-labelledby="settings-privacy-h">
+        <h2 className="x2f-card__title" id="settings-privacy-h">
+          {PRIVACY_COPY.title}
+        </h2>
+        <ul className="x2f-list">
+          <SettingsRow to={PRIVACY_PATH} part="privacy-link">
+            {PRIVACY_COPY.link}
+          </SettingsRow>
+        </ul>
+      </section>
     </SettingsPage>
   );
 }

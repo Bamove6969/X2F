@@ -10,7 +10,7 @@ import { render } from './render.js';
 const XMR = 1_000_000_000_000n;
 const OWES = {
   id: 'l1', status: 'active', amountAtomic: (2n * XMR).toString(), feeAtomic: '0', recoveredAtomic: (XMR / 2n).toString(),
-  remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 5000, defaultRateBps: 5000, fromCode: 'AB12-CD34-EF56-GH78', createdAt: '2026-11-16T12:00:00.000Z',
+  remainingAtomic: ((3n * XMR) / 2n).toString(), rateBps: 10000, defaultRateBps: 10000, fromCode: 'AB12-CD34-EF56-GH78', createdAt: '2026-11-16T12:00:00.000Z',
 };
 
 const OWED_TO = {
@@ -21,7 +21,7 @@ const OWED_TO = {
 describe('parseLiens', () => {
   it('reads what is owed both ways; owed to me is totals only (review M4) and whether a recovery address is set (Q2)', () => {
     const r = parseLiens({ owes: [OWES], owedTo: [OWED_TO] });
-    expect(r.owes[0]).toMatchObject({ amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, rateBps: 5000 });
+    expect(r.owes[0]).toMatchObject({ amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, rateBps: 10000 });
     expect(r.owedTo[0]).toEqual({ id: 'l2', status: 'active', amountAtomic: 2n * XMR, recoveredAtomic: XMR / 2n, remainingAtomic: (3n * XMR) / 2n, fromCode: 'AB12-CD34-EF56-GH78', recoveryAddressSet: false });
     expect(() => parseLiens({ owes: [], owedTo: [{ ...OWED_TO, recoveryAddressSet: 'no' }] })).toThrow(LiensShapeError);
   });
@@ -31,8 +31,14 @@ describe('parseLiens', () => {
     expect(() => parseLiens({ owes: {}, owedTo: [] })).toThrow(LiensShapeError);
   });
   it('shows the rate as a percentage', () => {
+    expect(pctOf(10000)).toBe('100%');
     expect(pctOf(5000)).toBe('50%');
     expect(pctOf(2550)).toBe('25.5%');
+  });
+  it('owner 26 Nov 2026: at the 100% default the notice says all of it goes, less the network fee; a lower approved rate names its share', () => {
+    expect(LIENS_COPY.owesIntro('100%')).toContain('all of it goes to them');
+    expect(LIENS_COPY.owesIntro('100%')).toContain('network fee');
+    expect(LIENS_COPY.owesIntro('25.5%')).toContain('25.5% of what you receive goes to them');
   });
 });
 
@@ -50,7 +56,8 @@ describe('the Liens screen', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     const text = host.textContent ?? '';
-    expect(text).toContain(LIENS_COPY.owesIntro('50%'));
+    expect(text).toContain(LIENS_COPY.owesIntro('100%'));
+    expect(text).toContain('100%');
     expect(text).toContain('2.000000 XMR');
     expect(text).toContain('0.500000 XMR');
     expect(text).toContain('1.500000 XMR');
@@ -136,5 +143,103 @@ describe("the buyer's confirmed recovery travels to the escrow (ConfirmedTrade.l
     expect(posterRecovery(v)).toBeUndefined();
     expect(posterRecovery({ ...v, lienRecoveryAtomic: '500' })).toBe(500n);
     expect(posterRecovery({ ...v, lienRecoveryAtomic: '0' })).toBeNull();
+  });
+});
+
+// Owner decision 26 Nov 2026 (5:43 PM): 7 days to pay the agreed way.
+describe('grace: 7 days to pay the agreed way', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+  const GRACE = { mode: 'grace', method: 'New PayPal payment of $120', graceUntil: '2026-12-03T12:00:00.000Z', lapsed: false, paidOffPlatform: false };
+
+  it('reads the grace strictly; once paid off the platform nothing is left (remaining 0 adds up)', () => {
+    const r = parseLiens({ owes: [{ ...OWES, grace: GRACE }], owedTo: [{ ...OWED_TO, grace: GRACE }] });
+    expect(r.owes[0]!.grace).toEqual(GRACE);
+    expect(r.owedTo[0]!.grace).toEqual(GRACE);
+    expect(parseLiens({ owes: [OWES], owedTo: [] }).owes[0]!.grace).toBeUndefined();
+    const paid = { ...OWED_TO, status: 'repaid', remainingAtomic: '0', grace: { ...GRACE, paidOffPlatform: true } };
+    expect(parseLiens({ owes: [], owedTo: [paid] }).owedTo[0]!.remainingAtomic).toBe(0n);
+    // Without the confirmation, remaining 0 does not add up.
+    expect(() => parseLiens({ owes: [], owedTo: [{ ...paid, grace: GRACE }] })).toThrow(LiensShapeError);
+    // Review item 3: staff may end any lien as paid off the platform (no grace needed).
+    const staffEnded = { ...OWED_TO, status: 'repaid', remainingAtomic: '0', paidOffPlatform: true };
+    expect(parseLiens({ owes: [], owedTo: [staffEnded] }).owedTo[0]).toMatchObject({ paidOffPlatform: true, remainingAtomic: 0n });
+    expect(() => parseLiens({ owes: [], owedTo: [{ ...staffEnded, paidOffPlatform: false }] })).toThrow(LiensShapeError);
+    for (const bad of [null, {}, { ...GRACE, mode: 'later' }, { ...GRACE, graceUntil: 'soon' }, { ...GRACE, lapsed: 'no' }, { ...GRACE, method: 3 }]) {
+      expect(() => parseLiens({ owes: [{ ...OWES, grace: bad }], owedTo: [] })).toThrow(LiensShapeError);
+    }
+  });
+
+  async function screen(raw: unknown) {
+    vi.resetModules();
+    const paid: string[] = [];
+    vi.doMock('../src/session/useSession.js', () => ({ useSession: () => ({ status: 'signed-in' }) }));
+    vi.doMock('../src/screens/liens/liensApi.js', async (orig) => ({
+      ...(await orig<typeof import('../src/screens/liens/liensApi.js')>()),
+      fetchLiens: async () => parseLiens(raw),
+      confirmPaid: async (id: string) => void paid.push(id),
+    }));
+    const { Liens } = await import('../src/screens/liens/Liens.js');
+    const { host } = render(<Liens />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    return { host, paid };
+  }
+  const press = async (host: HTMLElement, label: string) => {
+    await act(async () => {
+      [...host.querySelectorAll('button')].find((b) => b.textContent === label)!.click();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+
+  it('the debtor sees the deadline, the method and that the person owed confirms; not the collecting notice', async () => {
+    const { host } = await screen({ owes: [{ ...OWES, grace: GRACE }], owedTo: [] });
+    const text = host.querySelector('[data-part="grace"]')!.textContent ?? '';
+    expect(text).toContain('New PayPal payment of $120');
+    expect(text).toContain('must confirm');
+    expect(host.textContent).not.toContain(LIENS_COPY.owesIntro('100%'));
+  });
+
+  it('the person owed confirms "I\'ve been paid" after a check; no recovery wallet is asked for meanwhile', async () => {
+    const { host, paid } = await screen({ owes: [], owedTo: [{ ...OWED_TO, grace: GRACE }] });
+    expect(host.textContent).not.toContain(LIENS_COPY.addressNeeded);
+    await press(host, LIENS_COPY.graceConfirm);
+    expect(paid).toEqual([]);
+    expect(host.textContent).toContain(LIENS_COPY.graceConfirmCheck);
+    await press(host, LIENS_COPY.graceConfirmYes);
+    expect(paid).toEqual(['l2']);
+  });
+
+  it('review item 9: once switched to collecting, the person owed is told why and asked for the wallet', async () => {
+    const { host } = await screen({ owes: [], owedTo: [{ ...OWED_TO, grace: { ...GRACE, mode: 'collect', lapsed: true } }] });
+    expect(host.querySelector('[data-part="grace-collecting"]')?.textContent).toBe(LIENS_COPY.graceCollecting);
+    expect(host.textContent).toContain(LIENS_COPY.addressNeeded);
+    expect(host.textContent).not.toContain(LIENS_COPY.graceConfirm);
+  });
+});
+
+describe("owner 27 Nov 2026: the seller's accepted extra travels to the escrow (ConfirmedTrade.sellerLienRecoveryAtomic)", () => {
+  const base = { role: 'seller' as const, ownAddress: '4Seller', deal: { poster: 'buyer' as const, takeAmountAtomic: XMR, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 100_000n } };
+  it('is kept through the tab store; a buyer record carrying one is dropped', async () => {
+    const { readConfirmed, storeConfirmed } = await import('../src/screens/quote/confirmed.js');
+    storeConfirmed('AB12-CD34-EF56-GH70', { ...base, sellerLienRecoveryAtomic: XMR / 4n });
+    expect(readConfirmed('AB12-CD34-EF56-GH70')).toEqual({ ...base, sellerLienRecoveryAtomic: XMR / 4n });
+    storeConfirmed('AB12-CD34-EF56-GH71', { ...base, role: 'buyer', sellerLienRecoveryAtomic: XMR / 4n });
+    expect(readConfirmed('AB12-CD34-EF56-GH71')).toBeNull();
+  });
+  it("the poster-seller's sheet reads it from their own view; malformed is refused", async () => {
+    const { posterSellerRecovery } = await import('../src/screens/AcceptedSheet.js');
+    const v = { role: 'seller' as const, poster: 'seller' as const, amountAtomic: '1', grown: null, lockedRate: { currency: 'USD', centsPerXmr: '1' }, maxFiatCents: '1' };
+    expect(posterSellerRecovery(v)).toBeUndefined();
+    expect(posterSellerRecovery({ ...v, sellerLienRecoveryAtomic: '500' })).toBe(500n);
+    expect(posterSellerRecovery({ ...v, sellerLienRecoveryAtomic: '0' })).toBeNull();
+  });
+  it('the debtor is told that selling pays it back too, with extra they get back on a refund', () => {
+    expect(LIENS_COPY.sellNote('100%')).toContain('as much again as you sell');
+    expect(LIENS_COPY.sellNote('25%')).toContain('25% of what you sell');
+    expect(LIENS_COPY.sellNote('25%')).toContain('You get it back if the trade is refunded.');
   });
 });

@@ -34,6 +34,7 @@ import { appendLog } from '../log/append.js';
 import { recordRulingExecution } from '../disputes/execution.js';
 import { acceptGrant, noticeCandidates, pendingGrants, refuseGrant, storeNotice } from '../chat/grants.js';
 import { loadDisputeRecord } from '../disputes/store.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 import { bookSettlementNetworkFee } from '../staff/revenue.js';
 
@@ -111,7 +112,28 @@ interface RegisteredRow {
    */
   recovery_lien: { lienId: string; debtor: string; creditor: string; rateBps: number; statement: unknown; sig: string | null } | null;
   buyer_account: string;
+  /** Owner 27 Nov 2026: the same for the seller's open hold (a selling debtor's extra), and this trade's seller. */
+  srecovery_address: string | null;
+  srecovery_atomic: string | null;
+  srecovery_from: string | null;
+  srecovery_creditor: 'buyer' | 'seller' | null;
+  srecovery_lien: { lienId: string; debtor: string; creditor: string; rateBps: number; statement: unknown; sig: string | null } | null;
+  seller_account: string;
 }
+
+/** The open hold columns of `side` (lien_recovery_holds.debtor_side), prefixed `prefix`. */
+const holdColumns = (side: 'buyer' | 'seller', prefix: string): string => `
+                (select h.address from lien_recovery_holds h where h.trade_code = t.code and h.debtor_side = '${side}' and h.status = 'open') as ${prefix}_address,
+                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.debtor_side = '${side}' and h.status = 'open') as ${prefix}_atomic,
+                (select l.from_code from lien_recovery_holds h join liens l on l.id = h.lien_id
+                  where h.trade_code = t.code and h.debtor_side = '${side}' and h.status = 'open') as ${prefix}_from,
+                (select case when l.creditor_account_id = s.buyer_account_id then 'buyer' when l.creditor_account_id = s.seller_account_id then 'seller' end
+                   from lien_recovery_holds h join liens l on l.id = h.lien_id left join trades s on s.code = l.from_code
+                  where h.trade_code = t.code and h.debtor_side = '${side}' and h.status = 'open') as ${prefix}_creditor,
+                (select json_build_object('lienId', l.id::text, 'debtor', l.debtor_account_id::text, 'creditor', l.creditor_account_id::text,
+                                          'rateBps', h.rate_bps, 'statement', h.address_statement, 'sig', h.address_sig)
+                   from lien_recovery_holds h join liens l on l.id = h.lien_id
+                  where h.trade_code = t.code and h.debtor_side = '${side}' and h.status = 'open') as ${prefix}_lien,`;
 
 /**
  * The trade record's columns behind the attested terms (lead answer 4): the deal fixed at take
@@ -122,19 +144,8 @@ interface RegisteredRow {
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund,
-                (select h.address from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_address,
-                (select h.amount_atomic::text from lien_recovery_holds h where h.trade_code = t.code and h.status = 'open') as recovery_atomic,
-                (select l.from_code from lien_recovery_holds h join liens l on l.id = h.lien_id
-                  where h.trade_code = t.code and h.status = 'open') as recovery_from,
-                (select case when l.creditor_account_id = s.buyer_account_id then 'buyer' when l.creditor_account_id = s.seller_account_id then 'seller' end
-                   from lien_recovery_holds h join liens l on l.id = h.lien_id left join trades s on s.code = l.from_code
-                  where h.trade_code = t.code and h.status = 'open') as recovery_creditor,
-                (select json_build_object('lienId', l.id::text, 'debtor', l.debtor_account_id::text, 'creditor', l.creditor_account_id::text,
-                                          'rateBps', h.rate_bps, 'statement', h.address_statement, 'sig', h.address_sig)
-                   from lien_recovery_holds h join liens l on l.id = h.lien_id
-                  where h.trade_code = t.code and h.status = 'open') as recovery_lien,
-                t.buyer_account_id::text as buyer_account`;
+                t.pay_window_min, t.method_id, t.method_instructions, t.buyer_payout, t.seller_refund,${holdColumns('buyer', 'recovery')}${holdColumns('seller', 'srecovery')}
+                t.buyer_account_id::text as buyer_account, t.seller_account_id::text as seller_account`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -159,6 +170,10 @@ function termsOf(r: RegisteredRow): AttestedTerms {
     ...(r.recovery_address !== null && r.recovery_atomic !== null
       ? { lienRecovery: { address: r.recovery_address, amountAtomic: r.recovery_atomic } }
       : {}),
+    // Owner 27 Nov 2026: a selling debtor's extra, signed only when the trade holds one.
+    ...(r.srecovery_address !== null && r.srecovery_atomic !== null
+      ? { sellerLienRecovery: { address: r.srecovery_address, amountAtomic: r.srecovery_atomic } }
+      : {}),
   };
 }
 
@@ -168,7 +183,8 @@ function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
     a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents &&
     a.deal.methodId === b.deal.methodId && a.deal.instructionsSha256 === b.deal.instructionsSha256 &&
-    a.lienRecovery?.address === b.lienRecovery?.address && a.lienRecovery?.amountAtomic === b.lienRecovery?.amountAtomic
+    a.lienRecovery?.address === b.lienRecovery?.address && a.lienRecovery?.amountAtomic === b.lienRecovery?.amountAtomic &&
+    a.sellerLienRecovery?.address === b.sellerLienRecovery?.address && a.sellerLienRecovery?.amountAtomic === b.sellerLienRecovery?.amountAtomic
   );
 }
 
@@ -466,10 +482,11 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
   // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; held: boolean }>(
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; held: boolean; lock_held: boolean }>(
       `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
-              exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held
+              exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held,
+              ${tradeHeldSql('t')} as lock_held
          from trades t
          join trade_attestations a on a.code = t.code
          left join chats c on c.trade_code = t.code
@@ -485,7 +502,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
         // Lead review 8 Nov C2 (owner G7): a trade a recovery-code hold holds is paused for the
         // moderator's timers too, until the hold ends or a moderator decides.
-        paused: r.paused_at !== null || r.site_paused || r.held,
+        // D-059 (J-14 J8, ported): a trade of a locked account counts as paused from the lock's
+        // commit on, before the timer loop writes its `paused_at`: the moderator decides nothing.
+        paused: r.paused_at !== null || r.site_paused || r.held || r.lock_held,
       })),
     });
   }));
@@ -524,7 +543,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     // Review B2, checked again before any signature: a recovery to one of the trade's own addresses
     // would make the completed trade's payout unbuildable (the reserve and the poster's wallet route
     // already refuse it); such a trade is not served until that is mended.
-    const clash = (r: RegisteredRow) => r.recovery_address !== null && (r.recovery_address === r.buyer_payout || r.recovery_address === r.seller_refund);
+    const clash = (r: RegisteredRow) =>
+      (r.recovery_address !== null && (r.recovery_address === r.buyer_payout || r.recovery_address === r.seller_refund)) ||
+      (r.srecovery_address !== null && (r.srecovery_address === r.buyer_payout || r.srecovery_address === r.seller_refund || r.srecovery_address === r.recovery_address));
     for (const r of rows) if (clash(r)) log({ reason: 'internal-recovery-address-clash' });
     const work = rows.filter((r) => !clash(r)).map((r) => ({
       trade: r.code,
@@ -544,6 +565,17 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
               lienId: r.recovery_lien.lienId, debtorAccount: r.recovery_lien.debtor, creditorAccount: r.recovery_lien.creditor,
               buyerAccount: r.buyer_account, rateBps: r.recovery_lien.rateBps,
               address: { statement: r.recovery_lien.statement, sig: r.recovery_lien.sig },
+            },
+          }
+        : {}),
+      // Owner 27 Nov 2026: the seller's recovery, checked the same way (this trade's seller as the debtor).
+      ...(r.srecovery_address !== null && r.srecovery_from !== null && r.srecovery_creditor !== null && r.srecovery_lien !== null
+        ? {
+            sellerLienSource: {
+              fromCode: r.srecovery_from, creditor: r.srecovery_creditor,
+              lienId: r.srecovery_lien.lienId, debtorAccount: r.srecovery_lien.debtor, creditorAccount: r.srecovery_lien.creditor,
+              sellerAccount: r.seller_account, rateBps: r.srecovery_lien.rateBps,
+              address: { statement: r.srecovery_lien.statement, sig: r.srecovery_lien.sig },
             },
           }
         : {}),

@@ -55,6 +55,7 @@ async function caseOf(q: Queryable, req: FastifyRequest, t: TicketRow) {
   return {
     id: t.id, category: t.category, status: t.status, tradeCode: t.trade_code,
     createdAt: t.created_at.toISOString(), updatedAt: t.updated_at.toISOString(),
+    // Never which team member wrote a trader line (staff are not told who the trader is).
     messages: messages.map((m) => ({ from: m.from, body: m.body, at: m.at, mine: m.from === 'staff' && m.staffId === req.staff.accountId })),
   };
 }
@@ -84,7 +85,7 @@ export function staffTicketRoutes(app: FastifyInstance): void {
     const category = (raw as TicketCategory | undefined) ?? null;
     const { rows } = await req.server.deps.db.query<{ id: string; category: TicketCategory; status: 'open' | 'answered'; created_at: Date; updated_at: Date; taken_by: string | null }>(
       `select id, category, status, created_at, updated_at, taken_by from tickets
-        where status <> 'closed' and ($1::text is null or category = $1)
+        where kind = 'support' and status <> 'closed' and ($1::text is null or category = $1)
         order by created_at, id limit 200`,
       [category],
     );

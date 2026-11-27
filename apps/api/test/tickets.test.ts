@@ -86,15 +86,20 @@ describe('schema and storage', () => {
     );
     expect(cols.rows.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([
       'ticket_messages.ticket_id', 'ticket_messages.seq', 'ticket_messages.sender', 'ticket_messages.staff_id', 'ticket_messages.body_sealed', 'ticket_messages.at',
+      // Migration 860 (Q69): a team member's line names the member (shown to the team only).
+      'ticket_messages.member_id',
       'tickets.id', 'tickets.account_id', 'tickets.category', 'tickets.trade_code', 'tickets.status', 'tickets.taken_by', 'tickets.created_at', 'tickets.updated_at', 'tickets.closed_at',
+      // Migration 860 (D-059): the compromised report's kind, ticked method kinds and number, and why
+      // a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4).
+      'tickets.kind', 'tickets.methods_left', 'tickets.number', 'tickets.lock_skipped',
     ]);
   });
 
-  it('the categories end with everything-else, and the table takes exactly them', async () => {
+  it('the categories end with everything-else, and the table takes exactly them (and a compromised report\'s own)', async () => {
     expect(TICKET_CATEGORIES.at(-1)).toBe('everything-else');
-    const { rows } = await t.deps.db.query<{ def: string }>("select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = 'tickets'::regclass and pg_get_constraintdef(oid) like '%category%'");
+    const { rows } = await t.deps.db.query<{ def: string }>("select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = 'tickets'::regclass and conname = 'tickets_category_check'");
     for (const c of TICKET_CATEGORIES) expect(rows[0]!.def).toContain(`'${c}'`);
-    expect([...rows[0]!.def.matchAll(/'([a-z-]+)'::text/g)].map((m) => m[1])).toEqual([...TICKET_CATEGORIES]);
+    expect([...rows[0]!.def.matchAll(/'([a-z-]+)'::text/g)].map((m) => m[1])).toEqual([...TICKET_CATEGORIES, 'compromised']);
   });
 
   it('deleting the account deletes its tickets and messages', async () => {
@@ -171,7 +176,7 @@ describe('trader routes', () => {
     expect([res.statusCode, errorOf(res as never)]).toEqual([404, 'not-found']);
   });
 
-  it('team members and staff sessions cannot use them; a recovery session neither', async () => {
+  it('a recovery session cannot use them, nor a visitor', async () => {
     const id = await traderId();
     const { token, sessionId } = await insertSession(t.deps, id, 'trader');
     await t.deps.db.query("update sessions set level = 'recovery' where id = $1", [sessionId]);

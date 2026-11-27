@@ -57,6 +57,8 @@ const KIND_WORDS: Record<string, string> = {
   'team-member-login': 'A team member logged in',
   // J-20 (owner p11-27). COPY-UNSIGNED // DESIGN: wording
   'team-member-first-login': 'A team member logged in for the first time',
+  // Review of feat/lien-grace item 9. COPY-UNSIGNED
+  'lien-collecting': 'What you are owed is now collected from their trades',
 };
 
 const count = (n: unknown, one: string, many: string): string | null =>
@@ -92,6 +94,8 @@ export function alertDetail(kind: string, detail: unknown): string | null {
       if (a === null) return null;
       return dropped > 0 ? `${a} applied. ${count(dropped, 'change', 'changes')} could not be applied and were dropped.` : `${a} applied.`;
     }
+    case 'lien-collecting':
+      return 'The 7 days to pay the agreed way are over. Choose the wallet your recoveries go to in Settings, What you owe.';
     case 'recovery-code-renewed':
       return 'Your used recovery code was replaced. Write down the new one on the Security screen.';
     default:

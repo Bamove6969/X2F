@@ -531,7 +531,7 @@ describe('the training library', () => {
     expect(CID()).not.toBe(unkeyed);
     expect(createHmac('sha256', deps.config.trainingIdKey).update(`x2f/training-id\0${C.code}\0${1}`, 'utf8').digest('hex').slice(0, 32)).toBe(CID());
     // The key is the training id's own: no other secret of the config holds it.
-    const others = [deps.config.serverKey, ...[deps.config.passwordPeppers, deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys].flatMap((r) => [...r.keys.values()])];
+    const others = [deps.config.serverKey, ...[deps.config.passwordPeppers, deps.config.recoveryCodeKeys, deps.config.totpKeys, deps.config.loginNameKeys, deps.config.ticketKeys].flatMap((r) => [...r.keys.values()])];
     for (const k of others) expect(Buffer.from(k).equals(Buffer.from(deps.config.trainingIdKey))).toBe(false);
     expect((await mod.b.get(`/staff/v1/training?before=${CID()}`)).statusCode).toBe(200);
     expect((await mod.b.get(`/staff/v1/training/${unkeyed}`)).statusCode).toBe(404);

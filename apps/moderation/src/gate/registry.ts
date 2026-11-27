@@ -517,6 +517,12 @@ export interface PgGateSource extends GateSource {
    * closed in the last 7 days whose ruling has no statement yet (migration 791's grants).
    */
   afterRefundCodes(limit?: number): Promise<string[]>;
+  /**
+   * Owner 26 Nov 2026 5:53 PM: the lien's approved rate requests as the API records them (who
+   * proposed, who decided, the rate), oldest first: a senior's approval no longer takes a key tap,
+   * so each is the API's word (lienRecovery.ts `lienRateRequestApprovals` checks what it can).
+   */
+  approvedRateRequests(lienId: string): Promise<Array<{ id: string; rateBps: number; proposedBy: string; decidedBy: string | null }>>;
 }
 
 /** The gate's source on the API database, through the read-only role (`MOD_API_READER_DATABASE_URL`). */
@@ -587,6 +593,14 @@ export function pgGateSource(db: Pick<pg.Pool, 'query'>): PgGateSource {
         'select account_id, role, switched_off_at is not null as off, removed_at is not null as removed from staff_members',
       );
       return rows.map((r) => ({ accountId: r.account_id, role: r.role, switchedOff: r.off, removed: r.removed }));
+    },
+    async approvedRateRequests(lienId) {
+      const { rows } = await db.query<{ id: string; proposed_bps: number; proposed_by: string; decided_by: string | null }>(
+        `select id::text, proposed_bps, proposed_by::text, decided_by::text from lien_rate_requests
+          where lien_id = $1 and status = 'approved' order by decided_at, id`,
+        [lienId],
+      );
+      return rows.map((r) => ({ id: r.id, rateBps: r.proposed_bps, proposedBy: r.proposed_by, decidedBy: r.decided_by }));
     },
     async afterRefundCodes(limit = 200) {
       const { rows } = await db.query<{ code: string }>(

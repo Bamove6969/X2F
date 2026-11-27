@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { canonicalJson, evidenceSha256, inviteRegistrationChallenge, staffLoginChallenge, keyCheckCode, tapChallenge, type AccountAction, type KeyTapIntent, type RulingOutcome } from '@x2f/staff';
-import { LIEN_RECOVERY_MIN_ATOMIC, escrowPlan } from '@x2f/trade';
+import { LIEN_RECOVERY_MIN_ATOMIC, escrowPlan, lienRecoveryCap } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { createSoftAuthenticator, createTestCa, type SoftAuthenticator, type TestCa } from '../../api/test/helpers/softAuthenticator.js';
@@ -1823,7 +1823,7 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     const b = ruling(mod);
     expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R, bearsNetworkFee: true }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
@@ -1832,12 +1832,13 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     });
   });
 
-  it('a recovery the terms could not pay (over 90% of the proceeds, under 0.01 XMR, or to a party) makes the buyer\'s ruling bad-terms', async () => {
+  it('a recovery the terms could not pay (over the cap, all of the proceeds but the buyer\'s fee floor; under 0.01 XMR; or to a party) makes the buyer\'s ruling bad-terms', async () => {
     const w = await world();
     const mod = w.hire('mod');
     await syncRegistry(w.api, w.gate, ctx());
     for (const lienRecovery of [
-      { address: CREDITOR, amountAtomic: (AMOUNT * 9n) / 10n + 1n },
+      { address: CREDITOR, amountAtomic: lienRecoveryCap(AMOUNT) + 1n },
+      { address: CREDITOR, amountAtomic: AMOUNT },
       { address: CREDITOR, amountAtomic: LIEN_RECOVERY_MIN_ATOMIC - 1n },
       { address: SELLER, amountAtomic: R },
     ]) {
@@ -1848,7 +1849,50 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
   });
 });
 
-// Q1 (provisional owner answer, 17 Nov 2026): a lien's rate other than the 50% default is signed
+// Owner 27 Nov 2026 (docs/lien-recovery.md "Debtor is the seller"): the seller funded extra for its
+// lien; a ruling for the buyer pays it to the creditor (the buyer's payout unchanged), one for the
+// seller returns it with the whole balance.
+describe('authorizeRuling with a seller lien recovery (owner 27 Nov 2026)', () => {
+  const CREDITOR = '4'.padEnd(95, 'K');
+  const X = 100_000_000_000n;
+  const withExtra = (): RecordedTerms => {
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller', sellerLienRecoveryAtomic: X });
+    return { ...recorded(41_250n), sellerFundsAtomic: plan.sellerFundsAtomic, sellerLienRecovery: { address: CREDITOR, amountAtomic: X } };
+  };
+  it('release-to-buyer: the buyer gets the full amount, the creditor the extra; refund-to-seller: the whole balance to the seller', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' });
+    const balance = BALANCE + X;
+    const b = ruling(mod);
+    expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true }] },
+    });
+    const s = ruling(mod, { outcome: 'refund-to-seller' });
+    expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({
+      ok: true,
+      settle: { winner: 'seller', payouts: [{ address: SELLER, amountAtomic: balance }] },
+    });
+  });
+
+  it('an escrow short of the extra, or an extra the terms could not pay, makes the buyer\'s ruling bad-terms', async () => {
+    const w = await world();
+    const mod = w.hire('mod');
+    await syncRegistry(w.api, w.gate, ctx());
+    const b = ruling(mod);
+    expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: withExtra(), balanceAtomic: BALANCE }, ctx())).toEqual({ ok: false, reason: 'bad-terms' });
+    for (const sellerLienRecovery of [{ address: CREDITOR, amountAtomic: AMOUNT + 1n }, { address: SELLER, amountAtomic: X }]) {
+      const plan = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller', sellerLienRecoveryAtomic: sellerLienRecovery.amountAtomic });
+      const c = ruling(mod);
+      expect(await authorizeRuling(w.gate, { ruling: c.ruling, taps: [tapBy(mod, c.intent('propose'))], recorded: { ...recorded(41_250n), sellerFundsAtomic: plan.sellerFundsAtomic, sellerLienRecovery }, balanceAtomic: plan.sellerFundsAtomic }, ctx()))
+        .toEqual({ ok: false, reason: 'bad-terms' });
+    }
+  });
+});
+
+// Q1 (owner answer, 26 Nov 2026): a lien's rate other than the 100% default is signed
 // only once the gate verified a senior moderator's (or the owner's) `lien-rate` key tap for it.
 describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => {
   const LIEN = '6f1c1f9e-0b1a-4a51-9a1b-0c2d3e4f5a6b';
@@ -1863,9 +1907,11 @@ describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => 
     expect(await lienRateApproved(w.gate, [t], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(true);
     expect(w.gate.usedNonces[t.nonceHex]).toBe(`lien-rate:${LIEN}:9000`);
     expect(await lienRateApproved(w.gate, [tapBy(w.owner, intent(7000))], { lienId: LIEN, rateBps: 7000 }, ctx())).toBe(true);
+    // Back to the 100% default (owner 26 Nov 2026) is a change too, approved the same way.
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(10_000))], { lienId: LIEN, rateBps: 10_000 }, ctx())).toBe(true);
   });
 
-  it('refused: a moderator\'s tap, another lien or rate, a forged tap, a rate above 90%, a nonce used for anything else, no tap at all', async () => {
+  it('refused: a moderator\'s tap, another lien or rate, a forged tap, a rate above 100%, a nonce used for anything else, no tap at all', async () => {
     const w = await world();
     const senior = w.hire('senior');
     const mod = w.hire('mod');
@@ -1876,7 +1922,7 @@ describe('lienRateApproved: a rate change the gate verifies itself (Q1)', () => 
     // A tap an API made up: the intent changed after the key signed it.
     const forged = { ...tapBy(senior, intent(5000)), intent: canonicalJson(intent(9000)) };
     expect(await lienRateApproved(w.gate, [forged], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);
-    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(9500))], { lienId: LIEN, rateBps: 9500 }, ctx())).toBe(false);
+    expect(await lienRateApproved(w.gate, [tapBy(senior, intent(10_001))], { lienId: LIEN, rateBps: 10_001 }, ctx())).toBe(false);
     const used = tapBy(senior, intent(9000));
     w.gate.usedNonces[used.nonceHex] = 'ruling:x:propose';
     expect(await lienRateApproved(w.gate, [used], { lienId: LIEN, rateBps: 9000 }, ctx())).toBe(false);

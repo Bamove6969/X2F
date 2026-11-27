@@ -9,7 +9,7 @@
  * behind the shell goes to Login too (the session ran out).
  */
 import { defaultDeviceLabel, type TermsSignature } from '@x2f/auth-client';
-import type { GrantablePerm, KeyTapIntent, LoginHours, NavItem, Perm, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
+import type { CompromisedMethod, GrantablePerm, KeyTapIntent, LoginHours, NavItem, Perm, StaffRole, StarterSettings, TicketCategory, TicketStatus } from '@x2f/staff';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -270,6 +270,57 @@ export const closeStaffTicket = (id: string) => staffApi<TicketCase>(ticketUrl(i
 export const releaseTicket = (id: string) => staffApi<{ released: true }>(ticketUrl(id, '/release'), { method: 'POST', body: {} });
 
 // ---------------------------------------------------------------------------------------------
+// "My account has been compromised" reports (owner D-059; J-14 ported; perm accounts.freeze: senior
+// moderators and the owner). API: apps/api/src/tickets/compromisedRoutes.ts. The list carries no
+// comment; opening a report is written to the activity log before its comment is read.
+
+export type LockSkip = 'recent-unlock' | 'legacy-login-name' | 'lock-cap';
+
+export interface CompromisedItem {
+  id: string;
+  /** The number the sender was shown (CT-<number>). */
+  number: number;
+  status: 'open' | 'closed';
+  methodsLeft: CompromisedMethod[];
+  /** Why a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4); null when it locked or matched none. */
+  lockSkipped: LockSkip | null;
+  createdAt: string;
+  closedAt: string | null;
+  /** Whether the typed name matched a lockable account. */
+  matched: boolean;
+  /** The matched account's public name; null for no match or a team member's login. */
+  displayName: string | null;
+  locked: boolean;
+}
+
+export interface CompromisedCase {
+  id: string;
+  number: number;
+  status: 'open' | 'closed';
+  methodsLeft: CompromisedMethod[];
+  /** Why a report on a lockable account locked nothing (review of feat/lockout items 1, 3, 4); null when it locked or matched none. */
+  lockSkipped: LockSkip | null;
+  createdAt: string;
+  closedAt: string | null;
+  comment: string | null;
+  account: {
+    id: string;
+    displayName: string | null;
+    kind: string;
+    team: string | null;
+    createdAt: string;
+    lockedAt: string | null;
+    openTrades: Array<{ code: string; state: string; side: 'seller' | 'buyer'; paused: boolean }>;
+  } | null;
+}
+
+const reportUrl = (id: string, tail = '') => `/staff/v1/compromised/${encodeURIComponent(id)}${tail}`;
+export const compromisedReports = (status: 'open' | 'closed' = 'open') => staffApi<{ items: CompromisedItem[] }>(`/staff/v1/compromised?status=${status}`);
+export const compromisedReport = (id: string) => staffApi<CompromisedCase>(reportUrl(id));
+export const unlockAccount = (id: string, tapId: string) => staffApi<{ status: 'unlocked' }>(reportUrl(id, '/unlock'), { method: 'POST', body: { tapId } });
+export const closeCompromised = (id: string) => staffApi<Omit<CompromisedCase, 'comment' | 'account'>>(reportUrl(id, '/close'), { method: 'POST', body: {} });
+
+// ---------------------------------------------------------------------------------------------
 // Review disputes (Plan 5 Task 19 on the staff API; perm reputation.review: moderators and up)
 
 export type ReviewDisputeOutcome = 'stands' | 'comments-removed' | 'removed';
@@ -497,6 +548,16 @@ export interface LinkSettings {
   communityMatrixUrl: string | null;
   communityTelegramUrl: string | null;
 }
+/**
+ * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): minutes a dispute may wait untaken
+ * before the timer assigns it (1 to 1440), and whether it does. No tap (they bind no ruling).
+ */
+export interface AutoAssignSettings {
+  autoAssignMin: number;
+  autoAssignOn: boolean;
+}
+export const putAutoAssign = (change: Partial<AutoAssignSettings>) => staffApi<RulingSettings & AutoAssignSettings>('/staff/v1/settings', { method: 'PUT', body: change });
+
 /** The links need no tap (apps/api/src/staff/settings.ts TAPPED). */
 export const putLinks = (change: Partial<LinkSettings>) => staffApi<RulingSettings & LinkSettings>('/staff/v1/settings', { method: 'PUT', body: change });
 
@@ -695,6 +756,60 @@ export interface RevenueReport {
 export const revenue = (q?: { by: 'day' | 'month'; from: string; to: string }) =>
   staffApi<RevenueReport>(q === undefined ? '/staff/v1/revenue?by=month' : `/staff/v1/revenue?by=${q.by}&from=${q.from}&to=${q.to}`);
 
+/**
+ * Mirrors apps/api `EarningsReport` (Plan 4 Task 9, `GET /staff/v1/earnings`, earnings.read): what
+ * arrived in X2F's fee wallet (read through its view-only key) and payroll wallet by UTC month,
+ * beside the books. Amounts are atomic units (decimal strings); a wallet is null when this server
+ * has none set up.
+ */
+export type EarningsWalletState = 'syncing' | 'ready' | 'stale' | 'unavailable';
+export interface EarningsWallet {
+  walletEnd: string;
+  state: EarningsWalletState;
+  syncedAt: string | null;
+}
+export interface EarningsMonth {
+  month: string;
+  feeWalletAtomic: string;
+  sweptInAtomic: string;
+  payrollWalletAtomic: string;
+  earnedAtomic: string;
+  usdEstimateCents: string | null;
+  trades: number;
+  bookedNetAtomic: string;
+}
+export interface EarningsReport {
+  feeWallet: EarningsWallet | null;
+  payrollWallet: EarningsWallet | null;
+  usdCentsPerXmr: string | null;
+  months: EarningsMonth[];
+  allTime: EarningsMonth;
+}
+export const earnings = () => staffApi<EarningsReport>('/staff/v1/earnings');
+/**
+ * Mirrors apps/api `EarningsTallies` (owner 26 Nov 2026: "tallies by the day, tallies by the week,
+ * and tallies by the month"): `GET /staff/v1/earnings?period=…`, the last 31 days, 12 ISO weeks
+ * (Monday first) or 12 months, cut in `timeZone` (UTC), every one listed, empty ones too.
+ */
+export type EarningsPeriod = 'day' | 'week' | 'month';
+export interface EarningsTally extends Omit<EarningsMonth, 'month'> {
+  /** `YYYY-MM-DD`, ISO `YYYY-Www` or `YYYY-MM`; the total's is `last-31-days` and so on. */
+  period: string;
+  from: string;
+  to: string;
+}
+export interface EarningsTallies {
+  feeWallet: EarningsWallet | null;
+  payrollWallet: EarningsWallet | null;
+  usdCentsPerXmr: string | null;
+  timeZone: string;
+  period: EarningsPeriod;
+  tallies: EarningsTally[];
+  total: EarningsTally;
+  allTime: EarningsMonth;
+}
+export const earningsTallies = (period: EarningsPeriod) => staffApi<EarningsTallies>(`/staff/v1/earnings?period=${period}`);
+
 // ---------------------------------------------------------------------------------------------
 // Disputes (Plan 4 Tasks 11 and 12 on the staff API; perm disputes.handle, approvals rulings.approve)
 
@@ -724,11 +839,22 @@ export interface QueueRow {
    * time; listed for senior moderators and the owner, who decide the suspension. Absent from an older API.
    */
   complyLapsed?: boolean;
+  /** Owner 26 Nov 2026: a lien's 7 days to pay the agreed way passed; its moderator (or, once sent up, a senior) decides. Absent from an older API. */
+  graceLapsed?: boolean;
+  /**
+   * Owner 26 Nov 2026 ("Pool first, auto-assign if untaken"): when the timer gives this free case to
+   * the least-busy moderator on shift (later if nobody eligible is on shift); null when taken or
+   * auto-assign is off. Absent from an older API.
+   */
+  autoAssignAt?: string | null;
+  /** The current assignee got the case from the timer, not by taking it. Absent from an older API. */
+  autoAssigned?: boolean;
 }
 export interface Queue {
   rows: QueueRow[];
   counts: { open: number; overdue: number; unassigned: number; needApproval: number };
-  settings: { firstResponseH: number; largeTradeLimitUsd: number };
+  /** `autoAssign`: the owner's pool time (owner 26 Nov 2026); absent from an older API. */
+  settings: { firstResponseH: number; largeTradeLimitUsd: number; autoAssign?: { on: boolean; minutes: number } };
 }
 
 export interface CaseTrader {
@@ -737,7 +863,7 @@ export interface CaseTrader {
   positivePct: number | null;
 }
 export interface CaseRuling {
-  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string } | null;
+  proposal: { rulingId: string; reason: string; evidence: string[]; proposer: string; proposedAt: string; lienPlan?: LienPlanView } | null;
   sentBack: { rulingId: string; note: string | null; at: string } | null;
   draft: { id: string; outcome: import('@x2f/staff').RulingOutcome } | null;
   /** Round 1's ruling once there is an appeal (the API's `round1`): a round-2 tap names its id. */
@@ -797,14 +923,56 @@ export interface DisputeCase {
   limitUsd: number;
   assignee: string | null;
   assignedToYou: boolean;
+  /** Owner 26 Nov 2026: the current assignee got the case from the timer. Absent from an older API. */
+  autoAssigned?: boolean;
   proposedByYou: boolean;
   mayWork: boolean;
   traders: { buyer: CaseTrader | null; seller: CaseTrader | null };
   escrow: { state: string; amountAtomic: string; methodId: string; methodName: string; currency: string; centsPerXmr: string; fiatCents: string; confirmations: number };
   ruling: CaseRuling;
   freezes: { buyer: boolean; seller: boolean };
+  /** Owner 26 Nov 2026: the dispute's liens (grace, share, pending rate request). Absent from an older API. */
+  liens?: CaseLien[];
 }
 export type Side = 'buyer' | 'seller';
+
+/** Owner 26 Nov 2026 (5:43 and 5:51 PM): how a lien a ruling places is paid. */
+export type LienPlanView = { mode: 'collect'; rateBps: number; rateReason: string | null } | { mode: 'grace'; method: string };
+export interface LienGraceView {
+  mode: 'collect' | 'grace';
+  method: string | null;
+  graceUntil: string | null;
+  lapsedAt: string | null;
+  escalatedAt: string | null;
+  collectStartedAt: string | null;
+  repaidOffPlatformAt: string | null;
+}
+export interface CaseLien {
+  id: string;
+  status: string;
+  debtor: Side;
+  amountAtomic: string;
+  recoveredAtomic: string;
+  remainingAtomic: string;
+  rateBps: number;
+  createdAt: string;
+  ruledByYou: boolean;
+  grace: LienGraceView | null;
+  pendingRate: { id: string; rateBps: number; reason: string; proposedByYou: boolean } | null;
+}
+/** Owner 26 Nov 2026: switch a grace lien to collecting (tap `lien-collect` bound to the lien and the share). */
+export const collectLien = (lienId: string, b: { tapId: string; rateBps: number; rateReason?: string }) =>
+  staffApi<{ mode: 'collect'; rateRequest: 'pending' | null }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/collect`, { method: 'POST', body: b });
+/** Owner 26 Nov 2026: send a lapsed grace lien to a senior moderator or the owner. */
+export const escalateLien = (lienId: string) => staffApi<unknown>(`/staff/v1/liens/${encodeURIComponent(lienId)}/escalate`, { method: 'POST', body: {} });
+/** Review item 3: end a lien as paid outside X2F (tap `lien-paid-off-platform` bound to the lien). */
+export const paidOffPlatformLien = (lienId: string, tapId: string) =>
+  staffApi<{ status: string }>(`/staff/v1/liens/${encodeURIComponent(lienId)}/paid-off-platform`, { method: 'POST', body: { tapId } });
+/** Opens the lien (a senior's open of a pending lower-rate request is logged, owner 5:53 PM). */
+export const lienView = (lienId: string) => staffApi<{ chat: { code: string; disputeOpen: boolean } }>(`/staff/v1/liens/${encodeURIComponent(lienId)}`);
+/** Owner change 5:53 PM: a senior or the owner decides a lower-rate request without a key tap, never its proposer. */
+export const decideLienRate = (lienId: string, requestId: string, approve: boolean) =>
+  staffApi<unknown>(`/staff/v1/liens/${encodeURIComponent(lienId)}/rate/${encodeURIComponent(requestId)}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: {} });
 
 const casePath = (code: string, rest = '') => `/staff/v1/disputes/${encodeURIComponent(code)}${rest}`;
 
@@ -815,8 +983,12 @@ export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code
 /**
  * Design build task 9: a moderator message, sealed under the chat key and countersigned by this
  * device in the chat key worker (keys/reader.ts `sealModMessage`); the API never sees its text.
+ * A private message carries `to` (that trader's lane); a message to both has no `to` at all.
  */
-export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: sealed });
+export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => {
+  const { to, ...rest } = sealed;
+  return staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: to === undefined ? rest : { ...rest, to } });
+};
 /** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
 export const readCaseChat = (code: string, deviceKeyId: string) =>
   staffApi<import('./chat/types.js').CaseChatAnswer>(casePath(code, '/chat'), { method: 'POST', body: { deviceKeyId } });
@@ -905,7 +1077,7 @@ export const setFreeze = (code: string, b: { side: Side; on: true; reason: 'no-r
   staffApi<{ freezes: { buyer: boolean; seller: boolean } }>(casePath(code, '/freeze'), { method: 'POST', body: b });
 export const proposeRuling = (
   code: string,
-  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string; lienPlan?: import('@x2f/staff').LienPlan },
 ) => staffApi<{ code: string; ruling: CaseRuling }>(casePath(code, '/rulings'), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const approveRuling = (code: string, rulingId: string, tapId: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/approve`), { method: 'POST', body: { tapId } });
@@ -916,7 +1088,7 @@ export const secondApproveRuling = (code: string, rulingId: string, tapId: strin
 export const reProposeRuling = (
   code: string,
   replaces: string,
-  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string },
+  b: { rulingId: string; outcome: import('@x2f/staff').RulingOutcome; reason: string; evidence: string[]; tapId: string; lienPlan?: import('@x2f/staff').LienPlan },
 ) => staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(replaces)}/re-propose`), { method: 'POST', body: { ...b, accountAction: { kind: 'none' } } });
 export const sendBackRuling = (code: string, rulingId: string, note: string) =>
   staffApi<unknown>(casePath(code, `/rulings/${encodeURIComponent(rulingId)}/send-back`), { method: 'POST', body: { note } });

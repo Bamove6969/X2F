@@ -15,6 +15,8 @@ import { clearTourProgress, replayLabel, saveTourProgress, tourProgress } from '
 import { TourProvider, useTour } from '../src/tour/TourProvider.js';
 import { WELCOME_SEEN_KEY, markWelcomeSeen, resetWelcomeMemory, welcomeSeen } from '../src/tour/welcomeSeen.js';
 import { Sheet } from '../src/ui/Sheet.js';
+import { WELCOME_COPY, WelcomeScreen } from '../src/screens/welcome/WelcomeScreen.js';
+import { refreshSession } from '../src/session/useSession.js';
 import { fire, render, setReducedMotion } from './render.js';
 
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -68,9 +70,12 @@ describe('tour engine', () => {
     expect(progressOf(TWO_PAGES, { page: 1, step: 0 })).toEqual({ index: 1, total: 1 });
   });
 
-  it('a story: Next on every stop, Done on the last, never "Next screen"; counted across the tour', () => {
+  it('a story: Next within a page, "Next screen" after the last stop on a page, Done on the last; counted across the tour', () => {
     const labels = Array.from({ length: 19 }, (_, i) => nextLabel(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, i)));
-    expect(labels.slice(0, 18).every((l) => l === 'Next')).toBe(true);
+    const pageEndIndexes = new Set([4, 9, 11, 13, 15, 17]);
+    labels.slice(0, 18).forEach((l, i) => {
+      expect(l, `stop ${i + 1}`).toBe(pageEndIndexes.has(i) ? 'Next screen' : 'Next');
+    });
     expect(labels[18]).toBe('Done');
     expect(progressOf(FIRST_TRADE_TOUR, posOf(FIRST_TRADE_TOUR, 5))).toEqual({ index: 6, total: 19 });
   });
@@ -107,6 +112,54 @@ describe('the welcome flag (once per device)', () => {
     markWelcomeSeen();
     expect(welcomeSeen()).toBe(true);
   });
+});
+
+describe('the welcome screen (owner, 12 Nov, note #47)', () => {
+  // A signed-in trader: the screen waits for the session, then shows (a team member is sent on).
+  beforeEach(() => {
+    refreshSession();
+    const me = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) =>
+        String(input) === '/v1/account/me'
+          ? new Response(JSON.stringify(me), { status: 200, headers: { 'content-type': 'application/json' } })
+          : new Response(JSON.stringify({ error: 'not-found' }), { status: 404, headers: { 'content-type': 'application/json' } }),
+      ),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    refreshSession();
+  });
+
+  it('renders the diagonal "Welcome to" lead-in inside the hero before the centred X2F mark, plus choices and links', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/welcome']}>
+        <TourProvider>
+          <WelcomeScreen />
+        </TourProvider>
+      </MemoryRouter>,
+    );
+    for (let i = 0; i < 8; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+    const hero = host.querySelector('[data-part="welcome-hero"]');
+    expect(hero).not.toBeNull();
+    const lead = hero?.querySelector('[data-part="welcome-lead"]');
+    expect(lead).not.toBeNull();
+    expect(lead?.querySelector('[data-part="welcome-word-1"]')?.textContent).toBe('Welcome');
+    expect(lead?.querySelector('[data-part="welcome-word-2"]')?.textContent).toBe('to');
+    expect(hero?.querySelector('[data-part="welcome-mark"]')).not.toBeNull();
+    // The heading still says "Welcome to X2F", with "Welcome to" for screen readers only (shown above).
+    expect(host.querySelector('h1')?.textContent).toBe(WELCOME_COPY.heading);
+    expect(host.querySelector('h1 .x2f-sr-only')?.textContent).toBe('Welcome to ');
+    const links = [...host.querySelectorAll('nav[aria-label="Help and settings"] a')].map((a) => a.textContent);
+    expect(links).toEqual(['FAQ', 'Getting started', 'Support', 'Settings']);
+  });
+  // Links on short screens: checked on the real layout by the folded 466x678 case in e2e/tour.spec.ts.
 });
 
 describe('the remembered stop', () => {
