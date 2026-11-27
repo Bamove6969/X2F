@@ -22,6 +22,7 @@ import { appealWaiting, eligibleReviewers, reviewerCandidates } from './appeals.
 import { disputeSettings } from './settings.js';
 import { POOL_SINCE_SQL } from './autoAssign.js';
 import { gateValueOf, loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
+import { LIEN_NOT_COLLECTING_SQL } from './lien.js';
 
 /**
  * Plan 4 Task 11: the moderator's queue and case view, messages to both traders, the
@@ -884,7 +885,12 @@ async function freezeAllowed(q: Queryable, d: Dispute, side: Side, reason: 'no-r
     // Only a payment the ruling ordered and the seller let lapse (`seller-sends-xmr`, COMPLY_H).
     if (!(side === 'seller' && d.status === 'complying' && d.complyBy !== null && d.compliedAt === null && now.getTime() >= d.complyBy.getTime())) return false;
     // Review p4t22 residual (b): and only once the seller's app could show the pay form (the signed statement exists).
-    return d.ruling !== null && (await hasAfterRefundStatement(q, d.ruling.id));
+    if (!(d.ruling !== null && (await hasAfterRefundStatement(q, d.ruling.id)))) return false;
+    const { rows: liens } = await q.query(
+      `select 1 from liens l where l.from_code = $1 and l.dispute_seq = $2 and ${LIEN_NOT_COLLECTING_SQL('l')}`,
+      [d.code, d.seq],
+    );
+    return liens.length === 0;
   }
   const { rows } = await q.query<{ last: Date | null }>(
     `select max(e.created_at) as last from chat_envelopes e join chats c on c.code = e.chat
