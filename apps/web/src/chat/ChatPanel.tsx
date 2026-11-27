@@ -67,6 +67,7 @@ import { CANT_DO_TITLE, chatCantDoText, isCantDoCode, type CantDoCode } from '..
 import { ModeratorTag } from '../screens/dispute/ModeratorTag.js';
 import { BlockAction } from '../screens/settings/BlockAction.js';
 import { useTradeLive } from '../screens/trade/seams.js';
+import { displayNameOf, useSession } from '../session/useSession.js';
 import { ChatFailed, chatClient, openOfferChat, openTradeChat, type ChatFailure, type ChatSnapshot } from './client.js';
 import { useChatLive } from './live.js';
 import { CHAT_NOTICES } from './notices.js';
@@ -258,8 +259,12 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
     if (next.trim() === '') draftLane.current = null;
     else if (draftLane.current === null) draftLane.current = toMod;
   };
-  // @mentions, in a chat with a dispute open: the moderator's name (once one joined) and the counterparty's.
+  const session = useSession();
+  const myName = session.status === 'signed-in' ? displayNameOf(session.me) : '';
+  // @mentions, in a chat with a dispute open: the moderator's name (once one joined) and the counterparty's
+  // are offered in the picker; this trader's own display name is also highlighted in lines.
   const names = snap?.disputeOpen === true ? mentionNames(dispute?.moderator ?? null, name) : [];
+  const highlightNames = snap?.disputeOpen === true ? mentionNames(dispute?.moderator ?? null, name, myName) : [];
   const options = mention === null ? [] : names.filter((n) => n.toLowerCase().startsWith(mention.query.toLowerCase()));
   const pickerOpen = options.length > 0;
   const activeIndex = Math.min(active, Math.max(options.length - 1, 0));
@@ -417,7 +422,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
                       ) : null}
                     </>
                   ) : (
-                    withMentions(l.text, names)
+                    withMentions(l.text, highlightNames)
                   )}
                 </span>
               )}
@@ -546,9 +551,9 @@ function PrivateMarker() {
 }
 
 /** @mentions: the names offered, the moderator's first; empty and repeated names left out. */
-export function mentionNames(moderator: string | null, counterparty: string): string[] {
+export function mentionNames(moderator: string | null, counterparty: string, ...extra: ReadonlyArray<string | null>): string[] {
   const out: string[] = [];
-  for (const n of [moderator, counterparty]) if (n !== null && n.trim() !== '' && !out.includes(n)) out.push(n);
+  for (const n of [moderator, counterparty, ...extra]) if (n !== null && n.trim() !== '' && !out.includes(n)) out.push(n);
   return out;
 }
 
@@ -579,7 +584,9 @@ export function withMentions(text: string, names: readonly string[]): ReactNode 
   let i = 0;
   while (i < text.length) {
     const starts = text.charAt(i) === '@' && (i === 0 || !WORD.test(text.charAt(i - 1)));
-    const hit = starts ? sorted.find((n) => text.startsWith(n, i + 1) && !WORD.test(text.charAt(i + 1 + n.length))) : undefined;
+    const hit = starts
+      ? sorted.find((n) => text.slice(i + 1, i + 1 + n.length).toLowerCase() === n.toLowerCase() && !WORD.test(text.charAt(i + 1 + n.length)))
+      : undefined;
     if (hit === undefined) {
       plain += text.charAt(i);
       i++;
@@ -589,7 +596,7 @@ export function withMentions(text: string, names: readonly string[]): ReactNode 
     plain = '';
     out.push(
       <span key={i} className="x2f-chat__mention" data-mention="">
-        @{hit}
+        {text.slice(i, i + 1 + hit.length)}
       </span>,
     );
     i += 1 + hit.length;
