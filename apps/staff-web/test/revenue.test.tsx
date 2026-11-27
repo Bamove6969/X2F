@@ -171,6 +171,79 @@ describe('Revenue (owner; network fees paid to date and the net total)', () => {
     expect(reads).toEqual(['/staff/v1/earnings', '/staff/v1/earnings?period=day', '/staff/v1/earnings?period=week']);
   });
 
+  it('re-picking the same period after a tallies load failure retries the request and renders the table', async () => {
+    const fig = (fee: bigint, trades: number) => ({
+      feeWalletAtomic: fee.toString(), sweptInAtomic: '0', payrollWalletAtomic: '0', earnedAtomic: fee.toString(),
+      usdEstimateCents: '0', trades, bookedNetAtomic: fee.toString(),
+    });
+    const ALL = { month: 'all-time', ...fig(3_000_000_000n, 3) };
+    const MONTHLY = { feeWallet: null, payrollWallet: null, usdCentsPerXmr: '16501', months: [{ month: '2026-11', ...fig(3_000_000_000n, 3) }], allTime: ALL };
+    const DAY = {
+      feeWallet: null, payrollWallet: null, usdCentsPerXmr: '16501', timeZone: 'UTC', period: 'day',
+      tallies: [{ period: '2026-11-25', from: '2026-11-25', to: '2026-11-25', ...fig(1_000_000_000n, 1) }],
+      total: { period: 'last-31-days', from: '2026-10-27', to: '2026-11-26', ...fig(1_000_000_000n, 1) }, allTime: ALL,
+    };
+    let dayAttempts = 0;
+    const api = fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      'GET /staff/v1/revenue': { body: REPORT },
+      'GET /staff/v1/earnings': (_b: unknown, path: string) => {
+        const p = new URLSearchParams(path.split('?')[1] ?? '').get('period');
+        if (p === null) return { status: 200, body: MONTHLY };
+        dayAttempts += 1;
+        if (dayAttempts === 1) return { status: 500, body: { error: 'internal' } };
+        return { status: 200, body: DAY };
+      },
+    });
+    await open('/overview/revenue');
+    const button = (label: string) => [...document.querySelectorAll('[data-part="earnings-period"] button')].find((b) => b.textContent === label);
+
+    await click(button('Day'));
+    expect(document.querySelector('[data-part="tallies-fault"]')?.textContent).toContain('Pick the period again to try again.');
+    expect(document.querySelector('table[aria-label="Arrived by day"]')).toBeNull();
+
+    await click(button('Day'));
+    expect(api.calls.filter((c) => c.path === '/staff/v1/earnings?period=day')).toHaveLength(2);
+    expect(document.querySelector('[data-part="tallies-fault"]')).toBeNull();
+    expect(rows('Arrived by day').map((r) => r[0])).toEqual(['2026-11-25', 'Last 31 days', 'All time']);
+  });
+
+  it('switching from a failed period back to an already-loaded period clears the tallies fault', async () => {
+    const fig = (fee: bigint, trades: number) => ({
+      feeWalletAtomic: fee.toString(), sweptInAtomic: '0', payrollWalletAtomic: '0', earnedAtomic: fee.toString(),
+      usdEstimateCents: '0', trades, bookedNetAtomic: fee.toString(),
+    });
+    const ALL = { month: 'all-time', ...fig(3_000_000_000n, 3) };
+    const MONTHLY = { feeWallet: null, payrollWallet: null, usdCentsPerXmr: '16501', months: [{ month: '2026-11', ...fig(3_000_000_000n, 3) }], allTime: ALL };
+    const WEEK = {
+      feeWallet: null, payrollWallet: null, usdCentsPerXmr: '16501', timeZone: 'UTC', period: 'week',
+      tallies: [{ period: '2026-W48', from: '2026-11-23', to: '2026-11-29', ...fig(2_000_000_000n, 2) }],
+      total: { period: 'last-12-weeks', from: '2026-09-07', to: '2026-11-29', ...fig(2_000_000_000n, 2) }, allTime: ALL,
+    };
+    fakeApi({
+      'GET /staff/v1/me': { body: OWNER },
+      'GET /staff/v1/revenue': { body: REPORT },
+      'GET /staff/v1/earnings': (_b: unknown, path: string) => {
+        const p = new URLSearchParams(path.split('?')[1] ?? '').get('period');
+        if (p === null) return { status: 200, body: MONTHLY };
+        if (p === 'week') return { status: 200, body: WEEK };
+        return { status: 500, body: { error: 'internal' } };
+      },
+    });
+    await open('/overview/revenue');
+    const button = (label: string) => [...document.querySelectorAll('[data-part="earnings-period"] button')].find((b) => b.textContent === label);
+
+    await click(button('Week'));
+    expect(rows('Arrived by week').map((r) => r[0])).toEqual(['2026-W48 (2026-11-23 to 2026-11-29)', 'Last 12 weeks', 'All time']);
+
+    await click(button('Day'));
+    expect(document.querySelector('[data-part="tallies-fault"]')).not.toBeNull();
+
+    await click(button('Week'));
+    expect(document.querySelector('[data-part="tallies-fault"]')).toBeNull();
+    expect(rows('Arrived by week').map((r) => r[0])).toEqual(['2026-W48 (2026-11-23 to 2026-11-29)', 'Last 12 weeks', 'All time']);
+  });
+
   it('no wallet set up says so; nothing yet reads as such; a failed earnings read leaves the revenue in place', async () => {
     const EMPTY = { feeWallet: null, payrollWallet: null, usdCentsPerXmr: null, months: [], allTime: { month: 'all-time', feeWalletAtomic: '0', sweptInAtomic: '0', payrollWalletAtomic: '0', earnedAtomic: '0', usdEstimateCents: null, trades: 0, bookedNetAtomic: '0' } };
     fakeApi({ 'GET /staff/v1/me': { body: OWNER }, 'GET /staff/v1/revenue': { body: REPORT }, 'GET /staff/v1/earnings': { body: EMPTY } });
