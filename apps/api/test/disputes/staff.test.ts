@@ -1439,3 +1439,137 @@ describe('private moderator lanes (owner 27 Nov, private-mod-chat-2026-11-27)', 
     expect(result(await seller.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'seller', 'Hi', { seq: 0 })))).toEqual({ status: 400, error: 'bad-request' });
   });
 });
+
+// PR #41 / #44 follow-up tests: the server never hands one trader's private lane (seller-only,
+// buyer-only, or a trader's private reply to the moderator) to the other trader, through any read,
+// cursor, or after the dispute moves on; only staff who may work the case write in a lane (which is
+// where the moderator's private-mode switch, `chat.mode`, travels: the API sees ciphertext only, so
+// who may write in a lane is the server-side half of "only the moderator changes the mode").
+describe('private lanes: what the other trader never gets (PR #41/#44 follow-up tests)', () => {
+  type Item = { id: string; senderRole: string; to: Lane | null; envelope: Record<string, unknown> };
+  type Trader = Awaited<ReturnType<typeof newTrader>>;
+  const result = (r: { statusCode: number; body: string }) => ({ status: r.statusCode, error: errorOf(r) });
+  const read = async (who: Trader, chat: string, after = '0') => {
+    const res = await who.browser.get(`/v1/chats/${chat}/envelopes?after=${after}`);
+    expect(res.statusCode, res.body).toBe(200);
+    return { items: (res.json() as { envelopes: Item[] }).envelopes, body: res.body };
+  };
+  const reply = async (code: string, role: Lane, text: string, seq: number) => {
+    const c = moderation.chats.get(code)!;
+    return sealPrivate({ trade: c.channel, from: role, to: role, seq, type: 'chat.msg', payload: { text }, pk: c.lanes[role].pk, me: c.ids[role] });
+  };
+  /** A private-mode switch as staff-web seals it (sealModeMessage): v3 `chat.mode` `{ on }` in one lane. */
+  const modeMsg = async (code: string, to: Lane, on: boolean) => {
+    const c = moderation.chats.get(code)!;
+    const body = await encryptPrivate({ trade: c.channel, from: 'mod', to, seq: c.lanes[to].seq, type: 'chat.mode', payload: { on }, pk: c.lanes[to].pk });
+    const cs = await makeModPrivateCountersign({ body, requestId: randomUUID().replace(/-/g, ''), issuedAt: new Date(deps.clock().getTime()).toISOString(), me: DEVICE });
+    return { deviceKeyId: DEVICE_KEY_ID, to, seq: body.seq, nonce: body.nonce, ct: body.ct, ctSha256: cs.ctSha256, requestId: cs.requestId, issuedAt: cs.issuedAt, sig: cs.sig };
+  };
+  async function readCase() {
+    // The case first: it sets the clock, and the moderator's session starts at that time.
+    const d = await disputed();
+    const mod = await staff('mod');
+    expect((await mod.b.post(url(d.code, '/take'), {})).statusCode).toBe(200);
+    const res = await mod.b.post(url(d.code, '/chat'), { deviceKeyId: DEVICE_KEY_ID });
+    expect(res.statusCode, res.body).toBe(200);
+    return { ...d, mod };
+  }
+  /** Both lanes busy: mode on and a message in each, a private reply from each trader, and one shared line. */
+  async function busyLanes() {
+    const d = await readCase();
+    const { code, chat, mod, buyer, seller } = d;
+    for (const to of ['seller', 'buyer'] as const) {
+      expect((await mod.b.post(url(code, '/messages'), await modeMsg(code, to, true))).statusCode).toBe(201);
+      expect((await mod.b.post(url(code, '/messages'), await msg(code, `${to}, only you.`, { to }))).statusCode).toBe(201);
+    }
+    expect((await buyer.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'buyer', 'Buyer to mod only', 0))).statusCode).toBe(201);
+    expect((await seller.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'seller', 'Seller to mod only', 0))).statusCode).toBe(201);
+    expect((await mod.b.post(url(code, '/messages'), await msg(code, 'To both.'))).statusCode).toBe(201);
+    const lane = async (to: Lane) =>
+      (await deps.db.query<{ id: string; ct: string }>("select id::text as id, envelope->>'ct' as ct from chat_envelopes where chat = $1 and to_role = $2 order by id", [chat, to])).rows;
+    return { ...d, lanes: { buyer: await lane('buyer'), seller: await lane('seller') } };
+  }
+
+  it('seller-only and buyer-only lanes, mode switches and private replies: each trader reads the shared chat and its own lane only', async () => {
+    const { chat, buyer, seller, lanes } = await busyLanes();
+    // mode on, the message, and the trader's own reply: three per lane.
+    expect([lanes.buyer.length, lanes.seller.length]).toEqual([3, 3]);
+    for (const [who, own, other] of [[buyer, 'buyer', 'seller'], [seller, 'seller', 'buyer']] as const) {
+      const { items, body } = await read(who, chat);
+      expect(items.map((e) => [e.senderRole, e.to])).toEqual([['mod', own], ['mod', own], [own, own], ['mod', null]]);
+      // Not one byte of the other lane: no id, no ciphertext.
+      for (const e of lanes[other]) {
+        expect(items.some((i) => i.id === e.id)).toBe(false);
+        expect(body).not.toContain(e.ct);
+      }
+    }
+  });
+
+  it('no `after` cursor reaches the other lane: a cursor just before each of its envelopes skips it', async () => {
+    const { chat, buyer, seller, lanes } = await busyLanes();
+    for (const [who, other] of [[buyer, 'seller'], [seller, 'buyer']] as const) {
+      for (const e of lanes[other]) {
+        const { items } = await read(who, chat, (BigInt(e.id) - 1n).toString());
+        expect(items.every((i) => i.to === null || i.to !== other)).toBe(true);
+        expect(items.some((i) => i.id === e.id)).toBe(false);
+      }
+    }
+  });
+
+  it('the other trader still sees no lane after the dispute closes; the lane record stays its own trader\'s', async () => {
+    const { code, chat, buyer, seller, lanes } = await busyLanes();
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, START]);
+    expect((await read(buyer, chat)).items.map((e) => e.to)).toEqual(['buyer', 'buyer', 'buyer', null]);
+    expect((await read(seller, chat)).items.map((e) => e.to)).toEqual(['seller', 'seller', 'seller', null]);
+    expect((await read(buyer, chat)).body).not.toContain(lanes.seller[1]!.ct);
+    const c = moderation.chats.get(code)!;
+    for (const [who, role] of [[buyer, 'buyer'], [seller, 'seller']] as const) {
+      const got = await who.browser.get(`/v1/chats/${chat}/lane`);
+      expect(got.statusCode).toBe(200);
+      expect((await verifyPrivateLaneRecord((got.json() as { record: unknown }).record, { chat: c.channel, participants: c.participants })).to).toBe(role);
+    }
+  });
+
+  it('a trader outside the chat reads neither the envelopes nor a lane record', async () => {
+    const { chat } = await busyLanes();
+    const outsider = await newTrader();
+    expect((await outsider.browser.post('/t/login', { accountId: outsider.id })).statusCode).toBe(200);
+    for (const path of [`/v1/chats/${chat}/envelopes?after=0`, `/v1/chats/${chat}/lane`]) {
+      const res = await outsider.browser.get(path);
+      expect(res.statusCode, path).toBe(404);
+      expect(res.body).not.toContain('envelope');
+    }
+  });
+
+  it('a trader cannot write as the moderator or as the other trader in a lane, so cannot switch anyone\'s private mode', async () => {
+    const { code, chat, seller, lanes } = await busyLanes();
+    const post = (body: unknown) => seller.browser.post(`/v1/chats/${chat}/envelopes`, body);
+    const own = await reply(code, 'seller', 'x', 1);
+    // As the moderator, in either lane.
+    expect(result(await post({ ...own, from: 'mod' }))).toEqual({ status: 400, error: 'wrong-sender' });
+    expect(result(await post({ ...own, from: 'mod', to: 'buyer' }))).toEqual({ status: 400, error: 'wrong-sender' });
+    // As the buyer in the buyer's lane, or as itself in the buyer's lane.
+    expect(result(await post({ ...own, from: 'buyer', to: 'buyer' }))).toEqual({ status: 400, error: 'wrong-sender' });
+    expect(result(await post({ ...own, to: 'buyer' }))).toEqual({ status: 400, error: 'wrong-lane' });
+    // Nothing new in the buyer's lane.
+    expect((await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and to_role = 'buyer'", [chat])).rows[0]).toEqual({ n: lanes.buyer.length });
+  });
+
+  it('only staff who may work the case write in a lane (a mode switch included); an unassigned moderator is refused and nothing is stored', async () => {
+    const { code, chat, seller } = await readCase();
+    const stranger = await staff('mod');
+    for (const body of [await modeMsg(code, 'seller', true), await msg(code, 'Psst.', { to: 'seller' })]) {
+      expect(result(await stranger.b.post(url(code, '/messages'), body))).toEqual({ status: 403, error: 'forbidden-case' });
+    }
+    expect((await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and to_role is not null", [chat])).rows[0]).toEqual({ n: 0 });
+    // The lane is still not open to the seller (D2): nobody with the right to work the case wrote there.
+    expect(result(await seller.browser.post(`/v1/chats/${chat}/envelopes`, await reply(code, 'seller', 'Hi', 0)))).toEqual({ status: 409, error: 'lane-not-open' });
+  });
+
+  it('a closed case takes no more lane messages or mode switches from its moderator', async () => {
+    const { code, chat, mod } = await readCase();
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, START]);
+    expect(result(await mod.b.post(url(code, '/messages'), await modeMsg(code, 'buyer', false)))).toEqual({ status: 409, error: 'wrong-state' });
+    expect((await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and to_role is not null", [chat])).rows[0]).toEqual({ n: 0 });
+  });
+});
