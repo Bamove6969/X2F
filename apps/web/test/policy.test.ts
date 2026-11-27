@@ -510,7 +510,7 @@ describe('lien recovery in the signed terms', () => {
   it('the buyer co-signs the release that pays the signed recovery, and nothing else', () => {
     const c = withRec('buyer');
     const to = recSet(c);
-    expect(to[3]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic });
+    expect(to[3]).toEqual({ address: CREDITOR, amountAtomic: REC.amountAtomic, bearsNetworkFee: true });
     expect(cosignPolicy(c, out(to, 'seller', 'buyer'))).toBe(true);
     // The plain release (no recovery) does not match the signed terms.
     expect(cosignPolicy(c, out(expected('release', c), 'seller', 'buyer'))).toBe(false);
@@ -576,7 +576,7 @@ describe('seller lien recovery in the signed terms', () => {
   it('the release pays the buyer exactly what it gets without a lien, and the extra to the creditor; both sides co-sign only it', () => {
     const to = set('release', plan.sellerFundsAtomic);
     expect(to[0]).toEqual(expected('release', ctx('buyer', { state: 'paid', paidAt: '2026-11-27T12:00:00.000Z' }))[0]);
-    expect(to.find((p) => p.address === CREDITOR)).toEqual({ address: CREDITOR, amountAtomic: SREC.amountAtomic });
+    expect(to.find((p) => p.address === CREDITOR)).toEqual({ address: CREDITOR, amountAtomic: SREC.amountAtomic, bearsNetworkFee: true });
     expect(cosignPolicy(withExtra('buyer'), out(to, 'seller', 'buyer'))).toBe(true);
     expect(outcomeFor('release', withExtra('seller'))?.to).toEqual(to);
     // The extra to another address, or one atomic unit more: refused.

@@ -277,10 +277,14 @@ export interface RulingCopy {
   footer: string;
 }
 
-/** The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded). */
-export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party): bigint {
+/**
+ * The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded).
+ * `sellerExtraAtomic`: the seller's own lien extra (owner 27 Nov 2026), returned with a full
+ * reversal; pass it only for the seller's own copy (the buyer is never told of it).
+ */
+export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party, sellerExtraAtomic = 0n): bigint {
   const amount = BigInt(amountAtomic);
-  const plan = escrowPlan({ amountAtomic: amount, poster });
+  const plan = escrowPlan({ amountAtomic: amount, poster, sellerLienRecoveryAtomic: sellerExtraAtomic });
   if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - plan.feeAtomic;
   // Owner g63 (7 Nov): a full reversal takes no fee, so the seller gets back all it funded.
   if (outcome === 'refund-to-seller') return plan.sellerFundsAtomic;
@@ -298,7 +302,7 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
  * trader's app co-signs (owner 26 Nov, whichever opens first), appeal or not (escrow/runtime.ts,
  * against the signed ruling statement).
  */
-export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
+export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party, sellerExtraAtomic = 0n): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
   // What the seller must send on a seller-sends-xmr ruling: exact, never cut at 6 places.
@@ -308,7 +312,8 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   // on a buyer's ad the buyer gets the amount less the fee. A refund is a full reversal (owner g63):
   // no fee, the seller gets back everything it funded.
   // TODO(design, owner g63): the explanation of the fee rule for users (DisputeView.fee).
-  const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster))} XMR`;
+  // Owner 27 Nov 2026: the seller's own lien extra comes back with a full reversal; only the seller is told.
+  const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster, me === 'seller' ? sellerExtraAtomic : 0n))} XMR`;
   const otherSide: Party = me === 'buyer' ? 'seller' : 'buyer';
   const nameOf = (p: Party) => (p === me ? 'you' : other);
   let label: string;

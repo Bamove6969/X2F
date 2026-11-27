@@ -1823,7 +1823,7 @@ describe('authorizeRuling with a lien recovery (review M6)', () => {
     const b = ruling(mod);
     expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT - R, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: R, bearsNetworkFee: true }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({
@@ -1868,7 +1868,7 @@ describe('authorizeRuling with a seller lien recovery (owner 27 Nov 2026)', () =
     const b = ruling(mod);
     expect(await authorizeRuling(w.gate, { ruling: b.ruling, taps: [tapBy(mod, b.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({
       ok: true,
-      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: X }] },
+      settle: { winner: 'buyer', payouts: [{ address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true }, { address: FEE, amountAtomic: plan.feeAtomic - plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: PAYROLL, amountAtomic: plan.feeAtomic / 2n, bearsNetworkFee: true }, { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true }] },
     });
     const s = ruling(mod, { outcome: 'refund-to-seller' });
     expect(await authorizeRuling(w.gate, { ruling: s.ruling, taps: [tapBy(mod, s.intent('propose'))], recorded: withExtra(), balanceAtomic: balance }, ctx())).toEqual({

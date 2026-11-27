@@ -39,6 +39,23 @@ export async function siteMaintenanceSince(db: pg.Pool): Promise<Date | null> {
   return rows[0]?.maintenance_since ?? null;
 }
 
+/**
+ * Trades still in `setup`, not signed (no attestation), whose seller lien extra is fixed on the
+ * trade but whose seller hold is no longer open: released before the terms were signed. Not one an
+ * account hold holds (its own sync decides it).
+ */
+export async function stalledSellerLienSales(db: pg.Pool): Promise<string[]> {
+  const { rows } = await db.query<{ code: string }>(
+    `select t.code from trades t
+      where t.state = 'setup' and t.seller_lien_recovery_atomic > 0
+        and not exists (select 1 from lien_recovery_holds h where h.trade_code = t.code and h.debtor_side = 'seller' and h.status = 'open')
+        and not exists (select 1 from trade_attestations a where a.code = t.code)
+        and not exists (select 1 from held_trades h where h.code = t.code and h.released_at is null)
+      order by t.code`,
+  );
+  return rows.map((r) => r.code);
+}
+
 export function startTimers(deps: TimerDeps): TimerHandle {
   const log = deps.log ?? (() => {});
   const tick: TimerHandle['tick'] = async () => {
@@ -72,6 +89,22 @@ export function startTimers(deps: TimerDeps): TimerHandle {
       } catch (e) {
         const reason = e instanceof TradeRuleError ? e.code : 'error';
         skipped.push({ code: ev.code, reason });
+        log({ reason: `timer-skipped-${reason}` });
+      }
+    }
+    // Owner 27 Nov 2026 (review of feat/seller-lien, item 3): a sale whose seller lien extra was
+    // released before the terms were signed (the lien voided or written off: lien.ts
+    // `applyLienVoid`, `applyLienUncollectible`) can never start: its funding plan keeps the extra
+    // (fixed at take) while the terms would carry none, and the seller's device refuses those. It
+    // is closed here as a no-fault system cancel (nothing was funded: it is still in setup), so it
+    // never waits in setup. Logged as `trade.system-cancel`, after the hold's `lien.recovery-released`.
+    for (const code of await stalledSellerLienSales(deps.db)) {
+      try {
+        await applyEvent({ db: deps.db, clock: deps.clock, ...(deps.publish ? { publish: deps.publish } : {}) }, code, { type: 'system-cancel' }, 'system');
+        applied.push({ code, type: 'system-cancel' });
+      } catch (e) {
+        const reason = e instanceof TradeRuleError ? e.code : 'error';
+        skipped.push({ code, reason });
         log({ reason: `timer-skipped-${reason}` });
       }
     }

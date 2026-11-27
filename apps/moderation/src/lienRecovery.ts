@@ -467,13 +467,17 @@ export async function lienRateApproved(g: GateState, taps: readonly StoredTap[],
  * ruling for the buyer, after late coins on a trade it had seen refunded): the recovery counts
  * against its lien again, so this service never signs past what is owed.
  */
-export async function unfreeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string): Promise<void> {
-  await db.query('update mod_lien_recoveries set freed_at = null where trade = $1 and freed_at is not null', [trade]);
+export async function unfreeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string, side?: 'buyer' | 'seller'): Promise<void> {
+  await db.query('update mod_lien_recoveries set freed_at = null where trade = $1 and freed_at is not null and ($2::text is null or debtor_side = $2)', [trade, side ?? null]);
 }
 
-/** The watcher saw `trade` end without paying its recovery: it no longer counts against its lien. */
-export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string): Promise<void> {
-  await db.query('update mod_lien_recoveries set freed_at = now() where trade = $1 and freed_at is null', [trade]);
+/**
+ * The watcher saw `trade` end without paying its recovery: it no longer counts against its lien.
+ * `side` limits it to one side's row (owner 27 Nov 2026: a seller's extra on a trade closed with no
+ * coin is freed at once, as the API releases its hold).
+ */
+export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: string, side?: 'buyer' | 'seller'): Promise<void> {
+  await db.query('update mod_lien_recoveries set freed_at = now() where trade = $1 and freed_at is null and ($2::text is null or debtor_side = $2)', [trade, side ?? null]);
 }
 
 /**

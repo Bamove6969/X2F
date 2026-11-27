@@ -22,7 +22,11 @@ import './warn.css';
 
 type SheetView = Pick<TradeView, 'state' | 'receivedAtomic' | 'amountAtomic'>;
 
-/** The XMR the escrow holds, all of which is returned; the trade amount if unreadable. */
+/**
+ * The XMR the escrow holds, all of which is returned; the trade amount if unreadable. To the buyer the
+ * API's `receivedAtomic` already leaves out a seller's lien extra (owner 27 Nov 2026: the buyer is
+ * never told of the seller's lien), so the figure is what the buyer would see without it.
+ */
 function heldXmr(view: SheetView): string {
   for (const s of [view.receivedAtomic, view.amountAtomic]) {
     if (/^[1-9][0-9]*$/.test(s)) return formatXmr(BigInt(s));

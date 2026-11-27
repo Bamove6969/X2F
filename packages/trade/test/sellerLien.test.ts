@@ -3,7 +3,7 @@
 // person owed until it's paid off." The seller funds amount + fee + sellerRecovery; a completed
 // trade pays the extra to the creditor as its own output, every refund returns it to the seller.
 import { describe, expect, test } from 'vitest';
-import { feeFor } from '@x2f/core';
+import { MAX_NETWORK_FEE, feeFor, networkFeeShares } from '@x2f/core';
 import {
   LIEN_RECOVERY_MIN_ATOMIC,
   amountForFunds,
@@ -77,7 +77,7 @@ describe('payoutsFor with a seller recovery', () => {
       { address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true },
       { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
       { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
-      { address: CREDITOR, amountAtomic: X },
+      { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true },
       { address: SELLER, amountAtomic: 5n },
     ]);
     // A buyer's ad: the buyer gets amount − fee as always.
@@ -112,15 +112,32 @@ describe('payoutsFor with a seller recovery', () => {
       { address: BUYER, amountAtomic: AMOUNT - 100_000_000_000n, bearsNetworkFee: true },
       { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
       { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
-      { address: BUYER_CREDITOR, amountAtomic: 100_000_000_000n },
-      { address: CREDITOR, amountAtomic: X },
+      { address: BUYER_CREDITOR, amountAtomic: 100_000_000_000n, bearsNetworkFee: true },
+      { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true },
     ]);
   });
 
-  test('network fee: the creditor output bears none, so X2F books the same share as without a lien', () => {
-    const p = payoutsFor(facts('release', 'seller', AMOUNT + FEE_AMOUNT + X));
-    expect(p.find((o) => o.address === CREDITOR)?.bearsNetworkFee).toBeUndefined();
-    expect(feeWalletNetworkFee('release', 300_000_000n, FEE_AMOUNT)).toBe(200_000_000n);
+  test('review item 5: each creditor output bears its own share of the network fee; X2F books exactly its outputs\' shares (6 outputs, surplus or not)', () => {
+    for (const surplus of [0n, 7n]) {
+      for (const withBuyerRec of [false, true]) {
+        const f = { ...facts('release', 'seller', AMOUNT + FEE_AMOUNT + X + surplus), ...(withBuyerRec ? { lienRecovery: { address: BUYER_CREDITOR, amountAtomic: 100_000_000_000n } } : {}) };
+        const p = payoutsFor(f);
+        expect(p.find((o) => o.address === CREDITOR)?.bearsNetworkFee).toBe(true);
+        if (withBuyerRec) expect(p.find((o) => o.address === BUYER_CREDITOR)?.bearsNetworkFee).toBe(true);
+        expect(p.filter((o) => o.bearsNetworkFee !== true).map((o) => o.address)).toEqual(surplus > 0n ? [SELLER] : []);
+        const bearers = p.map((o) => o.bearsNetworkFee === true);
+        for (const fee of [1n, 7n, 30_720_001n, MAX_NETWORK_FEE]) {
+          const shares = networkFeeShares(fee, bearers);
+          // Every bearer still receives something after its share (the creditor's figure is at least MAX_NETWORK_FEE).
+          p.forEach((o, i) => expect(o.amountAtomic - shares[i]!).toBeGreaterThan(0n));
+          // The buyer pays one share, never the creditor's.
+          expect(shares[0]).toBeLessThanOrEqual(fee / BigInt(bearers.filter(Boolean).length) + 1n);
+          const x2f = shares[p.findIndex((o) => o.address === FEE)]! + shares[p.findIndex((o) => o.address === PAYROLL)]!;
+          expect(feeWalletNetworkFee('release', fee, FEE_AMOUNT, withBuyerRec ? 2 : 1)).toBe(x2f);
+        }
+      }
+    }
+    expect(() => feeWalletNetworkFee('release', 1n, FEE_AMOUNT, 3)).toThrow(RangeError);
   });
 });
 
@@ -138,7 +155,7 @@ describe('sweepMinimums with a seller recovery', () => {
       { address: BUYER, amountAtomic: AMOUNT, bearsNetworkFee: true },
       { address: FEE, amountAtomic: HALF, bearsNetworkFee: true },
       { address: PAYROLL, amountAtomic: HALF, bearsNetworkFee: true },
-      { address: CREDITOR, amountAtomic: X },
+      { address: CREDITOR, amountAtomic: X, bearsNetworkFee: true },
     ]);
     expect(attestedSellerRecovery(terms)).toEqual({ address: CREDITOR, amountAtomic: X });
   });

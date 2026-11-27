@@ -1765,6 +1765,13 @@ describe('lien recovery at take', () => {
       expect(bv).not.toHaveProperty('sellerLienRecoveryAtomic');
       expect(bv).not.toHaveProperty('lienRecoveryAtomic');
       expect(bv.funding).toBeNull();
+      // Review item 2: what the escrow received, as the buyer sees it, leaves out the seller's extra.
+      await deps.db.query(`update trades set received_atomic = $2 where code = $1`, [code, (plan.sellerFundsAtomic + XMR / 2n).toString()]);
+      expect(((await buyer.browser.get(`/v1/trades/${code}`)).json() as { receivedAtomic: string }).receivedAtomic).toBe(plan.sellerFundsAtomic.toString());
+      expect(((await debtor.browser.get(`/v1/trades/${code}`)).json() as { receivedAtomic: string }).receivedAtomic).toBe((plan.sellerFundsAtomic + XMR / 2n).toString());
+      await deps.db.query(`update trades set received_atomic = $2 where code = $1`, [code, (XMR / 4n).toString()]);
+      expect(((await buyer.browser.get(`/v1/trades/${code}`)).json() as { receivedAtomic: string }).receivedAtomic).toBe('0');
+      await deps.db.query(`update trades set received_atomic = 0 where code = $1`, [code]);
       const log = await deps.db.query<{ action: string; detail: string }>(`select action, detail from activity_log where trade_code = $1 and action like 'lien.%'`, [code]);
       expect(log.rows.map((r) => [r.action, JSON.parse(r.detail)])).toEqual([['lien.recovery-reserved', { lienId: lien, amountAtomic: (XMR / 2n).toString(), side: 'seller' }]]);
       // Set-up carries the accepted figure: none, or another one, is 409 and nothing is set.
@@ -1884,6 +1891,83 @@ describe('lien recovery at take', () => {
       await applyEvent(deps, code2, { type: 'settled', kind: 'dispute-buyer', txHash: '12'.repeat(32) }, 'system');
       expect(await sideHolds(code2)).toMatchObject([{ side: 'seller', status: 'recovered' }]);
       expect(await recovered(lien)).toBe((XMR / 2n).toString());
+    });
+
+    it('review item 1: a sale cancelled with an escrow but no coin releases the extra at once (no 30-day block); late coins ruled for the buyer still record it from the signed terms', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      const lien = await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(code), 'funding');
+      await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+      expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'released' }]);
+      const log = await deps.db.query<{ detail: string }>(`select detail from activity_log where trade_code = $1 and action = 'lien.recovery-released'`, [code]);
+      expect(log.rows.map((r) => JSON.parse(r.detail))).toEqual([{ lienId: lien, amountAtomic: (XMR / 2n).toString() }]);
+      // The remainder is free for the next sale at once.
+      const next = await sellerPosts(debtor, await person());
+      expect(await sideHolds(next)).toMatchObject([{ side: 'seller', status: 'open', amount: (XMR / 2n).toString() }]);
+      // HOLD_COUNTS_SQL agrees: a seller hold whose trade closed without a coin no longer counts at
+      // once (here the close is written directly, as if settle had missed it), and the job releases it.
+      await deps.db.query(`update trades set state = 'cancelled', closed_at = $2 where code = $1`, [next, deps.clock()]);
+      const { releaseStaleRecoveryHolds } = await import('../src/disputes/recovery.js');
+      expect(await releaseStaleRecoveryHolds(deps.db, deps.clock())).toBeGreaterThanOrEqual(1);
+      expect(await sideHolds(next)).toMatchObject([{ side: 'seller', status: 'released' }]);
+      // Late coins on the cancelled escrow, ruled for the buyer: the signed terms paid the extra, so it is recorded.
+      await deps.db.query(`insert into trade_attestations (code, attestation, sig) values ($1, $2, $3)`, [
+        code, { trade: code, terms: { sellerLienRecovery: { address: creditor.address, amountAtomic: (XMR / 2n).toString() } } }, '00'.repeat(64),
+      ]);
+      await deps.db.query(`update trades set state = 'disputed', received_atomic = $2 where code = $1`, [code, (XMR + XMR / 100n + XMR / 2n).toString()]);
+      await applyEvent(deps, code, { type: 'settled', kind: 'dispute-buyer', txHash: 'fa'.repeat(32) }, 'system');
+      expect(await recovered(lien)).toBe((XMR / 2n).toString());
+    });
+
+    it('review item 1: a sale cancelled after coins arrived keeps the extra held (late coins can still complete it)', async () => {
+      const debtor = await person();
+      const creditor = await person();
+      await lienOn(debtor, creditor, 2n * XMR);
+      const code = await sellerPosts(debtor, await person());
+      await driveTo(deps, await tradeOf(code), 'funding');
+      await deps.db.query(`update trades set received_atomic = 1000 where code = $1`, [code]);
+      await applyEvent(deps, code, { type: 'buyer-cancel' }, 'buyer');
+      expect(await sideHolds(code)).toMatchObject([{ side: 'seller', status: 'open' }]);
+    });
+
+    it('review item 3: a lien voided or written off before a sale is signed releases the extra and the sale is closed as a no-fault system cancel; a signed sale is untouched', async () => {
+      const { applyLienVoid, applyLienUncollectible } = await import('../src/disputes/lien.js');
+      const { startTimers, stalledSellerLienSales } = await import('../src/trades/timers.js');
+      const inTx = async (f: (c: import('pg').PoolClient) => Promise<unknown>) => {
+        const c = await deps.db.connect();
+        try {
+          await c.query('begin');
+          await f(c);
+          await c.query('commit');
+        } finally {
+          c.release();
+        }
+      };
+      const timers = startTimers({ db: deps.db, clock: deps.clock, intervalMs: 0 });
+      for (const end of ['void', 'uncollectible'] as const) {
+        const debtor = await person();
+        const creditor = await person();
+        const lien = await lienOn(debtor, creditor, 2n * XMR);
+        const unsigned = await sellerPosts(debtor, await person());
+        const signedCode = await sellerPosts(debtor, await person());
+        await deps.db.query(`insert into trade_attestations (code, attestation, sig, created_at) values ($1, '{}'::jsonb, 'x', now())`, [signedCode]);
+        if (end === 'void') await inTx((c) => applyLienVoid(c, lien, deps.clock(), unsigned));
+        else await inTx((c) => applyLienUncollectible(c, lien, creditor.id, '00000000-0000-4000-8000-000000000000', deps.clock()));
+        expect(await sideHolds(unsigned)).toMatchObject([{ side: 'seller', status: 'released' }]);
+        expect(await stalledSellerLienSales(deps.db)).toContain(unsigned);
+        const pass = await timers.tick();
+        expect(pass.applied).toContainEqual({ code: unsigned, type: 'system-cancel' });
+        expect((await tradeOf(unsigned)).state).toBe('cancelled');
+        const log = await deps.db.query<{ action: string }>(`select action from activity_log where trade_code = $1 order by id`, [unsigned]);
+        expect(log.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['lien.recovery-released', 'trade.system-cancel']));
+        // The signed sale keeps its hold and its trade.
+        expect(await sideHolds(signedCode)).toMatchObject([{ side: 'seller', status: 'open' }]);
+        expect((await tradeOf(signedCode)).state).toBe('setup');
+        expect(await stalledSellerLienSales(deps.db)).not.toContain(signedCode);
+      }
+      await timers.stop();
     });
 
     it('one remainder for buying and selling: a debtor who sells and buys never reserves more than is left', async () => {

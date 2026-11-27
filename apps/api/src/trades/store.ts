@@ -479,6 +479,7 @@ export async function applyEvent(
               e.type === 'settled' ? (next.state === 'released' && (e.kind === 'release' || e.kind === 'dispute-buyer') ? 'completed' : 'refunded') : 'closed',
               next.escrowAddress !== null,
               now,
+              next.receivedAtomic,
             )
           : [];
       if (within) await within(client, prev, next, now);

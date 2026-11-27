@@ -427,7 +427,10 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const cantDo = state.error === null ? null : takeCantDo(state.error);
   const cantDoOpen = cantDo !== null && closedError !== state.error;
 
-  const headlineAtomic = ok ? copy.headlineXmr(ok) : 0n;
+  // Owner 27 Nov 2026 (review item 4): a seller who owes sends the extra too, so the headline is all
+  // that goes into escrow; the extra keeps its own row.
+  const sellerExtra = sellerLien !== null && sellerLien.atomic !== null && sellerLien.atomic > 0n ? sellerLien.atomic : 0n;
+  const headlineAtomic = ok ? copy.headlineXmr(ok) + sellerExtra : 0n;
   // The board's 6 places ("1.250000"); exact only for a figure the person sends (headlineExact).
   // data-long (more than 6 places) takes the smaller size so 12 places fit a phone card.
   const headlineFigure = copy.headlineExact ? xmrText(headlineAtomic) : formatXmr(headlineAtomic);

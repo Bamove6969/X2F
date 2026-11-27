@@ -784,6 +784,8 @@ describe('SellQuote', () => {
     await pick(host, 'w-cake');
     expect(host.querySelector('[data-part="seller-lien-recovery"]')?.textContent).toContain('Extra for what you owe');
     expect(host.querySelector('[data-part="seller-lien-recovery"]')?.textContent).toContain('0.4545454');
+    // Review item 4: the headline is everything the seller sends, the extra included.
+    expect(host.querySelector('.x2f-quote__xmr')?.textContent).toContain('4.9999994');
     const note = host.querySelector('[data-part="seller-lien-recovery-note"]')?.textContent ?? '';
     expect(note).toContain('It goes to the person you owe when the trade completes; you get it back if the trade is refunded.');
     // The buyer's figure is never read or shown on a sale.

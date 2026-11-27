@@ -91,12 +91,16 @@ interface OpenLien {
  * that trade not closed without a coin for longer than the moderation watch (`$closedBefore`, a
  * timestamptz parameter). A trade deleted by the trade purge (retention/tradePurge.ts, which keeps a
  * trade on the moderation watch list) can no longer be paid, so its hold stops counting too and is
- * released by `releaseStaleHolds` (merge onto main, 26 Nov 2026).
+ * released by `releaseStaleHolds` (merge onto main, 26 Nov 2026). A SELLER's hold (owner 27 Nov 2026,
+ * review of feat/seller-lien item 1) stops counting as soon as its trade closed without a coin: a
+ * selling debtor must not block the lien's recovery for the whole watch by opening a trade and never
+ * funding it. Late coins ruled for the buyer still pay it, and `settleSide` records that from the
+ * signed terms (the late-payout-after-release path).
  */
 const HOLD_COUNTS_SQL = (h: string, closedBefore: string) =>
   `(${h}.status = 'open' and exists (
      select 1 from trades t where t.code = ${h}.trade_code
-        and not (t.closed_at is not null and t.closed_at < ${closedBefore} and t.received_atomic = 0)))`;
+        and not (t.closed_at is not null and t.received_atomic = 0 and (${h}.debtor_side = 'seller' or t.closed_at < ${closedBefore}))))`;
 
 const DAY_MS = 86_400_000;
 
@@ -361,17 +365,18 @@ export type TradeEnd = 'completed' | 'refunded' | 'closed';
  * (`HOLD_COUNTS_SQL`) and is then released (`releaseStaleHolds`, re-review N3); a late `completed`
  * still records what its signed terms carried. Returns the log entries for the caller to append last.
  */
-export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeEnd, escrowSetUp: boolean, now: Date): Promise<PendingLog[]> {
-  // Owner 27 Nov 2026: a trade may hold a buyer's and a seller's recovery; each ends by the same rule.
+export async function settleRecovery(c: pg.PoolClient, code: string, end: TradeEnd, escrowSetUp: boolean, now: Date, receivedAtomic = 0n): Promise<PendingLog[]> {
+  // Owner 27 Nov 2026: a trade may hold a buyer's and a seller's recovery; each ends by the same rule,
+  // except that a seller's hold on a trade closed without a coin is released at once.
   const logs: PendingLog[] = [];
-  for (const side of ['buyer', 'seller'] as const) logs.push(...(await settleSide(c, code, side, end, escrowSetUp, now)));
+  for (const side of ['buyer', 'seller'] as const) logs.push(...(await settleSide(c, code, side, end, escrowSetUp, receivedAtomic, now)));
   return logs;
 }
 
 /** The terms key a side's recovery is signed under. */
 const TERMS_KEY: Record<DebtorSide, string> = { buyer: 'lienRecovery', seller: 'sellerLienRecovery' };
 
-async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end: TradeEnd, escrowSetUp: boolean, now: Date): Promise<PendingLog[]> {
+async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end: TradeEnd, escrowSetUp: boolean, receivedAtomic: bigint, now: Date): Promise<PendingLog[]> {
   let hold = (
     await c.query<{ id: string; lien_id: string; amount_atomic: string }>(
       `select id::text, lien_id::text, amount_atomic::text from lien_recovery_holds where trade_code = $1 and debtor_side = $2 and status = 'open' for update`,
@@ -396,7 +401,8 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
   }
   if (hold === undefined) return [];
   if (end !== 'completed') {
-    if (end === 'closed' && escrowSetUp) return [];
+    // A seller's hold on a trade closed without a coin is released at once (HOLD_COUNTS_SQL).
+    if (end === 'closed' && escrowSetUp && !(side === 'seller' && receivedAtomic === 0n)) return [];
     await c.query(`update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where id = $1`, [hold.id, now]);
     return [{ action: 'lien.recovery-released', detail: { lienId: hold.lien_id, amountAtomic: hold.amount_atomic } }];
   }

@@ -64,10 +64,11 @@ export interface PayoutFacts {
   /**
    * Lien recovery from the attested terms (`AttestedTerms.lienRecovery`; docs/lien-recovery.md):
    * paid to the creditor out of the buyer's proceeds on a completed trade only. Absent: none.
-   * Network fee (lead default at the 26 Nov merge of lien recovery with the network-fee split; owner to
-   * confirm before liens are switched on): the creditor's output is NOT marked `bearsNetworkFee`, so it
-   * receives the signed recovery exactly. The buyer's output (which keeps at least LIEN_BUYER_KEEPS_ATOMIC)
-   * and the fee output share the network fee as on any completed trade, so `feeWalletNetworkFee` holds.
+   * Network fee (review M5 plan, done 27 Nov 2026 with the seller's recovery): the creditor's output
+   * is a receiving output, so it is marked `bearsNetworkFee` and pays its own equal share (the owner's
+   * rule: each receiver pays its own share), never the buyer for it. Safe: a recovery is at least
+   * LIEN_RECOVERY_MIN_ATOMIC = MAX_NETWORK_FEE, more than any share. The ledger keeps the gross figure;
+   * `feeWalletNetworkFee` takes the recovery outputs into the bearer list.
    */
   lienRecovery?: { address: string; amountAtomic: bigint };
   /**
@@ -75,8 +76,8 @@ export interface PayoutFacts {
    * 2026, docs/lien-recovery.md "Debtor is the seller"): the seller funded it on top of
    * amount + fee (`sellerFundsAtomic` includes it, `escrowPlan`). A completed trade pays it to the
    * creditor as its own output; every refund and a full reversal return it to the seller with the
-   * rest of the balance. Network fee: as the buyer's recovery, the creditor's output is not marked
-   * `bearsNetworkFee` (it receives the signed figure exactly), so `feeWalletNetworkFee` holds.
+   * rest of the balance. Network fee: as the buyer's recovery, the creditor's output is marked
+   * `bearsNetworkFee` and pays its own share.
    */
   sellerLienRecovery?: { address: string; amountAtomic: bigint };
 }
@@ -230,7 +231,7 @@ function recoveryOf(r: { address: string; amountAtomic: bigint } | undefined, pr
     throw new RangeError('bad recovery address');
   }
   if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic < LIEN_RECOVERY_MIN_ATOMIC || r.amountAtomic > lienRecoveryCap(proceeds)) throw new RangeError('bad recovery amount');
-  return { address: r.address, amountAtomic: r.amountAtomic };
+  return { address: r.address, amountAtomic: r.amountAtomic, bearsNetworkFee: true };
 }
 
 /**
@@ -244,7 +245,7 @@ function sellerRecoveryOf(r: { address: string; amountAtomic: bigint } | undefin
     throw new RangeError('bad recovery address');
   }
   if (typeof r.amountAtomic !== 'bigint' || r.amountAtomic < LIEN_RECOVERY_MIN_ATOMIC || r.amountAtomic > sellerLienRecoveryCap(amount)) throw new RangeError('bad recovery amount');
-  return { address: r.address, amountAtomic: r.amountAtomic };
+  return { address: r.address, amountAtomic: r.amountAtomic, bearsNetworkFee: true };
 }
 
 /** The attested seller recovery as `payoutsFor` takes it (bigint), or undefined. */
@@ -359,16 +360,22 @@ export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWa
  * the books (the API's revenue ledger). The payout's network fee is shared by its receiving outputs,
  * one equal share per output: a completed trade (`release`, `dispute-buyer`) marks the buyer's
  * output (index 0) and X2F's outputs in payoutsFor: since 26 Nov the fee wallet's and the payroll
- * wallet's halves of the 1% (`feeSplit`; a half of zero is no output). X2F pays everything but the
- * buyer's share (the buyer's output is the first bearer wallet2 pays, so it takes the odd unit).
- * Every other kind has no fee output: none. `feeAtomic` is the trade's 1% (zero: book nothing).
+ * wallet's halves of the 1% (`feeSplit`; a half of zero is no output). X2F pays its outputs' shares
+ * (the buyer's output is the first bearer wallet2 pays, so it takes the odd unit). `recoveryOutputs`
+ * (0..2): the lien recovery outputs the signed terms paid (the buyer's, the seller's), bearers too
+ * since 27 Nov 2026. Every other kind has no fee output: none. `feeAtomic` is the trade's 1% (zero:
+ * book nothing).
  */
-export function feeWalletNetworkFee(kind: SettleKind | RulingKind, txFeeAtomic: bigint, feeAtomic: bigint): bigint {
+export function feeWalletNetworkFee(kind: SettleKind | RulingKind, txFeeAtomic: bigint, feeAtomic: bigint, recoveryOutputs = 0): bigint {
   if (typeof txFeeAtomic !== 'bigint' || txFeeAtomic < 0n) throw new RangeError('network fee must not be negative');
+  if (!Number.isInteger(recoveryOutputs) || recoveryOutputs < 0 || recoveryOutputs > 2) throw new RangeError('bad recovery outputs');
   if (kind !== 'release' && kind !== 'dispute-buyer') return 0n;
   const { feeWalletAtomic, payrollAtomic } = feeSplit(feeAtomic);
   const x2f = (feeWalletAtomic > 0n ? 1 : 0) + (payrollAtomic > 0n ? 1 : 0);
   if (x2f === 0) return 0n;
-  const shares = networkFeeShares(txFeeAtomic, [true, ...Array<boolean>(x2f).fill(true)]);
-  return txFeeAtomic - shares[0]!;
+  // The real bearer list, in payoutsFor's order: the buyer, X2F's outputs, then each lien recovery
+  // output (the buyer's and the seller's, each marked since 27 Nov 2026). The seller's surplus bears
+  // nothing; X2F's shares are the same with it or without it (tested).
+  const shares = networkFeeShares(txFeeAtomic, [true, ...Array<boolean>(x2f + recoveryOutputs).fill(true)]);
+  return shares.slice(1, 1 + x2f).reduce((a, b) => a + b, 0n);
 }

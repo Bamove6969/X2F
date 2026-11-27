@@ -44,6 +44,7 @@ export interface TradeView {
    */
   maxFiatCents: string;
   grown: { at: string; fromAtomic: string; fromFiatCents: string } | null;
+  /** What the escrow received; to the buyer, less the seller's lien extra (owner 27 Nov 2026: never shown it). */
   receivedAtomic: string;
   confirmations: number;
   releasable: boolean;
@@ -157,6 +158,12 @@ export interface ViewContext {
   lienRecoveryAtomic?: bigint | null;
 }
 
+/** What the escrow received, as the buyer may see it: less the seller's lien extra, never below 0. */
+function buyerSeesReceived(t: Trade): bigint {
+  const extra = t.sellerLienRecoveryAtomic ?? 0n;
+  return t.receivedAtomic > extra ? t.receivedAtomic - extra : 0n;
+}
+
 /**
  * The single serializer for a trade (Task 6). Throws for a viewer who is not a participant; the
  * route answers 404 before calling it.
@@ -181,7 +188,9 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     grown: t.grown
       ? { at: t.grown.at.toISOString(), fromAtomic: t.grown.fromAtomic.toString(), fromFiatCents: t.grown.fromFiatCents.toString() }
       : null,
-    receivedAtomic: t.receivedAtomic.toString(),
+    // Review of feat/seller-lien item 2 (privacy): the buyer is never told of the seller's lien, so
+    // the buyer's figure leaves out the seller's extra (what it would read without the lien).
+    receivedAtomic: (role === 'buyer' ? buyerSeesReceived(t) : t.receivedAtomic).toString(),
     confirmations: t.confirmations,
     releasable: t.releasable,
     releasableEtaMin: releasableEta(t),
