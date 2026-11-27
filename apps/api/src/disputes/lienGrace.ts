@@ -312,7 +312,7 @@ export function accountLienGraceRoutes(app: FastifyInstance): void {
       const actor: Parameters<typeof appendLog>[1]['actor'] = side === undefined ? { kind: 'system' } : { kind: 'trader', side };
       const out = await endOffPlatform(client, id, l, now, actor);
       return { out, next: await complyOnOffPlatform(client, d, now) };
-    });
+    }, me);
   });
 }
 
@@ -325,6 +325,7 @@ async function withLienDispute<T>(
   deps: DisputeDeps,
   lienId: string,
   fn: (client: pg.PoolClient, now: Date, d: Dispute | null) => Promise<{ out: T; next: Dispute | null }>,
+  lockAccount?: string,
 ): Promise<T> {
   const { rows } = await deps.db.query<{ from_code: string; dispute_seq: number }>(
     `select l.from_code, l.dispute_seq
@@ -339,7 +340,7 @@ async function withLienDispute<T>(
   }
   let result!: T;
   try {
-    await withDispute(deps, { code: target.from_code, seq: target.dispute_seq }, async (d, client, now) => {
+    await withDispute(deps, { code: target.from_code, seq: target.dispute_seq, ...(lockAccount === undefined ? {} : { lockAccount }) }, async (d, client, now) => {
       const { out, next } = await fn(client, now, d);
       result = out;
       return next ?? d;

@@ -278,7 +278,7 @@ export interface DisputeDeps extends Pick<Deps, 'db' | 'clock'> {
  */
 export async function withDispute(
   deps: DisputeDeps,
-  target: { code: string; seq?: number },
+  target: { code: string; seq?: number; lockAccount?: string },
   fn: (d: Dispute, client: pg.PoolClient, now: Date, rec: DisputeRecord) => Promise<Dispute>,
 ): Promise<Dispute> {
   const client = await deps.db.connect();
@@ -302,11 +302,30 @@ export async function withDispute(
       // liens' and owed fees' foreign keys take FOR KEY SHARE on them), in id order, then this
       // dispute's liens. Order with the reputation branch's withDispute: trade, dispute, totals,
       // accounts, liens.
-      await client.query(
-        `select 1 from accounts where id in (select seller_account_id from trades where code = $1 union select buyer_account_id from trades where code = $1)
-          order by id for key share`,
-        [target.code],
-      );
+      if (target.lockAccount === undefined) {
+        await client.query(
+          `select 1 from accounts where id in (select seller_account_id from trades where code = $1 union select buyer_account_id from trades where code = $1)
+            order by id for key share`,
+          [target.code],
+        );
+      } else {
+        const { rows: acctRows } = await client.query<{ id: string }>(
+          `select id::text as id from (
+             select seller_account_id as id from trades where code = $1
+             union select buyer_account_id as id from trades where code = $1
+             union select $2::uuid as id
+           ) u order by id`,
+          [target.code, target.lockAccount],
+        );
+        for (const { id } of acctRows) {
+          await client.query(
+            id === target.lockAccount
+              ? 'select 1 from accounts where id = $1 for no key update'
+              : 'select 1 from accounts where id = $1 for key share',
+            [id],
+          );
+        }
+      }
       await client.query('select 1 from liens where from_code = $1 and dispute_seq = $2 order by id for update', [rec.dispute.code, rec.dispute.seq]);
       const now = deps.clock();
       before = rec.dispute;
