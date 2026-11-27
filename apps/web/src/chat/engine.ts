@@ -75,10 +75,12 @@
  *   backwards, another one stored fails closed), and a record that does not check out, of another
  *   pkh, or gone once pinned is the `security` failure. v3 envelopes of the own lane open under PK
  *   with the lane's own persisted guard (`laneState`, seq per lane); their lines carry `private`. A
- *   v3 envelope before the lane record exists stops the cursor (it is read again later). The
- *   trader's private reply (`send(…, { private: true })`, owner D2) is a v3 envelope from = to = its
- *   own role, with the lane's own seq, only while a dispute is open and once the moderator sent this
- *   trader at least one private line.
+ *   v3 envelope before the lane record exists stops the cursor (it is read again later).
+ *   Owner 27 Nov (follow-up, replaces D2): only the moderator switches private mode, with a
+ *   `chat.mode` `{ on }` it signs in this trader's lane (a trader's own is refused). The latest one
+ *   is this trader's `privateMode`, saved with the lane state (`rec.privateMode`, default off); it is
+ *   a system line, not a bubble. While it is on (a dispute open, the lane key held) `send` seals a
+ *   v3 envelope from = to = own role with the lane's own seq; otherwise the shared v2 line.
  */
 import type { Role } from '@x2f/core';
 import { chatKeyHash, isPlainObject, makeChatGrant, open, ProtocolError, ReplayGuard, verifyChatGrant, verifyDisputeNotice, verifyGrantAccepted, type ChatEnvelopeV2, type ChatEnvelopeV3, type ChatGrant, type Envelope, type Identity, type Participants } from '@x2f/protocol';
@@ -166,6 +168,12 @@ export interface ChatLine {
    * this trader and the moderator see it. The panel shows it in the private colour with its marker.
    */
   private?: true;
+  /**
+   * Owner 27 Nov (follow-up): the moderator switched private mode on or off with this trader (a
+   * signed `chat.mode` in the own lane, always `private`): `text` is empty and the panel shows its
+   * own system line.
+   */
+  mode?: 'on' | 'off';
 }
 
 export interface ChatSnapshot {
@@ -197,10 +205,11 @@ export interface ChatSnapshot {
    */
   more: boolean;
   /**
-   * Private lanes, owner D2: this trader may reply privately. A dispute is open, the engine holds
-   * the verified lane key, and the moderator has sent this trader at least one private line.
+   * Owner 27 Nov (follow-up): the moderator's private mode with this trader is on (the latest
+   * `chat.mode` it signed in the own lane), a dispute is open and the engine holds the verified lane
+   * key. `send` then goes to the moderator alone (v3), and the panel tints its composer.
    */
-  privateReply?: boolean;
+  privateMode?: boolean;
 }
 
 /**
@@ -220,10 +229,10 @@ export class ChatSendFailed extends Error {
 export interface ChatEngine {
   sync(chat: string): Promise<ChatSnapshot>;
   /**
-   * `private`: a private reply to the moderator in this trader's own lane (v3 under the lane key,
-   * owner D2); 'not-ready' unless the snapshot's `privateReply` holds.
+   * A line: in this trader's own lane (v3 under the lane key) while the moderator's private mode is
+   * on (owner 27 Nov follow-up, the snapshot's `privateMode`), else the shared chat (v2).
    */
-  send(chat: string, text: string, opts?: { private?: boolean }): Promise<ChatSnapshot>;
+  send(chat: string, text: string): Promise<ChatSnapshot>;
   /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /** Seals and posts a fixed notice (P-020); 'not-ready' while the trade is not secured. */
@@ -398,6 +407,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     lanes.get(chat)?.fill(0);
     lanes.delete(chat);
   };
+  /** Owner 27 Nov (follow-up): the moderator's private mode is on, in an open dispute, with the verified lane key held. */
+  const privateOn = (rec: ChatRecord, view: ChatApiView): boolean => view.disputeOpen && lanes.has(rec.chat) && rec.privateMode === true;
   const erase = async (chat: string): Promise<void> => {
     sessions.delete(chat);
     forgetKey(chat);
@@ -496,7 +507,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       disputeOpen: view.disputeOpen,
       systemCalled: false,
       paySecured: view.tradeSecuredAt !== null,
-      privateReply: view.disputeOpen && rec !== null && lanes.has(rec.chat) && sorted.some((m) => m.from === 'mod' && m.to === rec.role),
+      privateMode: rec !== null && privateOn(rec, view),
       modOnlySentAt: sorted.filter((m) => m.away === true && m.from === view.role && m.at !== null).map((m) => m.at as string),
       // By the server's order: a moderator line held until a dispute opened is shown where it was posted.
       lines: sorted
@@ -508,6 +519,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (shown === undefined) return { ...line, text: '', missing: true };
           if (shown.proof !== undefined) return { ...line, text: shown.text, proof: shown.proof };
           if (shown.notice !== undefined) return { ...line, text: shown.text, notice: shown.notice };
+          if (shown.mode !== undefined) return { ...line, text: '', mode: shown.mode ? 'on' : 'off' };
           return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
         }),
     };
@@ -685,7 +697,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     try {
       if (e.senderRole !== r.from || (r.sig !== null && sigOf(e.envelope) !== r.sig) || !isV3(e.envelope)) return null;
       const o = await openLaneMessage(e.envelope, { role: rec.role, channel, participants: parts, laneState: newLaneState(channel), pk, modMayPost: true });
-      return o.message.from === r.from && o.message.seq === r.seq && o.message.to === r.to ? { text: o.message.text } : null;
+      if (o.message.from !== r.from || o.message.seq !== r.seq || o.message.to !== r.to) return null;
+      return o.message.mode !== undefined ? { text: '', mode: o.message.mode } : { text: o.message.text };
     } catch {
       return null;
     }
@@ -705,6 +718,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     let state: ChatState = rec.state ?? newChatState(channel);
     // Private lanes: the lane's own guard and seq, saved with the record as `state` is.
     let laneState: LaneState = rec.laneState ?? newLaneState(channel);
+    // Owner 27 Nov (follow-up): the latest moderator `chat.mode` in the lane, saved with laneState.
+    let privateMode = rec.privateMode === true;
     const session = sessions.get(rec.chat);
     const shown = session?.texts ?? new Map<string, Shown>();
     const secured = view.tradeSecuredAt !== null;
@@ -748,7 +763,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           }
           if (past && !held && cursor !== e.id) {
             cursor = e.id;
-            rec = await keep({ ...rec, laneState, cursor });
+            rec = await keep({ ...rec, laneState, privateMode, cursor });
           }
           continue;
         }
@@ -780,7 +795,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             lastSeq.set(k, m.seq);
             receipts.push(m);
             known.set(m.id, m);
-            shown.set(m.id, { text: r.message.text });
+            if (r.message.mode !== undefined) {
+              // openLaneMessage takes a `chat.mode` from the moderator alone; the guard keeps them in seq order.
+              privateMode = r.message.mode;
+              shown.set(m.id, { text: '', mode: r.message.mode });
+            } else shown.set(m.id, { text: r.message.text });
           } else {
             // Decision 16: a v1 envelope is never opened in this (keyed) chat; it is decided in the catch below.
             if (isV1(e.envelope)) throw new V1InKeyedChat();
@@ -879,7 +898,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         }
         if (!advance) held = true;
         if (!held) cursor = e.id;
-        rec = await keep({ ...rec, state, laneState, cursor, receipts: [...receipts] });
+        rec = await keep({ ...rec, state, laneState, privateMode, cursor, receipts: [...receipts] });
       }
       unread = more;
       if (!more) break;
@@ -1091,17 +1110,17 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       }
       return gone;
     },
-    send: (chat, text, opts) =>
-      opts?.private === true
-        ? // Private lanes, owner D2: a reply in this trader's own lane, only while a dispute is open, the
-          // verified lane key is held and the moderator sent this trader a private line (the API checks the same).
-          post(chat, async (a, x) => {
-            const pk = lanes.get(chat);
-            if (!x.view.disputeOpen || pk === undefined || !x.rec.receipts.some((r) => r.from === 'mod' && r.to === x.rec.role)) throw new ChatSendFailed('not-ready');
-            const channel = await chatChannel(chat);
-            return sealLaneMessage({ role: a.role, me: a.me, channel, laneState: x.rec.laneState ?? newLaneState(channel), text, pk });
-          })
-        : post(chat, (a) => sealChatMessage({ ...a, text })),
+    // Owner 27 Nov (follow-up): decided on the sync just made, never by the page. While the
+    // moderator's private mode is on (a dispute open, the verified lane key held), the line goes into
+    // this trader's own lane (v3); otherwise to the shared chat. A mode switch the API withholds
+    // leaves a stale mode at worst: a line meant for the moderator alone never reaches the other trader.
+    send: (chat, text) =>
+      post(chat, async (a, x) => {
+        const pk = lanes.get(chat);
+        if (pk === undefined || !privateOn(x.rec, x.view)) return sealChatMessage({ ...a, text });
+        const channel = await chatChannel(chat);
+        return sealLaneMessage({ role: a.role, me: a.me, channel, laneState: x.rec.laneState ?? newLaneState(channel), text, pk });
+      }),
     grant: (chat, disputeAt) => serial(chat, () => purging(chat, async () => {
       const s = await syncLocked(chat);
       if (s.snap.phase !== 'ready' || !s.rec || !s.parts || !s.tk) throw new ChatSendFailed('not-ready');
@@ -1142,6 +1161,8 @@ interface Shown {
   /** A `proof.attached`'s key and facts: kept in memory only, never in the store (like the text). */
   proof?: ProofAttachedPayload;
   notice?: ChatNoticeId;
+  /** A moderator's `chat.mode` in the own lane (owner 27 Nov follow-up): on or off. */
+  mode?: boolean;
 }
 const shownOf = (m: { text: string; pay?: PayDetailsPayload; proof?: ProofAttachedPayload; notice?: ChatNoticeId }): Shown =>
   m.proof !== undefined

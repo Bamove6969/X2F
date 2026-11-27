@@ -517,6 +517,11 @@ export async function chatKeyOf(raw: unknown, a: { channel: string; role: ChatRo
 // envelope v3 under PK: the other trader never holds PK, so cannot read it. Seq is per lane, kept in
 // its own LaneState (counter and ReplayGuard), apart from the shared ChatState. Only plain text
 // (`chat.msg`, exactly `{ text }`) travels in a lane; packages, notices and proofs stay shared.
+// Owner 27 Nov (follow-up): the moderator's private mode switch also travels in the lane, signed by
+// the moderator: `chat.mode`, exactly `{ on: boolean }`, from 'mod' only (a trader's is refused).
+
+/** The moderator's private mode switch in a lane (owner 27 Nov follow-up). */
+export const CHAT_MODE_TYPE = 'chat.mode';
 
 export function newLaneState(channel: string): LaneState {
   return { nextSeq: 0, guard: new ReplayGuard(channel).toJSON() };
@@ -567,9 +572,10 @@ export async function sealLaneMessage(a: { role: ChatRole; me: Identity; channel
 /**
  * Checks and opens one v3 envelope of this trader's own lane under PK, with the lane's own guard.
  * A moderator line without `modMayPost` is ChatError('mod-not-allowed') and the guard does not move
- * (as openChatMessage); anything but plain text is 'bad-message'. The input state is not changed.
+ * (as openChatMessage); anything but plain text or the moderator's `chat.mode` (`mode`, text '') is
+ * 'bad-message'. The input state is not changed.
  */
-export async function openLaneMessage(body: unknown, a: { role: ChatRole; channel: string; participants: Participants; laneState: LaneState; pk: Uint8Array; modMayPost?: boolean }): Promise<{ message: ChatMessage & { to: ChatRole }; laneState: LaneState }> {
+export async function openLaneMessage(body: unknown, a: { role: ChatRole; channel: string; participants: Participants; laneState: LaneState; pk: Uint8Array; modMayPost?: boolean }): Promise<{ message: ChatMessage & { to: ChatRole; mode?: boolean }; laneState: LaneState }> {
   const lane = parseLaneState(a.laneState, a.channel);
   if (new TextEncoder().encode(JSON.stringify(body) ?? '').length > CHAT_BODY_MAX_BYTES) throw new ChatError('bad-message', 'Envelope too large');
   // A copy: the guard moves only in this copy, returned on success, so a refusal leaves no trace.
@@ -577,6 +583,13 @@ export async function openLaneMessage(body: unknown, a: { role: ChatRole; channe
   const opened = await openPrivate(body, { pk: a.pk, trade: a.channel, to: a.role, participants: a.participants, guard });
   if (opened.from === 'mod' && a.modMayPost !== true) throw new ChatError('mod-not-allowed', 'Moderator messages are shown only in a dispute');
   const p = opened.payload;
+  const seq = (body as { seq: number }).seq;
+  // The moderator's mode switch (owner 27 Nov follow-up): from the moderator alone, exactly `{ on }`.
+  // A trader's, or any other shape, is no message (the guard copy is dropped with it).
+  if (opened.type === CHAT_MODE_TYPE) {
+    if (opened.from !== 'mod' || !isPlainObject(p) || !hasExactKeys(p, ['on'] as const) || typeof p['on'] !== 'boolean') throw new ChatError('bad-message', 'Not a mode switch');
+    return { message: { from: opened.from, seq, text: '', to: opened.to, mode: p['on'] }, laneState: { ...lane, guard: guard.toJSON() } };
+  }
   if (opened.type !== CHAT_MSG_TYPE || !isPlainObject(p) || !hasExactKeys(p, ['text'] as const)) throw new ChatError('bad-message', 'Not a chat message');
   let text: string;
   try {
@@ -584,6 +597,5 @@ export async function openLaneMessage(body: unknown, a: { role: ChatRole; channe
   } catch {
     throw new ChatError('bad-message', 'Not a chat message');
   }
-  const seq = (body as { seq: number }).seq;
   return { message: { from: opened.from, seq, text, to: opened.to }, laneState: { ...lane, guard: guard.toJSON() } };
 }
