@@ -142,6 +142,12 @@ export type ApiErrorCode =
   | 'stale-seq'
   | 'wrong-channel'
   | 'wrong-sender'
+  // Private moderator lanes (private-mod-chat-2026-11-27): a v3 envelope for another lane, a lane
+  // never filed, a lane the moderator has not written in yet (D2), a lane whose dispute closed.
+  | 'wrong-lane'
+  | 'no-lane'
+  | 'lane-not-open'
+  | 'lane-closed'
   // Design build task 4 (chat membership keys): the signed key record.
   | 'bad-key-record'
   | 'key-exists'
