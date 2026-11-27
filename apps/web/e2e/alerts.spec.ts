@@ -122,7 +122,7 @@ test('the Jabber switch pauses and resumes alerts; the rows open the set-up and 
   });
   await page.goto('/settings/alerts');
   const jabber = page.locator('[data-part="jabber-alerts"]');
-  const sw = jabber.getByRole('switch', { name: 'Account change alerts' });
+  const sw = jabber.getByRole('switch', { name: 'Account and trade alerts' });
   await expect(sw).toHaveAttribute('aria-checked', 'true');
   await expect(jabber.locator('[data-part="jabber-last"]')).toContainText('Last message');
   await sw.click();

@@ -131,9 +131,26 @@ describe('the list follows the API (J-20 adds team-member-first-login)', () => {
     const { host } = render(<MemoryRouter><JabberEventsScreen /></MemoryRouter>);
     await flush();
     expect([...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((b) => b.dataset.kind)).toEqual([
-      'account-change', 'trade-attention', 'team-member-first-login', 'future-kind',
+      'account-change', 'team-member-first-login', 'future-kind', 'trade-attention',
     ]);
     expect(host.textContent).toContain(JABBER_COPY.events['team-member-first-login'].label);
     expect(host.textContent).not.toContain('future-kind');
+  });
+});
+
+describe('trade milestones (owner 27 Nov 2026) are a card of their own', () => {
+  it('every trade kind is labelled, listed under "Your trades", and can be turned off', async () => {
+    const trade = ['trade-started', 'trade-funded', 'trade-paid', 'trade-cancel-asked', 'trade-completed', 'trade-cancelled', 'trade-attention', 'trade-ruled'] as const;
+    api.getJabber.mockResolvedValue(ON);
+    api.getJabberEvents.mockResolvedValue({
+      events: [{ kind: 'account-change', on: true, canTurnOff: false }, ...trade.map((kind) => ({ kind, on: true, canTurnOff: true }))],
+    });
+    const { host } = render(<MemoryRouter><JabberEventsScreen /></MemoryRouter>);
+    await flush();
+    const card = host.querySelector('[data-part="jabber-events-trades"]')!;
+    expect(card.querySelector('h2')!.textContent).toBe(JABBER_COPY.tradesRow);
+    expect([...card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((b) => [b.dataset.kind, b.disabled])).toEqual(trade.map((k) => [k, false]));
+    for (const k of trade) expect(card.textContent).toContain(JABBER_COPY.events[k].label);
+    expect(host.querySelector('[data-part="jabber-events"] [data-kind="trade-started"]')).toBeNull();
   });
 });
