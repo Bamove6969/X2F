@@ -89,9 +89,13 @@ export function Revenue() {
   const [period, setPeriod] = useState<EarningsPeriod>('month');
   const [tallies, setTallies] = useState<Partial<Record<EarningsPeriod, EarningsTallies>>>({});
   const [talliesFault, setTalliesFault] = useState<string | null>(null);
+  const [tallyAttempt, setTallyAttempt] = useState(0);
 
   useEffect(() => {
-    if (period === 'month' || tallies[period] !== undefined) return;
+    if (period === 'month' || tallies[period] !== undefined) {
+      setTalliesFault(null);
+      return;
+    }
     let live = true;
     setTalliesFault(null);
     earningsTallies(period).then(
@@ -105,7 +109,7 @@ export function Revenue() {
     return () => {
       live = false;
     };
-  }, [period, tallies]);
+  }, [period, tallies, tallyAttempt]);
 
   useEffect(() => {
     let live = true;
@@ -189,7 +193,15 @@ export function Revenue() {
           </p>
           <div className="x2f-row" role="group" aria-label="Tally by" data-part="earnings-period">
             {PERIODS.map((p) => (
-              <Button key={p.period} variant="secondary" aria-pressed={p.period === period} onClick={() => setPeriod(p.period)}>
+              <Button
+                key={p.period}
+                variant="secondary"
+                aria-pressed={p.period === period}
+                onClick={() => {
+                  if (p.period === period && talliesFault !== null) setTallyAttempt((n) => n + 1);
+                  else setPeriod(p.period);
+                }}
+              >
                 {p.label}
               </Button>
             ))}
