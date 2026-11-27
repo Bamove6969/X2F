@@ -596,4 +596,93 @@ describe('auto-assign: round-2 escalation and settings bounds (#42)', () => {
     expect((await owner.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 1440 })).statusCode).toBe(200);
     expect((await owner.b.send('PUT', '/staff/v1/settings', { autoAssignMin: 15.5 })).statusCode).toBe(400);
   });
+
+  /** Polls pg_stat_activity until a query is blocked by `holderPid` (fails immediately if `done()` or after timeout). */
+  async function waitUntilBlockedBy(holderPid: number, done: () => boolean, timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (done()) throw new Error('auto-assign finished without blocking on staff_members FOR SHARE');
+      const { rows } = await deps.db.query(
+        'select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [holderPid],
+      );
+      if (rows.length > 0) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(`timed out waiting for auto-assign to block on holder pid ${holderPid}`);
+  }
+
+  it('locks staff_members FOR SHARE and skips a moderator switched off concurrently (fix-assign-lock)', async () => {
+    const { code } = await openCase();
+    const a = await onShift('mod');
+    const b = await onShift('mod');
+    const [mod1, mod2] = [a, b].sort((x, y) => x.id.localeCompare(y.id)) as [typeof a, typeof b];
+    setNow(at(15 * MIN));
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+
+    const c = await deps.db.connect();
+    let running: Promise<unknown> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from staff_members where account_id = $1 for update', [mod1.id]);
+      await c.query('update staff_members set switched_off_at = $2 where account_id = $1', [mod1.id, deps.clock()]);
+      running = tick().finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+    await running;
+
+    expect((await row(code)).assignee).toBe(mod2.id);
+  });
+
+  it('re-checks role under FOR SHARE and skips a senior demoted to mod concurrently on a round-2 appeal (fix-assign-lock)', async () => {
+    const { code, buyer } = await openCase();
+    const r1Mod = await onShift('mod');
+    await publishRuling(deps, code, { outcome: 'release-to-buyer', staffId: r1Mod.id });
+    await deps.db.query('update sessions set revoked_at = $2 where id = $1', [r1Mod.sessionId, deps.clock()]);
+    setNow(at(H));
+    const bb = new Browser(app);
+    expect((await bb.post('/t/login', { accountId: buyer })).statusCode).toBe(200);
+    expect((await bb.post(`/v1/trades/${code}/appeal`, { why: 'Need senior review.' })).statusCode).toBe(200);
+
+    const a = await onShift('senior');
+    const b = await onShift('senior');
+    const [sen1, sen2] = [a, b].sort((x, y) => x.id.localeCompare(y.id)) as [typeof a, typeof b];
+    setNow(at(H + 15 * MIN));
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+
+    const c = await deps.db.connect();
+    let running: Promise<unknown> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from staff_members where account_id = $1 for update', [sen1.id]);
+      // Demote sen1 to 'mod': still in AUTO_ASSIGN_ROLES and still holds disputes.handle,
+      // so only the role re-check via autoAssignDispute under FOR SHARE rejects sen1 for round 2.
+      await c.query("update staff_members set role = 'mod' where account_id = $1", [sen1.id]);
+      running = tick().finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+    await running;
+
+    expect((await row(code)).assignee).toBe(sen2.id);
+  });
 });

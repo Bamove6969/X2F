@@ -125,8 +125,25 @@ async function assignOne(client: pg.PoolClient, d: Dispute, at: Date, got: (id: 
   let who: AutoAssignCandidate | null = null;
   for (const c of await onShiftCandidates(client, at, [r.seller, r.buyer])) {
     try {
-      next = autoAssignDispute(d, c, at, s);
-      who = c;
+      autoAssignDispute(d, c, at, s);
+    } catch (err) {
+      if (!(err instanceof DisputeRuleError)) throw err;
+      continue;
+    }
+    const fresh = (
+      await client.query<{ role: StaffRole; grants: Perm[] }>(
+        `select m.role, m.grants::text[] as grants
+           from staff_members m join accounts a on a.id = m.account_id
+          where m.account_id = $2 and ${ON_SHIFT_SQL} and m.role = any($3::text[])
+            for share of m`,
+        [at, c.id, AUTO_ASSIGN_ROLES],
+      )
+    ).rows[0];
+    if (fresh === undefined || !can(fresh.role, 'disputes.handle', fresh.grants)) continue;
+    try {
+      const updated = { ...c, role: fresh.role, grants: fresh.grants };
+      next = autoAssignDispute(d, updated, at, s);
+      who = updated;
       break;
     } catch (err) {
       if (!(err instanceof DisputeRuleError)) throw err;
