@@ -148,17 +148,17 @@ async function moderation(
   fetch: Fetch,
   runParty: (a: ModPartyArgs) => void = () => {},
   log?: (e: { reason: string }) => void,
-  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
+  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates' | 'now' | 'intervalMs'> & { lienRecovery?: boolean | 'unset'; db?: pg.Pool } = {},
 ): Promise<ModerationHandle> {
   // Re-review N1: the lien suites run with MOD_LIEN_RECOVERY=on unless they say otherwise; 'unset' leaves the option out (the production default).
-  const { lienRecovery = true, ...deps } = extra;
+  const { lienRecovery = true, db: modDb = db, ...deps } = extra;
   await Promise.all(live.splice(0).map((h) => h.stop()));
   const h = await startModeration(
     {
       apiInternalUrl: API,
       relayAdminUrl: RELAY,
       daemonUri: 'http://127.0.0.1:1',
-      db,
+      db: modDb,
       keystoreKey,
       signingSecret: modSign.secret,
       feeWallet: '5'.repeat(95),
@@ -1097,5 +1097,254 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: FULL } })).resolves.toBeUndefined();
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: DEAL })).rejects.toMatchObject({ code: 'wrong-terms' });
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: FULL - 1n } })).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('fix-lien-statements-tick: tick() posts unposted mod_liens rows even when pullWork() returns []', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    // Simulate a transient failure or restart that left the signed statement unposted.
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    const net = fakeNetwork(() => []);
+    const mod = await moderation(net.fetch);
+    expect(await mod.tick()).toEqual([]);
+    expect(net.lienStatements).toHaveLength(1);
+    expect(net.lienStatements[0]!.statement).toMatchObject({ lienId: LIEN, debtor: DEBTOR });
+    const { rows } = await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN]);
+    expect(rows[0]!.posted_at).not.toBeNull();
+  });
+
+  it('fix-lien-statements-tick: permanent 409 lien-mismatch backs off and does not spam logs on repeated tick() calls', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    let atMs = NOW.getTime();
+    let posts = 0;
+    let mode: '409' | '500' | '201' = '409';
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'POST' && u.pathname === '/internal/v1/reports') {
+        const body = JSON.parse(init.body ?? '{}') as { kind?: string };
+        if (body.kind === 'lien-statement') {
+          posts += 1;
+          if (mode === '409') return { status: 409, json: async () => ({ error: 'lien-mismatch' }) };
+          if (mode === '500') return { status: 500, json: async () => ({ error: 'boom' }) };
+          return baseNet.fetch(url, init);
+        }
+      }
+      return baseNet.fetch(url, init);
+    };
+
+    const r = reasonsOf();
+    const mod = await moderation(fetch, () => {}, r.log, { now: () => new Date(atMs) });
+
+    // Five consecutive ticks at the same time: only one attempt and one log line.
+    for (let i = 0; i < 5; i++) await mod.tick();
+    expect(posts).toBe(1);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toEqual(['lien-statement-refused-409']);
+
+    // Even after the backoff window elapses and a retry still returns 409 lien-mismatch, no duplicate log is emitted.
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(2);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toEqual(['lien-statement-refused-409']);
+
+    // Backoff doubled (2 minutes): ticking +61s later still skips.
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(2);
+
+    // Once the next backoff elapses and the API accepts (201), it marks posted and stops retrying.
+    mode = '201';
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(3);
+    expect(baseNet.lienStatements).toHaveLength(1);
+    const { rows } = await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN]);
+    expect(rows[0]!.posted_at).not.toBeNull();
+  });
+
+  /** The test pool, with the queries `fail` picks rejected (a database error on exactly those). */
+  const failingDb = (fail: (sql: string, params: unknown[]) => boolean): pg.Pool =>
+    new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'query') {
+          return async (...args: unknown[]) => {
+            if (typeof args[0] === 'string' && fail(args[0], Array.isArray(args[1]) ? args[1] : [])) throw new Error('db down');
+            return (target.query as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+  const UNPOSTED_SQL = 'from mod_liens where posted_at is null';
+
+  it('fix-lien-statements-tick: a new signature inside the 409 backoff window is posted on the next tick, with a fresh backoff', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    let atMs = NOW.getTime();
+    const sent: string[] = [];
+    let mode: '409' | '201' = '409';
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'POST' && u.pathname === '/internal/v1/reports') {
+        const body = JSON.parse(init.body ?? '{}') as { kind?: string; sig?: string };
+        if (body.kind === 'lien-statement') {
+          sent.push(body.sig!);
+          if (mode === '409') return { status: 409, json: async () => ({ error: 'lien-mismatch' }) };
+        }
+      }
+      return baseNet.fetch(url, init);
+    };
+    const r = reasonsOf();
+    const mod = await moderation(fetch, () => {}, r.log, { now: () => new Date(atMs) });
+
+    await mod.tick();
+    const oldSig = (await db.query<{ sig: string }>('select sig from mod_liens where lien_id = $1', [LIEN])).rows[0]!.sig;
+    expect(sent).toEqual([oldSig]);
+    await mod.tick(); // inside the 60 s window: skipped
+    expect(sent).toEqual([oldSig]);
+
+    // Re-signed (a new statement, e.g. a rate change) while the old one is still backing off.
+    const newSig = 'cd'.repeat(64);
+    await db.query('update mod_liens set sig = $2, posted_at = null where lien_id = $1', [LIEN, newSig]);
+    await mod.tick();
+    expect(sent).toEqual([oldSig, newSig]);
+    // Refused again: a new refusal for the new signature is logged, and its backoff starts afresh at 60 s.
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toHaveLength(2);
+
+    mode = '201';
+    atMs += 61_000;
+    await mod.tick();
+    expect(sent).toEqual([oldSig, newSig, newSig]);
+    expect(baseNet.lienStatements.map((x) => x.sig)).toEqual([newSig]);
+    expect((await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN])).rows[0]!.posted_at).not.toBeNull();
+  });
+
+  it('fix-lien-statements-tick: a transient refusal (500) or network error (status 0) is retried on every tick without backoff and logged once', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    let posts = 0;
+    let mode: '500' | 'throw' | '201' = '500';
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'POST' && u.pathname === '/internal/v1/reports') {
+        const body = JSON.parse(init.body ?? '{}') as { kind?: string };
+        if (body.kind === 'lien-statement') {
+          posts += 1;
+          if (mode === '500') return { status: 500, json: async () => ({ error: 'boom' }) };
+          if (mode === 'throw') throw new Error('ECONNRESET');
+        }
+      }
+      return baseNet.fetch(url, init);
+    };
+    const r = reasonsOf();
+    // The clock never moves: a backoff of any length would skip every retry.
+    const mod = await moderation(fetch, () => {}, r.log, { now: () => NOW });
+
+    for (let i = 0; i < 3; i++) await mod.tick();
+    expect(posts).toBe(3);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-500')).toEqual(['lien-statement-refused-500']);
+
+    mode = 'throw';
+    for (let i = 0; i < 3; i++) await mod.tick();
+    expect(posts).toBe(6);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-0')).toEqual(['lien-statement-refused-0']);
+
+    mode = '201';
+    await mod.tick();
+    expect(posts).toBe(7);
+    expect(baseNet.lienStatements).toHaveLength(1);
+    expect((await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN])).rows[0]!.posted_at).not.toBeNull();
+  });
+
+  it('fix-lien-statements-tick: statements are posted even when pullWork() fails', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'GET' && u.pathname === '/internal/v1/work') return { status: 503, json: async () => ({}) };
+      return baseNet.fetch(url, init);
+    };
+    const r = reasonsOf();
+    const mod = await moderation(fetch, () => {}, r.log);
+    expect(await mod.tick()).toEqual([]);
+    expect(r.reasons).toContain('work-unavailable');
+    expect(baseNet.lienStatements).toHaveLength(1);
+    expect((await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN])).rows[0]!.posted_at).not.toBeNull();
+  });
+
+  it('fix-lien-statements-tick: a failing mod_liens query is logged once, tick() still resolves with its work, and the pass goes on to the other ticks', async () => {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+    const r = reasonsOf();
+    const broken = failingDb((sql) => sql.includes(UNPOSTED_SQL));
+    const mod = await moderation(net.fetch, () => {}, r.log, { db: broken });
+    await expect(mod.tick()).resolves.toEqual([code]);
+    await expect(mod.tick()).resolves.toEqual([code]);
+    expect(r.reasons.filter((x) => x === 'lien-statements-failed')).toEqual(['lien-statements-failed']);
+    await mod.stop();
+
+    // The running loop: the chat work (the pass after tick) is still asked for.
+    let chatAsked!: () => void;
+    const asked = new Promise<void>((resolve) => (chatAsked = resolve));
+    const fetch: Fetch = async (url, init) => {
+      if (new URL(url).pathname === '/internal/v1/chat-work') chatAsked();
+      return net.fetch(url, init);
+    };
+    const looping = reasonsOf();
+    await moderation(fetch, () => {}, looping.log, { db: broken, intervalMs: 5 });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([asked, new Promise((_, reject) => (timer = setTimeout(() => reject(new Error('chatTick never ran')), 2_000)))]);
+    clearTimeout(timer);
+    expect(looping.reasons).toContain('lien-statements-failed');
+    expect(looping.reasons).not.toContain('work-pass-failed');
+  });
+
+  it('fix-lien-statements-tick: a failure marking one lien posted does not stop the others being posted', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    // This lien comes first (oldest updated_at), then another unposted one.
+    await db.query(`update mod_liens set posted_at = null, updated_at = now() - interval '1 hour' where lien_id = $1`, [LIEN]);
+    const other = randomUUID();
+    await db.query(
+      `insert into mod_liens (lien_id, source_code, creditor_side, debtor, creditor, amount_atomic, rate_bps, statement, sig)
+       values ($1, 'SRCE-0000-0000-0000', 'buyer', 'debtor', 'creditor', 1000000, 5000, '{}', $2)`,
+      [other, 'ab'.repeat(64)],
+    );
+
+    const net = fakeNetwork(() => []);
+    const r = reasonsOf();
+    const broken = failingDb((sql, params) => sql.includes('update mod_liens set posted_at = now()') && params[0] === LIEN);
+    const mod = await moderation(net.fetch, () => {}, r.log, { db: broken });
+    await expect(mod.tick()).resolves.toEqual([]);
+    await expect(mod.tick()).resolves.toEqual([]);
+    expect(r.reasons.filter((x) => x === 'lien-statements-failed')).toEqual(['lien-statements-failed']);
+    const posted = async (id: string) => (await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [id])).rows[0]!.posted_at;
+    expect(await posted(LIEN)).toBeNull();
+    expect(await posted(other)).not.toBeNull();
+    expect(net.lienStatements.map((x) => x.statement.lienId ?? null)).toEqual([LIEN, null, LIEN]);
+    // Leave nothing unposted for the tests after this one.
+    await db.query('update mod_liens set posted_at = now() where lien_id = $1', [LIEN]);
   });
 });

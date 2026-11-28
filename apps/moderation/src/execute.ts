@@ -351,7 +351,10 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
           })
           .then(
             () => o.log({ reason: 'ruling-settled' }),
-            // The release is done in the party; the record is retried by the next pass's settle() answer.
+            // The release is done and settledAt is already in memory, so in this process step()
+            // answers 'settled' and settle() is not reached again; the next whole-state save
+            // (gateCheck in check.ts, or the 60 s gate sync) persists it. After a restart before any
+            // save, the spent escrow stops step() at `balance <= 0n` ('waiting-funds').
             () => {
               if (inFlight.get(s.code) === flightKey) inFlight.delete(s.code);
               o.log({ reason: 'ruling-settled-unsaved' });
