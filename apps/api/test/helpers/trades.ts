@@ -58,6 +58,8 @@ export async function seedTrade(
     code?: string;
     /** The trade's locked currency (default RATE's USD), e.g. a RUB trade from before migration 770. */
     lockedCurrency?: string;
+    /** Optional seller lien recovery extra in atomic units. */
+    sellerLienRecoveryAtomic?: bigint;
   } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
@@ -75,6 +77,7 @@ export async function seedTrade(
       ...(a.payWindowMin === undefined ? {} : { payWindowMin: a.payWindowMin }),
       minFiatCents: a.minFiatCents ?? 1_000n,
       maxFiatCents: a.maxFiatCents ?? 100_000n,
+      ...(a.sellerLienRecoveryAtomic === undefined ? {} : { sellerLienRecoveryAtomic: a.sellerLienRecoveryAtomic }),
     },
     deps.clock(),
   );

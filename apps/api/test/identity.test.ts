@@ -85,7 +85,7 @@ function dealOf(t: AttestedTerms): ConfirmedDeal {
 /** A fresh trade with a buyer and seller account, each with a browser; returns the stored code. */
 async function freshTrade(
   sides: Partial<SeededTrade['sides']> = {},
-  extra: { payWindowMin?: number } = {},
+  extra: { payWindowMin?: number; sellerLienRecoveryAtomic?: bigint } = {},
 ): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
   const buyer = await trader();
   const seller = await trader();
@@ -754,5 +754,40 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     const res = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-work' });
     expect(res.statusCode).toBe(409);
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
+  });
+
+  it('skips a seller-lien setup trade whose seller hold was released (B1, fix-work-voided-lien)', async () => {
+    const { code, buyer, seller } = await freshTrade({}, { sellerLienRecoveryAtomic: 20_000_000_000n });
+    const src = await freshTrade();
+    const srcRow = (await deps.db.query<{ buyer_account_id: string }>('select buyer_account_id::text from trades where code = $1', [src.code])).rows[0]!;
+    const sAddr = '4'.padEnd(95, 'V');
+    const statement = { v: 1, fromCode: src.code, creditorSide: 'buyer', address: sAddr, issuedAt: now.toISOString() };
+    const lien = (await deps.db.query<{ id: string }>(
+      `insert into liens (debtor_account_id, creditor_account_id, amount_atomic, fee_atomic, from_code, dispute_seq, round, cause, created_at, changed_at,
+         recovery_rate_bps, creditor_address, creditor_address_statement, creditor_address_sig)
+       values ($1, $2, 100000000000, 0, $3, 1, 1, 'restitution', now(), now(), 10000, $4, $5, $6) returning id::text`,
+      [seller.id, srcRow.buyer_account_id, src.code, sAddr, statement, 'ab'.repeat(64)],
+    )).rows[0]!.id;
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, debtor_side, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, 'seller', 20000000000, 10000, $3, $4, $5, now())`,
+      [lien, code, sAddr, statement, 'ab'.repeat(64)],
+    );
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+
+    const before = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(before.work.find((w) => w.trade === code)).toBeDefined();
+
+    // Lien voided/uncollectible before attestation: seller hold is released.
+    await deps.db.query(
+      `update lien_recovery_holds set status = 'released', closed_at = now(), address = null, address_statement = null, address_sig = null where trade_code = $1 and debtor_side = 'seller'`,
+      [code],
+    );
+    // Clear served stamp so this trade would be first in line if still eligible.
+    await deps.db.query('delete from trade_work_served where code = $1', [code]);
+
+    const after = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(after.work.find((w) => w.trade === code)).toBeUndefined();
   });
 });

@@ -530,6 +530,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
           where a.code is null and r.code is null
             and t.state = 'setup' and t.closed_at is null
             and t.buyer_payout is not null and t.seller_refund is not null
+            and (t.seller_lien_recovery_atomic = 0
+                 or exists (select 1 from lien_recovery_holds h where h.trade_code = t.code and h.debtor_side = 'seller' and h.status = 'open'))
           order by w.served_at nulls first, t.taken_at, t.code
           limit $1
        ), served as (
