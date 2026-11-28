@@ -1,6 +1,7 @@
 import { DEFAULT_RECOVERY_RATE_BPS, lienRemaining } from '@x2f/staff';
-import { LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, expectedRecovery, expectedSellerRecovery, lienRecoveryCap, sellerLienRecoveryCap } from '@x2f/trade';
+import { LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, expectedRecovery, formatXmrExact, expectedSellerRecovery, lienRecoveryCap, sellerLienRecoveryCap } from '@x2f/trade';
 import type pg from 'pg';
+import { addOwnerAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import type { LogAction } from '../log/actions.js';
 import { ApiError } from '../errors.js';
@@ -407,8 +408,8 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
     return [{ action: 'lien.recovery-released', detail: { lienId: hold.lien_id, amountAtomic: hold.amount_atomic } }];
   }
   const lien = (
-    await c.query<{ amount_atomic: string; fee_atomic: string; status: string; repaid_off_platform_at: Date | null }>(
-      'select amount_atomic::text, fee_atomic::text, status, repaid_off_platform_at from liens where id = $1 for update',
+    await c.query<{ amount_atomic: string; fee_atomic: string; status: string; repaid_off_platform_at: Date | null; from_code: string }>(
+      'select amount_atomic::text, fee_atomic::text, status, repaid_off_platform_at, from_code from liens where id = $1 for update',
       [hold.lien_id],
     )
   ).rows[0]!;
@@ -433,7 +434,16 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
   }
   const remaining = left - recorded;
   logs.push({ action: 'lien.recovered', detail: { lienId: hold.lien_id, amountAtomic: recorded.toString(), remainingAtomic: remaining.toString() } });
-  if (paid > recorded) logs.push({ action: 'lien.over-recovered', detail: { lienId: hold.lien_id, amountAtomic: (paid - recorded).toString() } });
+  if (paid > recorded) {
+    const over = paid - recorded;
+    logs.push({ action: 'lien.over-recovered', detail: { lienId: hold.lien_id, amountAtomic: over.toString() } });
+    // `trade` is the lien's own case (from_code), as every lien alert, so the staff site links to the
+    // lien panel; `paidBy` is the trade whose payout paid the excess.
+    await addOwnerAlert(c, 'lien-over-recovered', {
+      trade: lien.from_code, paidBy: code, lienId: hold.lien_id, amountAtomic: over.toString(),
+      message: `A late payout paid ${formatXmrExact(over)} XMR more than the lien still owed`,
+    }, now);
+  }
   // Q6 (provisional, 17 Nov): a lien voided, overturned or suspended while this trade's signed terms
   // carried its recovery: the money moved, so it is recorded, and flagged for staff (no clawback).
   if (lien.status !== 'active') logs.push({ action: 'lien.recovered-after-end', detail: { lienId: hold.lien_id, status: lien.status, amountAtomic: hold.amount_atomic } });

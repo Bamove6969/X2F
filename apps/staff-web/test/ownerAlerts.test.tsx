@@ -112,4 +112,26 @@ describe('lien alerts', () => {
     await open('/notifications');
     expect(document.querySelector('[data-part="alert-case"]')?.getAttribute('href')).toBe('/disputes/AB12-CD34-EF56-GH78');
   });
+
+  it('an over-recovered alert links to the lien\'s own case (from_code), not the trade whose payout paid it', async () => {
+    const { alertTitle } = await import('../src/screens/OwnerAlerts.js');
+    expect(alertTitle('lien-over-recovered')).toContain('exceeded what was still owed');
+    fakeApi({
+      'GET /staff/v1/me': { body: me('owner') },
+      'GET /staff/v1/owner/alerts': {
+        body: {
+          items: [{
+            id: 'a10', kind: 'lien-over-recovered', message: 'A late payout paid 0.0000001 XMR more than the lien still owed',
+            detail: { trade: 'AB12-CD34-EF56-GH78', paidBy: 'ZZ99-YY88-XX77-WW66', lienId: 'l', amountAtomic: '100000', message: 'A late payout paid 0.0000001 XMR more than the lien still owed' },
+            createdAt: '2026-11-28T09:00:00.000Z', seenAt: null,
+          }],
+          unread: 1, next: null,
+        },
+      },
+    });
+    await open('/notifications');
+    const links = [...document.querySelectorAll('[data-part="alert-case"]')].map((a) => a.getAttribute('href'));
+    expect(links).toEqual(['/disputes/AB12-CD34-EF56-GH78']);
+    expect(document.body.textContent).toContain('A late payout paid 0.0000001 XMR more than the lien still owed');
+  });
 });

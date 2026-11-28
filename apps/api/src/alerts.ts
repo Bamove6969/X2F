@@ -113,7 +113,11 @@ export type AlertKind =
   | 'dispute-auto-assigned'
   // Same decision: to the owner and every senior moderator, once per round, a dispute still in the
   // pool past its reply deadline (nobody eligible on shift). Detail: trade, round.
-  | 'dispute-unassigned-overdue';
+  | 'dispute-unassigned-overdue'
+  // PR #65 follow-up: a late-settling recovery payout exceeded what was still owed on the lien.
+  // Detail: trade (the lien's own case, from_code, as every lien alert), paidBy (the trade whose
+  // payout paid the excess), lienId, amountAtomic (the excess), message.
+  | 'lien-over-recovered';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

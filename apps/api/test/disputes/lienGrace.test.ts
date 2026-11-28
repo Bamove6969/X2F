@@ -854,57 +854,6 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     expect(compliedLogs.rowCount).toBe(1);
   });
 
-  it('settleRecovery sets left = 0n when repaid_off_platform_at is set: records nothing and logs lien.over-recovered for full amount (fix-offplatform-left)', async () => {
-    const r = await ruled();
-    const l = await lienOf(r.code);
-    // Mark lien repaid off-platform via the staff route.
-    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
-    expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId })).statusCode).toBe(200);
-    expect((await lienOf(r.code)).repaid_off_platform_at).not.toBeNull();
-
-    // Simulate a late-completing hold on another trade for the same debtor.
-    const paidAtomic = '100000';
-    const seller = await newTrader();
-    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
-    await deps.db.query(
-      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
-       values ($1, $2, $3, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $4)`,
-      [l.id, trade.code, paidAtomic, deps.clock()],
-    );
-
-    const c = await deps.db.connect();
-    try {
-      await c.query('begin');
-      const pending = await settleRecovery(c, trade.code, 'completed', true, deps.clock());
-      for (const entry of pending) {
-        await appendLog(c, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: trade.code, action: entry.action, detail: entry.detail });
-      }
-      await c.query('commit');
-    } catch (err) {
-      await c.query('rollback').catch(() => {});
-      throw err;
-    } finally {
-      c.release();
-    }
-
-    // 1. Nothing recorded in lien_recoveries.
-    const recoveries = await deps.db.query('select 1 from lien_recoveries where lien_id = $1', [l.id]);
-    expect(recoveries.rowCount).toBe(0);
-
-    // 2. activity_log has lien.recovered (0 / 0) and lien.over-recovered (full paidAtomic).
-    const recoveredLog = (await deps.db.query<{ detail: string }>(
-      `select detail from activity_log where trade_code = $1 and action = 'lien.recovered'`,
-      [trade.code],
-    )).rows.map((x) => JSON.parse(x.detail) as unknown);
-    expect(recoveredLog).toContainEqual({ lienId: l.id, amountAtomic: '0', remainingAtomic: '0' });
-
-    const overLog = (await deps.db.query<{ detail: string }>(
-      `select detail from activity_log where trade_code = $1 and action = 'lien.over-recovered'`,
-      [trade.code],
-    )).rows.map((x) => JSON.parse(x.detail) as unknown);
-    expect(overLog).toContainEqual({ lienId: l.id, amountAtomic: paidAtomic });
-  });
-
   /** Polls pg_stat_activity until a query is blocked by `holderPid` (fails immediately if `done()` or after timeout). */
   async function waitUntilBlockedBy(holderPid: number, done: () => boolean, timeoutMs = 5000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
@@ -1059,5 +1008,141 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     const res = await approvePromise;
     expect(res.statusCode, res.body).toBe(200);
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(3500);
+  });
+
+  it('lateAfterRelease payout after off-platform repayment records 0 recoveries, logs lien.over-recovered, and raises an owner alert (fix-over-recovered-alert)', async () => {
+    await staff('owner');
+    const r = await ruled();
+    const l = await lienOf(r.code);
+
+    // Seed another trade with an attested buyer recovery hold, then release that hold (as releaseStaleHolds does).
+    const paidAtomic = '100000';
+    const seller = await newTrader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, $3, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $4)`,
+      [l.id, trade.code, paidAtomic, deps.clock()],
+    );
+    await deps.db.query(
+      `insert into trade_attestations (code, attestation, sig) values ($1, $2::jsonb, repeat('0', 128))`,
+      [trade.code, JSON.stringify({ terms: { lienRecovery: { amountAtomic: paidAtomic } } })],
+    );
+    await deps.db.query(
+      `update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where trade_code = $1`,
+      [trade.code, deps.clock()],
+    );
+
+    // Mark the lien paid off-platform via the real staff route.
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId })).statusCode).toBe(200);
+    expect((await lienOf(r.code)).repaid_off_platform_at).not.toBeNull();
+
+    // Late payout settles the released hold through the attested-terms lateAfterRelease path.
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      const pending = await settleRecovery(c, trade.code, 'completed', true, deps.clock());
+      for (const entry of pending) {
+        await appendLog(c, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: trade.code, action: entry.action, detail: entry.detail });
+      }
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    expect((await deps.db.query('select 1 from lien_recoveries where lien_id = $1', [l.id])).rowCount).toBe(0);
+    expect((await deps.db.query<{ status: string }>('select status from lien_recovery_holds where trade_code = $1', [trade.code])).rows[0]?.status).toBe('released');
+
+    // left = 0 once repaid off-platform: the ledger records nothing and the whole payout is excess.
+    const recoveredLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(recoveredLog).toContainEqual({ lienId: l.id, amountAtomic: '0', remainingAtomic: '0' });
+
+    const overLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.over-recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(overLog).toContainEqual({ lienId: l.id, amountAtomic: paidAtomic });
+
+    // `trade` is the lien's own case (so the staff site links to its lien panel), not the paying trade.
+    const ownerAlerts = (await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'lien-over-recovered' and detail->>'lienId' = $2 order by created_at, id`,
+      [ownerId!, l.id],
+    )).rows.map((x) => x.detail);
+    expect(ownerAlerts).toEqual([{
+      trade: r.code, paidBy: trade.code, lienId: l.id, amountAtomic: paidAtomic,
+      message: 'A late payout paid 0.0000001 XMR more than the lien still owed',
+    }]);
+  });
+
+  it('lateAfterRelease payout larger than the remainder records the remainder and alerts the excess only (paid - left) (fix-over-recovered-alert)', async () => {
+    await staff('owner');
+    const r = await ruled();
+    const l = await lienOf(r.code);
+    const lienAmount = BigInt((await deps.db.query<{ a: string }>('select amount_atomic::text as a from liens where id = $1', [l.id])).rows[0]!.a);
+
+    // Earlier recoveries (another trade of the debtor's) leave 40000 atomic still owed.
+    const left = 40_000n;
+    const paid = 100_000n;
+    expect(lienAmount).toBeGreaterThan(left);
+    const seller = await newTrader();
+    const earlier = (await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' })).trade;
+    await deps.db.query('insert into lien_recoveries (lien_id, trade_code, amount_atomic, at) values ($1, $2, $3, $4)', [l.id, earlier.code, (lienAmount - left).toString(), deps.clock()]);
+
+    // A released hold on a later trade whose attested terms carry it, paid late (as in the test above).
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, $3, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $4)`,
+      [l.id, trade.code, paid.toString(), deps.clock()],
+    );
+    await deps.db.query(
+      `insert into trade_attestations (code, attestation, sig) values ($1, $2::jsonb, repeat('0', 128))`,
+      [trade.code, JSON.stringify({ terms: { lienRecovery: { amountAtomic: paid.toString() } } })],
+    );
+    await deps.db.query(
+      `update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where trade_code = $1`,
+      [trade.code, deps.clock()],
+    );
+
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      const pending = await settleRecovery(c, trade.code, 'completed', true, deps.clock());
+      for (const entry of pending) {
+        await appendLog(c, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: trade.code, action: entry.action, detail: entry.detail });
+      }
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    const over = (paid - left).toString(); // 60000
+    const recorded = (await deps.db.query<{ a: string }>('select amount_atomic::text as a from lien_recoveries where lien_id = $1 and trade_code = $2', [l.id, trade.code])).rows.map((x) => x.a);
+    expect(recorded).toEqual([left.toString()]);
+
+    const overLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.over-recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(overLog).toEqual([{ lienId: l.id, amountAtomic: over }]);
+
+    const ownerAlerts = (await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'lien-over-recovered' and detail->>'lienId' = $2 order by created_at, id`,
+      [ownerId!, l.id],
+    )).rows.map((x) => x.detail);
+    expect(ownerAlerts).toEqual([{
+      trade: r.code, paidBy: trade.code, lienId: l.id, amountAtomic: over,
+      message: 'A late payout paid 0.00000006 XMR more than the lien still owed',
+    }]);
   });
 });
