@@ -81,6 +81,9 @@ const DAY_MS = 86_400_000;
 export const MOD_INSTANCE_LOCK = 0x7832_6d69;
 /** How long the per-pass lock check waits for the lock connection (re-verify R3: a half-open one never answers). */
 export const LOCK_CHECK_TIMEOUT_MS = 5_000;
+/** Backoff for a `409 lien-mismatch` refusal on `lien-statement` (F4): starts at 1 min, doubles up to 1 h. */
+const LIEN_STATEMENT_BACKOFF_MS = 60_000;
+const LIEN_STATEMENT_BACKOFF_MAX_MS = 3_600_000;
 
 /**
  * Does this connection still hold the instance lock (re-verify R3)? Asked every watch pass: a
@@ -494,15 +497,38 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return { attestation: a.attestation, sig: a.sig, party: sealed };
   };
 
+  const lienStatementBackoff = new Map<string, { sig: string; until: number; delayMs: number }>();
+  const lienStatementLogged = new Map<string, string>();
+
   /**
    * Review B1: the lien statements this service signed and the API has not taken yet, posted over
    * the signed link (`lien-statement`); one the API refuses stays unposted and is logged.
+   * A permanent `409 lien-mismatch` backs off per lien (reset on a new signature) and refusals are
+   * logged only on change so repeated ticks do not spam the API or logs.
    */
   const postLienStatements = async (): Promise<void> => {
+    const at = now().getTime();
     for (const l of await unpostedLienStatements(o.db)) {
+      const b = lienStatementBackoff.get(l.lienId);
+      if (b && b.sig === l.sig && at < b.until) continue;
       const res = await link.report({ kind: 'lien-statement', statement: l.statement, sig: l.sig }).catch(() => ({ status: 0, error: null }));
-      if (res.status === 201) await markLienStatementPosted(o.db, l.lienId, l.sig);
-      else log({ reason: `lien-statement-refused-${res.status}` });
+      if (res.status === 201) {
+        lienStatementBackoff.delete(l.lienId);
+        lienStatementLogged.delete(l.lienId);
+        await markLienStatementPosted(o.db, l.lienId, l.sig);
+      } else {
+        if (res.status === 409 && res.error === 'lien-mismatch') {
+          const prev = b && b.sig === l.sig ? b : undefined;
+          const delayMs = prev ? Math.min(prev.delayMs * 2, LIEN_STATEMENT_BACKOFF_MAX_MS) : LIEN_STATEMENT_BACKOFF_MS;
+          lienStatementBackoff.set(l.lienId, { sig: l.sig, until: at + delayMs, delayMs });
+        }
+        const reason = `lien-statement-refused-${res.status}`;
+        const key = `${l.sig}:${reason}:${res.error ?? ''}`;
+        if (lienStatementLogged.get(l.lienId) !== key) {
+          lienStatementLogged.set(l.lienId, key);
+          log({ reason });
+        }
+      }
     }
   };
 
@@ -541,7 +567,6 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           continue;
         }
         await o.db.query('update signed_terms set posted_at = now() where trade = $1', [code]);
-        await postLienStatements();
         const terms = attestation.terms;
         if (terms === undefined) {
           // Unreachable: the API stores no attestation without terms (400). A pre-terms record.
@@ -589,6 +614,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
         }
       }
     }
+    await postLienStatements();
     return done;
   };
 

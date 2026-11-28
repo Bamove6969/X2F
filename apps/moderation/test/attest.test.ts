@@ -148,7 +148,7 @@ async function moderation(
   fetch: Fetch,
   runParty: (a: ModPartyArgs) => void = () => {},
   log?: (e: { reason: string }) => void,
-  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates'> & { lienRecovery?: boolean | 'unset' } = {},
+  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates' | 'now'> & { lienRecovery?: boolean | 'unset' } = {},
 ): Promise<ModerationHandle> {
   // Re-review N1: the lien suites run with MOD_LIEN_RECOVERY=on unless they say otherwise; 'unset' leaves the option out (the production default).
   const { lienRecovery = true, ...deps } = extra;
@@ -1097,5 +1097,74 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: FULL } })).resolves.toBeUndefined();
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: DEAL })).rejects.toMatchObject({ code: 'wrong-terms' });
     await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...base, deal: { ...DEAL, lienRecoveryAtomic: FULL - 1n } })).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('fix-lien-statements-tick: tick() posts unposted mod_liens rows even when pullWork() returns []', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    // Simulate a transient failure or restart that left the signed statement unposted.
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    const net = fakeNetwork(() => []);
+    const mod = await moderation(net.fetch);
+    expect(await mod.tick()).toEqual([]);
+    expect(net.lienStatements).toHaveLength(1);
+    expect(net.lienStatements[0]!.statement).toMatchObject({ lienId: LIEN, debtor: DEBTOR });
+    const { rows } = await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN]);
+    expect(rows[0]!.posted_at).not.toBeNull();
+  });
+
+  it('fix-lien-statements-tick: permanent 409 lien-mismatch backs off and does not spam logs on repeated tick() calls', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    let atMs = NOW.getTime();
+    let posts = 0;
+    let mode: '409' | '500' | '201' = '409';
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'POST' && u.pathname === '/internal/v1/reports') {
+        const body = JSON.parse(init.body ?? '{}') as { kind?: string };
+        if (body.kind === 'lien-statement') {
+          posts += 1;
+          if (mode === '409') return { status: 409, json: async () => ({ error: 'lien-mismatch' }) };
+          if (mode === '500') return { status: 500, json: async () => ({ error: 'boom' }) };
+          return baseNet.fetch(url, init);
+        }
+      }
+      return baseNet.fetch(url, init);
+    };
+
+    const r = reasonsOf();
+    const mod = await moderation(fetch, () => {}, r.log, { now: () => new Date(atMs) });
+
+    // Five consecutive ticks at the same time: only one attempt and one log line.
+    for (let i = 0; i < 5; i++) await mod.tick();
+    expect(posts).toBe(1);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toEqual(['lien-statement-refused-409']);
+
+    // Even after the backoff window elapses and a retry still returns 409 lien-mismatch, no duplicate log is emitted.
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(2);
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toEqual(['lien-statement-refused-409']);
+
+    // Backoff doubled (2 minutes): ticking +61s later still skips.
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(2);
+
+    // Once the next backoff elapses and the API accepts (201), it marks posted and stops retrying.
+    mode = '201';
+    atMs += 61_000;
+    await mod.tick();
+    expect(posts).toBe(3);
+    expect(baseNet.lienStatements).toHaveLength(1);
+    const { rows } = await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN]);
+    expect(rows[0]!.posted_at).not.toBeNull();
   });
 });

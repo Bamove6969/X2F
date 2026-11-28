@@ -351,7 +351,9 @@ export function rulingExecutor(o: RulingExecutorOptions): RulingExecutor {
           })
           .then(
             () => o.log({ reason: 'ruling-settled' }),
-            // The release is done in the party; the record is retried by the next pass's settle() answer.
+            // The release is done and settledAt is already in memory; the next gateCheck (check.ts) or
+            // periodic gate sync (60 s) saves the whole state before settle() is reached again, and
+            // escrow outputs spend once so there is no double payout.
             () => {
               if (inFlight.get(s.code) === flightKey) inFlight.delete(s.code);
               o.log({ reason: 'ruling-settled-unsaved' });
