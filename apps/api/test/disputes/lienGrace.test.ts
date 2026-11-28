@@ -904,4 +904,83 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     )).rows.map((x) => JSON.parse(x.detail) as unknown);
     expect(overLog).toContainEqual({ lienId: l.id, amountAtomic: paidAtomic });
   });
+
+  /** Polls pg_stat_activity until a query is blocked by `holderPid` (fails immediately if `done()` or after timeout). */
+  async function waitUntilBlockedBy(holderPid: number, done: () => boolean, timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (done()) throw new Error('/v1/account/liens/:id/paid finished without blocking on accounts FOR NO KEY UPDATE');
+      const { rows } = await deps.db.query(
+        'select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [holderPid],
+      );
+      if (rows.length > 0) return;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    throw new Error(`timed out waiting for /paid to block on holder pid ${holderPid}`);
+  }
+
+  it('POST /v1/account/liens/:id/paid locks account FOR NO KEY UPDATE before lien FOR UPDATE so it never deadlocks with recovery-address (fix-lien-lock-order)', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+
+    // Hold the exact lock order of POST /v1/account/liens/:id/recovery-address:
+    // 1. accounts FOR NO KEY UPDATE (requireLiveSessionInTx)
+    // 2. liens FOR UPDATE
+    const c = await deps.db.connect();
+    let paidPromise: ReturnType<typeof r.buyer.browser.post> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from accounts where id = $1 for no key update', [r.buyer.id]);
+      paidPromise = r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {}).finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('select 1 from liens where id = $1 for update', [l.id]);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    const paidRes = await paidPromise;
+    expect(paidRes.statusCode, paidRes.body).toBe(200);
+    expect((await lienOf(r.code)).repaid_off_platform_at).not.toBeNull();
+  });
+
+  it('POST /v1/account/liens/:id/paid on a dispute-backed lien returns 401 when the session is revoked while blocked on lockAccount', async () => {
+    const r = await ruled({ mode: 'grace', method: METHOD });
+    const l = await lienOf(r.code);
+    await r.buyer.browser.post('/t/login', { accountId: r.buyer.id });
+
+    const c = await deps.db.connect();
+    let paidPromise: ReturnType<typeof r.buyer.browser.post> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from accounts where id = $1 for no key update', [r.buyer.id]);
+      paidPromise = r.buyer.browser.post(`/v1/account/liens/${l.id}/paid`, {}).finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null', [r.buyer.id, deps.clock()]);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    const paidRes = await paidPromise;
+    expect(paidRes.statusCode, paidRes.body).toBe(401);
+    expect(errorOf(paidRes)).toBe('not-authenticated');
+    expect((await lienOf(r.code)).repaid_off_platform_at).toBeNull();
+  });
 });
