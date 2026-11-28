@@ -38,7 +38,13 @@ beforeEach(() => {
   setChatClient(client);
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ error: 'not-authenticated' }), { status: 401, headers: { 'content-type': 'application/json' } })),
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url;
+      if (url === '/v1/account/me') {
+        return new Response(JSON.stringify({ error: 'not-authenticated' }), { status: 401, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected fetch in chatPanel.test.tsx: ${url}`);
+    }),
   );
 });
 
