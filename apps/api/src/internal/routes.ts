@@ -481,9 +481,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
   // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
   // purged); moderation records the link while the trade is live and holds a shred by it.
+  // Also `closed` (finding F1): the trade record's `closed_at` is set.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean; held: boolean; lock_held: boolean }>(
-      `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; closed_at: Date | null; paused_at: Date | null; site_paused: boolean; held: boolean; lock_held: boolean }>(
+      `select t.code, c.code as chat, t.state, t.settling, t.closed_at, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
               exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held,
               ${tradeHeldSql('t')} as lock_held
@@ -500,6 +501,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
+        // Finding F1: whether the trade record is closed (`closed_at` set). A coinless `lapsed` trade
+        // is closed although its state is not one of CLOSED_STATES; the watcher reads closedness
+        // through isClosed(state, closed), so a lapsed trade with coins stays open.
+        closed: r.closed_at !== null,
         // Lead review 8 Nov C2 (owner G7): a trade a recovery-code hold holds is paused for the
         // moderator's timers too, until the hold ends or a moderator decides.
         // D-059 (J-14 J8, ported): a trade of a locked account counts as paused from the lock's

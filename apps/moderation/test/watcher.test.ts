@@ -14,11 +14,12 @@ import {
   type AttestedTerms,
   type ModPartyArgs,
   WATCH_RESTART_GRACE_MS,
+  watchShowsEmpty,
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
-import { relayRegisterMessage, startModeration, type Fetch, type ModerationHandle, type WorkItem } from '../src/main.js';
+import { relayRegisterMessage, reviveWatchState, startModeration, type Fetch, type ModerationHandle, type WorkItem } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -90,6 +91,10 @@ function fakeNetwork() {
     /** settleKind per trade on the watch list (default null), and the paused trades. */
     kinds: new Map<string, string>(),
     paused: new Set<string>(),
+    /** Trades whose API record is closed (`closed_at` set; finding F1: a coinless lapsed trade). */
+    recordClosed: new Set<string>(),
+    /** An API from before the watch list carried `closed`: the field is left out. */
+    legacy: false,
     reports: [] as Report[],
     closed: [] as string[],
     unsigned: [] as string[],
@@ -111,7 +116,11 @@ function fakeNetwork() {
       }
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: net.work });
       if (init.method === 'GET' && u.pathname === '/internal/v1/watch') {
-        return reply(200, { trades: [...net.states].map(([trade, state]) => ({ trade, state, settleKind: net.kinds.get(trade) ?? null, paused: net.paused.has(trade) })) });
+        return reply(200, {
+          trades: [...net.states].map(([trade, state]) => ({
+            trade, state, settleKind: net.kinds.get(trade) ?? null, paused: net.paused.has(trade), ...(net.legacy ? {} : { closed: net.recordClosed.has(trade) }),
+          })),
+        });
       }
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
         const body = JSON.parse(init.body ?? '{}') as Report;
@@ -1065,6 +1074,107 @@ describe('lien recoveries signed here are freed only by what the watcher sees (r
     p.funds = { ...p.funds, balance: XMR, unlocked: 0n, incoming: [incoming(hash('a'), XMR, 0, false)] };
     await m.handle.watch();
     expect(await freed(code)).toBe(false);
+    await m.handle.stop();
+  });
+  // Finding F1: a funding trade past fundBy with no coin lapses with its record closed (`closedAt`),
+  // in state `lapsed`, which is not one of CLOSED_STATES. The watch list's `closed` says so.
+  const watchRow = async (code: string) =>
+    (await db.query<{ watching: boolean; state: unknown }>('select watching, state from mod_watch where trade = $1', [code])).rows[0]!;
+
+  it("finding F1: a selling debtor's extra on a trade that lapsed with no coin is freed at once, as the API releases its hold", async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await db.query(`update mod_lien_recoveries set debtor_side = 'seller' where trade = $1`, [code]);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    net.states.set(code, 'lapsed');
+    net.recordClosed.add(code);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(true);
+    expect(reviveWatchState((await watchRow(code)).state).closedAt).not.toBeNull();
+    await m.handle.stop();
+  });
+
+  it("finding F1: a buying debtor's recovery on a trade that lapsed with no coin is kept while late coins could come, freed when the watch ends", async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await m.handle.watch();
+    net.states.set(code, 'lapsed');
+    net.recordClosed.add(code);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(m.parties.get(code)!.stopped).toBe(true);
+    expect(await freed(code)).toBe(true);
+    expect((await watchRow(code)).watching).toBe(false);
+    await m.handle.stop();
+  });
+
+  it('finding F1: a trade that lapsed WITH coins stays open (its lapse refund must settle): nothing freed, no late-funds, the watch goes on', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await db.query(`update mod_lien_recoveries set debtor_side = 'seller' where trade = $1`, [code]);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await m.handle.watch();
+    net.states.set(code, 'lapsed'); // the API record stays open: `closed` false
+    await m.handle.watch();
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    expect(net.reports.filter((r) => r.trade === code && r.kind === 'late-funds')).toEqual([]);
+    expect(reviveWatchState((await watchRow(code)).state).closedAt).toBeNull();
+    expect((await watchRow(code)).watching).toBe(true);
+    expect(p.stopped).toBe(false);
+    expect(net.closed).toEqual([]);
+    await m.handle.stop();
+  });
+
+  it('finding F1: an older API that leaves `closed` out: a lapsed trade reads as open (nothing freed early)', async () => {
+    const { net, fetch } = fakeNetwork();
+    net.legacy = true;
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await db.query(`update mod_lien_recoveries set debtor_side = 'seller' where trade = $1`, [code]);
+    await m.handle.watch();
+    net.states.set(code, 'lapsed');
+    net.recordClosed.add(code); // not served
+    await m.handle.watch();
+    expect(await freed(code)).toBe(false);
+    expect(reviveWatchState((await watchRow(code)).state).closedAt).toBeNull();
+    await m.handle.stop();
+  });
+
+  it('finding F1: a coinless lapsed trade the API stops listing (WATCH_LIST_CLOSED_DAYS) is cleaned up: party stopped, watch ended, escrow shown empty, recovery freed', async () => {
+    const { net, fetch } = fakeNetwork();
+    const logs: string[] = [];
+    const m = await moderation(fetch, logs);
+    const code = await inFunding(m, net);
+    await owing(code);
+    await m.handle.watch();
+    net.states.set(code, 'lapsed');
+    net.recordClosed.add(code);
+    await m.handle.watch();
+    // Both channels closed (the escrow never received a coin).
+    expect(net.closed.sort()).toEqual([await channelFor(code, 'escrow'), await channelFor(code, 'signals')].sort());
+    // 31 days on, the API drops it from the watch list; the watcher saw it close, so its own 30 days run out.
+    net.states.delete(code);
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await m.handle.watch();
+    expect(m.parties.get(code)!.stopped).toBe(true);
+    expect(logs).toContain('watch-ended');
+    const row = await watchRow(code);
+    expect(row.watching).toBe(false);
+    expect(watchShowsEmpty(reviveWatchState(row.state))).toBe(true);
+    expect(await freed(code)).toBe(true);
     await m.handle.stop();
   });
 });

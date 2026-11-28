@@ -4,6 +4,7 @@ import {
   WATCH_CLOSED_DAYS,
   WATCH_RESTART_GRACE_MS,
   WATCH_INTERVAL_MS,
+  isClosed,
   newWatchState,
   settleKindFor,
   watchShowsEmpty,
@@ -48,9 +49,9 @@ const sweep = (sweptAtomic: bigint, conf: number, txHash = SETTLE, chain = CHAIN
   sweptAtomic,
 });
 
-function step(o: { state?: WatchState; apiState?: TradeState; paused?: boolean; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean; upSince?: Date }) {
+function step(o: { state?: WatchState; apiState?: TradeState; paused?: boolean; closed?: boolean; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean; upSince?: Date }) {
   return watchStep({
-    trade: { state: o.apiState ?? 'funding', ...(o.paused !== undefined ? { paused: o.paused } : {}) },
+    trade: { state: o.apiState ?? 'funding', ...(o.paused !== undefined ? { paused: o.paused } : {}), ...(o.closed !== undefined ? { closed: o.closed } : {}) },
     funds: o.f,
     spend: o.spend ?? null,
     ...(o.claimed !== undefined ? { claimed: o.claimed } : {}),
@@ -798,5 +799,49 @@ describe('watchShowsEmpty', () => {
     expect(watchShowsEmpty({ ...s, channelsClosed: false })).toBe(false);
     // Review 22 Nov m1: never before the watch saw the trade close, even with the channels closed.
     expect(watchShowsEmpty({ ...newWatchState(), channelsClosed: true })).toBe(false);
+  });
+});
+
+// Finding F1: a funding trade past fundBy with no coin lapses with its record closed (the machine
+// sets closedAt), in state `lapsed`, which is deliberately not one of CLOSED_STATES (a lapsed trade
+// with coins must still settle its lapse refund). The API's watch list says which through `closed`.
+describe('a trade that lapsed with no coin is closed; one with coins stays open (finding F1)', () => {
+  test('isClosed: CLOSED_STATES whatever `closed` says; lapsed only when its record is closed; nothing else', () => {
+    for (const s of ['released', 'refunded', 'cancelled']) {
+      expect(isClosed(s)).toBe(true);
+      expect(isClosed(s, false)).toBe(true);
+    }
+    expect(isClosed('lapsed', true)).toBe(true);
+    expect(isClosed('lapsed', false)).toBe(false);
+    expect(isClosed('lapsed')).toBe(false); // an older API that leaves `closed` out
+    expect(isClosed('lapsed', null)).toBe(false);
+    for (const s of ['setup', 'funding', 'securing', 'secured', 'paid', 'settling', 'disputed']) expect(isClosed(s, true)).toBe(false);
+  });
+
+  test('watchStep closes a coinless lapsed trade whose record is closed, closes the channels, and ends the watch 30 days on', () => {
+    const empty = funds([]);
+    const r1 = step({ apiState: 'lapsed', closed: true, f: empty, now: at(0) });
+    expect(r1.state.closedAt).toEqual(at(0));
+    expect(r1.closeChannels).toBe(true);
+    expect(watchShowsEmpty(r1.state)).toBe(true);
+    expect(step({ apiState: 'lapsed', closed: true, state: r1.state, f: empty, now: at(29 * DAY_MIN) }).watching).toBe(true);
+    expect(step({ apiState: 'lapsed', closed: true, state: r1.state, f: empty, now: at(31 * DAY_MIN) }).watching).toBe(false);
+  });
+
+  test('a late coin on a coinless lapsed trade escalates, as on any closed trade', () => {
+    const r1 = step({ apiState: 'lapsed', closed: true, f: funds([]), now: at(0) });
+    const r2 = step({ apiState: 'lapsed', closed: true, state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: at(10) });
+    expect(r2.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    expect(r2.state.escalationPending).toBe(true);
+  });
+
+  test('a lapsed trade with coins (record open), or one from an API that leaves `closed` out, stays open', () => {
+    const coins = funds([inc(HASH_A, 1000n, 30)]);
+    for (const closed of [false, undefined]) {
+      const r = step({ apiState: 'lapsed', ...(closed !== undefined ? { closed } : {}), f: coins, now: at(0) });
+      expect(r.state.closedAt).toBeNull();
+      expect(r.reports.some((x) => x.kind === 'late-funds')).toBe(false);
+      expect(step({ apiState: 'lapsed', ...(closed !== undefined ? { closed } : {}), state: r.state, f: coins, now: at(40 * DAY_MIN) }).watching).toBe(true);
+    }
   });
 });

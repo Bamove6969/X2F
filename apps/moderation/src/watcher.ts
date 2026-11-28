@@ -1,7 +1,7 @@
 import type { Funds, Outgoing, PartyHandle } from '@x2f/escrow';
 import {
-  CLOSED_STATES,
   channelFor,
+  isClosed,
   modPartyPlan,
   newWatchState,
   sweepMinimums,
@@ -475,7 +475,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     }
     const item = fresh.item;
     const step = watchStep({
-      trade: { state: item.state as TradeState, paused: item.paused },
+      trade: { state: item.state as TradeState, paused: item.paused, closed: item.closed },
       funds: facts.funds,
       spend,
       state,
@@ -511,7 +511,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     // closed with no coin stops counting at once, as the API releases its hold, so an unfunded trade
     // cannot block the lien's recovery for the whole watch. Any coin this watcher then sees before a
     // sweep makes it count again (late coins can still be ruled for the buyer, paying it).
-    else if (CLOSED_STATES.includes(item.state as TradeState) && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade, 'seller');
+    else if (isClosed(item.state, item.closed) && neverFunded(step.state)) await freeLienRecoveries(o.db, row.trade, 'seller');
     else if (!neverFunded(step.state) && step.state.sweepTxs.length === 0) await unfreeLienRecoveries(o.db, row.trade, 'seller');
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
@@ -602,7 +602,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           closedHere = false;
         }
         if (!closedHere) continue;
-        item = { state: 'cancelled', chat: null, settleKind: null, paused: false };
+        item = { state: 'cancelled', chat: null, settleKind: null, paused: false, closed: true };
         unlisted = item;
       }
       const apiState = item.state as TradeState;
@@ -614,6 +614,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           escrowAddress: row.escrow_address,
           setupDoneReported: row.setup_done_at !== null,
           apiState,
+          apiClosed: item.closed,
           watching,
         });
         if (plan.stop) {
@@ -632,7 +633,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
         // Review lead-mod-purge M1: a trade the API shows closed before any escrow address existed
         // here has nothing to watch. modPartyPlan stops only a running party, so after a restart such
         // a row would watch for good; it stops watching the same way.
-        if (!plan.start && !running.has(row.trade) && !starting.has(row.trade) && row.escrow_address === null && CLOSED_STATES.includes(apiState as (typeof CLOSED_STATES)[number])) {
+        if (!plan.start && !running.has(row.trade) && !starting.has(row.trade) && row.escrow_address === null && isClosed(apiState, item.closed)) {
           await freeLienRecoveries(o.db, row.trade);
           await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
           o.log({ reason: 'watch-ended-no-escrow' });

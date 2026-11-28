@@ -54,7 +54,7 @@
  *   settling episode never gets a second claim. The 6 h fallback then counts from the later of the
  *   episode's start and the claim.
  */
-import type { TradeState } from './machine.js';
+import { isClosed, type TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
 import { UNLOCK_CONFIRMATIONS } from './timers.js';
 
@@ -158,7 +158,6 @@ export interface WatchStepResult {
 }
 
 const TX_HASH = /^[0-9a-f]{64}$/;
-const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 const DAY_MS = 24 * 60 * 60_000;
 
 export function newWatchState(): WatchState {
@@ -252,8 +251,11 @@ const same = (a: ChainFacts | null, b: ChainFacts): boolean =>
   a !== null && a.receivedAtomic === b.receivedAtomic && a.unlockedAtomic === b.unlockedAtomic && a.confirmations === b.confirmations;
 
 export function watchStep(a: {
-  /** The API trade: its state, and whether it is paused for maintenance (the fallback does not run then). */
-  trade: { state: TradeState; paused?: boolean };
+  /**
+   * The API trade: its state, whether it is paused for maintenance (the fallback does not run then),
+   * and whether the API's record is closed (finding F1: a coinless `lapsed` trade is closed; absent reads as false).
+   */
+  trade: { state: TradeState; paused?: boolean; closed?: boolean };
   funds: EscrowFunds;
   spend: SpendEvidence | null;
   state: WatchState;
@@ -270,7 +272,7 @@ export function watchStep(a: {
   const chainHeight = funds.chainHeight;
   let s: WatchState = { ...a.state };
   const reports: WatchReport[] = [];
-  const apiClosed = CLOSED.includes(a.trade.state);
+  const apiClosed = isClosed(a.trade.state, a.trade.closed);
 
   // Open again after our close (escalated, or disputed after a refund): note it; its next close
   // restarts the 30 days, counted from that latest close.

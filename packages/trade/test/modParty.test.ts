@@ -168,3 +168,19 @@ describe('modPartyArgs (the runParty arguments for the moderator)', () => {
     expect(asked).toEqual([]);
   });
 });
+
+describe('a trade that lapsed with no coin ends its party like any closed trade (finding F1)', () => {
+  test('lapsed with its record closed: no start without an escrow, stop once the watch ended', () => {
+    expect(modPartyPlan(facts({ running: true, apiState: 'lapsed', apiClosed: true }))).toEqual({ start: false, reportSetupDone: null, stop: true });
+    expect(modPartyPlan(facts({ apiState: 'lapsed', apiClosed: true })).start).toBe(false);
+    expect(modPartyPlan(facts({ running: true, escrowAddress: '4escrow', apiState: 'lapsed', apiClosed: true, setupDoneReported: true })).stop).toBe(false);
+    expect(modPartyPlan(facts({ running: true, escrowAddress: '4escrow', apiState: 'lapsed', apiClosed: true, watching: false, setupDoneReported: true })).stop).toBe(true);
+  });
+
+  test('lapsed with coins (record open), or `apiClosed` left out: the party is kept', () => {
+    for (const apiClosed of [false, undefined]) {
+      const f = facts({ running: true, escrowAddress: '4escrow', apiState: 'lapsed', watching: false, setupDoneReported: true, ...(apiClosed !== undefined ? { apiClosed } : {}) });
+      expect(modPartyPlan(f).stop).toBe(false);
+    }
+  });
+});

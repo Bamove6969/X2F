@@ -1,6 +1,6 @@
 import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
-import { CLOSED_STATES, attestedSellerRecovery, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
+import { CLOSED_STATES, attestedSellerRecovery, isClosed, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { apiShowsSellerCancel, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
 import { apiAllows, buyerCancelStep } from './buyerCancel.js';
@@ -67,8 +67,8 @@ export interface DeskRecord {
 
 export interface DeskStep {
   handle: PartyHandle;
-  /** The API's watch-list item: its state and settlement kind, and maintenance (`paused`). */
-  api: { state: string; settleKind?: string | null; paused?: boolean };
+  /** The API's watch-list item: its state and settlement kind, maintenance (`paused`), and whether its record is closed (`closed`, finding F1). */
+  api: { state: string; settleKind?: string | null; paused?: boolean; closed?: boolean };
   escrowAddress: string | null;
   /** The watcher reports this pass posted (all accepted). */
   reports: readonly WatchReport[];
@@ -559,8 +559,9 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
 
     // 3. The refunds the moderator may sign alone. Never once the trade is over (review M4).
     const over =
-      CLOSED.includes(s.api.state) ||
-      (r.shadow !== null && CLOSED.includes(r.shadow.state)) ||
+      // Finding F1: a coinless lapsed trade is over too (its record is closed), never one with coins.
+      isClosed(s.api.state, s.api.closed) ||
+      (r.shadow !== null && isClosed(r.shadow.state, r.shadow.closedAt !== null)) ||
       Boolean(s.settledTx) ||
       s.reports.some((x) => x.kind === 'settled');
     if (over) {

@@ -214,6 +214,16 @@ const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured'];
 /** The closed states (a trade in one of these is done; its escrow holds nothing to settle). */
 export const CLOSED_STATES: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 const CLOSED = CLOSED_STATES;
+/**
+ * Whether a trade seen from outside the API (the moderation watcher, desk, party plan, shred) is
+ * closed, from its state and whether the API's trade record is closed (`closedAt` set, the watch
+ * list's `closed`). Finding F1: a `lapsed` trade is closed only when it lapsed with no coin (the
+ * machine sets `closedAt` then); a lapsed trade with coins stays open until its lapse refund
+ * settles, so `lapsed` is never one of CLOSED_STATES. `closed` missing (an older API) reads as false.
+ */
+export function isClosed(state: string, closed?: boolean | null): boolean {
+  return (CLOSED as readonly string[]).includes(state) || (state === 'lapsed' && closed === true);
+}
 /** States in which a settlement seen on chain is recorded: every open state an escrow can hold coins in. */
 const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'lapsed'];
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */
