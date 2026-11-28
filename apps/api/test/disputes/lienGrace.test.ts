@@ -1060,4 +1060,64 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     expect(res.statusCode, res.body).toBe(200);
     expect((await lienOf(r.code)).recovery_rate_bps).toBe(3500);
   });
+
+  it('lateAfterRelease payout after off-platform repayment records 0 recoveries, logs lien.over-recovered, and raises an owner alert (fix-over-recovered-alert)', async () => {
+    await staff('owner');
+    const r = await ruled();
+    const l = await lienOf(r.code);
+
+    // Seed another trade with an attested buyer recovery hold, then release that hold (as releaseStaleHolds does).
+    const paidAtomic = '100000';
+    const seller = await newTrader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: l.debtor, poster: 'seller' });
+    await deps.db.query(
+      `insert into lien_recovery_holds (lien_id, trade_code, amount_atomic, rate_bps, address, address_statement, address_sig, created_at)
+       values ($1, $2, $3, 10000, '5' || repeat('A', 94), '{}'::jsonb, repeat('0', 128), $4)`,
+      [l.id, trade.code, paidAtomic, deps.clock()],
+    );
+    await deps.db.query(
+      `insert into trade_attestations (code, attestation, sig) values ($1, $2::jsonb, repeat('0', 128))`,
+      [trade.code, JSON.stringify({ terms: { lienRecovery: { amountAtomic: paidAtomic } } })],
+    );
+    await deps.db.query(
+      `update lien_recovery_holds set status = 'released', closed_at = $2, address = null, address_statement = null, address_sig = null where trade_code = $1`,
+      [trade.code, deps.clock()],
+    );
+
+    // Mark the lien paid off-platform via the real staff route.
+    const tapId = await seedTap(deps, r.mod.id, { kind: 'lien-paid-off-platform', lienId: l.id });
+    expect((await r.mod.b.post(`/staff/v1/liens/${l.id}/paid-off-platform`, { tapId })).statusCode).toBe(200);
+    expect((await lienOf(r.code)).repaid_off_platform_at).not.toBeNull();
+
+    // Late payout settles the released hold through the attested-terms lateAfterRelease path.
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      const pending = await settleRecovery(c, trade.code, 'completed', true, deps.clock());
+      for (const entry of pending) {
+        await appendLog(c, { at: deps.clock(), actor: { kind: 'system' }, tradeCode: trade.code, action: entry.action, detail: entry.detail });
+      }
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    expect((await deps.db.query('select 1 from lien_recoveries where lien_id = $1', [l.id])).rowCount).toBe(0);
+    expect((await deps.db.query<{ status: string }>('select status from lien_recovery_holds where trade_code = $1', [trade.code])).rows[0]?.status).toBe('released');
+
+    const overLog = (await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'lien.over-recovered'`,
+      [trade.code],
+    )).rows.map((x) => JSON.parse(x.detail) as unknown);
+    expect(overLog).toContainEqual({ lienId: l.id, amountAtomic: paidAtomic });
+
+    const ownerAlerts = (await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'lien-over-recovered' order by created_at, id`,
+      [ownerId!],
+    )).rows.map((x) => x.detail);
+    expect(ownerAlerts).toContainEqual({ trade: trade.code, lienId: l.id, amountAtomic: paidAtomic });
+  });
 });
