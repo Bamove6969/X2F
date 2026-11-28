@@ -223,8 +223,9 @@ describe('describeLog', () => {
     expect(req({})).toBe('Wrote to both traders');
     expect(req({ to: 'buyer' })).toBe('Wrote privately to the buyer');
     expect(req({ to: 'seller' })).toBe('Wrote privately to the seller');
-    expect(req({ to: 'buyer', mode: true })).toBe('Changed private mode for the buyer');
-    expect(req({ to: 'seller', mode: true })).toBe('Changed private mode for the seller');
+    expect(req({ to: 'buyer', mode: true })).toBe('Asked to change private mode for the buyer');
+    expect(req({ to: 'seller', mode: true })).toBe('Asked to change private mode for the seller');
+    expect(req({ mode: true })).toBe('Asked to change private mode');
 
     const sent = (detail: Record<string, unknown>) => describeLog({ action: 'chat.message-sent', detail, actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } });
     expect(sent({ envelopeId: 'e1' })).toBe('The message to both traders was sent');
