@@ -56,7 +56,7 @@ export const BAN_TIER_COPY: Readonly<Record<BanTier, { page: string; chip: strin
     title: 'Your account has been suspended',
     lead: SUSPENSION_NOTICE_LEAD,
     // not-a-refusal: says what the suspension means, on its own notice
-    means: "You can't log in to X2F until the suspension is lifted. You can still finish trades and disputes that are already under way.",
+    means: "You can't use X2F until the suspension is lifted. You can still finish trades and disputes that are already under way.",
   },
   lifetime: {
     page: 'Account banned',
@@ -64,9 +64,22 @@ export const BAN_TIER_COPY: Readonly<Record<BanTier, { page: string; chip: strin
     title: 'Your account has been permanently banned',
     lead: BAN_NOTICE_LEAD,
     // not-a-refusal: says what the lifetime ban means, on its own notice
-    means: "This ban is permanent: you can't log in to X2F again. You can still finish trades and disputes that are already under way.",
+    means: "This ban is permanent: you can't use X2F again. You can still finish trades and disputes that are already under way.",
   },
 };
+
+/** The reason line for a reason code this app does not know (a newer API): never an empty notice. COPY-UNSIGNED */
+export const BAN_REASON_UNKNOWN = 'Ask a moderator for the details';
+
+/**
+ * A trade ban that outlasts the suspension shown (review, 28 Nov): it carries on after the
+ * suspension is lifted. COPY-UNSIGNED, DESIGNER-REVIEW
+ */
+export function tradeBanAfterText(until: string | null): string {
+  return until === null
+    ? 'After the suspension is lifted, your trade ban continues for good, so new trades stay off.'
+    : `After the suspension is lifted, your trade ban continues until ${formatDateTime(until)}, so new trades stay off until then.`;
+}
 
 /** Review S1: above the links to what is still open. COPY-UNSIGNED, DESIGNER-REVIEW (no board) */
 export const BAN_UNFINISHED_LEAD = 'You can still finish these:';
@@ -77,6 +90,10 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
   const site = ban.kind === 'site';
   const tier = banTier(ban);
   const copy = BAN_TIER_COPY[tier];
+  // A trade ban standing with a suspension, and ending later (or never): it outlasts the suspension.
+  const trade = site ? notice.bans.find((b) => b.kind === 'trade') : undefined;
+  const tradeAfter =
+    tier === 'suspension' && trade !== undefined && ban.until !== null && (trade.until === null || Date.parse(trade.until) > Date.parse(ban.until)) ? trade : null;
   const c = notice.contacts;
   const links = [
     ...(c.matrixUrl ? [{ label: 'Matrix', href: c.matrixUrl }] : []),
@@ -93,7 +110,7 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
         <dl className="x2f-frozen__facts" data-tier={tier}>
           <div>
             <dt>Reason</dt>
-            <dd data-part="ban-reason">{BAN_REASON_TEXT[ban.reasonCode]}</dd>
+            <dd data-part="ban-reason">{ban.reasonCode !== null ? BAN_REASON_TEXT[ban.reasonCode] : BAN_REASON_UNKNOWN}</dd>
           </div>
           {isMoment(ban.implementedAt) ? (
             <div>
@@ -115,6 +132,7 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
       </Hero>
       <section className="x2f-frozen__card" aria-label="What this means" data-part="ban-means">
         <p>{copy.means}</p>
+        {tradeAfter !== null ? <p data-part="ban-trade-after">{tradeBanAfterText(tradeAfter.until)}</p> : null}
       </section>
       {site && notice.unfinished && notice.unfinished.length > 0 && (
         <section className="x2f-frozen__card" aria-label="Still to finish" data-part="ban-unfinished">

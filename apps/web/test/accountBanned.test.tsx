@@ -4,7 +4,9 @@
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { banTier, parseBanNotice } from '../src/api/ban.js';
-import { AccountBanned, BAN_NOTICE_LEAD, BAN_REASON_TEXT, BAN_TIER_COPY, BAN_UNFINISHED_LEAD, SUSPENSION_NOTICE_LEAD, type BanNotice } from '../src/screens/account/AccountBanned.js';
+import {
+  AccountBanned, BAN_NOTICE_LEAD, BAN_REASON_TEXT, BAN_REASON_UNKNOWN, BAN_TIER_COPY, BAN_UNFINISHED_LEAD, SUSPENSION_NOTICE_LEAD, type BanNotice,
+} from '../src/screens/account/AccountBanned.js';
 import { render } from './render.js';
 
 const CONTACTS = { moderatorUrl: null, matrixUrl: 'https://matrix.to/#/#x2f-mods:matrix.org', telegramUrl: 'https://t.me/x2f_mods' };
@@ -33,7 +35,9 @@ describe('AccountBanned (Task 27, D-020)', () => {
     expect(host.querySelector('[data-part="ban-end"]')?.textContent).toBe('Your suspension will be lifted automatically on 19 Nov 2026, 12:00 UTC.');
     expect(host.querySelector('[data-part="ban-end"]')?.previousElementSibling?.textContent).toBe('Lifted automatically');
     expect(host.querySelector('[data-part="ban-means"]')?.textContent).toBe(BAN_TIER_COPY.suspension.means);
-    expect(BAN_TIER_COPY.suspension.means).toContain('You can still finish trades and disputes that are already under way.');
+    expect(BAN_TIER_COPY.suspension.means).toBe("You can't use X2F until the suspension is lifted. You can still finish trades and disputes that are already under way.");
+    // A site-banned person does log in (that is how they reach this notice): never "can't log in".
+    for (const t of Object.values(BAN_TIER_COPY)) expect(t.means).not.toContain('log in to X2F');
     const links = [...host.querySelectorAll('a[data-part="ban-contact"]')].map((a) => [a.textContent, a.getAttribute('href')]);
     expect(links).toEqual([['Matrix', CONTACTS.matrixUrl], ['Telegram', CONTACTS.telegramUrl]]);
   });
@@ -50,7 +54,7 @@ describe('AccountBanned (Task 27, D-020)', () => {
     expect(BAN_NOTICE_LEAD).toBe("We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator and ask to speak to a moderator for further details.");
     expect(host.querySelector('[data-part="ban-implemented"]')?.textContent).toBe('1 Nov 2026, 08:00 UTC');
     expect(host.querySelector('[data-part="ban-end"]')?.textContent).toBe('Permanent');
-    expect(host.querySelector('[data-part="ban-means"]')?.textContent).toBe("This ban is permanent: you can't log in to X2F again. You can still finish trades and disputes that are already under way.");
+    expect(host.querySelector('[data-part="ban-means"]')?.textContent).toBe("This ban is permanent: you can't use X2F again. You can still finish trades and disputes that are already under way.");
     expect(host.textContent).not.toContain('suspended');
     expect(host.querySelectorAll('a[data-part="ban-contact"]')).toHaveLength(0);
   });
@@ -85,6 +89,36 @@ describe('AccountBanned (Task 27, D-020)', () => {
     expect(host.querySelector('[data-part="ban-implemented"]')?.textContent).toBe('12 Nov 2026, 09:30 UTC');
   });
 
+  it('review: an unknown reason code keeps the ban (never an empty notice, which would loop through the 403 redirect) and shows a generic reason', () => {
+    const n = parseBanNotice({
+      bans: [{ kind: 'site', reasonCode: 'some-new-reason', until: '2026-11-19T12:00:00.000Z', permanent: false, implementedAt: '2026-11-12T09:30:00.000Z' }],
+      contacts: CONTACTS,
+    });
+    expect(n.bans).toEqual([{ kind: 'site', reasonCode: null, until: '2026-11-19T12:00:00.000Z', permanent: false, implementedAt: '2026-11-12T09:30:00.000Z' }]);
+    expect(parseBanNotice({ bans: [{ kind: 'trade', reasonCode: 42, until: null }], contacts: CONTACTS }).bans).toEqual([{ kind: 'trade', reasonCode: null, until: null, permanent: true }]);
+    const { host } = mount(n);
+    expect(host.querySelector('h1')?.textContent).toBe('Your account has been suspended');
+    expect(host.querySelector('[data-part="ban-reason"]')?.textContent).toBe(BAN_REASON_UNKNOWN);
+    expect(host.querySelector('[data-part="ban-end"]')?.textContent).toBe('Your suspension will be lifted automatically on 19 Nov 2026, 12:00 UTC.');
+  });
+
+  it('review: a trade ban that outlasts the suspension says it continues until its date, or for good; one that ends first says nothing', () => {
+    const SUSP = { kind: 'site', reasonCode: 'abuse', until: '2026-11-19T12:00:00.000Z', permanent: false, implementedAt: '2026-11-12T09:30:00.000Z' } as const;
+    const after = (trade: BanNotice['bans'][number]) => mount({ bans: [trade, SUSP], contacts: CONTACTS }).host.querySelector('[data-part="ban-trade-after"]')?.textContent ?? null;
+    expect(after({ kind: 'trade', reasonCode: 'terms', until: '2026-12-19T12:00:00.000Z', permanent: false })).toBe(
+      'After the suspension is lifted, your trade ban continues until 19 Dec 2026, 12:00 UTC, so new trades stay off until then.',
+    );
+    expect(after({ kind: 'trade', reasonCode: 'terms', until: null, permanent: true })).toBe('After the suspension is lifted, your trade ban continues for good, so new trades stay off.');
+    expect(after({ kind: 'trade', reasonCode: 'terms', until: '2026-11-15T12:00:00.000Z', permanent: false })).toBeNull();
+    expect(after({ kind: 'trade', reasonCode: 'terms', until: SUSP.until, permanent: false })).toBeNull();
+    // A suspension alone, or a lifetime ban with a trade ban (the site ban never ends): no such line.
+    expect(mount({ bans: [SUSP], contacts: CONTACTS }).host.querySelector('[data-part="ban-trade-after"]')).toBeNull();
+    expect(
+      mount({ bans: [{ kind: 'trade', reasonCode: 'terms', until: null, permanent: true }, { kind: 'site', reasonCode: 'abuse', until: null, permanent: true }], contacts: CONTACTS })
+        .host.querySelector('[data-part="ban-trade-after"]'),
+    ).toBeNull();
+  });
+
   it('an older API without implementedAt: no implemented line, the rest as before', () => {
     const { host } = mount({ bans: [{ kind: 'site', reasonCode: 'abuse', until: '2026-11-19T12:00:00.000Z', permanent: false }], contacts: CONTACTS });
     expect(host.querySelector('[data-part="ban-implemented"]')).toBeNull();
@@ -103,7 +137,6 @@ describe('AccountBanned (Task 27, D-020)', () => {
       bans: [
         { kind: 'site', reasonCode: 'abuse', until: '2026-11-19T12:00:00.000Z', permanent: false, implementedAt: '2026-11-12T09:30:00.000Z' },
         { kind: 'trade', reasonCode: 'terms', until: null, permanent: true, implementedAt: 'yesterday' },
-        { kind: 'site', reasonCode: 'nope', until: null, permanent: true },
         { kind: 'other', reasonCode: 'abuse', until: null, permanent: true },
         { kind: 'site', reasonCode: 'abuse', until: 'soon', permanent: false },
       ],

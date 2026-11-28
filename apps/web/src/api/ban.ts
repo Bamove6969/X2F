@@ -15,7 +15,8 @@ export type BanTier = 'trade' | 'suspension' | 'lifetime';
 
 export interface BanInForce {
   kind: 'trade' | 'site';
-  reasonCode: BanReasonCode;
+  /** The general reason; null when this app does not know the code (the notice says a generic line). */
+  reasonCode: BanReasonCode | null;
   until: string | null;
   permanent: boolean;
   /** When the ban was placed (its `created_at`); absent from an older API. */
@@ -42,13 +43,15 @@ const link = (v: unknown): string | null => (typeof v === 'string' && v !== '' ?
 function parseBan(raw: unknown): BanInForce | null {
   const b = rec(raw);
   if (b === null || (b.kind !== 'trade' && b.kind !== 'site')) return null;
-  if (typeof b.reasonCode !== 'string' || !Object.hasOwn(BAN_REASON_TEXT, b.reasonCode)) return null;
+  // An unknown reason keeps the ban: dropping it would leave an empty notice, and the notice route
+  // would send the person home, where the API's 403 `banned` sends them back (client.ts).
+  const reasonCode = typeof b.reasonCode === 'string' && Object.hasOwn(BAN_REASON_TEXT, b.reasonCode) ? (b.reasonCode as BanReasonCode) : null;
   const until = b.until === null ? null : isoTime(b.until);
   if (until === null && b.until !== null) return null;
   const implementedAt = isoTime(b.implementedAt);
   return {
     kind: b.kind,
-    reasonCode: b.reasonCode as BanReasonCode,
+    reasonCode,
     until,
     permanent: until === null,
     ...(implementedAt !== null ? { implementedAt } : {}),
