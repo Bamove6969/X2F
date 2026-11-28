@@ -577,6 +577,11 @@ export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: stri
  * `verifyOnly`: nothing is settled or co-signed), then `lienCreditorsOf`. Any ruling that does not
  * verify: null. Re-review N2: also null when the gate has seen a round-2 ruling for the trade and the
  * API presents none (a hidden appeal). Partial: an appeal the gate never saw cannot be known here.
+ * Review F2: a `verifyOnly` check of round 1 is not refused as stale once the appeal is authorised
+ * (so the verifier answers the same on every call). Round 1 refused only for its signer's standing
+ * now (`revoked`: switched off, removed or reset since) counts only with an appeal, whose check is
+ * given round 1 and holds it to its own taps (as the executor's, `execute.ts`), so its outcome is
+ * the one its signers tapped.
  */
 export function lienRulingVerifier(o: { store: GateStore; source: Pick<RulingSource, 'storedRulings' | 'rulingTaps' | 'ownerKeys' | 'usedTaps' | 'credential' | 'invite' | 'staff'>; ctx: GateContext }): LienRulings {
   return {
@@ -585,17 +590,27 @@ export function lienRulingVerifier(o: { store: GateStore; source: Pick<RulingSou
       const r1 = stored.current?.round === 1 ? stored.current : stored.round1;
       if (r1 === null) return null;
       const a1 = await gateCheck(o.store, o.source, { ruling: r1, recorded, balanceAtomic: 0n, verifyOnly: true }, o.ctx);
-      if (!a1.ok) return null;
+      const appeal = stored.current !== null && stored.current.round === 2 ? stored.current : null;
+      if (!a1.ok && (a1.reason !== 'revoked' || appeal === null)) {
+        o.ctx.log({ reason: `gate.refused.lien-round1-${a1.reason}` });
+        return null;
+      }
       let r2 = null;
-      if (stored.current !== null && stored.current.round === 2) {
-        const a2 = await gateCheck(o.store, o.source, { ruling: stored.current, recorded, balanceAtomic: 0n, involved: stored.involved, verifyOnly: true }, o.ctx);
-        if (!a2.ok) return null;
-        r2 = stored.current.outcome;
+      if (appeal !== null) {
+        const a2 = await gateCheck(o.store, o.source, { ruling: appeal, recorded, balanceAtomic: 0n, involved: stored.involved, round1: r1, verifyOnly: true }, o.ctx);
+        if (!a2.ok) {
+          o.ctx.log({ reason: `gate.refused.lien-round2-${a2.reason}` });
+          return null;
+        }
+        r2 = appeal.outcome;
       } else {
         // Re-review N2: the API may hide the appeal and serve round 1 alone. When this gate has seen
         // a round-2 ruling for the trade that the API did not present, nothing verifies.
         const want = normalizeTradeCode(code);
-        if (Object.values(o.store.state.rulingsSeen).some((seen) => seen.code === want && seen.round >= 2)) return null;
+        if (Object.values(o.store.state.rulingsSeen).some((seen) => seen.code === want && seen.round >= 2)) {
+          o.ctx.log({ reason: 'gate.refused.lien-hidden-appeal' });
+          return null;
+        }
       }
       return lienCreditorsOf(r1.outcome, r2);
     },

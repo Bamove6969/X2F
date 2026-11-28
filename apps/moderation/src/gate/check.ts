@@ -25,8 +25,12 @@ export function gateCheck(
     await syncRegistry(source, store.state, ctx);
     const taps = await source.rulingTaps(input.ruling.id);
     const { round1: r1, ...rest } = input;
-    // Review p4t22 N1: round 1's own taps, for round 2 only and only while the gate has not seen round 1.
-    const round1 = input.ruling.round === 2 && r1 !== undefined && !Object.hasOwn(store.state.rulingsSeen, r1.id) ? { ruling: r1, taps: await source.rulingTaps(r1.id) } : undefined;
+    // Review p4t22 N1: round 1's own taps, for round 2 only and only while the gate has not seen round 1
+    // (review F2: always for a `verifyOnly` check, which holds round 1 to its taps; see `authorizeRuling`).
+    const round1 =
+      input.ruling.round === 2 && r1 !== undefined && (input.verifyOnly === true || !Object.hasOwn(store.state.rulingsSeen, r1.id))
+        ? { ruling: r1, taps: await source.rulingTaps(r1.id) }
+        : undefined;
     const result = await authorizeRuling(store.state, { ...rest, taps, ...(round1 ? { round1 } : {}) }, ctx);
     await store.save();
     return result;

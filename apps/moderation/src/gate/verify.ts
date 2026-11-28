@@ -236,7 +236,9 @@ export interface RulingInput {
   /**
    * Review B1 (lien recovery): only whether the ruling is authorised (its taps, its signers), as the
    * moderation service checks a recovery's source trade; no payout is worked out (`settle: null`),
-   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle.
+   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle,
+   * except (review F2) that round 1 is not refused as `stale-round` once an appeal is authorised, a
+   * `signersOnly` entry stays so, and round 2's `round1` is checked also when the gate has seen it.
    */
   verifyOnly?: boolean;
 }
@@ -427,7 +429,10 @@ function round2Authorised(g: GateState, rul: GateRuling): boolean {
 export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
   if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
   if (g.stopped) return refuse('stopped');
-  if (r.ruling?.round === 1 && round2Authorised(g, r.ruling)) return refuse('stale-round');
+  // Review F2: a `verifyOnly` check (the lien verifier) pays nothing, so it reads round 1 also once
+  // an appeal is authorised; only the executor's settle is held to the appeal here. Its success never
+  // upgrades a round 1 seen for its signers only (`signersOnly` is kept below).
+  if (r.verifyOnly !== true && r.ruling?.round === 1 && round2Authorised(g, r.ruling)) return refuse('stale-round');
   let e = await examine(g, r, ctx, false);
   if (!e.ok && STANDING.has(e.reason) && wasAuthorised(g, r.ruling)) {
     // Review p4t22 F1: a ruling this gate already authorised stays authorised when a signer is
@@ -446,14 +451,22 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     // Review B2: R37 rests on round 1 as this gate authorised it (same trade, round 1), never on
     // the database alone; the log's list can only add people to it.
     let r1 = Object.hasOwn(g.rulingsSeen, rul.round1Id) ? g.rulingsSeen[rul.round1Id] : undefined;
-    if (r1 === undefined && r.round1 !== undefined) {
+    // Review F2: a `verifyOnly` check holds the given round 1 to its taps also when the gate has seen
+    // it, so the lien verifier can rest round 1's outcome on this check when round 1's signer has
+    // since lost standing (a compromised API never swaps it).
+    if (r.round1 !== undefined && (r1 === undefined || r.verifyOnly === true)) {
       // Review p4t22 N1: the round 1 the appeal names, by someone since switched off or removed.
       const given = r.round1.ruling;
       if (given?.id !== rul.round1Id || given.round !== 1 || given.round1Id !== undefined) return refuse('round1-unseen');
-      const p = await examine(g, { ruling: given, taps: r.round1.taps, recorded: r.recorded }, ctx, true);
+      const g1 = { ruling: given, taps: r.round1.taps, recorded: r.recorded };
+      // Seen and authorised: F1's re-check on the very taps and intents it was authorised on. Seen for its
+      // signers only, or unseen: N1's reading (past signers' keys count; held to its recorded intents).
+      const p = r1 !== undefined && r1.signersOnly !== true ? await examine(g, g1, ctx, false, true) : await examine(g, g1, ctx, true);
       if (!p.ok || p.code !== code) return refuse('round1-unseen');
-      pastRound1 = p;
-      r1 = { code: p.code, round: 1, signers: p.signers, publishedSeenAt: ctx.now().toISOString() };
+      if (r1 === undefined) {
+        pastRound1 = p;
+        r1 = { code: p.code, round: 1, signers: p.signers, publishedSeenAt: ctx.now().toISOString() };
+      }
     }
     if (r1 === undefined || r1.code !== code || r1.round !== 1) return refuse('round1-unseen');
     const involved = new Set([...r1.signers, ...(r.involved ?? [])]);
@@ -503,6 +516,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     intentsSha256: seen?.intentsSha256 ?? intentsSha256,
     publishedSeenAt: seen?.publishedSeenAt ?? ctx.now().toISOString(),
     ...(seen?.firstSeenFinalAt !== undefined ? { firstSeenFinalAt: seen.firstSeenFinalAt } : {}),
+    // Review F2: a ruling seen for its signers only stays so (never authorised by a later check).
+    ...(seen?.signersOnly === true ? { signersOnly: true } : {}),
   };
   return { ok: true, settle };
 }

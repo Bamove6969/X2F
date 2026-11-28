@@ -1777,16 +1777,162 @@ describe('lienRulingVerifier (review B1)', () => {
     w.api.taps.push(tapBy(senior, r2.intent('propose')));
     w.api.rulings.set(r1.ruling.code, { current: r2.ruling, round1: r1.ruling, involved: [] });
     await withStore(w, async (store) => {
-      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      const logs: string[] = [];
+      const v = lienRulingVerifier({ store, source: w.api, ctx: { ...ctx(), log: (e) => logs.push(e.reason) } });
       // The honest view: the appeal overruled the order to pay, so the buyer is no creditor (the gate now has round 2 in rulingsSeen).
       const honest = await v.creditors(r1.ruling.code, recorded(41_250n));
       expect(honest).not.toBeNull();
       expect(honest).not.toContain('buyer');
-      // The API hides the appeal: round 1 alone would name the buyer.
+      // Review F2: the same answer on a second call (round 1 is not refused as stale under verifyOnly).
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(honest);
+      expect(logs).toEqual([]);
+      // The API hides the appeal: round 1 alone would name the buyer. Refused as a hidden appeal (N2); round 1 itself verifies.
       w.api.rulings.set(r1.ruling.code, { current: r1.ruling, round1: null, involved: [] });
       expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(logs).toEqual(['gate.refused.lien-hidden-appeal']);
       w.api.rulings.set(r1.ruling.code, { current: null, round1: r1.ruling, involved: [] });
       expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(logs).toEqual(['gate.refused.lien-hidden-appeal', 'gate.refused.lien-hidden-appeal']);
+    });
+  });
+
+  /** Review F2: round 1 by a moderator (release to the buyer), overturned on appeal by a senior (refund to the seller), both as the API stores them. */
+  async function appealed(w: World) {
+    const mod = w.hire('mod');
+    const senior = w.hire('senior');
+    const r1 = ruling(mod, { outcome: 'release-to-buyer' });
+    w.api.taps.push(tapBy(mod, r1.intent('propose')));
+    const r2 = ruling(senior, { round: 2, round1Id: r1.ruling.id, code: r1.ruling.code, outcome: 'refund-to-seller' });
+    w.api.taps.push(tapBy(senior, r2.intent('propose')));
+    w.api.rulings.set(r1.ruling.code, { current: r2.ruling, round1: r1.ruling, involved: [] });
+    const switchOff = async (store: Awaited<ReturnType<typeof freshGate>>) => {
+      w.api.staffRows.get(mod.id)!.switchedOff = true;
+      await store.exclusive(async () => syncRegistry(w.api, store.state, ctx()));
+      expect(store.state.staff[mod.id]!.revoked).toBe(true);
+    };
+    return { mod, senior, r1, r2, switchOff };
+  }
+  const logging = () => {
+    const logs: string[] = [];
+    return { logs, ctx: { ...ctx(), log: (e: { reason: string }) => void logs.push(e.reason) } };
+  };
+
+  it('review F2: an appealed trade names the same creditor on every call, also once the executor authorised and recorded round 2', async () => {
+    const w = await world();
+    const { r1 } = await appealed(w);
+    await withStore(w, async (store) => {
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(store.state.executions[r1.ruling.code]).toBeUndefined();
+    });
+    // The executor's way first: round 1, then round 2 (not verifyOnly), and round 2's payout recorded.
+    const w2 = await world();
+    const a = await appealed(w2);
+    await withStore(w2, async (store) => {
+      const rec = recorded(41_250n);
+      expect((await gateCheck(store, w2.api, { ruling: a.r1.ruling, recorded: rec, balanceAtomic: BALANCE }, ctx())).ok).toBe(true);
+      const paid = await gateCheck(store, w2.api, { ruling: a.r2.ruling, recorded: rec, balanceAtomic: BALANCE, involved: [], round1: a.r1.ruling }, ctx());
+      expect(paid).toMatchObject({ ok: true, settle: { winner: 'seller' } });
+      store.state.executions[a.r1.ruling.code] = { rulingId: a.r2.ruling.id, winner: 'seller', payouts: [], recordedAt: NOW.toISOString(), settledAt: null, settledTx: null };
+      // Round 1 never pays again (the executor's check keeps stale-round) ...
+      expect(await gateCheck(store, w2.api, { ruling: a.r1.ruling, recorded: rec, balanceAtomic: BALANCE }, ctx())).toEqual({ ok: false, reason: 'stale-round' });
+      // ... but the lien verifier reads it, on every call.
+      const v = lienRulingVerifier({ store, source: w2.api, ctx: ctx() });
+      expect(await v.creditors(a.r1.ruling.code, rec)).toEqual(['seller']);
+      expect(await v.creditors(a.r1.ruling.code, rec)).toEqual(['seller']);
+      expect(store.state.executions[a.r1.ruling.code]?.rulingId).toBe(a.r2.ruling.id);
+    });
+  });
+
+  it("review F2: round 1's signer switched off since, with the appeal present: round 1 is read from its taps by round 2's check", async () => {
+    // Round 1 never seen by the gate before the switch-off.
+    const w = await world();
+    const { r1, switchOff } = await appealed(w);
+    await withStore(w, async (store) => {
+      await switchOff(store);
+      const l = logging();
+      const v = lienRulingVerifier({ store, source: w.api, ctx: l.ctx });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(store.state.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(l.logs).toEqual([]);
+      // Round 1 alone (no appeal presented) is still refused for its signer: nothing reads it then.
+      w.api.rulings.set(r1.ruling.code, { current: r1.ruling, round1: null, involved: [] });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(l.logs).toEqual(['gate.refused.lien-round1-revoked']);
+    });
+    // Round 1 verified (and recorded as authorised) while its signer was in good standing.
+    const w2 = await world();
+    const b = await appealed(w2);
+    await withStore(w2, async (store) => {
+      const v = lienRulingVerifier({ store, source: w2.api, ctx: ctx() });
+      expect(await v.creditors(b.r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      await b.switchOff(store);
+      expect(await v.creditors(b.r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(await v.creditors(b.r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+    });
+  });
+
+  it("review F2, compromised API: round 1's outcome swapped while its signer is switched off verifies nothing", async () => {
+    // Swapped to a refund: with the appeal's refund that would be no creditor, or the buyer for another appeal.
+    const swap = (w: World, c: { ruling: GateRuling }, r2: { ruling: GateRuling }) =>
+      w.api.rulings.set(c.ruling.code, { current: r2.ruling, round1: { ...c.ruling, outcome: 'refund-to-seller' }, involved: [] });
+    // Never seen before the switch-off: swapped from the first call.
+    const w = await world();
+    const a = await appealed(w);
+    await withStore(w, async (store) => {
+      await a.switchOff(store);
+      swap(w, a.r1, a.r2);
+      const l = logging();
+      const v = lienRulingVerifier({ store, source: w.api, ctx: l.ctx });
+      expect(await v.creditors(a.r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(l.logs).toEqual(['gate.refused.lien-round2-round1-unseen']);
+    });
+    // Seen for its signers only (an honest call first), then swapped.
+    const w2 = await world();
+    const b = await appealed(w2);
+    await withStore(w2, async (store) => {
+      await b.switchOff(store);
+      const l = logging();
+      const v = lienRulingVerifier({ store, source: w2.api, ctx: l.ctx });
+      expect(await v.creditors(b.r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      swap(w2, b.r1, b.r2);
+      expect(await v.creditors(b.r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(l.logs).toEqual(['gate.refused.lien-round2-round1-unseen']);
+    });
+    // Authorised while its signer was in good standing, then switched off, then swapped.
+    const w3 = await world();
+    const c = await appealed(w3);
+    await withStore(w3, async (store) => {
+      const l = logging();
+      const v = lienRulingVerifier({ store, source: w3.api, ctx: l.ctx });
+      expect(await v.creditors(c.r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      await c.switchOff(store);
+      swap(w3, c.r1, c.r2);
+      expect(await v.creditors(c.r1.ruling.code, recorded(41_250n))).toBeNull();
+      expect(l.logs).toEqual(['gate.refused.lien-round2-round1-unseen']);
+    });
+  });
+
+  it('review F2: a verifyOnly check never upgrades a round 1 seen for its signers only', async () => {
+    const w = await world();
+    const { mod, r1, switchOff } = await appealed(w);
+    await withStore(w, async (store) => {
+      await switchOff(store);
+      const v = lienRulingVerifier({ store, source: w.api, ctx: ctx() });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(store.state.rulingsSeen[r1.ruling.id]).toMatchObject({ signersOnly: true });
+      // The moderator is in good standing again: round 1's own check now verifies, and changes nothing about how it was seen.
+      w.api.staffRows.get(mod.id)!.switchedOff = false;
+      store.state.staff[mod.id]!.revoked = false;
+      const a1 = await gateCheck(store, w.api, { ruling: r1.ruling, recorded: recorded(41_250n), balanceAtomic: 0n, verifyOnly: true }, ctx());
+      expect(a1).toEqual({ ok: true, settle: null });
+      expect(store.state.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true });
+      expect(await v.creditors(r1.ruling.code, recorded(41_250n))).toEqual(['seller']);
+      expect(store.state.rulingsSeen[r1.ruling.id]).toMatchObject({ round: 1, signersOnly: true });
+      // Still never paid: the settle path refuses it.
+      expect(await gateCheck(store, w.api, { ruling: r1.ruling, recorded: recorded(41_250n), balanceAtomic: BALANCE }, ctx())).toEqual({ ok: false, reason: 'stale-round' });
     });
   });
 
