@@ -1612,5 +1612,13 @@ describe('private lanes: what the other trader never gets (PR #41/#44 follow-up 
     expect(sentLogs[0]).toMatchObject({ to: 'buyer', mode: true });
     expect(sentLogs[1]).toMatchObject({ to: 'buyer' });
     expect('mode' in sentLogs[1]!).toBe(false);
+
+    const reqLogs = (
+      await deps.db.query<{ detail: string }>(
+        "select detail from activity_log where trade_code = $1 and action = 'chat.message-requested' order by id",
+        [code],
+      )
+    ).rows.map((r) => JSON.parse(r.detail) as Record<string, unknown>);
+    expect(reqLogs).toEqual([{ to: 'buyer', mode: true }, { to: 'buyer' }]);
   });
 });

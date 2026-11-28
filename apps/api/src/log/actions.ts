@@ -88,7 +88,7 @@ export const LOG_ACTIONS = {
   'case.opened': {},
   'chat.read': {},
   // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
-  'chat.message-requested': {},
+  'chat.message-requested': { to: 'id', mode: 'bool' },
   // Private moderator lanes: `to` names the lane (buyer or seller) of a private message; absent for a shared one; `mode` marks a chat.mode-only switch.
   'chat.message-sent': { envelopeId: 'id', to: 'id', mode: 'bool' },
   'proof.unblurred-requested': { side: 'id' },

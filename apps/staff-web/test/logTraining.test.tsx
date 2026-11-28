@@ -218,13 +218,20 @@ describe('describeLog', () => {
     expect(d({ field: 'feeSweepColdAddress' })).toBe('Changed the setting feeSweepColdAddress');
   });
 
-  it('describes chat.message-sent for shared, private-lane, and mode-toggle entries', () => {
-    const d = (detail: Record<string, unknown>) => describeLog({ action: 'chat.message-sent', detail, actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } });
-    expect(d({ envelopeId: 'e1' })).toBe('The message to both traders was sent');
-    expect(d({ envelopeId: 'e2', to: 'buyer' })).toBe('The message to the buyer was sent');
-    expect(d({ envelopeId: 'e3', to: 'seller' })).toBe('The message to the seller was sent');
-    expect(d({ envelopeId: 'e4', to: 'buyer', mode: true })).toBe('Changed private chat mode for the buyer');
-    expect(d({ envelopeId: 'e5', to: 'seller', mode: true })).toBe('Changed private chat mode for the seller');
+  it('describes chat.message-requested and chat.message-sent for shared, private-lane, and mode-toggle entries', () => {
+    const req = (detail: Record<string, unknown>) => describeLog({ action: 'chat.message-requested', detail, actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } });
+    expect(req({})).toBe('Wrote to both traders');
+    expect(req({ to: 'buyer' })).toBe('Wrote privately to the buyer');
+    expect(req({ to: 'seller' })).toBe('Wrote privately to the seller');
+    expect(req({ to: 'buyer', mode: true })).toBe('Changed private mode for the buyer');
+    expect(req({ to: 'seller', mode: true })).toBe('Changed private mode for the seller');
+
+    const sent = (detail: Record<string, unknown>) => describeLog({ action: 'chat.message-sent', detail, actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } });
+    expect(sent({ envelopeId: 'e1' })).toBe('The message to both traders was sent');
+    expect(sent({ envelopeId: 'e2', to: 'buyer' })).toBe('The private message to the buyer was sent');
+    expect(sent({ envelopeId: 'e3', to: 'seller' })).toBe('The private message to the seller was sent');
+    expect(sent({ envelopeId: 'e4', to: 'buyer', mode: true })).toBe('Changed private mode for the buyer');
+    expect(sent({ envelopeId: 'e5', to: 'seller', mode: true })).toBe('Changed private mode for the seller');
   });
 
   it('"When" is today, yesterday or the day', () => {

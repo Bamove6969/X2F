@@ -689,7 +689,13 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     if (to !== null && (await deps.db.query('select 1 from chat_private_lanes where chat = $1 and to_role = $2', [chat, to])).rows.length === 0) {
       throw new ApiError(409, 'no-lane');
     }
-    const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
+    const logEntryId = await logged(
+      req,
+      code,
+      'chat.message-requested',
+      to === null ? {} : mode ? { to, mode: true } : { to },
+      workable(req),
+    );
     let envelope: unknown;
     try {
       ({ envelope } = await o.moderation.chatSend({ code, logEntryId, staffAccountId: req.staff.accountId, deviceKeyId, ...sealed, ...(to === null ? {} : { to }) }));
