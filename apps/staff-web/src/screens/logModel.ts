@@ -128,7 +128,7 @@ function sentence(
     case 'chat.read': return 'Opened the trade chat';
     case 'chat.message-requested': {
       const target = d.to === 'buyer' || d.to === 'seller' ? `the ${d.to}` : null;
-      if (d.mode === true) return target ? `Changed private mode for ${target}` : 'Changed private mode';
+      if (d.mode === true) return target ? `Asked to change private mode for ${target}` : 'Asked to change private mode';
       return target ? `Wrote privately to ${target}` : 'Wrote to both traders';
     }
     case 'chat.message-sent': {
