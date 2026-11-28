@@ -43,3 +43,9 @@
   border-top: 0;
   background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-ground) 0%, transparent), var(--x2f-ground) 16px);
 }
+
+/* Desktop card look sets background: transparent at (0,4,0) over var(--x2f-surface); match the card
+   surface at (0,5,0) so scrolling form content does not bleed behind the sticky Send button. */
+[data-shell='desktop'] .x2f-flow[data-look='card'][data-screen='ticket-new'] .x2f-flow__footer {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--x2f-surface) 0%, transparent), var(--x2f-surface) 16px);
+}
