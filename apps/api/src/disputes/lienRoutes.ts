@@ -163,10 +163,10 @@ export function lienRoutes(app: FastifyInstance): void {
   });
 
   /** The pending request `:req` of lien `:id`, locked, with the lien locked first; refuses its proposer. */
-  async function pendingFor(c: import('pg').PoolClient, req: FastifyRequest): Promise<{ lienId: string; r: RequestRow }> {
+  async function pendingFor(c: import('pg').PoolClient, req: FastifyRequest): Promise<{ lienId: string; fromCode: string; r: RequestRow }> {
     const lienId = param(req, 'id');
     const requestId = param(req, 'req');
-    const lien = (await c.query<{ status: string }>('select status from liens where id = $1 for update', [lienId])).rows[0];
+    const lien = (await c.query<{ status: string; from_code: string }>('select status, from_code from liens where id = $1 for update', [lienId])).rows[0];
     if (!lien) throw new ApiError(404, 'not-found');
     const r = (
       await c.query<RequestRow>(
@@ -178,7 +178,7 @@ export function lienRoutes(app: FastifyInstance): void {
     if (!r) throw new ApiError(404, 'not-found');
     if (r.status !== 'pending') throw new ApiError(409, 'wrong-state');
     if (!canDecideRateRequest({ role: req.staff.role, id: req.staff.accountId }, r.proposed_by)) throw new ApiError(403, 'forbidden');
-    return { lienId, r };
+    return { lienId, fromCode: lien.from_code, r };
   }
 
   // Owner change 26 Nov 2026 5:53 PM: approved WITHOUT a key tap. The senior reads the dispute's chat
@@ -191,7 +191,10 @@ export function lienRoutes(app: FastifyInstance): void {
     const { db, clock } = req.server.deps;
     return withTx(db, async (c) => {
       const now = clock();
-      const { lienId, r } = await pendingFor(c, req);
+      const { lienId, fromCode, r } = await pendingFor(c, req);
+      // Match routes.ts F5: serialize with a concurrent chat key record before reading chat_keys,
+      // taken after pendingFor's liens lock (liens -> chats matches withDispute + storeModEnvelope).
+      await c.query('select 1 from chats where trade_code = $1 for share', [fromCode]);
       const lien = (await c.query<{ status: string; from_code: string; open: boolean; keyed: boolean }>(
         `select l.status, l.from_code,
                 exists (select 1 from disputes d where d.code = l.from_code and d.seq = l.dispute_seq and d.status <> 'closed') as open,

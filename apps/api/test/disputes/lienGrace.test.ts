@@ -983,4 +983,81 @@ describe('dispute compliance vs lien grace & off-platform repayment (fix-comply-
     expect(errorOf(paidRes)).toBe('not-authenticated');
     expect((await lienOf(r.code)).repaid_off_platform_at).toBeNull();
   });
+
+  it('POST /staff/v1/liens/:id/rate/:req/approve locks chats FOR SHARE so a concurrent chat_keys insert triggers 409 review-chat-first (fix-rate-chat-lock)', async () => {
+    const senior = await staff('senior');
+    const r = await ruled({ mode: 'collect', rateBps: 3500, rateReason: 'Can pay 35%' });
+    const l = await lienOf(r.code);
+    const req = (await deps.db.query<{ id: string }>(`select id::text from lien_rate_requests where lien_id = $1 and status = 'pending'`, [l.id])).rows[0]!;
+    await deps.db.query(
+      `insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at)
+       select $1, offer_id, buyer_account_id, seller_account_id, code, $2 from trades where code = $3`,
+      [r.code, deps.clock(), r.code],
+    );
+
+    const c = await deps.db.connect();
+    let approvePromise: ReturnType<typeof senior.b.post> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from chats where trade_code = $1 for update', [r.code]);
+      await c.query(
+        `insert into chat_keys (chat, tkh, created_by_role, wrap_buyer, wrap_seller, sig, created_at)
+         values ($1, repeat('a', 64), 'buyer', 'AAAA', 'AAAA', repeat('b', 128), $2)`,
+        [r.code, deps.clock()],
+      );
+      approvePromise = senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}).finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    const res = await approvePromise;
+    expect(res.statusCode, res.body).toBe(409);
+    expect(errorOf(res)).toBe('review-chat-first');
+    expect((await lienOf(r.code)).recovery_rate_bps).toBe(10_000);
+  });
+
+  it('POST /staff/v1/liens/:id/rate/:req/approve locks liens before chats so it never deadlocks with withDispute + storeModEnvelope (fix-rate-chat-lock)', async () => {
+    const senior = await staff('senior');
+    const r = await ruled({ mode: 'collect', rateBps: 3500, rateReason: 'Can pay 35%' });
+    const l = await lienOf(r.code);
+    const req = (await deps.db.query<{ id: string }>(`select id::text from lien_rate_requests where lien_id = $1 and status = 'pending'`, [l.id])).rows[0]!;
+    await deps.db.query(
+      `insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at)
+       select $1, offer_id, buyer_account_id, seller_account_id, code, $2 from trades where code = $3`,
+      [r.code, deps.clock(), r.code],
+    );
+
+    const c = await deps.db.connect();
+    let approvePromise: ReturnType<typeof senior.b.post> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from liens where id = $1 for update', [l.id]);
+      approvePromise = senior.b.post(`/staff/v1/liens/${l.id}/rate/${req.id}/approve`, {}).finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('select 1 from chats where trade_code = $1 for update', [r.code]);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+
+    const res = await approvePromise;
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await lienOf(r.code)).recovery_rate_bps).toBe(3500);
+  });
 });

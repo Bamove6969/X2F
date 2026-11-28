@@ -254,8 +254,8 @@ seller's device holds the buyer's.
   every staff chat read is, `chat.read`), and opening a pending request they may decide is logged on
   the source trade once per request and person (`lien.rate-review-opened { lienId, requestId }`, under
   an advisory lock on that pair). Enforced (review of feat/lien-grace item 4): while the dispute is
-  open, approve needs a `chat.read` by that decider on the source trade since the request was made,
-  otherwise 409 `review-chat-first`. The moderation service refuses a chat read once the dispute is
+  open and the trade's chat is keyed, approve needs a `chat.read` by that decider on the source
+  trade since the request was made, otherwise 409 `review-chat-first`. The moderation service refuses a chat read once the dispute is
   closed (OWNER p12-1), so a request on a closed dispute is decided from the case alone (lead answer:
   fine). The moderation service accepts an approved request as the
   API records it (`lienRateRequestApprovals`, read through `x2f_mod_reader`, migration 900's grant):
