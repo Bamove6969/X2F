@@ -11,31 +11,75 @@
  * Task 27's ("will be fully operational again on <exact date and time>"). No board yet: laid out with
  * the frozen notice's classes. Review S1: under a site ban, each unfinished trade (or its dispute)
  * is a link, the one way back into a trade the person may still finish.
+ *
+ * Owner, 28 Nov 2026: three tiers (api/ban.ts `banTier`). A Trade ban says new trades are blocked
+ * and what is already started finishes; a Suspension says the account is suspended, the general
+ * reason, when it was implemented and when it is lifted automatically; a Lifetime ban says it is
+ * permanent. Dates are `formatDateTime`'s.
  */
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router';
-import { api } from '../../api/client.js';
+import { banTier, fetchBanNotice, type BanNotice, type BanTier } from '../../api/ban.js';
 import { BAN_REASON_TEXT, type BanReasonCode } from '../../ui/cantDoCodes.js';
-import { formatDateTime } from '../../ui/dates.js';
+import { formatDateTime, isMoment } from '../../ui/dates.js';
 import { Hero, ResultHeadline } from '../../ui/Hero.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import './frozen.css';
 
 export const BANNED_PATH = '/account/banned';
 
-export { BAN_REASON_TEXT, type BanReasonCode };
-
-export interface BanNotice {
-  bans: Array<{ kind: 'trade' | 'site'; reasonCode: BanReasonCode; until: string | null; permanent: boolean }>;
-  /** Review S1: under a site ban, the trades still to finish (newest first); absent from an older API. */
-  unfinished?: Array<{ code: string; dispute: boolean }>;
-  contacts: { moderatorUrl: string | null; matrixUrl: string | null; telegramUrl: string | null };
-}
+export { BAN_REASON_TEXT, type BanNotice, type BanReasonCode };
 
 /** D-020, the owner's draft without its channel placeholders (the links follow it). COPY-UNSIGNED */
 export const BAN_NOTICE_LEAD =
   // not-a-refusal: the ban notice itself (owner G39 draft), a full screen, not a refused action
   "We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator and ask to speak to a moderator for further details.";
+
+/** Owner, 28 Nov 2026: the Suspension's lead, the owner's draft with "suspended". COPY-UNSIGNED */
+export const SUSPENSION_NOTICE_LEAD =
+  // not-a-refusal: the suspension notice itself, a full screen, not a refused action
+  "We're sorry, but your account has been suspended. If you feel this has been done in error, please reach out to a moderator and ask to speak to a moderator for further details.";
+
+/** Owner, 28 Nov 2026: each tier's words on the notice. COPY-UNSIGNED, DESIGNER-REVIEW */
+export const BAN_TIER_COPY: Readonly<Record<BanTier, { page: string; chip: string; title: string; lead: string; means: string }>> = {
+  trade: {
+    page: 'Trade ban',
+    chip: 'Trade ban',
+    title: 'Your account has been banned from trading',
+    lead: BAN_NOTICE_LEAD,
+    // not-a-refusal: says what the trade ban means, on its own notice
+    means: "You can't start or accept new trades. Trades you already started carry on, and you can still log in, look at offers and use your wallets.",
+  },
+  suspension: {
+    page: 'Account suspended',
+    chip: 'Suspension',
+    title: 'Your account has been suspended',
+    lead: SUSPENSION_NOTICE_LEAD,
+    // not-a-refusal: says what the suspension means, on its own notice
+    means: "You can't use X2F until the suspension is lifted. You can still finish trades and disputes that are already under way.",
+  },
+  lifetime: {
+    page: 'Account banned',
+    chip: 'Lifetime ban',
+    title: 'Your account has been permanently banned',
+    lead: BAN_NOTICE_LEAD,
+    // not-a-refusal: says what the lifetime ban means, on its own notice
+    means: "This ban is permanent: you can't use X2F again. You can still finish trades and disputes that are already under way.",
+  },
+};
+
+/** The reason line for a reason code this app does not know (a newer API): never an empty notice. COPY-UNSIGNED */
+export const BAN_REASON_UNKNOWN = 'Ask a moderator for the details';
+
+/**
+ * A trade ban that outlasts the suspension shown (review, 28 Nov): it carries on after the
+ * suspension is lifted. COPY-UNSIGNED, DESIGNER-REVIEW
+ */
+export function tradeBanAfterText(until: string | null): string {
+  return until === null
+    ? 'After the suspension is lifted, your trade ban continues for good, so new trades stay off.'
+    : `After the suspension is lifted, your trade ban continues until ${formatDateTime(until)}, so new trades stay off until then.`;
+}
 
 /** Review S1: above the links to what is still open. COPY-UNSIGNED, DESIGNER-REVIEW (no board) */
 export const BAN_UNFINISHED_LEAD = 'You can still finish these:';
@@ -44,6 +88,12 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
   // A site ban says more than a trade ban: show it when there is one.
   const ban = notice.bans.find((b) => b.kind === 'site') ?? notice.bans[0]!;
   const site = ban.kind === 'site';
+  const tier = banTier(ban);
+  const copy = BAN_TIER_COPY[tier];
+  // A trade ban standing with a suspension, and ending later (or never): it outlasts the suspension.
+  const trade = site ? notice.bans.find((b) => b.kind === 'trade') : undefined;
+  const tradeAfter =
+    tier === 'suspension' && trade !== undefined && ban.until !== null && (trade.until === null || Date.parse(trade.until) > Date.parse(ban.until)) ? trade : null;
   const c = notice.contacts;
   const links = [
     ...(c.matrixUrl ? [{ label: 'Matrix', href: c.matrixUrl }] : []),
@@ -53,23 +103,37 @@ export function AccountBanned({ notice }: { notice: BanNotice }) {
   return (
     <main className="x2f-frozen" data-screen="account-banned" aria-labelledby="banned-title">
       <header className="x2f-frozen__header">
-        <span className="x2f-frozen__page">Account banned</span>
+        <span className="x2f-frozen__page">{copy.page}</span>
       </header>
-      <Hero tone="danger" kind="result" label="Account banned" chip={<StatusChip tone="danger" icon="shield-x" label={site ? 'Account banned' : 'Trading banned'} />}>
-        <ResultHeadline id="banned-title" title={site ? 'Your account has been banned' : 'Your account has been banned from trading'} lead={BAN_NOTICE_LEAD} />
-        <dl className="x2f-frozen__facts">
+      <Hero tone="danger" kind="result" label={copy.page} chip={<StatusChip tone="danger" icon="shield-x" label={copy.chip} />}>
+        <ResultHeadline id="banned-title" title={copy.title} lead={copy.lead} />
+        <dl className="x2f-frozen__facts" data-tier={tier}>
           <div>
             <dt>Reason</dt>
-            <dd data-part="ban-reason">{BAN_REASON_TEXT[ban.reasonCode]}</dd>
+            <dd data-part="ban-reason">{ban.reasonCode !== null ? BAN_REASON_TEXT[ban.reasonCode] : BAN_REASON_UNKNOWN}</dd>
           </div>
+          {isMoment(ban.implementedAt) ? (
+            <div>
+              <dt>Implemented</dt>
+              <dd data-part="ban-implemented">{formatDateTime(ban.implementedAt)}</dd>
+            </div>
+          ) : null}
           <div>
-            <dt>Ends</dt>
+            <dt>{tier === 'suspension' ? 'Lifted automatically' : 'Ends'}</dt>
             <dd data-part="ban-end">
-              {ban.until === null ? 'Permanent' : `Your account will be fully working again on ${formatDateTime(new Date(ban.until))}.`}
+              {ban.until === null
+                ? 'Permanent'
+                : tier === 'suspension'
+                  ? `Your suspension will be lifted automatically on ${formatDateTime(ban.until)}.`
+                  : `Your trade ban ends on ${formatDateTime(ban.until)}.`}
             </dd>
           </div>
         </dl>
       </Hero>
+      <section className="x2f-frozen__card" aria-label="What this means" data-part="ban-means">
+        <p>{copy.means}</p>
+        {tradeAfter !== null ? <p data-part="ban-trade-after">{tradeBanAfterText(tradeAfter.until)}</p> : null}
+      </section>
       {site && notice.unfinished && notice.unfinished.length > 0 && (
         <section className="x2f-frozen__card" aria-label="Still to finish" data-part="ban-unfinished">
           <p>{BAN_UNFINISHED_LEAD}</p>
@@ -104,7 +168,7 @@ export function AccountBannedRoute() {
   const [notice, setNotice] = useState<BanNotice | null | 'none'>(null);
   useEffect(() => {
     let live = true;
-    api<BanNotice>('/v1/account/ban').then(
+    fetchBanNotice().then(
       (n) => live && setNotice(n.bans.length > 0 ? n : 'none'),
       () => live && setNotice('none'),
     );

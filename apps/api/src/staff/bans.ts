@@ -20,11 +20,14 @@
  *   `wrong-state` unless the ban still stands. Logged `account.ban-lifted` with the ban id. Lifting a
  *   lifetime site ban deletes the ban-list rows recorded as the account's or its members' own
  *   (review MF2, lead call; `identifiersRemoved` in the log).
+ * The three tiers (owner, 28 Nov 2026) are this model, no column of their own: a `trade` ban (timed
+ * or not) is the Trade ban; a timed `site` ban is the Suspension; a `site` ban with `until` null is
+ * the Lifetime ban.
  * Only a trader account is banned (a team's members are banned with it: their sessions are the
  * team account's); anything else is 404.
  *
  * Trader side: `GET /v1/account/ban` → `{ bans, unfinished, contacts }`: the bans in force (kind, the general
- * reason code, `until` or null, `permanent`), under a site ban the unfinished trades
+ * reason code, `until` or null, `permanent`, `implementedAt`: when it was placed), under a site ban the unfinished trades
  * (`{ code, dispute }`, newest first; review S1) and the moderator contact links from Settings
  * (`moderator_contact_url`, `community_matrix_url`, `community_telegram_url`; null when unset).
  * Never the rule or the note.
@@ -245,7 +248,9 @@ export function traderBanRoutes(app: FastifyInstance): void {
     );
     const s = rows[0];
     return {
-      bans: bans.map((x) => ({ kind: x.kind, reasonCode: x.reasonCode, until: x.until?.toISOString() ?? null, permanent: x.until === null })),
+      bans: bans.map((x) => ({
+        kind: x.kind, reasonCode: x.reasonCode, until: x.until?.toISOString() ?? null, permanent: x.until === null, implementedAt: x.createdAt.toISOString(),
+      })),
       unfinished,
       contacts: {
         moderatorUrl: s?.moderator_contact_url ?? null,

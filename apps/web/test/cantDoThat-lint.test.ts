@@ -194,7 +194,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // own") and the four TERMS_CHANGES lines, a summary of what changed in the Terms; nothing was tried and refused.
     // 89 -> 91 (team audit v2, 26 Nov): settings/teamLogCopy.ts's REFUSAL_WORDS (the reasons of past
     // refusals, shown in the team log) and `broken` (the chain check's result); nothing is refused there.
-    expect(notARefusal).toBeLessThanOrEqual(91);
+    // 91 -> 95 (ban tiers, owner 28 Nov): account/AccountBanned.tsx's SUSPENSION_NOTICE_LEAD (the
+    // suspension notice itself, as BAN_NOTICE_LEAD) and the three tiers' "what this means" lines, which
+    // say what each ban does on its own full-screen notice; nothing was tried and refused.
+    expect(notARefusal).toBeLessThanOrEqual(95);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

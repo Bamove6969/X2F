@@ -16,7 +16,7 @@ export const GRANT_LABELS: Readonly<Record<GrantablePerm, { title: string; help:
   'feedback.read': { title: 'Feedback', help: "Reads traders' feedback. Never who sent a named message." },
   'tickets.handle': { title: 'Support tickets', help: "Answers traders' support tickets." },
   // Owner 26 Nov 2026: senior moderators only, off unless ticked.
-  'accounts.ban': { title: 'Ban traders', help: 'Places trade bans and site bans from an account lookup.' },
+  'accounts.ban': { title: 'Ban traders', help: 'Places trade bans, suspensions and lifetime bans from an account lookup.' },
   'accounts.unban': { title: 'Lift bans', help: 'Lifts a ban in force from an account lookup.' },
 };
 

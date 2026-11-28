@@ -181,8 +181,8 @@ function sentence(
     case 'hold.ended': return d.via === 'secure-jabber' ? 'Ended a trading hold after reaching the owner of the account on Jabber' : 'Ended a trading hold';
     case 'account.frozen': return `Froze ${side()}'s account`;
     case 'account.freeze-lifted': return `Lifted the freeze on ${side()}'s account`;
-    case 'account.trade-banned': return d.permanent === true ? 'Banned an account from trading for good' : 'Banned an account from trading for a set time';
-    case 'account.site-banned': return d.permanent === true ? 'Banned an account from X2F for good' : 'Banned an account from X2F for a set time';
+    case 'account.trade-banned': return d.permanent === true ? 'Placed a trade ban on an account, for good' : 'Placed a trade ban on an account, for a set time';
+    case 'account.site-banned': return d.permanent === true ? 'Placed a lifetime ban on an account' : 'Suspended an account for a set time';
     case 'account.ban-lifted': return 'Lifted a ban';
     case 'account.reinstated': return 'An account was reinstated at the end of its ban';
     // The Accounts page's lookup (spec 6.6). COPY-UNSIGNED
