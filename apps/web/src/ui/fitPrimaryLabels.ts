@@ -11,8 +11,9 @@ const PROP = '--x2f-primary-fit';
 
 /** The label is too wide when it comes nearer than 16 px (or the button's own padding) to a side. */
 function tooWide(el: HTMLElement): boolean {
+  const label = el.matches('.x2f-ex__hold') ? (el.querySelector(':scope > span') ?? el) : el;
   const range = document.createRange();
-  range.selectNodeContents(el);
+  range.selectNodeContents(label);
   const text = range.getBoundingClientRect().width;
   const cs = getComputedStyle(el);
   const sides = Math.max(SIDE, parseFloat(cs.paddingLeft)) + Math.max(SIDE, parseFloat(cs.paddingRight));
