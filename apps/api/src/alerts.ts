@@ -115,7 +115,8 @@ export type AlertKind =
   // pool past its reply deadline (nobody eligible on shift). Detail: trade, round.
   | 'dispute-unassigned-overdue'
   // PR #65 follow-up: a late-settling recovery payout exceeded what was still owed on the lien.
-  // Detail: trade, lienId, amountAtomic.
+  // Detail: trade (the lien's own case, from_code, as every lien alert), paidBy (the trade whose
+  // payout paid the excess), lienId, amountAtomic (the excess), message.
   | 'lien-over-recovered';
 
 /**
