@@ -47,7 +47,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -u
-          deleted=0; skipped=0; missing=0
+          deleted=0; skipped=0; missing=0; failed=0
           while read -r sha branch; do
             case "$sha" in ''|'#'*) continue ;; esac
             case "$branch" in main|comms) echo "never deleting $branch"; continue ;; esac
@@ -55,6 +55,7 @@ jobs:
             tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
             if [ -z "$tip" ]; then missing=$((missing+1)); continue; fi
             if [ "$tip" != "$sha" ]; then echo "SKIP $branch: moved to $tip"; skipped=$((skipped+1)); continue; fi
-            if gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null; then deleted=$((deleted+1)); else echo "FAILED $branch"; fi
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null; then deleted=$((deleted+1)); else echo "FAILED $branch"; failed=$((failed+1)); fi
           done < .github/branch-cleanup.txt
-          echo "deleted=$deleted skipped=$skipped already-gone=$missing"
+          echo "deleted=$deleted skipped=$skipped already-gone=$missing failed=$failed"
+          if [ "$failed" -gt 0 ]; then exit 1; fi
