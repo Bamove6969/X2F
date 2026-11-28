@@ -51,7 +51,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
   'GET /v1/account/badges': "my own earned badges, their levels and my next milestones (Plan 5 Task 5); the account owner only",
-  'GET /v1/account/ban': "my own account's bans in force (kind, general reason code, end), my own unfinished trades under a site ban, and the moderator contact links; never the rule, the note or anyone else's ban (Task 27)",
+  'GET /v1/account/ban': "my own account's bans in force (kind, general reason code, when placed, end), my own unfinished trades under a site ban, and the moderator contact links; never the rule, the note or anyone else's ban (Task 27)",
   'GET /v1/account/blocks': 'the traders I blocked, when, and my own private note on each (S-093)',
   'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/freeze': "my own account's active trading freezes (D-016): since when, and my own disputed trade (my side, its amount and the partner's public name)",

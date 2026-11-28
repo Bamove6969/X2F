@@ -46,8 +46,8 @@ test('a site ban with an open trade: the notice says the exact end, links a mode
   await page.goto('/sell');
   await expect(page).toHaveURL(/\/account\/banned(\?|$)/);
   const notice = page.locator('[data-screen="account-banned"]');
-  await expect(notice.locator('h1')).toHaveText('Your account has been banned');
-  await expect(notice.locator('[data-part="ban-end"]')).toHaveText('Your account will be fully working again on 19 Nov 2026, 12:00 UTC.');
+  await expect(notice.locator('h1')).toHaveText('Your account has been suspended');
+  await expect(notice.locator('[data-part="ban-end"]')).toHaveText('Your suspension will be lifted automatically on 19 Nov 2026, 12:00 UTC.');
   await expect(notice.locator('a[data-part="ban-contact"]')).toHaveAttribute('href', CONTACTS.matrixUrl);
   expect(refused.length).toBeGreaterThan(0);
   const trade = notice.locator('[data-part="ban-unfinished"] a');

@@ -63,7 +63,18 @@ const HOLD_MAX_AHEAD = 30 * DAY;
 export const BAN_NOTE_MAX = 500;
 
 const daysText = (n: number) => (n === 1 ? '1 day' : `${n} days`);
-const KIND_WORDS: Readonly<Record<BanKind, string>> = { trade: 'Trade ban', site: 'Site ban' };
+/**
+ * Owner, 28 Nov 2026: the three ban tiers, by the ban's kind and end (the API has no field of its
+ * own for them): a trade ban, timed or not, is a "Trade ban"; a timed site ban a "Suspension"; a
+ * site ban with no end a "Lifetime ban".
+ */
+export function banTierWords(kind: BanKind, until: string | null): 'Trade ban' | 'Suspension' | 'Lifetime ban' {
+  if (kind === 'trade') return 'Trade ban';
+  return until === null ? 'Lifetime ban' : 'Suspension';
+}
+
+/** A kind before its end is picked (the ban form, a standing ban of that kind). */
+export const KIND_WORDS: Readonly<Record<BanKind, string>> = { trade: 'Trade ban', site: 'Suspension or lifetime ban' };
 
 /** A ban's end as the API takes it: an exact ISO instant with milliseconds, `days` from now. */
 export function banUntil(days: number, now: Date): string {
@@ -82,7 +93,7 @@ const endText = (until: string | null) => (until === null ? 'Permanent' : `until
 export function statusLines(a: LookedUpAccount): string[] {
   const s = a.status;
   const out: string[] = [];
-  for (const b of s.bans) out.push(`${KIND_WORDS[b.kind]}, ${endText(b.until)}: ${REASON_WORDS[b.reasonCode] ?? b.reasonCode}`);
+  for (const b of s.bans) out.push(`${banTierWords(b.kind, b.until)}, ${endText(b.until)}: ${REASON_WORDS[b.reasonCode] ?? b.reasonCode}`);
   if (s.hold !== null) out.push(`Account hold until ${utcMinuteText(s.hold.until)}, after ${HOLD_WORDS[s.hold.reason] ?? 'a security event'}`);
   if (s.frozen) out.push('Frozen in a dispute');
   if (s.lien) out.push('Lien: until it is repaid, what they receive in their trades goes to the person owed');
@@ -165,14 +176,14 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
   const askLift = (b: StaffBan) =>
     setTap({
       intent: { kind: 'lift-ban', accountId: a.accountId, banId: b.id },
-      title: `Lift the ${KIND_WORDS[b.kind].toLowerCase()} on ${name}`,
+      title: `Lift the ${banTierWords(b.kind, b.until).toLowerCase()} on ${name}`,
       body:
         b.kind === 'site' && b.permanent
-          ? `The permanent site ban on ${name} ends now: they can log in and use X2F again, and their names and keys come off the ban list. The ban stays in their history and counts as an offence. The lift is written to the activity log.`
-          : `The ${KIND_WORDS[b.kind].toLowerCase()} on ${name} (${endText(b.until)}) ends now and the account works again. The ban stays in their history and counts as an offence. The lift is written to the activity log.`,
-      labels: { accountId: name, banId: `the ${KIND_WORDS[b.kind].toLowerCase()} shown` },
+          ? `The lifetime ban on ${name} ends now: they can log in and use X2F again, and their names and keys come off the ban list. The ban stays in their history and counts as an offence. The lift is written to the activity log.`
+          : `The ${banTierWords(b.kind, b.until).toLowerCase()} on ${name} (${endText(b.until)}) ends now and the account works again. The ban stays in their history and counts as an offence. The lift is written to the activity log.`,
+      labels: { accountId: name, banId: `the ${banTierWords(b.kind, b.until).toLowerCase()} shown` },
       run: (tapId) =>
-        act(() => liftBan(a.accountId, b.id, tapId), `The ${KIND_WORDS[b.kind].toLowerCase()} on ${name} is lifted and logged.`, (c) =>
+        act(() => liftBan(a.accountId, b.id, tapId), `The ${banTierWords(b.kind, b.until).toLowerCase()} on ${name} is lifted and logged.`, (c) =>
           // not-a-refusal: the ban ended or was lifted meanwhile, a changed state.
           c === 'wrong-state' ? 'This ban is no longer in force. The list is up to date now.' : c === 'tap-invalid' ? 'The tap did not match this lift. Try again.' : '',
         ),
@@ -181,15 +192,18 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
   const askBan = (p: { kind: BanKind; rule: BanRule; until: string | null; note: string }) => {
     setBanning(false);
     const banId = crypto.randomUUID();
+    const tier = banTierWords(p.kind, p.until);
     setTap({
       intent: { kind: 'ban-account', accountId: a.accountId, banId, banKind: p.kind, ruleId: p.rule.id, until: p.until },
-      title: `${p.kind === 'trade' ? 'Ban' : 'Site-ban'} ${name} ${p.until === null ? 'for good' : `until ${utcMinuteText(p.until)}`}`,
+      title: `${tier} for ${name}${p.until !== null ? ` until ${utcMinuteText(p.until)}` : tier === 'Trade ban' ? ', for good' : ''}`,
       body: banBody(name, p.kind, p.rule, p.until),
-      labels: { accountId: name, banId: 'this new ban', banKind: KIND_WORDS[p.kind], ruleId: p.rule.label, ...(p.until !== null ? { until: utcMinuteText(p.until) } : {}) },
+      labels: { accountId: name, banId: 'this new ban', banKind: tier, ruleId: p.rule.label, ...(p.until !== null ? { until: utcMinuteText(p.until) } : {}) },
       run: (tapId) =>
         act(
           () => placeBan(a.accountId, { banId, kind: p.kind, ruleId: p.rule.id, until: p.until, ...(p.note.trim() !== '' ? { note: p.note.trim() } : {}), tapId }),
-          `${name} is ${p.kind === 'trade' ? 'banned from trading' : 'banned from X2F'} ${endText(p.until)}. Logged.`,
+          tier === 'Trade ban' ? `${name} is banned from trading ${endText(p.until)}. Logged.`
+            : tier === 'Suspension' ? `${name} is suspended ${endText(p.until)}. Logged.`
+            : `${name} has a lifetime ban. Logged.`,
           (c) =>
             // not-a-refusal: a ban of that kind was placed meanwhile, a changed state.
             c === 'already-banned' ? `${name} already has a ${KIND_WORDS[p.kind].toLowerCase()} in force. The list is up to date now.`
@@ -272,12 +286,12 @@ export function AccountCard({ account: a, role, onChanged }: { account: LookedUp
             <ul className="x2f-stack" data-part="ban-history">
               {bans.bans.map((b) => (
                 <li key={b.id} data-ban={b.id} data-active={b.active ? 'true' : 'false'}>
-                  <span>{`${KIND_WORDS[b.kind]}, ${endText(b.until)}: ${bans.rules.find((r) => r.id === b.ruleId)?.label ?? b.ruleId}. Placed ${utcMinuteText(b.createdAt)}.`}</span>
+                  <span>{`${banTierWords(b.kind, b.until)}, ${endText(b.until)}: ${bans.rules.find((r) => r.id === b.ruleId)?.label ?? b.ruleId}. Placed ${utcMinuteText(b.createdAt)}.`}</span>
                   {b.liftedAt !== null ? <span className="x2f-staff-hint">{` Lifted ${utcMinuteText(b.liftedAt)}.`}</span> : b.endedAt !== null || !b.active ? <span className="x2f-staff-hint"> Ended.</span> : null}
                   {b.note !== null ? <span className="x2f-staff-hint">{` Staff note: ${b.note}`}</span> : null}
                   {b.active && mayLift ? (
                     <Button variant="secondary" disabled={busy} onClick={() => askLift(b)}>
-                      {`Lift this ${KIND_WORDS[b.kind].toLowerCase()}`}
+                      {`Lift this ${banTierWords(b.kind, b.until).toLowerCase()}`}
                     </Button>
                   ) : null}
                 </li>
@@ -420,7 +434,7 @@ function BanSheet({ name, bans, kinds, onCancel, onReview }: {
             value: k,
             label: KIND_WORDS[k],
             // not-a-refusal: describes what each kind of ban does, before any choice.
-            note: k === 'trade' ? "Can't post or take offers. Open trades finish." : 'Shut out of X2F except for unfinished trades and the ban notice.',
+            note: k === 'trade' ? "Can't post or take offers. Open trades finish." : 'Shut out of X2F except for unfinished trades and the ban notice. With an end it is a suspension; Permanent makes it a lifetime ban.',
           }))}
         />
         <p className="x2f-staff-eyebrow" id={ruleId}>

@@ -23,17 +23,19 @@ export interface ActiveBan {
   kind: 'trade' | 'site';
   reasonCode: BanReasonCode;
   until: Date | null;
+  /** When the ban was placed (`created_at`): the notice's "implemented" date. */
+  createdAt: Date;
 }
 
 /** The account's bans in force at `now` (trade first, then site). */
 export async function activeBans(db: Queryable, accountId: string, now: Date): Promise<ActiveBan[]> {
-  const { rows } = await db.query<{ id: string; kind: 'trade' | 'site'; reason_code: BanReasonCode; until: Date | null }>(
-    `select id, kind, reason_code, until from account_bans
+  const { rows } = await db.query<{ id: string; kind: 'trade' | 'site'; reason_code: BanReasonCode; until: Date | null; created_at: Date }>(
+    `select id, kind, reason_code, until, created_at from account_bans
       where account_id = $1 and ended_at is null and lifted_at is null and (until is null or until > $2)
       order by kind desc`,
     [accountId, now],
   );
-  return rows.map((r) => ({ id: r.id, kind: r.kind, reasonCode: r.reason_code, until: r.until }));
+  return rows.map((r) => ({ id: r.id, kind: r.kind, reasonCode: r.reason_code, until: r.until, createdAt: r.created_at }));
 }
 
 /**

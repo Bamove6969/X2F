@@ -9,7 +9,7 @@ import { BAN_RULES, NAV, inviteTokenHash } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { banBody, banUntil, holdExtendUntil, statusLines } from '../src/screens/AccountActions.js';
+import { KIND_WORDS, banBody, banTierWords, banUntil, holdExtendUntil, statusLines } from '../src/screens/AccountActions.js';
 import { describeLog } from '../src/screens/logModel.js';
 import { button, cleanup, click, fakeApi, field, honestTapStart, refused, render, settle, tick, typeInto } from './helpers.js';
 
@@ -87,11 +87,38 @@ describe('helpers', () => {
       },
     }) as never);
     expect(lines).toEqual([
-      'Site ban, Permanent: Abuse of other traders',
+      'Lifetime ban, Permanent: Abuse of other traders',
       'Account hold until 2026-11-27 12:00 UTC, after a login with a recovery code',
       'Frozen in a dispute',
       'Lien: until it is repaid, what they receive in their trades goes to the person owed',
     ]);
+  });
+});
+
+describe('the ban tiers (owner, 28 Nov 2026)', () => {
+  it('names each tier the same way everywhere: Trade ban, Suspension, Lifetime ban', () => {
+    expect(banTierWords('trade', '2026-12-03T12:00:00.000Z')).toBe('Trade ban');
+    expect(banTierWords('trade', null)).toBe('Trade ban');
+    expect(banTierWords('site', '2026-12-03T12:00:00.000Z')).toBe('Suspension');
+    expect(banTierWords('site', null)).toBe('Lifetime ban');
+    // The form's kind, before the end is picked.
+    expect(KIND_WORDS).toEqual({ trade: 'Trade ban', site: 'Suspension or lifetime ban' });
+    const bans = [
+      { id: BAN, kind: 'trade', reasonCode: 'abuse', until: '2026-12-03T12:00:00.000Z', permanent: false },
+      { id: SELLER, kind: 'site', reasonCode: 'terms', until: '2026-12-10T12:00:00.000Z', permanent: false },
+    ];
+    expect(statusLines(account({ status: { bans, hold: null, frozen: false, lien: false } }) as never)).toEqual([
+      'Trade ban, until 2026-12-03 12:00 UTC: Abuse of other traders',
+      'Suspension, until 2026-12-10 12:00 UTC: Breaking the Terms of Service',
+    ]);
+  });
+  it('the activity log words each tier', () => {
+    const actor = { kind: 'staff', role: 'senior', id: 's-1', name: 'sarah.v' } as const;
+    const at = '2026-11-26T12:00:00.000Z';
+    const row = (action: string, permanent: boolean) => ({ id: 1, at, actor, tradeCode: null, action, detail: { accountId: ACCT, permanent } });
+    expect(describeLog(row('account.trade-banned', false) as never)).toBe('Placed a trade ban on an account, for a set time');
+    expect(describeLog(row('account.site-banned', false) as never)).toBe('Suspended an account for a set time');
+    expect(describeLog(row('account.site-banned', true) as never)).toBe('Placed a lifetime ban on an account');
   });
 });
 
@@ -253,7 +280,9 @@ describe('the Accounts page (spec 6.6)', () => {
     await open('/accounts');
     await lookUp('harbor_lin');
     expect(part('ban-history')?.textContent).toContain('Staff note: Doxxed a seller');
-    await click(button('Lift this site ban'));
+    expect(part('ban-history')?.textContent).toContain('Lifetime ban, Permanent');
+    await click(button('Lift this lifetime ban'));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('The lifetime ban on harbor_lin ends now');
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('their names and keys come off the ban list');
     await click(button('Tap security key'));
     expect(tapIntents(api.calls)).toEqual([{ kind: 'lift-ban', accountId: ACCT, banId: BAN }]);

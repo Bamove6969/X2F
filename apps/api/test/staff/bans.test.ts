@@ -88,7 +88,7 @@ describe('placing a ban (Task 27, D-017)', () => {
     const me = await asTrader(id);
     const notice = await me('GET', '/v1/account/ban');
     expect(notice.statusCode).toBe(200);
-    expect(notice.json().bans).toEqual([{ kind: 'trade', reasonCode: 'abuse', until: IN_A_WEEK, permanent: false }]);
+    expect(notice.json().bans).toEqual([{ kind: 'trade', reasonCode: 'abuse', until: IN_A_WEEK, permanent: false, implementedAt: NOW.toISOString() }]);
     expect(notice.body).not.toContain('Threatened');
   });
 
@@ -436,7 +436,31 @@ describe('a site ban on the trader app (Task 27, 2026-10-29b)', () => {
     await settleEndedBans.run(t.deps.db, t.deps.clock());
     const me = await asTrader(id);
     expect((await me('GET', '/v1/wallets')).statusCode).toBe(403);
-    expect((await me('GET', '/v1/account/ban')).json().bans).toEqual([{ kind: 'site', reasonCode: 'trade-problems', until: null, permanent: true }]);
+    expect((await me('GET', '/v1/account/ban')).json().bans).toEqual([{ kind: 'site', reasonCode: 'trade-problems', until: null, permanent: true, implementedAt: NOW.toISOString() }]);
+  });
+
+  it('owner, 28 Nov 2026 (three tiers): the notice says when each ban was implemented, for a trade ban, a suspension and a lifetime ban', async () => {
+    const placedAt = (h: number) => new Date(NOW.getTime() - h * HOUR);
+    // Trade ban: a trade ban, timed here. Suspension: a timed site ban. Lifetime ban: a site ban with no end.
+    const cases = [
+      { kind: 'trade', ruleId: 'abuse', until: IN_A_WEEK, at: placedAt(5), want: { kind: 'trade', reasonCode: 'abuse', until: IN_A_WEEK, permanent: false } },
+      { kind: 'site', ruleId: 'trade-problems', until: IN_A_WEEK, at: placedAt(3), want: { kind: 'site', reasonCode: 'trade-problems', until: IN_A_WEEK, permanent: false } },
+      { kind: 'site', ruleId: 'scamming', until: null, at: placedAt(1), want: { kind: 'site', reasonCode: 'trade-problems', until: null, permanent: true } },
+    ] as const;
+    for (const c of cases) {
+      const id = await trader();
+      t.setNow(c.at);
+      resetBudgets(t);
+      const placed = await ban(senior, id, { kind: c.kind, ruleId: c.ruleId, until: c.until });
+      expect(placed.res.statusCode, placed.res.body).toBe(201);
+      t.setNow(NOW);
+      const notice = await (await asTrader(id))('GET', '/v1/account/ban');
+      expect(notice.statusCode).toBe(200);
+      expect(notice.json().bans, c.kind).toEqual([{ ...c.want, implementedAt: c.at.toISOString() }]);
+      // The ban's own row: implementedAt is its created_at.
+      const row = (await t.deps.db.query<{ created_at: Date }>('select created_at from account_bans where id = $1', [placed.banId])).rows[0]!;
+      expect(row.created_at.toISOString()).toBe(c.at.toISOString());
+    }
   });
 
   it('a trade ban alone leaves the rest of the app open', async () => {
