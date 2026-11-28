@@ -215,7 +215,25 @@ describe('describeLog', () => {
     expect(d({ field: 'moderatorContactUrl' })).toBe('Changed the moderator contact link');
     expect(d({ field: 'communityMatrixUrl' })).toBe('Changed the community Matrix link');
     expect(d({ field: 'communityTelegramUrl' })).toBe('Changed the community Telegram link');
-    expect(d({ field: 'feeSweepColdAddress' })).toBe('Changed the setting feeSweepColdAddress');
+    expect(d({ field: 'unknownFutureSetting' })).toBe('Changed the setting unknownFutureSetting');
+  });
+
+  it('labels pay-bonus, fee-sweep (in XMR), and starter-limit settings', () => {
+    const d = (detail: Record<string, unknown>) => describeLog({ action: 'settings.changed', detail, actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' } });
+    expect(d({ field: 'seniorLargeTradeBp', from: 500, to: 1000 })).toBe("Changed a senior moderator's share of large-trade fees from 500 to 1,000 basis points (100 = 1% of the fee)");
+    expect(d({ field: 'largeTradeBonusThresholdUsd', from: 500, to: 1000 })).toBe('Changed the large-trade bonus threshold from 500 to 1,000 USD');
+    expect(d({ field: 'feeSweepThresholdAtomic', from: '5000000000000', to: '10000000000000' })).toBe('Changed the payroll wallet cap from 5.00 XMR to 10.00 XMR');
+    expect(d({ field: 'feeSweepThresholdAtomic', from: null, to: '5000000000000' })).toBe('Changed the payroll wallet cap from off to 5.00 XMR');
+    expect(d({ field: 'feeSweepFloatAtomic', from: '500000000000', to: '1250000000000' })).toBe('Changed the amount to keep in the payroll wallet from 0.50 XMR to 1.25 XMR');
+    expect(d({ field: 'feeSweepFloatAtomic', from: null, to: '500000000000' })).toBe('Changed the amount to keep in the payroll wallet from not set to 0.50 XMR');
+    expect(d({ field: 'feeSweepColdAddress' })).toBe('Changed the fee wallet address');
+    expect(d({ field: 'starterCapUsd', from: 200, to: 500 })).toBe("Changed Starter's largest trade from 200 to 500 USD");
+    expect(d({ field: 'starterMaxOpenTrades', from: 1, to: 2 })).toBe("Changed Starter's open trades limit from 1 to 2 trades");
+    expect(d({ field: 'buildingCapUsd', from: 1000, to: 2000 })).toBe("Changed Building's largest trade from 1,000 to 2,000 USD");
+    expect(d({ field: 'buildingMinTrades', from: 3, to: 5 })).toBe('Changed completed trades for Building from 3 to 5 trades');
+    expect(d({ field: 'buildingMinDays', from: 7, to: 14 })).toBe('Changed account age for Building from 7 to 14 days');
+    expect(d({ field: 'graduatedMinTrades', from: 10, to: 20 })).toBe('Changed completed trades for Graduated from 10 to 20 trades');
+    expect(d({ field: 'graduatedMinDays', from: 30, to: 60 })).toBe('Changed account age for Graduated from 30 to 60 days');
   });
 
   it('describes chat.message-requested and chat.message-sent for shared, private-lane, and mode-toggle entries', () => {
