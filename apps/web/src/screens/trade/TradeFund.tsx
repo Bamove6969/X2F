@@ -45,11 +45,12 @@ export const GIFT_CARD_WARNING =
 /** Edge has no "Full Sync" setting (owner demo note 16 Nov #96); the wallet menu's Wallet Settings has LWS or Full Node. COPY-UNSIGNED */
 export { EDGE_TIP };
 
-/** What the seller sends: the funding amount while unfunded, else the amount plus the poster's fee. */
+/** What the seller sends: the funding amount while unfunded, else the amount plus the poster's fee and any seller lien recovery. */
 function sellerFundsOf(view: TradeView): bigint {
   if (view.funding) return BigInt(view.funding.sellerFundsAtomic);
   const fee = view.poster === 'seller' && view.fee ? BigInt(view.fee.atomic) : 0n;
-  return BigInt(view.amountAtomic) + fee;
+  const extra = view.role === 'seller' && view.sellerLienRecoveryAtomic ? BigInt(view.sellerLienRecoveryAtomic) : 0n;
+  return BigInt(view.amountAtomic) + fee + extra;
 }
 
 const fiat = (view: TradeView, cents: string | bigint) => `${formatFiat(BigInt(cents), view.lockedRate.currency)} ${view.lockedRate.currency}`;

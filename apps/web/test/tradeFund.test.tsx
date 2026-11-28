@@ -176,6 +176,22 @@ describe('TradeFund (seller)', () => {
     noFundingTraces(host);
   });
 
+  it('when funding and deal are absent, the displayed seller total includes amount, fee, and sellerLienRecoveryAtomic', async () => {
+    current = {
+      ...base,
+      state: 'setup',
+      role: 'seller',
+      poster: 'seller',
+      fee: { atomic: '12500000000' },
+      sellerLienRecoveryAtomic: '500000000000',
+      funding: null,
+      fundBy: null,
+    };
+    setTradeEscrowHook(() => escrow({ deal: null }));
+    const host = await room();
+    expect(host.textContent).toContain('1.762500 XMR');
+  });
+
   it('when short: "Received 1.000000 of 1.250000 XMR, send the rest"', async () => {
     current = { ...base, receivedAtomic: '1000000000000' };
     const host = await room();
