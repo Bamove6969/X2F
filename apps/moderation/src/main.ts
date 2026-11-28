@@ -3,7 +3,7 @@ import { noticePass } from './notices.js';
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
-import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, TRADE_KEEP_DAYS, WATCH_INTERVAL_MS, watchShowsEmpty, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, channelFor, isClosed, TRADE_KEEP_DAYS, WATCH_INTERVAL_MS, watchShowsEmpty, type Attestation, type ModPartyArgs, type Trade } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms, checkWork } from './attest.js';
@@ -724,7 +724,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
    *   trade this service recorded the chat linked to, or the order's trade. Looked up by the chat
    *   (review I1), so an order naming no trade, or another one, does not skip the hold;
    * - the order's trade not the one this service recorded the chat linked to (`chat-shred-held-mismatch`);
-   * - its trade on the watch list in an open state, anything but CLOSED_STATES (`chat-shred-held-open`),
+   * - its trade on the watch list in an open state, anything isClosed(state, closed) does not count as
+   *   closed: a lapsed trade only when its record is closed, i.e. it lapsed with no coin (`chat-shred-held-open`),
    *   or the watch list unreadable this pass (`chat-shred-held-unknown`).
    * A held order is skipped, never a stop: the orders after it are still done this pass, and the API
    * serves the least recently served first (review M4).
@@ -1130,7 +1131,7 @@ async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch:
   if (trade === null) return null;
   if (watch === null) return 'unknown';
   const item = watch.get(trade);
-  if (item !== undefined && !CLOSED_STATES.includes(item.state as (typeof CLOSED_STATES)[number])) return 'open';
+  if (item !== undefined && !isClosed(item.state, item.closed)) return 'open';
   return null;
 }
 

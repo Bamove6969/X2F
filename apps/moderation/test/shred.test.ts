@@ -51,7 +51,7 @@ interface Order {
 }
 
 /** The API's internal listener as the moderation service sees it, checking every signature. */
-function fakeApi(s: { chatWork?: () => ChatWorkItem[]; orders?: () => Order[]; watch?: () => Array<{ trade: string; state: string; chat?: string | null }> | null; shredStatus?: number }) {
+function fakeApi(s: { chatWork?: () => ChatWorkItem[]; orders?: () => Order[]; watch?: () => Array<{ trade: string; state: string; chat?: string | null; closed?: boolean }> | null; shredStatus?: number }) {
   const reports: Array<Record<string, unknown>> = [];
   const modKey = sodium.from_hex(modSign.public);
   const fetch: Fetch = async (url, init) => {
@@ -414,6 +414,21 @@ describe('the shred pass', () => {
     watch = [{ trade, state: 'released' }];
     expect(await (await moderation(net.fetch, (e) => reasons.push(e.reason))).shredTick()).toEqual([c.chat, pre.chat]);
     // A trade the list no longer shows (closed more than 31 days ago) is not held either.
+    expect(await loadChatIdentity(db, keystoreKey, c.chat)).toBeNull();
+  });
+
+  it('finding F1: a trade that lapsed with no coin (its record closed) no longer holds its chat; one that lapsed with coins does', async () => {
+    const trade = newTradeCode();
+    const reasons: string[] = [];
+    let watch: Array<{ trade: string; state: string; closed?: boolean }> = [{ trade, state: 'lapsed', closed: false }];
+    const c = await attestedChat();
+    now = new Date(T0.getTime() + 31 * DAY);
+    const net = fakeApi({ orders: () => [order(c.chat, trade)], watch: () => watch });
+    const mod = await moderation(net.fetch, (e) => reasons.push(e.reason));
+    expect(await mod.shredTick()).toEqual([]);
+    expect(reasons).toContain('chat-shred-held-open');
+    watch = [{ trade, state: 'lapsed', closed: true }];
+    expect(await mod.shredTick()).toEqual([c.chat]);
     expect(await loadChatIdentity(db, keystoreKey, c.chat)).toBeNull();
   });
 

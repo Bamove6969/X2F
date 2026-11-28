@@ -81,6 +81,12 @@ export interface WatchItem {
   settleKind: SettleKind | null;
   /** Paused for maintenance (review M3). */
   paused: boolean;
+  /**
+   * The API's trade record is closed (`closed_at` set; finding F1). A coinless `lapsed` trade is
+   * closed with a state outside CLOSED_STATES: read closedness through `isClosed(state, closed)`.
+   * False when an older API leaves it out.
+   */
+  closed: boolean;
 }
 
 export interface Link {
@@ -228,11 +234,11 @@ export function createLink(o: {
       const body = (await res.json()) as { trades?: unknown };
       const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; chat?: unknown; settleKind?: unknown; paused?: unknown }>) {
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; chat?: unknown; settleKind?: unknown; paused?: unknown; closed?: unknown }>) {
         if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
         const chat = typeof t.chat === 'string' ? t.chat : null;
         const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
-        out.set(t.trade, { state: t.state, chat, settleKind, paused: t.paused === true });
+        out.set(t.trade, { state: t.state, chat, settleKind, paused: t.paused === true, closed: t.closed === true });
       }
       return out;
     },

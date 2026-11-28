@@ -85,8 +85,8 @@ describe('GET /internal/v1/watch', () => {
     const res = await signed('GET', '/internal/v1/watch');
     expect(res.statusCode).toBe(200);
     const trades = (res.json() as { trades: Array<{ trade: string; state: string }> }).trades;
-    expect(trades).toContainEqual({ trade: open.code, chat: null, state: 'setup', settleKind: null, paused: false });
-    expect(trades).toContainEqual({ trade: recent.code, chat: null, state: 'cancelled', settleKind: null, paused: false });
+    expect(trades).toContainEqual({ trade: open.code, chat: null, state: 'setup', settleKind: null, paused: false, closed: false });
+    expect(trades).toContainEqual({ trade: recent.code, chat: null, state: 'cancelled', settleKind: null, paused: false, closed: true });
     expect(trades.map((t) => t.trade)).not.toContain(unattested.code);
     expect(trades.map((t) => t.trade)).not.toContain(old.code);
   });
@@ -101,7 +101,7 @@ describe('GET /internal/v1/watch', () => {
     );
     const item = async () =>
       ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
-    expect(await item()).toEqual({ trade: t.code, chat: null, state: 'settling', settleKind: 'auto-refund', paused: false });
+    expect(await item()).toEqual({ trade: t.code, chat: null, state: 'settling', settleKind: 'auto-refund', paused: false, closed: false });
   });
 
   it('names the kind a sweep would settle (settleKindFor) and whether the trade is paused (review I1, M3)', async () => {
@@ -111,8 +111,32 @@ describe('GET /internal/v1/watch', () => {
     await deps.db.query(`update trades set state = 'lapsed' where code = $1`, [lapsed.code]);
     const res = await signed('GET', '/internal/v1/watch');
     const trades = (res.json() as { trades: unknown[] }).trades;
-    expect(trades).toContainEqual({ trade: settling.code, chat: null, state: 'settling', settleKind: 'release', paused: true });
-    expect(trades).toContainEqual({ trade: lapsed.code, chat: null, state: 'lapsed', settleKind: 'lapse-refund', paused: false });
+    expect(trades).toContainEqual({ trade: settling.code, chat: null, state: 'settling', settleKind: 'release', paused: true, closed: false });
+    expect(trades).toContainEqual({ trade: lapsed.code, chat: null, state: 'lapsed', settleKind: 'lapse-refund', paused: false, closed: false });
+  });
+
+  it('finding F1: says whether the trade record is closed, so a lapse with no coin reads closed and one with coins open', async () => {
+    const lapseAt = (f: Trade) => ({ db: deps.db, clock: () => new Date(f.fundBy!.getTime() + 60_000) });
+    // Funding past fundBy with nothing received: the machine lapses it with closedAt set.
+    const coinless = await trade();
+    const f1 = await driveTo(deps, coinless, 'funding');
+    const l1 = await applyEvent(lapseAt(f1), coinless.code, { type: 'tick' }, 'system');
+    expect(l1.state).toBe('lapsed');
+    expect(l1.closedAt).not.toBeNull();
+    // Part of the funds received: lapsed, its lapse refund still to settle, the record open.
+    const funded = await trade();
+    const f2 = await driveTo(deps, funded, 'funding');
+    await applyEvent(deps, funded.code, { type: 'chain', receivedAtomic: 1_000_000n, unlockedAtomic: 0n, confirmations: 0 }, 'system');
+    const l2 = await applyEvent(lapseAt(f2), funded.code, { type: 'tick' }, 'system');
+    expect(l2.state).toBe('lapsed');
+    expect(l2.closedAt).toBeNull();
+    const open = await trade();
+    const trades = ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades;
+    const item = (code: string) => trades.find((x) => x.trade === code);
+    expect(item(coinless.code)).toMatchObject({ state: 'lapsed', settleKind: 'lapse-refund', closed: true });
+    expect(item(funded.code)).toMatchObject({ state: 'lapsed', settleKind: 'lapse-refund', closed: false });
+    expect(item(open.code)).toMatchObject({ state: 'setup', closed: false });
+    for (const t of trades) expect(typeof t.closed).toBe('boolean');
   });
 
   it('an open trade shows paused as soon as site maintenance is on, before the timer loop pauses it (owner rule g62)', async () => {

@@ -79,6 +79,8 @@ export function fakeNetwork(ctx: Ctx) {
     paused: new Set<string>(),
     /** settleKindFor at the API, per trade (default null). */
     settleKinds: new Map<string, string>(),
+    /** Trades whose API record is closed (`closed_at` set; finding F1: a coinless lapsed trade). */
+    recordClosed: new Set<string>(),
     reports: [] as Report[],
     /** The API's trade shred orders (Plan 7 Task 2 follow-up), served on GET /internal/v1/trade-shred. */
     tradeShred: [] as Array<{ trade: unknown; purgedAt: string }>,
@@ -109,6 +111,7 @@ export function fakeNetwork(ctx: Ctx) {
             state,
             settleKind: net.settleKinds.get(trade) ?? null,
             paused: net.paused.has(trade),
+            closed: net.recordClosed.has(trade),
           })),
         });
       }

@@ -8,7 +8,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import type { EscrowEngine, PartyArgs, PartyStore, Transport } from '@x2f/escrow';
 import { isAttestedTerms, type AttestedTerms } from './attestation.js';
 import { channelFor } from './channels.js';
-import type { TradeState } from './machine.js';
+import { isClosed, type TradeState } from './machine.js';
 
 /**
  * What the moderation service's loop (apps/moderation/src/main.ts, Task 8) hands to its `runParty`
@@ -83,6 +83,8 @@ export interface ModPartyFacts {
   setupDoneReported: boolean;
   /** The trade's state from the API work list. */
   apiState: TradeState;
+  /** The API's record is closed (the watch list's `closed`; finding F1: a coinless `lapsed` trade). Absent reads as false. */
+  apiClosed?: boolean;
   /** The watcher's verdict: false once a closed escrow has been watched for 30 days (and the trade is still closed). */
   watching: boolean;
 }
@@ -95,11 +97,9 @@ export interface ModPartyPlan {
   stop: boolean;
 }
 
-const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
-
 export function modPartyPlan(f: ModPartyFacts): ModPartyPlan {
   const hasAddress = typeof f.escrowAddress === 'string' && f.escrowAddress !== '';
-  const closed = CLOSED.includes(f.apiState);
+  const closed = isClosed(f.apiState, f.apiClosed);
   // A trade that closed before any escrow existed has nothing to watch. The 30-day watch ends a
   // party only while the trade is closed: one escalated by late funds keeps it.
   const needed = (f.watching || !closed) && !(closed && !hasAddress);

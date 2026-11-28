@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { newTradeCode, type Role } from '@x2f/core';
+import type { PartyHandle } from '@x2f/escrow';
 import { generateIdentity, type Identity } from '@x2f/protocol';
 import {
   attestationBytes,
@@ -92,7 +93,7 @@ async function trader(code: string, role: 'buyer' | 'seller'): Promise<{ id: Ide
  * the injected fetch. It CHECKS every moderation signature exactly as the real listeners do, and
  * records what was posted.
  */
-function fakeNetwork(work: () => WorkItem[]) {
+function fakeNetwork(work: () => WorkItem[], watch?: () => unknown[]) {
   const reports: Array<{ attestation: Attestation; sig: string }> = [];
   const registered: Array<{ channel: string; signPublics: Record<Role, string> }> = [];
   const refused: string[] = [];
@@ -100,6 +101,8 @@ function fakeNetwork(work: () => WorkItem[]) {
   const refusals: Array<{ trade: string; reason: string }> = [];
   /** Review B1: the moderation service's signed lien statements, posted after an attestation. */
   const lienStatements: Array<{ statement: LienStatement; sig: string }> = [];
+  /** The watcher's reports (chain, settled, ...), when a watch list is served. */
+  const watchReports: Array<{ kind: string; trade: string }> = [];
   const modKey = sodium.from_hex(modSign.public);
   const fetch: Fetch = async (url, init) => {
     const reply = (status: number, body: unknown = {}) => ({ status, json: async () => body });
@@ -113,9 +116,11 @@ function fakeNetwork(work: () => WorkItem[]) {
         return reply(401);
       }
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: work() });
+      if (init.method === 'GET' && u.pathname === '/internal/v1/watch' && watch) return reply(200, { trades: watch() });
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
         const body = JSON.parse(init.body ?? '{}') as { kind: string; attestation: Attestation; sig: string; trade: string; reason: string; statement: LienStatement };
-        if (body.kind === 'refused') refusals.push({ trade: body.trade, reason: body.reason });
+        if (watch && body.kind !== 'attestation' && body.kind !== 'refused' && body.kind !== 'lien-statement') watchReports.push({ kind: body.kind, trade: body.trade });
+        else if (body.kind === 'refused') refusals.push({ trade: body.trade, reason: body.reason });
         else if (body.kind === 'lien-statement') lienStatements.push({ statement: body.statement, sig: body.sig });
         else reports.push({ attestation: body.attestation, sig: body.sig });
         return reply(201, { ok: true });
@@ -133,9 +138,10 @@ function fakeNetwork(work: () => WorkItem[]) {
       registered.push({ channel: body.channel, signPublics: body.signPublics });
       return reply(201, { ok: true });
     }
+    if (u.origin === RELAY && u.pathname === '/v1/admin/trades/close' && watch) return reply(200, { ok: true });
     return reply(404);
   };
-  return { fetch, reports, registered, refused, refusals, lienStatements };
+  return { fetch, reports, registered, refused, refusals, lienStatements, watchReports };
 }
 
 /** The running service: one at a time (instance lock, security review 7 Nov finding 2), so a new start is a restart. */
@@ -148,7 +154,7 @@ async function moderation(
   fetch: Fetch,
   runParty: (a: ModPartyArgs) => void = () => {},
   log?: (e: { reason: string }) => void,
-  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates' | 'now' | 'intervalMs'> & { lienRecovery?: boolean | 'unset'; db?: pg.Pool } = {},
+  extra: Pick<ModerationDeps, 'lienRulings' | 'lienRates' | 'now' | 'intervalMs' | 'startParty'> & { lienRecovery?: boolean | 'unset'; db?: pg.Pool } = {},
 ): Promise<ModerationHandle> {
   // Re-review N1: the lien suites run with MOD_LIEN_RECOVERY=on unless they say otherwise; 'unset' leaves the option out (the production default).
   const { lienRecovery = true, db: modDb = db, ...deps } = extra;
@@ -1003,6 +1009,49 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
       const left = TAKE - FULL; // 0.010000000001 XMR: at least the 0.01 XMR floor
       const b = await sellerTrade(rec(left), await sellerSourceOf(src));
       expect(b.signed).toBe(true);
+    });
+
+    it("finding F1: a sale that lapsed with no coin frees the seller's extra once the watcher sees it closed, and the debtor's next sale attests", async () => {
+      const src = await sourceTrade();
+      const a = await sellerTrade(rec(TAKE), await sellerSourceOf(src));
+      expect(a.signed).toBe(true);
+      // The whole lien is in a's extra: another sale's is over-owed while it counts.
+      const blocked = await sellerTrade(rec(TAKE), await sellerSourceOf(src));
+      expect(blocked.signed).toBe(false);
+      expect(blocked.reasons).toContain('lien-refused-over-owed');
+      // a's escrow is set up and never gets a coin; past fundBy the API lapses it with its record
+      // closed (`closedAt`, the watch list's `closed`) and stops counting the seller's hold.
+      const api = { state: 'funding', closed: false };
+      const net = fakeNetwork(() => [], () => [{ trade: a.code, chat: null, settleKind: null, paused: false, ...api }]);
+      const coinless = {
+        ready: async () => '5'.padEnd(95, 'E'),
+        settle: async () => null,
+        funds: async () => ({ balance: 0n, unlocked: 0n, incoming: [], chainHeight: 100, outgoing: [] }),
+        spendInfo: async () => {
+          throw new Error('not used');
+        },
+        importSpendInfo: async () => {
+          throw new Error('not used');
+        },
+        stop: async () => {},
+      } as unknown as PartyHandle;
+      const r = reasonsOf();
+      const mod = await moderation(net.fetch, () => {}, r.log, { lienRulings: creditorBuyer, startParty: async () => coinless });
+      const freed = async () =>
+        (await db.query<{ f: boolean }>(`select freed_at is not null as f from mod_lien_recoveries where trade = $1 and debtor_side = 'seller'`, [a.code])).rows[0]!.f;
+      await expect.poll(async () => {
+        await mod.watch();
+        return net.watchReports.some((x) => x.trade === a.code && x.kind === 'chain');
+      }).toBe(true);
+      expect(await freed()).toBe(false);
+      api.state = 'lapsed';
+      api.closed = true;
+      await mod.watch();
+      expect(await freed()).toBe(true);
+      const next = await sellerTrade(rec(TAKE), await sellerSourceOf(src));
+      expect(next.reasons).not.toContain('lien-refused-over-owed');
+      expect(next.signed).toBe(true);
+      expect(next.done).toEqual([next.code]);
     });
 
     it('both parties owe: one trade carries both recoveries, each checked against its own lien and recorded by side', async () => {
