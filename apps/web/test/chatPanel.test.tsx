@@ -36,6 +36,10 @@ beforeEach(() => {
   current = snap();
   client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendProof: vi.fn(async () => current), sendUnblurred: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ error: 'not-authenticated' }), { status: 401, headers: { 'content-type': 'application/json' } })),
+  );
 });
 
 afterEach(() => {
