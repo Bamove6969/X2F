@@ -28,7 +28,7 @@ export function whoName(e: Pick<LogEntry, 'actor'>): string {
 }
 
 /** The board's setting names: "the large-trade limit". */
-const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> = {
+const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string; xmr?: boolean; empty?: string }>> = {
   largeTradeLimitUsd: { name: 'the large-trade limit', unit: 'USD' },
   firstResponseH: { name: 'the first-reply time', unit: 'hours' },
   appealWindowH: { name: 'the appeal window', unit: 'hours' },
@@ -43,6 +43,18 @@ const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> =
   paySeniorDisputeUsdCents: { name: "a senior moderator's minimum per dispute", unit: 'US cents' },
   payModFlatUsdCents: { name: "a moderator's flat amount per dispute", unit: 'US cents' },
   paySeniorFlatUsdCents: { name: "a senior moderator's flat amount per dispute", unit: 'US cents' },
+  seniorLargeTradeBp: { name: "a senior moderator's share of large-trade fees", unit: 'basis points (100 = 1% of the fee)' },
+  largeTradeBonusThresholdUsd: { name: 'the large-trade bonus threshold', unit: 'USD' },
+  feeSweepThresholdAtomic: { name: 'the payroll wallet cap', xmr: true, empty: 'off' },
+  feeSweepFloatAtomic: { name: 'the amount to keep in the payroll wallet', xmr: true },
+  feeSweepColdAddress: { name: 'the fee wallet address' },
+  starterCapUsd: { name: "Starter's largest trade", unit: 'USD' },
+  starterMaxOpenTrades: { name: "Starter's open trades limit", unit: 'trades' },
+  buildingCapUsd: { name: "Building's largest trade", unit: 'USD' },
+  buildingMinTrades: { name: 'completed trades for Building', unit: 'trades' },
+  buildingMinDays: { name: 'account age for Building', unit: 'days' },
+  graduatedMinTrades: { name: 'completed trades for Graduated', unit: 'trades' },
+  graduatedMinDays: { name: 'account age for Graduated', unit: 'days' },
 };
 
 const groups = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -235,6 +247,11 @@ function sentence(
       const s = SETTING_WORDS[str(d.field)];
       const name = s?.name ?? `the setting ${str(d.field) || ''}`.trim();
       if (d.from === undefined && d.to === undefined) return `Changed ${name}`;
+      if (s?.xmr) {
+        const empty = s.empty ?? 'not set';
+        const val = (v: unknown) => (v === null || v === undefined ? empty : xmr(v) || num(v));
+        return `Changed ${name} from ${val(d.from)} to ${val(d.to)}`;
+      }
       const unit = s?.unit ? ` ${s.unit}` : '';
       return `Changed ${name} from ${num(d.from)} to ${num(d.to)}${unit}`;
     }
