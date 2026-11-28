@@ -83,9 +83,27 @@ export function startTimers(deps: TimerDeps): TimerHandle {
     const skipped = [...pass.skipped];
     for (const s of pass.skipped) log({ reason: `timer-skipped-${s.reason}` });
     for (const ev of pass.events) {
+      let stopped = false;
       try {
-        await applyEvent({ db: deps.db, clock: () => ev.at, ...(deps.publish ? { publish: deps.publish } : {}) }, ev.code, ev.event, 'system');
-        applied.push({ code: ev.code, type: ev.event.type });
+        await applyEvent(
+          { db: deps.db, clock: () => ev.at, ...(deps.publish ? { publish: deps.publish } : {}) },
+          ev.code,
+          ev.event,
+          'system',
+          undefined,
+          ev.event.type === 'resume'
+            ? async (client) => {
+                // Re-check under the trade row lock: a recovery-code hold placed since the scan
+                // keeps the trade paused until the hold ends (trades/held.ts).
+                const stillHeld = await client.query('select 1 from held_trades where code = $1 and released_at is null limit 1', [ev.code]);
+                if ((stillHeld.rowCount ?? 0) > 0) {
+                  stopped = true;
+                  return 'stop';
+                }
+              }
+            : undefined,
+        );
+        if (!stopped) applied.push({ code: ev.code, type: ev.event.type });
       } catch (e) {
         const reason = e instanceof TradeRuleError ? e.code : 'error';
         skipped.push({ code: ev.code, reason });
