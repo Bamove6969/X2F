@@ -1,6 +1,7 @@
 import { DEFAULT_RECOVERY_RATE_BPS, lienRemaining } from '@x2f/staff';
 import { LIEN_RECOVERY_MAX_BPS, WATCH_CLOSED_DAYS, expectedRecovery, expectedSellerRecovery, lienRecoveryCap, sellerLienRecoveryCap } from '@x2f/trade';
 import type pg from 'pg';
+import { addOwnerAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import type { LogAction } from '../log/actions.js';
 import { ApiError } from '../errors.js';
@@ -433,7 +434,11 @@ async function settleSide(c: pg.PoolClient, code: string, side: DebtorSide, end:
   }
   const remaining = left - recorded;
   logs.push({ action: 'lien.recovered', detail: { lienId: hold.lien_id, amountAtomic: recorded.toString(), remainingAtomic: remaining.toString() } });
-  if (paid > recorded) logs.push({ action: 'lien.over-recovered', detail: { lienId: hold.lien_id, amountAtomic: (paid - recorded).toString() } });
+  if (paid > recorded) {
+    const over = paid - recorded;
+    logs.push({ action: 'lien.over-recovered', detail: { lienId: hold.lien_id, amountAtomic: over.toString() } });
+    await addOwnerAlert(c, 'lien-over-recovered', { trade: code, lienId: hold.lien_id, amountAtomic: over.toString() }, now);
+  }
   // Q6 (provisional, 17 Nov): a lien voided, overturned or suspended while this trade's signed terms
   // carried its recovery: the money moved, so it is recorded, and flagged for staff (no clawback).
   if (lien.status !== 'active') logs.push({ action: 'lien.recovered-after-end', detail: { lienId: hold.lien_id, status: lien.status, amountAtomic: hold.amount_atomic } });

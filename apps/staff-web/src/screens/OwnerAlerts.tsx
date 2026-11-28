@@ -48,6 +48,7 @@ export const ALERT_TITLES: Readonly<Record<string, string>> = {
   'lien-grace-lapsed': 'The 7 days to pay the agreed way passed without the person owed confirming',
   'lien-grace-escalated': 'A lien whose 7 days to pay passed waits for a senior moderator',
   'lien-rate-requested': 'A lower share for a lien waits for your approval',
+  'lien-over-recovered': 'A lien recovery payout exceeded what was still owed on the lien',
 };
 export const alertTitle = (kind: string): string => ALERT_TITLES[kind] ?? 'Notice';
 
