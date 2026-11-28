@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 31: the trader's support tickets (/support/tickets, /support/tickets/new,
 // /support/tickets/:id) against a stubbed API in the shapes of apps/api/src/tickets/traderRoutes.ts.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { TICKET_CATEGORIES } from '@x2f/core';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -172,6 +174,55 @@ describe('Open a ticket', () => {
     answer = { status: 404, json: { error: 'not-found' } };
     await submit();
     expect(host.querySelector('[data-part="ticket-failed"]')!.textContent).toBe(TICKET_COPY.tradeUnknown);
+  });
+
+  it('desktop card sticky footer overrides ui.css transparent background with higher specificity over --x2f-surface and preserves rounded bottom corners', async () => {
+    const { host } = render(
+      <div data-shell="desktop">
+        <MemoryRouter initialEntries={['/support/tickets/new']}>
+          <TicketNew />
+        </MemoryRouter>
+      </div>,
+    );
+    await settle();
+    const footer = host.querySelector('.x2f-flow__footer')!;
+    expect(footer).not.toBeNull();
+
+    const supportCss = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/support/support.css'), 'utf8');
+    const uiCss = readFileSync(join(import.meta.dirname, '..', 'src', 'ui/ui.css'), 'utf8');
+
+    // Strip comments and extract top-level selector -> declaration blocks.
+    const rules = (css: string) =>
+      [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+        selectors: m[1]!.split(',').map((s) => s.trim()).filter(Boolean),
+        body: m[2]!,
+      }));
+
+    // Count (class + attribute + pseudo-class) tokens for selectors without IDs.
+    const classAttrSpecificity = (sel: string) => (sel.match(/(\.[a-zA-Z0-9_-]+|\[[^\]]+\])/g) ?? []).length;
+
+    const uiCardFooter = rules(uiCss)
+      .flatMap((r) => r.selectors.map((s) => ({ sel: s, body: r.body })))
+      .find(
+        ({ sel, body }) =>
+          sel.includes("[data-shell='desktop']") &&
+          sel.includes(".x2f-flow[data-look='card']") &&
+          sel.includes('.x2f-flow__footer') &&
+          /background:\s*transparent\b/.test(body),
+      );
+    expect(uiCardFooter).toBeDefined();
+    expect(footer.matches(uiCardFooter!.sel)).toBe(true);
+    const uiSpec = classAttrSpecificity(uiCardFooter!.sel);
+    expect(uiSpec).toBe(4);
+
+    const supportDesktopFooter = rules(supportCss)
+      .flatMap((r) => r.selectors.map((s) => ({ sel: s, body: r.body })))
+      .find(({ sel }) => sel.includes("[data-shell='desktop']") && sel.includes("[data-screen='ticket-new']") && sel.includes('.x2f-flow__footer'));
+    expect(supportDesktopFooter).toBeDefined();
+    expect(footer.matches(supportDesktopFooter!.sel)).toBe(true);
+    expect(classAttrSpecificity(supportDesktopFooter!.sel)).toBeGreaterThan(uiSpec);
+    expect(supportDesktopFooter!.body).toMatch(/background:\s*linear-gradient\([^;]*var\(--x2f-surface\)/);
+    expect(supportDesktopFooter!.body).toMatch(/border-radius:\s*0\s+0\s+var\(--x2f-radius-lg\)\s+var\(--x2f-radius-lg\)/);
   });
 });
 
