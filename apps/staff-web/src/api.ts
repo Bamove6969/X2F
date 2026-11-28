@@ -986,8 +986,11 @@ export const disputeCase = (code: string) => staffApi<DisputeCase>(casePath(code
  * A private message carries `to` (that trader's lane); a message to both has no `to` at all.
  */
 export const messageTraders = (code: string, sealed: import('./chat/types.js').SealedModMessage) => {
-  const { to, ...rest } = sealed;
-  return staffApi<{ id: string }>(casePath(code, '/messages'), { method: 'POST', body: to === undefined ? rest : { ...rest, to } });
+  const { to, mode, ...rest } = sealed;
+  return staffApi<{ id: string }>(casePath(code, '/messages'), {
+    method: 'POST',
+    body: { ...rest, ...(to === undefined ? {} : { to }), ...(mode === true ? { mode: true } : {}) },
+  });
 };
 /** Design build task 9: the moderator's read: the chat key re-wrapped to this device, and the chat's ciphertext. Logged (`chat.read`). */
 export const readCaseChat = (code: string, deviceKeyId: string) =>

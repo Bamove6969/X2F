@@ -218,4 +218,28 @@ describe('GET /staff/v1/performance/:id/weeks', () => {
       expect(res.statusCode, id).toBe(404);
     }
   });
+
+  it('excludes chat.mode-only toggles (mode: true) from first-reply credit so the replying mod gets credit (fix-mode-firstreply)', async () => {
+    const modX: Who = { id: (await seedStaff(deps, { role: 'mod' })).id, role: 'mod' };
+    const modY: Who = { id: (await seedStaff(deps, { role: 'senior' })).id, role: 'senior' };
+    at(10 * H);
+    const code = await disputed();
+    await assign(code, modX);
+    // modX toggles private mode (logged with mode: true, does not call reply).
+    at(10 * H + 5 * MIN);
+    await step(code, async (d, now, client) => {
+      await appendLog(client, { at: now, actor: actorOf(modX), tradeCode: code, action: 'chat.message-sent', detail: { envelopeId: randomUUID(), to: 'buyer', mode: true } });
+      return d;
+    });
+    // modY takes over and sends the actual first reply 25 min after opening.
+    at(10 * H + 25 * MIN);
+    await assign(code, modY);
+    await reply(code, modY);
+
+    const res = await (await browser(owner)).get('/staff/v1/performance?period=30d');
+    expect(res.statusCode, res.body).toBe(200);
+    const people = (res.json() as { people: PersonRow[] }).people;
+    expect(people.find((p) => p.id === modX.id)?.firstReplyMin).toBeNull();
+    expect(people.find((p) => p.id === modY.id)?.firstReplyMin).toBe(25);
+  });
 });

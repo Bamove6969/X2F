@@ -3,7 +3,8 @@
 // pkh; v3 envelopes open under their lane's key with that lane's own replay guard and gap count; a
 // private message is sealed as v3 under the lane key with the lane countersign.
 import { generateIdentity, makePrivateLaneRecord, newPrivateKey, openPrivate, privateKeyHash, ReplayGuard, sealChat, signPrivateEnvelope, verifyModCountersign, verifyModPrivateCountersign, wrapPrivateKey } from '@x2f/protocol';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { messageTraders } from '../src/api.js';
 import { ChatKeyError } from '../src/chat/types.js';
 import { CaseChatError, forget, openCaseChat, sealModeMessage, sealModMessage } from '../src/keys/reader.js';
 import { memory, MOD_PUB, workerPair, world } from './chatWorld.js';
@@ -170,7 +171,7 @@ describe('the lane mode (owner 27 Nov follow-up): `chat.mode` in a lane', () => 
     const o = await openCaseChat(w.answer, w.device, MOD);
     for (const on of [true, false]) {
       const m = await sealModeMessage(o, 'buyer', on, w.device, new Date(NOW), 3);
-      expect({ to: m.to, seq: m.seq }).toEqual({ to: 'buyer', seq: 3 });
+      expect({ to: m.to, seq: m.seq, mode: m.mode }).toEqual({ to: 'buyer', seq: 3, mode: true });
       const body = { v: 3 as const, trade: w.channel, from: 'mod' as const, to: 'buyer' as const, seq: 3, nonce: m.nonce, ct: m.ct };
       const cs = { chat: w.channel, to: 'buyer', seq: 3, nonce: m.nonce, ctSha256: m.ctSha256, requestId: m.requestId, issuedAt: m.issuedAt, sig: m.sig };
       await expect(verifyModPrivateCountersign(cs, { body, signPublic: w.device.signPublic })).resolves.toBeDefined();
@@ -191,7 +192,7 @@ describe('the lane mode (owner 27 Nov follow-up): `chat.mode` in a lane', () => 
     const { keys, keeper } = await workerPair({ backend, now: () => NOW });
     const v = await keys.open(w.answer);
     const m = await keys.sealMode(v.handle, 'seller', true, new Date(NOW), 0);
-    expect({ to: m.to, seq: m.seq }).toEqual({ to: 'seller', seq: 0 });
+    expect({ to: m.to, seq: m.seq, mode: m.mode }).toEqual({ to: 'seller', seq: 0, mode: true });
     expect((await keys.sealMode(v.handle, 'seller', false, new Date(NOW), 1)).seq).toBe(1);
     await expect(keys.sealMode(v.handle, 'mod' as never, true, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('unreadable'));
     await expect(keys.sealMode(v.handle, 'buyer', 1 as never, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('unreadable'));
@@ -199,5 +200,34 @@ describe('the lane mode (owner 27 Nov follow-up): `chat.mode` in a lane', () => 
     await expect(keys.sealMode('0'.repeat(32), 'buyer', true, new Date(NOW), 0)).rejects.toEqual(new ChatKeyError('gone'));
     expect(JSON.stringify(m)).not.toContain(Buffer.from(w.pk.seller).toString('hex'));
     keeper.forgetAll();
+  });
+
+  it('messageTraders sends mode: true for a mode message and omits mode otherwise (fix-mode-firstreply)', async () => {
+    const w = await world();
+    const o = await openCaseChat(w.answer, w.device, MOD);
+    const modeMsg = await sealModeMessage(o, 'buyer', true, w.device, new Date(NOW), 0);
+    const laneMsg = await sealModMessage(o, 'Only buyer.', w.device, new Date(NOW), 1, 'buyer');
+    const sharedMsg = await sealModMessage(o, 'To both.', w.device, new Date(NOW), 0);
+    const bodies: Record<string, unknown>[] = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ id: '1' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    });
+    try {
+      await messageTraders('ABCD-EFGH-JKLM-NPQR', modeMsg);
+      await messageTraders('ABCD-EFGH-JKLM-NPQR', laneMsg);
+      await messageTraders('ABCD-EFGH-JKLM-NPQR', { ...laneMsg, mode: false });
+      await messageTraders('ABCD-EFGH-JKLM-NPQR', sharedMsg);
+    } finally {
+      fetchSpy.mockRestore();
+      forget(o);
+    }
+    expect(bodies).toHaveLength(4);
+    expect(bodies[0]).toMatchObject({ to: 'buyer', mode: true });
+    expect(bodies[1]).toMatchObject({ to: 'buyer' });
+    expect('mode' in bodies[1]!).toBe(false);
+    expect('mode' in bodies[2]!).toBe(false);
+    expect('to' in bodies[3]!).toBe(false);
+    expect('mode' in bodies[3]!).toBe(false);
   });
 });

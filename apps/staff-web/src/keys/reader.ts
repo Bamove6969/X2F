@@ -235,7 +235,7 @@ export async function sealModMessage(c: OpenedChat, text: string, device: StaffD
  */
 export async function sealModeMessage(c: OpenedChat, to: Lane, on: boolean, device: StaffDeviceKey, now: Date, seq: number): Promise<SealedModMessage> {
   if (typeof on !== 'boolean') throw new CaseChatError('unreadable');
-  return sealInLane(c, to, CHAT_MODE_TYPE, { on }, device, now, seq);
+  return { ...(await sealInLane(c, to, CHAT_MODE_TYPE, { on }, device, now, seq)), mode: true };
 }
 
 function newRequestId(): string {

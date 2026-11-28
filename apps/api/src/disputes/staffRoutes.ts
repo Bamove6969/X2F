@@ -667,8 +667,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   // the caller's certified staff device, logged, signed as the moderator by the moderation process,
   // stored as the chat's mod envelope, and the dispute's reply (the first one stops the first-reply clock).
   app.post('/staff/v1/disputes/:code/messages', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
-    const b = body(req, [...MESSAGE_KEYS, 'to'], MESSAGE_KEYS);
-    if ((b.to !== undefined && !isLane(b.to)) || typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
+    const b = body(req, [...MESSAGE_KEYS, 'to', 'mode'], MESSAGE_KEYS);
+    if ((b.to !== undefined && !isLane(b.to)) || (b.mode !== undefined && typeof b.mode !== 'boolean') || typeof b.deviceKeyId !== 'string' || !DEVICE_KEY_ID.test(b.deviceKeyId) || typeof b.seq !== 'number' || !Number.isSafeInteger(b.seq) || b.seq < 0
       || typeof b.nonce !== 'string' || !B64.test(b.nonce) || typeof b.ct !== 'string' || !B64.test(b.ct) || b.ct.length > 90_000
       || typeof b.ctSha256 !== 'string' || !HEX64.test(b.ctSha256) || typeof b.requestId !== 'string' || !HEX32.test(b.requestId)
       || typeof b.issuedAt !== 'string' || !ISO_MS.test(b.issuedAt) || typeof b.sig !== 'string' || !HEX128.test(b.sig)) {
@@ -676,6 +676,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     }
     const sealed = { seq: b.seq, nonce: b.nonce, ct: b.ct, ctSha256: b.ctSha256, requestId: b.requestId, issuedAt: b.issuedAt, sig: b.sig };
     const to: Lane | null = b.to === undefined ? null : (b.to as Lane);
+    const mode = b.mode === true;
+    if (mode && (to === null || sealed.ct.length !== 364)) throw new ApiError(400, 'bad-request');
     const deviceKeyId = b.deviceKeyId;
     const deps = req.server.deps;
     const code = await codeOf(deps.db, req);
@@ -709,9 +711,15 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
         workable(req)(d);
         id = await storeModEnvelope(client, chat, env, to, now);
-        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: to === null ? { envelopeId: id } : { envelopeId: id, to } });
-        // A private message is the dispute's reply as a shared one is.
-        return applyDispute(d, { type: 'reply' }, me, now, await disputeSettings(client));
+        await log(client, {
+          at: now,
+          actor: me,
+          tradeCode: code,
+          action: 'chat.message-sent',
+          detail: to === null ? { envelopeId: id } : mode ? { envelopeId: id, to, mode: true } : { envelopeId: id, to },
+        });
+        // A private message is the dispute's reply as a shared one is, except a chat.mode-only switch.
+        return mode ? d : applyDispute(d, { type: 'reply' }, me, now, await disputeSettings(client));
       });
     } catch (err) {
       ruleError(err);
