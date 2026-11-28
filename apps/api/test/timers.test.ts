@@ -165,4 +165,62 @@ describe('startTimers', () => {
     expect(calls).toBe(after);
     expect(reasons).toContain('timers-pass-failed');
   });
+
+  /** Polls pg_stat_activity until a query is blocked by `holderPid` (fails immediately if `done()` or after timeout). */
+  async function waitUntilBlockedBy(holderPid: number, done: () => boolean, timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (done()) throw new Error('timers.tick() finished without blocking on trades FOR UPDATE');
+      const { rows } = await deps.db.query(
+        'select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+        [holderPid],
+      );
+      if (rows.length > 0) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(`timed out waiting for timers.tick() to block on holder pid ${holderPid}`);
+  }
+
+  it('resume re-checks held_trades under the trade row lock so a concurrent hold keeps the trade paused (F5, fix-resume-held)', async () => {
+    const t0 = new Date('2026-11-03T10:00:00Z');
+    now = t0;
+    const t = await driveTo({ db: deps.db, clock }, await trade(), 'secured');
+
+    let maintenance: Date | null = new Date(t0.getTime() + 60_000);
+    now = maintenance;
+    const timers = startTimers({ db: deps.db, clock, intervalMs: 0, maintenanceSince: async () => maintenance });
+    await timers.tick();
+    expect((await loadTrade(deps.db, t.code))!.pausedAt).not.toBeNull();
+
+    // Maintenance ends: tick() will try to resume `t.code`.
+    maintenance = null;
+    now = new Date(t0.getTime() + 21 * 60_000);
+
+    const c = await deps.db.connect();
+    let pass: ReturnType<typeof timers.tick> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from trades where code = $1 for update', [t.code]);
+      pass = timers.tick().finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query(
+        `insert into held_trades (code, account_id, action, held_at, paused) values ($1, $2, 'pause', $3, 'paused')`,
+        [t.code, t.buyerId, now],
+      );
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+    await pass;
+    await timers.stop();
+
+    expect((await loadTrade(deps.db, t.code))!.pausedAt).not.toBeNull();
+  });
 });

@@ -481,6 +481,7 @@ function onResume(t: Trade, now: Date): Trade {
 }
 
 function onDispute(t: Trade, by: Party, now: Date): Trade {
+  if (t.dispute !== null) return fail('wrong-state');
   const open = (): Trade => ({ ...t, state: 'disputed', dispute: { by, at: now }, closedAt: null });
   switch (t.state) {
     case 'securing':

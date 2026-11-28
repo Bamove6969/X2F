@@ -1494,4 +1494,16 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     const t = apply(fundingFor('buyer'), chain(received, received, 10), 'system', at(5));
     expect(facts(t, received, 'buyer-cancel')).toEqual([{ address: 'S', amountAtomic: received }]);
   });
+
+  test('open-dispute on a refunded trade that already had a dispute fails with wrong-state (F6)', () => {
+    const disputedRefund = apply(
+      apply(paid(), { type: 'open-dispute' }, 'buyer', at(250)),
+      { type: 'settled', kind: 'mutual-cancel', txHash: 'dd'.repeat(32) },
+      'system',
+      at(260),
+    );
+    expect(disputedRefund.state).toBe('refunded');
+    expect(disputedRefund.dispute).not.toBeNull();
+    expect(rule(() => apply(disputedRefund, { type: 'open-dispute' }, 'buyer', at(265)))).toBe('wrong-state');
+  });
 });
