@@ -176,7 +176,18 @@ describe('Open a ticket', () => {
     expect(host.querySelector('[data-part="ticket-failed"]')!.textContent).toBe(TICKET_COPY.tradeUnknown);
   });
 
-  it('desktop card sticky footer overrides ui.css transparent background with higher specificity over --x2f-surface', () => {
+  it('desktop card sticky footer overrides ui.css transparent background with higher specificity over --x2f-surface and preserves rounded bottom corners', async () => {
+    const { host } = render(
+      <div data-shell="desktop">
+        <MemoryRouter initialEntries={['/support/tickets/new']}>
+          <TicketNew />
+        </MemoryRouter>
+      </div>,
+    );
+    await settle();
+    const footer = host.querySelector('.x2f-flow__footer')!;
+    expect(footer).not.toBeNull();
+
     const supportCss = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/support/support.css'), 'utf8');
     const uiCss = readFileSync(join(import.meta.dirname, '..', 'src', 'ui/ui.css'), 'utf8');
 
@@ -200,22 +211,18 @@ describe('Open a ticket', () => {
           /background:\s*transparent\b/.test(body),
       );
     expect(uiCardFooter).toBeDefined();
+    expect(footer.matches(uiCardFooter!.sel)).toBe(true);
     const uiSpec = classAttrSpecificity(uiCardFooter!.sel);
     expect(uiSpec).toBe(4);
 
     const supportDesktopFooter = rules(supportCss)
       .flatMap((r) => r.selectors.map((s) => ({ sel: s, body: r.body })))
-      .find(
-        ({ sel, body }) =>
-          sel.includes("[data-shell='desktop']") &&
-          sel.includes(".x2f-flow") &&
-          sel.includes("[data-look='card']") &&
-          sel.includes("[data-screen='ticket-new']") &&
-          sel.includes('.x2f-flow__footer') &&
-          /background:\s*linear-gradient\([^;]*var\(--x2f-surface\)/.test(body),
-      );
+      .find(({ sel }) => sel.includes("[data-shell='desktop']") && sel.includes("[data-screen='ticket-new']") && sel.includes('.x2f-flow__footer'));
     expect(supportDesktopFooter).toBeDefined();
+    expect(footer.matches(supportDesktopFooter!.sel)).toBe(true);
     expect(classAttrSpecificity(supportDesktopFooter!.sel)).toBeGreaterThan(uiSpec);
+    expect(supportDesktopFooter!.body).toMatch(/background:\s*linear-gradient\([^;]*var\(--x2f-surface\)/);
+    expect(supportDesktopFooter!.body).toMatch(/border-radius:\s*0\s+0\s+var\(--x2f-radius-lg\)\s+var\(--x2f-radius-lg\)/);
   });
 });
 
