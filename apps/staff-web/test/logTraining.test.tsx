@@ -218,6 +218,15 @@ describe('describeLog', () => {
     expect(d({ field: 'feeSweepColdAddress' })).toBe('Changed the setting feeSweepColdAddress');
   });
 
+  it('describes chat.message-sent for shared, private-lane, and mode-toggle entries', () => {
+    const d = (detail: Record<string, unknown>) => describeLog({ action: 'chat.message-sent', detail, actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } });
+    expect(d({ envelopeId: 'e1' })).toBe('The message to both traders was sent');
+    expect(d({ envelopeId: 'e2', to: 'buyer' })).toBe('The message to the buyer was sent');
+    expect(d({ envelopeId: 'e3', to: 'seller' })).toBe('The message to the seller was sent');
+    expect(d({ envelopeId: 'e4', to: 'buyer', mode: true })).toBe('Changed private chat mode for the buyer');
+    expect(d({ envelopeId: 'e5', to: 'seller', mode: true })).toBe('Changed private chat mode for the seller');
+  });
+
   it('"When" is today, yesterday or the day', () => {
     const now = new Date(2026, 10, 18, 12, 0);
     expect(whenText(new Date(2026, 10, 18, 9, 50).toISOString(), now)).toBe('Today 09:50');
