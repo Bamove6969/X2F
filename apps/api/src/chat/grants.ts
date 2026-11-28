@@ -154,16 +154,15 @@ export async function chatNotice(q: Queryable, chat: string, tradeCode: string |
 }
 
 /**
- * For moderation (build task 7): keyed chats whose linked trade is disputed, whose current dispute is
- * not closed, with no accepted grant and no notice for that dispute yet. Every value is the API's
- * word; moderation signs a notice only when its own records agree.
+ * For moderation (build task 7): keyed chats whose current dispute is not closed, with no accepted
+ * grant and no notice for that dispute yet. Every value is the API's word; moderation signs a
+ * notice only when its own records agree.
  */
 export async function noticeCandidates(q: Queryable, limit: number): Promise<Array<{ chat: string; trade: string; disputeSeq: number; openedAt: string; openedBy: string }>> {
   const { rows } = await q.query<{ chat: string; trade: string; seq: number; opened_at: Date; opened_by: string }>(
     `select c.code as chat, c.trade_code as trade, d.seq, d.opened_at, d.opened_by
        from chats c
        join chat_keys k on k.chat = c.code
-       join trades t on t.code = c.trade_code
        join lateral (select seq, status, opened_at, opened_by from disputes where code = c.trade_code order by seq desc limit 1) d on d.status <> 'closed'
       where not exists (select 1 from chat_members m where m.chat = c.code and m.member_kind = 'mod' and m.removed_at is null and m.accepted is not null)
         and not exists (select 1 from chat_dispute_notices n where n.chat = c.code and n.dispute_seq = d.seq)
