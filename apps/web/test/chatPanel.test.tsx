@@ -25,6 +25,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
 
 let current: ChatSnapshot;
 let client: { sync: ReturnType<typeof vi.fn<ChatClient['sync']>>; send: ReturnType<typeof vi.fn<ChatClient['send']>>; sendPay: ReturnType<typeof vi.fn<ChatClient['sendPay']>>; sendProof: ReturnType<typeof vi.fn<ChatClient['sendProof']>>; sendUnblurred: ReturnType<typeof vi.fn<ChatClient['sendUnblurred']>>; sendNotice: ReturnType<typeof vi.fn<ChatClient['sendNotice']>> };
+let unexpectedFetches: string[] = [];
 
 const flush = async (): Promise<void> => {
   await act(async () => {
@@ -34,6 +35,7 @@ const flush = async (): Promise<void> => {
 
 beforeEach(() => {
   current = snap();
+  unexpectedFetches = [];
   client = { sync: vi.fn(async () => current), send: vi.fn(async () => current), sendPay: vi.fn(async () => current), sendProof: vi.fn(async () => current), sendUnblurred: vi.fn(async () => current), sendNotice: vi.fn(async () => current) };
   setChatClient(client);
   vi.stubGlobal(
@@ -43,6 +45,7 @@ beforeEach(() => {
       if (url === '/v1/account/me') {
         return new Response(JSON.stringify({ error: 'not-authenticated' }), { status: 401, headers: { 'content-type': 'application/json' } });
       }
+      unexpectedFetches.push(url);
       throw new Error(`unexpected fetch in chatPanel.test.tsx: ${url}`);
     }),
   );
@@ -52,6 +55,7 @@ afterEach(() => {
   setChatClient(null);
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  expect(unexpectedFetches).toEqual([]);
 });
 
 function type(el: HTMLTextAreaElement, value: string): void {
