@@ -630,6 +630,8 @@ export function createWatcher(o: WatcherOptions): Watcher {
           o.log({ reason: 'party-stopped' });
           continue;
         }
+        // Finding F1: isClosed here (a coinless lapse counts) is defensive: a lapse needs a funding
+        // trade, which has an escrow address, so this path is barely reachable for one.
         // Review lead-mod-purge M1: a trade the API shows closed before any escrow address existed
         // here has nothing to watch. modPartyPlan stops only a running party, so after a restart such
         // a row would watch for good; it stops watching the same way.

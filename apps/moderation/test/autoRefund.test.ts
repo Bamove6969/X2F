@@ -374,6 +374,31 @@ describe("the seller's cancel refund (owner 8 Nov: no final alert, the refund st
     await again.handle.stop();
   });
 
+  it('finding F1: an armed refund is never handed once the API shows the trade lapsed with its record closed: the desk logs it over', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await sellerCancelled(l);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([REFUND]);
+    expect((await record(l.code)).armed?.kind).toBe('auto-refund');
+    await m.handle.stop();
+    // The API now shows the trade lapsed with its record closed (`closed`): it is over.
+    net.states.set(l.code, 'lapsed');
+    net.settleKinds.delete(l.code);
+    net.recordClosed.add(l.code);
+    const again = await moderation(ctx, fetch);
+    await again.handle.watch(); // starts the party again from the moderation database
+    const p = again.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    await again.handle.watch();
+    await again.handle.watch();
+    expect(again.logs).toContain('desk-trade-over');
+    expect(p.settles).toEqual([]);
+    await again.handle.stop();
+  });
+
   it('a desk record saved before the reversal (shadow in refund_requested with a final alert) loads as secured; the seller cancels again and it signs (migration 120)', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);
