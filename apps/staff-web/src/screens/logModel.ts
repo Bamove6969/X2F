@@ -127,7 +127,11 @@ function sentence(
     case 'case.opened': return 'Opened the case';
     case 'chat.read': return 'Opened the trade chat';
     case 'chat.message-requested': return 'Wrote to both traders';
-    case 'chat.message-sent': return 'The message to both traders was sent';
+    case 'chat.message-sent': {
+      const target = d.to === 'buyer' || d.to === 'seller' ? `the ${d.to}` : null;
+      if (d.mode === true) return target ? `Changed private chat mode for ${target}` : 'Changed private chat mode';
+      return target ? `The message to ${target} was sent` : 'The message to both traders was sent';
+    }
     case 'proof.unblurred-requested': return `Requested the unblurred payment proof from ${side()}`;
     case 'proof.unblurred-opened': return 'Opened the unblurred payment proof';
     // Rulings and appeals.
