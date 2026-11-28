@@ -87,3 +87,22 @@ describe('the News preview is the trader view, through the one door', () => {
     expect(news).toMatch(/<NewsPost\b/);
   });
 });
+
+/**
+ * Primary button labels (ui.css `--x2f-primary-fit`): staff-web uses apps/web's Button and ui.css,
+ * so main.tsx must install apps/web's fitPrimaryLabels observer through the one door (ui/kit.ts)
+ * so long primary button labels scale down on narrow viewports instead of overflowing at 27 px.
+ */
+describe('primary button label fit is wired through the one door', () => {
+  it("the kit's door for installPrimaryLabelFit is apps/web's ui/fitPrimaryLabels.ts", () => {
+    const kit = readFileSync(join(SRC, KIT), 'utf8');
+    expect(kit).toMatch(/export \{[^}]*\binstallPrimaryLabelFit\b[^}]*\} from '\.\.\/\.\.\/\.\.\/web\/src\/ui\/fitPrimaryLabels\.js'/);
+  });
+
+  it('main.tsx imports installPrimaryLabelFit from ui/kit.ts and calls it', () => {
+    const main = readFileSync(join(SRC, ENTRY), 'utf8');
+    expect(main).toMatch(/import \{[^}]*\binstallPrimaryLabelFit\b[^}]*\} from '\.\/ui\/kit\.js'/);
+    expect(main).toMatch(/\binstallPrimaryLabelFit\s*\(\s*\)/);
+  });
+});
+
