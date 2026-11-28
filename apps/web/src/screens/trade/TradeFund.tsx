@@ -419,15 +419,16 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
     setBusy(true);
     setError(null);
     try {
+      let next: TradeView;
       try {
-        await postTradeEvent(view.code, { type: 'buyer-cancel' });
+        next = await postTradeEvent(view.code, { type: 'buyer-cancel' });
       } catch {
         setError("Couldn't cancel the trade. Try again.");
         return;
       }
       // With coins already in the escrow the cancel is a refund to the seller, which this device
       // builds (BuyerCancelling takes over, with Try again). With none, the trade just closes.
-      if (view.receivedAtomic !== '0') {
+      if (next.state === 'settling') {
         try {
           await escrow.buyerCancel();
         } catch {

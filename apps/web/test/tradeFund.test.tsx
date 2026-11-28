@@ -71,6 +71,7 @@ const base: TradeView = {
 };
 
 let current: TradeView | { status: number; error: string } = base;
+let postResult: TradeView | null = null;
 const posted: unknown[] = [];
 
 function respond(body: unknown, status = 200): Response {
@@ -82,12 +83,13 @@ beforeEach(() => {
   localStorage.clear();
   posted.length = 0;
   current = base;
+  postResult = null;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
         posted.push({ path, body: JSON.parse(String(init.body)) });
-        return respond({ ...base, state: 'cancelled' });
+        return respond(postResult ?? { ...base, state: 'cancelled' });
       }
       if ('error' in current) return respond({ error: current.error }, current.status);
       return respond(current);
@@ -847,6 +849,7 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
 
   it('with coins already in the escrow, the cancel also starts the refund on this device', async () => {
     current = buyerView({ receivedAtomic: '600000000000' });
+    postResult = buyerView({ state: 'settling', settling: 'buyer-cancel', receivedAtomic: '600000000000' });
     const buyerCancel = vi.fn(async () => undefined);
     setTradeEscrowHook(() => verified({ buyerCancel }));
     const host = await room();
@@ -860,6 +863,32 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     await flush();
     expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
     expect(buyerCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('branches on the POST response state: starts escrow.buyerCancel when coins arrived after the last poll, and skips it when cancelled', async () => {
+    // 1. Stale view has receivedAtomic === '0', but POST returns state: 'settling' (coins arrived in between).
+    current = buyerView({ receivedAtomic: '0' });
+    postResult = buyerView({ state: 'settling', settling: 'buyer-cancel', receivedAtomic: '1000' });
+    const cancelSettling = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel: cancelSettling }));
+    const host1 = await room();
+    await act(async () => button(host1, 'Cancel trade')!.click());
+    const sheet1 = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    await act(async () => [...sheet1.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
+    await flush();
+    expect(cancelSettling).toHaveBeenCalledTimes(1);
+
+    // 2. When POST returns state: 'cancelled', escrow.buyerCancel is NOT called.
+    current = buyerView({ receivedAtomic: '0' });
+    postResult = buyerView({ state: 'cancelled' });
+    const cancelClosed = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel: cancelClosed }));
+    const host2 = await room();
+    await act(async () => button(host2, 'Cancel trade')!.click());
+    const sheet2 = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    await act(async () => [...sheet2.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
+    await flush();
+    expect(cancelClosed).not.toHaveBeenCalled();
   });
 
   it('once the time to fund is over, the screen says the trade is being cancelled (the server cancels it)', async () => {
