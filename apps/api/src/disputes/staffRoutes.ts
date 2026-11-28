@@ -304,7 +304,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       locked_currency: string; locked_cents_per_xmr: string;
       method_id: string; opened_by: string; opened_at: Date; appealed_at: Date | null; reply_due_at: Date; ruling_due_at: Date;
       first_reply_at: Date | null; assignee: string | null; assignee_name: string | null; ruling: { proposer?: string } | null; proposer_name: string | null; mine: boolean;
-      involved: string[] | null; comply_lapsed: boolean; pooled_since: Date; auto_assigned: boolean; grace_lapsed: boolean;
+      involved: string[] | null; comply_lapsed: boolean; pooled_since: Date; auto_assigned: boolean; grace_lapsed: boolean; paused: boolean;
     }>(
       `select d.code, d.incident_id, d.status, d.round, t.amount_atomic::text as amount_atomic, d.usd_cents::text as usd_cents,
               t.locked_currency, t.locked_cents_per_xmr::text as locked_cents_per_xmr,
@@ -312,7 +312,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
               d.reply_due_at, d.ruling_due_at, d.first_reply_at, d.assignee::text as assignee, a.${PUBLIC_NAME_COLUMN} as assignee_name,
               d.ruling, p.${PUBLIC_NAME_COLUMN} as proposer_name, coalesce(d.assignee = $3::uuid, false) as mine,
               case when d.round1 is null then null else array(select jsonb_array_elements_text(d.round1->'involved')) end as involved,
-              ${COMPLY_LAPSED_SQL} as comply_lapsed, ${POOL_SINCE_SQL} as pooled_since, d.auto_assigned, (${GRACE_WAITING_SQL(false, null)} or ${GRACE_WAITING_SQL(true, null)}) as grace_lapsed
+              ${COMPLY_LAPSED_SQL} as comply_lapsed, ${POOL_SINCE_SQL} as pooled_since, d.auto_assigned, (${GRACE_WAITING_SQL(false, null)} or ${GRACE_WAITING_SQL(true, null)}) as grace_lapsed,
+              (d.paused_since is not null or ${tradeHeldSql('t')} or exists (select 1 from site_flags f where f.maintenance_since is not null)) as paused
          from disputes d
          join trades t on t.code = d.code
          left join dispute_appeals ap on ap.code = d.code and ap.seq = d.seq
@@ -377,7 +378,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
           graceLapsed: r.grace_lapsed,
           // Owner 26 Nov 2026: when the timer gives this free case to the least-busy moderator on
           // shift (it may be later: nobody eligible on shift); null when taken, or auto-assign is off.
-          autoAssignAt: settings.autoAssignOn && r.assignee === null && (r.status === 'open' || r.status === 'appealed')
+          autoAssignAt: settings.autoAssignOn && !r.paused && r.assignee === null && (r.status === 'open' || r.status === 'appealed')
             ? new Date(r.pooled_since.getTime() + settings.autoAssignMin * 60_000).toISOString()
             : null,
           // The current assignee got it from the timer ("Assigned to you automatically").

@@ -685,4 +685,102 @@ describe('auto-assign: round-2 escalation and settings bounds (#42)', () => {
 
     expect((await row(code)).assignee).toBe(sen2.id);
   });
+
+  it('hides autoAssignAt while paused and shifts pooled_at on resume so remaining pool time is preserved (fix-pooled-at-pause)', async () => {
+    const { code } = await openCase();
+    const mod = await onShift('mod');
+    // Close any earlier tests' open disputes so only `code` is in the pool.
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+
+    try {
+      // Pause at t = 5 min via maintenance.
+      setNow(at(5 * MIN));
+      await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [at(5 * MIN)]);
+      await tick();
+
+      const qPaused = (await mod.b.get('/staff/v1/disputes?filter=free')).json() as { rows: { code: string; autoAssignAt: string | null }[] };
+      expect(qPaused.rows.find((r) => r.code === code)?.autoAssignAt).toBeNull();
+
+      // Resume at t = 25 min (20 min paused): 10 min of pool time remain (due at t = 35 min).
+      setNow(at(25 * MIN));
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
+      await tick();
+      expect((await row(code)).assignee).toBeNull();
+
+      const qResumed = (await mod.b.get('/staff/v1/disputes?filter=free')).json() as { rows: { code: string; autoAssignAt: string | null }[] };
+      expect(qResumed.rows.find((r) => r.code === code)?.autoAssignAt).toBe(at(35 * MIN).toISOString());
+
+      // At t = 35 min, auto-assign fires.
+      setNow(at(35 * MIN));
+      await tick();
+      expect((await row(code)).assignee).toBe(mod.id);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
+    }
+  });
+
+  it('hides autoAssignAt while held by a trade account lock and shifts pooled_at on release (fix-pooled-at-pause)', async () => {
+    const { code, buyer } = await openCase();
+    const mod = await onShift('mod');
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+
+    // Hold via account lock at t = 5 min.
+    setNow(at(5 * MIN));
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [buyer, at(5 * MIN)]);
+    await tick();
+
+    const qHeld = (await mod.b.get('/staff/v1/disputes?filter=free')).json() as { rows: { code: string; autoAssignAt: string | null }[] };
+    expect(qHeld.rows.find((r) => r.code === code)?.autoAssignAt).toBeNull();
+
+    // Release hold at t = 25 min (20 min held): pooled_at shifts to t = 20 min, due at t = 35 min.
+    setNow(at(25 * MIN));
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [buyer, at(25 * MIN)]);
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+    expect((await row(code)).pooled_at?.toISOString()).toBe(at(20 * MIN).toISOString());
+
+    const qResumed = (await mod.b.get('/staff/v1/disputes?filter=free')).json() as { rows: { code: string; autoAssignAt: string | null }[] };
+    expect(qResumed.rows.find((r) => r.code === code)?.autoAssignAt).toBe(at(35 * MIN).toISOString());
+
+    setNow(at(35 * MIN));
+    await tick();
+    expect((await row(code)).assignee).toBe(mod.id);
+  });
+
+  it('clamps pooled_at to resume time when a case enters the pool during a pause (fix-pooled-at-pause)', async () => {
+    const { code, buyer } = await openCase();
+    const mod1 = await onShift('mod');
+    const mod2 = await onShift('mod');
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+    // mod1 takes the case at t = 0.
+    expect((await mod1.b.post(`/staff/v1/disputes/${code}/take`)).statusCode).toBe(200);
+
+    // Pause at t = 5 min via trade hold.
+    setNow(at(5 * MIN));
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [buyer, at(5 * MIN)]);
+    await tick();
+
+    // Switch off mod1 during the pause at t = 15 min -> case returns to the pool with pooled_at = t = 15 min.
+    setNow(at(15 * MIN));
+    const owner0 = await onShift('owner', ownerId);
+    const offRes = await owner0.b.post(`/staff/v1/members/${mod1.id}/switch-off`, {});
+    expect(offRes.statusCode, offRes.body).toBe(200);
+    await deps.db.query('update sessions set revoked_at = $1 where id = $2', [deps.clock(), owner0.sessionId]);
+    expect((await row(code)).pooled_at?.toISOString()).toBe(at(15 * MIN).toISOString());
+
+    // Resume at t = 25 min: pooled_at must be t = 25 min (resume time), NOT t = 35 min (over-shifted).
+    setNow(at(25 * MIN));
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [buyer, at(25 * MIN)]);
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+    expect((await row(code)).pooled_at?.toISOString()).toBe(at(25 * MIN).toISOString());
+
+    // Full 15 min from resume: still unassigned at t = 39 min, assigned to mod2 at t = 40 min.
+    setNow(at(39 * MIN));
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+    setNow(at(40 * MIN));
+    await tick();
+    expect((await row(code)).assignee).toBe(mod2.id);
+  });
 });

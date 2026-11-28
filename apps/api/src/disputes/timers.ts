@@ -90,8 +90,18 @@ export async function runDisputeTimers(deps: DisputeDeps & { push?: OwnerAlertDe
       // Re-read in the dispute's transaction: a lock placed since the list was read keeps it paused.
       const still = await client.query(`select 1 from trades t where t.code = $1 and ${tradeHeldSql('t')}`, [d.code]);
       if ((still.rowCount ?? 0) > 0) return d;
-      await client.query('update disputes set paused_since = null where code = $1 and seq = $2', [d.code, d.seq]);
       const ms = Math.max(0, at.getTime() - rec.pausedSince.getTime());
+      await client.query(
+        `update disputes d
+            set paused_since = null,
+                pooled_at = case
+                  when d.assignee is null and d.status in ('open', 'appealed')
+                  then least(coalesce(d.pooled_at, (select ap.at from dispute_appeals ap where ap.code = d.code and ap.seq = d.seq), d.opened_at), $4::timestamptz) + ($3 * interval '1 millisecond')
+                  else d.pooled_at
+                end
+          where d.code = $1 and d.seq = $2`,
+        [d.code, d.seq, ms, rec.pausedSince],
+      );
       return shiftDeadlines(d, rec.pausedSince, ms);
     }))) n++;
   }
