@@ -31,7 +31,14 @@ jobs:
           tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
           if [ -z "$tip" ]; then echo "already gone"; exit 0; fi
           if [ "$tip" != "$SHA" ]; then echo "SKIP: $BRANCH moved to $tip after the merge"; exit 0; fi
-          gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null && echo "deleted $BRANCH"
+          if err=$(gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" 2>&1); then
+            echo "deleted $BRANCH"
+          else
+            case "$err" in
+              *422*"Reference does not exist"*|*"Reference does not exist"*422*) echo "already gone" ;;
+              *) printf '%s\n' "$err" >&2; exit 1 ;;
+            esac
+          fi
 
   listed:
     if: github.event_name == 'workflow_dispatch'
@@ -55,7 +62,14 @@ jobs:
             tip=$(gh api "repos/$REPO/git/ref/heads/$enc" --jq .object.sha 2>/dev/null || true)
             if [ -z "$tip" ]; then missing=$((missing+1)); continue; fi
             if [ "$tip" != "$sha" ]; then echo "SKIP $branch: moved to $tip"; skipped=$((skipped+1)); continue; fi
-            if gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" >/dev/null; then deleted=$((deleted+1)); else echo "FAILED $branch"; failed=$((failed+1)); fi
+            if err=$(gh api -X DELETE "repos/$REPO/git/refs/heads/$enc" 2>&1); then
+              deleted=$((deleted+1))
+            else
+              case "$err" in
+                *422*"Reference does not exist"*|*"Reference does not exist"*422*) missing=$((missing+1)) ;;
+                *) printf '%s\n' "$err" >&2; echo "FAILED $branch"; failed=$((failed+1)) ;;
+              esac
+            fi
           done < .github/branch-cleanup.txt
           echo "deleted=$deleted skipped=$skipped already-gone=$missing failed=$failed"
           if [ "$failed" -gt 0 ]; then exit 1; fi
