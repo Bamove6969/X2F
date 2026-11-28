@@ -11,6 +11,7 @@ import '../../web/src/theme/base.css';
 import '../../web/src/screens/screens.css';
 import '../../web/src/screens/setup/setup.css';
 import { App } from './App.js';
+import { installPrimaryLabelFit } from './ui/kit.js';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('missing #root');
@@ -21,3 +22,5 @@ createRoot(root).render(
     </BrowserRouter>
   </StrictMode>,
 );
+// DESIGN: owner 17 Nov button labels: the orange buttons' labels fill the button (ui/fitPrimaryLabels.ts).
+installPrimaryLabelFit();
