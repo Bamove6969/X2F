@@ -138,6 +138,9 @@ export function MentionTextarea({ id, names, value, onChange, className, rows, m
             setClosedAt(token!.start);
           }
         }}
+        onBlur={() => {
+          if (token !== null) setClosedAt(token.start);
+        }}
       />
       {open ? (
         <ul className="x2f-staff-mentions__list" id={listId} role="listbox" aria-label="Mention someone" data-part="mention-picker">

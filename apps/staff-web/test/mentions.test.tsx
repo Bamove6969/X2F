@@ -1,12 +1,14 @@
+// @vitest-environment happy-dom
 // PR #44 follow-up tests: the staff app's @mention helpers (ui/mentions.tsx) as implemented.
 // What the code does: a mention is typed after the start or white space; the picker matches
 // case-insensitively, names starting with the query first, then names containing it; names with
 // white space, empty names and repeats are dropped; in lines `@<known name>` is highlighted
 // case-insensitively, the longest name first, never inside a word, an address, after another `@`,
 // or as the start of a longer name. Output is strings and <mark> elements only.
-import { isValidElement, type ReactNode } from 'react';
+import { act, isValidElement, useState, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { mentionAt, mentionMatches, mentionNodes } from '../src/ui/mentions.js';
+import { mentionAt, mentionMatches, mentionNodes, MentionTextarea } from '../src/ui/mentions.js';
+import { click, render, settle, typeInto } from './helpers.js';
 
 /** Strings stay strings; a <mark> becomes ['mark', its text]. */
 const shape = (nodes: ReactNode[]) =>
@@ -81,5 +83,39 @@ describe('mentionNodes (staff)', () => {
     expect(mentionNodes('plain', ['sam'])).toEqual(['plain']);
     expect(mentionNodes('@sam', [])).toEqual(['@sam']);
     expect(shape(mentionNodes('<b>@sam</b>', ['sam']))).toEqual(['<b>', ['mark', '@sam', 'mention'], '</b>']);
+  });
+});
+
+describe('MentionTextarea (staff)', () => {
+  function Harness() {
+    const [value, setValue] = useState('');
+    return <MentionTextarea id="msg" names={['dmitri_k', 'mira.k']} value={value} onChange={setValue} />;
+  }
+
+  it('closes the mention picker on blur, while re-typing @ or clicking an option still works', async () => {
+    render(<Harness />);
+    await settle();
+    const ta = document.querySelector<HTMLTextAreaElement>('#msg')!;
+    typeInto(ta, 'Hi @');
+    expect(document.querySelector('[data-part="mention-picker"]')).not.toBeNull();
+
+    // Blurring the textarea closes the listbox.
+    act(() => {
+      ta.focus();
+      ta.blur();
+    });
+    await settle();
+    expect(document.querySelector('[data-part="mention-picker"]')).toBeNull();
+
+    // Typing a new @ re-opens it, and clicking an option still inserts the name.
+    typeInto(ta, 'Hi @ and @m');
+    const opt = document.querySelector('[data-part="mention-picker"] [role="option"]')!;
+    expect(opt.textContent).toBe('@mira.k');
+    const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    opt.dispatchEvent(md);
+    expect(md.defaultPrevented).toBe(true);
+    await click(opt);
+    expect(ta.value).toBe('Hi @ and @mira.k ');
+    expect(document.querySelector('[data-part="mention-picker"]')).toBeNull();
   });
 });
