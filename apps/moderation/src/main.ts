@@ -499,23 +499,47 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
   const lienStatementBackoff = new Map<string, { sig: string; until: number; delayMs: number }>();
   const lienStatementLogged = new Map<string, string>();
+  /** The unposted-statements read failed last pass and was logged; cleared by the next read that works. */
+  let lienStatementsReadFailed = false;
 
   /**
    * Review B1: the lien statements this service signed and the API has not taken yet, posted over
    * the signed link (`lien-statement`); one the API refuses stays unposted and is logged.
-   * A permanent `409 lien-mismatch` backs off per lien (reset on a new signature) and refusals are
-   * logged only on change so repeated ticks do not spam the API or logs.
+   * A permanent `409 lien-mismatch` backs off per lien (reset on a new signature); any other refusal
+   * or a network error is retried on the next pass. Refusals are logged only on change so repeated
+   * ticks do not spam the API or logs. It never throws: a database error is logged
+   * (`lien-statements-failed`, once until it clears) so the pass goes on to the other ticks, and a
+   * failure on one lien does not stop the others being tried.
    */
   const postLienStatements = async (): Promise<void> => {
     const at = now().getTime();
-    for (const l of await unpostedLienStatements(o.db)) {
+    let unposted: Awaited<ReturnType<typeof unpostedLienStatements>>;
+    try {
+      unposted = await unpostedLienStatements(o.db);
+      lienStatementsReadFailed = false;
+    } catch {
+      if (!lienStatementsReadFailed) log({ reason: 'lien-statements-failed' });
+      lienStatementsReadFailed = true;
+      return;
+    }
+    const logOnce = (lienId: string, key: string, reason: string): void => {
+      if (lienStatementLogged.get(lienId) === key) return;
+      lienStatementLogged.set(lienId, key);
+      log({ reason });
+    };
+    for (const l of unposted) {
       const b = lienStatementBackoff.get(l.lienId);
       if (b && b.sig === l.sig && at < b.until) continue;
       const res = await link.report({ kind: 'lien-statement', statement: l.statement, sig: l.sig }).catch(() => ({ status: 0, error: null }));
       if (res.status === 201) {
         lienStatementBackoff.delete(l.lienId);
-        lienStatementLogged.delete(l.lienId);
-        await markLienStatementPosted(o.db, l.lienId, l.sig);
+        try {
+          await markLienStatementPosted(o.db, l.lienId, l.sig);
+          lienStatementLogged.delete(l.lienId);
+        } catch {
+          // Stays unposted; the next pass posts it again (the API takes the same statement again).
+          logOnce(l.lienId, `${l.sig}:lien-statements-failed`, 'lien-statements-failed');
+        }
       } else {
         if (res.status === 409 && res.error === 'lien-mismatch') {
           const prev = b && b.sig === l.sig ? b : undefined;
@@ -523,16 +547,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           lienStatementBackoff.set(l.lienId, { sig: l.sig, until: at + delayMs, delayMs });
         }
         const reason = `lien-statement-refused-${res.status}`;
-        const key = `${l.sig}:${reason}:${res.error ?? ''}`;
-        if (lienStatementLogged.get(l.lienId) !== key) {
-          lienStatementLogged.set(l.lienId, key);
-          log({ reason });
-        }
+        logOnce(l.lienId, `${l.sig}:${reason}:${res.error ?? ''}`, reason);
       }
     }
   };
 
-  const tick = async (): Promise<string[]> => {
+  const workTick = async (): Promise<string[]> => {
     const done: string[] = [];
     let work: WorkItem[];
     try {
@@ -614,8 +634,19 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
         }
       }
     }
-    await postLienStatements();
     return done;
+  };
+
+  /**
+   * The work pass, then the unposted lien statements (F4): every pass, also one whose work list
+   * could not be pulled, and after the work so a statement signed this pass is posted this pass.
+   */
+  const tick = async (): Promise<string[]> => {
+    try {
+      return await workTick();
+    } finally {
+      await postLienStatements();
+    }
   };
 
   /**
