@@ -578,10 +578,12 @@ export async function freeLienRecoveries(db: Pick<pg.Pool, 'query'>, trade: stri
  * verify: null. Re-review N2: also null when the gate has seen a round-2 ruling for the trade and the
  * API presents none (a hidden appeal). Partial: an appeal the gate never saw cannot be known here.
  * Review F2: a `verifyOnly` check of round 1 is not refused as stale once the appeal is authorised
- * (so the verifier answers the same on every call). Round 1 refused only for its signer's standing
- * now (`revoked`: switched off, removed or reset since) counts only with an appeal, whose check is
- * given round 1 and holds it to its own taps (as the executor's, `execute.ts`), so its outcome is
- * the one its signers tapped.
+ * (so the verifier answers the same on every call). Round 1 must verify on its own: one the gate
+ * authorised while its signers were in good standing still does after they lose it (F1's re-check on
+ * the very taps and intents it was authorised on); any other round 1 by someone switched off,
+ * removed or reset since (`revoked`), seen for its signers only or never seen, is null. A retired or
+ * switched-off key never decides round 1's outcome here (review of F2, F-A): round 2's check is not
+ * given round 1 (no N1 reading of past signers), and rests on round 1 as this check saw it.
  */
 export function lienRulingVerifier(o: { store: GateStore; source: Pick<RulingSource, 'storedRulings' | 'rulingTaps' | 'ownerKeys' | 'usedTaps' | 'credential' | 'invite' | 'staff'>; ctx: GateContext }): LienRulings {
   return {
@@ -591,13 +593,13 @@ export function lienRulingVerifier(o: { store: GateStore; source: Pick<RulingSou
       if (r1 === null) return null;
       const a1 = await gateCheck(o.store, o.source, { ruling: r1, recorded, balanceAtomic: 0n, verifyOnly: true }, o.ctx);
       const appeal = stored.current !== null && stored.current.round === 2 ? stored.current : null;
-      if (!a1.ok && (a1.reason !== 'revoked' || appeal === null)) {
+      if (!a1.ok) {
         o.ctx.log({ reason: `gate.refused.lien-round1-${a1.reason}` });
         return null;
       }
       let r2 = null;
       if (appeal !== null) {
-        const a2 = await gateCheck(o.store, o.source, { ruling: appeal, recorded, balanceAtomic: 0n, involved: stored.involved, round1: r1, verifyOnly: true }, o.ctx);
+        const a2 = await gateCheck(o.store, o.source, { ruling: appeal, recorded, balanceAtomic: 0n, involved: stored.involved, verifyOnly: true }, o.ctx);
         if (!a2.ok) {
           o.ctx.log({ reason: `gate.refused.lien-round2-${a2.reason}` });
           return null;

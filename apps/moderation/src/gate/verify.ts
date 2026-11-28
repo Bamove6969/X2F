@@ -237,8 +237,8 @@ export interface RulingInput {
    * Review B1 (lien recovery): only whether the ruling is authorised (its taps, its signers), as the
    * moderation service checks a recovery's source trade; no payout is worked out (`settle: null`),
    * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle,
-   * except (review F2) that round 1 is not refused as `stale-round` once an appeal is authorised, a
-   * `signersOnly` entry stays so, and round 2's `round1` is checked also when the gate has seen it.
+   * except (review F2) that round 1 is not refused as `stale-round` once an appeal is authorised, and
+   * a `signersOnly` entry stays so.
    */
   verifyOnly?: boolean;
 }
@@ -451,22 +451,14 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     // Review B2: R37 rests on round 1 as this gate authorised it (same trade, round 1), never on
     // the database alone; the log's list can only add people to it.
     let r1 = Object.hasOwn(g.rulingsSeen, rul.round1Id) ? g.rulingsSeen[rul.round1Id] : undefined;
-    // Review F2: a `verifyOnly` check holds the given round 1 to its taps also when the gate has seen
-    // it, so the lien verifier can rest round 1's outcome on this check when round 1's signer has
-    // since lost standing (a compromised API never swaps it).
-    if (r.round1 !== undefined && (r1 === undefined || r.verifyOnly === true)) {
+    if (r1 === undefined && r.round1 !== undefined) {
       // Review p4t22 N1: the round 1 the appeal names, by someone since switched off or removed.
       const given = r.round1.ruling;
       if (given?.id !== rul.round1Id || given.round !== 1 || given.round1Id !== undefined) return refuse('round1-unseen');
-      const g1 = { ruling: given, taps: r.round1.taps, recorded: r.recorded };
-      // Seen and authorised: F1's re-check on the very taps and intents it was authorised on. Seen for its
-      // signers only, or unseen: N1's reading (past signers' keys count; held to its recorded intents).
-      const p = r1 !== undefined && r1.signersOnly !== true ? await examine(g, g1, ctx, false, true) : await examine(g, g1, ctx, true);
+      const p = await examine(g, { ruling: given, taps: r.round1.taps, recorded: r.recorded }, ctx, true);
       if (!p.ok || p.code !== code) return refuse('round1-unseen');
-      if (r1 === undefined) {
-        pastRound1 = p;
-        r1 = { code: p.code, round: 1, signers: p.signers, publishedSeenAt: ctx.now().toISOString() };
-      }
+      pastRound1 = p;
+      r1 = { code: p.code, round: 1, signers: p.signers, publishedSeenAt: ctx.now().toISOString() };
     }
     if (r1 === undefined || r1.code !== code || r1.round !== 1) return refuse('round1-unseen');
     const involved = new Set([...r1.signers, ...(r.involved ?? [])]);
