@@ -29,9 +29,12 @@ export function whoName(e: Pick<LogEntry, 'actor'>): string {
 
 /** The board's setting names: "the large-trade limit". */
 const SETTING_WORDS: Readonly<Record<string, { name: string; unit?: string }>> = {
-  large_trade_limit_usd: { name: 'the large-trade limit', unit: 'USD' },
-  first_response_h: { name: 'the first-reply time', unit: 'hours' },
-  appeal_window_h: { name: 'the appeal window', unit: 'hours' },
+  largeTradeLimitUsd: { name: 'the large-trade limit', unit: 'USD' },
+  firstResponseH: { name: 'the first-reply time', unit: 'hours' },
+  appealWindowH: { name: 'the appeal window', unit: 'hours' },
+  moderatorContactUrl: { name: 'the moderator contact link' },
+  communityMatrixUrl: { name: 'the community Matrix link' },
+  communityTelegramUrl: { name: 'the community Telegram link' },
   autoAssignOn: { name: 'automatic case assignment' },
   autoAssignMin: { name: 'the automatic case assignment wait', unit: 'minutes' },
   payModFeeBp: { name: "a moderator's share of the fee", unit: 'basis points (100 = 1% of the fee)' },
@@ -226,8 +229,10 @@ function sentence(
     case 'owner.key-removed': return 'Removed an owner security key';
     case 'settings.changed': {
       const s = SETTING_WORDS[str(d.field)];
+      const name = s?.name ?? `the setting ${str(d.field) || ''}`.trim();
+      if (d.from === undefined && d.to === undefined) return `Changed ${name}`;
       const unit = s?.unit ? ` ${s.unit}` : '';
-      return `Changed ${s?.name ?? `the setting ${str(d.field) || ''}`.trim()} from ${num(d.from)} to ${num(d.to)}${unit}`;
+      return `Changed ${name} from ${num(d.from)} to ${num(d.to)}${unit}`;
     }
     case 'treasury.swept': return `Swept ${xmr(d.amountAtomic) || 'the fees'} to the cold wallet`;
     case 'treasury.sweep-failed': return 'The sweep to the cold wallet failed';

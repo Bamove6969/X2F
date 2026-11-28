@@ -28,7 +28,7 @@ const ENTRIES: LogEntry[] = [
   entry({ id: '9', action: 'chat.read', actor: { kind: 'staff', role: 'mod', id: MOD_ID, name: 'dmitri_k' } }),
   entry({ id: '8', action: 'trade.mark-paid', actor: { kind: 'trader', role: 'buyer', id: null, name: 'mira.k' } }),
   entry({ id: '7', action: 'trade.chain', detail: { receivedAtomic: '1250000000000', unlockedAtomic: '1250000000000', confirmations: 10 } }),
-  entry({ id: '6', tradeCode: null, action: 'settings.changed', actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' }, detail: { field: 'large_trade_limit_usd', from: 500, to: 1000 } }),
+  entry({ id: '6', tradeCode: null, action: 'settings.changed', actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' }, detail: { field: 'largeTradeLimitUsd', from: 500, to: 1000 } }),
 ];
 
 async function open(path: string) {
@@ -205,6 +205,17 @@ describe('describeLog', () => {
     expect(d({ field: 'autoAssignOn', from: false, to: true })).toBe('Changed automatic case assignment from off to on');
     expect(d({ field: 'autoAssignMin', from: 15, to: 30 })).toBe('Changed the automatic case assignment wait from 15 to 30 minutes');
     expect(d({ field: 'otherFlag', from: true, to: false })).toBe('Changed the setting otherFlag from on to off');
+  });
+
+  it('uses camelCase API setting keys and renders link-only fields without from/to', () => {
+    const d = (detail: Record<string, unknown>) => describeLog({ action: 'settings.changed', detail, actor: { kind: 'staff', role: 'owner', id: 'o', name: 'lumen.k' } });
+    expect(d({ field: 'largeTradeLimitUsd', from: 500, to: 1000 })).toBe('Changed the large-trade limit from 500 to 1,000 USD');
+    expect(d({ field: 'firstResponseH', from: 2, to: 4 })).toBe('Changed the first-reply time from 2 to 4 hours');
+    expect(d({ field: 'appealWindowH', from: 24, to: 48 })).toBe('Changed the appeal window from 24 to 48 hours');
+    expect(d({ field: 'moderatorContactUrl' })).toBe('Changed the moderator contact link');
+    expect(d({ field: 'communityMatrixUrl' })).toBe('Changed the community Matrix link');
+    expect(d({ field: 'communityTelegramUrl' })).toBe('Changed the community Telegram link');
+    expect(d({ field: 'feeSweepColdAddress' })).toBe('Changed the setting feeSweepColdAddress');
   });
 
   it('"When" is today, yesterday or the day', () => {
