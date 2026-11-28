@@ -236,7 +236,9 @@ export interface RulingInput {
   /**
    * Review B1 (lien recovery): only whether the ruling is authorised (its taps, its signers), as the
    * moderation service checks a recovery's source trade; no payout is worked out (`settle: null`),
-   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle.
+   * so the balance is not read. Everything else, nonces and `rulingsSeen` included, is as for a settle,
+   * except (review F2) that round 1 is not refused as `stale-round` once an appeal is authorised, and
+   * a `signersOnly` entry stays so.
    */
   verifyOnly?: boolean;
 }
@@ -427,7 +429,10 @@ function round2Authorised(g: GateState, rul: GateRuling): boolean {
 export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateContext): Promise<Authorization> {
   if (g.ownerAccountId === null || g.ownerCreds.length < 2) return refuse('unpinned');
   if (g.stopped) return refuse('stopped');
-  if (r.ruling?.round === 1 && round2Authorised(g, r.ruling)) return refuse('stale-round');
+  // Review F2: a `verifyOnly` check (the lien verifier) pays nothing, so it reads round 1 also once
+  // an appeal is authorised; only the executor's settle is held to the appeal here. Its success never
+  // upgrades a round 1 seen for its signers only (`signersOnly` is kept below).
+  if (r.verifyOnly !== true && r.ruling?.round === 1 && round2Authorised(g, r.ruling)) return refuse('stale-round');
   let e = await examine(g, r, ctx, false);
   if (!e.ok && STANDING.has(e.reason) && wasAuthorised(g, r.ruling)) {
     // Review p4t22 F1: a ruling this gate already authorised stays authorised when a signer is
@@ -503,6 +508,8 @@ export async function authorizeRuling(g: GateState, r: RulingInput, ctx: GateCon
     intentsSha256: seen?.intentsSha256 ?? intentsSha256,
     publishedSeenAt: seen?.publishedSeenAt ?? ctx.now().toISOString(),
     ...(seen?.firstSeenFinalAt !== undefined ? { firstSeenFinalAt: seen.firstSeenFinalAt } : {}),
+    // Review F2: a ruling seen for its signers only stays so (never authorised by a later check).
+    ...(seen?.signersOnly === true ? { signersOnly: true } : {}),
   };
   return { ok: true, settle };
 }
