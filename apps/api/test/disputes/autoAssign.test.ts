@@ -783,4 +783,78 @@ describe('auto-assign: round-2 escalation and settings bounds (#42)', () => {
     await tick();
     expect((await row(code)).assignee).toBe(mod2.id);
   });
+
+  it('skips clocked-in moderators outside their login hours or with invalid hours (fix-autoassign-hours)', async () => {
+    const realH = new Date().getUTCHours();
+    const offsetH = (realH + 6 - at(0).getUTCHours() + 24) % 24;
+    const openAt = offsetH * H;
+    const dueAt = at(openAt + 15 * MIN);
+    const { code } = await openCase(openAt);
+    const outMod = await onShift('mod');
+    const badMod = await onShift('mod');
+    const allDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const h = dueAt.getUTCHours();
+    const hh = (n: number) => `${String((n + 24) % 24).padStart(2, '0')}:00`;
+    // Window covers the real current UTC hour but excludes `dueAt`, so swapping `now` for `new Date()` fails.
+    await deps.db.query('update staff_members set hours = $2::jsonb where account_id = $1', [
+      outMod.id,
+      JSON.stringify({ tz: 'UTC', days: allDays, start: hh(realH), end: hh(realH + 2) }),
+    ]);
+    await deps.db.query('update staff_members set hours = $2::jsonb where account_id = $1', [
+      badMod.id,
+      JSON.stringify({ invalid: true }),
+    ]);
+
+    setNow(dueAt);
+    await tick();
+    expect((await row(code)).assignee).toBeNull();
+
+    const inMod = await onShift('mod');
+    await deps.db.query('update staff_members set hours = $2::jsonb where account_id = $1', [
+      inMod.id,
+      JSON.stringify({ tz: 'UTC', days: allDays, start: hh(h), end: hh(h + 2) }),
+    ]);
+    await tick();
+    expect((await row(code)).assignee).toBe(inMod.id);
+  });
+
+  it('re-checks login hours under FOR SHARE and skips a moderator whose hours changed out-of-window concurrently (fix-autoassign-hours)', async () => {
+    const realH = new Date().getUTCHours();
+    const offsetH = (realH + 6 - at(0).getUTCHours() + 24) % 24;
+    const openAt = offsetH * H;
+    const dueAt = at(openAt + 15 * MIN);
+    const { code } = await openCase(openAt);
+    const a = await onShift('mod');
+    const b = await onShift('mod');
+    const [mod1, mod2] = [a, b].sort((x, y) => x.id.localeCompare(y.id)) as [typeof a, typeof b];
+    setNow(dueAt);
+    await deps.db.query("update disputes set status = 'closed', closed_at = $1 where status <> 'closed' and code <> $2", [deps.clock(), code]);
+
+    const allDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const hh = (n: number) => `${String((n + 24) % 24).padStart(2, '0')}:00`;
+    const outWindow = JSON.stringify({ tz: 'UTC', days: allDays, start: hh(realH), end: hh(realH + 2) });
+
+    const c = await deps.db.connect();
+    let running: Promise<unknown> | undefined;
+    let finished = false;
+    try {
+      await c.query('begin');
+      const holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await c.query('select 1 from staff_members where account_id = $1 for update', [mod1.id]);
+      await c.query('update staff_members set hours = $2::jsonb where account_id = $1', [mod1.id, outWindow]);
+      running = tick().finally(() => {
+        finished = true;
+      });
+      await waitUntilBlockedBy(holderPid, () => finished);
+      await c.query('commit');
+    } catch (err) {
+      await c.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      c.release();
+    }
+    await running;
+
+    expect((await row(code)).assignee).toBe(mod2.id);
+  });
 });
