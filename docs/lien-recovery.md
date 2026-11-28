@@ -107,7 +107,9 @@ signed recovery. The hold stops counting once the trade has been closed without 
 (re-review N3: the retention job `releaseStaleRecoveryHolds`, and `complied` itself first; logged
 `lien.recovery-released`). A recovery paid after that (late coins ruled for the buyer) is still
 recorded when the trade's attested terms carry exactly that hold's figure; past what is still owed it
-records only what was owed and logs `lien.over-recovered`.
+records only what was owed, logs `lien.over-recovered`, and raises the `lien-over-recovered` owner
+alert (detail: the lien's own case as `trade`, the paying trade as `paidBy`, the excess as
+`amountAtomic`, and a message; the staff site links it to the lien's case).
 `complied` refuses (409 `lien-recovery-in-flight`) while the lien has an open hold that still counts. The same rule for the lien code: `complied` (which repays a restitution lien) is
 a system event only (tested), and its future route (NEEDS_TASK_12_TX_PROOF) must emit it only after
 the tx proof is checked on chain: the seller's "sent" claim and uploaded evidence are not receipt.
