@@ -1184,6 +1184,52 @@ describe('lien recovery at attestation (review B1, owner answers of 17 and 26 No
     });
   const UNPOSTED_SQL = 'from mod_liens where posted_at is null';
 
+  it('fix-lien-statements-tick: a new signature inside the 409 backoff window is posted on the next tick, with a fresh backoff', async () => {
+    const src = await sourceTrade();
+    const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
+    expect(n.done).toEqual([n.code]);
+    await db.query('update mod_liens set posted_at = null where lien_id = $1', [LIEN]);
+
+    let atMs = NOW.getTime();
+    const sent: string[] = [];
+    let mode: '409' | '201' = '409';
+    const baseNet = fakeNetwork(() => []);
+    const fetch: Fetch = async (url, init) => {
+      const u = new URL(url);
+      if (u.origin === API && init.method === 'POST' && u.pathname === '/internal/v1/reports') {
+        const body = JSON.parse(init.body ?? '{}') as { kind?: string; sig?: string };
+        if (body.kind === 'lien-statement') {
+          sent.push(body.sig!);
+          if (mode === '409') return { status: 409, json: async () => ({ error: 'lien-mismatch' }) };
+        }
+      }
+      return baseNet.fetch(url, init);
+    };
+    const r = reasonsOf();
+    const mod = await moderation(fetch, () => {}, r.log, { now: () => new Date(atMs) });
+
+    await mod.tick();
+    const oldSig = (await db.query<{ sig: string }>('select sig from mod_liens where lien_id = $1', [LIEN])).rows[0]!.sig;
+    expect(sent).toEqual([oldSig]);
+    await mod.tick(); // inside the 60 s window: skipped
+    expect(sent).toEqual([oldSig]);
+
+    // Re-signed (a new statement, e.g. a rate change) while the old one is still backing off.
+    const newSig = 'cd'.repeat(64);
+    await db.query('update mod_liens set sig = $2, posted_at = null where lien_id = $1', [LIEN, newSig]);
+    await mod.tick();
+    expect(sent).toEqual([oldSig, newSig]);
+    // Refused again: a new refusal for the new signature is logged, and its backoff starts afresh at 60 s.
+    expect(r.reasons.filter((x) => x === 'lien-statement-refused-409')).toHaveLength(2);
+
+    mode = '201';
+    atMs += 61_000;
+    await mod.tick();
+    expect(sent).toEqual([oldSig, newSig, newSig]);
+    expect(baseNet.lienStatements.map((x) => x.sig)).toEqual([newSig]);
+    expect((await db.query<{ posted_at: Date | null }>('select posted_at from mod_liens where lien_id = $1', [LIEN])).rows[0]!.posted_at).not.toBeNull();
+  });
+
   it('fix-lien-statements-tick: a transient refusal (500) or network error (status 0) is retried on every tick without backoff and logged once', async () => {
     const src = await sourceTrade();
     const n = await debtorTrade(rec(FULL), await sourceOf(src), creditorBuyer);
